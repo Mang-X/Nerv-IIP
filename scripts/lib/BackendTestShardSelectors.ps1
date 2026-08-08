@@ -51,9 +51,14 @@ function Get-BackendTestShardPolicyIdentityMatches {
 
         A selector covers an identity when it *is* that identity (a method selector) or when it is
         that identity's class prefix (a class selector, matched with a trailing dot so a sibling
-        class sharing the prefix is not swallowed). Comparison is ordinal throughout: these are
-        identifiers, and PowerShell's default — including `-ceq` — is culture-aware and folds
-        ignorable characters.
+        class sharing the prefix is not swallowed). A blank or null identity is covered by nothing,
+        including the empty selector it would otherwise compare equal to. Comparison is ordinal
+        throughout: these are identifiers, and PowerShell's default — including `-ceq` — is
+        culture-aware and folds ignorable characters.
+
+        Each clause above has an executable counterpart in scripts/tests/backend-test-shards.Tests.ps1
+        under "Discrimination controls for the key derivation itself"; none of them is documentation
+        alone.
 
         This exists as one function because it is the derivation the shard policy gate runs and the
         one its contract tests have to check. A test that re-derived the same keys by hand could not

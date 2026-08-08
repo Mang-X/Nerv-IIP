@@ -898,8 +898,10 @@ try {
     # to most ways of breaking a key: a key that dropped `identity` and degenerated to
     # `source|rule` is still perfectly rearrangement-invariant, and so is one that returned a
     # constant for every match. Mutation testing on scripts/lib/BackendTestShardSelectors.ps1 found
-    # exactly that — four of six mutations survived. The three checks below close it by asserting the
-    # key's *structure*, its *cardinality*, and the *case sensitivity* of the match that feeds it.
+    # exactly that — four of six mutations survived. The checks below close it by asserting the key's
+    # *structure*, its *cardinality*, and then the *match* that feeds it: ordinality, sibling
+    # containment, and the blank-identity guard. Each was added because a mutation of the production
+    # function survived this file; nothing here is a restatement of the docstring.
 
     # (1) Structure: the key is reversibly sourceId|ruleId|identity, in that order, and nothing else.
     #     Test identities, rule ids and source ids are C#/ kebab identifiers and never contain `|`,
@@ -949,7 +951,7 @@ try {
     Assert-Contract ($distinctTriples -gt 1) 'The policy must carry more than one distinct identity triple for key cardinality to be assertable.'
     Assert-Contract ($distinctKeys -eq $distinctTriples) "Every distinct (sourceId, ruleId, identity) triple must produce its own key; $distinctTriples triples collapsed to $distinctKeys keys."
 
-    # (3) Case sensitivity of the match. `Get-BackendTestShardPolicyIdentityMatches` is what decides
+    # (3) Case sensitivity — and ordinality — of the match. `Get-BackendTestShardPolicyIdentityMatches` is what decides
     #     *which* identities a selector governs, so a comparison relaxed to OrdinalIgnoreCase would
     #     silently widen every exclusion — and no set comparison across a rearrangement can see that,
     #     because it widens both sides equally. Asserted on a probe rule rather than on the real
@@ -965,7 +967,56 @@ try {
     Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.Alpha' -Rules @($caseProbeRule)).Count -eq 1) 'A class selector must match the identities beneath it.'
     Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'nerv.probe.alpha.beta' -Rules @($caseProbeRule)).Count -eq 0) 'A selector differing only in case must not match; policy identities are ordinal identifiers, not case-folded names.'
     Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'nerv.probe.alpha' -Rules @($caseProbeRule)).Count -eq 0) 'A class selector differing only in case must not match either.'
-    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.AlphaOther' -Rules @($caseProbeRule)).Count -eq 0) 'A sibling class sharing a prefix must not be swallowed by the trailing-dot rule.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.AlphaOther' -Rules @($caseProbeRule)).Count -eq 0) 'A longer sibling selector must not match an identity it merely shares a prefix with.'
+
+    #     The docstring claims the comparison is *ordinal*, which is strictly stronger than
+    #     case-sensitive: a culture-aware comparison — PowerShell's default, `-ceq` included — folds
+    #     ignorable characters, so a selector carrying a soft hyphen compares equal to the identity
+    #     without one and would silently widen the exclusion while every case assertion above stayed
+    #     green. Probed on both branches of the match: the exact-equality one and the prefix one.
+    $softHyphen = [string][char]0x00AD
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector "Nerv.Probe.Alpha.Be${softHyphen}ta" -Rules @($caseProbeRule)).Count -eq 0) 'An exact selector differing by an ignorable character must not match; the equality branch is ordinal, not culture-aware.'
+    Assert-Contract (@(Get-BackendTestShardPolicyIdentityMatches -Selector "Nerv.Probe.Al${softHyphen}pha" -Rules @($caseProbeRule)).Count -eq 0) 'A class selector differing by an ignorable character must not match; the prefix branch is ordinal too.'
+
+    # (4) Sibling containment. The docstring promises the prefix test carries a trailing dot precisely
+    #     so that `Foo.BarTests` does not swallow `Foo.BarTestsExtra.*` — and nothing asserted it:
+    #     deleting the dot left this whole file green. The check above (`Nerv.Probe.AlphaOther`) probes
+    #     the harmless direction, where the *selector* is the longer sibling and no prefix rule of any
+    #     spelling would match. The direction that matters is the reverse one, asserted here over a
+    #     probe rule that carries the class row, a genuine member and a same-prefix sibling at once, so
+    #     that widening the rule (dot deleted, or "always match") and disabling it ("never match") all
+    #     fail on the same cardinality.
+    $siblingProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-sibling-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @('Nerv.Probe.BarTests', 'Nerv.Probe.BarTests.SomeMethod', 'Nerv.Probe.BarTestsExtra.SomeMethod')
+    }
+    $siblingMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector 'Nerv.Probe.BarTests' -Rules @($siblingProbeRule))
+    $siblingMatchedIdentities = @($siblingMatches | ForEach-Object { [string] $_.identity })
+    Assert-Contract ($siblingMatches.Count -eq 2) "A class selector must cover exactly its own row and the members beneath it; matched $($siblingMatches.Count): $($siblingMatchedIdentities -join ', ')."
+    foreach ($coveredIdentity in @('Nerv.Probe.BarTests', 'Nerv.Probe.BarTests.SomeMethod')) {
+        Assert-Contract (@($siblingMatchedIdentities | Where-Object { [string]::Equals([string] $_, $coveredIdentity, [StringComparison]::Ordinal) }).Count -eq 1) "A class selector must cover '$coveredIdentity' exactly once; matched [$($siblingMatchedIdentities -join ', ')]."
+    }
+    Assert-Contract (@($siblingMatchedIdentities | Where-Object { [string]::Equals([string] $_, 'Nerv.Probe.BarTestsExtra.SomeMethod', [StringComparison]::Ordinal) }).Count -eq 0) "A sibling class sharing the selector's prefix must not be swallowed; that is what the trailing dot in the prefix test buys, and matched [$($siblingMatchedIdentities -join ', ')]."
+
+    # (5) The blank-identity guard, likewise deletable while this file stayed green. A policy row
+    #     carrying an empty, whitespace-only or null identity must be covered by nothing at all — and
+    #     the selector that exposes the guard is the blank one, because that is the only selector a
+    #     blank identity can compare equal to. A null identity must also not throw on the way through;
+    #     an exception here fails the run, which is the assertion.
+    $blankProbeRule = [pscustomobject][ordered]@{
+        id = 'probe-blank-rule'
+        sourceId = 'probe-source'
+        classification = 'environment-gated'
+        requiredLane = 'postgres'
+        testIdentities = @('', '   ', $null)
+    }
+    foreach ($blankProbeSelector in @('', '   ', 'Nerv.Probe.BarTests')) {
+        $blankMatches = @(Get-BackendTestShardPolicyIdentityMatches -Selector $blankProbeSelector -Rules @($blankProbeRule))
+        Assert-Contract ($blankMatches.Count -eq 0) "A blank policy identity must never be covered by any selector; selector '$blankProbeSelector' matched $($blankMatches.Count)."
+    }
 
     # The gate itself, over the rearranged topology. The assertions above compare derivations; this
     # runs the real policy gate as a process and requires it to be satisfied by a shard layout it has
