@@ -34,16 +34,21 @@
     and reading it as "the strict one" is what put these operators in the tree in the first place.
 #>
 
-$script:NervOrdinalContractBannedOperators = @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin')
-$script:NervOrdinalContractCultureOperators = @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin')
-$script:NervOrdinalContractWhereSwitches = @(
-    'eq', 'ne', 'ceq', 'cne', 'contains', 'notcontains', 'ccontains', 'cnotcontains', 'in', 'notin', 'cin', 'cnotin')
+# These are functions rather than `$script:` arrays for the same reason Add-NervOrdinalContractFinding
+# is a function rather than a closure: a dot-sourced library's script-scope variables resolve against
+# whatever session state the caller dot-sourced it into, and this file has already been bitten once by
+# assuming that binding holds. A function call is looked up the same way from every caller.
+function Get-NervOrdinalContractBannedOperators { return @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin') }
+function Get-NervOrdinalContractCultureOperators { return @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin') }
+function Get-NervOrdinalContractWhereSwitches {
+    return @('eq', 'ne', 'ceq', 'cne', 'contains', 'notcontains', 'ccontains', 'cnotcontains', 'in', 'notin', 'cin', 'cnotin')
+}
 # String methods that are unambiguously string methods: no collection type in this tree exposes them,
 # so a missing [StringComparison] argument is always a culture-aware comparison.
-$script:NervOrdinalContractStringMethods = @('StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf')
+function Get-NervOrdinalContractStringMethods { return @('StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf') }
 # …unlike Contains/Equals, which HashSet[string] and Hashtable also expose. Only the spelling that
 # cannot be a set lookup in practice is flagged: a single *string-literal* argument.
-$script:NervOrdinalContractAmbiguousMethods = @('Contains', 'Equals')
+function Get-NervOrdinalContractAmbiguousMethods { return @('Contains', 'Equals') }
 
 function Get-NervOrdinalContractCoveredAxes {
     <#
@@ -136,6 +141,50 @@ function Test-NervOrdinalContractOrdinalArgument {
     return $false
 }
 
+function Test-NervOrdinalContractHasParameter {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ParameterNames,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    return @($ParameterNames | Where-Object { [string]::Equals($_, $Name, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+}
+
+function Add-NervOrdinalContractFinding {
+    <#
+        Records one finding, unless a named exception claims this exact node.
+
+        A plain function rather than a `{ … }.GetNewClosure()` helper (#1509 round 3, second CI-only
+        defect): a closure rebinds the script block to the session state captured at creation time,
+        and on the CI runner's PowerShell that binding could no longer resolve the sibling functions
+        of this very library — `Get-NervOrdinalContractEnclosingSite` came back "not recognized"
+        while the same file ran green locally on 7.6.4 under both `-File` and the `-command ". '…'"`
+        form CI uses. Passing the two accumulators as parameters is version-independent: both are
+        reference types, so the caller sees the mutations.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $Findings,
+        [Parameter(Mandatory)] [hashtable] $ExceptionHits,
+        [Parameter(Mandatory)] [string] $Label,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [string] $Axis,
+        [Parameter(Mandatory)] [string] $Message
+    )
+
+    $key = "$(Get-NervOrdinalContractEnclosingSite -Node $Node)|$([string] $Node.Extent.Text)"
+    if ($ExceptionHits.ContainsKey($key)) {
+        $ExceptionHits[$key] = [int] $ExceptionHits[$key] + 1
+        return
+    }
+
+    # The offending expression is always carried in the finding, first line only and clipped: a
+    # finding that names a rule but not the code is unactionable, and a multi-line `switch` would
+    # otherwise bury the rest of the report.
+    $excerpt = @(([string] $Node.Extent.Text) -split "`r?`n")[0]
+    if ($excerpt.Length -gt 160) { $excerpt = $excerpt.Substring(0, 157) + '...' }
+    $Findings.Add("[$Axis] ${Label}:$($Node.Extent.StartLineNumber) $Message | $excerpt")
+}
+
 function Get-NervOrdinalComparisonFindings {
     <#
         Scans one PowerShell file for the culture-aware comparison constructs enumerated above.
@@ -170,37 +219,21 @@ function Get-NervOrdinalComparisonFindings {
         $exceptionHits["$([string]$exception.Site)|$([string]$exception.Text)"] = 0
     }
 
-    $report = {
-        param($Node, $Axis, $Message)
-
-        $key = "$(Get-NervOrdinalContractEnclosingSite -Node $Node)|$([string] $Node.Extent.Text)"
-        if ($exceptionHits.ContainsKey($key)) {
-            $exceptionHits[$key] = [int] $exceptionHits[$key] + 1
-            return
-        }
-        # The offending expression is always carried in the finding, first line only and clipped:
-        # a finding that names a rule but not the code is unactionable, and a multi-line `switch`
-        # would otherwise bury the rest of the report.
-        $excerpt = ([string] $Node.Extent.Text) -split "`r?`n" | Select-Object -First 1
-        if ($excerpt.Length -gt 160) { $excerpt = $excerpt.Substring(0, 157) + '...' }
-        $findings.Add("[$Axis] ${label}:$($Node.Extent.StartLineNumber) $Message | $excerpt")
-    }.GetNewClosure()
-
     foreach ($binary in $ast.FindAll({
         param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst]
     }, $true)) {
         $operator = [string] $binary.Operator
-        if (@($script:NervOrdinalContractBannedOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -gt 0) {
-            # Deliberately not routed through $report: the banned operators have no exception path.
+        if (@((Get-NervOrdinalContractBannedOperators) | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -gt 0) {
+            # Deliberately not routed through Add-NervOrdinalContractFinding: the banned operators have no exception path.
             $findings.Add("[banned-c-operator] ${label}:$($binary.Extent.StartLineNumber) uses -$($operator.ToLowerInvariant()); the c-prefixed operators only disable case-insensitivity and still fold ignorable characters.")
             continue
         }
-        if (@($script:NervOrdinalContractCultureOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -eq 0) { continue }
+        if (@((Get-NervOrdinalContractCultureOperators) | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -eq 0) { continue }
         if (-not ((Test-NervOrdinalContractStringOperand -Node $binary.Left) -or
                   (Test-NervOrdinalContractStringOperand -Node $binary.Right))) {
             continue
         }
-        & $report $binary 'culture-operator-with-string-literal' "compares strings with -$($operator.ToLowerInvariant()), which is culture-aware."
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $binary -Axis 'culture-operator-with-string-literal' -Message "compares strings with -$($operator.ToLowerInvariant()), which is culture-aware."
     }
 
     foreach ($command in $ast.FindAll({
@@ -211,18 +244,13 @@ function Get-NervOrdinalComparisonFindings {
         $parameterNames = @($command.CommandElements |
             Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
             ForEach-Object { [string] $_.ParameterName })
-        $hasParameter = {
-            param($candidate)
-            @($parameterNames | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-        }.GetNewClosure()
-
         $axis = $null
         $message = $null
         if ([string]::Equals($name, 'Sort-Object', [StringComparison]::OrdinalIgnoreCase)) {
             # Both spellings, not just -Unique: ordering a retained artifact by culture collation makes
             # the bytes depend on the machine's locale, which is the same defect one step later.
             $axis = 'sort-object'
-            $message = if (& $hasParameter 'Unique') {
+            $message = if (Test-NervOrdinalContractHasParameter -ParameterNames $parameterNames -Name 'Unique') {
                 'deduplicates with Sort-Object -Unique, which folds ignorable characters. Use an ordinal set or sort helper.'
             }
             else {
@@ -237,14 +265,14 @@ function Get-NervOrdinalComparisonFindings {
             $axis = 'compare-object'
             $message = 'diffs with Compare-Object, whose comparison is culture-aware.'
         }
-        elseif ([string]::Equals($name, 'Select-Object', [StringComparison]::OrdinalIgnoreCase) -and (& $hasParameter 'Unique')) {
+        elseif ([string]::Equals($name, 'Select-Object', [StringComparison]::OrdinalIgnoreCase) -and (Test-NervOrdinalContractHasParameter -ParameterNames $parameterNames -Name 'Unique')) {
             $axis = 'select-object-unique'
             $message = 'deduplicates with Select-Object -Unique, which compares culture-aware.'
         }
         elseif ([string]::Equals($name, 'Where-Object', [StringComparison]::OrdinalIgnoreCase)) {
             $comparisonParameter = @($parameterNames | Where-Object {
                 $candidate = $_
-                @($script:NervOrdinalContractWhereSwitches | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+                @((Get-NervOrdinalContractWhereSwitches) | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
             })
             if ($comparisonParameter.Count -gt 0) {
                 $axis = 'where-object-comparison-switch'
@@ -253,7 +281,7 @@ function Get-NervOrdinalComparisonFindings {
         }
 
         if ($null -eq $axis) { continue }
-        & $report $command $axis $message
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $command -Axis $axis -Message $message
     }
 
     foreach ($switchStatement in $ast.FindAll({
@@ -268,7 +296,7 @@ function Get-NervOrdinalComparisonFindings {
             Test-NervOrdinalContractStringOperand -Node $_
         })
         if ($stringClauses.Count -eq 0) { continue }
-        & $report $switchStatement 'switch-statement-string-clause' "branches on string clauses with switch, whose matching is culture-aware even under -CaseSensitive: $(($stringClauses | ForEach-Object { $_.Extent.Text }) -join ', ')"
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $switchStatement -Axis 'switch-statement-string-clause' -Message "branches on string clauses with switch, whose matching is culture-aware even under -CaseSensitive: $(($stringClauses | ForEach-Object { $_.Extent.Text }) -join ', ')"
     }
 
     foreach ($invocation in $ast.FindAll({
@@ -277,12 +305,12 @@ function Get-NervOrdinalComparisonFindings {
         $member = [string] $invocation.Member.Value
         if ([string]::IsNullOrWhiteSpace($member)) { continue }
         $arguments = @($invocation.Arguments)
-        if (@($script:NervOrdinalContractStringMethods | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+        if (@((Get-NervOrdinalContractStringMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
             if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments) { continue }
-            & $report $invocation 'string-method-without-ordinal-comparison' "calls .$member() without an explicit ordinal [StringComparison]."
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'string-method-without-ordinal-comparison' -Message "calls .$member() without an explicit ordinal [StringComparison]."
             continue
         }
-        if (@($script:NervOrdinalContractAmbiguousMethods | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) { continue }
+        if (@((Get-NervOrdinalContractAmbiguousMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) { continue }
         if ($arguments.Count -ne 1) { continue }
         # A *literal* argument only. `[string]$x` would be a string operand for the binary-operator
         # rule above, but here it is the ordinary spelling of a HashSet/Hashtable lookup, which is
@@ -292,7 +320,7 @@ function Get-NervOrdinalComparisonFindings {
             $arguments[0] -isnot [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
             continue
         }
-        & $report $invocation 'ambiguous-method-with-string-literal' "calls .$member() on a string literal without an explicit ordinal [StringComparison]."
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'ambiguous-method-with-string-literal' -Message "calls .$member() on a string literal without an explicit ordinal [StringComparison]."
     }
 
     foreach ($memberExpression in $ast.FindAll({
@@ -308,7 +336,7 @@ function Get-NervOrdinalComparisonFindings {
             [string]::Equals($member, 'OrdinalIgnoreCase', [StringComparison]::Ordinal)) {
             continue
         }
-        & $report $memberExpression 'non-ordinal-stringcomparison' "names [StringComparison]::$member, which is culture-aware even though it is written out explicitly."
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $memberExpression -Axis 'non-ordinal-stringcomparison' -Message "names [StringComparison]::$member, which is culture-aware even though it is written out explicitly."
     }
 
     return [pscustomobject]@{

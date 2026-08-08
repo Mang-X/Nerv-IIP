@@ -1527,6 +1527,31 @@ $actualOrdinalSweepIdentity = (@($ordinalSweepExceptions | ForEach-Object {
 Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweepIdentity, [StringComparison]::Ordinal)) `
     "The ordinal sweep exception table changed. Expected:`n$expectedOrdinalSweepIdentity`nActual:`n$actualOrdinalSweepIdentity"
 
+# The scan face must stay callable from any session state (#1509 round 3, second CI-only defect).
+# The first version built its helpers as `{ … }.GetNewClosure()` and read its tables through
+# `$script:` variables; both bind to the session state captured when the library was dot-sourced, and
+# on the CI runner's PowerShell that binding could no longer see the library's own sibling functions
+# — `Get-NervOrdinalContractEnclosingSite` came back "not recognized" while the identical file ran
+# green locally on 7.6.4 under both `-File` and CI's `-command ". '…'"` form. Since the divergence is
+# not reproducible here, the invariant is asserted structurally instead of behaviourally: this
+# library binds nothing to a captured scope.
+$contractLibraryPath = Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1'
+$contractLibraryAst = [System.Management.Automation.Language.Parser]::ParseFile($contractLibraryPath, [ref] $null, [ref] $null)
+$capturedScopeUses = @(
+    @($contractLibraryAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        [string]::Equals([string] $node.Member.Value, 'GetNewClosure', [StringComparison]::OrdinalIgnoreCase)
+    }, $true) | ForEach-Object { "GetNewClosure at line $($_.Extent.StartLineNumber)" })
+    @($contractLibraryAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        ([string] $node.VariablePath.UserPath).StartsWith('script:', [StringComparison]::OrdinalIgnoreCase)
+    }, $true) | ForEach-Object { "script-scope variable $($_.Extent.Text) at line $($_.Extent.StartLineNumber)" })
+)
+Assert-True ($capturedScopeUses.Count -eq 0) `
+    "scripts/lib/OrdinalComparisonContract.ps1 must not bind to a captured session state: $(@($capturedScopeUses) -join '; ')"
+
 $evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
 Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
