@@ -163,7 +163,7 @@ function Get-DirectSourceFiles {
     )
 
     if (Test-Path -LiteralPath $ResolvedSourceRoot -PathType Leaf) {
-        if ([System.IO.Path]::GetExtension($ResolvedSourceRoot) -cne '.cs') {
+        if (-not [string]::Equals([System.IO.Path]::GetExtension($ResolvedSourceRoot), '.cs', [StringComparison]::Ordinal)) {
             return @()
         }
 
@@ -746,8 +746,8 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
-    # Ordinal dictionaries make both path and pattern membership exact, matching the -ceq finding
-    # comparisons below. The nested value is the checker-owned maximum number of valid baseline rows.
+    # Ordinal dictionaries make both path and pattern membership exact, matching the explicit ordinal
+    # finding comparisons below. The nested value is the checker-owned maximum number of valid rows.
     $permanentPathPatternCapacities = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($entry in $PermanentAllowlist) {
         $normalizedEntry = ($entry -replace '\\', '/').Trim()
@@ -813,7 +813,7 @@ function Read-Baseline {
             continue
         }
 
-        $isPermanent = $classification -ceq $permanentClassification
+        $isPermanent = [string]::Equals($classification, $permanentClassification, [StringComparison]::Ordinal)
         $classificationFields = if ($isPermanent) { $permanentOnlyFields } else { $expiringOnlyFields }
         $forbiddenFields = if ($isPermanent) { $expiringOnlyFields } else { $permanentOnlyFields }
         $requiredBaselineFields = @($commonBaselineFields + $classificationFields)
@@ -914,7 +914,7 @@ function Read-Baseline {
                 $Errors.Add("exception[$index] registeredByIssue must be a MAN issue key or a #<number> GitHub issue.")
                 $rowValid = $false
             }
-            elseif ($ownerIssueValid -and $registeredByIssueIdentity -ceq $ownerIssueIdentity) {
+            elseif ($ownerIssueValid -and [string]::Equals($registeredByIssueIdentity, $ownerIssueIdentity, [StringComparison]::Ordinal)) {
                 $Errors.Add("exception[$index] registeredByIssue must differ from ownerIssue.")
                 $rowValid = $false
             }
@@ -986,9 +986,9 @@ function Read-Baseline {
         foreach ($entryPattern in $patternCapacities.Keys) {
             $actualRows = @(
                 $rows | Where-Object {
-                    $_.Classification -ceq $permanentClassification -and
-                    $_.Path -ceq $entryPath -and
-                    $_.Pattern -ceq $entryPattern
+                    [string]::Equals($_.Classification, $permanentClassification, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Path, $entryPath, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Pattern, $entryPattern, [StringComparison]::Ordinal)
                 }
             ).Count
             $maximumRows = $patternCapacities[$entryPattern]
@@ -1009,7 +1009,7 @@ try {
     $resolvedSourceRoot = Resolve-RepoInputPath -InputPath $SourceRoot
     $resolvedBaselinePath = Resolve-RepoInputPath -InputPath $BaselinePath
 
-    $sourceFiles = if ([System.IO.Path]::GetFullPath($resolvedSourceRoot) -ceq [System.IO.Path]::GetFullPath($backendRoot)) {
+    $sourceFiles = if ([string]::Equals([System.IO.Path]::GetFullPath($resolvedSourceRoot), [System.IO.Path]::GetFullPath($backendRoot), [StringComparison]::Ordinal)) {
         Get-SolutionTestSourceFiles
     }
     else {
@@ -1025,9 +1025,9 @@ try {
         $exactMatches = @(
             $findings |
                 Where-Object {
-                    $_.Path -ceq $row.Path -and
-                    $_.Pattern -ceq $row.Pattern -and
-                    $_.LineTextSha256 -ceq $row.LineTextSha256
+                    [string]::Equals($_.Path, $row.Path, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Pattern, $row.Pattern, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.LineTextSha256, $row.LineTextSha256, [StringComparison]::Ordinal)
                 }
         )
         if ($exactMatches.Count -eq $row.OccurrenceCount) {
@@ -1045,7 +1045,12 @@ try {
             continue
         }
 
-        $sameSourcePattern = @($findings | Where-Object { $_.Path -ceq $row.Path -and $_.Pattern -ceq $row.Pattern })
+        $sameSourcePattern = @(
+            $findings | Where-Object {
+                [string]::Equals($_.Path, $row.Path, [StringComparison]::Ordinal) -and
+                [string]::Equals($_.Pattern, $row.Pattern, [StringComparison]::Ordinal)
+            }
+        )
         if ($sameSourcePattern.Count -gt 0) {
             $baselineErrors.Add("$($row.Path) [$($row.Pattern)] hash no longer matches a current source line.")
         }
@@ -1077,8 +1082,16 @@ try {
         exit 1
     }
 
-    $permanentRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $permanentClassification }).Count
-    $expiringRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $expiringClassification }).Count
+    $permanentRowCount = @(
+        $baselineRows | Where-Object {
+            [string]::Equals($_.Classification, $permanentClassification, [StringComparison]::Ordinal)
+        }
+    ).Count
+    $expiringRowCount = @(
+        $baselineRows | Where-Object {
+            [string]::Equals($_.Classification, $expiringClassification, [StringComparison]::Ordinal)
+        }
+    ).Count
     Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count), expiringDebtRows=$expiringRowCount, permanentRows=$permanentRowCount."
     exit 0
 }

@@ -555,6 +555,19 @@ try {
     $exactOccurrenceCase = New-OccurrenceCase -Name 'occurrence-exact' -ActualCount 2 -ExpectedCount 2
     Assert-CheckerCase -Name 'matching occurrence count' -SourceRoot $exactOccurrenceCase.SourcePath -BaselinePath $exactOccurrenceCase.BaselinePath -ExpectedExitCode 0
 
+    # Invariant-culture comparison ignores a soft hyphen, but baseline identities are byte-sensitive.
+    # A visually similar path must not admit findings from a different ordinal path.
+    $ordinalMismatchRow = (Get-Content -LiteralPath $exactOccurrenceCase.BaselinePath -Raw | ConvertFrom-Json).exceptions[0]
+    $ordinalMismatchRow.path = $ordinalMismatchRow.path.Replace('occurrences.cs', "occur`u{00AD}rences.cs")
+    $ordinalMismatchPath = Join-Path $tempRoot 'ordinal-path-mismatch.json'
+    Write-JsonFile -Path $ordinalMismatchPath -Value ([ordered]@{ schema = 3; exceptions = @($ordinalMismatchRow) })
+    Assert-CheckerCase `
+        -Name 'baseline path matching is ordinal' `
+        -SourceRoot $exactOccurrenceCase.SourcePath `
+        -BaselinePath $ordinalMismatchPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('does not match a current finding')
+
     $growthOccurrenceCase = New-OccurrenceCase -Name 'occurrence-growth' -ActualCount 3 -ExpectedCount 2
     Assert-CheckerCase -Name 'occurrence growth' -SourceRoot $growthOccurrenceCase.SourcePath -BaselinePath $growthOccurrenceCase.BaselinePath -ExpectedExitCode 1 -ExpectedOutput @('occurrence count changed', 'expected 2', 'actual 3', ':5 [Task.Delay]')
 
