@@ -114,15 +114,22 @@ if (-not $seamTargetsFunction) {
 # Only `-is` tests applied to the $Left parameter itself count as dispatch; the function also uses
 # `-is` on the ParenExpression pipeline internals, and folding those in would make the contract
 # assert something other than "which Left shapes are recognised".
+# Ordinal dedup+sort, per the #1507 ruling: `Sort-Object -Unique` folds case and ignorable
+# characters under the current culture, so the folding would run *before* the [StringComparison]::Ordinal
+# join check below and cancel it out — the same "序数化被自己上一行抵消" shape already ruled on here.
 $dispatchedLeftTypes = @(
-    $seamTargetsFunction.Body.FindAll({
-        param($node)
-        $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
-        $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
-        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-        [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Left', [StringComparison]::OrdinalIgnoreCase) -and
-        $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
-    }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' } | Sort-Object -Unique
+    [System.Collections.Generic.SortedSet[string]]::new(
+        [string[]] @(
+            $seamTargetsFunction.Body.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+                $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
+                $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Left', [StringComparison]::OrdinalIgnoreCase) -and
+                $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
+            }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' }
+        ),
+        [StringComparer]::Ordinal)
 )
 $expectedDispatchedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
 if (-not [string]::Equals(($dispatchedLeftTypes -join '|'), ($expectedDispatchedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
@@ -184,12 +191,18 @@ $ruledOutExpressionTypes = @(
     'UsingExpressionAst'
 )
 $knownExpressionTypes = @($expectedLeftTypes + $ruledOutExpressionTypes)
+# Ordinal ordering, matching the ordinal membership filter in the same pipeline: this list only feeds the
+# failure message, but a culture-aware `Sort-Object` in the same expression as an Ordinal comparison
+# is the shape this file has already ruled against, so it is not left to read as an exception.
 $unruledExpressionTypes = @(
-    [System.Management.Automation.Language.ExpressionAst].Assembly.GetTypes() |
-        Where-Object { $_.IsPublic -and -not $_.IsAbstract -and $_.IsSubclassOf([System.Management.Automation.Language.ExpressionAst]) } |
-        ForEach-Object { $_.Name } |
-        Where-Object { $candidateType = $_; @($knownExpressionTypes | Where-Object { [string]::Equals($_, $candidateType, [StringComparison]::Ordinal) }).Count -eq 0 } |
-        Sort-Object
+    [System.Collections.Generic.SortedSet[string]]::new(
+        [string[]] @(
+            [System.Management.Automation.Language.ExpressionAst].Assembly.GetTypes() |
+                Where-Object { $_.IsPublic -and -not $_.IsAbstract -and $_.IsSubclassOf([System.Management.Automation.Language.ExpressionAst]) } |
+                ForEach-Object { $_.Name } |
+                Where-Object { $candidateType = $_; @($knownExpressionTypes | Where-Object { [string]::Equals($_, $candidateType, [StringComparison]::Ordinal) }).Count -eq 0 }
+        ),
+        [StringComparer]::Ordinal)
 )
 if ($unruledExpressionTypes.Count -gt 0) {
     throw "PowerShell $($PSVersionTable.PSVersion) has expression AST types nobody has ruled on as an assignment Left: [$($unruledExpressionTypes -join ', ')]. Decide whether each can appear there, then add it to the corpus or to the ruled-out list."
