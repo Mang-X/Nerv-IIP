@@ -425,7 +425,7 @@ Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 
 # `lane-assembly-not-in-baseline` with a null delta, and the only way to clear it was for a human to
 # regenerate and re-commit the snapshot. Re-introducing the lane into the key turns this red.
 $rehomedBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
-Assert-True ([string]$rehomedBaseline.assemblies[0].lane -cne 'backend-shard-4') 'The re-homing fixture must actually move the assembly to a different lane.'
+Assert-True (-not [string]::Equals([string]$rehomedBaseline.assemblies[0].lane, 'backend-shard-4', [StringComparison]::Ordinal)) 'The re-homing fixture must actually move the assembly to a different lane.'
 $rehomedBaseline.assemblies[0].lane = 'backend-shard-4'
 $rehomedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $rehomedBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-True ([bool]$rehomedSummary.baseline.available) 'An assembly re-homed to another shard must keep its timing comparison key.'

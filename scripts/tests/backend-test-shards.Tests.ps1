@@ -461,6 +461,9 @@ $timingFunctionNames = @(
         Sort-Object -Unique
 )
 Assert-Contract ($timingFunctionNames.Count -gt 0) 'The timing library must define functions for the dependency-boundary assertion to have anything to look for.'
+# Ordinal set membership, for the same reason the policy identity comparison is ordinal: a function
+# name is an identifier, and PowerShell's `-ccontains` is culture-aware, not ordinal.
+$timingFunctionNameSet = [System.Collections.Generic.HashSet[string]]::new([string[]] $timingFunctionNames, [StringComparer]::Ordinal)
 
 # The scan covers the gate **and every repository library it dot-sources**. Scanning only the entry
 # point leaves the hole open exactly one hop down: a call to a timing function placed inside
@@ -485,7 +488,7 @@ foreach ($scanPath in $boundaryScanPaths) {
     $scanAst = [System.Management.Automation.Language.Parser]::ParseFile($scanPath, [ref] $null, [ref] $null)
     foreach ($command in @($scanAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
         $commandName = [string] $command.GetCommandName()
-        Assert-Contract (-not ($timingFunctionNames -ccontains $commandName)) "The shard policy hard gate must not call the timing library function '$commandName' (found in $scanName); timing lives in the report-only balance script."
+        Assert-Contract (-not $timingFunctionNameSet.Contains($commandName)) "The shard policy hard gate must not call the timing library function '$commandName' (found in $scanName); timing lives in the report-only balance script."
         # A dot-source is a CommandAst whose invocation operator is `.`; its single argument is the path.
         if ($command.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Dot) { continue }
         $dotSourced = ($command.Extent.Text -replace '\\', '/')
@@ -521,7 +524,7 @@ try {
 
     # (a) Remove one assembly's timing data. The balance must degrade to a named report-only warning
     #     plus an estimate and exit 0 — never red.
-    $businessCoreB = @($fastShards | Where-Object { [string] $_.id -ceq 'business-core-b' })[0]
+    $businessCoreB = @($fastShards | Where-Object { [string]::Equals([string] $_.id, 'business-core-b', [StringComparison]::Ordinal) })[0]
     $droppedAssembly = Get-NervShardTimingAssemblyKey -Name ([string] @($businessCoreB.projects)[0])
     $reducedObservations = @($allObservations | Where-Object { -not [string]::Equals([string] $_.assembly, $droppedAssembly, [StringComparison]::Ordinal) })
     Assert-Contract ($reducedObservations.Count -lt $allObservations.Count) "The missing-timing fixture must actually remove '$droppedAssembly'."
@@ -586,7 +589,7 @@ try {
     $newProjectManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     $newProjectRelativePath = 'backend/tests/Nerv.IIP.BrandNew.Tests/Nerv.IIP.BrandNew.Tests.csproj'
     $newProjectAssembly = Get-NervShardTimingAssemblyKey -Name $newProjectRelativePath
-    $newProjectShard = @($newProjectManifest.fastShards | Where-Object { [string] $_.id -ceq 'business-gateway' })[0]
+    $newProjectShard = @($newProjectManifest.fastShards | Where-Object { [string]::Equals([string] $_.id, 'business-gateway', [StringComparison]::Ordinal) })[0]
     $newProjectShard.projects = @(@($newProjectShard.projects) + @($newProjectRelativePath))
     $newProjectManifestPath = Join-Path $timingFixtureRoot 'manifest-with-new-project.json'
     Set-Content -LiteralPath $newProjectManifestPath -NoNewline -Value ($newProjectManifest | ConvertTo-Json -Depth 100)
@@ -639,8 +642,8 @@ try {
         @(Get-NervShardTimingObservationsFromEvidenceDirectory -Path $runOne -RunId 'run-1') +
         @(Get-NervShardTimingObservationsFromEvidenceDirectory -Path $runTwo -RunId 'run-2')
     ))
-    $splitRow = @($aggregated | Where-Object { [string] $_.assembly -ceq 'split.tests.dll' })
-    $soloRow = @($aggregated | Where-Object { [string] $_.assembly -ceq 'solo.tests.dll' })
+    $splitRow = @($aggregated | Where-Object { [string]::Equals([string] $_.assembly, 'split.tests.dll', [StringComparison]::Ordinal) })
+    $soloRow = @($aggregated | Where-Object { [string]::Equals([string] $_.assembly, 'solo.tests.dll', [StringComparison]::Ordinal) })
     Assert-Contract ($splitRow.Count -eq 1 -and $soloRow.Count -eq 1) 'Aggregation must produce exactly one row per assembly across runs.'
     Assert-Contract ([double] $splitRow[0].elapsedMilliseconds -eq 150.0) "An assembly split across two lanes of one run must be summed first, then medianed; got $($splitRow[0].elapsedMilliseconds)."
     Assert-Contract ([int] $splitRow[0].observationCount -eq 2) 'Two lanes of one run must count as one observation, not two.'
@@ -1243,7 +1246,7 @@ try {
         foreach ($laneValue in @(@($rule.allowedLanes) + @([string] $rule.requiredLane))) {
             Assert-Contract (-not ([string] $laneValue -cmatch '-shard-[0-9]')) "Evidence policy rule '$($rule.id)' must key on a logical lane, never on a shard: '$laneValue'."
         }
-        Assert-Contract (@($rule.testIdentities).Count -gt 0 -or [string] $rule.classification -ceq 'quarantined') "Evidence policy rule '$($rule.id)' must key on explicit test identities."
+        Assert-Contract (@($rule.testIdentities).Count -gt 0 -or [string]::Equals([string] $rule.classification, 'quarantined', [StringComparison]::Ordinal)) "Evidence policy rule '$($rule.id)' must key on explicit test identities."
     }
 
     # Lane is a rule's *applicability condition*, never part of its identity key, and the two are
