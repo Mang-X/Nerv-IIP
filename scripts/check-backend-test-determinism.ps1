@@ -19,19 +19,19 @@ param(
 
     # Where a flagged construct IS the audited primitive itself — its implementation or its own
     # self-test — so the finding can never be removed and dating it would be theatre. Each entry is
-    # `<repo-relative-path>=<pattern>`: a path alone is not enough, because the justification is
-    # always about one specific construct in that file. Allow-listing the path only would mean a
-    # `Thread.Sleep` added to `GlobalTestStateScope.cs` next year could be registered as permanent on
-    # a rationale written for culture setters.
+    # `<repo-relative-path>=<pattern>=<maxRows>`: a path alone is not enough, because the justification
+    # is always about one specific construct in that file, and the positive row capacity prevents a
+    # previously reviewed pair from growing through baseline-only edits. The cap counts valid
+    # permanent baseline rows, not source occurrences and not occurrenceCount.
     #
     # The list is deliberately hard-coded rather than read from the baseline: a `permanent` row must
     # be countersigned by the checker, otherwise the classification degrades into a self-served
     # exemption. The parameter exists so the checker's own fixture harness can exercise both sides of
     # the rule; CI invokes the script with no arguments.
     [string[]] $PermanentAllowlist = @(
-        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter',
-        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter',
-        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay'
+        'backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter=12',
+        'backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter=9',
+        'backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay=1'
     )
 )
 
@@ -46,19 +46,20 @@ $solutionPath = Join-Path $backendRoot 'Nerv.IIP.sln'
 $allowedPatterns = @('Task.Delay', 'Thread.Sleep', 'ShortLease', 'UnreachableAddress', 'StaticSetter')
 
 # Two classifications, deliberately disjoint metadata:
-#   expiring-debt — an admitted debt. Carries an owner who outlives the registering change, an exit
-#                   condition, and a date after which the checker fails. This is the default and the
-#                   only classification that may grow.
+#   expiring-debt — an admitted debt. Carries distinct registering and owning issues, the offline
+#                   registration date, an exit condition, and an expiry no more than 45 days after
+#                   registration. This is the default and the only classification that may grow.
 #   permanent     — the flagged construct is the audited primitive itself: its implementation, or its
 #                   own self-test. There is nothing to expire towards, so a date would be a lie;
 #                   instead it carries a rationale and is only legal for an allow-listed
-#                   path + pattern pair (see $PermanentAllowlist).
+#                   path + pattern pair within its checker-owned row capacity (see
+#                   $PermanentAllowlist).
 $expiringClassification = 'expiring-debt'
 $permanentClassification = 'permanent'
 $allowedClassifications = @($expiringClassification, $permanentClassification)
 $commonBaselineFields = @('path', 'pattern', 'lineTextSha256', 'occurrenceCount', 'classification', 'reason')
 $commonStringBaselineFields = @('path', 'pattern', 'lineTextSha256', 'classification', 'reason')
-$expiringOnlyFields = @('ownerIssue', 'exitCondition', 'expiresOn')
+$expiringOnlyFields = @('ownerIssue', 'registeredByIssue', 'exitCondition', 'registeredOn', 'expiresOn')
 $permanentOnlyFields = @('rationale')
 
 function Resolve-RepoInputPath {
@@ -115,6 +116,27 @@ function Get-FindingIdentity {
     return "$Path|$Pattern|$LineTextSha256"
 }
 
+# Issue keys keep their namespace but normalize the numeric identity before comparison. GitHub and
+# Linear render canonical keys without leading zeroes, yet the documented `\d+` input shape accepts
+# them; comparing raw strings would let `#1487` self-guarantee through `#01487`.
+function Get-CanonicalIssueIdentity {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Issue
+    )
+
+    $issueMatch = [regex]::Match(
+        $Issue,
+        '^(?<namespace>MAN-|#)(?<number>\d+)$',
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    if (-not $issueMatch.Success) {
+        return $null
+    }
+
+    $canonicalNumber = $issueMatch.Groups['number'].Value -replace '^0+(?=\d)', ''
+    return "$($issueMatch.Groups['namespace'].Value)$canonicalNumber"
+}
+
 function Test-GeneratedSource {
     param(
         [Parameter(Mandatory)]
@@ -141,7 +163,7 @@ function Get-DirectSourceFiles {
     )
 
     if (Test-Path -LiteralPath $ResolvedSourceRoot -PathType Leaf) {
-        if ([System.IO.Path]::GetExtension($ResolvedSourceRoot) -cne '.cs') {
+        if (-not [string]::Equals([System.IO.Path]::GetExtension($ResolvedSourceRoot), '.cs', [StringComparison]::Ordinal)) {
             return @()
         }
 
@@ -711,8 +733,8 @@ function Read-Baseline {
     }
 
     $schema = Get-PropertyValue -Object $baseline -Name 'schema'
-    if ($schema -isnot [long] -or $schema -ne 2) {
-        $Errors.Add('schema must equal 2 as a JSON number.')
+    if ($schema -isnot [long] -or $schema -ne 3) {
+        $Errors.Add('schema must equal 3 as a JSON number.')
     }
 
     $exceptionsValue = Get-PropertyValue -Object $baseline -Name 'exceptions'
@@ -724,28 +746,60 @@ function Read-Baseline {
     $rows = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
-    # Ordinal, not the case-insensitive default of `@{}`: an allowlist entry must match the baseline
-    # path exactly, the same way the finding comparison below uses -ceq.
-    $permanentPathPatterns = New-Object 'System.Collections.Generic.Dictionary[string, System.Collections.Generic.List[string]]' ([StringComparer]::Ordinal)
+    # Ordinal dictionaries make both path and pattern membership exact, matching the explicit ordinal
+    # finding comparisons below. The nested value is the checker-owned maximum number of valid rows.
+    $permanentPathPatternCapacities = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($entry in $PermanentAllowlist) {
         $normalizedEntry = ($entry -replace '\\', '/').Trim()
-        $separatorIndex = $normalizedEntry.LastIndexOf('=')
-        if ($separatorIndex -le 0 -or $separatorIndex -eq $normalizedEntry.Length - 1) {
-            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>'.")
+        $capacitySeparatorIndex = $normalizedEntry.LastIndexOf('=')
+        if ($capacitySeparatorIndex -lt 0) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
             continue
         }
 
-        $entryPath = $normalizedEntry.Substring(0, $separatorIndex).Trim()
-        $entryPattern = $normalizedEntry.Substring($separatorIndex + 1).Trim()
-        if ($allowedPatterns -notcontains $entryPattern) {
+        $pathAndPattern = $normalizedEntry.Substring(0, $capacitySeparatorIndex)
+        $patternSeparatorIndex = $pathAndPattern.LastIndexOf('=')
+        if ($patternSeparatorIndex -lt 0) {
+            $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
+            continue
+        }
+
+        $entryPath = $pathAndPattern.Substring(0, $patternSeparatorIndex).Trim()
+        $entryPattern = $pathAndPattern.Substring($patternSeparatorIndex + 1).Trim()
+        $entryMaxRows = $normalizedEntry.Substring($capacitySeparatorIndex + 1).Trim()
+        if ([string]::IsNullOrWhiteSpace($entryPath)) {
+            $Errors.Add("permanent allowlist entry '$entry' path must be non-empty.")
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($entryPattern)) {
+            $Errors.Add("permanent allowlist entry '$entry' pattern must be non-empty.")
+            continue
+        }
+
+        $maxRows = 0
+        $maxRowsValid = [int]::TryParse(
+            $entryMaxRows,
+            [Globalization.NumberStyles]::Integer,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [ref] $maxRows)
+        if (-not $maxRowsValid -or $maxRows -le 0) {
+            $Errors.Add("permanent allowlist entry '$entry' maxRows must be a positive integer.")
+            continue
+        }
+        if ($allowedPatterns -cnotcontains $entryPattern) {
             $Errors.Add("permanent allowlist entry '$entry' names unsupported pattern '$entryPattern'.")
             continue
         }
 
-        if (-not $permanentPathPatterns.ContainsKey($entryPath)) {
-            $permanentPathPatterns[$entryPath] = New-Object System.Collections.Generic.List[string]
+        if (-not $permanentPathPatternCapacities.ContainsKey($entryPath)) {
+            $permanentPathPatternCapacities[$entryPath] = [System.Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         }
-        $permanentPathPatterns[$entryPath].Add($entryPattern)
+        $patternCapacities = $permanentPathPatternCapacities[$entryPath]
+        if ($patternCapacities.ContainsKey($entryPattern)) {
+            $Errors.Add("duplicate permanent allowlist entry for path '$entryPath' and pattern '$entryPattern'.")
+            continue
+        }
+        $patternCapacities[$entryPattern] = $maxRows
     }
 
     for ($index = 0; $index -lt $exceptionsValue.Count; $index++) {
@@ -759,7 +813,7 @@ function Read-Baseline {
             continue
         }
 
-        $isPermanent = $classification -ceq $permanentClassification
+        $isPermanent = [string]::Equals($classification, $permanentClassification, [StringComparison]::Ordinal)
         $classificationFields = if ($isPermanent) { $permanentOnlyFields } else { $expiringOnlyFields }
         $forbiddenFields = if ($isPermanent) { $expiringOnlyFields } else { $permanentOnlyFields }
         $requiredBaselineFields = @($commonBaselineFields + $classificationFields)
@@ -811,8 +865,10 @@ function Read-Baseline {
         $pattern = $stringValues['pattern']
         $hash = $stringValues['lineTextSha256']
         $ownerIssue = $stringValues['ownerIssue']
+        $registeredByIssue = $stringValues['registeredByIssue']
         $reason = $stringValues['reason']
         $exitCondition = $stringValues['exitCondition']
+        $registeredOn = $stringValues['registeredOn']
         $expiresOn = $stringValues['expiresOn']
         $rationale = $stringValues['rationale']
 
@@ -833,32 +889,68 @@ function Read-Baseline {
             # Only the checker decides which files may hold a permanent row, and for which pattern;
             # the baseline cannot nominate itself into the allowlist, nor widen an entry written for
             # one construct to cover a different one.
-            if (-not $permanentPathPatterns.ContainsKey($path)) {
+            if (-not $permanentPathPatternCapacities.ContainsKey($path)) {
                 $Errors.Add("exception[$index] permanent classification is not allowed for path '$path'.")
                 $rowValid = $false
             }
-            elseif ($permanentPathPatterns[$path] -cnotcontains $pattern) {
+            elseif (-not $permanentPathPatternCapacities[$path].ContainsKey($pattern)) {
                 $Errors.Add("exception[$index] permanent classification is not allowed for pattern '$pattern' on path '$path'.")
                 $rowValid = $false
             }
         }
         else {
-            # A Linear key (MAN-123) or a GitHub issue number (#123) both name a tracked owner. The
-            # owner must outlive the change that registered the debt, so a row may not point at its
-            # own issue.
-            if ($ownerIssue -notmatch '^(MAN-\d+|#\d+)$') {
+            # Both issue fields are checked offline. Keeping the registering change distinct from
+            # the follow-up owner prevents a debt row from self-guaranteeing its own cleanup.
+            $ownerIssueIdentity = Get-CanonicalIssueIdentity -Issue $ownerIssue
+            $ownerIssueValid = $null -ne $ownerIssueIdentity
+            if (-not $ownerIssueValid) {
                 $Errors.Add("exception[$index] ownerIssue must be a MAN issue key or a #<number> GitHub issue.")
                 $rowValid = $false
             }
 
+            $registeredByIssueIdentity = Get-CanonicalIssueIdentity -Issue $registeredByIssue
+            $registeredByIssueValid = $null -ne $registeredByIssueIdentity
+            if (-not $registeredByIssueValid) {
+                $Errors.Add("exception[$index] registeredByIssue must be a MAN issue key or a #<number> GitHub issue.")
+                $rowValid = $false
+            }
+            elseif ($ownerIssueValid -and [string]::Equals($registeredByIssueIdentity, $ownerIssueIdentity, [StringComparison]::Ordinal)) {
+                $Errors.Add("exception[$index] registeredByIssue must differ from ownerIssue.")
+                $rowValid = $false
+            }
+
+            $registrationDate = [DateOnly]::MinValue
+            $registrationDateValid = [DateOnly]::TryParseExact($registeredOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $registrationDate)
+            if (-not $registrationDateValid) {
+                $Errors.Add("exception[$index] registeredOn must use yyyy-MM-dd.")
+                $rowValid = $false
+            }
+            elseif ($registrationDate -gt $today) {
+                $Errors.Add("exception[$index] registeredOn must not be in the future: $registeredOn.")
+                $rowValid = $false
+            }
+
             $expiry = [DateOnly]::MinValue
-            if (-not [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)) {
+            $expiryValid = [DateOnly]::TryParseExact($expiresOn, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref] $expiry)
+            if (-not $expiryValid) {
                 $Errors.Add("exception[$index] expiresOn must use yyyy-MM-dd.")
                 $rowValid = $false
             }
-            elseif ($expiry -lt $today) {
-                $Errors.Add("exception[$index] expired on $expiresOn.")
-                $rowValid = $false
+            else {
+                if ($expiry -lt $today) {
+                    $Errors.Add("exception[$index] expired on $expiresOn.")
+                    $rowValid = $false
+                }
+                if ($registrationDateValid) {
+                    if ($expiry -lt $registrationDate) {
+                        $Errors.Add("exception[$index] expiresOn must be on or after registeredOn.")
+                        $rowValid = $false
+                    }
+                    elseif (($expiry.DayNumber - $registrationDate.DayNumber) -gt 45) {
+                        $Errors.Add("exception[$index] expiresOn must be no later than 45 days after registeredOn.")
+                        $rowValid = $false
+                    }
+                }
             }
         }
 
@@ -879,11 +971,32 @@ function Read-Baseline {
                 OccurrenceCount = $occurrenceCount
                 Classification = $classification
                 OwnerIssue = $ownerIssue
+                RegisteredByIssue = $registeredByIssue
                 Reason = $reason
                 ExitCondition = $exitCondition
+                RegisteredOn = $registeredOn
                 ExpiresOn = $expiresOn
                 Rationale = $rationale
             })
+        }
+    }
+
+    foreach ($entryPath in $permanentPathPatternCapacities.Keys) {
+        $patternCapacities = $permanentPathPatternCapacities[$entryPath]
+        foreach ($entryPattern in $patternCapacities.Keys) {
+            $actualRows = @(
+                $rows | Where-Object {
+                    [string]::Equals($_.Classification, $permanentClassification, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Path, $entryPath, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Pattern, $entryPattern, [StringComparison]::Ordinal)
+                }
+            ).Count
+            $maximumRows = $patternCapacities[$entryPattern]
+            if ($actualRows -gt $maximumRows) {
+                $Errors.Add(
+                    "permanent allowlist capacity exceeded for path '$entryPath' and pattern '$entryPattern': valid permanent baseline rows=$actualRows, maximum=$maximumRows."
+                )
+            }
         }
     }
 
@@ -896,7 +1009,7 @@ try {
     $resolvedSourceRoot = Resolve-RepoInputPath -InputPath $SourceRoot
     $resolvedBaselinePath = Resolve-RepoInputPath -InputPath $BaselinePath
 
-    $sourceFiles = if ([System.IO.Path]::GetFullPath($resolvedSourceRoot) -ceq [System.IO.Path]::GetFullPath($backendRoot)) {
+    $sourceFiles = if ([string]::Equals([System.IO.Path]::GetFullPath($resolvedSourceRoot), [System.IO.Path]::GetFullPath($backendRoot), [StringComparison]::Ordinal)) {
         Get-SolutionTestSourceFiles
     }
     else {
@@ -912,9 +1025,9 @@ try {
         $exactMatches = @(
             $findings |
                 Where-Object {
-                    $_.Path -ceq $row.Path -and
-                    $_.Pattern -ceq $row.Pattern -and
-                    $_.LineTextSha256 -ceq $row.LineTextSha256
+                    [string]::Equals($_.Path, $row.Path, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.Pattern, $row.Pattern, [StringComparison]::Ordinal) -and
+                    [string]::Equals($_.LineTextSha256, $row.LineTextSha256, [StringComparison]::Ordinal)
                 }
         )
         if ($exactMatches.Count -eq $row.OccurrenceCount) {
@@ -932,7 +1045,12 @@ try {
             continue
         }
 
-        $sameSourcePattern = @($findings | Where-Object { $_.Path -ceq $row.Path -and $_.Pattern -ceq $row.Pattern })
+        $sameSourcePattern = @(
+            $findings | Where-Object {
+                [string]::Equals($_.Path, $row.Path, [StringComparison]::Ordinal) -and
+                [string]::Equals($_.Pattern, $row.Pattern, [StringComparison]::Ordinal)
+            }
+        )
         if ($sameSourcePattern.Count -gt 0) {
             $baselineErrors.Add("$($row.Path) [$($row.Pattern)] hash no longer matches a current source line.")
         }
@@ -964,8 +1082,16 @@ try {
         exit 1
     }
 
-    $permanentRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $permanentClassification }).Count
-    $expiringRowCount = @($baselineRows | Where-Object { $_.Classification -ceq $expiringClassification }).Count
+    $permanentRowCount = @(
+        $baselineRows | Where-Object {
+            [string]::Equals($_.Classification, $permanentClassification, [StringComparison]::Ordinal)
+        }
+    ).Count
+    $expiringRowCount = @(
+        $baselineRows | Where-Object {
+            [string]::Equals($_.Classification, $expiringClassification, [StringComparison]::Ordinal)
+        }
+    ).Count
     Write-Host "Backend test determinism check passed: files=$($sourceFiles.Count), findings=$($findings.Count), admitted=$($matchedFindingKeys.Count), expiringDebtRows=$expiringRowCount, permanentRows=$permanentRowCount."
     exit 0
 }
