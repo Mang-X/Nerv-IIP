@@ -236,6 +236,29 @@ catch {
 }
 Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
 
+# …and the *other* side of the same guard, which had no probe at all (#1509 round 2): `$unexpected`
+# asks whether an executed assembly is one this shard classifies. Its membership test used to be the
+# same culture-aware `-contains`, so an assembly differing from a classified project by an ignorable
+# character was accepted as classified and the solution-filter/manifest drift went unreported. The
+# fixture keeps the exactly-matching assembly present so `$missing` stays empty and the throw can
+# only come from the drift branch.
+$ordinalDriftText = ''
+try {
+    Assert-BackendTestShardProjectExecution `
+        -ShardId 'ordinal-drift' `
+        -ClassifiedProjects @('backend/tests/Nerv.Probe.Drift.Tests/Nerv.Probe.Drift.Tests.csproj') `
+        -ExecutedAssemblies @('Nerv.Probe.Drift.Tests.dll', "Nerv.Probe.Drift${ordinalSoftHyphen}.Tests.dll")
+}
+catch {
+    $ordinalDriftText = $_.Exception.Message
+}
+Assert-Contract ($ordinalDriftText.Contains("executed assemblies it does not classify: Nerv.Probe.Drift${ordinalSoftHyphen}.Tests")) "An executed assembly differing from every classified project by an ignorable character is not classified by this shard; the drift membership test must be ordinal. Reported: '$ordinalDriftText'."
+# Positive control, so the probe above cannot pass by reporting every executed assembly as drift.
+Assert-BackendTestShardProjectExecution `
+    -ShardId 'ordinal-drift' `
+    -ClassifiedProjects @('backend/tests/Nerv.Probe.Drift.Tests/Nerv.Probe.Drift.Tests.csproj') `
+    -ExecutedAssemblies @('Nerv.Probe.Drift.Tests.dll')
+
 # The third ordinal decision in this library: the real-PostgreSQL selector gate. It asks whether every
 # discovered test actually appears in the TRX, and that membership used to be `-notcontains`. A test
 # whose TRX name differs from the discovered name by an ignorable character never ran under that
@@ -327,7 +350,7 @@ finally {
 }
 
 $classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
-Assert-Contract ((Get-BackendTestShardOrdinalUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
+Assert-Contract ((Get-BackendTestShardUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
 
 # What the deleted assertion guarded, and who guards it now (#1509).
 #
@@ -376,12 +399,12 @@ function Get-BackendSolutionTestProjects {
 $spacedSolutionLine = 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nerv.IIP.Spaced.Tests", "tests\Nerv IIP Spaced.Tests\Nerv.IIP.Spaced.Tests.csproj", "{00000000-0000-0000-0000-000000000009}"'
 Assert-Contract ([string]::Equals(((Get-BackendSolutionTestProjects -SolutionLines @($spacedSolutionLine)) -join '|'), 'backend/tests/Nerv IIP Spaced.Tests/Nerv.IIP.Spaced.Tests.csproj', [StringComparison]::Ordinal)) 'A backend test project whose solution path contains a space must still be derived from the solution; the path is delimited by quotes, not by whitespace.'
 
-$solutionTestProjects = Get-BackendTestShardOrdinalUniqueSorted -Values @(
+$solutionTestProjects = Get-BackendTestShardUniqueSorted -Values @(
     Get-BackendSolutionTestProjects -SolutionLines @(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln'))
 )
 Assert-Contract ($solutionTestProjects.Count -gt 0) 'The backend solution must list backend test projects; an empty derivation would make the coverage comparison below vacuous.'
-$classifiedProjectSet = Get-BackendTestShardOrdinalSet -Values $classifiedProjects
-$solutionTestProjectSet = Get-BackendTestShardOrdinalSet -Values $solutionTestProjects
+$classifiedProjectSet = Get-BackendTestShardMembershipSet -Values $classifiedProjects
+$solutionTestProjectSet = Get-BackendTestShardMembershipSet -Values $solutionTestProjects
 $missingFromManifest = @($solutionTestProjects | Where-Object { -not $classifiedProjectSet.Contains($_) })
 $notInSolution = @($classifiedProjects | Where-Object { -not $solutionTestProjectSet.Contains($_) })
 Assert-Contract ($missingFromManifest.Count -eq 0) "Every backend test project in backend/Nerv.IIP.sln must be classified by the shard manifest; unclassified: $($missingFromManifest -join ', ')."

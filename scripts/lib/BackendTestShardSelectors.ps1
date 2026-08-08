@@ -9,9 +9,15 @@
 #   Requires:
 #     - PowerShell 7
 
-function Get-BackendTestShardOrdinalUniqueSorted {
+function Get-BackendTestShardUniqueSorted {
     <#
-        Deduplicates and orders identifiers by an *ordinal* comparer.
+        Deduplicates and orders identifiers by an explicitly supplied comparer.
+
+        The name deliberately does not say "Ordinal" (#1509 round 2): the default is Ordinal, but two
+        of the three call sites pass OrdinalIgnoreCase, so a name promising ordinal-and-case-sensitive
+        would be a promise the function does not keep. What it does guarantee is that the comparer is
+        an explicit [System.StringComparer] rather than PowerShell's culture-aware default — which is
+        the property that matters, and why -Comparer has no way to be omitted accidentally.
 
         Every string this library handles is an identifier — a test selector, an assembly file name,
         a project file name — and identifiers are equal only when they are the same sequence of
@@ -45,7 +51,10 @@ function Get-BackendTestShardOrdinalUniqueSorted {
     return @($unique)
 }
 
-function Get-BackendTestShardOrdinalSet {
+function Get-BackendTestShardMembershipSet {
+    # The membership counterpart of Get-BackendTestShardUniqueSorted, carrying the same comparer.
+    # Named for what it produces rather than for a comparer it does not fix: callers choose Ordinal
+    # (selectors, policy identities) or OrdinalIgnoreCase (TRX assembly file names).
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values,
         [System.StringComparer] $Comparer = [System.StringComparer]::Ordinal
@@ -85,7 +94,7 @@ function Get-BackendTestShardExcludedSelectors {
         $selectors += @(Get-BackendTestShardOptionalArray -Object $Shard -PropertyName 'excludedTests')
     }
 
-    return Get-BackendTestShardOrdinalUniqueSorted -Values @(
+    return Get-BackendTestShardUniqueSorted -Values @(
         $selectors |
             Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string] $_) } |
             ForEach-Object { [string] $_ }
@@ -194,7 +203,7 @@ function Get-BackendTestShardExecutedAssemblies {
     # OrdinalIgnoreCase, for the same reason Assert-BackendTestShardProjectExecution uses it: the
     # `storage` attribute is a file path VSTest writes lowercased, so case carries no information
     # here and two spellings of one assembly must collapse to one entry.
-    return Get-BackendTestShardOrdinalUniqueSorted -Values @($assemblies) -Comparer ([System.StringComparer]::OrdinalIgnoreCase)
+    return Get-BackendTestShardUniqueSorted -Values @($assemblies) -Comparer ([System.StringComparer]::OrdinalIgnoreCase)
 }
 
 function Assert-BackendTestShardProjectExecution {
@@ -218,14 +227,14 @@ function Assert-BackendTestShardProjectExecution {
     # where all 36 platform projects were named in this throw while all 36 had in fact passed.
     # scripts/tests/backend-test-shards.Tests.ps1 carries that exact TRX shape as a fixture.
     $assemblyComparer = [System.StringComparer]::OrdinalIgnoreCase
-    $expected = Get-BackendTestShardOrdinalUniqueSorted -Comparer $assemblyComparer -Values @(
+    $expected = Get-BackendTestShardUniqueSorted -Comparer $assemblyComparer -Values @(
         $ClassifiedProjects | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
-    $observed = Get-BackendTestShardOrdinalUniqueSorted -Comparer $assemblyComparer -Values @(
+    $observed = Get-BackendTestShardUniqueSorted -Comparer $assemblyComparer -Values @(
         $ExecutedAssemblies | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string] $_) }
     )
-    $expectedSet = Get-BackendTestShardOrdinalSet -Values $expected -Comparer $assemblyComparer
-    $observedSet = Get-BackendTestShardOrdinalSet -Values $observed -Comparer $assemblyComparer
+    $expectedSet = Get-BackendTestShardMembershipSet -Values $expected -Comparer $assemblyComparer
+    $observedSet = Get-BackendTestShardMembershipSet -Values $observed -Comparer $assemblyComparer
 
     $missing = @($expected | Where-Object { -not $observedSet.Contains($_) })
     if ($missing.Count -gt 0) {
@@ -263,7 +272,7 @@ function Assert-BackendTestShardSelectorExecution {
 
     $expectedTests = @($DiscoveredTests | Where-Object { $_.StartsWith($Selector, [StringComparison]::Ordinal) })
     $matchedResults = @($TrxResults | Where-Object { ([string] $_.testName).StartsWith($Selector, [StringComparison]::Ordinal) })
-    $executedNames = Get-BackendTestShardOrdinalSet -Values @($matchedResults | ForEach-Object { [string] $_.testName })
+    $executedNames = Get-BackendTestShardMembershipSet -Values @($matchedResults | ForEach-Object { [string] $_.testName })
     $missingTests = @($expectedTests | Where-Object { -not $executedNames.Contains($_) })
     $failedResults = @($matchedResults | Where-Object { [string] $_.outcome -ne 'Passed' })
     if ($missingTests.Count -gt 0 -or $failedResults.Count -gt 0) {

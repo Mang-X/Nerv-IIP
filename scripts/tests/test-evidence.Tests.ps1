@@ -385,6 +385,40 @@ $foldedLaneRecordSource.lane = "postgres$softHyphen-shard-1"
 $foldedRecordLaneSummary = New-NervTestEvidenceSummary -Records @($foldedLaneRecordSource) -RunMetadata $foldedSummaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 0 $foldedRecordLaneSummary.selectedLaneResults[0].executed 'A record from a lane differing by an ignorable character must not be counted as this lane executing; the summary lane grouping must be ordinal.'
 
+# The `invalid-selection` half of the same gateResult decision (#1509 round 2). The probes above only
+# exercise the `zero-execution` branch, so the `unregistered-skip` branch had no control at all and
+# reverting its comparison to `-ceq` left the suite green. Three cases, because the branch makes two
+# ordinal decisions (code and selector id) and a positive control is needed so "always pass" cannot
+# satisfy the other two.
+$invalidSelectionSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation 'unregistered-skip' 'postgres-shard-1' 'Real invalid selection.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'invalid-selection' $invalidSelectionSummary.selectedLaneResults[0].gateResult 'An unregistered-skip violation carrying this lane selector must be reported as invalid-selection.'
+$foldedInvalidCodeSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation "unregistered-skip$softHyphen" 'postgres-shard-1' 'Folded code must not be read as unregistered-skip.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedInvalidCodeSummary.selectedLaneResults[0].gateResult 'A violation code differing by an ignorable character is a different code; the invalid-selection comparison must be ordinal.'
+$foldedInvalidSelectorSummary = New-NervTestEvidenceSummary -Records $executedShardRecord -RunMetadata $foldedSummaryRun -Violations @(
+    New-NervTestEvidenceViolation 'unregistered-skip' "postgres$softHyphen-shard-1" 'Folded selector must not be attributed to this lane.'
+) -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal 'pass' $foldedInvalidSelectorSummary.selectedLaneResults[0].gateResult 'An unregistered-skip id differing from the selector by an ignorable character belongs to a different selector.'
+
+# The selected-lane dedup that feeds the lane-contract loop (#1509 round 2). `Sort-Object -Unique`
+# folded the two spellings into one, so only one of them was ever matched against the lane patterns
+# and the other silently stopped being checked — an unregistered lane that reports nothing.
+$foldedSelectedLaneViolations = @(Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres', "postgres$softHyphen") -RunnerOs 'Linux')
+Assert-True (@($foldedSelectedLaneViolations | Where-Object { (Test-NervOrdinalEquals ([string]$_.code) 'unregistered-skip') -and (Test-NervOrdinalEquals ([string]$_.id) "postgres$softHyphen") }).Count -eq 1) 'A selected lane differing from a real lane by an ignorable character is its own lane and must be reported as matching no lane contract; the selected-lane dedup must be ordinal.'
+Assert-Equal 0 @(Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend', 'backend') -RunnerOs 'Linux' | Where-Object { Test-NervOrdinalEquals ([string]$_.code) 'unregistered-skip' }).Count 'Ordinal dedup must still collapse two identical lane spellings; the probe above must not pass by refusing to deduplicate at all.'
+
+# The policy schema's own source/rule cross-reference (#1509 round 2): `sourceId` is the first segment
+# of the frozen evidence key `sourceId|ruleId|identity`, and it was compared with `-ceq`, so a rule
+# pointing at `<source><U+00AD>` resolved to `<source>` and the mis-registration was invisible.
+$foldedSourceIdPolicy = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
+$foldedSourceIdPolicy.rules[0].sourceId = "$([string]$foldedSourceIdPolicy.rules[0].sourceId)$softHyphen"
+$foldedSourceIdViolations = @(Test-NervTestEvidencePolicy -Policy $foldedSourceIdPolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+Assert-True (@($foldedSourceIdViolations | Where-Object { [string]$_.message -clike 'Rule sourceId must resolve*' }).Count -eq 1) 'A rule whose sourceId differs from a registered source by an ignorable character resolves to no source; the sourceId comparison must be ordinal.'
+Assert-True (@($foldedSourceIdViolations | Where-Object { [string]$_.message -clike 'Registered source is not referenced*' }).Count -eq 1) 'The reverse cross-reference must fail for the same reason; the source-to-rule comparison must be ordinal too.'
+
 $expired = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-expired-quarantine.json')
 $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]'2026-08-03T16:00:00Z')
 # Same shape as the illegal-quarantine fixture: the expired rule is also not closed over a source
@@ -1447,6 +1481,122 @@ $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/scrip
 foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
+
+# ---------------------------------------------------------------------------------------------
+# Ordinal sweep contract (#1509 round 2). The file-wide sweep of scripts/lib/TestEvidence.ps1 is
+# only worth anything if it stays swept, and two prior rounds showed that a prose boundary ("the
+# rest is out of scope") drifts from the code within one PR. So the boundary is parsed instead:
+# every culture-aware identifier comparison in that library must either be gone or be a named,
+# justified exception here.
+#
+# What "culture-aware" means was measured, not assumed — the measurements are in the library's own
+# header. `-ceq`/`-cne` are banned outright with no exception path, because they read as "the strict
+# one" while still folding ignorable characters; that misreading is what put them in the file.
+$evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+$evidenceLibraryParseErrors = $null
+$evidenceLibraryAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $evidenceLibraryPath, [ref] $null, [ref] $evidenceLibraryParseErrors)
+Assert-True (@($evidenceLibraryParseErrors).Count -eq 0) 'scripts/lib/TestEvidence.ps1 must parse for the ordinal sweep contract.'
+
+# Named exceptions, matched on the offending expression's exact text. Text, not line number: a line
+# number would be invalidated by any edit above it and would silently start exempting something
+# else. Each entry states what the key actually is and why culture-aware is the right reading.
+$ordinalSweepExceptions = @(
+    @{
+        Text = "Group-Object { Get-NervRetainedSkipReason `$_ }"
+        Reason = 'skipReasons groups on a human-readable skip reason, which is prose, not an identifier; folding two visually identical reasons into one reported row is the intended reading.'
+    }
+)
+
+function Test-NervOrdinalContractStringOperand {
+    param([Parameter(Mandatory)] [AllowNull()] [System.Management.Automation.Language.Ast] $Node)
+
+    if ($null -eq $Node) { return $false }
+    if ($Node -is [System.Management.Automation.Language.StringConstantExpressionAst] -or
+        $Node -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+        return $true
+    }
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        $typeName = [string] $Node.Type.TypeName.FullName
+        return [string]::Equals($typeName, 'string', [StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals($typeName, 'string[]', [StringComparison]::OrdinalIgnoreCase)
+    }
+    if ($Node -is [System.Management.Automation.Language.ArrayLiteralAst]) {
+        $elements = @($Node.Elements)
+        if ($elements.Count -eq 0) { return $false }
+        return @($elements | Where-Object { -not (Test-NervOrdinalContractStringOperand -Node $_) }).Count -eq 0
+    }
+    return $false
+}
+
+$bannedOperators = @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin')
+$cultureAwareOperators = @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin')
+$whereObjectComparisonParameters = @(
+    'eq', 'ne', 'ceq', 'cne', 'contains', 'notcontains', 'ccontains', 'cnotcontains', 'in', 'notin', 'cin', 'cnotin')
+$ordinalSweepFindings = [System.Collections.Generic.List[string]]::new()
+
+foreach ($binary in $evidenceLibraryAst.FindAll({
+    param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst]
+}, $true)) {
+    $operator = [string] $binary.Operator
+    $line = $binary.Extent.StartLineNumber
+    if (@($bannedOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -gt 0) {
+        $ordinalSweepFindings.Add("TestEvidence.ps1:$line uses -$($operator.ToLowerInvariant()); the c-prefixed operators only disable case-insensitivity and still fold ignorable characters. Use Test-NervOrdinalEquals / Get-NervOrdinalSet.")
+        continue
+    }
+    if (@($cultureAwareOperators | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -eq 0) { continue }
+    if (-not ((Test-NervOrdinalContractStringOperand -Node $binary.Left) -or
+              (Test-NervOrdinalContractStringOperand -Node $binary.Right))) {
+        continue
+    }
+    $ordinalSweepFindings.Add("TestEvidence.ps1:$line compares strings with -$($operator.ToLowerInvariant()), which is culture-aware: $($binary.Extent.Text)")
+}
+
+foreach ($command in $evidenceLibraryAst.FindAll({
+    param($node) $node -is [System.Management.Automation.Language.CommandAst]
+}, $true)) {
+    $name = [string] $command.GetCommandName()
+    if ([string]::IsNullOrWhiteSpace($name)) { continue }
+    $line = $command.Extent.StartLineNumber
+    $parameterNames = @($command.CommandElements |
+        Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
+        ForEach-Object { [string] $_.ParameterName })
+    $hasParameter = {
+        param($candidate)
+        @($parameterNames | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+    }
+
+    $finding = $null
+    if ([string]::Equals($name, 'Sort-Object', [StringComparison]::OrdinalIgnoreCase) -and (& $hasParameter 'Unique')) {
+        $finding = "TestEvidence.ps1:$line deduplicates with Sort-Object -Unique, which folds ignorable characters. Use Get-NervOrdinalSorted -Unique."
+    }
+    elseif ([string]::Equals($name, 'Group-Object', [StringComparison]::OrdinalIgnoreCase)) {
+        $finding = "TestEvidence.ps1:$line groups with Group-Object, whose key comparison is culture-aware. Use Get-NervOrdinalGroups."
+    }
+    elseif ([string]::Equals($name, 'Compare-Object', [StringComparison]::OrdinalIgnoreCase)) {
+        $finding = "TestEvidence.ps1:$line diffs with Compare-Object, whose comparison is culture-aware."
+    }
+    elseif ([string]::Equals($name, 'Where-Object', [StringComparison]::OrdinalIgnoreCase)) {
+        # Where-Object's comparison switches are spelled without the token-kind prefix (`-eq`, not
+        # `Ieq`), so they need their own list; `-gt`/`-lt`/`-match` are numeric or regex and stay.
+        $comparisonParameter = @($parameterNames | Where-Object {
+            $candidate = $_
+            @($whereObjectComparisonParameters | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
+        })
+        if ($comparisonParameter.Count -gt 0) {
+            $finding = "TestEvidence.ps1:$line filters with Where-Object -$($comparisonParameter[0]), which compares culture-aware. Use a script block with Test-NervOrdinalEquals."
+        }
+    }
+
+    if ($null -eq $finding) { continue }
+    $commandText = [string] $command.Extent.Text
+    $exempted = @($ordinalSweepExceptions | Where-Object { $commandText.Contains([string]$_.Text, [StringComparison]::Ordinal) })
+    if ($exempted.Count -gt 0) { continue }
+    $ordinalSweepFindings.Add($finding)
+}
+
+Assert-True ($ordinalSweepFindings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($ordinalSweepFindings) -join "`n  ")"
+Assert-True ($ordinalSweepExceptions.Count -eq 1) 'The ordinal sweep exception list must stay exhaustive and reviewed; adding an entry is a deliberate change to a named contract.'
 
 $newRepoCommandLogs = @(
     if (Test-Path $repoScriptLogRoot) {
