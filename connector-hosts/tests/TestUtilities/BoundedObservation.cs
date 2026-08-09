@@ -25,7 +25,7 @@ internal static class BoundedObservation
         Func<string> lastObservation,
         TimeSpan? budget = null)
     {
-        var effectiveBudget = budget ?? DefaultBudget;
+        var effectiveBudget = GetEffectiveBudget(budget);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
         {
@@ -48,7 +48,7 @@ internal static class BoundedObservation
         Func<string> lastObservation,
         TimeSpan? budget = null)
     {
-        var effectiveBudget = budget ?? DefaultBudget;
+        var effectiveBudget = GetEffectiveBudget(budget);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
         {
@@ -68,12 +68,38 @@ internal static class BoundedObservation
         var completedTask = await Task.WhenAny(observation, budgetTask);
         if (!ReferenceEquals(completedTask, observation))
         {
+            ConsumeLateFault(observation);
             return false;
         }
 
         await cancellation.CancelAsync();
         return true;
     }
+
+    private static TimeSpan GetEffectiveBudget(TimeSpan? budget)
+    {
+        var effectiveBudget = budget ?? DefaultBudget;
+        if (effectiveBudget < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(budget),
+                budget,
+                "The observation budget must be non-negative.");
+        }
+
+        return effectiveBudget;
+    }
+
+    /// <summary>
+    /// The source is no longer awaited after the observation budget wins, so consume any eventual fault
+    /// where it occurs instead of surfacing it against an unrelated test during a later finalization pass.
+    /// </summary>
+    private static void ConsumeLateFault(Task abandoned) =>
+        _ = abandoned.ContinueWith(
+            static observed => _ = observed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     /// <summary>
     /// Polls <paramref name="condition"/> under a bound. Used only where no completion signal
