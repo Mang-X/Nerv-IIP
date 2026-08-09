@@ -1,24 +1,24 @@
 # ADR 0020: NvUI 组件命名、token 场景命名空间与样式隔离
 
-- Status: Accepted
-- Date: 2026-07-07
-- 关联: Linear MAN-432 / GitHub #786（前端第二波 W0）
+- 状态：已接受
+- 日期：2026-07-07
+- 关联：Linear MAN-432 / GitHub #786（前端第二波 W0）
 - 上游已定决策（本 ADR 只细化落地，不重议）：品牌前缀 `Nv`、组件库品牌名 **NvUI**、
   组件迁移在业务批之前完成、token 允许跨场景取值相同但名称必须按场景命名空间隔离、
-  组件样式全部进入 CSS cascade layer。
-- 执行批次：本 ADR **不改任何代码**。库侧改名与 layer 落地 = MAN-433；分 app codemod =
+  组件样式全部进入 CSS 层叠层。
+- 执行批次：本 ADR **不改任何代码**。库侧改名与层落地 = MAN-433；分应用代码转换 =
   MAN-435；守护与收口 = MAN-436。附录 A/B/C 是这些批次的执行输入。
 
 ## S4 收口更正（2026-07-12 / #896）
 
 S4 以代码事实补齐原附录遗漏：PC 品牌层的最终源码目录是 `components/pc/`，不保留
-`components/pro/` 兼容目录；所有实现文件采用 canonical `Nv*.vue` 名。原
+`components/pro/` 兼容目录；所有实现文件采用规范的 `Nv*.vue` 名。原
 `DataTablePaginationPro` 实际承担通用 PC 分页职责，最终迁为
 `components/pc/pagination/NvPagination.vue` 并只导出 `NvPagination`，不保留误导性的
-`NvDataTablePagination` 名称。本文 Context 中的 `pro/`、`*Pro` 与旧 selector 描述均为
+`NvDataTablePagination` 名称。本文“背景”中的 `pro/`、`*Pro` 与旧选择器描述均为
 迁移前事实，不能作为新代码范式。
 
-## Context
+## 背景
 
 以下现状为 2026-07-07 对仓库的实地清点结果（非估算）。
 
@@ -42,13 +42,13 @@ codex/协作代理反复把 shadcn 原版误当作品牌组件库直接使用—
 `theme.css`，但 PC/mobile/touch 共用一套裸名 token；动效值跨场景复制字面量而非引用
 （`--sb-ease` 与 `--ease-out-quart` 同值 `cubic-bezier(0.25,1,0.5,1)`，两处硬编码）；
 `.sb-scroll` 在 `screen/tokens.css` 与 `apps/screen/src/assets/main.css` 有两份视觉参数
-不一致的定义（hover 显隐 vs 常显）。类名前缀同样混乱：PC/touch 用 `.ds-*`
+不一致的定义（悬停时显隐与常显两种方式）。类名前缀同样混乱：PC/touch 用 `.ds-*`
 （`.ds-overlay-content`、`.ds-tbtn`），screen 用 `.sb-*`（`.sb-scroll`、`.sb-tbl`）。
 
 **样式层现状是"两轨制"。** 四个产品 app 的 `main.css` 用标准 `@import 'tailwindcss'`
 （theme/base/components/utilities 四层）；而库内存在**故意 unlayered** 的规则以赢过
 utilities（`theme.css` 中玻璃拟态 `[data-slot=…]` 覆盖、`.ds-overlay-content` 动效、
-sidebar premium 选中态，注释明写 "intentionally UNLAYERED"）。app 自定义规则
+侧栏增强选中态，注释明确写着故意不分层（"intentionally UNLAYERED"））。app 自定义规则
 （business-console 的 sidebar active、apps/screen 的 body/滚动条）也全部 unlayered。
 优先级依赖"谁不分层谁赢"，不可审计。
 
@@ -68,7 +68,7 @@ sidebar premium 选中态，注释明写 "intentionally UNLAYERED"）。app 自�
 `packages/ui` 为单 barrel 入口，`screen/index.ts` 顶部副作用 `import './tokens.css'`——
 即 PC app 只要 import `@nerv-iip/ui` 也会载入大屏 token 表。
 
-## Decision 1: 命名规则
+## 决策 1：命名规则
 
 ### 1.1 总则
 
@@ -107,7 +107,7 @@ sidebar premium 选中态，注释明写 "intentionally UNLAYERED"）。app 自�
   （`frontend/DESIGN/component-coverage.md` 既定的 PC 参照系）→ 加场景词根
   （mobile `Steps`/`Collapse`/`Rate`/`Tag`/`Result` → `NvMobileSteps` 等）。
 - **R3b** 复合名以通用原语词（Chart/Table/Card/Tag/Bar…）结尾：首词为工业/业务专名
-  （Oee、Takt、Alarm、Kpi、Scan、Station、Qty、Andon…开放词表，扩词须 review）→
+  （Oee、Takt、Alarm、Kpi、Scan、Station、Qty、Andon…开放词表，扩词须评审）→
   专名主导，直接 `Nv`（`AlarmTable → NvAlarmTable`、`KpiBar → NvKpiBar`）；首词为
   通用修饰词（Trend、Status、List…）→ 加场景词根（`TrendChart → NvScreenTrendChart`）。
 - **R4** 其余（工业专名、本项目自造名、纯场景语汇）→ 直接 `Nv`
@@ -129,7 +129,7 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
 `NvStatusBadge` = 原 `StatusBadgePro` 取代）。`screen/WaterLevel.vue` 未从 barrel 导出且
 全库零引用，由 MAN-435 决定补导出（届时名 `NvWaterLevel`）或删除。
 
-## Decision 2: 包名——保持 `@nerv-iip/ui` 与 `@nerv-iip/ui-mobile`
+## 决策 2：包名——保持 `@nerv-iip/ui` 与 `@nerv-iip/ui-mobile`
 
 **结论：不改包名。** NvUI 是组件层品牌，由组件前缀、文档站与 DESIGN 文档承载；包名
 维持 `@nerv-iip/ui`（+ `@nerv-iip/ui-mobile`）。
@@ -138,9 +138,9 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
 
 | 维度 | A. 改 `@nerv-iip/nvui`(+nvui-mobile) | B. 保持包名，只改组件名（**采纳**） |
 |---|---|---|
-| import 替换面 | 167 + 17 = 184 个文件的 import 行 + ui-mobile 对 ui 的 workspace 依赖声明 | 0（组件名替换已由 MAN-435 codemod 承担，不叠加） |
-| workspace/工具链 | 6 个 app 的 package.json、若目录同步改名则 5 处 `@source` 相对路径、vite workspace:build 配置、design-system `@source`、tsconfig 引用 | 0 |
-| 发布影响 | 全部包 `private: true`，无 npm 发布，改名无对外收益 | 同左，无损失 |
+| 导入替换面 | 167 + 17 = 184 个文件的导入行 + ui-mobile 对 ui 的工作区依赖声明 | 0（组件名替换已由 MAN-435 代码转换承担，不叠加） |
+| 工作区/工具链 | 6 个应用的 package.json、若目录同步改名则 5 处 `@source` 相对路径、vite workspace:build 配置、design-system `@source`、tsconfig 引用 | 0 |
+| 发布影响 | 全部包为私有包（`private: true`），无 npm 发布，改名无对外收益 | 同左，无损失 |
 | 并行冲突 | 与业务批（MAN-430/431/434）及全部在途 PR 产生全局 rebase 冲突 | 组件名走别名过渡，可渐进合入 |
 | 品牌一致性 | 包名即品牌；但 scope `@nerv-iip` 已含品牌，`@nerv-iip/nvui` 双品牌冗余 | 包名语义"nerv-iip 的 UI 包"本就成立 |
 
@@ -148,7 +148,7 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
 `@nerv-iip/nvui`（或独立 scope）立项改名——届时有 semver 与 registry 语境，成本收益
 才成立。在那之前，任何 PR 不得顺手改包名。
 
-## Decision 3: token 场景命名空间
+## 决策 3：token 场景命名空间
 
 ### 3.1 分层与前缀
 
@@ -173,12 +173,12 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
 
 原则：
 
-1. **primitive 值（OKLCH/曲线/时长）全库共享**；场景层不得复制字面量。
+1. **原语值（OKLCH/曲线/时长）全库共享**；场景层不得复制字面量。
 2. **跨场景同值必须用 var 引用链表达**：`--nv-scr-ease: var(--nv-ease-out-quart)`（替代
    现状 `--sb-ease` 硬编码同值）。引用链方向固定为"场景名 → 共享名"，禁止反向。
 3. **允许跨场景取值相同，但名称必须隔离**：screen 想用与 PC 相同的绿色，写
    `--nv-scr-green: var(--nv-success)`，不得在 screen 组件里直接引 `--nv-success`。
-   场景组件只允许引用本场景前缀 + 契约层 token；跨场景直引由 contract test 拦截（4.4）。
+   场景组件只允许引用本场景前缀 + 契约层 token；跨场景直引由契约测试拦截（4.4）。
 4. **场景 token 表文件与场景层同目录**（现状 `screen/tokens.css` 模式不变，改名为
    `--nv-scr-*`；mobile/touch 表在首个场景 token 出现时建立）。
 
@@ -192,7 +192,7 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
 - 组件位移/透明度类动效优先走 motion-v 封装（whilePress、useReducedMotion 全局降级），
   纯 CSS 过渡引用 token 曲线/时长，两轨都禁止内联 cubic-bezier 字面量。
 
-## Decision 4: 样式隔离——CSS cascade layer
+## 决策 4：样式隔离——CSS 层叠层
 
 ### 4.1 层序（全局唯一）
 
@@ -222,8 +222,8 @@ mobile 原生触控 40–48px / touch 大触控 56–72px / screen 挂墙远读�
    `@import` 之前），保证构建产物首个 layer 语句即全序。层归属通过
    `@import … layer(<name>)` 在导入点指定；库的 overrides 段拆为独立文件
    （`styles/overrides.css`，文件内不包层），产品 app 以 `layer(nv-overrides)` 导入。
-4. **app 自定义样式一律进 `@layer app`**；紧急 hotfix 允许临时 unlayered，但 review
-   checklist 项要求限期归层。
+4. **应用自定义样式一律进 `@layer app`**；紧急修复允许临时不分层（unlayered），但评审
+   检查清单要求限期归层。
 5. 已知风险与验证条款：`@layer` 基线为 2022 全绿浏览器，大屏一体机/车间 WebView 的内核
    版本在 MAN-433 落地前实机核查；vitest 不编译 CSS，层序正确性除 contract test 文本
    断言外，**必须真机走查亮/暗/大屏三态**（门禁绿 ≠ 真机无 bug，历史教训）。
@@ -255,7 +255,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
   文档站裸导入）；
 - SFC 样式：内嵌 `@layer nv-components`。
 
-### 4.4 design contract test 扩展守护项（MAN-433 一并落地）
+### 4.4 设计契约测试扩展守护项（MAN-433 一并落地）
 
 `packages/ui/src/design-system.contract.test.ts` 在既有 7 组 token 断言（断言文本随
 附录 C 改名同步）之外，新增：
@@ -277,24 +277,24 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
    （实现走 contract test 文本扫描 + CI grep gate，**不引入 ESLint**——遵守 ADR 0006
    的 Vite+ 工具链决策）。
 
-## Decision 5: 迁移路线与验收口径
+## 决策 5：迁移路线与验收口径
 
 顺序（总约束：**全部组件迁移批在业务批开始之前完成**）：
 
 | 步 | 批次 | 内容 | 验收口径 |
 |---|---|---|---|
-| S1 别名过渡 | MAN-433 | 库侧：按附录 A 新增 `Nv*` 为 canonical 实现名；旧名以 `export { NvButton as ButtonPro }` 形式保留并标 JSDoc `@deprecated`（IDE 划线）；token 新名落地 + 旧名 var 别名（`--sb-bg: var(--nv-scr-bg)`）；4.1/4.3 layer 结构落地；4.4 契约守护（别名期形态）上线；design-system 站组件页标题/示例切新名（文档站是唯一教学面，先切断旧名传播） | `pnpm -C frontend typecheck && test && build` 全绿；contract test 别名期断言绿；文档站构建绿 + 实机抽查（亮/暗/大屏）；既有业务代码**零改动**仍编译通过（别名兜底的直接证据） |
-| S2 codemod 分 app | MAN-435 | 按 app 逐个 PR 替换 import 与模板引用：business-console（93 页）→ business-pda（15）→ screen（10）→ console（10）。codemod 以附录 A 为唯一映射输入（脚本 + 人工复核），同 PR 内完成该 app 的 `--sb-*`/类名引用替换 | 每 app PR：typecheck/test/build 三绿 + 真机逐模块抽查；该 app 源码旧名/旧 token **零匹配**（CI grep）；不允许半迁移合入 |
-| S3 守护 | MAN-436 前置 | 4.4 第 8 项切到"旧名零新增"强断言；PR review checklist 加命名/层归属项（governance.md 已同步） | 守护断言在 CI 稳定绿一周（覆盖并行 PR 汇入） |
-| S4 收口 | MAN-436 | 删除全部 deprecated 别名导出、旧 token 别名、旧类名；1.3 的旧代组件（blocks/DataTable 等）删除；contract test 切收口断言（`--sb-` 全库零匹配、旧名导出不存在）；DESIGN 文档（component-coverage、motion-interaction、screen/product.md、pro/MIGRATION.md）术语归档更新 | 全库 `ButtonPro\|--sb-\|\.sb-\|\.ds-` 等旧标识零匹配（白名单：本 ADR 与历史 roadmap 文档）；frontend 全量 gate 绿；文档站构建绿 |
+| S1 别名过渡 | MAN-433 | 库侧：按附录 A 新增 `Nv*` 为规范实现名；旧名以 `export { NvButton as ButtonPro }` 形式保留并标 JSDoc `@deprecated`（IDE 划线）；token 新名落地 + 旧名 var 别名（`--sb-bg: var(--nv-scr-bg)`）；4.1/4.3 层结构落地；4.4 契约守护（别名期形态）上线；design-system 站组件页标题/示例切新名（文档站是唯一教学面，先切断旧名传播） | `pnpm -C frontend typecheck && test && build` 全绿；契约测试别名期断言绿；文档站构建绿 + 实机抽查（亮/暗/大屏）；既有业务代码**零改动**仍编译通过（别名兜底的直接证据） |
+| S2 按应用进行代码转换 | MAN-435 | 按应用逐个 PR 替换导入与模板引用：business-console（93 页）→ business-pda（15）→ screen（10）→ console（10）。代码转换以附录 A 为唯一映射输入（脚本 + 人工复核），同 PR 内完成该应用的 `--sb-*`/类名引用替换 | 每个应用 PR：typecheck/test/build 三绿 + 真机逐模块抽查；该应用源码旧名/旧 token **零匹配**（CI grep）；不允许半迁移合入 |
+| S3 守护 | MAN-436 前置 | 4.4 第 8 项切到“旧名零新增”强断言；PR 评审检查清单增加命名/层归属项（governance.md 已同步） | 守护断言在 CI 稳定绿一周（覆盖并行 PR 汇入） |
+| S4 收口 | MAN-436 | 删除全部弃用别名导出、旧 token 别名、旧类名；1.3 的旧代组件（blocks/DataTable 等）删除；契约测试切收口断言（`--sb-` 全库零匹配、旧名导出不存在）；DESIGN 文档（component-coverage、motion-interaction、screen/product.md、pro/MIGRATION.md）术语归档更新 | 全库 `ButtonPro\|--sb-\|\.sb-\|\.ds-` 等旧标识零匹配（白名单：本 ADR 与历史 roadmap 文档）；frontend 全量门禁绿；文档站构建绿 |
 
 回滚策略：S1 合入后任何一步发现阻断性问题，业务代码可继续用旧名（别名兜底），
-回滚粒度为"撤销单个 app 的 codemod PR"，不存在全局不可逆点；S4 之后才移除退路。
+回滚粒度为“撤销单个应用的代码转换 PR”，不存在全局不可逆点；S4 之后才移除退路。
 
-## Alternatives Considered
+## 备选方案
 
-1. **包名改 `@nerv-iip/nvui`**：见 Decision 2 对比表。被否：private 包无发布收益，
-   184 个文件 import 面 + 工具链配置面纯属机械成本，且与并行业务批的冲突面最大化。
+1. **包名改 `@nerv-iip/nvui`**：见决策 2 对比表。被否：私有包无发布收益，
+   184 个文件的导入面 + 工具链配置面纯属机械成本，且与并行业务批的冲突面最大化。
 2. **全场景强制词根（screen 件一律 NvScreenXxx）**：判定简单，但 `NvScreenOeeHero`、
    `NvScreenTaktGantt` 冗长且专名本身已自明场景；与上游已定的"天然独有名直接 Nv"
    （NvScanBar/NvOeeHero）矛盾。被否，改用 R1–R5 判定流程 + 附录 A 冻结逐件结果。
@@ -311,7 +311,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
    切断原版组件经 Tailwind 桥的依赖链，等价于改原版——违反红线。被否，契约层名单
    永久冻结（3.1）。
 
-## Consequences
+## 后果
 
 **变易。** 原版与品牌件一眼可分（`Nv` 前缀即边界），协作代理误用原版的诱因消除；
 `Badge`/`Empty`/`DropdownMenu` 双包撞名消解（mobile 侧改 `NvMobile*`）；token 场景
@@ -319,10 +319,10 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 八层全序，app 主权（`app` 层）与库级装饰（`nv-overrides`）各得其所；文档站嵌入从
 逐坑手补变为容器隔离制度。
 
-**变难。** 一次性认知成本：迁移期内旧名（deprecated）与新名并存，IDE 补全会同时出现
-两套（靠 @deprecated 划线缓解）；S2 是 118 页 × import/模板/token 的大面积机械替换，
+**变难。** 一次性认知成本：迁移期内旧名（已弃用）与新名并存，IDE 补全会同时出现
+两套（靠 @deprecated 划线缓解）；S2 是 118 页 × 导入/模板/token 的大面积机械替换，
 必须依赖附录 A 而非人脑记忆；类型名连带改名（`DataTableProColumn` 等）会出现在
-业务代码签名里，codemod 须覆盖 type import。
+业务代码签名里，代码转换须覆盖类型导入。
 
 **后续维护者须知。** 附录 A/B/C 是 MAN-433/435 的执行合同，执行中发现映射遗漏先修订
 本 ADR 再动代码；新组件命名一律走 1.2 流程，R3b 专名词表扩词须在 PR 中注明；
@@ -331,22 +331,22 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 
 ---
 
-## 附录 A: 组件旧名 → 新名完整映射表（MAN-433/435 执行输入）
+## 附录 A：组件旧名 → 新名完整映射表（MAN-433/435 执行输入）
 
 判定依据列：`PC` = PC 素名规则（去 Pro/裸名升级）；`R1`–`R5` 见 1.2；`废` = 1.3 处置。
 
-> **收口后新增（无旧名，完全 Pro-free）。** MAN-439（#793）在 `pc/combobox/` 新增两个
-> 全新组件，直接以 `Nv*` canonical 名落地（R1），不涉及旧名映射：
+> **收口后新增（无旧名，完全不含 Pro）。** MAN-439（#793）在 `pc/combobox/` 新增两个
+> 全新组件，直接以 `Nv*` 规范名称落地（R1），不涉及旧名映射：
 > - `NvCombobox`（输入联想框：文本输入即过滤建议，允许自由录入）
 > - `NvSearchSelect`（弹出选择框：可搜索的弹出单选，仅选不填）
 >
 > 二者的**文件名即 `NvCombobox.vue`/`NvSearchSelect.vue`**（不带 `Pro` 后缀），且内部**不含**
 > `data-slot="*-pro"` / `.ds-*` / `.sb-*`（纯 Tailwind utility 类 + ARIA `role` 语义）——即
 > 直接落在 S4 收口（#896）后的 `pc/` 目标形态，不引入任何 `pro→nv` 债。已并入
-> `nvui-naming.contract.test.ts` 的冻结 canonical 集合。
+> `nvui-naming.contract.test.ts` 的冻结规范集合。
 
-> **收口后新增（无旧名，完全 Pro-free）。** PR #1093 在 `pc/card/` 新增两个指标家族件，
-> 直接以 `Nv*` canonical 名落地：
+> **收口后新增（无旧名，完全不含 Pro）。** PR #1093 在 `pc/card/` 新增两个指标家族件，
+> 直接以 `Nv*` 规范名称落地：
 > - `NvMetricRing`（环形构成指标：多色分段环 + 图例联动，表达「部分与整体」）
 > - `NvMetricStrip`（横向多指标条：一卡多口径，分隔线代卡缝）
 >
@@ -356,15 +356,15 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > 指标条，均无法并入 `NvMetricCard` 的纵向单值骨架，不走"一件多模式"）。定名走 **§1.1(2)
 > PC 层取素名**：`Nv` + 素名（`MetricRing`/`MetricStrip`）——§1.2 的 R1–R5 只用于
 > screen/touch/mobile 候选名，PC 件不适用。与大屏层既有 `NvRingGauge`（纯仪表原语、
-> `--nv-scr-*` 深色）不构成 clash：二者分属不同表面，按 §1.2 尾「跨两个表面拆两件」各自
+> `--nv-scr-*` 深色）不构成冲突：二者分属不同表面，按 §1.2 尾“跨两个表面拆两件”各自
 > 实现、各自命名。文件名即 `NvMetricRing.vue`/`NvMetricStrip.vue`，内部无
-> `*-pro`/`.ds-*`/`.sb-*`。已并入 `nvui-naming.contract.test.ts` 冻结 canonical 集合。
+> `*-pro`/`.ds-*`/`.sb-*`。已并入 `nvui-naming.contract.test.ts` 冻结规范集合。
 > `NvMetricCard` 的各 variant 下半区拆为 `pc/card/parts/` 内部实现件，命名
 > `NvMetric*Part`（`NvMetricTipPart` 等 7 件）：保持品牌层 `Nv` 前缀统一语义，但
 > **不导出、不入 barrel、不入冻结集合**——`*Part` 后缀即「某公开件的私有组成部分」。
 
-> **收口后新增（无旧名，完全 Pro-free）。** 演示走查整改（前端批 1）在 `blocks/` 新增两个
-> 跨模块复用的选择类区块件，直接以 `Nv*` canonical 名落地：
+> **收口后新增（无旧名，完全不含 Pro）。** 演示走查整改（前端批 1）在 `blocks/` 新增两个
+> 跨模块复用的选择类区块件，直接以 `Nv*` 规范名称落地：
 > - `NvEntityPicker`（实体选择弹窗：可搜索的实体选择对话框，仅选不填；名称 + 编码 +
 >   辅助信息三列展示，底部注明数据来源，适合上百条的主数据目录）
 > - `NvCascadePicker`（级联选择器：一行多级依赖选择，如 车间→产线→设备；每级为可搜索
@@ -375,9 +375,9 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > `blocks/`；定名走 **§1.1(2) PC 层取素名**：`Nv` + 素名（`EntityPicker`/`CascadePicker`），
 > R1–R5 不适用。文件名即 `NvEntityPicker.vue`/`NvCascadePicker.vue`，内部无
 > `*-pro`/`.ds-*`/`.sb-*`，`data-slot` 用 `nv-` 前缀。已并入
-> `nvui-naming.contract.test.ts` 冻结 canonical 集合。
+> `nvui-naming.contract.test.ts` 冻结规范集合。
 
-> **收口后新增（无旧名，完全 Pro-free）。** 演示走查整改（MES 前端批）在 `blocks/` 再增一件：
+> **收口后新增（无旧名，完全不含 Pro）。** 演示走查整改（MES 前端批）在 `blocks/` 再增一件：
 > - `NvGroupPanel`（可折叠分组面板：把长列表按业务父级——工单 / 客户 / 设备 / 批次——
 >   切成若干组，每组常驻标题行 + 可折叠内容区；只管呈现与展开态，不承担取数与分页）
 >
@@ -385,7 +385,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 > 故落 `blocks/`；定名走 §1.1(2) PC 层取素名：`Nv` + 素名（`GroupPanel`），R1–R5 不适用。
 > 未取 `NvCollapsible` 是为避让 shadcn 原版同名件的语义——本件不是原版 Collapsible 的重建版，
 > 而是「分组容器」这一业务语义的区块件。文件名即 `NvGroupPanel.vue`，`data-slot` 为
-> `nv-group-panel`。已并入 `nvui-naming.contract.test.ts` 冻结 canonical 集合，
+> `nv-group-panel`。已并入 `nvui-naming.contract.test.ts` 冻结规范集合，
 > 文档站页 `components/desktop/group-panel`。
 
 ### A1. PC 素名层 — `pc/`（35 目录，116 个组件导出）
@@ -539,7 +539,7 @@ NvFieldVariants`、`fieldProVariants → nvFieldVariants`。
 
 （`resolveStatus` 函数与 `ResolvedStatus`/`StatusTone`/`PageHeaderCrumb`/
 `TrendDirection`/`DataTableAlign`/`DataTableColumn`/`DataTableSort` 类型不改名；
-deprecated 组件的旧类型随组件在 S4 一并删除。）
+已弃用组件的旧类型随组件在 S4 一并删除。）
 
 ### A3. PC 素名层 — `layout/`（8 件）
 
@@ -659,7 +659,7 @@ deprecated 组件的旧类型随组件在 S4 一并删除。）
 `StepItem`、`ActionItem`、`SwipeAction`、`PickerOption`、`GridItem`、`FabAction`、
 `DropdownOption`）不改名。）
 
-### A7. 不参与改名的导出（明确列出，防 codemod 误伤）
+### A7. 不参与改名的导出（明确列出，防代码转换误伤）
 
 - shadcn 原版全部导出（`components/ui/` 34 目录）：`Button`、`Badge`、`Table`、
   `Dialog`、`Sidebar` 家族、`FileUpload`/`FilePreview` 家族等——零改动零别名；
@@ -667,7 +667,7 @@ deprecated 组件的旧类型随组件在 S4 一并删除。）
   `nervMotion`、`toast`（vue-sonner 透传）、`Toaster`；
 - `@nerv-iip/app-shell`、`@nerv-iip/business-core` 等非 UI 包的组件不在本 ADR 范围。
 
-## 附录 B: `--sb-*` → `--nv-scr-*` token 全表映射（30 项）
+## 附录 B：`--sb-*` → `--nv-scr-*` token 全表映射（30 项）
 
 规则：机械替换前缀 `--sb-` → `--nv-scr-`；右值同步做引用链收敛的两项已标注。
 
@@ -707,10 +707,10 @@ deprecated 组件的旧类型随组件在 S4 一并删除。）
 类名同步：`.sb-scroll → .nv-scr-scroll`、`.sb-tbl → .nv-scr-tbl`、
 `.sb-at-tbl → .nv-scr-at-tbl`，及 screen 组件内部全部 `sb-` 前缀类。
 `apps/screen/src/assets/main.css` 中与 `tokens.css` 不一致的第二份 `.sb-scroll` 定义在
-S2（screen app codemod）时消除——保留 tokens.css 单一定义，app 差异若确需保留则以
+S2（screen 应用代码转换）时消除——保留 tokens.css 单一定义，应用差异若确需保留则以
 `@layer app` 内 `.nv-scr-scroll` 覆盖表达。
 
-## 附录 C: PC 自有语义 token nv 化清单（契约层之外的全部 `:root`/`.dark` 自有名）
+## 附录 C：PC 自有语义 token nv 化清单（契约层之外的全部 `:root`/`.dark` 自有名）
 
 | 旧名 | 新名 |
 |---|---|
