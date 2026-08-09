@@ -115,7 +115,7 @@ function Get-NervItemsUniqueSortedByString {
     )
 
     return @(Get-NervStringGroups -Items $Items -KeySelector $KeySelector -Comparer $Comparer |
-        ForEach-Object { @($_.Group)[0] })
+        ForEach-Object { ,@($_.Group)[0] })
 }
 
 function Get-NervItemsSorted {
