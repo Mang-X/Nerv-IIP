@@ -1430,7 +1430,12 @@ foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3'
 Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
 Assert-Equal 5 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover exactly the four backend shards and connector-host.'
-Assert-True (-not $laneJobAllowlist.Contains('backend', [StringComparison]::Ordinal)) 'No job may certify the unsharded backend lane once the shards own it.'
+$laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
+$softHyphenLaneJobKeys = @($laneJobKeys + "backend$softHyphen")
+$strictBackendKeyMatches = @($softHyphenLaneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
+Assert-Equal 0 $strictBackendKeyMatches.Count 'A U+00AD-mutated evidence lane key must not be accepted as the retired backend lane.'
+$actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
+Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'
 Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($laneJobAllowlist.Values)), [StringComparer]::Ordinal).Contains([string]('Backend Tests')))) 'The test-free shard aggregate must own no evidence lane.'
 Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Connector artifact identity mismatch.'
 Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
@@ -2016,7 +2021,7 @@ try {
     # scan cannot distinguish from a safe one; the assertion is that the scan stays silent, so the day
     # any of them becomes detectable this list and the documentation have to be edited together.
     $blindSpotProbes = [ordered]@{
-        'non-identity-variable-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
+        'both-operands-non-literal-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
         'both-operands-non-literal-in' = '$result = $candidate -in $known'
         'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
         'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'

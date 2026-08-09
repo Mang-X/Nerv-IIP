@@ -716,7 +716,26 @@ try {
     }
 
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
-    $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.') + 1)
+    $lastIndexTarget = "    `$collisionMethod = `$collisionSelector.Substring(`$collisionSelector.LastIndexOf('.', [StringComparison]::Ordinal) + 1)"
+    $backendTestSource = [IO.File]::ReadAllText($PSCommandPath)
+    Assert-Contract ([regex]::Matches($backendTestSource, [regex]::Escape($lastIndexTarget)).Count -eq 1) 'The selector suffix extraction must bind the explicit ordinal string overload exactly once.'
+    $lastIndexProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-last-index-ordinal-{0}" -f [Guid]::NewGuid().ToString('N'))
+    try {
+        [IO.Directory]::CreateDirectory($lastIndexProbeRoot) | Out-Null
+        $lastIndexProbePath = Join-Path $lastIndexProbeRoot 'probe.ps1'
+        [IO.File]::WriteAllText($lastIndexProbePath, $backendTestSource.Replace($lastIndexTarget, "    `$collisionMethod = `$collisionSelector.Substring(`$collisionSelector.LastIndexOf('.') + 1)"), [Text.UTF8Encoding]::new($false))
+        $lastIndexMutationFindings = @((Get-NervOrdinalComparisonFindings -ScriptPath $lastIndexProbePath -DisplayName 'backend-test-shards-last-index-mutation.ps1').Findings)
+        Assert-Contract ($lastIndexMutationFindings.Count -eq 1 -and $lastIndexMutationFindings[0].Contains('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal)) 'Removing the explicit ordinal comparer from the selector suffix extraction must make the ordinal scanner fail.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $lastIndexProbeRoot) { Remove-Item -LiteralPath $lastIndexProbeRoot -Recurse -Force }
+    }
+    $softHyphenLastIndex = [string][char]0x00AD
+    $implicitStringLastIndex = [string].GetMethod('LastIndexOf', [Type[]]@([string]))
+    Assert-Contract ($null -ne $implicitStringLastIndex) 'The focused culture probe must bind the one-argument string overload.'
+    Assert-Contract ([int]$implicitStringLastIndex.Invoke('ab', [object[]]@($softHyphenLastIndex)) -eq 2) 'The implicit one-character string call is culture-sensitive and must not be treated as a char overload.'
+    Assert-Contract (('ab').LastIndexOf($softHyphenLastIndex, [StringComparison]::Ordinal) -eq -1) 'The explicit ordinal string overload must not fold U+00AD into a non-existent suffix.'
+    $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.', [StringComparison]::Ordinal) + 1)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null
     Set-Content -LiteralPath $temporaryCollisionSourcePath -NoNewline -Value "public sealed class Fixture { public void $collisionMethod() { } public void ${collisionMethod}Extra() { } }"
     $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
