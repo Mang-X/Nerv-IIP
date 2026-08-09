@@ -215,24 +215,50 @@ function Test-NervOrdinalContractTypedNonStringLocal {
     $scope = Get-NervOrdinalContractEnclosingFunction -Node $Context
     if ($null -eq $scope) { return $false }
     $name = [string] $Variable.VariablePath.UserPath
-    $declarations = @($scope.FindAll({
+    $contextBlock = Get-NervOrdinalContractDirectSequentialBlock -Node $Context
+    if ($null -eq $contextBlock) { return $false }
+    $writes = @($scope.FindAll({
         param($candidate)
         if ($candidate -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
             $candidate.Extent.StartOffset -ge $Context.Extent.StartOffset -or
-            $candidate.Left -isnot [System.Management.Automation.Language.ConvertExpressionAst] -or
-            $candidate.Left.Child -isnot [System.Management.Automation.Language.VariableExpressionAst] -or
-            -not [string]::Equals([string] $candidate.Left.Child.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)) {
+            -not [object]::ReferenceEquals((Get-NervOrdinalContractDirectSequentialBlock -Node $candidate), $contextBlock)) {
             return $false
         }
-        $type = $candidate.Left.Type.TypeName.GetReflectionType()
-        return $null -ne $type -and
-            -not [object]::ReferenceEquals($type, [string]) -and
-            -not [object]::ReferenceEquals($type, [string[]]) -and
-            $type.IsValueType
+        $target = if ($candidate.Left -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+            $candidate.Left.Child
+        }
+        else {
+            $candidate.Left
+        }
+        return $target -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            [string]::Equals([string] $target.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)
     }, $true) | Where-Object {
         [object]::ReferenceEquals((Get-NervOrdinalContractEnclosingFunction -Node $_), $scope)
     })
-    return $declarations.Count -eq 1
+    if ($writes.Count -ne 1 -or
+        $writes[0].Left -isnot [System.Management.Automation.Language.ConvertExpressionAst] -or
+        $writes[0].Left.Child -isnot [System.Management.Automation.Language.VariableExpressionAst]) {
+        return $false
+    }
+    $type = $writes[0].Left.Type.TypeName.GetReflectionType()
+    return $null -ne $type -and
+        -not [object]::ReferenceEquals($type, [string]) -and
+        -not [object]::ReferenceEquals($type, [string[]]) -and
+        $type.IsValueType
+}
+
+function Get-NervOrdinalContractDirectSequentialBlock {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node)
+
+    $current = $Node.Parent
+    while ($null -ne $current) {
+        if ($current -is [System.Management.Automation.Language.StatementBlockAst] -or
+            $current -is [System.Management.Automation.Language.NamedBlockAst]) {
+            return $current
+        }
+        $current = $current.Parent
+    }
+    return $null
 }
 
 function Get-NervOrdinalContractEnclosingFunction {
@@ -406,31 +432,63 @@ function Test-NervOrdinalContractForeachIteratorIsUnmodified {
     $writes = @($ForEach.Body.FindAll({
         param($candidate)
         $candidate -is [System.Management.Automation.Language.AssignmentStatementAst] -and
-            $candidate.Extent.StartOffset -lt $Comparison.Extent.StartOffset -and
-            $candidate.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-            [string]::Equals([string] $candidate.Left.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)
+            (Test-NervOrdinalContractAssignmentWritesVariable -Assignment $candidate -Name $name)
     }, $true))
     if ($writes.Count -gt 0) { return $false }
 
     $setVariableWrites = @($ForEach.Body.FindAll({
         param($candidate)
-        if ($candidate -isnot [System.Management.Automation.Language.CommandAst] -or
-            $candidate.Extent.StartOffset -ge $Comparison.Extent.StartOffset -or
-            -not [string]::Equals([string] $candidate.GetCommandName(), 'Set-Variable', [StringComparison]::OrdinalIgnoreCase)) {
-            return $false
-        }
-        $elements = @($candidate.CommandElements)
-        for ($index = 0; $index -lt $elements.Count - 1; $index++) {
-            if ($elements[$index] -is [System.Management.Automation.Language.CommandParameterAst] -and
-                [string]::Equals([string] $elements[$index].ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase) -and
-                $elements[$index + 1] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-                [string]::Equals([string] $elements[$index + 1].Value, $name, [StringComparison]::OrdinalIgnoreCase)) {
-                return $true
-            }
-        }
-        return $false
+        $candidate -is [System.Management.Automation.Language.CommandAst] -and
+            (Test-NervOrdinalContractSetVariableWritesVariable -Command $candidate -Name $name)
     }, $true))
     return $setVariableWrites.Count -eq 0
+}
+
+function Test-NervOrdinalContractAssignmentWritesVariable {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.AssignmentStatementAst] $Assignment,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $target = if ($Assignment.Left -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        $Assignment.Left.Child
+    }
+    else {
+        $Assignment.Left
+    }
+    return $target -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string] $target.VariablePath.UserPath, $Name, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-NervOrdinalContractSetVariableWritesVariable {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if (-not [string]::Equals([string] $Command.GetCommandName(), 'Set-Variable', [StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    $elements = @($Command.CommandElements)
+    for ($index = 0; $index -lt $elements.Count; $index++) {
+        if ($elements[$index] -is [System.Management.Automation.Language.CommandParameterAst] -and
+            [string]::Equals([string] $elements[$index].ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase)) {
+            $candidate = if ($null -ne $elements[$index].Argument) {
+                $elements[$index].Argument
+            }
+            elseif ($index + 1 -lt $elements.Count) {
+                $elements[$index + 1]
+            }
+            else {
+                $null
+            }
+            return $candidate -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+                [string]::Equals([string] $candidate.Value, $Name, [StringComparison]::OrdinalIgnoreCase)
+        }
+    }
+    return $elements.Count -gt 1 -and
+        $elements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+        [string]::Equals([string] $elements[1].Value, $Name, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Test-NervOrdinalContractCharacterComparison {
@@ -602,15 +660,29 @@ function Test-NervOrdinalContractCharacterIndexInvocation {
 
     if (-not [string]::Equals([string] $Node.Member.Value, 'IndexOf', [StringComparison]::OrdinalIgnoreCase)) { return $false }
     $arguments = @($Node.Arguments)
-    if ($arguments.Count -eq 0) { return $false }
-    if ($arguments[0] -is [System.Management.Automation.Language.ConvertExpressionAst] -and
-        [object]::ReferenceEquals($arguments[0].Type.TypeName.GetReflectionType(), [char]) -and
-        (Test-NervOrdinalContractStringValue -Node $Node.Expression -Context $Node)) { return $true }
-    return $arguments.Count -eq 2 -and
-        (Test-NervOrdinalContractStringValue -Node $Node.Expression -Context $Node) -and
-        $arguments[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-        ([string] $arguments[0].Value).Length -eq 1 -and
-        (Test-NervOrdinalContractIntegerValue -Node $arguments[1] -Context $Node)
+    if ($arguments.Count -lt 1 -or $arguments.Count -gt 3 -or
+        -not (Test-NervOrdinalContractStringValue -Node $Node.Expression -Context $Node) -or
+        -not (Test-NervOrdinalContractStaticCharacterIndexArgument -Node $arguments[0] -Context $Node)) {
+        return $false
+    }
+    if ($arguments.Count -ge 2 -and -not (Test-NervOrdinalContractIntegerValue -Node $arguments[1] -Context $Node)) {
+        return $false
+    }
+    return $arguments.Count -lt 3 -or
+        (Test-NervOrdinalContractIntegerValue -Node $arguments[2] -Context $Node)
+}
+
+function Test-NervOrdinalContractStaticCharacterIndexArgument {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Context
+    )
+
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        return [object]::ReferenceEquals($Node.Type.TypeName.GetReflectionType(), [char])
+    }
+    return $Node -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        (Test-NervOrdinalContractTypedParameter -Variable $Node -Context $Context -AllowedTypes @([char]))
 }
 
 function Test-NervOrdinalContractDateTimeSort {

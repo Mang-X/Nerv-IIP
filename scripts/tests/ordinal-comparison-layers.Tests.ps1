@@ -72,6 +72,9 @@ foreach ($nonStringIdentityCase in @(
     Assert-Layer (@(Get-LayerProbeFindings -Source $nonStringIdentityCase).Count -eq 0) `
         'Typed numeric, date, and collection comparisons must not be treated as string identity.'
 }
+$conditionalTypedIdentityFindings = @(Get-LayerProbeFindings -Source 'function Test-ConditionalTypedIdentity { if ($false) { [int]$leftId = 1; [int]$rightId = 2 }; return $leftId -eq $rightId }')
+Assert-Layer (@($conditionalTypedIdentityFindings | Where-Object { $_.StartsWith('[culture-operator-with-identity-variable]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'A typed local declared only in a conditional block must not suppress an identity comparison finding.'
 $cultureComparerFindings = @(Get-LayerProbeFindings -Source 'function Test-CultureFactory { return [StringComparer]::Create([Globalization.CultureInfo]::InvariantCulture, $true) }')
 Assert-Layer (@($cultureComparerFindings | Where-Object { $_.StartsWith('[culture-created-stringcomparer]', [StringComparison]::Ordinal) }).Count -eq 1) `
     'Creating a StringComparer from CultureInfo must be reported.'
@@ -89,7 +92,10 @@ foreach ($invalidCharacterCase in @(
     'function Test-UnknownCharacter { param($character) return $character -eq ''{'' }',
     'function Test-StringValue { param([string]$character) return $character -eq ''{'' }',
     'function Test-ReassignedCharacter { param([string]$text) $character = $text[0]; $character = ''value''; return $character -eq ''{'' }',
-    'function Test-ReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { $character = ''{''; if ($character -eq ''{'') { return $true } } }'
+    'function Test-ReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { $character = ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-TypedReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { [string]$character = ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-PositionalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-AttachedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable -Name:character -Value ''{''; if ($character -eq ''{'') { return $true } } }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidCharacterCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -121,10 +127,22 @@ $stringIndexFindings = @(Get-LayerProbeFindings -Source 'function Test-StringInd
 Assert-Layer (@($stringIndexFindings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
     'An unknown instance IndexOf call must remain a finding.'
 
-Assert-Layer (@(Get-LayerProbeFindings -Source 'function Test-CharacterIndex { param([string]$value, [int]$start) return $value.IndexOf('';'', $start) }').Count -eq 0) `
-    'A one-character IndexOf overload with a proven integer start index must be accepted.'
-Assert-Layer (@(Get-LayerProbeFindings -Source '$value = Get-Content -LiteralPath ''input.txt'' -Raw; $start = $value.IndexOf(''name'', [StringComparison]::Ordinal); $result = $value.IndexOf('';'', $start)').Count -eq 0) `
-    'A Get-Content -Raw receiver and a start index returned by ordinal IndexOf must prove the character overload used by source-contract tests.'
+foreach ($safeCharacterIndexCase in @(
+    'function Test-ExplicitCharacterIndex { param([string]$value, [int]$start) return $value.IndexOf([char]'';'', $start) }',
+    'function Test-TypedCharacterIndex { param([string]$value, [int]$start, [char]$needle) return $value.IndexOf($needle, $start) }',
+    '$value = Get-Content -LiteralPath ''input.txt'' -Raw; $start = $value.IndexOf(''name'', [StringComparison]::Ordinal); $result = $value.IndexOf([char]'';'', $start)'
+)) {
+    Assert-Layer (@(Get-LayerProbeFindings -Source $safeCharacterIndexCase).Count -eq 0) `
+        'An IndexOf overload with an explicit or statically proven char needle must be accepted.'
+}
+foreach ($stringLiteralIndexCase in @(
+    'function Test-OneCharacterStringIndex { param([string]$value, [int]$start) return $value.IndexOf(''é'', $start) }',
+    'function Test-MultiCharacterStringIndex { param([string]$value, [int]$start) return $value.IndexOf(''éé'', $start) }'
+)) {
+    $findings = @(Get-LayerProbeFindings -Source $stringLiteralIndexCase)
+    Assert-Layer (@($findings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
+        'An IndexOf string literal, including a one-character literal, must remain a finding.'
+}
 foreach ($invalidIndexCase in @(
     'function Test-StringNeedleIndex { param([int]$start) return $value.IndexOf('';;'', $start) }',
     'function Test-UnknownReceiverIndex { param([int]$start) return $value.IndexOf('';'', $start) }',
