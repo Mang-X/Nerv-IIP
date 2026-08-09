@@ -124,12 +124,12 @@
 **C4-1 MRP 例外消息面板（#716）** `/planning`
 
 - 工作台顶部新增「例外消息」面板：reschedule-in（红/需提前）/ reschedule-out（黄/可延后）/ cancel（灰/建议取消）三类计数 + 列表
-- 每条关联源供给单据（PO/工单）可跳转；展示建议日期 vs 当前日期差
+- 每条关联源供给单据（PO/工单）可跳转；展示建议日期与当前日期之差
 - 预测输入 tab：Forecast 维护（SKU/期间/数量）+ 消耗情况展示（被订单吃掉多少）
 
 **C4-2 ECO 延迟生效（#720/721）** `engineering/eco.vue`
 
-- 表单生效日期语义明确：future 日期 → 提交后进入 **Scheduled** 状态（新状态列 + "计划生效于 X"）
+- 表单生效日期语义明确：日期为未来日期时 → 提交后进入 **Scheduled** 状态（新状态列 + "计划生效于 X"）
 - Scheduled 状态支持改期/取消调度操作
 - 新增「在制影响」视图：ECO 生效后受影响的未完工工单清单（状态分级：待确认/已重绑/继续旧版），与 MES 工单详情"工程变更影响"标记互链
 
@@ -282,7 +282,7 @@
 
 ## 8. 专项 B：组件库品牌化 + 四场景文档重构
 
-**核实后的体系事实**：base（shadcn 原版，零改动）+ 四场景层——PC `pc/`（35 目录 95+ 件，Pro 后缀）、mobile（独立 `ui-mobile` 包 43 件，Mobile 前缀+裸名混杂）、screen（28+ 件，Screen 前缀）、touch（5 件，平板工位）。命名三种风格并存；console/screen app 无合约测试守护；docs 站 desktop 45 页 vs mobile/screen 明显偏科；token 文档不分场景（`--sb-*` 等场景差异只在组件层体现）。
+**核实后的体系事实**：base（shadcn 原版，零改动）+ 四场景层——PC `pc/`（35 目录 95+ 件，Pro 后缀）、mobile（独立 `ui-mobile` 包 43 件，Mobile 前缀+裸名混杂）、screen（28+ 件，Screen 前缀）、touch（5 件，平板工位）。命名三种风格并存；console/screen app 无合约测试守护；docs 站 desktop 有 45 页，而 mobile/screen 明显偏科；token 文档不分场景（`--sb-*` 等场景差异只在组件层体现）。
 
 > **已决策（2026-07-07）**：品牌前缀 `Nv`，组件库品牌名 **NvUI**（包名方案在 ADR 定：`@nerv-iip/nvui` / 保持 `@nerv-iip/ui` 仅改组件名，倾向前者）；**迁移在业务批（C/P）之前完成**；token 允许跨场景取值相同（设计理念一致，如动效统一 motion-v 封装），但**名称必须按场景命名空间隔离**（primitive 层共享，semantic 层按场景前缀：PC `--nv-*`、screen `--nv-scr-*`（现 `--sb-*` 迁移）、mobile `--nv-m-*`、touch `--nv-t-*`，具体在 ADR 冻结）；**样式隔离制度化**：全部组件样式进 CSS cascade layer，解决 VitePress 文档站 `--vp-*` 覆盖/revert-layer 嵌入坑，文档站嵌入规范写入 governance。
 
