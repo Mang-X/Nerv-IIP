@@ -1,5 +1,5 @@
-# Claude Instructions
+# Claude 指令
 
 @AGENTS.md
 
-The imported AGENTS.md above is the canonical instruction file for this subtree (root AGENTS.md still applies).
+上面导入的 `AGENTS.md` 是本子树的规范指令文件（根 `AGENTS.md` 仍然适用）。

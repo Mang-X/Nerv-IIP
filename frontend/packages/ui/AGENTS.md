@@ -21,7 +21,7 @@
   附录 A，不要即兴起名。
 - 包名永不改（ADR 0020 Decision 2）：品牌由 `Nv*` 前缀承载，不是包重命名。
 
-## Token / CSS Layer（ADR 0020 §4）
+## 令牌 / CSS 层（ADR 0020 §4）
 
 - 共享令牌 `--nv-*` 在 `styles/theme.css`（`@layer nv-tokens`）；大屏独立
   `--nv-scr-*` 在 `components/screen/tokens.css`。场景令牌只允许 **var 链**
@@ -35,12 +35,12 @@
 
 ## 门禁与同步
 
-- 包内 contract tests：`nvui-naming` / `ui-primitives` / `blocks` /
+- 包内契约测试：`nvui-naming` / `ui-primitives` / `blocks` /
   `design-system`（各 app 另有 `nvui-imports` 守边界）。新增导出/改名先看
   会不会打破它们。
 - 新增/改动组件同步 design-system 文档站对应页
   （`frontend/apps/design-system/docs/`），组件文档站是 props 的
-  source of truth。
+  单一事实源。
 - **欢迎 app 侧反哺**：业务页面里长出的数据展示/业务组件成熟后上提进
   对应层。入层三件事：过该层设计哲学（screen 层 = `product.md`）、按
-  R1–R5 定名、补 barrel 导出 + contract test + 文档站页。
+  R1–R5 定名、补稳定导出入口 + 契约测试 + 文档站页。

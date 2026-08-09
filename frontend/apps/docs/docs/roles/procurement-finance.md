@@ -14,7 +14,7 @@
 | 5   | 处理采购退货与销售退货（RMA）                                                                                                                                         | 退货与贷项/借项凭证闭环  | ⛔ 缺口：退货体系未交付（[#713](https://github.com/Mang-X/Nerv-IIP/issues/713)）                      |
 | 6   | 在 `/erp/sales/quotations` 报价，在 `/erp/sales/orders` 成单（含信用检查），再到 `/erp/sales/deliveries` 发货；已转出的报价再次转订单不会新建，系统幂等返回既有订单号 | 销售报价到发货成链       | ✅ 可用                                                                                               |
 | 7   | 在 `/erp/finance/ar-ap` 核对应收应付，在 `/erp/finance/vouchers` 查凭证                                                                                               | 业务单据可下钻到财务事实 | ✅ 可用                                                                                               |
-| 8   | 在 `/erp/finance/cost-candidates` 归集成本候选                                                                                                                        | 生产消耗进入成本核算视野 | 🟡 部分可用：科目表与 WIP 成本核算框架未交付（[#714](https://github.com/Mang-X/Nerv-IIP/issues/714)） |
+| 8   | 在 `/erp/finance/cost-candidates` 归集成本候选                                                                                                                        | 生产消耗进入成本核算视野 | 🟡 部分可用：科目表与在制品（WIP）成本核算框架未交付（[#714](https://github.com/Mang-X/Nerv-IIP/issues/714)） |
 
 ## 发货完成与应收口径
 

@@ -1,6 +1,6 @@
 # 核心业务流程图
 
-本页用六张 Mermaid 图概览当前产品主线。每个节点都把角色、前置资料、业务对象或状态、系统入口和当前缺口放在同一张图里；节点下方的映射表再列出对应 BusinessGateway facade。页面入口只表示当前有可访问或窄化工作台的业务表面，不代表每个高级子能力都已完整交付。
+本页用六张 Mermaid 图概览当前产品主线。每个节点都把角色、前置资料、业务对象或状态、系统入口和当前缺口放在同一张图里；节点下方的映射表再列出对应 BusinessGateway 门面。页面入口只表示当前有可访问或窄化工作台的业务表面，不代表每个高级子能力都已完整交付。
 
 ## 现场动作的一致性
 
@@ -24,7 +24,7 @@ flowchart LR
     E4["角色: 工艺工程师<br/>入口: /engineering/standard-operations<br/>对象/状态: StandardOperation Enabled<br/>缺口: 无"]
     E5["角色: 工艺工程师<br/>入口: /engineering/routings<br/>对象/状态: Routing Draft -> Published<br/>缺口: 无"]
     E6["角色: 生产准备员<br/>入口: /engineering/production-versions<br/>对象/状态: ProductionVersion Draft -> Published<br/>缺口: 无"]
-    E7["角色: 工程变更员<br/>入口: /engineering/eco<br/>对象/状态: ECO/ECN release -> affected versions Archived<br/>缺口: future effectiveDate 延迟切换后续深化"]
+    E7["角色: 工程变更员<br/>入口: /engineering/eco<br/>对象/状态: ECO/ECN release -> affected versions Archived<br/>缺口: effectiveDate 未来生效延迟切换后续深化"]
   end
   subgraph Downstream["下游引用"]
     D1["角色: 计划员 / MES 主管<br/>入口: /planning, /mes/plans<br/>对象/状态: Published ProductionVersion 可被计划和 MES 引用<br/>缺口: 高级版本矩阵后续深化"]
@@ -38,15 +38,15 @@ flowchart LR
   E7 -.变更归档.-> E6
 ```
 
-| 节点                 | Business Console 页面                                                                        | BusinessGateway facade                                                                                                       | 当前事实或缺口                                                           |
+| 节点                 | Business Console 页面                                                                        | BusinessGateway 门面                                                                                                         | 当前事实或缺口                                                           |
 | -------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | SKU / UOM / 工厂资源 | `/master-data/skus`, `/master-data/units`, `/master-data/facilities`, `/master-data/devices` | `/api/business-console/v1/master-data/**`                                                                                    | 作为 EBOM、MBOM、Routing 和 ProductionVersion 的前置资料。               |
-| EngineeringItem      | `/engineering/items`                                                                         | `/api/business-console/v1/engineering/items`                                                                                 | 当前 ItemCode 语义冻结为 MasterData SKU code。                           |
-| EBOM                 | `/engineering/ebom`                                                                          | `/api/business-console/v1/engineering/engineering-boms`, `/api/business-console/v1/engineering/engineering-boms/release`     | 已有 list、explosion、where-used 和 release facade。                     |
-| MBOM                 | `/engineering/mbom`                                                                          | `/api/business-console/v1/engineering/manufacturing-boms`, `/api/business-console/v1/engineering/manufacturing-boms/release` | 发布时校验 EBOM parent SKU 与 MBOM 产出 SKU 连续性。                     |
+| EngineeringItem      | `/engineering/items`                                                                         | `/api/business-console/v1/engineering/items`                                                                                 | 当前 ItemCode 语义冻结为 MasterData SKU 编码。                           |
+| EBOM                 | `/engineering/ebom`                                                                          | `/api/business-console/v1/engineering/engineering-boms`, `/api/business-console/v1/engineering/engineering-boms/release`     | 已有列表、展开、反查和发布门面。                                         |
+| MBOM                 | `/engineering/mbom`                                                                          | `/api/business-console/v1/engineering/manufacturing-boms`, `/api/business-console/v1/engineering/manufacturing-boms/release` | 发布时校验 EBOM 父项 SKU 与 MBOM 产出 SKU 连续性。                       |
 | 标准工序 / 工艺路线  | `/engineering/standard-operations`, `/engineering/routings`                                  | `/api/business-console/v1/engineering/standard-operations`, `/api/business-console/v1/engineering/routings/release`          | Routing 发布保存标准工序快照。                                           |
-| 生产版本             | `/engineering/production-versions`                                                           | `/api/business-console/v1/engineering/production-versions`                                                                   | 绑定 SKU、MBOM、Routing 和有效期；同一 SKU active 有效窗不能重叠。       |
-| ECO/ECN              | `/engineering/eco`                                                                           | `/api/business-console/v1/engineering/engineering-changes/**`                                                                | 当前 release 即时归档受影响版本；future effectiveDate 延迟切换仍是缺口。 |
+| 生产版本             | `/engineering/production-versions`                                                           | `/api/business-console/v1/engineering/production-versions`                                                                   | 绑定 SKU、MBOM、Routing 和有效期；同一 SKU 的 `active` 有效窗不能重叠。  |
+| ECO/ECN              | `/engineering/eco`                                                                           | `/api/business-console/v1/engineering/engineering-changes/**`                                                                | 当前发布即归档受影响版本；`effectiveDate` 的未来生效延迟切换仍是缺口。   |
 
 ## 计划生产
 
@@ -74,10 +74,10 @@ flowchart LR
   P0 --> P1 --> P2 --> M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> I1
 ```
 
-| 节点              | Business Console 页面                               | BusinessGateway facade                                                                                                                     | 当前事实或缺口                                                                     |
+| 节点              | Business Console 页面                               | BusinessGateway 门面                                                                                                                       | 当前事实或缺口                                                                     |
 | ----------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | 需求 / MRP / 建议 | `/planning`                                         | `/api/business-console/v1/planning/demands`, `/api/business-console/v1/planning/mrp-runs`, `/api/business-console/v1/planning/suggestions` | 支持需求、MRP、pegging 和计划建议处理。                                            |
-| APS lite / 排程   | `/scheduling`                                       | `/api/business-console/v1/scheduling/**`                                                                                                   | 当前是 deterministic finite-capacity heuristic；不包含全局优化器、仿真或自动重排。 |
+| APS 轻量版 / 排程 | `/scheduling`                                       | `/api/business-console/v1/scheduling/**`                                                                                                   | 当前采用确定性有限产能启发式算法；不包含全局优化器、仿真或自动重排。     |
 | 生产计划          | `/mes/plans`                                        | `/api/business-console/v1/mes/production-plans`                                                                                            | MES 可回显来源计划和转工单状态。                                                   |
 | 工单 / 工单详情   | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**`                                                                                              | 工单详情页存在，但不是常驻菜单入口。                                               |
 | 派工 / 工序执行   | `/mes/dispatch`, `/mes/operation-tasks`             | `/api/business-console/v1/mes/dispatch/**`, `/api/business-console/v1/mes/operation-tasks/**`                                              | 支撑派工、开工、暂停、恢复和完工的执行视图。                                       |
@@ -92,7 +92,7 @@ flowchart LR
 flowchart LR
   subgraph Inbound["入库作业"]
     W1["角色: 仓库收货员<br/>前置: SKU, UOM, 供应商, 仓库库位<br/>入口: /wms/inbound<br/>对象/状态: InboundOrder Open -> Received<br/>缺口: ASN 差异后续深化"]
-    W2["角色: 仓库上架员<br/>入口: /wms/putaway<br/>对象/状态: PutawayTask Open -> Completed<br/>缺口: directed putaway 后续深化"]
+    W2["角色: 仓库上架员<br/>入口: /wms/putaway<br/>对象/状态: PutawayTask Open -> Completed<br/>缺口: 定向上架后续深化"]
   end
   subgraph Stock["库存事实"]
     I1["角色: 库存管理员<br/>入口: /inventory/availability<br/>对象/状态: StockBalance OnHand/Reserved/Available<br/>缺口: 无"]
@@ -108,14 +108,14 @@ flowchart LR
   W4 -.自动化任务.-> W5
 ```
 
-| 节点       | Business Console 页面     | BusinessGateway facade                            | 当前事实或缺口                                                     |
+| 节点       | Business Console 页面     | BusinessGateway 门面                              | 当前事实或缺口                                                     |
 | ---------- | ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------ |
-| 收货       | `/wms/inbound`            | `/api/business-console/v1/wms/inbound-orders`     | 收货列表可融合 Inventory availability context/sourceStatus。       |
-| 上架       | `/wms/putaway`            | `/api/business-console/v1/wms/putaway-tasks`      | 已有分页、状态和库位过滤；directed putaway 仍未完整交付。          |
+| 收货       | `/wms/inbound`            | `/api/business-console/v1/wms/inbound-orders`     | 收货列表可融合 Inventory 可用量上下文与 `sourceStatus`。           |
+| 上架       | `/wms/putaway`            | `/api/business-console/v1/wms/putaway-tasks`      | 已有分页、状态和库位过滤；定向上架仍未完整交付。                   |
 | 库存可用量 | `/inventory/availability` | `/api/business-console/v1/inventory/availability` | 可解释现有量、预留量和可用量。                                     |
 | 拣货       | `/wms/picking`            | `/api/business-console/v1/wms/picking-tasks`      | 出库拣货通过 Inventory 预留库存；FEFO/FIFO 高级拣货仍是缺口。      |
-| 出库       | `/wms/outbound`           | `/api/business-console/v1/wms/outbound-orders`    | 出库完成后 Inventory 按 reservation id 分配预留并过账。            |
-| WCS 任务   | `/wms/wcs`                | `/api/business-console/v1/wms/wcs-tasks`          | 当前是任务状态和 dispatch/fail/complete 事实，不表示真实设备在线。 |
+| 出库       | `/wms/outbound`           | `/api/business-console/v1/wms/outbound-orders`    | 出库完成后 Inventory 按预留 ID（reservation id）分配预留并过账。  |
+| WCS 任务   | `/wms/wcs`                | `/api/business-console/v1/wms/wcs-tasks`          | 当前是任务状态和派发/失败/完成事实，不表示真实设备在线。           |
 
 ## 质量审批
 
@@ -138,12 +138,12 @@ flowchart LR
   Q0 -->|failed| Q1 --> A1 --> Q2 --> O1
 ```
 
-| 节点               | Business Console 页面   | BusinessGateway facade                                                                                             | 当前事实或缺口                                            |
+| 节点               | Business Console 页面   | BusinessGateway 门面                                                                                               | 当前事实或缺口                                            |
 | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | 检验记录           | `/quality/inspections`  | `/api/business-console/v1/quality/inspection-records`                                                              | 检验失败可打开 NCR。                                      |
-| NCR                | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs`                                                                            | 支持 NCR 列表、处置提交和关闭 facade。                    |
-| 原因码             | `/quality/reason-codes` | `/api/business-console/v1/quality/reason-codes`                                                                    | 已有独立原因码目录页面和 facade。                         |
-| 审批               | `/approval`             | `/api/business-console/v1/approval/**`                                                                             | 审批中心已有模板、流程实例、待办、决策记录和委托 facade。 |
+| NCR                | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs`                                                                            | 支持 NCR 列表、处置提交和关闭门面。                       |
+| 原因码             | `/quality/reason-codes` | `/api/business-console/v1/quality/reason-codes`                                                                    | 已有独立原因码目录页面和门面。                            |
+| 审批               | `/approval`             | `/api/business-console/v1/approval/**`                                                                             | 审批中心已有模板、流程实例、待办、决策记录和委托门面。    |
 | 放行 / 返工 / 报废 | `/quality/ncrs`         | `/api/business-console/v1/quality/ncrs/{ncrId}/disposition`, `/api/business-console/v1/quality/ncrs/{ncrId}/close` | 处置结果可提交并关闭；完整质量处置工作台仍需后续产品化。  |
 
 ## 设备维护
@@ -167,11 +167,11 @@ flowchart LR
   T1 -.clear 回写.-> M2
 ```
 
-| 节点                       | Business Console 页面                                                                   | BusinessGateway facade                                                                                                                                                                                                                                      | 当前事实或缺口                                                                                                 |
+| 节点                       | Business Console 页面                                                                   | BusinessGateway 门面                                                                                                                                                                                                                                        | 当前事实或缺口                                                                                                 |
 | -------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | 设备台账 / 标签 / 报警规则 | `/master-data/devices`, `/equipment/telemetry/tags`, `/equipment/telemetry/alarm-rules` | `/api/business-console/v1/master-data/device-assets`, `/api/business-console/v1/telemetry/tags`, `/api/business-console/v1/telemetry/alarm-rules`                                                                                                           | 已有设备资产、采集标签和报警规则入口。                                                                         |
-| 设备报警                   | `/equipment/alarms`                                                                     | `/api/business-console/v1/equipment/alarms`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve` | IndustrialTelemetry 暴露 raise/ack/shelve/escalation/clear 生命周期；Notification 只负责 escalation 通知投递。 |
-| 维修工单                   | `/maintenance/work-orders`                                                              | `/api/business-console/v1/maintenance/work-orders`                                                                                                                                                                                                          | Maintenance 可消费报警 raised/cleared 并形成工单上下文。                                                       |
+| 设备报警                   | `/equipment/alarms`                                                                     | `/api/business-console/v1/equipment/alarms`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve` | IndustrialTelemetry 暴露触发/确认/搁置/升级/清除生命周期；Notification 只负责升级通知投递。                    |
+| 维修工单                   | `/maintenance/work-orders`                                                              | `/api/business-console/v1/maintenance/work-orders`                                                                                                                                                                                                          | Maintenance 可消费报警触发/清除事实并形成工单上下文。                                                         |
 | 备件需求                   | `/maintenance/spare-parts`                                                              | `/api/business-console/v1/maintenance/spare-parts`                                                                                                                                                                                                          | 完工备件出库请求事件已存在；备件库存策略体验仍需深化。                                                         |
 | 恢复与可靠性               | `/maintenance/reliability`, `/maintenance/availability`                                 | `/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability`, `/api/business-console/v1/maintenance/availability-windows`, `/api/business-console/v1/equipment/availability`, `/api/business-console/v1/telemetry/runtime-availability`        | MTBF/MTTR 无样本返回空值，不伪造指标。                                                                         |
 
@@ -196,17 +196,17 @@ flowchart LR
   B0 --> B1 --> B2 --> B3 --> B4
 ```
 
-| 节点             | Business Console 页面                 | BusinessGateway facade                                                                                                                                                                                                | 当前事实或缺口                                                            |
+| 节点             | Business Console 页面                 | BusinessGateway 门面                                                                                                                                                                                                  | 当前事实或缺口                                                            |
 | ---------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| SKU 默认条码规则 | `/master-data/skus`, `/barcode/rules` | `/api/business-console/v1/master-data/skus`, `/api/business-console/v1/barcode/rules`                                                                                                                                 | SKU 页面可维护 defaultBarcodeRuleCode；BarcodeLabel 提供规则分页 facade。 |
-| 标签模板         | `/barcode/templates`                  | `/api/business-console/v1/barcode/templates`                                                                                                                                                                          | 已有标签模板页面和 facade。                                               |
-| 打印批次         | `/barcode/print-batches`              | `/api/business-console/v1/barcode/print-batches`                                                                                                                                                                      | 已有打印批次分页和详情 facade；完整打印管理体验仍需产品化。               |
-| 扫码记录         | `/barcode/scans`                      | `/api/business-console/v1/barcode/scans`                                                                                                                                                                              | 已有扫码记录分页和 record facade。                                        |
+| SKU 默认条码规则 | `/master-data/skus`, `/barcode/rules` | `/api/business-console/v1/master-data/skus`, `/api/business-console/v1/barcode/rules`                                                                                                                                 | SKU 页面可维护 `defaultBarcodeRuleCode`；BarcodeLabel 提供规则分页门面。  |
+| 标签模板         | `/barcode/templates`                  | `/api/business-console/v1/barcode/templates`                                                                                                                                                                          | 已有标签模板页面和门面。                                                  |
+| 打印批次         | `/barcode/print-batches`              | `/api/business-console/v1/barcode/print-batches`                                                                                                                                                                      | 已有打印批次分页和详情门面；完整打印管理体验仍需产品化。                  |
+| 扫码记录         | `/barcode/scans`                      | `/api/business-console/v1/barcode/scans`                                                                                                                                                                              | 已有扫码记录分页和记录门面。                                              |
 | 追溯             | `/mes/traceability`                   | `/api/business-console/v1/mes/traceability/work-orders/{workOrderId}`, `/api/business-console/v1/mes/traceability/batches/{batchOrSerial}`, `/api/business-console/v1/mes/traceability/material-lots/{materialLotId}` | BarcodeLabel 已记录 GS1/EPCIS 追溯事实；跨域可视化追溯图谱仍是缺口。      |
 
 ## 当前限制
 
-- APS lite 与 MES 规则排程已经可解释计划到执行的基础链路；`/scheduling` 已提供只读资源甘特,高级优化器、仿真、自动重排和交互式甘特仍后置。
+- APS 轻量版与 MES 规则排程已经可解释计划到执行的基础链路；`/scheduling` 已提供只读资源甘特，高级优化器、仿真、自动重排和交互式甘特仍后置。
 - 质量审批图表达当前 Quality NCR 与 BusinessApproval 的已暴露业务链路；完整质量处置工作台和跨域工作流体验仍需继续产品化。
 - 设备维护图覆盖报警、维修工单、备件请求和可靠性指标；报警处置闭环、独立大屏和完整 CMMS 工作台仍需深化。
 - 条码追溯图覆盖规则、模板、打印批次、扫码记录和 MES 追溯入口；独立移动扫码解释、离线同步和跨域追溯图谱仍后置。

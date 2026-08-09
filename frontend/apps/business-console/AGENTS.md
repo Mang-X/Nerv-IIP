@@ -12,7 +12,7 @@
 
 1. 读根 `docs/architecture/implementation-readiness.md`。
 2. 读所改业务域的**产品业务文档**（§2 清单），以它为业务/IA/UX 事实依据。
-3. 后端能力以 **facade 代码事实**为准，不臆测——**必要时登录后探针真实接口看真返回**（曾踩坑：以为 MES facade 回 GUID、实为人读编码 `WO-…/WC-…/SKU-…`，导致把现成可读单号藏成"待接入"占位；探一下就避免了）；缺什么就发 issue（§2）。
+3. 后端能力以 **facade（门面）代码事实**为准，不臆测——**必要时登录后探针真实接口看真返回**（曾踩坑：以为 MES facade 回 GUID、实为人读编码 `WO-…/WC-…/SKU-…`，导致把现成可读单号藏成"待接入"占位；探一下就避免了）；缺什么就发 Issue（§2）。
 
 ## 1. 三大支柱：产品 · 业务 · UX（最高准则）
 
@@ -59,34 +59,34 @@
 
 - **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/architecture/master-data-module-product-design.md`（基础数据）。新域开工先立此文档。
 - **导航总图**：`docs/architecture/frontend-navigation-map.md`——IA/导航变更必须同步。
-- **后端缺口**：发现 facade 缺端点，**整批审计后发 consolidated issue** 给 codex（不要遇到一个发一个），并在模块文档「后端缺口」回填 issue 号。
+- **后端缺口**：发现 facade 缺端点，**整批审计后向 Codex 提交汇总 Issue**（不要遇到一个发一个），并在模块文档「后端缺口」回填 Issue 号。
 - 顺序铁律：**先有/先更文档方案 → 再重构**。
 
-## 3. 东西在哪里（让 agent 快速定位修改点）
+## 3. 东西在哪里（让代理快速定位修改点）
 
 ```
 src/pages/<域>/                 业务页面；路由即文件，definePage 配 title/权限
-src/composables/useBusiness*.ts 每域一个数据 composable（封装 useQuery/useMutation）
+src/composables/useBusiness*.ts 每域一个数据组合式函数（封装 useQuery/useMutation）
 src/data/*.ts                   前端受控值/字典常量（Phase 1 字典源，如 masterDataReference.ts）
 src/navigation.ts               导航树 + 域解析 + 权限钩子（单一事实源）
 src/components/                  应用级组件（非 @nerv-iip/ui 原版）
-@nerv-iip/api-client            generated/（codegen，勿手改） + business-console.ts（curated barrel，手工接出）
+@nerv-iip/api-client            generated/（代码生成，勿手改）+ business-console.ts（精选稳定导出入口，手工接出）
 @nerv-iip/ui                    区块组件库（见下）+ shadcn 原版基础件（Button/Input/Select/Dialog/Tabs…，禁改）
 ```
 
 > **区块组件（项目内习称「FE-2 区块」，FE-2 = 前端重建第 2 阶段编号）**：在 shadcn 原版基础件之上**复制重建**的、可复用的**页面级组件**——`PageHeader` / `SectionCards` / `Toolbar` / `DataTable` / `DataTablePagination` / `StatusBadge` / `RowActions`（源码 `frontend/packages/ui/src/components/blocks/`，从 `@nerv-iip/ui` 导出）。`@nerv-iip/ui` 分两层：**原版基础件**（shadcn 拷入，**零改动**）+ **区块组件**（在其上重建）。做业务页一律用区块拼，不手搓裸 `<table>`/裸页头，也不改原版（要定制就复制重建）。
 
-**新业务能力标准落点链**：facade → generated（`pnpm -C frontend generate:api`）→ barrel 手工 re-export → composable hook → page。任一环漏接都会导致"后端有、前端用不上"。
+**新业务能力标准落点链**：facade（门面）→ generated（生成代码，运行 `pnpm -C frontend generate:api`）→ 稳定导出入口手工重新导出 → 组合式函数钩子 → 页面。任一环漏接都会导致"后端有、前端用不上"。
 
 ## 4. 区块与数据约定
 
 - 复用 `@nerv-iip/ui` 区块组件（PageHeader/DataTable/Toolbar… 定义见 §3）；**禁止改 shadcn 原版组件**（要定制就复制重建为应用级组件）。
 - **区块是标准页的基线、不是上限**：常规列表/工作台用区块拼（快、一致）；当产品 / UX 需要区块给不了的呈现或交互时，按 §1 优先级**大胆新建组件 / 交互**（复制重建，绝不改原版），别为迁就现有件牺牲产品感。
 - 列表骨架 `PageHeader + Toolbar + DataTable + DataTablePagination`（**SectionCards 可选、非默认**，见 §1.5-B 第 8 条）；分页用 `usePagedList`。页内 Tabs 属布局、**不进菜单树**。
-- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示 facade 返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 `frontend/DESIGN/patterns/pages/list-workbench.md` 与 `blocks/app-shell.md`（含**每个导航项必须带 icon**）。
-- **不做假分页、不在 UI 伪造能力 / 不假装闭环**：后端无分页/无端点就如实处理（整列表渲染 或 入口禁用+说明）；别编 `WO-PLAN-xxx` 之类冒充下游单据假装跨域闭环（曾踩坑：planning"接受建议"后端并不建 MES 工单）；发 issue，不糊弄。
+- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示 facade 返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 `frontend/DESIGN/patterns/pages/list-workbench.md` 与 `blocks/app-shell.md`（含**每个导航项必须带图标**）。
+- **不做假分页、不在 UI 伪造能力 / 不假装闭环**：后端无分页/无端点就如实处理（整列表渲染 或 入口禁用+说明）；别编 `WO-PLAN-xxx` 之类冒充下游单据假装跨域闭环（曾踩坑：planning"接受建议"后端并不建 MES 工单）；发 Issue，不糊弄。
 - **但要 seed / mock 真实感数据看效果**：页面做完必须拉起来看真实数据——后端有接口就脚本 seed（如 `tmp_seed_*.py`），缺接口就前端 mock（E2E `page.route` / 本地桩）跑通视觉；"看不到实际效果就不算完"。**seed/mock 的数据要像真实业务**（真实物料 / 工序 / 单号口径），**绝不写"测试 / test / 样例 / demo / foo / bar"或一眼假的文字**——"不做假数据"指不在 UI 伪造能力，不是不准为验证而造真实感数据。
-- **UI 不暴露工程语言**：operationId / sourceSystem / code / policy / resourceType / demo / seed / mock / GitHub issue 号 等不进业务界面（`goldStandardPages.contract.test.ts` 会拦 demo/seed/mock/样例 等并校验必备区块）。
+- **UI 不暴露工程语言**：operationId / sourceSystem / code / policy / resourceType / demo / seed / mock / GitHub Issue 号等不进业务界面（`goldStandardPages.contract.test.ts` 会拦 demo/seed/mock/样例等词并校验必备区块）。
 - 业务取值优先**字典/常量驱动**，少硬编码（§6）。
 
 ## 5. 权限：拆分与同步（务必仔细）
@@ -102,7 +102,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 
 - 业务取值走**字典 / CodeSet / 常量模块**（如 `masterDataReference.ts`），**禁止**在页面写死某客户/某产品专名（已踩坑：减振器 demo 文案与硬编码分类）。
 - 流程 / SOP、状态机、字段可见性优先做成**数据驱动或集中配置**；**SOP 须充分设计后再敲定固化**，避免把流程逻辑散落在多处反复改。
-- 即使必须改代码：坚持"一域一 composable、一页一文件、受控值集中、命名贴业务"，让 agent 能**按 域 / 页 / 字典常量 快速定位**改点。
+- 即使必须改代码：坚持"一域一个组合式函数、一页一文件、受控值集中、命名贴业务"，让代理能**按域 / 页 / 字典常量快速定位**改点。
 - 兼容性：新增字段/状态/分类优先扩字典而非改枚举；跨域协作走上下文链接 / Drawer / 工作台，不以服务名作导航断点。
 
 ## 7. 命令与门禁
@@ -114,11 +114,11 @@ pnpm -C frontend/apps/business-console build        # 生产构建
 pnpm -C frontend generate:api                       # 从 Gateway OpenAPI 快照重生成 api-client
 ```
 
-## 8. "Done" 定义（提交前自检）
+## 8. “完成”定义（提交前自检）
 
 - typecheck + test + build 全绿；新增/改动页有契约或单测覆盖（参照 `goldStandardPages.contract.test.ts`）。
 - 三大支柱过关（含 §1 优先级取舍）；UI 无工程语言、无假分页、不假装闭环、无"待接入"空壳。
 - **拉起来看过真实数据**：seed / mock 真实感业务数据后，真机刷新 / 截图确认页面实际效果——不靠想象，不留空壳。
 - 涉及 IA / 业务逻辑 / 权限的改动，**对应文档已同步更新**。
-- 后端缺口已发 consolidated issue 并在模块文档回填。
+- 后端缺口已提交汇总 Issue 并在模块文档回填。
 - 回复用中文（用户偏好）。
