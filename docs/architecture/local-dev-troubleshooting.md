@@ -10,7 +10,7 @@
 1. **绝不得使用 `dotnet run` 启动 AppHost。** 平台 AppHost 必须由 Aspire CLI 管理：
    `.\nerv.ps1 dev` / `aspire start`、`.\nerv.ps1 stop` /
    `aspire stop`、`.\nerv.ps1 wait <resource>`、`.\nerv.ps1 logs <resource>`。
-   linked worktree 中启动必须使用 Aspire isolated mode；由 `scripts/dev.ps1` 处理。
+   链接工作树（linked worktree）中启动必须使用 Aspire 隔离模式（isolated mode）；由 `scripts/dev.ps1` 处理。
    直接使用 `dotnet run` 会遗留过期 DCP/backchannel 状态，使后续 `aspire add`、部署和
    诊断不可靠。
 
@@ -20,7 +20,7 @@
 
 3. **空白机器必须先完成 bootstrap。** 对新接入网络的 Windows 机器，先运行
    `.\nerv.ps1 bootstrap -InstallMissing`，再运行 `.\nerv.ps1 dev`。bootstrap 入口负责前置
-   条件检查、可选工具安装、本地 AppHost user-secrets 初始化、包 restore 和 AppHost build。
+   条件检查、可选工具安装、本地 AppHost 用户机密（user-secrets）初始化、依赖还原和 AppHost 构建。
    在该路径通过且 Docker Desktop 确实运行前，不得排查范围宽泛的请求失败。
 
 4. **本地 HTTPS 证书。** Aspire Dashboard/DCP 和本地 HTTPS endpoint 需要受信任的开发证书。
@@ -29,7 +29,7 @@
    `aspire certs clean`、`aspire certs trust` 和 `dotnet dev-certs https --trust` 重置。
 
 5. **启动/停止脚本必须提供有界反馈。** `.\nerv.ps1 dev` 和 `.\nerv.ps1 stop` 必须显示阶段
-   诊断并调用有界 helper。证书检查失败、容器退出、Aspire/DCP 卡死或启动成功都不得表现为
+   诊断并调用有界辅助函数。证书检查失败、容器退出、Aspire/DCP 卡死或启动成功都不得表现为
    “仍在等待”。Aspire CLI stop 超时时，stop 必须对当前仓库的 AppHost 进程和 Aspire
    usvc-dev 容器执行兜底清理。
 

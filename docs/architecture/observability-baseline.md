@@ -35,12 +35,12 @@ Observability（可观测性）不拥有：
 
 ## 运行时 telemetry（遥测）路由
 
-1. 本地 `.\nerv.ps1 dev` 由 Aspire AppHost 注入 telemetry endpoint。日志默认指向 VictoriaLogs OTLP/HTTP endpoint；traces 和 metrics 继续使用 Aspire Dashboard/OTLP 路径。
-2. AppHost 内的 OpenTelemetry Collector 是显式测试路径，只在 `Observability:UseCollector=true` 时启用。该路径用于验证 Collector/Compose-like 转发，不是普通本地开发默认值。
-3. Compose、PoC 和生产路径以 OpenTelemetry Collector 作为采集入口。Collector 可以将日志转发到 VictoriaLogs，并可通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 将数据转发到 standalone Aspire Dashboard 的 OTLP/HTTP endpoint，用于短期诊断。
-4. standalone Aspire Dashboard 只保存内存态 telemetry，适合开发、联调、PoC 和现场短期排障。生产长期日志检索默认走 VictoriaLogs；trace 检索、审计保留和导出仍需按后续 profile 明确，不由本次仅日志后端承担。
+1. 本地 `.\nerv.ps1 dev` 由 Aspire AppHost 注入遥测端点（telemetry endpoint）。日志默认指向 VictoriaLogs OTLP/HTTP 端点；追踪（traces）和指标（metrics）继续使用 Aspire Dashboard/OTLP 路径。
+2. AppHost 内的 OpenTelemetry Collector 是显式测试路径，只在 `Observability:UseCollector=true` 时启用。该路径用于验证 Collector/类似 Compose 的转发，不是普通本地开发默认值。
+3. Compose、PoC 和生产路径以 OpenTelemetry Collector 作为采集入口。Collector 可以将日志转发到 VictoriaLogs，并可通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 将数据转发到独立运行的 Aspire Dashboard（standalone）的 OTLP/HTTP 端点，用于短期诊断。
+4. 独立运行的 Aspire Dashboard（standalone）只保存内存态遥测（telemetry），适合开发、联调、PoC 和现场短期排障。生产长期日志检索默认走 VictoriaLogs；追踪（trace）检索、审计保留和导出仍需按后续 profile 明确，不由本次仅日志后端承担。
 5. CLI 校验优先使用 `aspire otel logs`、VictoriaLogs LogsQL query 和 `aspire otel traces`，不要只看资源状态判断 telemetry 是否进入后端。
-6. 平台服务、Gateway 和业务服务的 Web host 统一通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` / `UseNervIipCorrelation` 接入日志、trace、metric 和 correlation；服务项目不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`，Serilog provider、ClientInfo enrichment、Console JSON、本地文件和 OTLP logs sink 由共享库集中维护。
+6. 平台服务、Gateway 和业务服务的 Web 宿主（Web host）统一通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` / `UseNervIipCorrelation` 接入日志、追踪（trace）、指标（metric）和 correlation；服务项目不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`，Serilog 提供方（provider）、ClientInfo 增强（enrichment）、Console JSON、本地文件和 OTLP 日志 sink 由共享库集中维护。
 
 ## 指标阈值告警闭环
 

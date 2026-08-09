@@ -14,7 +14,7 @@
 | 部署目标 | 主要场景 | 入口 | 边界要求 |
 | --- | --- | --- | --- |
 | Aspire | 本地开发、联调、Dashboard、服务发现、生成部署产物 | 平台级 AppHost | 只能有一个平台级编排入口，不为每个服务生成局部 AppHost。 |
-| 联网空白机引导（bootstrap） | 新开发机、实施前联网预检、可访问公网的 PoC 机器 | `.\nerv.ps1 bootstrap` / `scripts/bootstrap-online.ps1` | 只负责工具链检查/可选安装、依赖 restore、本地 secrets 初始化和 AppHost build/start，不替代离线安装器。 |
+| 联网空白机引导（bootstrap） | 新开发机、实施前联网预检、可访问公网的 PoC 机器 | `.\nerv.ps1 bootstrap` / `scripts/bootstrap-online.ps1` | 只负责工具链检查/可选安装、依赖还原、本地机密初始化和 AppHost 构建/启动，不替代离线安装器。 |
 | Docker Compose | PoC、小规模私有化、容器化单机部署、演示环境 | Aspire 生成的 Compose；受控 overlay 仅作过渡或依赖兜底 | 不把手写 compose 作为长期拓扑真相源。 |
 | 安装包 | 无容器或传统运维环境 | Windows Service、systemd、zip/tar/deb/rpm 等制品 | 主平台服务与 Connector Host 分开分发。 |
 | 整合安装脚本 | 实施交付、离线或弱联网部署、环境初始化 | PowerShell、Bash | 脚本负责检查、配置、初始化、注册服务、启动和诊断。 |
