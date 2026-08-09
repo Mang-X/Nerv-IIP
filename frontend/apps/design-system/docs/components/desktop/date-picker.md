@@ -41,7 +41,7 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 <NvDatePicker v-model="planDate" disabled />
 ```
 
-## 日期范围 NvDateRangePicker
+## 日期范围 DateRangePicker
 
 `NvDateRangePicker` 选择起止区间：首次点击定起点，再次点击定终点（自动排序），悬停可实时预览跨度。模型是 `{ start, end }` 字符串对象。
 
