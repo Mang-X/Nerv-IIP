@@ -11,7 +11,7 @@
 5. 主平台对外提供的 SDK、OpenAPI、事件和协议遵循主版本对齐、小版本兼容策略。
 6. 任何 JSON/text 序列化字段进入 API、SDK、IntegrationEvent 或外部协议前，必须定义 schema/version/compat 说明；不能只把数据库中的 JSON blob 原样提升为公开契约。
 
-## Platform SDK 与版本策略
+## Platform SDK（平台软件开发工具包）与版本策略
 
 1. Platform SDK 是主平台提供给应用、Connector Host、行业扩展和前端包的稳定能力集合，详细模块边界见 docs/architecture/platform-sdk-baseline.md。
 2. Platform SDK 可包含 OpenAPI 生成客户端、公开 DTO、Connector Protocol、认证与授权上下文、文件存储客户端、上传指令 DTO、运维客户端、通知客户端、观测上下文辅助、错误模型、事件契约和缓存键辅助约定。
@@ -41,56 +41,56 @@
 2. Gateway 暴露给前端的页面级接口也必须纳入 OpenAPI。
 3. 契约变更需要遵循同主版本向后兼容或显式主版本升级原则。
 
-### Gateway Console OpenAPI
+### Gateway 控制台 OpenAPI
 
 1. 控制台前端只直接消费 PlatformGateway 暴露的 `/api/console/**` 接口，不直接调用 AppHub、Ops、Iam、FileStorage 等领域服务接口。
 2. PlatformGateway 的 OpenAPI 文档通过 FastEndpoints.Swagger 输出，第三迭代起固定本地文档入口为 `/swagger/v1/swagger.json`。
-3. 控制台接口必须提供稳定 `operationId`，供 Hey API 生成可读、可追踪的 query 与 mutation helper。
+3. 控制台接口必须提供稳定 `operationId`，供 Hey API 生成可读、可追踪的查询与变更辅助函数。
 4. Gateway Endpoint 仍优先保持属性路由风格；控制台 `operationId` 由 `UseFastEndpoints` 的 Endpoint name generator 集中映射到稳定名称。只有单个 Endpoint 需要复杂 metadata 时，才完整切换为 `Configure()` 并使用 `Description(x => x.WithName(...))`。
 5. `operationId` 使用 lower camelCase，并以业务动作表达意图，例如 `listConsoleInstances`、`getConsoleInstanceDetail`、`restartConsoleInstance`、`getConsoleOperationTask`。
-6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
+6. 新增或修改 Gateway 控制台接口时，必须先更新后端端点与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 API 客户端。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
 8. Notification DLQ 管理接口由 PlatformGateway 暴露为 `/api/console/v1/notifications/dlq/**`，稳定 operationId 为 `listConsoleNotificationDeadLetters`、`getConsoleNotificationDeadLetterMetrics`、`getConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetters` 和 `ignoreConsoleNotificationDeadLetter`；Console 前端只消费生成的 `@nerv-iip/api-client` 稳定导出。
 
-### BusinessGateway Console OpenAPI
+### BusinessGateway 控制台 OpenAPI
 
-业务控制台前端只直接消费 BusinessGateway 暴露的 `/api/business-console/v1/**` 接口，不直接调用 BusinessMasterData、Inventory、Quality、MES、IAM 或 FileStorage 的服务 URL。BusinessGateway 属于业务平台聚合入口，不属于 PlatformGateway；它可以执行用户鉴权、IAM 权限检查、上下文透传、internal token 下游调用和页面级响应整理，但不承载业务规则或持久事实。
+业务控制台前端只直接消费 BusinessGateway 暴露的 `/api/business-console/v1/**` 接口，不直接调用 BusinessMasterData、Inventory、Quality、MES、IAM 或 FileStorage 的服务 URL。BusinessGateway 属于业务平台聚合入口，不属于 PlatformGateway；它可以执行用户鉴权、IAM 权限检查、上下文透传、使用内部令牌调用下游和页面级响应整理，但不承载业务规则或持久事实。
 
-当 BusinessGateway 需要向下游业务服务转发“当前用户已经通过额外权限校验”的事实时，不得使用裸 permission header。下游服务只能信任由 BusinessGateway 注入并通过共享配置密钥签名的最小 forwarded permission header；服务到服务 internal token 只证明调用方身份，不能单独代表终端用户具备高风险放行权限。入口服务必须先执行 IAM permission check，再注入签名 header；下游服务必须校验可信 issuer、签名、明确 permission code、组织/环境、请求键和短时效签发时间，未配置签名密钥、签名无效、上下文不匹配或签发时间过期时按未授权处理。
+当 BusinessGateway 需要向下游业务服务转发“当前用户已经通过额外权限校验”的事实时，不得使用裸权限标头。下游服务只能信任由 BusinessGateway 注入、并通过共享配置密钥签名的最小转发权限标头；服务到服务的内部令牌只证明调用方身份，不能单独代表终端用户具备高风险放行权限。入口服务必须先执行 IAM 权限检查，再注入签名标头；下游服务必须校验可信签发方、签名、明确权限码、组织/环境、请求键和短时效签发时间，未配置签名密钥、签名无效、上下文不匹配或签发时间过期时按未授权处理。
 
 BusinessGateway Console OpenAPI 的生成链路固定为：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
 2. 导出脚本将 BusinessGateway Console OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-console.v1.json`。
-3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 business-console input，生成到 `frontend/packages/api-client/src/generated/business-console/`，与现有 PlatformGateway generated 文件和移动端 generated 文件隔离；多 input 生成任务必须避免互相清理输出目录，当前 Hey API 配置使用独立 output path，并在 `generate` script 中先清理已知 generated 文件，再关闭 per-job clean，避免并行 job 互删子目录。
+3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 business-console 输入，生成到 `frontend/packages/api-client/src/generated/business-console/`，与现有 PlatformGateway 生成文件和移动端生成文件隔离；多输入生成任务必须避免互相清理输出目录，当前 Hey API 配置使用独立输出路径，并在 `generate` 脚本中先清理已知生成文件，再关闭逐任务清理，避免并行任务互删子目录。
 4. `frontend/packages/api-client/src/business-console.ts` 提供业务控制台稳定导出；`src/index.ts` 可以重新导出业务控制台需要的类型、SDK 和 Pinia Colada query/mutation options。
-5. `frontend/apps/business-console` 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/business-console/*`。
-6. OpenAPI 快照是生成输入，不允许手改；新增或修改 business-console endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization/proxy tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+5. `frontend/apps/business-console` 只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated/business-console/*` 深层导入。
+6. OpenAPI 快照是生成输入，不允许手改；新增或修改 business-console 端点时必须先更新 BusinessGateway 端点、OpenAPI/授权/代理测试，再导出快照并运行 `pnpm -C frontend generate:api`。
 
 MAN-627 / #1164 的 `GET /api/business-console/v1/me/work-context`
-（`getBusinessConsolePrincipalWorkContext`）是当前主体作业上下文的两跳 facade：Gateway 使用
-realtime IAM check 从服务端取得 principal、角色和 permission-aware grants，再调用
-MasterData principal work-context 并只返回候选与授权范围的交集。请求不接受 `userId`；
-`organizationId`、`environmentId`、`permissionCode` 必填，scope kind/id 只能成对作为待验证
+（`getBusinessConsolePrincipalWorkContext`）是当前主体作业上下文的两跳门面：Gateway 使用
+realtime IAM check（实时 IAM 检查）从服务端取得 principal（主体）、角色和 permission-aware grants（权限感知授权范围），再调用
+MasterData principal work-context（主体作业上下文），并只返回候选与授权范围的交集。请求不接受 `userId`；
+`organizationId`、`environmentId`、`permissionCode` 必填，scope kind/id（范围种类/标识）只能成对作为待验证
 选择。MasterData 协议/坏响应稳定映射 502，连接或超时映射 503，OpenAPI 必须声明两类错误。
-该响应不替代各业务动作自己的 permission/scope 检查。
+该响应不替代各业务动作自己的权限/范围检查。
 
-7. `@hey-api/openapi-ts` 当前生成的 fetch client 内含上游 TODO 注释；该注释属于 generated artifact，不在项目内手改，升级生成器前通过 `frontend/packages/api-client/scripts/clean-generated.mjs` 保持生成目录无陈旧文件。
-8. BusinessGateway facade 转发下游查询时，布尔开关参数采用“默认 false 省略、true 显式发送”的约定；例如 MasterData `includeDisabled=false` 不进入下游 query string，`includeDisabled=true` 才会发送，避免 Gateway 把下游默认值重复编码进 facade。
+7. `@hey-api/openapi-ts` 当前生成的 fetch 客户端内含上游 TODO 注释；该注释属于生成产物，不在项目内手改，升级生成器前通过 `frontend/packages/api-client/scripts/clean-generated.mjs` 保持生成目录无陈旧文件。
+8. BusinessGateway 门面转发下游查询时，布尔开关参数采用“默认 false 省略、true 显式发送”的约定；例如 MasterData `includeDisabled=false` 不进入下游查询字符串，`includeDisabled=true` 才会发送，避免 Gateway 把下游默认值重复编码进门面。
 9. `runBusinessConsoleMesSchedule` 是 MES 规则排程的过渡入口，用于 #206 前的确定性规则排程触发和结果状态查看；它不是长期 APS 权威接口。#206 落地 BusinessScheduling/APS lite 后，Business Console 的正式排程视图和甘特/RFC 应消费 BusinessScheduling 输出 DTO，MES 只按已发布方案落地执行域变化。
 10. BusinessScheduling `SchedulePlanMetricsContract.AssignedMinutes` 与 `ScheduleResourceLoadContract.AssignedMinutes` 使用资源占用口径：工序加工时间加同一资源前序分配之后产生的 setup/changeover 时间。`ScheduleAssignmentContract.StartUtc/EndUtc` 仍表示工序加工窗口；setup 不新增对外字段，也不要求 OpenAPI/api-client 生成。
 11. `/api/business-console/v1/mes/foundation-readiness/**` 是系统管理和数据就绪诊断入口，用于检查主数据、工程资料、供应齐套、质量、设备和条码编码准备状态；它不应作为一线 MES 日常执行菜单的优先入口。日常执行仍从驾驶舱、生产计划、工单、派工、工序执行、报工、质量、入库和追溯等业务任务进入。
-12. `/api/business-console/v1/workbench/summary` 是 Business Console 数字化工作台聚合入口，聚合 KPI、BusinessApproval 待办、Notification 消息/任务、IndustrialTelemetry 预警以及 MES/Quality 摘要。该 facade 必须按当前 principal 对每个来源分别执行 permission check；无权限来源只返回 source status，不返回对象名称、金额、消息标题或其它敏感字段。
+12. `/api/business-console/v1/workbench/summary` 是 Business Console 数字化工作台聚合入口，聚合 KPI、BusinessApproval 待办、Notification 消息/任务、IndustrialTelemetry 预警以及 MES/Quality 摘要。该门面必须按当前主体对每个来源分别执行权限检查；无权限来源只返回来源状态，不返回对象名称、金额、消息标题或其他敏感字段。
 13. `/api/business-console/v1/mes/production-plans` 的目标来源是 DemandPlanning 的 demand source/source plan 或等价来源计划；MES 计划转工单命令已持久化 source system、source document type/id、source demand reference 和 UOM 快照到 `work_orders`，并通过 production plans、work order detail 和 traceability surface 回显。DemandPlanning 计划建议 accept 对计划工单建议不再要求 Business Console 提供编造的 `downstreamDocumentId`：后端通过 MES 内部边界创建真实工单后回写 accepted downstream reference，并保留 `PlanningSuggestionAccepted` 公共事件作为异步补偿/消费边界。采购建议 accept 目标为 `BusinessErp/PurchaseRequisition` 时同样不要求前端提供 ERP 采购申请号；后端通过 ERP 内部边界创建真实 `PurchaseRequisition` 并回写 ERP 采购申请号，`PlanningSuggestionAccepted` 事件继续作为幂等补偿/消费边界。MES/ERP 均不读取 DemandPlanning schema，不建立跨 schema FK；既有 MES 工单、工序任务、报工、停机、完工入库和追溯接口不因此失效。
-14. BusinessERP 后端已实现 Sales Opportunity，但后端契约存在不等于 BusinessGateway/Business Console 可以提前开放商机页面。ERP 商机 facade、OpenAPI 快照、api-client 生成和前端页面仍必须跟随 Business Console 菜单分期和对应 issue，不因服务端已有聚合根而扩大当前菜单范围。
-15. #207 BusinessGateway 设备运行事实 facade 已进入 BusinessGateway Console OpenAPI 快照，`frontend/packages/api-client/openapi/business-gateway-console.v1.json` 与 `frontend/packages/api-client/src/generated/business-console/` 已通过 `pnpm -C frontend generate:api` 刷新，Business Console 只从 `@nerv-iip/api-client` 稳定入口消费。
+14. BusinessERP 后端已实现 Sales Opportunity，但后端契约存在不等于 BusinessGateway/Business Console 可以提前开放商机页面。ERP 商机门面、OpenAPI 快照、API 客户端生成和前端页面仍必须跟随 Business Console 菜单分期和对应 Issue，不因服务端已有聚合根而扩大当前菜单范围。
+15. #207 BusinessGateway 设备运行事实门面已进入 BusinessGateway Console OpenAPI 快照，`frontend/packages/api-client/openapi/business-gateway-console.v1.json` 与 `frontend/packages/api-client/src/generated/business-console/` 已通过 `pnpm -C frontend generate:api` 刷新，Business Console 只从 `@nerv-iip/api-client` 稳定入口消费。
 16. `/api/business-console/v1/search` 是 #271 全局对象搜索后端 facade，供后续 Cmd/Ctrl+K 面板消费。该 facade 从当前 bearer token 的组织/环境上下文读取 scope，并对每个对象来源分别执行 IAM permission check；无权限来源不得查询下游，也不得返回对象标题、状态或摘要。首批支持 MES 工单、MasterData SKU 和 IndustrialTelemetry 当前报警；Inventory batch/lot 与 equipment device 因当前缺少可增量搜索下游查询，必须返回 `unsupported` source/type status，不能静默截断。当前已连接来源的搜索词匹配语义是 `source-window`：Gateway 先读取每个来源的首个请求窗口，再在窗口内匹配 `q`，响应中的 `matchScope` 和 `matchScopeDescription` 必须显式暴露该限制；后续若下游接口支持 `q`/keyword 下推，再调整该语义和契约说明。
-17. MES list facade endpoints（工单、生产计划、工序任务、派工、WIP、报工、领料、完工入库、停机、交接、产能影响和相关质量项）支持服务端 `keyword` 以及适用的 `workCenterId`、`shiftId`、`deviceAssetId` 过滤；生产计划额外支持 `source` 和 `readinessStatus`。这些过滤必须在后端 `total` 计算前应用，Business Console 不得在服务端分页结果上叠加误导性的当前页关键字搜索。MES 列表 facade 不得只暴露裸内部 id 或自由文本状态：列表行必须随业务 id 返回可显示的 `*No`/`*Code`/`*Name` 字段（如 `workOrderNo`、`operationTaskNo`、`workCenterCode`/`workCenterName`、`deviceAssetCode`/`deviceAssetName`），`status`/`receiptStatus` 查询参数和响应字段必须在 OpenAPI 中收窄为受控枚举，前端据此做 Select 与中文标签映射，不在页面硬编码开发语言。
-18. BusinessGateway Quality list facade endpoints（`/quality/ncrs` 与 `/quality/inspection-plans`）支持服务端 `keyword` 定位；NCR 仅按 `NcrId`、`NcrCode`、`SourceDocumentId` 匹配，检验方案仅按 `InspectionPlanId`、`PlanCode` 匹配。该过滤必须在下游 Quality 服务的 `total` 计算前应用，用于 MES/Quality 跨页跳转定位和检验方案上下文穿透；不得把 SKU、缺陷原因、批次、工位、设备或文档类型等高基数字段混入定位语义。
-19. BusinessGateway ERP list facade endpoints 必须对所有已开放创建入口提供对应列表查询。RFQ、商机、报价、发货单和会计凭证列表支持服务端 `status`、`keyword`、`skip`、`take`，且过滤必须在下游 BusinessERP 的 `total` 计算前应用；BusinessGateway 仅透传当前用户组织/环境上下文、internal token 和读取/写入权限，不在 facade 层补业务规则。RFQ 和报价按对应聚合状态枚举过滤；商机当前仅接受 `open`；发货单和会计凭证当前没有持久化多状态，`status` 仅接受固定单值 `released` / `posted`，其它值返回空集。会计期间开关、AP 付款执行、AR 收款匹配、试算平衡和月结检查清单均由 BusinessERP 拥有事实和期间守卫，BusinessGateway facade 只转发 period scope 与命令 DTO。
-20. BusinessGateway Approval facade endpoints 支撑 Business Console 审批中心的模板、流程实例、审批记录和委托设置。`/approval/templates` 与 `/approval/tasks` 返回 `{ items,total }` 并支持 `skip/take`；`/approval/chains` 支持 `status`、`startedBy`、`sourceService`、`documentType`、`documentId`、`skip`、`take`；`/approval/decisions` 支持 `chainId`、`actorType`、`actorRef`、`decision`、`documentType`、`documentId`、`skip`、`take`；`/approval/delegations` 支持委托查询、创建和撤销。BusinessGateway 只做 IAM permission check、上下文透传和 internal token 下游调用，不在 facade 层解释审批规则；BusinessApproval 仍不接管 Ops 运维审批。
-21. BusinessGateway BarcodeLabel facade 已补齐条码规则、标签模板、打印批次和扫码记录的服务端分页读面。`/barcode/rules`、`/barcode/print-batches`、`/barcode/templates`、`/barcode/scans` 均返回 `{ items,total }` 或等价分页响应，并在下游 BarcodeLabel 服务的 `total` 计算前应用 `skip/take` 与支持的过滤条件。BarcodeLabel 后端规则写入口支持 GS1 规则的可选 `gs1CompanyPrefixLength` 字段，GS1 规则下必须提供 6-12 位 company prefix length 才能正确生成 SGTIN EPC URI；扫码写入口已支持 GS1 `(01)/(10)/(21)/(30)` 和 FNC1 原始串解析、序列化 EPCIS 追溯事实和受支持 inventory workflow 的 Inventory movement-requested 事件路由；BusinessGateway 当前仍只暴露读面，不得用 UI 假流程替代该后端契约。
-22. BusinessGateway WMS facade 已补齐 PDA 一线作业读写面：收货、上架、拣货、复核发货、盘点五类列表只接受 WMS 目录返回的 `self/work-pool/site` 工作范围。收货、上架、拣货和复核发货列表支持服务端状态、关键字、库位和批次过滤；盘点列表支持状态、关键字和库位过滤，当前聚合没有 lot 语义，因此不得向 OpenAPI 或前端伪造盘点批次参数。前端只发送 `scopeKind/scopeId`；Gateway 从当前 bearer token 取得 principal，读取 MasterData 当前组织/环境的启用 site 目录并与 IAM 对当前端点权限返回的 grants 求交，再按端点注入固定 WMS permission。Organization grant 只展开为该目录内的启用 site，Site grant 只命中同编码 site；客户端不能注入 actor、授权站点或内部派工过滤。
+17. MES 列表门面端点（工单、生产计划、工序任务、派工、WIP、报工、领料、完工入库、停机、交接、产能影响和相关质量项）支持服务端 `keyword` 以及适用的 `workCenterId`、`shiftId`、`deviceAssetId` 过滤；生产计划额外支持 `source` 和 `readinessStatus`。这些过滤必须在后端 `total` 计算前应用，Business Console 不得在服务端分页结果上叠加误导性的当前页关键字搜索。MES 列表门面不得只暴露裸内部标识或自由文本状态：列表行必须随业务标识返回可显示的 `*No`/`*Code`/`*Name` 字段（如 `workOrderNo`、`operationTaskNo`、`workCenterCode`/`workCenterName`、`deviceAssetCode`/`deviceAssetName`），`status`/`receiptStatus` 查询参数和响应字段必须在 OpenAPI 中收窄为受控枚举，前端据此使用选择器与中文标签映射，不在页面硬编码开发语言。
+18. BusinessGateway Quality 列表门面端点（`/quality/ncrs` 与 `/quality/inspection-plans`）支持服务端 `keyword` 定位；NCR 仅按 `NcrId`、`NcrCode`、`SourceDocumentId` 匹配，检验方案仅按 `InspectionPlanId`、`PlanCode` 匹配。该过滤必须在下游 Quality 服务的 `total` 计算前应用，用于 MES/Quality 跨页跳转定位和检验方案上下文穿透；不得把 SKU、缺陷原因、批次、工位、设备或文档类型等高基数字段混入定位语义。
+19. BusinessGateway ERP 列表门面端点必须对所有已开放创建入口提供对应列表查询。RFQ、商机、报价、发货单和会计凭证列表支持服务端 `status`、`keyword`、`skip`、`take`，且过滤必须在下游 BusinessERP 的 `total` 计算前应用；BusinessGateway 仅透传当前用户组织/环境上下文、内部令牌和读取/写入权限，不在门面层补业务规则。RFQ 和报价按对应聚合状态枚举过滤；商机当前仅接受 `open`；发货单和会计凭证当前没有持久化多状态，`status` 仅接受固定单值 `released` / `posted`，其他值返回空集。会计期间开关、AP 付款执行、AR 收款匹配、试算平衡和月结检查清单均由 BusinessERP 拥有事实和期间守卫，BusinessGateway 门面只转发期间范围与命令 DTO。
+20. BusinessGateway Approval 门面端点支撑 Business Console 审批中心的模板、流程实例、审批记录和委托设置。`/approval/templates` 与 `/approval/tasks` 返回 `{ items,total }` 并支持 `skip/take`；`/approval/chains` 支持 `status`、`startedBy`、`sourceService`、`documentType`、`documentId`、`skip`、`take`；`/approval/decisions` 支持 `chainId`、`actorType`、`actorRef`、`decision`、`documentType`、`documentId`、`skip`、`take`；`/approval/delegations` 支持委托查询、创建和撤销。BusinessGateway 只做 IAM 权限检查、上下文透传和使用内部令牌调用下游，不在门面层解释审批规则；BusinessApproval 仍不接管 Ops 运维审批。
+21. BusinessGateway BarcodeLabel 门面已补齐条码规则、标签模板、打印批次和扫码记录的服务端分页读面。`/barcode/rules`、`/barcode/print-batches`、`/barcode/templates`、`/barcode/scans` 均返回 `{ items,total }` 或等价分页响应，并在下游 BarcodeLabel 服务的 `total` 计算前应用 `skip/take` 与支持的过滤条件。BarcodeLabel 后端规则写入口支持 GS1 规则的可选 `gs1CompanyPrefixLength` 字段，GS1 规则下必须提供 6-12 位企业前缀长度才能正确生成 SGTIN EPC URI；扫码写入口已支持 GS1 `(01)/(10)/(21)/(30)` 和 FNC1 原始串解析、序列化 EPCIS 追溯事实和受支持库存工作流的 Inventory movement-requested 事件路由；BusinessGateway 当前仍只暴露读面，不得用 UI 假流程替代该后端契约。
+22. BusinessGateway WMS 门面已补齐 PDA 一线作业读写面：收货、上架、拣货、复核发货、盘点五类列表只接受 WMS 目录返回的 `self/work-pool/site` 工作范围。收货、上架、拣货和复核发货列表支持服务端状态、关键字、库位和批次过滤；盘点列表支持状态、关键字和库位过滤，当前聚合没有 lot（批次）语义，因此不得向 OpenAPI 或前端伪造盘点批次参数。前端只发送 `scopeKind/scopeId`；Gateway 从当前 bearer token（Bearer 令牌）取得 principal（主体），读取 MasterData 当前组织/环境的启用 site（站点）目录并与 IAM 对当前端点权限返回的 grants（授权范围）求交，再按端点注入固定 WMS permission（权限）。Organization grant（组织级授权）只展开为该目录内的启用 site，Site grant（站点级授权）只命中同编码 site；客户端不能注入 actor（操作人）、授权站点或内部派工过滤。
 
     WMS 服务端 `listWmsOperationalCandidates` 通过一个受 internal service authorization 保护的服务路由读取近期持久作业事实；BusinessGateway 将它拆成 `listBusinessConsoleWmsReceiptOperationalCandidates`、`listBusinessConsoleWmsShipmentOperationalCandidates`、`listBusinessConsoleWmsCountOperationalCandidates` 三个公开 operation，并分别固定 `receipts/shipments/counts` 候选域及 `business.wms.receipts.read`、`business.wms.shipments.read`、`business.wms.counts.read`。收货候选只来自入库单/上架任务，发货候选只来自出库单/拣货任务，盘点候选只来自盘点执行。响应必须保留 `sourceKind=wms-operational-facts`、`scopeKind/scopeId`、`asOfUtc`、可空 `freshnessUtc` 和 `truncated`，不得把该有界作业事实窗口解释为 MasterData 库位目录、Inventory `StockLocation` 权威目录或全量批次。该服务 operation 到三个 Gateway operation 的一对三 `exposed` 声明已登记在 `facade-coverage-matrix.json`，BusinessGateway OpenAPI 快照和 generated api-client 均包含三个公开 operation；公开盘点范围目录、候选和列表统一使用 `business.wms.counts.read`，创建、派工和完成盘点独立要求 `business.inventory.counts.manage`，`business.wms.receipts.manage` 不授予盘点写能力。
 
@@ -265,24 +265,24 @@ Business Console operationId 使用 lower camelCase，并带 `BusinessConsole` �
 | `createBusinessConsoleSchedulingWorkbenchPlan`                                                                                                                                  | `POST /api/business-console/v1/scheduling/workbench/plans`                                    | 从最多 500 个 MES 权威工单与 ProductEngineering 生产版本路线生成并持久化首版排程方案。                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `createBusinessConsoleSchedulingPlanRevision`                                                                                                                                   | `POST /api/business-console/v1/scheduling/plans/{planId}/revisions`                           | 以持久化 base problem、included orders 和显式锁定 assignment 生成修订版，并返回最新失效影响与权威方案对比。                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-Connector configured-tag coverage 的两跳契约固定如下：IndustrialTelemetry `POST /api/business/v1/iiot/connector-tag-manifests` / `reportBusinessIiotConnectorTagManifest` 是 Connector Host callback，facade classification 为 `internal`；IndustrialTelemetry `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage` / `getBusinessIiotConnectorTagCoverage` 由 BusinessGateway `GET /api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage` / `getBusinessConsoleTelemetryConnectorTagCoverage` 暴露，classification 为 `exposed`，权限为 `business.iiot.telemetry.read`。Business Console 只消费 generated query options 和 `business-console.ts` 稳定导出；coverage 的 `manifestStatus=current|unavailable`、activation status 与 nullable sample timestamps 保持原义，Gateway 不推断 quality/freshness，也不以旧 sample 反造 manifest。
+Connector 已配置标签覆盖率的两跳契约固定如下：IndustrialTelemetry `POST /api/business/v1/iiot/connector-tag-manifests` / `reportBusinessIiotConnectorTagManifest` 是 Connector Host 回调，facade classification（门面分类）为 `internal`；IndustrialTelemetry `GET /api/business/v1/iiot/connectors/{collectionConnectorId}/tag-coverage` / `getBusinessIiotConnectorTagCoverage` 由 BusinessGateway `GET /api/business-console/v1/telemetry/connectors/{connectorId}/tag-coverage` / `getBusinessConsoleTelemetryConnectorTagCoverage` 暴露，classification（分类）为 `exposed`，权限为 `business.iiot.telemetry.read`。Business Console 只消费生成的查询选项和 `business-console.ts` 稳定导出；覆盖率的 `manifestStatus=current|unavailable`、激活状态与可空样本时间戳保持原义，Gateway 不推断质量/新鲜度，也不以旧样本反造清单。
 
-### BusinessGateway Mobile API Track
+### BusinessGateway 移动 API 轨道
 
-当前 `frontend/apps/business-pda` 已落地，但还没有独立 `/api/mobile/v1/**` 契约、`business-gateway-mobile.v1.json` 快照、`frontend/packages/api-client/src/generated/mobile/` 或 `frontend/packages/api-client/src/mobile.ts`。PDA v1 复用现有 BusinessGateway `/api/business-console/v1/**` facade，并通过 `@nerv-iip/api-client` 的 `business-console.ts` 稳定导出消费 WMS、MES、Maintenance 和 Equipment/IndustrialTelemetry 相关 query/mutation options。`business-pda` 的 Vite dev proxy 分别把 `/api/business-console` 转发到 BusinessGateway、`/api/console` 转发到 PlatformGateway；Capacitor/APK 构建通过 `VITE_NERV_IIP_API_BASE_URL` 或等价配置传入绝对网关地址。
+当前 `frontend/apps/business-pda` 已落地，但还没有独立 `/api/mobile/v1/**` 契约、`business-gateway-mobile.v1.json` 快照、`frontend/packages/api-client/src/generated/mobile/` 或 `frontend/packages/api-client/src/mobile.ts`。PDA v1 复用现有 BusinessGateway `/api/business-console/v1/**` 门面，并通过 `@nerv-iip/api-client` 的 `business-console.ts` 稳定导出消费 WMS、MES、Maintenance 和 Equipment/IndustrialTelemetry 相关查询/变更选项。`business-pda` 的 Vite 开发代理分别把 `/api/business-console` 转发到 BusinessGateway、`/api/console` 转发到 PlatformGateway；Capacitor/APK 构建通过 `VITE_NERV_IIP_API_BASE_URL` 或等价配置传入绝对网关地址。
 
-移动专用 API 仍是后续轨道。新增 `/api/mobile/v1/**` 前必须先确认它不会复制 business-console facade 的既有能力，只承载 PDA 专属的 bootstrap、个人任务、扫码解释、设备注册、离线 outbox/sync、诊断上传和弱网冲突处理。落地时的生成链路应为：
+移动专用 API 仍是后续轨道。新增 `/api/mobile/v1/**` 前必须先确认它不会复制 business-console 门面的既有能力，只承载 PDA 专属的引导初始化、个人任务、扫码解释、设备注册、离线发件箱/同步、诊断上传和弱网冲突处理。落地时的生成链路应为：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
-2. 导出脚本将 BusinessGateway mobile OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-mobile.v1.json`。
-3. `frontend/packages/api-client/openapi-ts.config.ts` 增加 mobile input，生成到 `frontend/packages/api-client/src/generated/mobile/`，与 PlatformGateway 和 business-console generated 文件隔离。
-4. `frontend/packages/api-client/src/mobile.ts` 提供 PDA 专用稳定导出；`src/index.ts` 可以重新导出移动端需要的类型、SDK 和 Pinia Colada online query options。
-5. PDA app 只从 `@nerv-iip/api-client` 稳定入口消费，不深 import `src/generated/mobile/*`。
-6. OpenAPI 快照是生成输入，不允许手改；新增或修改 mobile endpoint 时必须先更新 BusinessGateway endpoint、OpenAPI/authorization tests，再导出快照并运行 `pnpm -C frontend generate:api`。
+2. 导出脚本将 BusinessGateway 移动 OpenAPI 快照写入 `frontend/packages/api-client/openapi/business-gateway-mobile.v1.json`。
+3. `frontend/packages/api-client/openapi-ts.config.ts` 增加移动输入，生成到 `frontend/packages/api-client/src/generated/mobile/`，与 PlatformGateway 和 business-console 生成文件隔离。
+4. `frontend/packages/api-client/src/mobile.ts` 提供 PDA 专用稳定导出；`src/index.ts` 可以重新导出移动端需要的类型、SDK 和 Pinia Colada 在线查询选项。
+5. PDA 应用只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated/mobile/*` 深层导入。
+6. OpenAPI 快照是生成输入，不允许手改；新增或修改移动端点时必须先更新 BusinessGateway 端点、OpenAPI/授权测试，再导出快照并运行 `pnpm -C frontend generate:api`。
 
-计划中的 mobile operationId 使用 lower camelCase，并带 `Mobile` 语义前缀；以下只是 future contract 草案，不代表当前代码已存在：
+计划中的 mobile operationId 使用 lower camelCase（小驼峰）命名，并带 `Mobile` 语义前缀；以下只是未来契约草案，不代表当前代码已存在：
 
-| operationId               | Route                                  | 用途                                     |
+| operationId               | 路由                                   | 用途                                     |
 | ------------------------- | -------------------------------------- | ---------------------------------------- |
 | `getMobileBootstrap`      | `GET /api/mobile/v1/bootstrap`         | 登录后拉取用户、上下文、权限、设备策略。 |
 | `listMobileTasks`         | `GET /api/mobile/v1/tasks`             | 拉取本人任务、最近任务、异常任务。       |
@@ -292,19 +292,19 @@ Connector configured-tag coverage 的两跳契约固定如下：IndustrialTeleme
 | `registerMobileDevice`    | `POST /api/mobile/v1/devices/register` | 登记设备或安装实例。                     |
 | `uploadMobileDiagnostics` | `POST /api/mobile/v1/diagnostics`      | 上传诊断摘要。                           |
 
-### Console IAM Admin API
+### 控制台 IAM 管理 API
 
-Phase 8 已在 PlatformGateway 暴露 Console IAM Admin facade。控制台仍只消费 `/api/console/v1/**`，Gateway 负责 IAM-backed permission enforcement、bearer token 转发和下游错误映射；前端通过 `@nerv-iip/api-client` 的稳定导出消费 generated SDK、Pinia Colada query/mutation options 与类型别名。
+Phase 8（第八阶段）已在 PlatformGateway 暴露控制台 IAM 管理门面。控制台仍只消费 `/api/console/v1/**`，Gateway 负责由 IAM 支撑的权限强制校验、bearer 令牌转发和下游错误映射；前端通过 `@nerv-iip/api-client` 的稳定导出消费生成的 SDK、Pinia Colada 查询/变更选项与类型别名。
 
-Console auth `/api/console/v1/auth/me` 返回的 principal 包含当前 organization/environment membership 的 `roleIds` 和有效 `permissionCodes`。前者可与公开 IAM role catalog 对照显示实际账号角色，后者用于前端提前禁用无权限的 IAM admin 写操作按钮；后端 Gateway/IAM permission enforcement 仍是最终授权边界。
+控制台认证接口 `/api/console/v1/auth/me` 返回的主体包含当前组织/环境成员关系的 `roleIds` 和有效 `permissionCodes`。前者可与公开 IAM 角色目录对照显示实际账号角色，后者用于前端提前禁用无权限的 IAM 管理写操作按钮；后端 Gateway/IAM 权限强制校验仍是最终授权边界。
 
 MAN-519 领导演示证据复用既有 Maintenance work-order 两跳读面：服务端 `GET /api/business/v1/maintenance/work-orders` 与 BusinessGateway `GET /api/business-console/v1/maintenance/work-orders` 的 classification 继续为 `exposed`，响应兼容增加 `sourceReferenceId`。`sourceAlarmId` 保留真实报警 raise/clear 生命周期关联，`sourceReferenceId` 承载稳定案例引用；Gateway 只透传两者，不互相复制或推断。
 
 Console login/refresh 响应透传 IAM 的 `passwordChangeRequired` 标记；Console IAM 用户 DTO 暴露 `accountExpiresAtUtc`、`passwordChangeRequired`、`passwordExpiresAtUtc` 和 `lockoutUntilUtc`，用于 `/iam/users` 页面展示账号生命周期和密码策略状态。
 
-当前 Console IAM operation IDs 固定为：
+当前控制台 IAM 操作标识固定为：
 
-| operationId                       | Route                                                    | 用途           |
+| operationId                       | 路由                                                     | 用途           |
 | --------------------------------- | -------------------------------------------------------- | -------------- |
 | `listConsoleIamUsers`             | `GET /api/console/v1/iam/users`                          | 用户分页列表。 |
 | `createConsoleIamUser`            | `POST /api/console/v1/iam/users`                         | 创建用户。     |
@@ -319,50 +319,50 @@ Console login/refresh 响应透传 IAM 的 `passwordChangeRequired` 标记；Con
 | `listConsoleIamSessions`          | `GET /api/console/v1/iam/sessions`                       | 会话分页列表。 |
 | `revokeConsoleIamSession`         | `POST /api/console/v1/iam/sessions/{sessionId}/revoke`   | 撤销会话。     |
 
-新增、删除或修改任一 Gateway Console IAM facade endpoint 时，必须同步更新 Gateway OpenAPI operationId 测试、导出 `frontend/packages/api-client/openapi/platform-gateway.v1.json`，再运行 `pnpm -C frontend generate:api` 刷新 generated SDK、types 和 Pinia Colada options。生成 diff 只应保留真实 Gateway 契约变化；不得手改 OpenAPI 快照或 generated 文件来掩盖后端契约缺口。
+新增、删除或修改任一 Gateway 控制台 IAM 门面端点时，必须同步更新 Gateway OpenAPI operationId 测试、导出 `frontend/packages/api-client/openapi/platform-gateway.v1.json`，再运行 `pnpm -C frontend generate:api` 刷新生成的 SDK、类型和 Pinia Colada 选项。生成差异只应保留真实 Gateway 契约变化；不得手改 OpenAPI 快照或生成文件来掩盖后端契约缺口。
 
-### Console FileStorage API
+### 控制台 FileStorage API
 
-PlatformGateway 已暴露 FileStorage 管理 facade，用于主平台 Console 和通用 `FileUpload` 接线。控制台仍只消费 `/api/console/v1/files/**`；Gateway 负责 IAM-backed permission enforcement、internal service token 下游调用、`ResponseData<T>` 包装和传输 URL 代理路径重写。公开响应不得包含 FileStorage 内部 `objectKey`/`object_key`，也不得把 MinIO/S3 或其它对象存储直连 URL 透给前端。
+PlatformGateway 已暴露 FileStorage 管理门面，用于主平台控制台和通用 `FileUpload` 接线。控制台仍只消费 `/api/console/v1/files/**`；Gateway 负责由 IAM 支撑的权限强制校验、使用内部服务令牌调用下游、`ResponseData<T>` 包装和传输 URL 代理路径重写。公开响应不得包含 FileStorage 内部 `objectKey`/`object_key`，也不得把 MinIO/S3 或其他对象存储直连 URL 透给前端。
 
-当前 Console FileStorage operation IDs 固定为：
+当前控制台 FileStorage 操作标识固定为：
 
-| operationId                        | Route                                                                   | Permission                     | 用途                                                                           |
+| operationId                        | 路由                                                                    | 权限                           | 用途                                                                           |
 | ---------------------------------- | ----------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ |
 | `createConsoleFileUploadSession`   | `POST /api/console/v1/files/upload-sessions`                            | `files.upload`                 | 创建上传会话并返回受控上传指令。                                               |
 | `completeConsoleFileUploadSession` | `POST /api/console/v1/files/upload-sessions/{uploadSessionId}/complete` | `files.upload`                 | 完成上传会话并返回文件元数据。                                                 |
-| `listConsoleFiles`                 | `GET /api/console/v1/files`                                             | `files.read`                   | 查询文件元数据列表，支持 purpose、uploader、created range、status、skip/take。 |
+| `listConsoleFiles`                 | `GET /api/console/v1/files`                                             | `files.read`                   | 查询文件元数据列表，支持 purpose（用途）、uploader（上传者）、created range（创建时间范围）、status（状态）和 skip/take（分页参数）。 |
 | `getConsoleFileStorageUsage`       | `GET /api/console/v1/files/usage`                                       | `files.read`                   | 查询组织/环境/用途级当前 FileStorage 用量和匹配配额。                          |
 | `getConsoleFileMetadata`           | `GET /api/console/v1/files/{fileId}`                                    | `files.read`                   | 读取文件元数据。                                                               |
 | `createConsoleFileDownloadGrant`   | `POST /api/console/v1/files/{fileId}/download-grants`                   | `files.download-grants.create` | 创建短期下载授权并返回受控下载指令。                                           |
-| `getConsoleTusUploadOffset`        | `HEAD /api/console/v1/files/tus/{uploadSessionId}`                      | `files.upload`                 | 代理 tus offset 查询。                                                         |
+| `getConsoleTusUploadOffset`        | `HEAD /api/console/v1/files/tus/{uploadSessionId}`                      | `files.upload`                 | 代理 tus 偏移量查询。                                                          |
 | `patchConsoleTusUpload`            | `PATCH /api/console/v1/files/tus/{uploadSessionId}`                     | `files.upload`                 | 代理 tus 字节追加，不暴露 FileStorage 服务 URL。                               |
-| `downloadConsoleFileGrantContent`  | `GET /api/console/v1/files/download-grants/{downloadGrantId}/content`   | `files.read`                   | 代理 download grant content，不暴露对象存储直连 URL。                          |
+| `downloadConsoleFileGrantContent`  | `GET /api/console/v1/files/download-grants/{downloadGrantId}/content`   | `files.read`                   | 代理下载授权内容，不暴露对象存储直连 URL。                                     |
 
-新增、删除或修改任一 Gateway Console FileStorage facade endpoint 时，必须同步更新 Gateway OpenAPI operationId 测试、导出 `frontend/packages/api-client/openapi/platform-gateway.v1.json`，再运行 `pnpm -C frontend generate:api` 刷新 generated SDK、types 和 Pinia Colada options。OpenAPI 快照和 generated api-client 不允许手改。
+新增、删除或修改任一 Gateway 控制台 FileStorage 门面端点时，必须同步更新 Gateway OpenAPI operationId 测试、导出 `frontend/packages/api-client/openapi/platform-gateway.v1.json`，再运行 `pnpm -C frontend generate:api` 刷新生成的 SDK、类型和 Pinia Colada 选项。OpenAPI 快照和生成的 API 客户端不允许手改。
 
-### Console Log Query API
+### 控制台日志查询 API
 
 1. 控制台日志查看属于 PlatformGateway 页面级 API，不属于前端直连观测后端能力。
 2. 前端通过生成客户端调用 `POST /api/console/v1/logs/query`；该接口的 `operationId` 固定为 `queryConsoleLogs`。后续可以新增 `/api/console/v1/instances/{instanceKey}/logs` 或 `/api/console/v1/operation-tasks/{operationTaskId}/logs`，operationId 分别使用 `getConsoleInstanceLogs`、`getConsoleOperationLogs`。
-3. Gateway 内部当前接入 VictoriaLogs：通过 `Nerv.IIP.Observability` client 把平台过滤条件映射为 LogsQL，并调用 `/select/logsql/query`。后续也可以接入内置日志归档 profile、Aspire Dashboard 短期 telemetry API、滚动 JSONL 热文件或客户侧托管平台。OpenAPI DTO 必须保持平台中立，不暴露后端查询语言、内部 API、tenant header、数据源 URL 或凭据。
+3. Gateway 内部当前接入 VictoriaLogs：通过 `Nerv.IIP.Observability` 客户端把平台过滤条件映射为 LogsQL，并调用 `/select/logsql/query`。后续也可以接入内置日志归档配置、Aspire Dashboard 短期遥测 API、滚动 JSONL 热文件或客户侧托管平台。OpenAPI DTO 必须保持平台中立，不暴露后端查询语言、内部 API、租户标头、数据源 URL 或凭据。
 4. 查询请求必须包含受控过滤条件：`from`、`to`、`limit`、`cursor`、`level`、`service`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId` 和 `text`。Gateway 负责把这些条件映射为后端查询。
-5. 查询响应建议包含 `items`、`nextCursor`、`partial` 和 `backendStatus`。单条日志建议包含 `timestamp`、`level`、`service`、`message`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`labels`、`fields`、`source`。`source` 只表达 `hotFile`、`archiveChunk`、`dashboard`、`externalBackend` 等平台中立来源，不暴露实际存储路径或对象 key。
+5. 查询响应建议包含 `items`、`nextCursor`、`partial` 和 `backendStatus`。单条日志建议包含 `timestamp`、`level`、`service`、`message`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`labels`、`fields`、`source`。`source` 只表达 `hotFile`、`archiveChunk`、`dashboard`、`externalBackend` 等平台中立来源，不暴露实际存储路径或对象键。
 6. 日志接口必须执行 IAM 鉴权、组织与环境隔离、最大时间窗口、最大返回条数、速率限制和敏感字段脱敏。当前 `queryConsoleLogs` 需要 `observability.logs.read`，最大窗口为 24 小时，最大 `limit` 为 200；当 VictoriaLogs 被部署配置关闭时，Gateway 返回明确的 501 功能未启用响应，不尝试连接默认后端地址。
-7. 实时日志 tail 如果落地，应新增 SSE 或 WebSocket 契约，并继续由 Gateway 代理后端查询；普通页面不得直接打开观测后端连接。
-8. OpenAPI 不暴露内部 `LogChunk`、`LogEntryIndex` 或 File Storage object key；前端只能看到可展示日志条目和分页游标。
-9. `LogChunk` 与 `LogEntryIndex` 只是 Gateway 内部定位数据的索引模型，不属于前端契约；索引字段变化不应造成 Console API breaking change。
+7. 实时日志持续跟踪如果落地，应新增 SSE 或 WebSocket 契约，并继续由 Gateway 代理后端查询；普通页面不得直接打开观测后端连接。
+8. OpenAPI 不暴露内部 `LogChunk`、`LogEntryIndex` 或 File Storage 对象键；前端只能看到可展示日志条目和分页游标。
+9. `LogChunk` 与 `LogEntryIndex` 只是 Gateway 内部定位数据的索引模型，不属于前端契约；索引字段变化不应造成控制台 API 破坏性变更。
 
-当前 Console Log Query operation IDs 固定为：
+当前控制台日志查询操作标识固定为：
 
-| operationId        | Route                             | Permission                | 用途                                                                                              |
+| operationId        | 路由                              | 权限                      | 用途                                                                                              |
 | ------------------ | --------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `queryConsoleLogs` | `POST /api/console/v1/logs/query` | `observability.logs.read` | 查询 VictoriaLogs-backed 集中日志，按 service、correlationId、traceId、time range 和 level 过滤。 |
+| `queryConsoleLogs` | `POST /api/console/v1/logs/query` | `observability.logs.read` | 查询由 VictoriaLogs 支撑的集中日志，按 service（服务）、correlationId（关联标识）、traceId（跟踪标识）、time range（时间范围）和 level（级别）过滤。 |
 
 ### 前端责任
 
-1. 前端通过 Hey API 从 OpenAPI 生成 types、sdk、client 与 Pinia Colada 查询、变更函数。
-2. 页面和 composables 不直接拼接 URL，也不绕过生成客户端手写重复网络层。
+1. 前端通过 Hey API 从 OpenAPI 生成类型、SDK、客户端与 Pinia Colada 查询、变更函数。
+2. 页面和组合式函数不直接拼接 URL，也不绕过生成客户端手写重复网络层。
 3. 后端 SDK 和 OpenAPI 变更可以触发 `frontend/packages/api-client` 机械生成，但这不授权新增控制台视图。若后端契约暂不被当前控制台使用，应保持生成客户端变更可追溯，并用生成契约测试覆盖。
 
 ## 推荐目录结构
@@ -389,23 +389,23 @@ frontend/packages/api-client/
     index.ts
 ```
 
-### generated
+### 生成目录（generated）
 
 - 只放代码生成文件。
 - 推荐包含 client.gen.ts、sdk.gen.ts、types.gen.ts，以及 Colada 查询与变更生成文件。
 - 不允许手改。
-- Business Console generated 文件放在 `src/generated/business-console/`，Mobile generated 文件放在 `src/generated/mobile/`，避免与 PlatformGateway Console generated 文件在同一目录内发生 operationId 或类型名冲突。
+- Business Console 生成文件放在 `src/generated/business-console/`，移动端生成文件放在 `src/generated/mobile/`，避免与 PlatformGateway 控制台生成文件在同一目录内发生 operationId 或类型名冲突。
 
-### openapi
+### OpenAPI 快照目录（openapi）
 
 - 保存由脚本从 Gateway 导出的版本化 OpenAPI 快照。
 - `platform-gateway.v1.json` 对应 PlatformGateway 当前主版本控制台 API。
 - `business-gateway-console.v1.json` 对应 BusinessGateway 当前主版本业务控制台 API。
-- `business-gateway-mobile.v1.json` 预留给后续 BusinessGateway 移动 PDA API；当前仓库尚未生成该快照，PDA v1 使用 `business-gateway-console.v1.json` 对应的 business-console facade。
-- 快照更新必须能追溯到后端 Endpoint、测试和文档变化。
+- `business-gateway-mobile.v1.json` 预留给后续 BusinessGateway 移动 PDA API；当前仓库尚未生成该快照，PDA v1 使用 `business-gateway-console.v1.json` 对应的 business-console 门面。
+- 快照更新必须能追溯到后端端点、测试和文档变化。
 - 快照是生成产物输入，格式以导出脚本输出为准，不纳入 Vite+ formatter 检查。
 
-### transport
+### 传输层（transport）
 
 - base-url.ts
 - auth.ts
@@ -414,66 +414,66 @@ frontend/packages/api-client/
 
 职责是统一 baseURL、认证头、错误归一化和请求级策略。
 
-### index.ts
+### 稳定导出入口（index.ts）
 
 - 作为稳定导出入口。
-- 应用层只消费这里，而不消费 generated 深层路径。
-- `business-console.ts` 是业务控制台专用稳定导出入口；`frontend/apps/business-console` 不得绕过它深 import generated。
-- `mobile.ts` 是 PDA 专用稳定导出入口；`index.ts` 可以重新导出它，但页面不得绕过 `mobile.ts` 深 import generated。
+- 应用层只消费这里，而不消费生成目录的深层路径。
+- `business-console.ts` 是业务控制台专用稳定导出入口；`frontend/apps/business-console` 不得绕过它深层导入生成文件。
+- `mobile.ts` 是 PDA 专用稳定导出入口；`index.ts` 可以重新导出它，但页面不得绕过 `mobile.ts` 深层导入生成文件。
 
 ## 生成链路
 
 1. 后端更新接口并同步 OpenAPI。
 2. 使用 `scripts/export-gateway-openapi.ps1` 导出 Gateway OpenAPI 快照。
-3. 前端运行 `pnpm -C frontend generate:api`，通过 Vite+ workspace task 调用 Hey API 生成命令。
-4. api-client 更新 generated 与 transport 组合导出。
-5. console 与 business-console 应用、共享 composables 通过稳定入口消费新的 sdk/query/mutation。
-6. 变更涉及 breaking change 时，必须同步更新对应页面、组合函数和文档。
-7. OpenAPI 导出和 api-client 写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
+3. 前端运行 `pnpm -C frontend generate:api`，通过 Vite+ 工作区任务调用 Hey API 生成命令。
+4. API 客户端更新生成文件与传输层的组合导出。
+5. 控制台与业务控制台应用、共享组合式函数通过稳定入口消费新的 SDK、查询和变更函数。
+6. 变更涉及破坏性变化时，必须同步更新对应页面、组合函数和文档。
+7. OpenAPI 导出和 API 客户端写入属于 `generate` 类脚本副作用，必须按 docs/architecture/script-automation-governance.md 声明写入路径、日志、服务启动和清理策略；纯 `verify` 脚本不得隐式写生成产物。
 8. CI 使用 `scripts/verify-openapi-client-drift.ps1` 作为契约漂移门禁：重新导出 PlatformGateway 与 BusinessGateway OpenAPI 快照，运行 `pnpm -C frontend generate:api`，再对 `frontend/packages/api-client/openapi/*.v1.json` 和 `frontend/packages/api-client/src/generated/**` 执行 git status/diff 检查；若提交的快照或生成客户端不同步，PR 必须失败并显示差异。
 
-BusinessGateway console API 引入后，生成链路增加 `business-gateway-console.v1.json` 作为第二个 OpenAPI 输入；当前 Business PDA v1 也复用该输入。BusinessGateway mobile API 引入后，再增加 `business-gateway-mobile.v1.json`。这些输入仍由同一个 `frontend/packages/api-client` 包输出，但 generated 目录和稳定导出入口必须与 PlatformGateway Console 隔离。
+BusinessGateway 控制台 API 引入后，生成链路增加 `business-gateway-console.v1.json` 作为第二个 OpenAPI 输入；当前 Business PDA v1 也复用该输入。BusinessGateway 移动 API 引入后，再增加 `business-gateway-mobile.v1.json`。这些输入仍由同一个 `frontend/packages/api-client` 包输出，但生成目录和稳定导出入口必须与 PlatformGateway 控制台隔离。
 
 第三迭代生成配置固定使用：
 
-1. `@hey-api/client-fetch` 生成 fetch client。
+1. `@hey-api/client-fetch` 生成 fetch 客户端。
 2. `@hey-api/typescript` 生成 TypeScript DTO。
 3. `@hey-api/sdk` 生成按 `operationId` 命名的调用函数。
-4. `@pinia/colada` 生成查询和变更 options。
+4. `@pinia/colada` 生成查询和变更选项。
 
-生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、api-client 生成、前端 typecheck/test/build；在脚本治理迁移中，该入口必须显式声明混合 `verify`/`generate` 副作用，或拆成受控 generate step 与纯验证 step。
+生成入口固定为 `frontend/packages/api-client/openapi-ts.config.ts`，应用侧只从 `@nerv-iip/api-client` 稳定入口消费，不从 `src/generated` 深层路径导入。第三阶段总验收入口为 `scripts/verify-third-slice-console.ps1`，该脚本会串起 Gateway OpenAPI 导出、API 客户端生成、前端类型检查/测试/构建；在脚本治理迁移中，该入口必须显式声明混合 `verify`/`generate` 副作用，或拆成受控生成步骤与纯验证步骤。
 
-### 导出环境口径：NuGet package XML 文档漂移（已根治）
+### 导出环境口径：NuGet 包 XML 文档漂移（已根治）
 
-历史坑（PR #1274 实证）：NSwag/NJsonSchema 生成 swagger 文档时，会在运行时探测 NuGet 全局缓存目录读取依赖 package 的 XML 文档（如 `~/.nuget/packages/fastendpoints/<ver>/lib/<tfm>/FastEndpoints.xml`），把注释注入 `FastEndpointsErrorResponse` 等 schema 的 `description`；且缺失当前 TFM 的 XML 时会回落读取同一 package 其他 TFM 目录，手工删除单个 XML 文件无效。GitHub Runner 默认 `NUGET_XMLDOC_MODE=skip`，缓存中从不解出这些 XML，因此本机（曾以非 skip 模式 restore 过）导出的快照会与 CI 重生成结果漂移。实测该探测路径不遵循 `NUGET_PACKAGES` 环境变量——运行网关进程时把 `NUGET_PACKAGES` 指向空目录并不能消除漂移，环境变量隔离方案不可行。
+历史问题（PR #1274 实证）：NSwag/NJsonSchema 生成 Swagger 文档时，会在运行时探测 NuGet 全局缓存目录，读取依赖包的 XML 文档（如 `~/.nuget/packages/fastendpoints/<ver>/lib/<tfm>/FastEndpoints.xml`），把注释注入 `FastEndpointsErrorResponse` 等 schema（模式定义）的 `description`；且缺失当前 TFM 的 XML 时会回落读取同一包其他 TFM 目录，手工删除单个 XML 文件无效。GitHub Runner 默认 `NUGET_XMLDOC_MODE=skip`，缓存中从不解出这些 XML，因此本机（曾以非 skip 模式还原过）导出的快照会与 CI 重生成结果漂移。实测该探测路径不遵循 `NUGET_PACKAGES` 环境变量——运行网关进程时把 `NUGET_PACKAGES` 指向空目录并不能消除漂移，环境变量隔离方案不可行。
 
-根治方案：两个 Gateway 的 `SwaggerDocument` 配置统一设置 `s.SchemaSettings.ResolveExternalXmlDocumentation = false`，禁止 NJsonSchema 探测程序集旁路径之外的外部 XML（NuGet 缓存、SDK 目录），使导出结果机器无关；随构建输出的本仓库项目 XML（如 `Nerv.IIP.Contracts.*.xml`）仍正常参与 description 生成。已在“本机缓存已解出 package XML”的污染状态下实证：导出 + `pnpm -C frontend generate:api` 与已提交快照零漂移。辅助口径：`scripts/export-gateway-openapi.ps1` 的构建步骤固定 `NUGET_XMLDOC_MODE=skip`，与 CI restore 行为一致，避免导出流程继续向本机缓存解出 XML。
+根治方案：两个 Gateway 的 `SwaggerDocument` 配置统一设置 `s.SchemaSettings.ResolveExternalXmlDocumentation = false`，禁止 NJsonSchema 探测程序集旁路径之外的外部 XML（NuGet 缓存、SDK 目录），使导出结果与机器无关；随构建输出的本仓库项目 XML（如 `Nerv.IIP.Contracts.*.xml`）仍正常参与描述生成。已在“本机缓存已解出包 XML”的污染状态下实证：导出 + `pnpm -C frontend generate:api` 与已提交快照零漂移。辅助口径：`scripts/export-gateway-openapi.ps1` 的构建步骤固定 `NUGET_XMLDOC_MODE=skip`，与 CI 还原行为一致，避免导出流程继续向本机缓存解出 XML。
 
-另注意：corepack 按“就近 `package.json` 的 `packageManager` 字段”决定 pnpm 版本，仓库根目录没有 `package.json`，从根目录 cwd 调用 `pnpm -C frontend ...` 会拉取最新 pnpm 并因与锁定版本不一致直接失败。该坑已在 helper 层根治：`scripts/lib/ScriptAutomation.ps1` 的 `Invoke-Pnpm` 统一经 `Resolve-PnpmInvocation` 把 `-C`/`--dir` 对齐为进程 cwd，未显式传 `WorkingDirectory` 时默认以 `frontend/` 为 cwd；脚本内 pnpm 调用一律走 `Invoke-Pnpm`，不需要各脚本再各自处理工作目录。
+另请注意：corepack 按“就近 `package.json` 的 `packageManager` 字段”决定 pnpm 版本，仓库根目录没有 `package.json`，从根目录当前工作目录调用 `pnpm -C frontend ...` 会拉取最新 pnpm，并因与锁定版本不一致直接失败。该问题已在辅助层根治：`scripts/lib/ScriptAutomation.ps1` 的 `Invoke-Pnpm` 统一经 `Resolve-PnpmInvocation` 把 `-C`/`--dir` 对齐为进程当前工作目录，未显式传 `WorkingDirectory` 时默认以 `frontend/` 为当前工作目录；脚本内 pnpm 调用一律走 `Invoke-Pnpm`，不需要各脚本再各自处理工作目录。
 
 ## 使用规则
 
-1. 页面组件和 composables 不直接写 fetch 或 axios URL。
-2. 页面优先消费生成的 query/mutation helpers。
+1. 页面组件和组合式函数不直接写 fetch 或 axios URL。
+2. 页面优先消费生成的查询/变更辅助函数。
 3. 少量页面特有参数整理可以放在 src/api/领域名/adapters.ts 中。
-4. api-client 只做契约、transport 和稳定导出，不放业务视图逻辑。
-5. 需要轮询的服务端状态通过 Pinia Colada query options 和官方 auto-refetch 插件表达，不在组件里手写 `setInterval`。
-6. Design System 冻结前，不因后端契约变更新增页面、视觉组件、组件库迁移或样式 token；相关规划见 docs/architecture/frontend-design-system-planning.md。
+4. API 客户端只做契约、传输和稳定导出，不放业务视图逻辑。
+5. 需要轮询的服务端状态通过 Pinia Colada 查询选项和官方自动重新获取插件表达，不在组件里手写 `setInterval`。
+6. 设计系统冻结前，不因后端契约变更新增页面、视觉组件、组件库迁移或样式令牌；相关规划见 docs/architecture/frontend-design-system-planning.md。
 7. 生成客户端可以承载 JSON/text 契约字段，但字段语义、版本和兼容策略必须在后端契约或服务文档中可追踪。
 8. FileStorage 公开 DTO 的源码事实当前位于 `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage`；SDK/Web 边界复用同一 DTO，公开响应不得包含 `objectKey` 或 `object_key`。
 
 ## 版本与变更管理
 
 1. OpenAPI 变更必须在 PR 中可见。
-2. 生成文件允许较大 diff，但 hand-written transport 层需要保持最小、稳定。
+2. 生成文件允许较大差异，但手写传输层需要保持最小、稳定。
 3. 破坏性改动必须提升主版本，并同步更新前端消费点、SDK、迁移说明与文档。
 4. 不允许前端在契约未更新时通过手写 DTO 临时绕过。
 5. SDK 模块新增或行为变化必须同步更新 docs/architecture/platform-sdk-baseline.md。
 
 ## 反模式
 
-1. 在页面里直接手写 URL、headers 和重复错误处理。
-2. 在 generated 目录里补自定义逻辑。
+1. 在页面里直接手写 URL、标头和重复错误处理。
+2. 在生成目录里补自定义逻辑。
 3. 让多个包各自维护不同版本的相同接口类型。
 4. 让 Gateway 返回未进入 OpenAPI 的隐式接口。
 5. 让 SDK 变成服务发现中心、权限事实源、审计事实源、通知事实源或服务端领域模型副本。
