@@ -1,24 +1,24 @@
-# Business Maintenance MVP Implementation Plan
+# 业务维护 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Build Maintenance lite for maintenance work orders, maintenance plans, inspections, downtime reasons and asset availability events.
+**目标：**构建精简版 Maintenance（维护服务），用于维护工单、维护计划、巡检、停机原因和资产可用性事件。
 
-**Architecture:** Maintenance is an independent CMMS-lite CleanDDD service under `backend/services/Business/Maintenance`. It consumes IndustrialTelemetry alarm events and references MasterData device assets, but it does not own device master data, telemetry samples, production work orders or spare-part stock balance.
+**架构：**Maintenance（维护服务）是 `backend/services/Business/Maintenance` 下独立的精简版计算机化维护管理系统（CMMS）CleanDDD 服务。它消费 IndustrialTelemetry（工业遥测）报警事件并引用 MasterData（主数据）设备资产，但不持有设备主数据、遥测样本、生产工单或备件库存余额。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
+**技术栈：**.NET 10、FastEndpoints、MediatR、EF Core、Npgsql、netcorepal 集成事件、xUnit。
 
 ---
 
-## Boundaries
+## 边界
 
-1. Do not create or mutate `DeviceAsset`; reference MasterData device IDs/codes.
-2. Do not store telemetry samples or alarm raw payloads; consume alarm event IDs.
-3. Do not own spare-part inventory balance; request or reference Inventory movements.
-4. Do not change MES schedules directly; publish asset availability events for MES and Planning.
-5. Do not implement full EAM depreciation or asset accounting.
+1. 不得创建或变更 `DeviceAsset`；引用 MasterData（主数据）设备 ID/编码。
+2. 不得存储遥测样本或报警原始载荷；消费报警事件 ID。
+3. 不得持有备件库存余额；请求或引用 Inventory（库存）变动记录。
+4. 不得直接更改 MES 排程；为 MES 和 Planning（计划）发布资产可用性事件。
+5. 不得实现完整的 EAM 折旧或资产会计。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/
@@ -56,20 +56,20 @@ backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Te
   MaintenanceSchemaConventionTests.cs
 ```
 
-## Task 1: Scaffold Maintenance Service
+## 任务 1：搭建维护（Maintenance）服务脚手架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Nerv.IIP.Business.Maintenance.Web.csproj`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/Nerv.IIP.Business.Maintenance.Domain.csproj`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Nerv.IIP.Business.Maintenance.Infrastructure.csproj`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Nerv.IIP.Business.Maintenance.Web.csproj`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/Nerv.IIP.Business.Maintenance.Domain.csproj`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Nerv.IIP.Business.Maintenance.Infrastructure.csproj`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create service and test projects**
+- [ ] **步骤 1：创建服务和测试项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Maintenance -o backend/services/Business/Maintenance --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -82,31 +82,31 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Maintenance/tests/
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj
 ```
 
-Expected: projects are added and no IndustrialTelemetry project is created by this plan.
+预期结果：项目已添加，且本计划未创建 IndustrialTelemetry（工业遥测）项目。
 
-- [ ] **Step 2: Commit scaffold**
+- [ ] **步骤 2：提交脚手架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/services/Business/Maintenance
 git commit -m "feat: scaffold maintenance service"
 ```
 
-## Task 2: Implement Maintenance Domain Facts
+## 任务 2：实现维护领域事实
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/MaintenanceFacts.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceWorkOrderAggregate/MaintenanceWorkOrder.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenancePlanAggregate/MaintenancePlan.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceInspectionAggregate/MaintenanceInspection.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/DowntimeReasonAggregate/DowntimeReason.cs`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/MaintenanceAggregateTests.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/MaintenanceFacts.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceWorkOrderAggregate/MaintenanceWorkOrder.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenancePlanAggregate/MaintenancePlan.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceInspectionAggregate/MaintenanceInspection.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/DowntimeReasonAggregate/DowntimeReason.cs`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/MaintenanceAggregateTests.cs`
 
-- [ ] **Step 1: Write failing maintenance tests**
+- [ ] **步骤 1：编写失败的维护测试**
 
-Create tests covering:
+创建涵盖以下内容的测试：
 
 ```csharp
 var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
@@ -117,15 +117,15 @@ var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-in
 var inspection = MaintenanceInspection.Record("org-001", "env-dev", plan.Id.Value, "operator-001", "passed", DateTimeOffset.UtcNow);
 ```
 
-Assert completion requires result and downtime attribution, plan interval is explicit, spare part quantities are positive, and inspections reference a plan or work order.
+断言完成操作要求提供结果和停机归因、计划间隔明确、备件数量为正，并且巡检引用一项计划或工单。
 
-- [ ] **Step 2: Implement events**
+- [ ] **步骤 2：实现事件**
 
-Create `MaintenanceWorkOrderOpenedDomainEvent`, `MaintenanceWorkOrderCompletedDomainEvent`, `AssetUnavailableDomainEvent`, `AssetRestoredDomainEvent`, `MaintenancePlanCreatedDomainEvent` and `MaintenanceInspectionRecordedDomainEvent`.
+创建 `MaintenanceWorkOrderOpenedDomainEvent`、`MaintenanceWorkOrderCompletedDomainEvent`、`AssetUnavailableDomainEvent`、`AssetRestoredDomainEvent`、`MaintenancePlanCreatedDomainEvent` 和 `MaintenanceInspectionRecordedDomainEvent`。
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj --no-restore
@@ -133,34 +133,34 @@ git add backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.
 git commit -m "feat: add maintenance cmms lite facts"
 ```
 
-Expected: tests pass before commit.
+预期结果：测试在提交前通过。
 
-## Task 3: Add Persistence, Alarm Consumer and Events
+## 任务 3：添加持久化、报警消费者和事件
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceWorkOrderEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenancePlanEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceInspectionEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/DowntimeReasonEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEvents/MaintenanceIntegrationEvents.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/OpenWorkOrderWhenAlarmRaisedHandler.cs`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceSchemaConventionTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceWorkOrderEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenancePlanEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceInspectionEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/DowntimeReasonEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEvents/MaintenanceIntegrationEvents.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/OpenWorkOrderWhenAlarmRaisedHandler.cs`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceSchemaConventionTests.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
 
-- [ ] **Step 1: Configure schema**
+- [ ] **步骤 1：配置 schema**
 
-Use schema `maintenance`. Tables are `maintenance_work_orders`, `maintenance_plans`, `maintenance_inspections`, `downtime_reasons`.
+使用 schema `maintenance`。数据表为 `maintenance_work_orders`、`maintenance_plans`、`maintenance_inspections`、`downtime_reasons`。
 
-- [ ] **Step 2: Implement alarm consumer**
+- [ ] **步骤 2：实现报警消费者**
 
-`OpenWorkOrderWhenAlarmRaisedHandler` consumes `industrialTelemetry.AlarmRaised` and creates one maintenance work order per `sourceAlarmId`. Duplicate delivery returns the existing work order ID and does not create a second work order.
+`OpenWorkOrderWhenAlarmRaisedHandler` 消费 `industrialTelemetry.AlarmRaised`，并为每个 `sourceAlarmId` 创建一张维护工单。重复投递返回现有工单 ID，且不创建第二张工单。
 
-- [ ] **Step 3: Define integration events**
+- [ ] **步骤 3：定义集成事件**
 
-Create:
+创建：
 
 ```csharp
 public sealed record MaintenanceWorkOrderOpenedIntegrationEvent(string WorkOrderId, string DeviceAssetId, string? SourceAlarmId, string Priority);
@@ -169,43 +169,43 @@ public sealed record AssetUnavailableIntegrationEvent(string DeviceAssetId, stri
 public sealed record AssetRestoredIntegrationEvent(string DeviceAssetId, DateTimeOffset RestoredAtUtc);
 ```
 
-- [ ] **Step 4: Run schema and handler tests**
+- [ ] **步骤 4：运行 schema 和处理器测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~MaintenanceSchemaConventionTests|FullyQualifiedName~MaintenanceIntegrationEventHandlerTests"
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Commit persistence**
+- [ ] **步骤 5：提交持久化实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Business/Maintenance docs/architecture/database-schema-catalog.md
 git commit -m "feat: persist maintenance facts"
 ```
 
-## Task 4: Add Maintenance API and Permissions
+## 任务 4：添加维护 API 和权限
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CreateMaintenanceWorkOrderCommand.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CompleteMaintenanceWorkOrderCommand.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CreateMaintenancePlanCommand.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/RecordMaintenanceInspectionCommand.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/ListMaintenanceWorkOrdersQuery.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/ListMaintenancePlansQuery.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Endpoints/Maintenance/MaintenanceEndpoints.cs`
-- Create: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceEndpointTests.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Auth/MaintenancePermissionCodes.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CreateMaintenanceWorkOrderCommand.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CompleteMaintenanceWorkOrderCommand.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/CreateMaintenancePlanCommand.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/RecordMaintenanceInspectionCommand.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/ListMaintenanceWorkOrdersQuery.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/ListMaintenancePlansQuery.cs`
+- 创建：`backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Endpoints/Maintenance/MaintenanceEndpoints.cs`
+- 创建：`backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceEndpointTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
 
-- [ ] **Step 1: Add routes**
+- [ ] **步骤 1：添加路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/maintenance/work-orders` | `business.maintenance.work-orders.manage` |
 | `POST /api/business/v1/maintenance/work-orders/{workOrderId}/complete` | `business.maintenance.work-orders.manage` |
@@ -214,13 +214,13 @@ git commit -m "feat: persist maintenance facts"
 | `GET /api/business/v1/maintenance/plans` | `business.maintenance.plans.read` |
 | `POST /api/business/v1/maintenance/inspections` | `business.maintenance.plans.manage` |
 
-- [ ] **Step 2: Seed permissions**
+- [ ] **步骤 2：写入初始权限数据**
 
-Seed `business.maintenance.work-orders.read`, `business.maintenance.work-orders.manage`, `business.maintenance.plans.read`, `business.maintenance.plans.manage`.
+写入 `business.maintenance.work-orders.read`、`business.maintenance.work-orders.manage`、`business.maintenance.plans.read`、`business.maintenance.plans.manage` 的初始数据。
 
-- [ ] **Step 3: Run tests and commit**
+- [ ] **步骤 3：运行测试并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj --no-restore
@@ -229,39 +229,39 @@ git add backend/services/Business/Maintenance backend/services/Iam/src/Nerv.IIP.
 git commit -m "feat: expose maintenance api"
 ```
 
-Expected: tests pass before commit.
+预期结果：测试在提交前通过。
 
-## Task 5: Add Verification and Readiness
+## 任务 5：添加验证与就绪状态记录
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-business-maintenance-mvp.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
+- 创建：`scripts/verify-business-maintenance-mvp.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
 
-- [ ] **Step 1: Run verification**
+- [ ] **步骤 1：运行验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-maintenance-mvp.ps1
 git diff --check
 ```
 
-Expected: script runs Maintenance domain and web tests and exits `0`.
+预期结果：脚本运行维护领域测试和 Web 测试，并以 `0` 退出。
 
-- [ ] **Step 2: Commit docs**
+- [ ] **步骤 2：提交文档**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-business-maintenance-mvp.ps1 docs/architecture/implementation-readiness.md README.md
 git commit -m "docs: record maintenance readiness"
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. Maintenance is tracked independently from IndustrialTelemetry.
-2. Alarm-to-work-order flow is idempotent.
-3. Asset unavailable/restored events are available for MES, Planning and Notification consumers.
-4. Maintenance stores no telemetry samples, DeviceAsset master data or spare-part inventory balance.
+1. Maintenance（维护）与 IndustrialTelemetry（工业遥测）分开跟踪。
+2. 报警到工单的流程具有幂等性。
+3. 资产不可用/已恢复事件可供 MES、Planning（计划）和 Notification（通知）消费者使用。
+4. Maintenance（维护）不存储遥测样本、DeviceAsset（设备资产）主数据或备件库存余额。
