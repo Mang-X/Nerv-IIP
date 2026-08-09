@@ -6,6 +6,24 @@ using FluentValidation;
 namespace Nerv.IIP.Testing;
 
 /// <summary>
+/// Raised when process-global test state remains owned by another scope for the full acquisition
+/// budget, usually because that earlier scope was not disposed.
+/// </summary>
+public sealed class GlobalTestStateScopeAcquisitionTimeoutException : TimeoutException
+{
+    public GlobalTestStateScopeAcquisitionTimeoutException(TimeSpan acquisitionTimeout)
+        : base(
+            $"Timed out after {acquisitionTimeout} waiting to capture process-global test state. "
+            + "An earlier GlobalTestStateScope was likely not disposed. Ensure every captured scope "
+            + "is disposed with await using or try/finally.")
+    {
+        AcquisitionTimeout = acquisitionTimeout;
+    }
+
+    public TimeSpan AcquisitionTimeout { get; }
+}
+
+/// <summary>
 /// Serialises the tests that take a scope against each other and restores the exact prior value on
 /// dispose, including the difference between "was never set", "was set to the empty string" and
 /// "had a value". It cannot stop a test that never takes a scope from observing a mutated value
@@ -28,6 +46,7 @@ namespace Nerv.IIP.Testing;
 /// </remarks>
 public sealed class GlobalTestStateScope : IAsyncDisposable
 {
+    private static readonly TimeSpan DefaultAcquisitionTimeout = TimeSpan.FromSeconds(60);
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     private readonly Func<Type, MemberInfo, LambdaExpression, string> _propertyNameResolver;
@@ -53,16 +72,28 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
             StringComparer.Ordinal);
     }
 
-    public static async ValueTask<GlobalTestStateScope> CaptureAsync(
+    public static ValueTask<GlobalTestStateScope> CaptureAsync(
         IEnumerable<string>? environmentVariables = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CaptureAsync(environmentVariables, DefaultAcquisitionTimeout, cancellationToken);
+
+    internal static async ValueTask<GlobalTestStateScope> CaptureAsync(
+        IEnumerable<string>? environmentVariables,
+        TimeSpan acquisitionTimeout,
+        CancellationToken cancellationToken)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(acquisitionTimeout, TimeSpan.Zero);
+
         var names = (environmentVariables ?? [])
             .Prepend("TZ")
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var acquired = await Gate.WaitAsync(acquisitionTimeout, cancellationToken).ConfigureAwait(false);
+        if (!acquired)
+        {
+            throw new GlobalTestStateScopeAcquisitionTimeoutException(acquisitionTimeout);
+        }
 
         try
         {

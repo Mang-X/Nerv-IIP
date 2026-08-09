@@ -6,10 +6,9 @@ namespace Nerv.IIP.Testing.Tests;
 /// <summary>
 /// The scope's own tests. Every one of them must release the scope's permit on **every** path,
 /// including a failing assertion: <see cref="GlobalTestStateScope.CaptureAsync"/> waits on the gate
-/// without a timeout, so a leaked permit turns one red assertion into an assembly that hangs instead
-/// of failing — the "silently deadlocked, never red" shape MAN-799 and MAN-663 each hit once. Hence
-/// no assertion may sit between a bare capture and its disposal; use <c>await using</c> or
-/// <c>try/finally</c>.
+/// before a bounded diagnostic failure, so leaking a permit would still stall every following test
+/// for the full production budget. Hence no assertion may sit between a bare capture and its
+/// disposal; use <c>await using</c> or <c>try/finally</c>.
 /// </summary>
 public sealed class GlobalTestStateScopeTests
 {
@@ -128,5 +127,83 @@ public sealed class GlobalTestStateScopeTests
             await first.DisposeAsync();
             await (await secondCapture).DisposeAsync();
         }
+    }
+
+    [Fact]
+    public async Task CaptureAsync_WhenAnEarlierScopeIsStillHeld_FailsWithinBudgetWithActionableDiagnostic()
+    {
+        var first = await GlobalTestStateScope.CaptureAsync();
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<GlobalTestStateScopeAcquisitionTimeoutException>(
+                async () => await GlobalTestStateScope.CaptureAsync(
+                        environmentVariables: null,
+                        acquisitionTimeout: TimeSpan.FromMilliseconds(25),
+                        cancellationToken: default)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(2)));
+
+            Assert.Contains(
+                "An earlier GlobalTestStateScope was likely not disposed",
+                exception.Message,
+                StringComparison.Ordinal);
+            Assert.Contains("await using or try/finally", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await first.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task CaptureAsync_AfterATimedOutWaiter_StillSerializesUntilTheHolderDisposes()
+    {
+        var first = await GlobalTestStateScope.CaptureAsync();
+        Task<GlobalTestStateScope>? nextCapture = null;
+
+        try
+        {
+            await Assert.ThrowsAsync<GlobalTestStateScopeAcquisitionTimeoutException>(
+                async () => await GlobalTestStateScope.CaptureAsync(
+                        environmentVariables: null,
+                        acquisitionTimeout: TimeSpan.FromMilliseconds(25),
+                        cancellationToken: default)
+                    .AsTask()
+                    .WaitAsync(TimeSpan.FromSeconds(2)));
+
+            nextCapture = GlobalTestStateScope.CaptureAsync(
+                environmentVariables: null,
+                acquisitionTimeout: TimeSpan.FromSeconds(2),
+                cancellationToken: default).AsTask();
+
+            Assert.False(nextCapture.IsCompleted);
+        }
+        finally
+        {
+            await first.DisposeAsync();
+
+            if (nextCapture is not null)
+            {
+                await (await nextCapture).DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CaptureAsync_WhenCallerCancels_PropagatesCallerCancellation()
+    {
+        await using var first = await GlobalTestStateScope.CaptureAsync();
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+
+        var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await GlobalTestStateScope.CaptureAsync(
+                environmentVariables: null,
+                acquisitionTimeout: TimeSpan.FromSeconds(2),
+                cancellationToken: callerCancellation.Token));
+
+        Assert.IsNotType<GlobalTestStateScopeAcquisitionTimeoutException>(exception);
+        Assert.Equal(callerCancellation.Token, exception.CancellationToken);
     }
 }
