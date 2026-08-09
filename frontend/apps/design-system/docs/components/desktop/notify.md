@@ -34,7 +34,7 @@ function fireNotification(kind) {
 
 两类反馈通道：`nvMessage` 顶部居中、单行、短暂自停；`nvNotification` 右上角卡片，带标题与描述。二者皆为命令式函数调用，需在应用根部挂载一次 `NvNotifierHost`。
 
-> 应用入口处放置 `<NvNotifierHost />`，本页 Demo 已内置。
+> 应用入口处放置 `<NvNotifierHost />`，本页示例已内置。
 
 ## 轻提示 Message
 

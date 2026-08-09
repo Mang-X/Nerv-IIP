@@ -1,5 +1,5 @@
 ---
-title: NvApp & Header 应用外壳
+title: NvApp 与 NvAppHeader 应用外壳
 ---
 
 <script setup>
@@ -7,13 +7,13 @@ import { NvAppHeader, NvButton } from '@nerv-iip/ui'
 import { BellIcon, SearchIcon } from '@lucide/vue'
 </script>
 
-# NvApp & Header 应用外壳
+# NvApp 与 NvAppHeader 应用外壳
 
-`NvApp` 是根级提供者(参考 Nuxt UI `NvApp`):挂载全局 reka ConfigProvider + 统一 TooltipProvider + Toast 出口,并设定基底表面。`NvAppHeader` 是顶部应用栏。
+`NvApp` 是根级提供者（参考 Nuxt UI 的 `NvApp`）：它挂载全局 reka `ConfigProvider`、统一的 `TooltipProvider` 与 Toast 出口，并设定基底表面。`NvAppHeader` 是顶部应用栏。
 
 ## NvApp 根容器
 
-整个应用包一层 `NvApp`,Tooltip / Toast / 阅读方向 / 滚动锁等全局能力即就位。
+给整个应用包一层 `NvApp` 后，提示、消息提醒、阅读方向与滚动锁等全局能力即可就位。
 
 ```vue
 <script setup>
@@ -30,11 +30,11 @@ import { NvApp } from '@nerv-iip/ui'
 
 | 属性           | 说明                      | 类型     | 默认  |
 | -------------- | ------------------------- | -------- | ----- |
-| `tooltipDelay` | 全局 Tooltip 打开延迟(ms) | `number` | `200` |
+| `tooltipDelay` | 全局提示打开延迟（毫秒） | `number` | `200` |
 
 ## Header 顶部栏
 
-`#leading` 放品牌 / 菜单按钮,默认插槽放标题或居中导航,`#trailing` 放操作。默认吸顶 + 玻璃质感。
+`#leading` 放置品牌或菜单按钮，默认插槽放置标题或居中导航，`#trailing` 放置操作项。默认采用吸顶与玻璃质感。
 
 <Demo>
   <NvAppHeader :sticky="false" class="w-full rounded-xl border border-border">

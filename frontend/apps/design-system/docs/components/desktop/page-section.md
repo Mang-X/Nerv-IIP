@@ -8,7 +8,7 @@ import { NvPageSection, NvPageGrid } from '@nerv-iip/ui'
 
 # NvPageSection 内容区块
 
-带可选居中页眉（eyebrow + 标题 + 描述）的纵向内容区块（参考 Nuxt UI），用于概览页 / 落地页的分段编排。
+带可选居中页眉（眉题 `eyebrow`、标题与描述）的纵向内容区块（参考 Nuxt UI），用于概览页 / 落地页的分段编排。
 
 ## 带页眉的区块
 

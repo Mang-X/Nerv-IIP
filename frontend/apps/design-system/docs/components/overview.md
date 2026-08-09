@@ -11,7 +11,7 @@
 
 ## 在文档里直接用组件
 
-本文档站已把设计系统接入，Markdown 里可以直接 `import` 并渲染任意组件：
+本文档站已接入设计系统，可在 `Markdown` 文档中直接 `import` 并渲染任意组件：
 
 ```md
 <script setup>
