@@ -1,46 +1,46 @@
-# ADR 0019: WMS to Inventory RPC Idempotency
+# ADR 0019：WMS 到 Inventory 的 RPC 幂等性
 
-- Status: Accepted
-- Date: 2026-07-07
+- 状态：已接受
+- 日期：2026-07-07
 
-## Context
+## 背景
 
-WMS has two synchronous Inventory RPC chains that can time out after Inventory commits and before WMS stores the returned Inventory identifier:
+WMS 有两条同步 Inventory RPC 调用链，可能在 Inventory 已提交、但 WMS 尚未存储返回的 Inventory 标识符时超时：
 
-1. picking task creation reserves Inventory stock;
-2. count execution creation creates an Inventory count task and freezes the target ledger.
+1. 创建拣货任务时预留 Inventory 库存；
+2. 创建盘点执行时创建 Inventory 盘点任务并冻结目标台账。
 
-Without a stable recovery key, a caller retry can either create a second Inventory side effect or leave WMS without the committed Inventory identifier. MAN-390 / GitHub #706 requires these chains to converge after timeout and retry without shared database writes or fake downstream ids.
+如果没有稳定的恢复键，调用方重试可能产生第二次 Inventory 副作用，也可能使 WMS 无法获得已提交的 Inventory 标识符。MAN-390 / GitHub #706 要求这些调用链在超时和重试后收敛，且不得写入共享数据库或使用伪造的下游 ID。
 
-## Decision
+## 决策
 
-Use synchronous RPC with caller-generated stable idempotency keys and query-based retry recovery.
+使用同步 RPC、由调用方生成的稳定幂等键，以及基于查询的重试恢复机制。
 
-WMS derives keys from durable business identity:
+WMS 根据持久业务标识派生键：
 
-1. picking reservation: `wms-pick-res:<hash(organizationId:environmentId:outboundOrderNo:lineNo)>`;
-2. count freeze: `wms-count-freeze:<hash(organizationId:environmentId:countNo)>`.
+1. 拣货预留：`wms-pick-res:<hash(organizationId:environmentId:outboundOrderNo:lineNo)>`；
+2. 盘点冻结：`wms-count-freeze:<hash(organizationId:environmentId:countNo)>`。
 
-Inventory persists the key on the committed fact. A retry with the same key is a recovery query:
+Inventory 将该键持久化到已提交的业务事实上。使用相同键的重试属于恢复查询：
 
-1. same key and same payload return the existing reservation or count task result;
-2. same key and different payload are rejected as an idempotency conflict;
-3. count task code conflicts with a different idempotency key are rejected before a second freeze can be created.
+1. 键和载荷均相同时，返回现有预留或盘点任务结果；
+2. 键相同而载荷不同时，以幂等冲突拒绝；
+3. 若盘点任务编码与另一幂等键冲突，则在创建第二次冻结前拒绝。
 
-Inventory fallback keys for count tasks are also namespaced as `count-code:<countTaskCode>` so caller-provided keys cannot collide with the legacy count-code fallback space.
+Inventory 的盘点任务回退键也使用 `count-code:<countTaskCode>` 命名空间，使调用方提供的键不会与旧版盘点编码回退空间冲突。
 
-For concurrent count-freeze retries inside the service process, Inventory serializes `CreateStockCountTaskCommand` by organization, environment and resolved idempotency key through the existing command lock behavior. The database unique index remains the durable backstop for the committed fact.
+对于服务进程内并发的盘点冻结重试，Inventory 通过现有命令锁行为，按组织、环境和解析后的幂等键串行执行 `CreateStockCountTaskCommand`。数据库唯一索引仍是已提交事实的持久化兜底保障。
 
-## Alternatives Considered
+## 已考虑的替代方案
 
-1. **Event-driven freeze with callback receipt**: rejected for this slice because the caller needs a synchronous answer to create the WMS count execution and picking task. Adding an event receipt table would widen the surface and still need a query path for operator retry.
-2. **Best-effort cleanup after timeout**: rejected because WMS cannot know whether Inventory committed before the timeout. Cleanup risks releasing a valid reservation or count freeze that a later retry should recover.
-3. **Shared reconciliation table**: rejected because ADR 0003 and ADR 0012 keep service data ownership isolated; WMS must not read or write Inventory schema.
+1. **事件驱动的冻结和回调回执**：本次不采用，因为调用方需要同步应答来创建 WMS 盘点执行和拣货任务。新增事件回执表会扩大涉及范围，且运维人员重试时仍需要查询路径。
+2. **超时后的尽力清理**：不采用，因为 WMS 无法判断 Inventory 是否已在超时前提交。清理可能释放本应由后续重试恢复的有效预留或盘点冻结。
+3. **共享对账表**：不采用，因为 ADR 0003 和 ADR 0012 要求服务数据所有权相互隔离；WMS 不得读写 Inventory schema。
 
-## Consequences
+## 影响
 
-The compensation path is deterministic: retry the same WMS command. WMS recomputes the same key, Inventory returns the committed fact, and WMS persists the returned Inventory id locally.
+补偿路径具有确定性：重试同一 WMS 命令。WMS 重新计算相同的键，Inventory 返回已提交的业务事实，WMS 再在本地持久化返回的 Inventory ID。
 
-This keeps timeout recovery local to the two owning services and does not introduce a cross-service process manager. Operators still need normal retry or DLQ tooling to re-drive the WMS command after a transport timeout.
+这样可将超时恢复限制在两个事实所属服务内，且不引入跨服务流程管理器。传输超时后，运维人员仍需使用常规重试或 DLQ 工具重新驱动 WMS 命令。
 
-Verification must include cross-boundary WMS and Inventory behavior. Fast in-memory tests may cover command flow, but real PostgreSQL profile tests must cover the unique-index and retry/concurrency behavior when `NERV_IIP_TEST_POSTGRES` is available.
+验证必须包含跨边界的 WMS 和 Inventory 行为。快速内存测试可以覆盖命令流，但当 `NERV_IIP_TEST_POSTGRES` 可用时，真实 PostgreSQL 配置档测试必须覆盖唯一索引以及重试/并发行为。
