@@ -44,4 +44,4 @@ TimescaleDB 仍是可选的未来优化，而不是本次范围的基线依赖�
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --filter IndustrialTelemetryHistorianTests -v:minimal
 ```
 
-该测试覆盖原始数据写入、策略强制执行、选择性启用的调度器执行、小时/日加权汇总和保留期清理。每次调度器运行时，降采样读取数量有界的待处理小时/日窗口；`IndustrialTelemetry:Historian` 限制的是窗口数量（`MaxPendingHourlyWindows`、`MaxPendingDailyWindows`），而不是原始数据行数。对于数据量更大的客户容量评估，在启用更短的原始数据保留期之前，应设置 `NERV_IIP_TEST_POSTGRES` 并对 PostgreSQL 支持的测试夹具运行同一命令；首个生产 schema 已包含该基准测试应覆盖的幂等索引和范围/窗口索引。
+该测试覆盖原始数据写入、策略强制执行、选择性启用的调度器执行、小时/日加权汇总和保留期清理。每次调度器运行时，降采样读取数量有界的待处理小时/日窗口；`IndustrialTelemetry:Historian` 限制的是窗口数量（`MaxPendingHourlyWindows`、`MaxPendingDailyWindows`），而不是原始数据行数。对于数据量更大的客户容量评估，在启用更短的原始数据保留期之前，应设置 `NERV_IIP_TEST_POSTGRES` 并对以 PostgreSQL 为后端的测试夹具运行同一命令；首个生产 schema 已包含该基准测试应覆盖的幂等索引和范围/窗口索引。

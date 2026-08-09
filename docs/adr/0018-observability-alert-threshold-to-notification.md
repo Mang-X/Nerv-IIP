@@ -18,7 +18,7 @@ Nerv-IIP 已输出 OpenTelemetry 指标，并具备仅处理日志的 VictoriaLo
 首批基线规则如下：
 
 1. 通过已配置的 `/health` 端点检测服务健康检查失败；
-2. 通过现有 Notification 死信存储指标检测可处理的 CAP/DLQ 积压；
+2. 通过现有 Notification 死信存储指标检测需处置的 CAP/DLQ 积压；
 3. 通过 AppHub 内部实例查询检测 Connector Host 心跳过期；
 4. 通过 PostgreSQL 系统视图/函数检测连接使用率和数据库大小水位。
 
@@ -26,7 +26,7 @@ Nerv-IIP 已输出 OpenTelemetry 指标，并具备仅处理日志的 VictoriaLo
 
 ## 理由
 
-当 Nerv-IIP 增加 VictoriaMetrics 等兼容 Prometheus 的指标存储后，vmalert 仍是首选候选方案。它在 VictoriaMetrics 生态中具备成熟的运维经验和强大的规则语义。在本次范围内，引入 vmalert 还需要新增并支持指标后端、抓取拓扑、兼容 Alertmanager 的路由或自定义 webhook 桥接；对于当前单机私有化基线而言，这会引入过多基础设施。
+当 Nerv-IIP 增加 VictoriaMetrics 等兼容 Prometheus 的指标存储后，vmalert 仍是首选候选方案。它在 VictoriaMetrics 生态中已有成熟的运维实践，并提供强大的规则语义。在本次范围内，引入 vmalert 还需要新增并支持指标后端、抓取拓扑、兼容 Alertmanager 的路由或自定义 webhook 桥接；对于当前单机私有化基线而言，这会引入过多基础设施。
 
 轻量扫描器复用平台已有事实，使闭环路径保持精简：
 
