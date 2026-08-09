@@ -95,7 +95,13 @@ foreach ($invalidCharacterCase in @(
     'function Test-ReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { $character = ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-TypedReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { [string]$character = ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-PositionalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable character ''{''; if ($character -eq ''{'') { return $true } } }',
-    'function Test-AttachedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable -Name:character -Value ''{''; if ($character -eq ''{'') { return $true } } }'
+    'function Test-AttachedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable -Name:character -Value ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-BuiltinAliasSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { sv character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-ScopedNamedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable -Name:local:character -Value ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-ScopedPositionalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable local:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-PrivateSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable private:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-GlobalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable global:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-QualifiedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Utility\Set-Variable character ''{''; if ($character -eq ''{'') { return $true } } }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidCharacterCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -164,11 +170,43 @@ foreach ($invalidSortCase in @(
     'function Test-NameSort { Get-ChildItem | Sort-Object Name }',
     'function Test-UnknownSort { param($property) Get-ChildItem | Sort-Object $property }',
     'function Test-DateLikeSort { Get-Thing | Sort-Object LastWriteTimeUtc }',
-    'function Get-ChildItem { [pscustomobject]@{ LastWriteTimeUtc = ''apple'' } }; function Test-ShadowedDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }'
+    'function Get-ChildItem { [pscustomobject]@{ LastWriteTimeUtc = ''apple'' } }; function Test-ShadowedDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'Set-Alias -Name:Get-ChildItem Get-Thing; function Test-AttachedAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'New-Alias -Name Get-ChildItem Get-Thing; function Test-SeparateNewAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'Microsoft.PowerShell.Utility\Set-Alias -Name:Get-ChildItem Get-Thing; function Test-QualifiedSetAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'Microsoft.PowerShell.Utility\New-Alias -Name Get-ChildItem Get-Thing; function Test-QualifiedNewAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'sal Get-ChildItem Get-Thing; function Test-BuiltinAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'nal Get-ChildItem Get-Thing; function Test-BuiltinNewAliasDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'function script:Get-ChildItem { [pscustomobject]@{ LastWriteTimeUtc = ''apple'' } }; function Test-ScopedFunctionDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'filter script:Get-ChildItem { [pscustomobject]@{ LastWriteTimeUtc = ''apple'' } }; function Test-ScopedFilterDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidSortCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[sort-object]', [StringComparison]::Ordinal) }).Count -eq 1) `
         'String, dynamic, and unproven DateTime-looking Sort-Object keys must remain findings.'
+}
+
+foreach ($invalidGetContentShadowCase in @(
+    'Set-Alias -Name:Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'New-Alias -Name Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'Microsoft.PowerShell.Utility\Set-Alias -Name:Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'Microsoft.PowerShell.Utility\New-Alias -Name Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'sal Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'nal Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'function script:Get-Content { ''one;two'' }; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)',
+    'filter script:Get-Content { ''one;two'' }; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)'
+)) {
+    $findings = @(Get-LayerProbeFindings -Source $invalidGetContentShadowCase)
+    Assert-Layer (@($findings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
+        'Attached alias, builtin alias command, and scope-qualified function shadows must invalidate Get-Content string inference.'
+}
+
+foreach ($customAliasNameCase in @(
+    'function customSv { param($name, $value) }; function Test-CustomSvName { param([string]$text) foreach ($character in $text.ToCharArray()) { customSv character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function customSal { param($name, $value) }; customSal Get-ChildItem Get-Thing; function Test-CustomSalName { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
+    'function customNal { param($name, $value) }; customNal Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)'
+)) {
+    Assert-Layer (@(Get-LayerProbeFindings -Source $customAliasNameCase).Count -eq 0) `
+        'A user-defined command name must not be statically treated as a PowerShell builtin alias.'
 }
 
 $compositeCases = @(

@@ -466,9 +466,33 @@ function Test-NervOrdinalContractSetVariableWritesVariable {
         [Parameter(Mandatory)] [string] $Name
     )
 
-    if (-not [string]::Equals([string] $Command.GetCommandName(), 'Set-Variable', [StringComparison]::OrdinalIgnoreCase)) {
+    if (-not (Test-NervOrdinalContractBuiltinSetVariableCommand -Command $Command)) {
         return $false
     }
+
+    return Test-NervOrdinalContractCommandNameMayMatch -Command $Command -Name $Name
+}
+
+function Test-NervOrdinalContractBuiltinSetVariableCommand {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command)
+
+    $commandName = [string] $Command.GetCommandName()
+    return [string]::Equals($commandName, 'Set-Variable', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'Microsoft.PowerShell.Utility\Set-Variable', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'sv', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-NervOrdinalContractCommandNameMayMatch {
+    <#
+        A dynamic `-Name` cannot prove that it leaves the protected binding unchanged.  The two
+        callers use only built-in command identities, so an unknown target must invalidate their
+        narrow type/source proof rather than become a broad alias resolver.
+    #>
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
     $elements = @($Command.CommandElements)
     for ($index = 0; $index -lt $elements.Count; $index++) {
         if ($elements[$index] -is [System.Management.Automation.Language.CommandParameterAst] -and
@@ -482,13 +506,32 @@ function Test-NervOrdinalContractSetVariableWritesVariable {
             else {
                 $null
             }
-            return $candidate -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-                [string]::Equals([string] $candidate.Value, $Name, [StringComparison]::OrdinalIgnoreCase)
+            return Test-NervOrdinalContractVariablePathMayMatch -Candidate $candidate -Name $Name
         }
     }
-    return $elements.Count -gt 1 -and
-        $elements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-        [string]::Equals([string] $elements[1].Value, $Name, [StringComparison]::OrdinalIgnoreCase)
+    if ($elements.Count -lt 2 -or $elements[1] -is [System.Management.Automation.Language.CommandParameterAst]) { return $true }
+    return Test-NervOrdinalContractVariablePathMayMatch -Candidate $elements[1] -Name $Name
+}
+
+function Test-NervOrdinalContractVariablePathMayMatch {
+    param(
+        [AllowNull()] [System.Management.Automation.Language.Ast] $Candidate,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if ($Candidate -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $true }
+    $candidateName = [string] $Candidate.Value
+    $separator = $candidateName.IndexOf(':', [StringComparison]::Ordinal)
+    if ($separator -ge 0) {
+        $scope = $candidateName.Substring(0, $separator)
+        if (-not ([string]::Equals($scope, 'local', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'script', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'global', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'private', [StringComparison]::OrdinalIgnoreCase))) { return $true }
+        $candidateName = $candidateName.Substring($separator + 1)
+    }
+    if ([string]::IsNullOrWhiteSpace($candidateName)) { return $true }
+    return [string]::Equals($candidateName, $Name, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Test-NervOrdinalContractCharacterComparison {
@@ -627,32 +670,51 @@ function Test-NervOrdinalContractUnshadowedCommand {
     while ($null -ne $root.Parent) { $root = $root.Parent }
     $functions = @($root.FindAll({
         param($candidate)
-        $candidate -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-            [string]::Equals([string] $candidate.Name, $Name, [StringComparison]::OrdinalIgnoreCase)
+        if ($candidate -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { return $false }
+        return Test-NervOrdinalContractFunctionDefinitionNameMayMatch -CandidateName ([string] $candidate.Name) -Name $Name
     }, $true))
     if ($functions.Count -gt 0) { return $false }
 
     $aliasDefinitions = @($root.FindAll({
         param($candidate)
         if ($candidate -isnot [System.Management.Automation.Language.CommandAst] -or
-            (-not [string]::Equals([string] $candidate.GetCommandName(), 'Set-Alias', [StringComparison]::OrdinalIgnoreCase) -and
-                -not [string]::Equals([string] $candidate.GetCommandName(), 'New-Alias', [StringComparison]::OrdinalIgnoreCase))) {
+            -not (Test-NervOrdinalContractBuiltinAliasDefinitionCommand -Command $candidate)) {
             return $false
         }
-        $elements = @($candidate.CommandElements)
-        for ($index = 0; $index -lt $elements.Count - 1; $index++) {
-            if ($elements[$index] -is [System.Management.Automation.Language.CommandParameterAst] -and
-                [string]::Equals([string] $elements[$index].ParameterName, 'Name', [StringComparison]::OrdinalIgnoreCase) -and
-                $elements[$index + 1] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-                [string]::Equals([string] $elements[$index + 1].Value, $Name, [StringComparison]::OrdinalIgnoreCase)) {
-                return $true
-            }
-        }
-        return $elements.Count -gt 1 -and
-            $elements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
-            [string]::Equals([string] $elements[1].Value, $Name, [StringComparison]::OrdinalIgnoreCase)
+        return Test-NervOrdinalContractCommandNameMayMatch -Command $candidate -Name $Name
     }, $true))
     return $aliasDefinitions.Count -eq 0
+}
+
+function Test-NervOrdinalContractBuiltinAliasDefinitionCommand {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command)
+
+    $commandName = [string] $Command.GetCommandName()
+    return [string]::Equals($commandName, 'Set-Alias', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'New-Alias', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'Microsoft.PowerShell.Utility\Set-Alias', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'Microsoft.PowerShell.Utility\New-Alias', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'sal', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($commandName, 'nal', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-NervOrdinalContractFunctionDefinitionNameMayMatch {
+    param(
+        [Parameter(Mandatory)] [string] $CandidateName,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $separator = $CandidateName.IndexOf(':', [StringComparison]::Ordinal)
+    if ($separator -ge 0) {
+        $scope = $CandidateName.Substring(0, $separator)
+        if (-not ([string]::Equals($scope, 'local', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'script', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'global', [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals($scope, 'private', [StringComparison]::OrdinalIgnoreCase))) { return $true }
+        $CandidateName = $CandidateName.Substring($separator + 1)
+    }
+    return [string]::IsNullOrWhiteSpace($CandidateName) -or
+        [string]::Equals($CandidateName, $Name, [StringComparison]::OrdinalIgnoreCase)
 }
 
 function Test-NervOrdinalContractCharacterIndexInvocation {
