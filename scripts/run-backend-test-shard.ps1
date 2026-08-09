@@ -40,7 +40,9 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
-$shard = @($manifest.fastShards | Where-Object { $_.id -eq $ShardId })
+$shard = @($manifest.fastShards | Where-Object {
+    [string]::Equals([string]$_.id, $ShardId, [StringComparison]::Ordinal)
+})
 if ($shard.Count -ne 1) {
     throw "Backend test shard '$ShardId' must be defined exactly once in $ManifestPath."
 }

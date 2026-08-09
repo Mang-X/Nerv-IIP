@@ -55,6 +55,8 @@
 # asset"). Entry points: scripts/update-backend-test-shard-timings.ps1 (refresh the cache) and
 # scripts/report-backend-test-shard-balance.ps1 (report-only balance).
 
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
+
 Set-Variable -Name NervShardTimingCacheSchemaVersion -Value 1 -Scope Script -Force
 Set-Variable -Name NervShardTimingDurationMetric -Value 'trx-elapsed' -Scope Script -Force
 Set-Variable -Name NervShardTimingStatistic -Value 'median' -Scope Script -Force
@@ -91,7 +93,7 @@ function Get-NervShardTimingAssemblyKey {
     $trimmed = ([string] $Name).Trim() -replace '\\', '/'
     if ([string]::IsNullOrWhiteSpace($trimmed)) { return '' }
 
-    $leaf = $trimmed.Substring($trimmed.LastIndexOf('/') + 1)
+    $leaf = $trimmed.Substring($trimmed.LastIndexOf('/', [StringComparison]::Ordinal) + 1)
     foreach ($extension in @('.csproj', '.dll')) {
         if ($leaf.EndsWith($extension, [StringComparison]::OrdinalIgnoreCase)) {
             $leaf = $leaf.Substring(0, $leaf.Length - $extension.Length)
@@ -180,7 +182,7 @@ function Get-NervShardTimingMedian {
     #>
     param([Parameter(Mandatory)] [AllowEmptyCollection()] [double[]] $Values)
 
-    $sorted = @($Values | Sort-Object)
+    $sorted = @(Get-NervItemsSorted -Items @($Values) -Comparison { param($left, $right) if ([double]$left -lt [double]$right) { -1 } elseif ([double]$left -gt [double]$right) { 1 } else { 0 } })
     if ($sorted.Count -eq 0) { return $null }
     $middle = [int][Math]::Floor($sorted.Count / 2)
     if ($sorted.Count % 2 -eq 1) { return [double] $sorted[$middle] }
@@ -244,7 +246,7 @@ function Merge-NervShardTimingObservations {
     }
 
     return @(
-        foreach ($key in @($perRun.Keys | Sort-Object)) {
+        foreach ($key in @(Get-NervStringsSorted -Values @($perRun.Keys) -Comparer ([StringComparer]::Ordinal))) {
             $values = [double[]] @($perRun[$key].Values | ForEach-Object { [double] $_ })
             [pscustomobject][ordered]@{
                 assembly = $key
@@ -540,7 +542,7 @@ function Get-NervShardTimingObservationsFromEvidenceDirectory {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return @() }
 
     return @(
-        foreach ($summaryFile in @(Get-ChildItem -LiteralPath $Path -Filter 'summary.json' -File -Recurse | Sort-Object FullName)) {
+        foreach ($summaryFile in @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $Path -Filter 'summary.json' -File -Recurse) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal))) {
             $rows = @()
             try {
                 $summary = Get-Content -LiteralPath $summaryFile.FullName -Raw | ConvertFrom-Json

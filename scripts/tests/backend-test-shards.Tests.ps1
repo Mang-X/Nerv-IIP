@@ -1,12 +1,9 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Creates and removes one temporary unclassified backend test project
-#     - Creates and removes one temporary backend project that is not a solution member
+#     - Creates a temporary backend inventory mirror with two mutation projects
 #   Writes:
-#     - backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/** (temporarily)
-#     - backend/common/Nerv.IIP.TemporarySolutionMembership/** (temporarily)
-#     - OS temporary directory: workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
 #     - artifacts/script-logs/**
@@ -24,9 +21,10 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $manifestPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
 $validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
-$temporaryProjectDirectory = Join-Path $repoRoot 'backend/tests/Nerv.IIP.TemporaryShardClassification.Tests'
+$temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
+$temporaryProjectDirectory = Join-Path $temporaryBackendInventory 'tests/Nerv.IIP.TemporaryShardClassification.Tests'
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
-$temporarySolutionMemberDirectory = Join-Path $repoRoot 'backend/common/Nerv.IIP.TemporarySolutionMembership'
+$temporarySolutionMemberDirectory = Join-Path $temporaryBackendInventory 'common/Nerv.IIP.TemporarySolutionMembership'
 $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv.IIP.TemporarySolutionMembership.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
 $timeoutResultsDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-timeout-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -51,6 +49,11 @@ function Assert-Contract {
         throw $Message
     }
 }
+
+$inventoryRelativeToRepo = [IO.Path]::GetRelativePath($repoRoot, $temporaryBackendInventory)
+Assert-Contract ($inventoryRelativeToRepo.StartsWith('..', [StringComparison]::Ordinal)) 'Backend mutation fixtures must live outside the tracked repository tree.'
+Assert-Contract (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'backend/tests/Nerv.IIP.TemporaryShardClassification.Tests'))) 'The unclassified-project fixture must never be planted in the tracked backend tree.'
+Assert-Contract (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'backend/common/Nerv.IIP.TemporarySolutionMembership'))) 'The solution-membership fixture must never be planted in the tracked backend tree.'
 
 # Every assertion below is about *what the script under test said*, so it is always run as a real
 # process and judged by its exit code plus its output.
@@ -415,6 +418,40 @@ finally {
 . (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
 $selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertionsPath -DisplayName 'BackendTestShardSelectors.ps1'
 Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
+$runnerSweep = Get-NervOrdinalComparisonFindings -ScriptPath $runnerPath -DisplayName 'run-backend-test-shard.ps1'
+Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
+
+# Exercise the real manifest lookup with the U+00AD value that PowerShell's -eq folds away. The
+# canonical runner must reject it before resolving or executing any solution filter. A copied
+# production runner with only that comparison weakened must miss this diagnostic, proving the test
+# is attached to the call site rather than merely to the scanner implementation.
+$runnerOrdinalRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-backend-runner-ordinal-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    $runnerOrdinalManifest = Join-Path $runnerOrdinalRoot 'manifest.json'
+    [IO.Directory]::CreateDirectory($runnerOrdinalRoot) | Out-Null
+    [IO.File]::WriteAllText($runnerOrdinalManifest, '{"fastShards":[{"id":"platform","solutionFilter":"missing.slnf","projects":[]}]}', [Text.UTF8Encoding]::new($false))
+    $softHyphenShardId = "platform$([char]0x00AD)"
+    $canonicalFailure = Invoke-GovernedScript -ScriptPath $runnerPath -Arguments @('-ShardId', $softHyphenShardId, '-ManifestPath', $runnerOrdinalManifest, '-ResultsDirectory', (Join-Path $runnerOrdinalRoot 'results'), '-TrxFilePrefix', 'ordinal-probe') -Name 'backend-runner-ordinal-canonical'
+    Assert-Contract (-not $canonicalFailure.Passed -and $canonicalFailure.Message.Contains('must be defined exactly once', [StringComparison]::Ordinal)) `
+        'The real shard lookup must reject a U+00AD-suffixed identity before resolving the selected shard.'
+
+    $mutatedScripts = Join-Path $runnerOrdinalRoot 'mutated/scripts'
+    [IO.Directory]::CreateDirectory((Join-Path $mutatedScripts 'lib')) | Out-Null
+    foreach ($libraryName in @('ScriptAutomation.ps1', 'BackendTestShardSelectors.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $mutatedScripts "lib/$libraryName")
+    }
+    $mutatedRunner = Join-Path $mutatedScripts 'run-backend-test-shard.ps1'
+    $runnerSource = [IO.File]::ReadAllText($runnerPath)
+    $ordinalLookup = '[string]::Equals([string]$_.id, $ShardId, [StringComparison]::Ordinal)'
+    Assert-Contract ([regex]::Matches($runnerSource, [regex]::Escape($ordinalLookup)).Count -eq 1) 'Runner lookup mutation must target exactly one production call site.'
+    [IO.File]::WriteAllText($mutatedRunner, $runnerSource.Replace($ordinalLookup, '$_.id -eq $ShardId'), [Text.UTF8Encoding]::new($false))
+    $mutatedFailure = Invoke-GovernedScript -ScriptPath $mutatedRunner -Arguments @('-ShardId', $softHyphenShardId, '-ManifestPath', $runnerOrdinalManifest, '-ResultsDirectory', (Join-Path $runnerOrdinalRoot 'results'), '-TrxFilePrefix', 'ordinal-probe') -Name 'backend-runner-ordinal-weakened'
+    Assert-Contract (-not $mutatedFailure.Message.Contains('must be defined exactly once', [StringComparison]::Ordinal)) `
+        'Weakening the real shard lookup to -eq must make the U+00AD mutation probe red.'
+}
+finally {
+    if (Test-Path -LiteralPath $runnerOrdinalRoot) { Remove-Item -LiteralPath $runnerOrdinalRoot -Recurse -Force }
+}
 
 $classifiedProjects = @($fastShards.projects | ForEach-Object { [string] $_ }) + @($heavyLanes.projects | ForEach-Object { [string] $_ })
 Assert-Contract ((Get-BackendTestShardUniqueSorted -Values $classifiedProjects).Count -eq $classifiedProjects.Count) 'Every backend test project must be classified exactly once.'
@@ -515,7 +552,7 @@ try {
     New-Item -ItemType Directory -Path $temporarySolutionMemberDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporarySolutionMemberPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    $solutionMembership = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-solution-membership'
+    $solutionMembership = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-solution-membership' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
 }
 finally {
     if (Test-Path -LiteralPath $temporarySolutionMemberDirectory) {
@@ -532,7 +569,7 @@ try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
 
-    $unclassified = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unclassified-project'
+    $unclassified = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unclassified-project' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
     Assert-Contract (-not $unclassified.Passed) 'An unclassified temporary backend test project must fail classification.'
     Assert-Contract ($unclassified.Message.Contains('Unclassified backend test')) 'Unclassified project failure must identify the classification error.'
     Assert-Contract ($unclassified.Message.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj')) 'Unclassified project failure must identify the temporary project path.'
@@ -692,9 +729,7 @@ try {
     Assert-Contract (-not (Test-Path -LiteralPath $timeoutResultsDirectory)) 'Buffered shard diagnostics must stay in the job log instead of an uploaded results directory.'
 }
 finally {
-    if (Test-Path -LiteralPath $temporaryProjectDirectory) {
-        Remove-Item -LiteralPath $temporaryProjectDirectory -Recurse -Force
-    }
+    Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryWorkflowPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $timeoutResultsDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
