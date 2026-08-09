@@ -385,7 +385,7 @@ foreach ($resourceVariable in @(
     'businessMaintenance'
 )) {
     $resourceStart = $appHostText.IndexOf("var $resourceVariable =", [StringComparison]::Ordinal)
-    $resourceEnd = $appHostText.IndexOf(';', $resourceStart)
+    $resourceEnd = $appHostText.IndexOf([char]';', $resourceStart)
     Assert-True (
         $resourceStart -ge 0 -and
         $resourceEnd -gt $resourceStart -and
@@ -393,14 +393,14 @@ foreach ($resourceVariable in @(
     ) "AppHost must pass the leader-demo seed flag to '$resourceVariable'."
 }
 $businessMesStart = $appHostText.IndexOf('var businessMes =', [StringComparison]::Ordinal)
-$businessMesEnd = $appHostText.IndexOf(';', $businessMesStart)
+$businessMesEnd = $appHostText.IndexOf([char]';', $businessMesStart)
 Assert-True (
     $businessMesStart -ge 0 -and
     $businessMesEnd -gt $businessMesStart -and
     $appHostText.Substring($businessMesStart, $businessMesEnd - $businessMesStart).Contains('.WithHttpHealthCheck("/swagger/v1/swagger.json")', [StringComparison]::Ordinal)
 ) 'AppHost must not report BusinessMES healthy until its startup seed has completed and HTTP is accepting traffic.'
 $notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
-$notificationEnd = $appHostText.IndexOf(';', $notificationStart)
+$notificationEnd = $appHostText.IndexOf([char]';', $notificationStart)
 Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled', [StringComparison]::Ordinal)) 'AppHost must not leak the business leader-demo seed flag to Notification.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
