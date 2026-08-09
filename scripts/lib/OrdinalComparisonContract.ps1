@@ -90,6 +90,7 @@ function Get-NervOrdinalContractCoveredAxes {
     return @(
         'banned-c-operator',
         'culture-operator-with-string-literal',
+        'culture-operator-with-identity-variable',
         'sort-object',
         'group-object',
         'compare-object',
@@ -101,7 +102,8 @@ function Get-NervOrdinalContractCoveredAxes {
         'parameterless-sort-method',
         'ambiguous-method-with-string-literal',
         'non-ordinal-stringcomparison',
-        'non-ordinal-stringcomparer'
+        'non-ordinal-stringcomparer',
+        'culture-created-stringcomparer'
     )
 }
 
@@ -112,7 +114,7 @@ function Get-NervOrdinalContractBlindSpots {
         one of them becomes detectable the fixture goes red and this list has to be edited with it.
     #>
     return @(
-        'both-operands-non-literal-eq',
+        'non-identity-variable-eq',
         'both-operands-non-literal-in',
         'ambiguous-method-with-variable-argument',
         'like-and-match-operators',
@@ -156,10 +158,348 @@ function Test-NervOrdinalContractStringOperand {
     return $false
 }
 
+function Test-NervOrdinalContractIdentityOperand {
+    <#
+        Detects variables and members whose names express string identity. The suffix set remains
+        narrow so counters, attempts, dates and collections do not become false-positive identity
+        comparisons merely because both operands are variables.
+    #>
+    param([Parameter(Mandatory)] [AllowNull()] [System.Management.Automation.Language.Ast] $Node)
+
+    if ($null -eq $Node) { return $false }
+    while ($Node -is [System.Management.Automation.Language.ParenExpressionAst] -or
+        $Node -is [System.Management.Automation.Language.SubExpressionAst]) {
+        $pipeline = if ($Node -is [System.Management.Automation.Language.ParenExpressionAst]) {
+            $Node.Pipeline
+        }
+        else {
+            $statements = @($Node.SubExpression.Statements)
+            if (($null -ne $Node.SubExpression.Traps -and $Node.SubExpression.Traps.Count -ne 0) -or
+                $statements.Count -ne 1) { return $false }
+            $statements[0]
+        }
+        if ($pipeline -isnot [System.Management.Automation.Language.PipelineAst]) { return $false }
+        $pipelineElements = @($pipeline.PipelineElements)
+        if ($pipelineElements.Count -ne 1 -or
+            $pipelineElements[0] -isnot [System.Management.Automation.Language.CommandExpressionAst] -or
+            @($pipelineElements[0].Redirections).Count -ne 0) {
+            return $false
+        }
+        $Node = $pipelineElements[0].Expression
+    }
+    $name = if ($Node -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        [string] $Node.VariablePath.UserPath
+    }
+    elseif ($Node -is [System.Management.Automation.Language.MemberExpressionAst]) {
+        [string] $Node.Member.Value
+    }
+    elseif ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        $resolvedType = $Node.Type.TypeName.GetReflectionType()
+        $isStringIdentityType = [object]::ReferenceEquals($resolvedType, [string]) -or
+            [object]::ReferenceEquals($resolvedType, [string[]])
+        if (-not $isStringIdentityType) { return $false }
+        return Test-NervOrdinalContractIdentityOperand -Node $Node.Child
+    }
+    else { '' }
+    if ([string]::IsNullOrWhiteSpace($name) -or $name -cmatch '(?i)(?:ExitCode|StatusCode|ProcessId|Pid)$') { return $false }
+    return $name -cmatch '(?:Id|ID|Identity|SHA|Sha|Name|Lane|Outcome|Status|Code|Key|Path|URI|Uri|Namespace|Prefix)$'
+}
+
+function Get-NervOrdinalContractEnclosingFunction {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node)
+
+    $current = $Node.Parent
+    while ($null -ne $current) {
+        if ($current -is [System.Management.Automation.Language.FunctionDefinitionAst]) { return $current }
+        $current = $current.Parent
+    }
+    return $null
+}
+
+function Test-NervOrdinalContractTypedParameter {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.VariableExpressionAst] $Variable,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Context,
+        [Parameter(Mandatory)] [Type[]] $AllowedTypes
+    )
+
+    $scope = Get-NervOrdinalContractEnclosingFunction -Node $Context
+    if ($null -eq $scope) { return $false }
+    $name = [string] $Variable.VariablePath.UserPath
+    $parameters = @($scope.Parameters)
+    if ($null -ne $scope.Body.ParamBlock) { $parameters += @($scope.Body.ParamBlock.Parameters) }
+    $parameters = @($parameters | Where-Object { $_ -is [System.Management.Automation.Language.ParameterAst] })
+    foreach ($parameter in $parameters) {
+        if (-not [string]::Equals([string] $parameter.Name.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        foreach ($allowedType in $AllowedTypes) {
+            if ([object]::ReferenceEquals($parameter.StaticType, $allowedType)) { return $true }
+        }
+        return $false
+    }
+    return $false
+}
+
+function Get-NervOrdinalContractLocalAssignments {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.VariableExpressionAst] $Variable,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Context
+    )
+
+    $scope = Get-NervOrdinalContractEnclosingFunction -Node $Context
+    $searchScope = if ($null -ne $scope) { $scope } else {
+        $root = $Context
+        while ($null -ne $root.Parent) { $root = $root.Parent }
+        $root
+    }
+    $name = [string] $Variable.VariablePath.UserPath
+    $parameters = if ($null -ne $scope) { @($scope.Parameters) } else { @() }
+    if ($null -ne $scope -and $null -ne $scope.Body.ParamBlock) { $parameters += @($scope.Body.ParamBlock.Parameters) }
+    $parameters = @($parameters | Where-Object { $_ -is [System.Management.Automation.Language.ParameterAst] })
+    if (@($parameters | Where-Object {
+        [string]::Equals([string] $_.Name.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)
+    }).Count -gt 0) { return @() }
+
+    return @($searchScope.FindAll({
+        param($node)
+        if ($node -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $node.Extent.StartOffset -ge $Context.Extent.StartOffset -or
+            $node.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+        [string]::Equals([string] $node.Left.VariablePath.UserPath, $name, [StringComparison]::OrdinalIgnoreCase)
+    }, $true) | Where-Object {
+        $owner = Get-NervOrdinalContractEnclosingFunction -Node $_
+        [object]::ReferenceEquals($owner, $scope)
+    })
+}
+
+function Test-NervOrdinalContractTypedStringExpression {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Context
+    )
+
+    if ($Node -is [System.Management.Automation.Language.VariableExpressionAst]) {
+        return Test-NervOrdinalContractTypedParameter -Variable $Node -Context $Context -AllowedTypes @([string])
+    }
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        return [object]::ReferenceEquals($Node.Type.TypeName.GetReflectionType(), [string])
+    }
+    return $Node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+}
+
+function Test-NervOrdinalContractCharacterValue {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.BinaryExpressionAst] $Comparison
+    )
+
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        return [object]::ReferenceEquals($Node.Type.TypeName.GetReflectionType(), [char])
+    }
+    if ($Node -is [System.Management.Automation.Language.IndexExpressionAst]) {
+        return Test-NervOrdinalContractTypedStringExpression -Node $Node.Target -Context $Comparison
+    }
+    if ($Node -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+    if (Test-NervOrdinalContractTypedParameter -Variable $Node -Context $Comparison -AllowedTypes @([char])) { return $true }
+
+    $assignments = @(Get-NervOrdinalContractLocalAssignments -Variable $Node -Context $Comparison)
+    $assignedValue = if ($assignments.Count -eq 1 -and
+        $assignments[0].Right -is [System.Management.Automation.Language.CommandExpressionAst]) {
+        $assignments[0].Right.Expression
+    }
+    elseif ($assignments.Count -eq 1) { $assignments[0].Right }
+    else { $null }
+    if ($assignments.Count -eq 1 -and
+        $assignments[0].Operator -eq [System.Management.Automation.Language.TokenKind]::Equals -and
+        $assignedValue -is [System.Management.Automation.Language.IndexExpressionAst] -and
+        (Test-NervOrdinalContractTypedStringExpression -Node $assignedValue.Target -Context $Comparison)) {
+        return $true
+    }
+
+    # The iterator is a char only when this exact enclosing foreach enumerates ToCharArray() on a
+    # proven string. A same-named variable in another loop or a custom enumerable stays unknown.
+    $ancestor = $Comparison.Parent
+    while ($null -ne $ancestor) {
+        if ($ancestor -is [System.Management.Automation.Language.ForEachStatementAst] -and
+            [string]::Equals([string] $ancestor.Variable.VariablePath.UserPath, [string] $Node.VariablePath.UserPath, [StringComparison]::OrdinalIgnoreCase)) {
+            $toCharArrayCalls = @($ancestor.Condition.FindAll({
+                param($candidate)
+                $candidate -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                    [string]::Equals([string] $candidate.Member.Value, 'ToCharArray', [StringComparison]::OrdinalIgnoreCase)
+            }, $true))
+            return $toCharArrayCalls.Count -eq 1 -and
+                (Test-NervOrdinalContractTypedStringExpression -Node $toCharArrayCalls[0].Expression -Context $Comparison)
+        }
+        if ($ancestor -is [System.Management.Automation.Language.FunctionDefinitionAst]) { break }
+        $ancestor = $ancestor.Parent
+    }
+    return $false
+}
+
+function Test-NervOrdinalContractCharacterComparison {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.BinaryExpressionAst] $Node)
+
+    $leftLiteral = $Node.Left -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ([string] $Node.Left.Value).Length -eq 1
+    $rightLiteral = $Node.Right -is [System.Management.Automation.Language.StringConstantExpressionAst] -and ([string] $Node.Right.Value).Length -eq 1
+    if ($leftLiteral -eq $rightLiteral) { return $false }
+    $other = if ($leftLiteral) { $Node.Right } else { $Node.Left }
+    return Test-NervOrdinalContractCharacterValue -Node $other -Comparison $Node
+}
+
+function Test-NervOrdinalContractOrdinalComparerExpression {
+    param([Parameter(Mandatory)] [AllowNull()] [System.Management.Automation.Language.Ast] $Node)
+
+    if ($null -eq $Node -or
+        $Node -isnot [System.Management.Automation.Language.MemberExpressionAst] -or
+        $Node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+        $Node.Expression -isnot [System.Management.Automation.Language.TypeExpressionAst] -or
+        -not ([string] $Node.Expression.TypeName.FullName).EndsWith('StringComparer', [StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    $member = [string] $Node.Member.Value
+    return [string]::Equals($member, 'Ordinal', [StringComparison]::Ordinal) -or
+        [string]::Equals($member, 'OrdinalIgnoreCase', [StringComparison]::Ordinal)
+}
+
+function Test-NervOrdinalContractOrdinalHashSetConstructor {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node)
+
+    if ($Node -isnot [System.Management.Automation.Language.InvokeMemberExpressionAst] -or
+        $Node.Expression -isnot [System.Management.Automation.Language.TypeExpressionAst] -or
+        -not [string]::Equals([string] $Node.Member.Value, 'new', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $typeName = [string] $Node.Expression.TypeName.FullName
+    if (-not ($typeName.EndsWith('Collections.Generic.HashSet[string]', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($typeName, 'HashSet[string]', [StringComparison]::OrdinalIgnoreCase))) { return $false }
+    return @($Node.Arguments | Where-Object { Test-NervOrdinalContractOrdinalComparerExpression -Node $_ }).Count -eq 1
+}
+
+function Test-NervOrdinalContractOrdinalHashSetReceiver {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Invocation)
+
+    if (Test-NervOrdinalContractOrdinalHashSetConstructor -Node $Invocation.Expression) { return $true }
+    if ($Invocation.Expression -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+    $assignments = @(Get-NervOrdinalContractLocalAssignments -Variable $Invocation.Expression -Context $Invocation)
+    $assignedValue = if ($assignments.Count -eq 1 -and
+        $assignments[0].Right -is [System.Management.Automation.Language.CommandExpressionAst]) {
+        $assignments[0].Right.Expression
+    }
+    elseif ($assignments.Count -eq 1) { $assignments[0].Right }
+    else { $null }
+    return $assignments.Count -eq 1 -and
+        $assignments[0].Operator -eq [System.Management.Automation.Language.TokenKind]::Equals -and
+        (Test-NervOrdinalContractOrdinalHashSetConstructor -Node $assignedValue)
+}
+
+function Test-NervOrdinalContractArrayIndexInvocation {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Node)
+
+    if ($Node.Expression -isnot [System.Management.Automation.Language.TypeExpressionAst] -or
+        -not [string]::Equals([string] $Node.Member.Value, 'IndexOf', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $typeName = [string] $Node.Expression.TypeName.FullName
+    return [string]::Equals($typeName, 'Array', [StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($typeName, 'System.Array', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-NervOrdinalContractIntegerValue {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Context
+    )
+
+    if ($Node -is [System.Management.Automation.Language.ConstantExpressionAst]) { return $Node.Value -is [int] }
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        return [object]::ReferenceEquals($Node.Type.TypeName.GetReflectionType(), [int])
+    }
+    if ($Node -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+    if (Test-NervOrdinalContractTypedParameter -Variable $Node -Context $Context -AllowedTypes @([int])) { return $true }
+    $assignments = @(Get-NervOrdinalContractLocalAssignments -Variable $Node -Context $Context)
+    if ($assignments.Count -ne 1 -or $assignments[0].Operator -ne [System.Management.Automation.Language.TokenKind]::Equals) { return $false }
+    $right = if ($assignments[0].Right -is [System.Management.Automation.Language.CommandExpressionAst]) {
+        $assignments[0].Right.Expression
+    }
+    else { $assignments[0].Right }
+    return $right -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+        ([string]::Equals([string] $right.Member.Value, 'IndexOf', [StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals([string] $right.Member.Value, 'LastIndexOf', [StringComparison]::OrdinalIgnoreCase)) -and
+        (Test-NervOrdinalContractOrdinalArgument -Arguments @($right.Arguments) -Invocation $right)
+}
+
+function Test-NervOrdinalContractStringValue {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Context
+    )
+
+    if ($Node -is [System.Management.Automation.Language.ConvertExpressionAst]) {
+        return [object]::ReferenceEquals($Node.Type.TypeName.GetReflectionType(), [string])
+    }
+    if ($Node -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+    if (Test-NervOrdinalContractTypedParameter -Variable $Node -Context $Context -AllowedTypes @([string])) { return $true }
+
+    # `Get-Content -Raw` is the only inferred string-producing command needed by the tree. Every
+    # prior assignment in the same scope must have that exact shape; an unknown command, missing
+    # -Raw, or a mixed reassignment keeps the receiver unknown and therefore red.
+    $assignments = @(Get-NervOrdinalContractLocalAssignments -Variable $Node -Context $Context)
+    if ($assignments.Count -eq 0) { return $false }
+    foreach ($assignment in $assignments) {
+        if ($assignment.Operator -ne [System.Management.Automation.Language.TokenKind]::Equals -or
+            $assignment.Right -isnot [System.Management.Automation.Language.PipelineAst]) { return $false }
+        $elements = @($assignment.Right.PipelineElements)
+        if ($elements.Count -ne 1 -or $elements[0] -isnot [System.Management.Automation.Language.CommandAst] -or
+            -not [string]::Equals([string] $elements[0].GetCommandName(), 'Get-Content', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+        $parameters = @($elements[0].CommandElements |
+            Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
+            ForEach-Object { [string] $_.ParameterName })
+        if (-not (Test-NervOrdinalContractHasParameter -ParameterNames $parameters -Name 'Raw')) { return $false }
+    }
+    return $true
+}
+
+function Test-NervOrdinalContractCharacterIndexInvocation {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Node)
+
+    if (-not [string]::Equals([string] $Node.Member.Value, 'IndexOf', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $arguments = @($Node.Arguments)
+    if ($arguments.Count -eq 0) { return $false }
+    if ($arguments[0] -is [System.Management.Automation.Language.ConvertExpressionAst] -and
+        [object]::ReferenceEquals($arguments[0].Type.TypeName.GetReflectionType(), [char]) -and
+        (Test-NervOrdinalContractStringValue -Node $Node.Expression -Context $Node)) { return $true }
+    return $arguments.Count -ge 2 -and
+        (Test-NervOrdinalContractStringValue -Node $Node.Expression -Context $Node) -and
+        $arguments[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] -and
+        ([string] $arguments[0].Value).Length -eq 1 -and
+        (Test-NervOrdinalContractIntegerValue -Node $arguments[1] -Context $Node)
+}
+
+function Test-NervOrdinalContractDateTimeSort {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Node)
+
+    if (Test-NervOrdinalContractHasParameter -ParameterNames @($Node.CommandElements |
+        Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
+        ForEach-Object { [string] $_.ParameterName }) -Name 'Unique') { return $false }
+    $properties = @($Node.CommandElements | Select-Object -Skip 1 | Where-Object {
+        $_ -isnot [System.Management.Automation.Language.CommandParameterAst]
+    })
+    if ($properties.Count -ne 1 -or $properties[0] -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
+        -not [string]::Equals([string] $properties[0].Value, 'LastWriteTimeUtc', [StringComparison]::Ordinal)) { return $false }
+    if ($Node.Parent -isnot [System.Management.Automation.Language.PipelineAst]) { return $false }
+    $elements = @($Node.Parent.PipelineElements)
+    $position = [Array]::IndexOf($elements, $Node)
+    return $position -gt 0 -and
+        $elements[$position - 1] -is [System.Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string] $elements[$position - 1].GetCommandName(), 'Get-ChildItem', [StringComparison]::OrdinalIgnoreCase)
+}
+
 function Test-NervOrdinalContractOrdinalArgument {
-    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Arguments)
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Arguments,
+        [System.Management.Automation.Language.InvokeMemberExpressionAst] $Invocation
+    )
 
     foreach ($argument in @($Arguments)) {
+        if ($null -ne $Invocation -and $argument -is [System.Management.Automation.Language.VariableExpressionAst] -and
+            (Test-NervOrdinalContractOrdinalLocalArgument -Argument $argument -Invocation $Invocation)) {
+            return $true
+        }
         if ($argument -isnot [System.Management.Automation.Language.MemberExpressionAst]) { continue }
         $typeName = if ($argument.Expression -is [System.Management.Automation.Language.TypeExpressionAst]) {
             [string] $argument.Expression.TypeName.FullName
@@ -174,6 +514,65 @@ function Test-NervOrdinalContractOrdinalArgument {
     }
 
     return $false
+}
+
+function Test-NervOrdinalContractOrdinalValueExpression {
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node)
+
+    while ($Node -is [System.Management.Automation.Language.CommandExpressionAst] -or
+        $Node -is [System.Management.Automation.Language.ParenExpressionAst]) {
+        $Node = if ($Node -is [System.Management.Automation.Language.CommandExpressionAst]) { $Node.Expression } else { $Node.Pipeline }
+    }
+    if ($Node -is [System.Management.Automation.Language.MemberExpressionAst] -and
+        $Node.Expression -is [System.Management.Automation.Language.TypeExpressionAst] -and
+        ([string] $Node.Expression.TypeName.FullName).EndsWith('StringComparison', [StringComparison]::OrdinalIgnoreCase)) {
+        $member = [string] $Node.Member.Value
+        return [string]::Equals($member, 'Ordinal', [StringComparison]::Ordinal) -or
+            [string]::Equals($member, 'OrdinalIgnoreCase', [StringComparison]::Ordinal)
+    }
+    if ($Node -isnot [System.Management.Automation.Language.IfStatementAst] -or $null -eq $Node.ElseClause) { return $false }
+    $branches = @($Node.Clauses | ForEach-Object { $_.Item2 }) + @($Node.ElseClause)
+    foreach ($branch in $branches) {
+        $statements = @($branch.Statements)
+        if ($statements.Count -ne 1 -or $statements[0] -isnot [System.Management.Automation.Language.PipelineAst]) { return $false }
+        $elements = @($statements[0].PipelineElements)
+        if ($elements.Count -ne 1 -or $elements[0] -isnot [System.Management.Automation.Language.CommandExpressionAst]) { return $false }
+        if (-not (Test-NervOrdinalContractOrdinalValueExpression -Node $elements[0])) { return $false }
+    }
+    return $true
+}
+
+function Test-NervOrdinalContractOrdinalLocalArgument {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.VariableExpressionAst] $Argument,
+        [Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Invocation
+    )
+
+    $function = Get-NervOrdinalContractEnclosingSite -Node $Invocation
+    $scope = $Invocation.Parent
+    while ($null -ne $scope -and $scope -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $scope = $scope.Parent }
+    if ($null -eq $scope -or -not [string]::Equals([string] $scope.Name, $function, [StringComparison]::Ordinal)) { return $false }
+    $variableName = [string] $Argument.VariablePath.UserPath
+    foreach ($parameter in @($scope.Parameters)) {
+        if ($parameter -is [System.Management.Automation.Language.ParameterAst] -and
+            [string]::Equals([string] $parameter.Name.VariablePath.UserPath, $variableName, [StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+    }
+
+    $assignments = @($scope.FindAll({
+        param($node)
+        if ($node -isnot [System.Management.Automation.Language.AssignmentStatementAst] -or
+            $node.Extent.StartOffset -ge $Invocation.Extent.StartOffset -or
+            $node.Left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { return $false }
+        [string]::Equals([string] $node.Left.VariablePath.UserPath, $variableName, [StringComparison]::OrdinalIgnoreCase)
+    }, $true) | Where-Object {
+        $owner = $_.Parent
+        while ($null -ne $owner -and $owner -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { $owner = $owner.Parent }
+        [object]::ReferenceEquals($owner, $scope)
+    })
+    if ($assignments.Count -ne 1 -or $assignments[0].Operator -ne [System.Management.Automation.Language.TokenKind]::Equals) { return $false }
+    return Test-NervOrdinalContractOrdinalValueExpression -Node $assignments[0].Right
 }
 
 function Test-NervOrdinalContractOrdinalComparerReceiver {
@@ -289,11 +688,22 @@ function Get-NervOrdinalComparisonFindings {
             continue
         }
         if (@((Get-NervOrdinalContractCultureOperators) | Where-Object { [string]::Equals($_, $operator, [StringComparison]::Ordinal) }).Count -eq 0) { continue }
-        if (-not ((Test-NervOrdinalContractStringOperand -Node $binary.Left) -or
-                  (Test-NervOrdinalContractStringOperand -Node $binary.Right))) {
+        if (([string]::Equals($operator, 'Ieq', [StringComparison]::Ordinal) -or
+            [string]::Equals($operator, 'Ine', [StringComparison]::Ordinal)) -and
+            (Test-NervOrdinalContractCharacterComparison -Node $binary)) {
             continue
         }
-        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $binary -Axis 'culture-operator-with-string-literal' -Message "compares strings with -$($operator.ToLowerInvariant()), which is culture-aware."
+        $hasStringLiteral = (Test-NervOrdinalContractStringOperand -Node $binary.Left) -or
+            (Test-NervOrdinalContractStringOperand -Node $binary.Right)
+        $hasIdentityVariable = ([string]::Equals($operator, 'Ieq', [StringComparison]::Ordinal) -or
+            [string]::Equals($operator, 'Ine', [StringComparison]::Ordinal)) -and
+            (Test-NervOrdinalContractIdentityOperand -Node $binary.Left) -and
+            (Test-NervOrdinalContractIdentityOperand -Node $binary.Right)
+        if (-not $hasStringLiteral -and -not $hasIdentityVariable) {
+            continue
+        }
+        $axis = if ($hasStringLiteral) { 'culture-operator-with-string-literal' } else { 'culture-operator-with-identity-variable' }
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $binary -Axis $axis -Message "compares identity-sensitive values with -$($operator.ToLowerInvariant()), which is culture-aware."
     }
 
     foreach ($command in $ast.FindAll({
@@ -307,6 +717,7 @@ function Get-NervOrdinalComparisonFindings {
         $axis = $null
         $message = $null
         if ([string]::Equals($name, 'Sort-Object', [StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-NervOrdinalContractDateTimeSort -Node $command) { continue }
             # Both spellings, not just -Unique: ordering a retained artifact by culture collation makes
             # the bytes depend on the machine's locale, which is the same defect one step later.
             $axis = 'sort-object'
@@ -365,13 +776,21 @@ function Get-NervOrdinalComparisonFindings {
         $member = [string] $invocation.Member.Value
         if ([string]::IsNullOrWhiteSpace($member)) { continue }
         $arguments = @($invocation.Arguments)
+        if ([string]::Equals($member, 'Create', [StringComparison]::OrdinalIgnoreCase) -and
+            $invocation.Expression -is [System.Management.Automation.Language.TypeExpressionAst] -and
+            ([string] $invocation.Expression.TypeName.FullName).EndsWith('StringComparer', [StringComparison]::OrdinalIgnoreCase)) {
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'culture-created-stringcomparer' -Message 'creates a StringComparer from a CultureInfo; use Ordinal or OrdinalIgnoreCase.'
+            continue
+        }
+        if (Test-NervOrdinalContractArrayIndexInvocation -Node $invocation) { continue }
         if (@((Get-NervOrdinalContractStringMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-            if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments) { continue }
+            if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments -Invocation $invocation) { continue }
+            if (Test-NervOrdinalContractCharacterIndexInvocation -Node $invocation) { continue }
             Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'string-method-without-ordinal-comparison' -Message "calls .$member() without an explicit ordinal [StringComparison]."
             continue
         }
         if (@((Get-NervOrdinalContractComparisonMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-            if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments) { continue }
+            if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments -Invocation $invocation) { continue }
             if (Test-NervOrdinalContractOrdinalComparerReceiver -Node $invocation) { continue }
             Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'comparison-method-without-ordinal-comparison' -Message "orders with .$member() without an explicit ordinal comparer, which is culture collation."
             continue
@@ -396,6 +815,8 @@ function Get-NervOrdinalComparisonFindings {
             $arguments[0] -isnot [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
             continue
         }
+        if ([string]::Equals($member, 'Contains', [StringComparison]::OrdinalIgnoreCase) -and
+            (Test-NervOrdinalContractOrdinalHashSetReceiver -Invocation $invocation)) { continue }
         Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'ambiguous-method-with-string-literal' -Message "calls .$member() on a string literal without an explicit ordinal [StringComparison]."
     }
 

@@ -121,6 +121,7 @@ try {
   # under the platform temp directory, so path separators and temp-dir semantics are exactly what a
   # macOS/Linux claim has to be backed by.
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/script-governance-scan-boundary.Tests.ps1") -Name "compat-script-governance-scan-boundary" -TimeoutSeconds 180
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-comparison-layers.Tests.ps1") -Name "compat-ordinal-comparison-layers" -TimeoutSeconds 180
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/test-evidence.Tests.ps1") -Name "compat-test-evidence-contracts" -TimeoutSeconds 300
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 

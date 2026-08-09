@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## 脚本标识符序数比较的分层收口（#1512，L6）
+
+`OrdinalComparisonContract.ps1` 以 AST 定义可枚举的比较轴，`ordinal-comparison-layers.Tests.ps1` 将 `scripts/verify-*`、顶层入口、递归 tests、独立 fixtures、`install/package/support` 与 `lib` 分层枚举；tests 与 fixtures 合计必须对 `scripts/tests/**` 恰好覆盖一次，新增路径或整层跳过都会失败。该门禁只接受按函数和表达式精确命中一次的具名豁免，且只允许人读 skip reason 分组。
+
+变量 comparer 不按名称放行：string method 的本地 comparer 只有在同一函数、调用前唯一赋值、不是参数且每个分支都严格为 `StringComparison.Ordinal` 或 `OrdinalIgnoreCase` 时才合法；culture、未知、重赋值或非 ordinal 分支继续报告。char 比较、`HashSet[string]` 的 ordinal receiver、`[Array]::IndexOf`、`Get-ChildItem | Sort-Object LastWriteTimeUtc` 与单字符 `IndexOf` 也必须由精确 AST 来源、类型或 receiver 证明；未知来源和混合重赋值仍然报告。数值、日期与集合比较不因变量名碰巧带 identity 后缀而纳入字符串规则。完整收口需以分层门禁的零 finding 为证据；#1520 的进程清理 authority、runtime runner 与 CI evidence 不属于本层。
+
 ## BusinessGateway 共享宿主 profile 与安全并行（MAN-663，2026-08-04）
 
 `Nerv.IIP.BusinessGateway.Web.Tests` 不再逐测试构建 `WebApplicationFactory<Program>`，也不再关闭整程序集并行。两个命名共享 profile（`Default`、`ServiceBaseUrls`）各构建一个宿主，测试通过租约拿到自己的下游 fake 槽位；租约以逐请求 `X-Nerv-IIP-Test-Scope` header 路由，不向共享容器写入任何逐测试状态，因此不存在会被遗忘的 reset 步骤。租约释放后带旧 header 的请求显式报错，不静默回落。无法逐请求表达的配置（builder 设置、非实例注册、名单外服务类型）自动回退到 dedicated 宿主，正确性不依赖共享是否适用。

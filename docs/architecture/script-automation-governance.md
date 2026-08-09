@@ -231,7 +231,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。这条规矩本 PR 自己已经违反过五次（二轮：参数拼写；三轮：八种绑定拼写；四轮：多重/类型化赋值、`$using:` 死条目；八轮：`-Name` 的多名字与分组语法——表格里「**字面量**名字」按字面读恰好覆盖了实现看不见的 `action,zz`），每一次都是文档先写了一个实现还没到的强度。八轮之后上表的每一行都对应实现里的一个分支或一次显式跳过，且每一行都有具名用例。
 
-## 标识符比较的序数收口（#1509）
+## 标识符比较的序数收口（#1509、#1512）
 
 PowerShell 的默认字符串比较是 **culture-aware**，`-c` 前缀只关掉大小写不敏感、并不改成序数。实测（pwsh 7 / macOS，U+00AD SOFT HYPHEN）：
 
@@ -247,7 +247,11 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 ### 扫描面覆盖的构造（`Get-NervOrdinalContractCoveredAxes`）
 
-`banned-c-operator`（`-ceq`/`-cne`/`-cge`/`-cgt`/`-clt`/`-cle`/`-ccontains`/`-cnotcontains`/`-cin`/`-cnotin`，**无豁免通道**）、`culture-operator-with-string-literal`（对应的默认拼写 `-eq`/`-ne`/`-ge`/`-gt`/`-lt`/`-le`/`-contains`/`-notcontains`/`-in`/`-notin`，且至少一侧是字符串字面量或 `[string]` 转换）、`sort-object`（含**不带** `-Unique` 的排序）、`group-object`、`compare-object`、`select-object-unique`、`where-object-comparison-switch`、`switch-statement-string-clause`、`string-method-without-ordinal-comparison`（`.StartsWith`/`.EndsWith`/`.IndexOf`/`.LastIndexOf` 未显式传序数 `[StringComparison]`）、`comparison-method-without-ordinal-comparison`（`[string]::Compare(…)` / `.CompareTo(…)` 未传序数 `[StringComparison]`、接收方也不是序数 `[StringComparer]`）、`parameterless-sort-method`（`.Sort()` 无参，用的是 culture-aware 的 `Comparer<string>.Default`）、`ambiguous-method-with-string-literal`（`.Contains`/`.Equals` 单个**字面量**参数）、`non-ordinal-stringcomparison`（写出来的 `[StringComparison]::CurrentCulture` 之类）、`non-ordinal-stringcomparer`（写出来的 `[StringComparer]::InvariantCulture` 之类）。
+`banned-c-operator`（`-ceq`/`-cne`/`-cge`/`-cgt`/`-clt`/`-cle`/`-ccontains`/`-cnotcontains`/`-cin`/`-cnotin`，**无豁免通道**）、`culture-operator-with-string-literal`（对应的默认拼写 `-eq`/`-ne`/`-ge`/`-gt`/`-lt`/`-le`/`-contains`/`-notcontains`/`-in`/`-notin`，且至少一侧是字符串字面量或 `[string]` 转换）、`culture-operator-with-identity-variable`（两侧均为受管 identity 变量/成员的 `-eq`/`-ne`）、`sort-object`（含**不带** `-Unique` 的排序）、`group-object`、`compare-object`、`select-object-unique`、`where-object-comparison-switch`、`switch-statement-string-clause`、`string-method-without-ordinal-comparison`（`.StartsWith`/`.EndsWith`/`.IndexOf`/`.LastIndexOf` 未显式传序数 `[StringComparison]`）、`comparison-method-without-ordinal-comparison`（`[string]::Compare(…)` / `.CompareTo(…)` 未传序数 `[StringComparison]`、接收方也不是序数 `[StringComparer]`）、`parameterless-sort-method`（`.Sort()` 无参，用的是 culture-aware 的 `Comparer<string>.Default`）、`ambiguous-method-with-string-literal`（`.Contains`/`.Equals` 单个**字面量**参数）、`non-ordinal-stringcomparison`（写出来的 `[StringComparison]::CurrentCulture` 之类）、`non-ordinal-stringcomparer`（写出来的 `[StringComparer]::InvariantCulture` 之类）以及 `culture-created-stringcomparer`（`StringComparer.Create(CultureInfo, …)`）。
+
+`culture-operator-with-identity-variable` 只识别 `Id`、`Identity`、`Sha`、`Name`、`Lane`、`Outcome`、`Status`、`Code`、`Key`、`Path`、`Uri`、`Namespace`、`Prefix` 等窄后缀；`ExitCode`、`StatusCode`、`ProcessId`、`Pid` 明确排除，因此计数、日期和集合的普通比较不会被误报。string method 的本地 `[StringComparison]` 变量只有在同一函数、调用前唯一赋值、不是参数，且所有 `if/else` 分支均为 `Ordinal`/`OrdinalIgnoreCase` 时才可通过；culture、未知、重赋值与非 ordinal 分支一律报告。此证明不使用变量名白名单或整文件豁免。
+
+非字符串同形调用只按下列窄证明排除：char 必须来自 `[char]`、带 `[string]` 类型的参数索引，或同一作用域内唯一的该索引赋值/`ToCharArray()` 迭代；ordinal set 必须是接收方自身或调用前唯一赋值的 `HashSet[string]::new(..., [StringComparer]::Ordinal/OrdinalIgnoreCase)`；collection lookup 只接受静态 `[Array]::IndexOf`；日期排序只接受紧跟 `Get-ChildItem`、唯一属性为 `LastWriteTimeUtc` 且不带 `-Unique` 的 `Sort-Object`。单字符 `String.IndexOf` 还要求接收方由 `[string]` 参数、`[string]` 转换或全部为 `Get-Content -Raw` 的同作用域赋值证明为字符串，起点由 `[int]`、整数常量或已显式传 ordinal comparer 的 `IndexOf` 返回值证明。未知接收方、默认/culture set、混合重赋值、多字符 needle、动态排序键都继续报告。
 
 **比较算子是从 parser 的类型系统穷举的，不是被点过名的拼写清单**（#1509 六轮）。PowerShell 的比较算子在 `TokenKind` 里成对出现（`I…` / `C…`），契约测试把这个成对家族整体枚举出来，断言它恰好等于三份名单的并集：banned（`-c*` 的相等/序关系/成员系）、culture（它们的默认拼写）、pattern（`-like`/`-notlike`/`-match`/`-notmatch`/`-replace`/`-split` 及其 `c` 变体，按 #1507 口径刻意不动，登记在盲区 `like-and-match-operators`）。三份名单互不相交、每个算子各有一条探针（banned 必报、culture 对字面量必报、pattern 必须沉默）。此前只枚举了相等/成员系的一半，序关系算子 `-lt`/`-le`/`-gt`/`-ge` 两边都没有——它们走 culture collation，与 `Sort-Object` 同一个毛病。
 
@@ -263,8 +267,8 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 | 盲区 | 例子 | 为什么扫不出 |
 | --- | --- | --- |
-| `both-operands-non-literal-eq` | `$left -eq $right` | 两侧都是变量，AST 判不出是不是字符串比较 |
 | `both-operands-non-literal-in` | `$candidate -in $known` | 同上 |
+| `non-identity-variable-eq` | `$attempt -eq $runAttempt` | 两侧变量名都不携带受管 identity 后缀，避免把计数、日期和集合比较泛化为字符串门禁 |
 | `ambiguous-method-with-variable-argument` | `$text.Contains($needle)` | 与 `HashSet[string]`/`Hashtable` 的成员查找同形，后者本身就是序数 |
 | `like-and-match-operators` | `-like` / `-match` | 正则与面向人的文案匹配，按 #1507 口径刻意不动 |
 | `validateset-attribute` | `[ValidateSet('all','class')]` | 属性自身的比较是 culture-aware，无法从调用点收窄（`Get-BackendTestShardExcludedSelectors` 的做法是：属性放行的折叠拼法在函数体内**抛错**而不是静默选空） |
@@ -286,7 +290,7 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 盲区表登记的是「本可以被这两半判据看到、但刻意或无力区分」的构造；名单之外的拼写不进盲区表，也不算在声明强度里。
 
-`scripts/lib/` 下其余五个库（`FullStackSessionRuntime.ps1`、`FullStackSessionState.ps1`、`LeaderDemoTelemetrySimulator.ps1`、`BackendTestShardTimings.ps1`、`ScriptAutomation.ps1`）**没有**这样的收口声明。连同 `scripts/verify-*`、`scripts/*.ps1` 顶层、`scripts/tests/*` 这三层从未进过任何扫描面的存量，全部承接在 **issue #1512**（分层全量账、处理原则与验收都在那张票里）。owner 必须是一张在登记它的变更之外仍然存在的 issue——#1509 合并即关，不能当残余 owner，这正是 #1512 存在的理由。
+`#1512` 的分层门禁覆盖 `scripts/verify-*`、顶层 `scripts/*.ps1`、递归 `scripts/tests/**`、独立 `scripts/tests/fixtures/**`、`scripts/{install,package,support}` 与 `scripts/lib/*`。每层都以临时仓库镜像中真实枚举路径的 culture comparison mutation 重跑完整门禁；tests/fixtures 重复、漏掉新增子目录或跳过一层都会失败。全量「零 finding」只能在该门禁实际通过后声明，不能以本段文字、局部扫描或 #1520 runtime 证据替代。
 
 ## 端口、数据库与容器
 

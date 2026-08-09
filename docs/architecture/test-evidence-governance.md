@@ -92,6 +92,12 @@ MAN-669 PR-A 重新配平分片内容时，同一规则第二次适用。旧的�
 
 规范化 TRX 是确定性的保留交换格式，不是原始运行器时间线。其 `Times` 元素使用固定的合成起点 `2000-01-01T00:00:00Z`，并且只根据保留的 TRX elapsed 耗时推导结束时间；使用方不得将这些时间戳解释为墙钟执行时间。原始 TRX 仍只存在于作业本地，绝不上传。
 
+可空以及带路径的程序集身份使用命名空间限定的 `assemblyIdentity` 标记。任何标记都要求同时存在两个规范 SHA 属性；`null`/`empty` 要求标准 `storage` 为空，`verbatim` 要求 `storage` 非空且包含路径分隔符。其他命名空间中的保留本地名称、不完整的标记集合，或 writer 永远不会生成的标记/`storage` 形状都会失败关闭。
+
+规范化 TRX 文件名在 `OrdinalIgnoreCase` 下唯一且不超过 240 个字符时保留旧版清洗名称。预留这些兼容名称后，其余身份按序数身份顺序分配完整 SHA-256 身份摘要；若旧版/哈希或哈希/哈希候选已被占用，则附加确定性的冲突序号。这样可在大小写不敏感文件系统上无损保留有效身份，同时保持普通历史名称，并使文件名选择不受输入顺序影响。
+
+全脚本序数门禁对 `New-NervTestEvidenceSummary` 中的 `Group-Object { Get-NervRetainedSkipReason $_ }` 保留唯一具名例外：skip reason 是面向人的说明文本，合并视觉等价说明是有意语义。例外同时精确绑定函数名与完整表达式，必须在全树中恰好命中一次；移动、复制或改宽表达式都会失败。其后的保留结果排序、`skipClassification`、`skipPolicyId`、测试身份和文件名仍必须使用序数比较，该例外不传播到任何 identity 字段。
+
 ## 跳过政策
 
 `scripts/test-evidence-policy.json` 包含 `{ schemaVersion, lanes[], sources[], rules[] }`。来源行通过路径、从 1 开始的序号和锚定的来源原因模式，标识一个仓库相对路径下的 C# `Skip =` 赋值。规则标识来源、分类、锚定的运行时测试/原因模式、带 `expectedRuntimeTestCount` 的精确 `testIdentities` 集合、允许的执行通道/操作系统、可选的必需执行通道和隔离元数据。来源/规则引用在两个方向上都闭合，因此使用共享 Fact 特性的新方法不能静默消耗既有的类级预算。
