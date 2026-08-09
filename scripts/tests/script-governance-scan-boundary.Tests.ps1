@@ -106,7 +106,7 @@ $excludedLibraryFiles = @(
         @($expectedExclusions | Where-Object { $candidate -like $_ }).Count -gt 0
     }
 )
-if (($excludedLibraryFiles -join '|') -ne 'scripts/lib/ScriptAutomation.ps1') {
+if (-not [string]::Equals(($excludedLibraryFiles -join '|'), 'scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) {
     throw "Only the wrapper may be excluded from the scripts/lib scan; excluded: [$($excludedLibraryFiles -join ', ')]."
 }
 
@@ -283,7 +283,7 @@ function Invoke-LibraryScopeCase {
             Write-Host $output
             throw "Library scope case '$Name' expected exit $ExpectedExitCode, got $actualExitCode."
         }
-        if ($ExpectedRule -and -not $output.Contains("[$ExpectedRule]")) {
+        if ($ExpectedRule -and $output.IndexOf("[$ExpectedRule]", [StringComparison]::Ordinal) -lt 0) {
             Write-Host $output
             throw "Library scope case '$Name' expected rule '$ExpectedRule'."
         }
@@ -1134,7 +1134,7 @@ function Invoke-FixtureSetAliasShadowDegraded {
         $degradedCommand = "Remove-Item Alias:set -Force; & '$mirrorChecker' -Path '$libraryFixturePath'"
         $degradedOutput = (& pwsh -NoProfile -ExecutionPolicy Bypass -Command $degradedCommand 2>&1) -join "`n"
         $degradedExitCode = $LASTEXITCODE
-        if ($degradedExitCode -eq 0 -or -not $degradedOutput.Contains('[DynamicInvocation]')) {
+        if ($degradedExitCode -eq 0 -or $degradedOutput.IndexOf('[DynamicInvocation]', [StringComparison]::Ordinal) -lt 0) {
             Write-Host $degradedOutput
             throw "Library scope case 'binder-alias-removed-from-session' expected the binder to stay recognised after the alias was removed from the session (exit $degradedExitCode)."
         }
@@ -1225,7 +1225,7 @@ function Invoke-FixtureDefaultScan {
 '@), [System.Text.UTF8Encoding]::new($false))
     $defaultScanOutput = (& pwsh -NoProfile -ExecutionPolicy Bypass -File $mirrorChecker 2>&1) -join "`n"
     $defaultScanExitCode = $LASTEXITCODE
-    if ($defaultScanExitCode -eq 0 -or -not $defaultScanOutput.Contains('scripts/lib/zz-governance-library-fixture.ps1')) {
+    if ($defaultScanExitCode -eq 0 -or $defaultScanOutput.IndexOf('scripts/lib/zz-governance-library-fixture.ps1', [StringComparison]::Ordinal) -lt 0) {
         Write-Host $defaultScanOutput
         throw "The default script governance scan must cover scripts/lib; the planted fixture was not reported (exit $defaultScanExitCode)."
     }
