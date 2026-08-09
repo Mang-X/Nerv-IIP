@@ -10,6 +10,7 @@ namespace Nerv.IIP.ConnectorHost.TestUtilities;
 /// This source is linked into each connector test assembly that owns an external process, socket,
 /// or background collection cycle.
 /// </summary>
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class BoundedWaitContractTests
 {
     private const string CollectionName = ConnectorTimeoutCollection.Name;
@@ -74,6 +75,104 @@ public sealed class BoundedWaitContractTests
             violations);
     }
 
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Non_generic_observation_preserves_an_already_faulted_source_timeout()
+    {
+        var sourceTimeout = new TimeoutException("Modbus transport timed out before observation");
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() =>
+            BoundedObservation.ObserveAsync(
+                Task.FromException(sourceTimeout),
+                "the Modbus operation to finish",
+                () => "operation already faulted"));
+
+        Assert.Same(sourceTimeout, exception);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Non_generic_observation_preserves_a_source_timeout_that_faults_asynchronously()
+    {
+        var sourceTimeout = new TimeoutException("Modbus transport timed out during observation");
+        var releaseFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var operation = FaultAfterAsync(releaseFault.Task, sourceTimeout);
+        var observation = BoundedObservation.ObserveAsync(
+            operation,
+            "the Modbus operation to finish",
+            () => $"operation status={operation.Status}");
+
+        releaseFault.SetResult();
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() => observation);
+
+        Assert.Same(sourceTimeout, exception);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Generic_observation_preserves_an_already_faulted_source_timeout()
+    {
+        var sourceTimeout = new TimeoutException("Modbus read timed out before observation");
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() =>
+            BoundedObservation.ObserveAsync(
+                Task.FromException<int>(sourceTimeout),
+                "the Modbus read to finish",
+                () => "read already faulted"));
+
+        Assert.Same(sourceTimeout, exception);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Generic_observation_preserves_a_source_timeout_that_faults_asynchronously()
+    {
+        var sourceTimeout = new TimeoutException("Modbus read timed out during observation");
+        var releaseFault = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var operation = FaultAfterAsync<int>(releaseFault.Task, sourceTimeout);
+        var observation = BoundedObservation.ObserveAsync(
+            operation,
+            "the Modbus read to finish",
+            () => $"read status={operation.Status}");
+
+        releaseFault.SetResult();
+        var exception = await Assert.ThrowsAsync<TimeoutException>(() => observation);
+
+        Assert.Same(sourceTimeout, exception);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Non_generic_observation_reports_diagnostics_when_its_own_budget_expires()
+    {
+        var operation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var exception = await Assert.ThrowsAsync<XunitException>(() =>
+            BoundedObservation.ObserveAsync(
+                operation.Task,
+                "the bounded operation to finish",
+                () => "operation incomplete",
+                TimeSpan.Zero));
+
+        Assert.Contains("the bounded operation to finish", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("budget 0s", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("attempts 1/1", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("last observation: operation incomplete", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Generic_observation_reports_diagnostics_when_its_own_budget_expires()
+    {
+        var operation = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var exception = await Assert.ThrowsAsync<XunitException>(() =>
+            BoundedObservation.ObserveAsync(
+                operation.Task,
+                "the bounded read to finish",
+                () => "read incomplete",
+                TimeSpan.Zero));
+
+        Assert.Contains("the bounded read to finish", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("budget 0s", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("attempts 1/1", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("last observation: read incomplete", exception.Message, StringComparison.Ordinal);
+    }
+
     private static MethodInfo[] FindViolatingAsyncTests(IEnumerable<Type> types) =>
         types
             .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly))
@@ -103,6 +202,18 @@ public sealed class BoundedWaitContractTests
         typeof(Task).IsAssignableFrom(method.ReturnType)
         || method.ReturnType == typeof(void)
         && method.GetCustomAttribute<AsyncStateMachineAttribute>() is not null;
+
+    private static async Task FaultAfterAsync(Task release, Exception exception)
+    {
+        await release;
+        throw exception;
+    }
+
+    private static async Task<T> FaultAfterAsync<T>(Task release, Exception exception)
+    {
+        await release;
+        throw exception;
+    }
 
 #pragma warning disable xUnit1000, xUnit1048 // Deliberately undiscoverable xUnit v2 async-void regression fixture.
     private sealed class AsyncVoidRegressionFixture

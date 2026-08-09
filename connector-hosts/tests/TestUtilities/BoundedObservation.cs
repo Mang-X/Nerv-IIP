@@ -27,17 +27,15 @@ internal static class BoundedObservation
     {
         var effectiveBudget = budget ?? DefaultBudget;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            await observation.WaitAsync(effectiveBudget);
-        }
-        catch (TimeoutException)
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
         {
             throw new Xunit.Sdk.XunitException(
                 $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
                 + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
                 + $"await on a completion signal); last observation: {lastObservation()}");
         }
+
+        await observation;
     }
 
     /// <summary>
@@ -52,17 +50,29 @@ internal static class BoundedObservation
     {
         var effectiveBudget = budget ?? DefaultBudget;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            return await observation.WaitAsync(effectiveBudget);
-        }
-        catch (TimeoutException)
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
         {
             throw new Xunit.Sdk.XunitException(
                 $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
                 + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
                 + $"await on a completion signal); last observation: {lastObservation()}");
         }
+
+        return await observation;
+    }
+
+    private static async Task<bool> CompletesWithinBudgetAsync(Task observation, TimeSpan budget)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var budgetTask = Task.Delay(budget, cancellation.Token);
+        var completedTask = await Task.WhenAny(observation, budgetTask);
+        if (!ReferenceEquals(completedTask, observation))
+        {
+            return false;
+        }
+
+        await cancellation.CancelAsync();
+        return true;
     }
 
     /// <summary>
