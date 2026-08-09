@@ -709,7 +709,7 @@ public async Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
 
 - [ ] **步骤 7：替换角色变更服务契约**
 
-在 `IamRoleApplicationService.cs` 中，将变更 record 和接口方法替换为：
+在 `IamRoleApplicationService.cs` 中，将变更记录类型和接口方法替换为：
 
 ```csharp
 public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
@@ -1457,7 +1457,7 @@ builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient
 
 - [ ] **步骤 8：添加稳定的 operation ID**
 
-在 `Program.cs` 中扩展端点名称生成器 switch：
+在 `Program.cs` 中扩展端点名称生成器的分支表达式：
 
 ```csharp
 nameof(ListConsoleIamUsersEndpoint) => "listConsoleIamUsers",
@@ -1621,7 +1621,7 @@ export type ConsoleIamPermissionsEnvelope =
   NetCorePalExtensionsDtoResponseDataOfConsoleIamPermissionCatalogResponse
 ```
 
-如果生成类型名称仅因 namespace 扁平化而不同，则将导入替换为 `types.gen.ts` 中生成的名称，并保持公开别名与左侧所示名称完全一致。
+如果生成类型名称仅因命名空间扁平化而不同，则将导入替换为 `types.gen.ts` 中生成的名称，并保持公开别名与左侧所示名称完全一致。
 
 - [ ] **步骤 4：从包根目录导出 IAM 汇总模块**
 
@@ -1767,7 +1767,7 @@ expect(wrapper.getComponent(AppShellStub).props('navItems')).toEqual([
 pnpm -C frontend test packages/app-shell/src/AppShell.test.ts apps/console/src/layouts/DefaultLayout.test.ts
 ```
 
-预期：失败，因为 `NavItem` 不支持 `children`，且 DefaultLayout 仍只暴露 Instances。
+预期：失败，因为 `NavItem` 不支持 `children`，且 DefaultLayout 仍只暴露实例入口。
 
 - [ ] **步骤 3：添加分组导航支持**
 
@@ -2875,7 +2875,7 @@ const emit = defineEmits<{
 }>()
 ```
 
-Badge 变体：
+徽章变体：
 
 ```ts
 function sessionState(session: ConsoleIamSessionResponse) {
@@ -3079,7 +3079,7 @@ pnpm -C frontend --filter @nerv-iip/console dev
 /iam/sessions
 ```
 
-预期：桌面端和移动端宽度下渲染均无文本重叠；主要操作、焦点环和所选导航使用蓝色；状态 badge 不使用蓝色表达危险或成功语义；对话框具有无障碍标题。
+预期：桌面端和移动端宽度下渲染均无文本重叠；主要操作、焦点环和所选导航使用蓝色；状态徽章不使用蓝色表达危险或成功语义；对话框具有无障碍标题。
 
 - [ ] **步骤 4：更新架构文档**
 

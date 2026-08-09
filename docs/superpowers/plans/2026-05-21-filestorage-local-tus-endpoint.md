@@ -20,7 +20,7 @@
 修改：
 
 1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`——为 tus 端点暴露上传会话/文件查询，并登记已完成的本地内容。
-2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`——保持编译兼容；本地 tus 端点可以依赖 `IFileStorageService` 和一个小型 tus 感知接口。
+2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`——保持编译兼容；本地 tus 端点可以依赖 `IFileStorageService` 和一个小型 tus 专用接口。
 3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`——注册本地 tus 存储单例。
 4. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`——新增端点工作流测试。
 5. `docs/architecture/file-storage-baseline.md` 和 `docs/architecture/implementation-readiness.md`——代码验证后记录最小 tus 端点行为。

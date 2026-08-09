@@ -326,4 +326,4 @@ git commit -m "docs: record master data realignment readiness"
 2. 在不将 Recipe/Formula 版本移入 MasterData 的前提下表达流程制造需求。
 3. API 契约包含创建/列表以及批量解析和校验操作。
 4. IntegrationEvent 覆盖下游服务可能缓存的变更。
-5. 下游计划不创建平行的 SKU、UOM、合作方、资源或设备主数据事实。
+5. 下游计划不另行创建重复或竞争性的 SKU、UOM、合作方、资源或设备主数据事实。
