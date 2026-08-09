@@ -1,34 +1,34 @@
-# IAM Persistent Auth Foundation Implementation Plan
+# IAM 持久化认证基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Turn the existing IAM in-memory skeleton into a persistent backend authentication foundation with PostgreSQL migrations, seed behavior, JWT access tokens, refresh-token rotation, schema convention tests and documentation.
+**目标：** 将现有 IAM 内存态骨架转化为持久化后端认证基础，包括 PostgreSQL 迁移、种子行为、JWT 访问 token、refresh-token 轮换、schema 约定测试和文档。
 
-**Architecture:** Keep IAM as a CleanDDD-style three-project service. Preserve the current InMemory profile for earlier verification scripts, and add a PostgreSQL profile with `iam` schema ownership, service-schema EF migrations history, entity configurations, migration runner and focused Web/Application services for login, refresh, revoke, `/me` and Connector Host credential validation.
+**架构：** IAM 保持为 CleanDDD 风格的三项目服务。为较早的验证脚本保留当前 InMemory profile，并添加 PostgreSQL profile，其中包含 `iam` schema 所有权、服务 schema 的 EF 迁移历史、实体配置、迁移运行器，以及用于登录、刷新、吊销、`/me` 和 Connector Host 凭证验证的聚焦 Web/Application 服务。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core 10.0.8, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1, netcorepal repository/unit-of-work primitives, ASP.NET Core `PasswordHasher<T>`, JWT Bearer primitives, xUnit, PowerShell.
+**技术栈：** .NET 10、FastEndpoints、MediatR、EF Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、netcorepal repository/unit-of-work 原语、ASP.NET Core `PasswordHasher<T>`、JWT Bearer 原语、xUnit、PowerShell。
 
 ---
 
-## Completion Record
+## 完成记录
 
-This plan starts from commit `c707269 docs: design iam persistent auth foundation` on branch `codex/iam-persistent-auth-foundation`.
+本计划从提交 `c707269 docs: design iam persistent auth foundation` 开始，该提交位于分支 `codex/iam-persistent-auth-foundation` 上。
 
-Known handoff note: `skills-lock.json` is dirty before this plan begins, with no text diff reported in prior audits. Do not stage or modify it unless the user explicitly asks.
+已知交接说明：本计划开始前 `skills-lock.json` 已处于脏状态，先前审核未报告文本差异。除非用户明确要求，否则不得暂存或修改该文件。
 
-Post-merge audit note: implementation landed through `8c6bcde Merge pull request #12 from Mang-X/codex/iam-persistent-auth-foundation`. The original checkbox tracking below was not updated during the branch, so the boxes are stale historical tracking rather than an accurate status signal. A follow-up audit tightened PostgreSQL IAM management endpoints so user/role/session management routes reject anonymous callers before touching persistence; user/role write management remains intentionally unproductized and returns 501 only after permission checks pass.
+合并后审核说明：实现通过 `8c6bcde Merge pull request #12 from Mang-X/codex/iam-persistent-auth-foundation` 落地。下面的原始复选框跟踪在分支期间未更新，因此这些复选框是过时的历史记录，不是准确的状态信号。后续审核收紧了 PostgreSQL IAM 管理 endpoint，使用户/角色/会话管理路由在接触持久化之前拒绝匿名调用方；用户/角色写入管理仍有意不产品化，并且只有权限检查通过后才返回 501。
 
-## Boundaries
+## 边界
 
-1. Do not implement Gateway-wide bearer authorization or permission policies.
-2. Do not add console login UI, routes, navigation, styles, design tokens or component library changes.
-3. Do not implement OAuth/OIDC, SSO, MFA, WebAuthn, ABAC, delegation or third-party consent flows.
-4. Do not create customer-release migration bundles, installers, backup scripts or restore rehearsals.
-5. Do not validate GaussDB, DMDB or other provider profiles.
-6. Keep the current InMemory IAM profile available unless a targeted test proves a compatibility issue.
-7. Do not stage unrelated `skills-lock.json` changes.
+1. 不得实施 Gateway 全局 bearer 授权或权限策略。
+2. 不得添加控制台登录 UI、路由、导航、样式、设计 token 或组件库变更。
+3. 不得实施 OAuth/OIDC、SSO、MFA、WebAuthn、ABAC、委托或第三方授权流程。
+4. 不得创建客户发布迁移包、安装程序、备份脚本或恢复演练。
+5. 不得验证 GaussDB、DMDB 或其他 provider profile。
+6. 除非针对性测试证明存在兼容性问题，否则保持当前 InMemory IAM profile 可用。
+7. 不得暂存无关的 `skills-lock.json` 变更。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Iam/src/Nerv.IIP.Iam.Domain/
@@ -81,16 +81,16 @@ README.md
 scripts/verify-iam-persistent-auth-foundation.ps1
 ```
 
-## Task 1: Add Persistent Auth Failing Tests
+## 任务 1：添加预期失败的持久化认证测试
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj`
-- Create: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj`
+- 创建：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
 
-- [ ] **Step 1: Add required test project references**
+- [ ] **步骤 1：添加必需的测试项目引用**
 
-Modify the test project references so PostgreSQL tests can inspect IAM infrastructure and schema conventions:
+修改测试项目引用，使 PostgreSQL 测试可以检查 IAM 基础设施和 schema 约定：
 
 ```xml
   <ItemGroup>
@@ -99,17 +99,17 @@ Modify the test project references so PostgreSQL tests can inspect IAM infrastru
   </ItemGroup>
 ```
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
 ```
 
-Expected: existing tests still compile. If this fails before new tests are added, stop and inspect the project reference path.
+预期结果：现有测试仍可编译。如果在添加新测试之前失败，停止工作并检查项目引用路径。
 
-- [ ] **Step 2: Add a failing PostgreSQL login/refresh/revoke test**
+- [ ] **步骤 2：添加预期失败的 PostgreSQL 登录/刷新/吊销测试**
 
-Create `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`:
+创建 `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`：
 
 ```csharp
 using System.Net;
@@ -240,25 +240,25 @@ public sealed class IamPostgresProfileTests
 }
 ```
 
-- [ ] **Step 3: Run the new test and verify the expected red state**
+- [ ] **步骤 3：运行新测试并验证预期红灯状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter FullyQualifiedName~IamPostgresProfileTests
 ```
 
-Expected: compile failure because `ApplicationDbContext`, `IamDatabaseMigrationRunner`, `IamSeedService`, and PostgreSQL IAM DbSets do not exist yet.
+预期结果：编译失败，因为 `ApplicationDbContext`、`IamDatabaseMigrationRunner`、`IamSeedService` 和 PostgreSQL IAM DbSet 尚不存在。
 
-## Task 2: Add IAM Schema Convention Failing Test
+## 任务 2：添加预期失败的 IAM Schema 约定测试
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamSchemaConventionTests.cs`
+- 创建：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamSchemaConventionTests.cs`
 
-- [ ] **Step 1: Write the schema convention test**
+- [ ] **步骤 1：编写 schema 约定测试**
 
-Create `IamSchemaConventionTests.cs`:
+创建 `IamSchemaConventionTests.cs`：
 
 ```csharp
 using MediatR;
@@ -363,34 +363,34 @@ public sealed class IamSchemaConventionTests
 }
 ```
 
-- [ ] **Step 2: Run schema test and verify the expected red state**
+- [ ] **步骤 2：运行 schema 测试并验证预期红灯状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter FullyQualifiedName~IamSchemaConventionTests
 ```
 
-Expected: compile failure because IAM aggregate types and `AddIamPersistence` do not exist yet.
+预期结果：编译失败，因为 IAM 聚合类型和 `AddIamPersistence` 尚不存在。
 
-## Task 3: Add IAM Domain Model
+## 任务 3：添加 IAM 领域模型
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/Nerv.IIP.Iam.Domain.csproj`
-- Modify or keep: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/IamFacts.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/OrganizationAggregate/Organization.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/UserAggregate/User.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/MembershipAggregate/Membership.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/UserSessionAggregate/UserSession.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/ConnectorHostCredentialAggregate/ConnectorHostCredential.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/SeedAggregate/SeedManifest.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/DomainEvents/IamDomainEvents.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/Nerv.IIP.Iam.Domain.csproj`
+- 修改或保留：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/IamFacts.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/OrganizationAggregate/Organization.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/UserAggregate/User.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/RoleAggregate/Role.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/MembershipAggregate/Membership.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/UserSessionAggregate/UserSession.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/ConnectorHostCredentialAggregate/ConnectorHostCredential.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/SeedAggregate/SeedManifest.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/DomainEvents/IamDomainEvents.cs`
 
-- [ ] **Step 1: Add netcorepal domain reference**
+- [ ] **步骤 1：添加 netcorepal 领域引用**
 
-Modify the IAM Domain project:
+修改 IAM Domain 项目：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -408,9 +408,9 @@ Modify the IAM Domain project:
 </Project>
 ```
 
-- [ ] **Step 2: Add Organization and Environment aggregate file**
+- [ ] **步骤 2：添加 Organization 和 Environment 聚合文件**
 
-Create `OrganizationAggregate/Organization.cs`:
+创建 `OrganizationAggregate/Organization.cs`：
 
 ```csharp
 using NetCorePal.Extensions.Domain;
@@ -464,9 +464,9 @@ public sealed class IamEnvironment : Entity<IamEnvironmentId>, IAggregateRoot
 }
 ```
 
-- [ ] **Step 3: Add User aggregate file**
+- [ ] **步骤 3：添加 User 聚合文件**
 
-Create `UserAggregate/User.cs`:
+创建 `UserAggregate/User.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Domain.DomainEvents;
@@ -533,9 +533,9 @@ public sealed class User : Entity<UserId>, IAggregateRoot
 }
 ```
 
-- [ ] **Step 4: Add Role and Membership aggregate files**
+- [ ] **步骤 4：添加 Role 和 Membership 聚合文件**
 
-Create `RoleAggregate/Role.cs`:
+创建 `RoleAggregate/Role.cs`：
 
 ```csharp
 using NetCorePal.Extensions.Domain;
@@ -596,7 +596,7 @@ public sealed class RolePermission : Entity<RolePermissionId>
 }
 ```
 
-Create `MembershipAggregate/Membership.cs`:
+创建 `MembershipAggregate/Membership.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -666,9 +666,9 @@ public sealed class MembershipRole : Entity<MembershipRoleId>
 }
 ```
 
-- [ ] **Step 5: Add UserSession and Connector credential aggregate files**
+- [ ] **步骤 5：添加 UserSession 和 Connector 凭证聚合文件**
 
-Create `UserSessionAggregate/UserSession.cs`:
+创建 `UserSessionAggregate/UserSession.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
@@ -726,7 +726,7 @@ public sealed class UserSession : Entity<UserSessionId>, IAggregateRoot
 }
 ```
 
-Create `ConnectorHostCredentialAggregate/ConnectorHostCredential.cs`:
+创建 `ConnectorHostCredentialAggregate/ConnectorHostCredential.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -805,9 +805,9 @@ public sealed class ConnectorHostCredentialCapability : Entity<ConnectorHostCred
 }
 ```
 
-- [ ] **Step 6: Add SeedManifest and domain events**
+- [ ] **步骤 6：添加 SeedManifest 和领域事件**
 
-Create `SeedAggregate/SeedManifest.cs`:
+创建 `SeedAggregate/SeedManifest.cs`：
 
 ```csharp
 using NetCorePal.Extensions.Domain;
@@ -839,7 +839,7 @@ public sealed class SeedManifest : Entity<SeedManifestId>, IAggregateRoot
 }
 ```
 
-Create `DomainEvents/IamDomainEvents.cs`:
+创建 `DomainEvents/IamDomainEvents.cs`：
 
 ```csharp
 using NetCorePal.Extensions.Domain;
@@ -851,30 +851,30 @@ public sealed record UserSessionCreatedDomainEvent(string SessionId, string User
 public sealed record UserSessionRevokedDomainEvent(string SessionId, string UserId, DateTimeOffset RevokedAtUtc, string Reason) : IDomainEvent;
 ```
 
-- [ ] **Step 7: Run compile and inspect errors**
+- [ ] **步骤 7：运行编译并检查错误**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/services/Iam/src/Nerv.IIP.Iam.Domain/Nerv.IIP.Iam.Domain.csproj
 ```
 
-Expected: domain project builds. If strongly typed ID source generation requires additional package references, compare AppHub/Ops project files and add only the missing netcorepal package reference.
+预期结果：Domain 项目构建成功。如果强类型 ID 源生成需要其他包引用，对比 AppHub/Ops 项目文件，只添加缺失的 netcorepal 包引用。
 
-## Task 4: Add IAM Persistence Profile
+## 任务 4：添加 IAM 持久化 Profile
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Nerv.IIP.Iam.Infrastructure.csproj`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamPersistenceServiceCollectionExtensions.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamDatabaseMigrationRunner.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Nerv.IIP.Iam.Infrastructure.csproj`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamPersistenceServiceCollectionExtensions.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamDatabaseMigrationRunner.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs`
 
-- [ ] **Step 1: Add infrastructure package references**
+- [ ] **步骤 1：添加 Infrastructure 包引用**
 
-Modify IAM Infrastructure project:
+修改 IAM Infrastructure 项目：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -896,9 +896,9 @@ Modify IAM Infrastructure project:
 </Project>
 ```
 
-- [ ] **Step 2: Add DbContext**
+- [ ] **步骤 2：添加 DbContext**
 
-Create `ApplicationDbContext.cs` with DbSets for every IAM persistent entity. Follow AppHub/Ops default schema style:
+创建 `ApplicationDbContext.cs`，为每个 IAM 持久化实体提供 DbSet。遵循 AppHub/Ops 默认 schema 风格：
 
 ```csharp
 using MediatR;
@@ -938,9 +938,9 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
 }
 ```
 
-- [ ] **Step 3: Add persistence extension and migration runner**
+- [ ] **步骤 3：添加持久化扩展和迁移运行器**
 
-Create `IamPersistenceServiceCollectionExtensions.cs`:
+创建 `IamPersistenceServiceCollectionExtensions.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -980,7 +980,7 @@ public static class IamPersistenceServiceCollectionExtensions
 }
 ```
 
-Create `IamDatabaseMigrationRunner.cs`:
+创建 `IamDatabaseMigrationRunner.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -996,9 +996,9 @@ public sealed class IamDatabaseMigrationRunner(ApplicationDbContext dbContext)
 }
 ```
 
-- [ ] **Step 4: Add entity configurations with comments and indexes**
+- [ ] **步骤 4：添加带注释和索引的实体配置**
 
-Create one configuration file per aggregate area. Use these exact table names and required conventions:
+为每个聚合区域创建一个配置文件。使用以下精确表名和必需约定：
 
 ```csharp
 builder.ToTable("users", table => table.HasComment("IAM user login identities and security stamps."));
@@ -1021,55 +1021,55 @@ builder.HasIndex(x => x.LoginName).IsUnique();
 builder.HasIndex(x => x.Email).IsUnique();
 ```
 
-Repeat the same explicit-ID/comment pattern for:
+对以下对象重复相同的显式 ID/注释模式：
 
-1. `organizations`: `Id`, `Name`, `Status`, `Deleted`, `RowVersion`.
-2. `environments`: `Id`, `OrganizationId`, `Name`, `Status`, `Deleted`, `RowVersion`, unique index on `{ OrganizationId, Id }`.
-3. `roles`: `Id`, `RoleName`, `Deleted`, `RowVersion`, unique role name.
-4. `role_permissions`: `Id`, `RoleId`, `PermissionCode`, unique index on `{ RoleId, PermissionCode }`.
-5. `memberships`: `Id`, `UserId`, `OrganizationId`, `EnvironmentId`, unique index on `{ UserId, OrganizationId, EnvironmentId }`.
-6. `membership_roles`: `Id`, `MembershipId`, `RoleId`, unique index on `{ MembershipId, RoleId }`.
-7. `user_sessions`: `Id`, `UserId`, `RefreshTokenHash`, `IssuedAtUtc`, `ExpiresAtUtc`, `RevokedAtUtc`, `RevokedReason`, `PermissionVersion`, `ClientInfo`, `IpAddress`, indexes on `RefreshTokenHash` and `{ UserId, RevokedAtUtc }`.
-8. `connector_host_credentials`: `Id`, `ConnectorHostId`, `OrganizationId`, `EnvironmentId`, `SecretHash`, `ValidFromUtc`, `ValidToUtc`, unique connector host id.
-9. `connector_host_credential_capabilities`: `Id`, `ConnectorHostCredentialId`, `CapabilityCode`.
-10. `seed_manifests`: `Id`, `SeedName`, `SeedVersion`, `OwnerService`, `AppliedAtUtc`, unique index on `{ SeedName, SeedVersion }`.
+1. `organizations`：`Id`、`Name`、`Status`、`Deleted`、`RowVersion`。
+2. `environments`：`Id`、`OrganizationId`、`Name`、`Status`、`Deleted`、`RowVersion`，在 `{ OrganizationId, Id }` 上建立唯一索引。
+3. `roles`：`Id`、`RoleName`、`Deleted`、`RowVersion`，角色名称唯一。
+4. `role_permissions`：`Id`、`RoleId`、`PermissionCode`，在 `{ RoleId, PermissionCode }` 上建立唯一索引。
+5. `memberships`：`Id`、`UserId`、`OrganizationId`、`EnvironmentId`，在 `{ UserId, OrganizationId, EnvironmentId }` 上建立唯一索引。
+6. `membership_roles`：`Id`、`MembershipId`、`RoleId`，在 `{ MembershipId, RoleId }` 上建立唯一索引。
+7. `user_sessions`：`Id`、`UserId`、`RefreshTokenHash`、`IssuedAtUtc`、`ExpiresAtUtc`、`RevokedAtUtc`、`RevokedReason`、`PermissionVersion`、`ClientInfo`、`IpAddress`，在 `RefreshTokenHash` 和 `{ UserId, RevokedAtUtc }` 上建立索引。
+8. `connector_host_credentials`：`Id`、`ConnectorHostId`、`OrganizationId`、`EnvironmentId`、`SecretHash`、`ValidFromUtc`、`ValidToUtc`，Connector Host id 唯一。
+9. `connector_host_credential_capabilities`：`Id`、`ConnectorHostCredentialId`、`CapabilityCode`。
+10. `seed_manifests`：`Id`、`SeedName`、`SeedVersion`、`OwnerService`、`AppliedAtUtc`，在 `{ SeedName, SeedVersion }` 上建立唯一索引。
 
-- [ ] **Step 5: Run schema convention test and verify meaningful failures**
+- [ ] **步骤 5：运行 schema 约定测试并验证有意义的失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter FullyQualifiedName~IamSchemaConventionTests
 ```
 
-Expected: the test compiles. It may fail with specific missing comments, missing max lengths or missing migrations history schema. Fix entity configuration until the test passes without requiring a live database.
+预期结果：测试可编译。它可能因具体的注释缺失、最大长度缺失或迁移历史 schema 缺失而失败。修复实体配置，直到测试无需运行中数据库即可通过。
 
-## Task 5: Add IAM Auth, Token and Seed Services
+## 任务 5：添加 IAM 认证、Token 和种子服务
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.IIP.Iam.Web.csproj`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthModels.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamPasswordService.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamTokenService.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedOptions.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Program.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Nerv.IIP.Iam.Web.csproj`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthModels.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamPasswordService.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamTokenService.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedOptions.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Program.cs`
 
-- [ ] **Step 1: Add Web package references**
+- [ ] **步骤 1：添加 Web 包引用**
 
-Modify IAM Web project to include JWT and password hashing packages available through the shared framework. If an explicit package reference is required by the compiler, add:
+修改 IAM Web 项目，以包含共享框架提供的 JWT 和密码哈希包。如果编译器要求显式包引用，添加：
 
 ```xml
 <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" VersionOverride="10.0.0" />
 ```
 
-If Central Package Management rejects `VersionOverride`, add `Microsoft.AspNetCore.Authentication.JwtBearer` to `backend/Directory.Packages.props` with version `10.0.0` and use a normal package reference. Keep this change scoped to the package reference needed for JWT Bearer.
+如果集中式包管理拒绝 `VersionOverride`，将 `Microsoft.AspNetCore.Authentication.JwtBearer` 添加到 `backend/Directory.Packages.props`，版本设为 `10.0.0`，并使用普通包引用。此变更严格限定为 JWT Bearer 所需的包引用。
 
-- [ ] **Step 2: Add auth DTOs**
+- [ ] **步骤 2：添加认证 DTO**
 
-Create `Application/Auth/IamAuthModels.cs`:
+创建 `Application/Auth/IamAuthModels.cs`：
 
 ```csharp
 namespace Nerv.IIP.Iam.Web.Application.Auth;
@@ -1083,9 +1083,9 @@ public sealed record CurrentPrincipalResponse(string UserId, string LoginName, s
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 ```
 
-- [ ] **Step 3: Add password and token services**
+- [ ] **步骤 3：添加密码和 token 服务**
 
-Create `IamPasswordService.cs`:
+创建 `IamPasswordService.cs`：
 
 ```csharp
 using Microsoft.AspNetCore.Identity;
@@ -1107,7 +1107,7 @@ public sealed class IamPasswordService
 }
 ```
 
-Create `IamTokenService.cs` with HMAC signing from configuration key `Iam:Jwt:SigningKey`. The implementation must create JWTs with `sub`, `sessionId`, `principalType`, `securityStamp`, `permissionVersion`, `iat` and `jti` claims. It must expose:
+创建 `IamTokenService.cs`，使用配置键 `Iam:Jwt:SigningKey` 提供的 HMAC 签名。实现必须创建包含 `sub`、`sessionId`、`principalType`、`securityStamp`、`permissionVersion`、`iat` 和 `jti` claim 的 JWT。它必须公开：
 
 ```csharp
 public sealed record AccessTokenPrincipal(string SessionId, string UserId, string SecurityStamp, int PermissionVersion);
@@ -1121,11 +1121,11 @@ public sealed class IamTokenService(IConfiguration configuration)
 }
 ```
 
-When implementing `CreateAccessToken` and `TryReadPrincipal`, use `System.IdentityModel.Tokens.Jwt`, `Microsoft.IdentityModel.Tokens`, `ClaimsIdentity`, `JwtSecurityTokenHandler`, and `SymmetricSecurityKey`. Use `ValidateLifetime=true` and a default 15-minute lifetime if `Iam:Jwt:AccessTokenMinutes` is not configured.
+实施 `CreateAccessToken` 和 `TryReadPrincipal` 时，使用 `System.IdentityModel.Tokens.Jwt`、`Microsoft.IdentityModel.Tokens`、`ClaimsIdentity`、`JwtSecurityTokenHandler` 和 `SymmetricSecurityKey`。使用 `ValidateLifetime=true`；如果未配置 `Iam:Jwt:AccessTokenMinutes`，默认有效期为 15 分钟。
 
-- [ ] **Step 4: Add seed options and seed service**
+- [ ] **步骤 4：添加种子选项和种子服务**
 
-Create `Application/Seed/IamSeedOptions.cs`:
+创建 `Application/Seed/IamSeedOptions.cs`：
 
 ```csharp
 namespace Nerv.IIP.Iam.Web.Application.Seed;
@@ -1148,18 +1148,18 @@ public sealed class IamSeedOptions
 }
 ```
 
-Create `IamSeedService.cs`. It must:
+创建 `IamSeedService.cs`。它必须：
 
-1. read `IOptions<IamSeedOptions>`;
-2. no-op when `Enabled` is false;
-3. require non-empty `AdminPassword` and `ConnectorHostSecret` when enabled;
-4. upsert organization, environment, admin role, admin user, membership, connector credential and seed manifest by stable IDs/business keys;
-5. use `NervIipSeedPermissions.All` for role permissions and connector `connectors.*` capability scope;
-6. save changes through `ApplicationDbContext`.
+1. 读取 `IOptions<IamSeedOptions>`；
+2. 当 `Enabled` 为 false 时不执行操作；
+3. 启用时要求 `AdminPassword` 和 `ConnectorHostSecret` 非空；
+4. 按稳定 ID/业务键 upsert 组织、环境、管理员角色、管理员用户、成员关系、Connector 凭证和种子清单；
+5. 角色权限使用 `NervIipSeedPermissions.All`，Connector 能力范围使用 `connectors.*`；
+6. 通过 `ApplicationDbContext` 保存变更。
 
-- [ ] **Step 5: Add auth service**
+- [ ] **步骤 5：添加认证服务**
 
-Create `IamAuthService.cs` with these public methods:
+创建 `IamAuthService.cs`，提供以下公开方法：
 
 ```csharp
 public Task<AuthResponse> LoginAsync(string loginName, string password, string? clientInfo, string? ipAddress, CancellationToken cancellationToken);
@@ -1169,18 +1169,18 @@ public Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext http
 public Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(string connectorHostId, string secret, CancellationToken cancellationToken);
 ```
 
-Implementation requirements:
+实施要求：
 
-1. `LoginAsync` finds enabled user by login name, verifies password, records success/failure, creates `UserSession`, and returns token pair.
-2. `RefreshAsync` hashes the submitted refresh token, finds an active session, verifies the user is enabled, revokes the old session with reason `refresh-rotated`, creates a new session and returns token pair.
-3. `RevokeSessionAsync` is idempotent.
-4. `GetCurrentPrincipalAsync` validates JWT and then verifies persisted session, user enabled state, security stamp and permission version.
-5. `ValidateConnectorCredentialAsync` hashes the submitted secret and checks credential validity window.
-6. All unauthorized paths throw `UnauthorizedAccessException` with generic messages.
+1. `LoginAsync` 按登录名查找已启用用户、验证密码、记录成功/失败、创建 `UserSession` 并返回 token 对。
+2. `RefreshAsync` 对提交的 refresh token 求哈希，查找活动会话，验证用户已启用，以原因 `refresh-rotated` 吊销旧会话，创建新会话并返回 token 对。
+3. `RevokeSessionAsync` 是幂等的。
+4. `GetCurrentPrincipalAsync` 验证 JWT，然后验证持久化会话、用户启用状态、security stamp 和权限版本。
+5. `ValidateConnectorCredentialAsync` 对提交的 secret 求哈希，并检查凭证有效时间窗。
+6. 所有未授权路径都以通用消息抛出 `UnauthorizedAccessException`。
 
-- [ ] **Step 6: Wire services in Program**
+- [ ] **步骤 6：在 Program 中接入服务**
 
-Modify `Program.cs`:
+修改 `Program.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -1220,23 +1220,23 @@ app.Run();
 public partial class Program;
 ```
 
-## Task 6: Update IAM Endpoints
+## 任务 6：更新 IAM Endpoint
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Auth/AuthEndpoints.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Sessions/SessionEndpoints.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Auth/AuthEndpoints.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Sessions/SessionEndpoints.cs`
 
-- [ ] **Step 1: Replace Auth endpoints with auth service**
+- [ ] **步骤 1：使用认证服务替换 Auth endpoint**
 
-Modify Auth endpoints so PostgreSQL mode uses `IamAuthService`. Keep support for InMemory mode by either:
+修改 Auth endpoint，使 PostgreSQL 模式使用 `IamAuthService`。通过以下任一方式保留对 InMemory 模式的支持：
 
-1. wrapping `InMemoryIamStore` behind `IamAuthService` when no `ApplicationDbContext` exists; or
-2. registering a common `IIamAuthService` interface with separate in-memory and PostgreSQL implementations.
+1. 将 `InMemoryIamStore` 包装在 `IamAuthService` 后，并在不存在 `ApplicationDbContext` 时使用它；或
+2. 注册公共 `IIamAuthService` 接口，并提供独立的内存态和 PostgreSQL 实现。
 
-Endpoint behavior must match:
+Endpoint 行为必须符合：
 
 ```csharp
 [HttpPost("/api/iam/v1/auth/login")]
@@ -1253,15 +1253,15 @@ public sealed class LoginEndpoint(IamAuthService auth) : Endpoint<LoginRequest>
 }
 ```
 
-`WriteAuthResultAsync` should support `Func<Task<T>>`, catch `UnauthorizedAccessException`, set status `401`, and write `{ title, detail, status }`.
+`WriteAuthResultAsync` 应支持 `Func<Task<T>>`，捕获 `UnauthorizedAccessException`，将状态设置为 `401`，并写入 `{ title, detail, status }`。
 
-- [ ] **Step 2: Make `/me` persisted-session aware**
+- [ ] **步骤 2：使 `/me` 感知持久化会话**
 
-`GET /api/iam/v1/me` must call `IamAuthService.GetCurrentPrincipalAsync(HttpContext, ct)`. If it returns null, call `Send.UnauthorizedAsync(ct)`. Otherwise return `CurrentPrincipalResponse`.
+`GET /api/iam/v1/me` 必须调用 `IamAuthService.GetCurrentPrincipalAsync(HttpContext, ct)`。如果返回 null，调用 `Send.UnauthorizedAsync(ct)`；否则返回 `CurrentPrincipalResponse`。
 
-- [ ] **Step 3: Update users/roles/sessions read endpoints**
+- [ ] **步骤 3：更新 users/roles/sessions 读取 endpoint**
 
-For PostgreSQL mode, read from `ApplicationDbContext` with `AsNoTracking()` and return minimal DTOs:
+在 PostgreSQL 模式下，从 `ApplicationDbContext` 读取，使用 `AsNoTracking()` 并返回最小 DTO：
 
 ```csharp
 await Send.OkAsync(await db.Users
@@ -1271,7 +1271,7 @@ await Send.OkAsync(await db.Users
     .ToListAsync(ct), ct);
 ```
 
-Adjust property names to the actual strongly typed ID property (`x.Id.Id`) when implementing. Keep InMemory fallback for early scripts by resolving optional services carefully:
+实施时，将属性名称调整为实际的强类型 ID 属性（`x.Id.Id`）。谨慎解析可选服务，为早期脚本保留 InMemory 回退：
 
 ```csharp
 var db = Resolve<ApplicationDbContext?>();
@@ -1283,40 +1283,40 @@ if (db is null)
 }
 ```
 
-- [ ] **Step 4: Keep placeholder write endpoints honest**
+- [ ] **步骤 4：如实处理占位写入 endpoint**
 
-For `POST /users`, `PATCH /users/{userId}`, `POST /users/{userId}/disable`, `POST /roles`, and `PATCH /roles/{roleId}/permissions`, either implement real persisted commands or return `501 Not Implemented` with a problem response. Do not return fake placeholder IDs in PostgreSQL mode.
+对于 `POST /users`、`PATCH /users/{userId}`、`POST /users/{userId}/disable`、`POST /roles` 和 `PATCH /roles/{roleId}/permissions`，要么实施真实持久化命令，要么返回带 problem 响应的 `501 Not Implemented`。PostgreSQL 模式下不得返回虚假的占位 ID。
 
-- [ ] **Step 5: Run IAM web tests**
+- [ ] **步骤 5：运行 IAM Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
 ```
 
-Expected: existing in-memory test passes, schema convention test passes, PostgreSQL test is skipped when `NERV_IIP_TEST_POSTGRES` is unset.
+预期结果：现有内存态测试通过、schema 约定测试通过；未设置 `NERV_IIP_TEST_POSTGRES` 时跳过 PostgreSQL 测试。
 
-## Task 7: Generate IAM Migration and Verification Script
+## 任务 7：生成 IAM 迁移和验证脚本
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Migrations/*`
-- Create: `scripts/verify-iam-persistent-auth-foundation.ps1`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Migrations/*`
+- 创建：`scripts/verify-iam-persistent-auth-foundation.ps1`
 
-- [ ] **Step 1: Restore EF tool**
+- [ ] **步骤 1：还原 EF 工具**
 
-Run:
+运行：
 
 ```powershell
 dotnet tool restore
 ```
 
-Expected: exit 0.
+预期结果：以 0 退出。
 
-- [ ] **Step 2: Generate IAM initial migration**
+- [ ] **步骤 2：生成 IAM 初始迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -1329,22 +1329,22 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__IamDb -ErrorAction SilentlyContinue
 ```
 
-Expected: migration files are created under IAM Infrastructure `Migrations/`.
+预期结果：迁移文件创建在 IAM Infrastructure 的 `Migrations/` 下。
 
-- [ ] **Step 3: Inspect migration**
+- [ ] **步骤 3：检查迁移**
 
-Open the generated migration and verify:
+打开生成的迁移并验证：
 
-1. schema `iam` is created;
-2. all business tables have comments;
-3. all business columns have comments;
-4. string IDs have bounded lengths;
-5. no password, refresh token or connector secret appears as clear text;
-6. no data seed with secrets is embedded in the migration.
+1. 已创建 schema `iam`；
+2. 所有业务表都有注释；
+3. 所有业务列都有注释；
+4. 字符串 ID 长度有界；
+5. 密码、refresh token 或 Connector secret 均不以明文出现；
+6. 迁移中未嵌入包含 secret 的数据种子。
 
-- [ ] **Step 4: Add verification script**
+- [ ] **步骤 4：添加验证脚本**
 
-Create `scripts/verify-iam-persistent-auth-foundation.ps1`:
+创建 `scripts/verify-iam-persistent-auth-foundation.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -1413,39 +1413,39 @@ dotnet test backend/Nerv.IIP.sln --no-restore
 Write-Host "IAM persistent auth foundation verified."
 ```
 
-- [ ] **Step 5: Run targeted verification**
+- [ ] **步骤 5：运行针对性验证**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-iam-persistent-auth-foundation.ps1
 ```
 
-Expected: exit 0 and final output `IAM persistent auth foundation verified.`
+预期结果：以 0 退出，最终输出为 `IAM persistent auth foundation verified.`
 
-## Task 8: Update Documentation
+## 任务 8：更新文档
 
-**Files:**
+**文件：**
 
-- Modify: `README.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/iam-authentication-baseline.md`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/database-schema-conventions.md`
+- 修改：`README.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/iam-authentication-baseline.md`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/architecture/database-schema-conventions.md`
 
-- [ ] **Step 1: Update README status**
+- [ ] **步骤 1：更新 README 状态**
 
-Update the current status to add a seventh stage after schema governance:
+更新当前状态，在 schema 治理之后添加第七阶段：
 
 ```markdown
 第七阶段 IAM Persistent Auth Foundation 已规划/落地：IAM 在保留 InMemory profile 的同时新增 PostgreSQL `iam` schema、EF migrations、schema convention tests、idempotent seed、JWT access token、refresh token rotation、session revoke 和 Connector Host credential validation 的持久化后端基线。
 ```
 
-Use `已规划` while only planning, and change to `已落地` only after implementation verification passes.
+仅规划时使用`已规划`，只有实施验证通过后才改为`已落地`。
 
-- [ ] **Step 2: Update implementation readiness**
+- [ ] **步骤 2：更新实施就绪状态**
 
-Add a new section `### 第七迭代已完成范围` after the sixth iteration once implemented:
+实施完成后，在第六次迭代之后添加新章节 `### 第七迭代已完成范围`：
 
 ```markdown
 ### 第七迭代已完成范围
@@ -1458,9 +1458,9 @@ Add a new section `### 第七迭代已完成范围` after the sixth iteration on
 6. Gateway 全面鉴权、Console 登录 UI、OAuth/OIDC、SSO、MFA、ABAC 和客户发布 bundle 仍属于后续阶段。
 ```
 
-- [ ] **Step 3: Update IAM authentication baseline**
+- [ ] **步骤 3：更新 IAM 认证基线**
 
-Add an implementation status section that distinguishes implemented foundation from future work:
+添加实施状态章节，区分已实施基础和未来工作：
 
 ```markdown
 ## 当前实现状态
@@ -1468,9 +1468,9 @@ Add an implementation status section that distinguishes implemented foundation f
 IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL `iam` schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、`/me` 和 Connector Host credential validation。Gateway-wide permission enforcement、Console 登录 UI、OAuth/OIDC、SSO、MFA 和复杂 ABAC 不属于本阶段。
 ```
 
-- [ ] **Step 4: Update schema catalog**
+- [ ] **步骤 4：更新 schema 目录**
 
-Add an `IAM Schema` section with rows for actual tables created by the migration. Include known gaps:
+添加 `IAM Schema` 章节，为迁移实际创建的表添加行。包括已知缺口：
 
 ```markdown
 Known gaps:
@@ -1480,78 +1480,78 @@ Known gaps:
 3. Customer release seed input and migration bundle remain later release work.
 ```
 
-- [ ] **Step 5: Update schema conventions**
+- [ ] **步骤 5：更新 schema 约定**
 
-Update the `Schema Convention Tests` section to include IAM after tests pass:
+测试通过后，更新 `Schema Convention Tests` 章节以包含 IAM：
 
 ```markdown
 AppHub/Ops/IAM 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、string ID 约束和 service-schema `__EFMigrationsHistory`。
 ```
 
-## Task 9: Final Verification and Commit
+## 任务 9：最终验证并提交
 
-**Files:**
+**文件：**
 
-- All implementation files from Tasks 1-8.
+- 任务 1–8 的所有实施文件。
 
-- [ ] **Step 1: Run IAM targeted tests**
+- [ ] **步骤 1：运行 IAM 针对性测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
 ```
 
-Expected: exit 0. PostgreSQL test may skip when `NERV_IIP_TEST_POSTGRES` is not set.
+预期结果：以 0 退出。未设置 `NERV_IIP_TEST_POSTGRES` 时可以跳过 PostgreSQL 测试。
 
-- [ ] **Step 2: Run full backend tests**
+- [ ] **步骤 2：运行完整后端测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: exit 0.
+预期结果：以 0 退出。
 
-- [ ] **Step 3: Run connector-host tests if auth SDK or connector contracts changed**
+- [ ] **步骤 3：如果认证 SDK 或 Connector 契约发生变化，则运行 connector-host 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
 ```
 
-Expected: exit 0.
+预期结果：以 0 退出。
 
-- [ ] **Step 4: Run IAM PostgreSQL verification script**
+- [ ] **步骤 4：运行 IAM PostgreSQL 验证脚本**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-iam-persistent-auth-foundation.ps1
 ```
 
-Expected: exit 0 and final output `IAM persistent auth foundation verified.`
+预期结果：以 0 退出，最终输出为 `IAM persistent auth foundation verified.`
 
-- [ ] **Step 5: Run diff hygiene**
+- [ ] **步骤 5：运行 diff 卫生检查**
 
-Run:
+运行：
 
 ```powershell
 git diff --check
 git status --short
 ```
 
-Expected: `git diff --check` exit 0. `git status --short` must not include unrelated staged changes. If `skills-lock.json` remains dirty, leave it unstaged and mention it in the final response.
+预期结果：`git diff --check` 以 0 退出。`git status --short` 不得包含无关的已暂存变更。如果 `skills-lock.json` 仍为脏状态，保持未暂存，并在最终响应中说明。
 
-- [ ] **Step 6: Commit implementation**
+- [ ] **步骤 6：提交实现**
 
-Stage only files changed for this plan:
+仅暂存本计划更改的文件：
 
 ```powershell
 git add README.md docs/architecture/implementation-readiness.md docs/architecture/iam-authentication-baseline.md docs/architecture/database-schema-catalog.md docs/architecture/database-schema-conventions.md docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md scripts/verify-iam-persistent-auth-foundation.ps1 backend/services/Iam
 git commit -m "feat: add iam persistent auth foundation"
 ```
 
-Expected: commit succeeds. Do not stage `skills-lock.json`.
+预期结果：提交成功。不得暂存 `skills-lock.json`。

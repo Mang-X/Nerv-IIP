@@ -1,32 +1,32 @@
-# Second Vertical Slice Low-Risk Operations Implementation Plan
+# 第二阶段纵切低风险运维实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** 建立第二条纵切：Gateway 创建低风险 restart 运维任务，Ops 记录任务、尝试与审计，Connector Host 领取并执行动作，Ops 接收结果，AppHub 继续只通过 state snapshot 表达实例最终状态。
+**目标：** 建立第二条纵切：Gateway 创建低风险 restart 运维任务，Ops 记录任务、尝试与审计，Connector Host 领取并执行动作，Ops 接收结果，AppHub 继续只通过 state snapshot 表达实例最终状态。
 
-**Architecture:** 本阶段采用 HTTP pull 作为本地纵切传输机制：Connector Host 通过 `Sdk.Ops` 轮询 Ops 的 pending task endpoint，执行 `lifecycle.restart` 后回传 `OperationResult`。Ops 是动作生命周期与审计事实源；Gateway 只提供控制台入口；AppHub 不接收动作结果，也不被 Ops 直接改写实例状态。
+**架构：** 本阶段采用 HTTP pull 作为本地纵切传输机制：Connector Host 通过 `Sdk.Ops` 轮询 Ops 的 pending task endpoint，执行 `lifecycle.restart` 后回传 `OperationResult`。Ops 是动作生命周期与审计事实源；Gateway 只提供控制台入口；AppHub 不接收动作结果，也不被 Ops 直接改写实例状态。
 
-**Tech Stack:** .NET 10、ASP.NET Core、FastEndpoints、xUnit、Microsoft.AspNetCore.Mvc.Testing、Platform SDK Core/Auth/ConnectorProtocol/Ops、本地 in-memory stores、PowerShell verification scripts。
+**技术栈：** .NET 10、ASP.NET Core、FastEndpoints、xUnit、Microsoft.AspNetCore.Mvc.Testing、Platform SDK Core/Auth/ConnectorProtocol/Ops、本地 in-memory stores、PowerShell verification scripts。
 
 ---
 
-## Execution Status
+## 执行状态
 
-Completed for this PR on 2026-05-15.
+已于 2026-05-15 在此 PR 中完成。
 
-1. All in-scope implementation items are present: AppHub endpoint tests, Ops contracts and SDK, Ops task/result/audit endpoints, Gateway restart/detail facade, Connector Host operation loop, Docker restart executor, and the second-slice verification script.
-2. Final verification passed with `pwsh scripts/verify-second-slice-ops.ps1`; observed result: `Second vertical slice verified with operationTaskId op-000001.`
-3. The task sections below remain the execution recipe. This branch packages the completed work in one PR instead of the per-task commits described in the original worker instructions.
+1. 范围内的全部实施项均已具备：AppHub endpoint 测试、Ops 契约和 SDK、Ops 任务/结果/审计 endpoint、Gateway 重启/详情 facade、Connector Host 操作循环、Docker 重启执行器，以及第二阶段验证脚本。
+2. 最终验证已通过 `pwsh scripts/verify-second-slice-ops.ps1`；观察到的结果为：`Second vertical slice verified with operationTaskId op-000001.`
+3. 下面的任务章节继续作为执行步骤保留。此分支将已完成工作打包到一个 PR 中，而不是按原始执行者指令中描述的逐任务提交。
 
-## First Phase Gate
+## 第一阶段门禁
 
-Fresh verification run on 2026-05-15:
+2026-05-15 重新运行验证：
 
 ```powershell
 pwsh scripts/verify-first-slice.ps1
 ```
 
-Observed result:
+观察结果：
 
 ```text
 backend restore/build/test: exit 0
@@ -34,33 +34,33 @@ connector-hosts restore/build/test: exit 0
 First vertical slice verified with correlationId corr-first-slice.
 ```
 
-No blocking first-phase omission was found against the local vertical-slice acceptance criteria. One quality gap remains visible in the test output: `Nerv.IIP.AppHub.Web.Tests` currently has no discoverable tests. This plan makes that the first task so the next stage starts from a cleaner baseline.
+根据本地纵切验收标准，未发现阻塞性的第一阶段遗漏。测试输出中仍可见一个质量缺口：`Nerv.IIP.AppHub.Web.Tests` 当前没有可发现的测试。本计划将此列为首个任务，使下一阶段从更干净的基线开始。
 
-## Scope
+## 范围
 
-### In This Plan
+### 本计划范围内
 
-1. Backfill AppHub Web endpoint tests for the first vertical slice.
-2. Add `Nerv.IIP.Contracts.Ops` public DTOs and `Nerv.IIP.Sdk.Ops` HTTP client.
-3. Implement Ops in-memory operation task, attempt, result and audit facts.
-4. Add Ops endpoints:
+1. 为第一阶段纵切补充 AppHub Web endpoint 测试。
+2. 添加 `Nerv.IIP.Contracts.Ops` 公开 DTO 和 `Nerv.IIP.Sdk.Ops` HTTP 客户端。
+3. 实施 Ops 内存态操作任务、尝试、结果和审计事实。
+4. 添加 Ops endpoint：
    - `POST /api/ops/v1/operation-tasks`
    - `GET /api/ops/v1/operation-tasks/{operationTaskId}`
    - `GET /api/ops/v1/operation-tasks/pending`
    - `POST /api/ops/v1/operation-results`
-5. Add Gateway console-facing restart and operation detail endpoints.
-6. Add Connector Host operation execution loop for `lifecycle.restart`.
-7. Add `scripts/verify-second-slice-ops.ps1` to verify the local end-to-end restart task lifecycle.
+5. 添加面向 Gateway 控制台的重启和操作详情 endpoint。
+6. 为 `lifecycle.restart` 添加 Connector Host 操作执行循环。
+7. 添加 `scripts/verify-second-slice-ops.ps1`，验证本地端到端重启任务生命周期。
 
-### Outside This Plan
+### 本计划范围外
 
-1. High-risk approvals and manual confirmation UI.
-2. Stop, backup, restore, log pulling and batch operations.
-3. Persistent PostgreSQL/CAP storage migration for IAM/AppHub/Ops.
-4. Full console UI and generated frontend API client.
-5. Notification messages for operation success/failure.
+1. 高风险审批和人工确认 UI。
+2. 停止、备份、恢复、日志拉取和批量操作。
+3. IAM/AppHub/Ops 的 PostgreSQL/CAP 持久化迁移。
+4. 完整控制台 UI 和生成的前端 API 客户端。
+5. 操作成功/失败的通知消息。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/
@@ -119,28 +119,28 @@ scripts/
   verify-second-slice-ops.ps1
 ```
 
-## Boundary Rules
+## 边界规则
 
-1. Ops owns `OperationTask`, `OperationAttempt`, `AuditRecord` and operation result status.
-2. AppHub owns instance facts and only changes them through registration, heartbeat and state snapshot.
-3. Gateway does not reference `Nerv.IIP.Ops.Domain` or `Nerv.IIP.Ops.Infrastructure`.
-4. Connector Host does not reference backend service Web, Domain or Infrastructure projects.
-5. `Sdk.Ops` depends only on public contracts, `Sdk.Core`, `Sdk.Auth` and Connector Protocol result DTOs.
-6. `lifecycle.restart` is the only executable operation in this plan.
-7. Pending task polling is a local v1 HTTP contract hidden behind `Sdk.Ops`; callers must not depend on Ops internal domain objects.
-8. Platform HTTP endpoints continue to use FastEndpoints, with route classes under `Endpoints/**`.
+1. Ops 拥有 `OperationTask`、`OperationAttempt`、`AuditRecord` 和操作结果状态。
+2. AppHub 拥有实例事实，并且只通过注册、心跳和状态快照更改它们。
+3. Gateway 不引用 `Nerv.IIP.Ops.Domain` 或 `Nerv.IIP.Ops.Infrastructure`。
+4. Connector Host 不引用后端服务的 Web、Domain 或 Infrastructure 项目。
+5. `Sdk.Ops` 只依赖公开契约、`Sdk.Core`、`Sdk.Auth` 和 Connector Protocol 结果 DTO。
+6. `lifecycle.restart` 是本计划唯一可执行的操作。
+7. 待处理任务轮询是隐藏在 `Sdk.Ops` 后的本地 v1 HTTP 契约；调用方不得依赖 Ops 内部领域对象。
+8. 平台 HTTP endpoint 继续使用 FastEndpoints，路由类位于 `Endpoints/**` 下。
 
 ---
 
-## Task 1: Backfill AppHub Web Endpoint Tests
+## 任务 1：补充 AppHub Web Endpoint 测试
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubConnectorEndpointTests.cs`
+- 创建：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubConnectorEndpointTests.cs`
 
-- [ ] **Step 1: Write the endpoint tests**
+- [ ] **步骤 1：编写 endpoint 测试**
 
-Create `AppHubConnectorEndpointTests.cs`:
+创建 `AppHubConnectorEndpointTests.cs`：
 
 ```csharp
 using System.Net;
@@ -214,40 +214,40 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 }
 ```
 
-- [ ] **Step 2: Run the AppHub Web tests**
+- [ ] **步骤 2：运行 AppHub Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj
 ```
 
-Expected: exit code `0`, with `2` tests discovered and passed.
+预期结果：退出代码为 `0`，发现并通过 `2` 个测试。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests
 git commit -m "test: cover apphub connector endpoints"
 ```
 
-## Task 2: Add Ops Public Contracts And SDK Client
+## 任务 2：添加 Ops 公开契约和 SDK 客户端
 
-**Files:**
+**文件：**
 
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.Ops/OpsContracts.cs`
-- Create: `backend/tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tests.csproj`
-- Create: `backend/tests/Nerv.IIP.Contracts.Ops.Tests/OpsContractJsonTests.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Ops/OpsClient.cs`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.Ops/OpsContracts.cs`
+- 创建：`backend/tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tests.csproj`
+- 创建：`backend/tests/Nerv.IIP.Contracts.Ops.Tests/OpsContractJsonTests.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Ops/OpsClient.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Write the contract serialization test**
+- [ ] **步骤 1：编写契约序列化测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet new classlib -n Nerv.IIP.Contracts.Ops -o backend/common/Contracts/Nerv.IIP.Contracts.Ops --framework net10.0
@@ -256,7 +256,7 @@ dotnet add backend/tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tes
 dotnet sln backend/Nerv.IIP.sln add backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj backend/tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tests.csproj
 ```
 
-Create `OpsContractJsonTests.cs`:
+创建 `OpsContractJsonTests.cs`：
 
 ```csharp
 using System.Text.Json;
@@ -295,9 +295,9 @@ public sealed class OpsContractJsonTests
 }
 ```
 
-- [ ] **Step 2: Add Ops DTOs**
+- [ ] **步骤 2：添加 Ops DTO**
 
-Create `OpsContracts.cs`:
+创建 `OpsContracts.cs`：
 
 ```csharp
 namespace Nerv.IIP.Contracts.Ops;
@@ -355,19 +355,19 @@ public sealed record OperationTaskDispatchItem(
     IReadOnlyDictionary<string, string> Parameters);
 ```
 
-- [ ] **Step 3: Run the contract test and verify it fails before SDK work is added**
+- [ ] **步骤 3：运行契约测试并验证在添加 SDK 工作前的失败状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tests.csproj
 ```
 
-Expected: exit code `0`, `1` test passed.
+预期结果：退出代码为 `0`，`1` 个测试通过。
 
-- [ ] **Step 4: Add Sdk.Ops project and client**
+- [ ] **步骤 4：添加 Sdk.Ops 项目和客户端**
 
-Run:
+运行：
 
 ```powershell
 dotnet new classlib -n Nerv.IIP.Sdk.Ops -o backend/common/Sdk/Nerv.IIP.Sdk.Ops --framework net10.0
@@ -375,7 +375,7 @@ dotnet add backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj reference
 dotnet sln backend/Nerv.IIP.sln add backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj
 ```
 
-Create `OpsClient.cs`:
+创建 `OpsClient.cs`：
 
 ```csharp
 using System.Net.Http.Json;
@@ -437,39 +437,39 @@ public sealed class HttpOpsClient(HttpClient httpClient, ConnectorHostCredential
 }
 ```
 
-- [ ] **Step 5: Build contract and SDK projects**
+- [ ] **步骤 5：构建契约和 SDK 项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj
 dotnet build backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj
 ```
 
-Expected: both commands exit with code `0`.
+预期结果：两条命令都以代码 `0` 退出。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Contracts/Nerv.IIP.Contracts.Ops backend/common/Sdk/Nerv.IIP.Sdk.Ops backend/tests/Nerv.IIP.Contracts.Ops.Tests backend/Nerv.IIP.sln
 git commit -m "feat: add ops contracts and sdk client"
 ```
 
-## Task 3: Implement Ops Task And Audit Endpoints
+## 任务 3：实施 Ops 任务和审计 Endpoint
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Domain/OperationFacts.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Domain/InMemoryOpsStateStore.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Endpoints/OperationTasks/OperationTaskEndpoints.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
-- Create: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OperationTaskEndpointTests.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Domain/OperationFacts.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Domain/InMemoryOpsStateStore.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Endpoints/OperationTasks/OperationTaskEndpoints.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
+- 创建：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OperationTaskEndpointTests.cs`
 
-- [ ] **Step 1: Write endpoint tests**
+- [ ] **步骤 1：编写 endpoint 测试**
 
-Create `OperationTaskEndpointTests.cs`:
+创建 `OperationTaskEndpointTests.cs`：
 
 ```csharp
 using System.Net.Http.Json;
@@ -517,19 +517,19 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter Operation_task_can_be_created_dispatched_and_completed
 ```
 
-Expected: FAIL with `404` or missing endpoint/store types.
+预期结果：失败，返回 `404` 或报告 endpoint/store 类型缺失。
 
-- [ ] **Step 3: Add Ops facts**
+- [ ] **步骤 3：添加 Ops 事实**
 
-Create `OperationFacts.cs`:
+创建 `OperationFacts.cs`：
 
 ```csharp
 using Nerv.IIP.Contracts.ConnectorProtocol;
@@ -587,9 +587,9 @@ public static class OperationTaskMapper
 }
 ```
 
-- [ ] **Step 4: Add in-memory Ops state store**
+- [ ] **步骤 4：添加内存态 Ops 状态存储**
 
-Create `InMemoryOpsStateStore.cs`:
+创建 `InMemoryOpsStateStore.cs`：
 
 ```csharp
 using Nerv.IIP.Contracts.ConnectorProtocol;
@@ -693,9 +693,9 @@ public sealed class InMemoryOpsStateStore
 }
 ```
 
-- [ ] **Step 5: Add Ops endpoints**
+- [ ] **步骤 5：添加 Ops endpoint**
 
-Create `OperationTaskEndpoints.cs`:
+创建 `OperationTaskEndpoints.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -778,7 +778,7 @@ internal static class OpsConnectorAuth
 }
 ```
 
-Modify `Program.cs`:
+修改 `Program.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -798,38 +798,38 @@ app.Run();
 public partial class Program;
 ```
 
-- [ ] **Step 6: Run Ops Web tests**
+- [ ] **步骤 6：运行 Ops Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj
 ```
 
-Expected: exit code `0`, with the existing skeleton test and the new operation lifecycle test passing.
+预期结果：退出代码为 `0`，现有骨架测试和新的操作生命周期测试均通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Ops
 git commit -m "feat: add ops operation task lifecycle"
 ```
 
-## Task 4: Add Gateway Restart Facade
+## 任务 4：添加 Gateway 重启 Facade
 
-**Files:**
+**文件：**
 
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpsClient/OpsClient.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Operations/OperationEndpoints.cs`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`
-- Create: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOperationTests.cs`
+- 创建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpsClient/OpsClient.cs`
+- 创建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Operations/OperationEndpoints.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`
+- 创建：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOperationTests.cs`
 
-- [ ] **Step 1: Write Gateway operation tests**
+- [ ] **步骤 1：编写 Gateway 操作测试**
 
-Create `GatewayOperationTests.cs`:
+创建 `GatewayOperationTests.cs`：
 
 ```csharp
 using System.Net.Http.Json;
@@ -886,19 +886,19 @@ public sealed class GatewayOperationTests
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --filter Restart_endpoint_creates_lifecycle_restart_task
 ```
 
-Expected: FAIL with missing `RestartInstanceRequest` or route.
+预期结果：失败，报告缺少 `RestartInstanceRequest` 或路由。
 
-- [ ] **Step 3: Add Ops client in Gateway**
+- [ ] **步骤 3：在 Gateway 中添加 Ops 客户端**
 
-Create `Application/OpsClient/OpsClient.cs`:
+创建 `Application/OpsClient/OpsClient.cs`：
 
 ```csharp
 using System.Net.Http.Json;
@@ -930,7 +930,7 @@ public sealed class GatewayOpsClient(HttpClient httpClient) : IGatewayOpsClient
 }
 ```
 
-Modify `Program.cs` to register the typed client:
+修改 `Program.cs` 以注册强类型客户端：
 
 ```csharp
 builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
@@ -939,9 +939,9 @@ builder.Services.AddHttpClient<IGatewayOpsClient, GatewayOpsClient>(client =>
 });
 ```
 
-- [ ] **Step 4: Add Gateway endpoints**
+- [ ] **步骤 4：添加 Gateway endpoint**
 
-Create `OperationEndpoints.cs`:
+创建 `OperationEndpoints.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -985,49 +985,49 @@ public sealed class GetConsoleOperationTaskEndpoint(IGatewayOpsClient opsClient)
 }
 ```
 
-- [ ] **Step 5: Add project reference**
+- [ ] **步骤 5：添加项目引用**
 
-Run:
+运行：
 
 ```powershell
 dotnet add backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj reference backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj
 ```
 
-- [ ] **Step 6: Run Gateway tests**
+- [ ] **步骤 6：运行 Gateway 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj
 ```
 
-Expected: exit code `0`. The Gateway project file still must not reference `Nerv.IIP.Ops.Domain` or `Nerv.IIP.Ops.Infrastructure`.
+预期结果：退出代码为 `0`。Gateway 项目文件仍不得引用 `Nerv.IIP.Ops.Domain` 或 `Nerv.IIP.Ops.Infrastructure`。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/PlatformGateway
 git commit -m "feat: add gateway restart operation facade"
 ```
 
-## Task 5: Add Connector Host Operation Execution Loop
+## 任务 5：添加 Connector Host 操作执行循环
 
-**Files:**
+**文件：**
 
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions/ConnectorOperationAbstractions.cs`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker/DockerConnector.cs`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Application/ConnectorOperationLoop.cs`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Application/Nerv.IIP.ConnectorHost.Application.csproj`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Worker.cs`
-- Create: `connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/OperationLoopTests.cs`
-- Create: `connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/DockerConnectorOperationTests.cs`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions/ConnectorOperationAbstractions.cs`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker/DockerConnector.cs`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Application/ConnectorOperationLoop.cs`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Application/Nerv.IIP.ConnectorHost.Application.csproj`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Worker.cs`
+- 创建：`connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/OperationLoopTests.cs`
+- 创建：`connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/DockerConnectorOperationTests.cs`
 
-- [ ] **Step 1: Add failing operation loop tests**
+- [ ] **步骤 1：添加预期失败的操作循环测试**
 
-Create `OperationLoopTests.cs`:
+创建 `OperationLoopTests.cs`：
 
 ```csharp
 using Nerv.IIP.ConnectorHost.Application;
@@ -1084,19 +1084,19 @@ public sealed class OperationLoopTests
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/Nerv.IIP.ConnectorHost.Application.Tests.csproj --filter Operation_loop_executes_pending_restart_and_reports_result
 ```
 
-Expected: FAIL with missing operation abstractions or `ConnectorOperationLoop`.
+预期结果：失败，报告缺少操作抽象或 `ConnectorOperationLoop`。
 
-- [ ] **Step 3: Add operation executor abstraction**
+- [ ] **步骤 3：添加操作执行器抽象**
 
-Create `ConnectorOperationAbstractions.cs`:
+创建 `ConnectorOperationAbstractions.cs`：
 
 ```csharp
 using Nerv.IIP.Contracts.Ops;
@@ -1122,9 +1122,9 @@ public sealed record ConnectorOperationExecution(
 }
 ```
 
-- [ ] **Step 4: Add connector operation loop**
+- [ ] **步骤 4：添加 Connector 操作循环**
 
-Create `ConnectorOperationLoop.cs`:
+创建 `ConnectorOperationLoop.cs`：
 
 ```csharp
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
@@ -1167,9 +1167,9 @@ public sealed class ConnectorOperationLoop(
 }
 ```
 
-- [ ] **Step 5: Add Docker restart executor behavior**
+- [ ] **步骤 5：添加 Docker 重启执行器行为**
 
-Modify `DockerConnector.cs` so the class implements `IConnectorOperationExecutor`:
+修改 `DockerConnector.cs`，使该类实施 `IConnectorOperationExecutor`：
 
 ```csharp
 public sealed class DockerConnector(IReadOnlyList<DockerContainerDescriptor>? containers = null) : IConnector, IConnectorOperationExecutor
@@ -1199,9 +1199,9 @@ public sealed class DockerConnector(IReadOnlyList<DockerContainerDescriptor>? co
 }
 ```
 
-- [ ] **Step 6: Wire host services and cycle timing**
+- [ ] **步骤 6：接入宿主服务和循环时序**
 
-Modify `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`:
+修改 `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`：
 
 ```csharp
 builder.Services.AddSingleton<DockerConnector>(_ => new DockerConnector([
@@ -1216,7 +1216,7 @@ builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>(client =>
 builder.Services.AddSingleton<ConnectorOperationLoop>();
 ```
 
-Modify `Worker.cs` so each cycle runs reporting and operations:
+修改 `Worker.cs`，使每个循环都运行上报和操作：
 
 ```csharp
 public class Worker(ILogger<Worker> logger, Application.ConnectorReportingLoop reportingLoop, Application.ConnectorOperationLoop operationLoop, IConfiguration configuration) : BackgroundService
@@ -1243,43 +1243,43 @@ public class Worker(ILogger<Worker> logger, Application.ConnectorReportingLoop r
 }
 ```
 
-- [ ] **Step 7: Add SDK reference to connector-hosts**
+- [ ] **步骤 7：为 connector-hosts 添加 SDK 引用**
 
-Run:
+运行：
 
 ```powershell
 dotnet add connector-hosts/src/Nerv.IIP.ConnectorHost.Application/Nerv.IIP.ConnectorHost.Application.csproj reference backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj backend/common/Sdk/Nerv.IIP.Sdk.Ops/Nerv.IIP.Sdk.Ops.csproj
 dotnet add connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions/Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj reference backend/common/Contracts/Nerv.IIP.Contracts.Ops/Nerv.IIP.Contracts.Ops.csproj
 ```
 
-- [ ] **Step 8: Run connector-host tests**
+- [ ] **步骤 8：运行 connector-host 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
 ```
 
-Expected: exit code `0`, including the operation loop test and Docker operation test.
+预期结果：退出代码为 `0`，包括操作循环测试和 Docker 操作测试。
 
-- [ ] **Step 9: Commit**
+- [ ] **步骤 9：提交**
 
-Run:
+运行：
 
 ```powershell
 git add connector-hosts
 git commit -m "feat: execute restart tasks in connector host"
 ```
 
-## Task 6: Add Second Slice Verification Script
+## 任务 6：添加第二阶段验证脚本
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-second-slice-ops.ps1`
+- 创建：`scripts/verify-second-slice-ops.ps1`
 
-- [ ] **Step 1: Add the verification script**
+- [ ] **步骤 1：添加验证脚本**
 
-Create `verify-second-slice-ops.ps1`:
+创建 `verify-second-slice-ops.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -1399,15 +1399,15 @@ finally {
 }
 ```
 
-- [ ] **Step 2: Run second slice verification**
+- [ ] **步骤 2：运行第二阶段验证**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-second-slice-ops.ps1
 ```
 
-Expected:
+预期结果：
 
 ```text
 backend restore/build/test: exit 0
@@ -1415,65 +1415,65 @@ connector-hosts restore/build/test: exit 0
 Second vertical slice verified with operationTaskId op-000001.
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-second-slice-ops.ps1
 git commit -m "test: verify second ops vertical slice"
 ```
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 must be first because it closes the only test gap observed in first-phase verification.
-2. Task 2 must finish before Ops, Gateway or Connector Host code references `Nerv.IIP.Contracts.Ops` or `Nerv.IIP.Sdk.Ops`.
-3. Task 3 depends on Task 2 contracts.
-4. Task 4 depends on Task 3 Ops endpoints.
-5. Task 5 depends on Task 2 SDK and Task 3 Ops endpoints.
-6. Task 6 depends on Tasks 1 through 5.
+1. 必须首先执行任务 1，因为它关闭第一阶段验证中观察到的唯一测试缺口。
+2. 在 Ops、Gateway 或 Connector Host 代码引用 `Nerv.IIP.Contracts.Ops` 或 `Nerv.IIP.Sdk.Ops` 之前，必须完成任务 2。
+3. 任务 3 依赖任务 2 的契约。
+4. 任务 4 依赖任务 3 的 Ops endpoint。
+5. 任务 5 依赖任务 2 的 SDK 和任务 3 的 Ops endpoint。
+6. 任务 6 依赖任务 1 至任务 5。
 
-Recommended parallelization after Task 2:
+任务 2 之后建议并行执行：
 
-1. One worker implements Task 3 Ops endpoints.
-2. One worker implements Task 5 Connector Host operation loop against the new SDK interface.
-3. Gateway Task 4 can start after Ops endpoint routes and response contracts are stable.
+1. 一名执行者实施任务 3 的 Ops endpoint。
+2. 一名执行者依据新 SDK 接口实施任务 5 的 Connector Host 操作循环。
+3. Ops endpoint 路由和响应契约稳定后，可以开始 Gateway 任务 4。
 
-## Second Iteration Completion Definition
+## 第二次迭代完成定义
 
-The second iteration is complete when all statements are true:
+满足以下全部条件时，第二次迭代才算完成：
 
-1. `dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj` discovers and passes AppHub Web endpoint tests.
-2. `Nerv.IIP.Contracts.Ops` serializes operation task responses with web JSON options.
-3. `Nerv.IIP.Sdk.Ops` can create operation tasks, read task detail, poll pending tasks and submit operation results without referencing service internals.
-4. Ops can create an idempotent `lifecycle.restart` task and records `operation.requested`.
-5. Ops pending polling creates an attempt, marks the task as `dispatched` and records `operation.dispatched`.
-6. Connector Host can execute a pending `lifecycle.restart` task and submit `OperationResult`.
-7. Ops records `operation.completed` or `operation.failed` and exposes attempts plus audit records in task detail.
-8. Gateway can create a restart task through `/api/console/v1/instances/{instanceKey}/operations/restart`.
-9. Gateway can return task detail through `/api/console/v1/operation-tasks/{operationTaskId}`.
-10. AppHub state is not directly changed by Ops operation result handling.
-11. `pwsh scripts/verify-second-slice-ops.ps1` exits with code `0`.
+1. `dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj` 能发现并通过 AppHub Web endpoint 测试。
+2. `Nerv.IIP.Contracts.Ops` 使用 Web JSON 选项序列化操作任务响应。
+3. `Nerv.IIP.Sdk.Ops` 能创建操作任务、读取任务详情、轮询待处理任务并提交操作结果，且不引用服务内部实现。
+4. Ops 能创建幂等的 `lifecycle.restart` 任务并记录 `operation.requested`。
+5. Ops 待处理轮询创建一次尝试，将任务标记为 `dispatched` 并记录 `operation.dispatched`。
+6. Connector Host 能执行待处理的 `lifecycle.restart` 任务并提交 `OperationResult`。
+7. Ops 记录 `operation.completed` 或 `operation.failed`，并在任务详情中公开尝试和审计记录。
+8. Gateway 能通过 `/api/console/v1/instances/{instanceKey}/operations/restart` 创建重启任务。
+9. Gateway 能通过 `/api/console/v1/operation-tasks/{operationTaskId}` 返回任务详情。
+10. Ops 操作结果处理不会直接更改 AppHub 状态。
+11. `pwsh scripts/verify-second-slice-ops.ps1` 以代码 `0` 退出。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. Low-risk action loop: covered by Tasks 2 through 6.
-2. Audit boundary: covered by Task 3 facts, endpoints and tests.
-3. Gateway entrypoint: covered by Task 4.
-4. Connector Host execution: covered by Task 5.
-5. AppHub/Ops boundary: covered by Boundary Rules and completion item 10.
-6. First-phase test gap: covered by Task 1.
+1. 低风险操作闭环：由任务 2 至任务 6 覆盖。
+2. 审计边界：由任务 3 的事实、endpoint 和测试覆盖。
+3. Gateway 入口：由任务 4 覆盖。
+4. Connector Host 执行：由任务 5 覆盖。
+5. AppHub/Ops 边界：由“边界规则”和完成项 10 覆盖。
+6. 第一阶段测试缺口：由任务 1 覆盖。
 
-Placeholder scan:
+占位符扫描：
 
-1. No unresolved markers or undefined fill-in work remains.
-2. All file paths are explicit.
-3. Each task has commands and expected outputs.
+1. 不保留未解决标记或未定义的待填工作。
+2. 所有文件路径均明确。
+3. 每个任务都有命令和预期输出。
 
-Type consistency:
+类型一致性：
 
-1. `OperationTaskId`, `AttemptId`, `OperationCode`, `CorrelationId` and `ConnectorHostId` names match across contracts, Ops, SDK, Gateway and Connector Host.
-2. `lifecycle.restart` is the single operation code used in Gateway, Ops and Connector Host tests.
-3. `OperationResult` remains in `Nerv.IIP.Contracts.ConnectorProtocol`, and `Sdk.Ops` reuses it for result submission.
+1. `OperationTaskId`、`AttemptId`、`OperationCode`、`CorrelationId` 和 `ConnectorHostId` 的名称在契约、Ops、SDK、Gateway 和 Connector Host 之间一致。
+2. `lifecycle.restart` 是 Gateway、Ops 和 Connector Host 测试使用的唯一操作代码。
+3. `OperationResult` 继续位于 `Nerv.IIP.Contracts.ConnectorProtocol`，`Sdk.Ops` 复用它提交结果。

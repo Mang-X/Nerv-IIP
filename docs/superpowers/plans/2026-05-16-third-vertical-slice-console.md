@@ -1,24 +1,24 @@
-# Third Vertical Slice Console Workspace Implementation Plan
+# 第三阶段纵切控制台工作区实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** 建立第三条纵切：创建 Vue 控制台工作区、导出 Gateway OpenAPI、生成类型安全 API client，并在控制台完成实例列表、实例详情、restart 动作和 OperationTask 状态查看。
+**目标：** 建立第三条纵切：创建 Vue 控制台工作区、导出 Gateway OpenAPI、生成类型安全 API client，并在控制台完成实例列表、实例详情、restart 动作和 OperationTask 状态查看。
 
-**Architecture:** PlatformGateway 继续作为前端唯一控制台 API 入口，先补齐稳定 OpenAPI 文档与 operationId，再由 `frontend/packages/api-client` 使用 Hey API 生成 fetch SDK、TypeScript types 和 Pinia Colada query/mutation options。`frontend/apps/console` 使用 Vue Router 官方文件路由插件、Pinia、Pinia Colada 和薄页面组件消费 `api-client` 的稳定导出，不在页面里手写 URL 或 DTO。
+**架构：** PlatformGateway 继续作为前端唯一控制台 API 入口，先补齐稳定 OpenAPI 文档与 operationId，再由 `frontend/packages/api-client` 使用 Hey API 生成 fetch SDK、TypeScript types 和 Pinia Colada query/mutation options。`frontend/apps/console` 使用 Vue Router 官方文件路由插件、Pinia、Pinia Colada 和薄页面组件消费 `api-client` 的稳定导出，不在页面里手写 URL 或 DTO。
 
-**Tech Stack:** .NET 10、FastEndpoints、FastEndpoints.Swagger、PowerShell、pnpm 10.13.1、Node.js >=22.18.0、Vue 3.5.34、Vue Router 5.0.7、Vite 8.0.13、Vite+ 0.1.21、TypeScript 6.0.3、Pinia 3.0.4、Pinia Colada 1.3.0、Pinia Colada Auto Refetch 0.2.6、Hey API OpenAPI TypeScript 0.97.1、Vitest 4.1.6。
+**技术栈：** .NET 10、FastEndpoints、FastEndpoints.Swagger、PowerShell、pnpm 10.13.1、Node.js >=22.18.0、Vue 3.5.34、Vue Router 5.0.7、Vite 8.0.13、Vite+ 0.1.21、TypeScript 6.0.3、Pinia 3.0.4、Pinia Colada 1.3.0、Pinia Colada Auto Refetch 0.2.6、Hey API OpenAPI TypeScript 0.97.1、Vitest 4.1.6。
 
 ---
 
-## Current Gate
+## 当前门禁
 
-Verification run on 2026-05-16 after adding repository-level `NuGet.config`:
+添加仓库级 `NuGet.config` 后，于 2026-05-16 运行验证：
 
 ```powershell
 pwsh scripts/verify-second-slice-ops.ps1
 ```
 
-Observed result:
+观察结果：
 
 ```text
 backend restore/build/test: exit 0
@@ -26,9 +26,9 @@ connector-hosts restore/build/test: exit 0
 Second vertical slice verified with operationTaskId op-000001.
 ```
 
-The project is ready for the third phase. The only pre-plan adjustment already made is `NuGet.config`, which keeps Central Package Management from failing on local machines with multiple global NuGet sources and `TreatWarningsAsErrors=true`.
+项目已为第三阶段做好准备。计划前唯一已完成的调整是 `NuGet.config`，它避免集中式包管理在具有多个全局 NuGet 源且设置 `TreatWarningsAsErrors=true` 的本地机器上失败。
 
-## Completion Record
+## 完成记录
 
 2026-05-17 更新：第三阶段控制台纵切已完成并复验通过。
 
@@ -55,31 +55,31 @@ scripts/verify-third-slice-console.ps1: Third vertical slice console verified.
 
 注意：Vite+ 的 lint/fmt 路径会直接读取根级 `frontend/vite.config.ts`。Node.js `22.17.x` 会触发 TypeScript config loading 错误；第三阶段已将本机 OpenJS.NodeJS.22 升级到 `22.22.3`，仓库根 `.node-version` 固定为 `22.22.3`，项目基线保持为 Node.js `>=22.18.0`。
 
-## Scope
+## 范围
 
-### In This Plan
+### 本计划范围内
 
-1. Add Gateway OpenAPI support for console-facing endpoints.
-2. Freeze console operation IDs for generated frontend clients:
+1. 为面向控制台的 endpoint 添加 Gateway OpenAPI 支持。
+2. 为生成的前端客户端冻结控制台 operation ID：
    - `listConsoleInstances`
    - `getConsoleInstanceDetail`
    - `restartConsoleInstance`
    - `getConsoleOperationTask`
-3. Create the `frontend` pnpm workspace skeleton.
-4. Create `frontend/packages/api-client` with Hey API generation and stable hand-written exports.
-5. Create `frontend/packages/ui` and `frontend/packages/app-shell` as small first-pass local packages.
-6. Create `frontend/apps/console` with typed file routing, Pinia, Pinia Colada, console overview, restart action and operation detail polling.
-7. Add a third-slice verification script covering backend OpenAPI export, frontend install, typecheck, tests and production build.
+3. 创建 `frontend` pnpm 工作区骨架。
+4. 创建 `frontend/packages/api-client`，包含 Hey API 生成和稳定的手写导出。
+5. 创建 `frontend/packages/ui` 和 `frontend/packages/app-shell`，作为小型首版本地包。
+6. 创建 `frontend/apps/console`，包含强类型文件路由、Pinia、Pinia Colada、控制台概览、重启操作和操作详情轮询。
+7. 添加第三阶段验证脚本，覆盖后端 OpenAPI 导出、前端安装、类型检查、测试和生产构建。
 
-### Outside This Plan
+### 本计划范围外
 
-1. Full IAM login and permission enforcement.
-2. shadcn-vue registry initialization and long-lived visual design system migration.
-3. High-risk operation approvals, notification routing and audit inbox UI.
-4. PostgreSQL/RabbitMQ/Redis persistence migration.
-5. Aspire AppHost and deployment package generation.
+1. 完整 IAM 登录和权限强制执行。
+2. shadcn-vue registry 初始化和长期视觉设计系统迁移。
+3. 高风险操作审批、通知路由和审计收件箱 UI。
+4. PostgreSQL/RabbitMQ/Redis 持久化迁移。
+5. Aspire AppHost 和部署包生成。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/
@@ -152,41 +152,41 @@ README.md
 docs/architecture/implementation-readiness.md
 ```
 
-## Boundary Rules
+## 边界规则
 
-1. Console pages must import API calls from `@nerv-iip/api-client`; they must not handwrite `/api/...` URLs.
-2. `frontend/packages/api-client/src/generated` is generated-only and must not be edited by hand.
-3. `api-client` may configure transport, base URL and stable exports, but must not contain view logic.
-4. Pinia stores are only for client state. Server state goes through Pinia Colada.
-5. Route-level Vue pages stay thin; feature markup and interactions live in components and composables.
-6. `PlatformGateway.Web` remains the only frontend-facing API boundary in this phase.
-7. Gateway still does not reference AppHub or Ops Domain/Infrastructure projects.
-8. `layer-base`、`layer-platform`、`auth`、`shared-types` are reserved frontend package boundaries and are not created until a real cross-page or cross-app need appears.
-9. Operation polling uses Pinia Colada auto-refetch options; Vue components must not own raw polling timers.
+1. 控制台页面必须从 `@nerv-iip/api-client` 导入 API 调用；不得手写 `/api/...` URL。
+2. `frontend/packages/api-client/src/generated` 仅包含生成内容，不得手工编辑。
+3. `api-client` 可以配置传输、base URL 和稳定导出，但不得包含视图逻辑。
+4. Pinia store 仅用于客户端状态。服务端状态通过 Pinia Colada 管理。
+5. 路由级 Vue 页面保持轻薄；功能标记和交互位于组件和 composable 中。
+6. `PlatformGateway.Web` 仍是本阶段唯一面向前端的 API 边界。
+7. Gateway 仍不引用 AppHub 或 Ops Domain/Infrastructure 项目。
+8. `layer-base`、`layer-platform`、`auth`、`shared-types` 是保留的前端包边界，只有出现真实的跨页面或跨应用需求时才创建。
+9. 操作轮询使用 Pinia Colada 自动重新获取选项；Vue 组件不得拥有原始轮询计时器。
 
-## Architecture Inputs
+## 架构输入
 
-Read these documents before executing the tasks:
+执行任务前阅读以下文档：
 
-1. `docs/architecture/api-contract-and-codegen.md` for Gateway OpenAPI, operationId, Hey API and generated-client boundaries.
-2. `docs/architecture/frontend-structure.md` for pnpm workspace packages, Vue Router file-routing, typed route and Pinia Colada rules.
-3. `docs/architecture/implementation-readiness.md` for NuGet restore baseline, current stage status and third-iteration acceptance boundaries.
-4. `docs/adr/0006-frontend-workspace-structure.md` and `docs/adr/0007-vue-router-file-routing-colocation.md` for durable frontend decisions.
+1. `docs/architecture/api-contract-and-codegen.md`：Gateway OpenAPI、operationId、Hey API 和生成客户端的边界。
+2. `docs/architecture/frontend-structure.md`：pnpm 工作区包、Vue Router 文件路由、强类型路由和 Pinia Colada 规则。
+3. `docs/architecture/implementation-readiness.md`：NuGet 还原基线、当前阶段状态和第三次迭代验收边界。
+4. `docs/adr/0006-frontend-workspace-structure.md` 和 `docs/adr/0007-vue-router-file-routing-colocation.md`：持久前端决策。
 
 ---
 
-## Task 1: Add Gateway OpenAPI For Console APIs
+## 任务 1：为控制台 API 添加 Gateway OpenAPI
 
-**Files:**
+**文件：**
 
-- Modify: `backend/Directory.Packages.props`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Create: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
+- 修改：`backend/Directory.Packages.props`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 创建：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
 
-- [ ] **Step 1: Write OpenAPI endpoint test**
+- [ ] **步骤 1：编写 OpenAPI endpoint 测试**
 
-Create `GatewayOpenApiTests.cs`:
+创建 `GatewayOpenApiTests.cs`：
 
 ```csharp
 using System.Text.Json;
@@ -222,39 +222,39 @@ public sealed class GatewayOpenApiTests
 }
 ```
 
-- [ ] **Step 2: Run the new test to verify it fails**
+- [ ] **步骤 2：运行新测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --filter Gateway_exports_console_openapi_document_with_stable_operation_ids
 ```
 
-Expected: FAIL with `/swagger/v1/swagger.json` returning `404 Not Found` or missing operation IDs.
+预期结果：失败，`/swagger/v1/swagger.json` 返回 `404 Not Found` 或缺少 operation ID。
 
-- [ ] **Step 3: Add FastEndpoints.Swagger package version**
+- [ ] **步骤 3：添加 FastEndpoints.Swagger 包版本**
 
-Modify `backend/Directory.Packages.props`:
+修改 `backend/Directory.Packages.props`：
 
 ```xml
 <PackageVersion Include="FastEndpoints.Swagger" Version="8.1.0" />
 ```
 
-Place it beside the existing `FastEndpoints` package version.
+将它放在现有 `FastEndpoints` 包版本旁。
 
-- [ ] **Step 4: Reference FastEndpoints.Swagger from Gateway**
+- [ ] **步骤 4：从 Gateway 引用 FastEndpoints.Swagger**
 
-Modify `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`:
+修改 `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj`：
 
 ```xml
 <PackageReference Include="FastEndpoints.Swagger" />
 ```
 
-Place it in the same `ItemGroup` as `FastEndpoints`.
+将它放在 `ItemGroup` 中，与 `FastEndpoints` 保持同组。
 
-- [ ] **Step 5: Configure Swagger document in Program.cs**
+- [ ] **步骤 5：在 Program.cs 中配置 Swagger 文档**
 
-Replace `Program.cs` with:
+将 `Program.cs` 替换为：
 
 ```csharp
 using FastEndpoints;
@@ -307,49 +307,49 @@ app.Run();
 public partial class Program;
 ```
 
-- [ ] **Step 6: Preserve Gateway endpoint style**
+- [ ] **步骤 6：保留 Gateway endpoint 风格**
 
-Keep the existing console endpoint classes in attribute-routing style:
+保持现有控制台 endpoint 类的 attribute-routing 风格：
 
-1. `ListInstancesEndpoint` and `GetInstanceDetailEndpoint` keep `[HttpGet]` plus `[AllowAnonymous]`.
-2. `RestartInstanceEndpoint` keeps `[HttpPost]` plus `[AllowAnonymous]`.
-3. `GetConsoleOperationTaskEndpoint` keeps `[HttpGet]` plus `[AllowAnonymous]`.
-4. `GatewayEndpointResults`, `RestartInstanceRequest` and `GatewayOpsEndpointResults` stay unchanged.
+1. `ListInstancesEndpoint` 和 `GetInstanceDetailEndpoint` 保留 `[HttpGet]` 与 `[AllowAnonymous]`。
+2. `RestartInstanceEndpoint` 保留 `[HttpPost]` 与 `[AllowAnonymous]`。
+3. `GetConsoleOperationTaskEndpoint` 保留 `[HttpGet]` 与 `[AllowAnonymous]`。
+4. `GatewayEndpointResults`、`RestartInstanceRequest` 和 `GatewayOpsEndpointResults` 保持不变。
 
-Do not convert these Endpoint classes solely to set OpenAPI `operationId`. In this project, route/auth declarations stay close to the Endpoint class, while stable generated-client names for Gateway console APIs are owned by the `NameGenerator` mapping in `Program.cs`. If a future Endpoint needs advanced FastEndpoints metadata that attributes cannot express, switch that Endpoint fully to `Configure()` and remove the route/auth attributes from the class.
+不得仅为设置 OpenAPI `operationId` 而转换这些 Endpoint 类。在此项目中，路由/认证声明靠近 Endpoint 类，而 Gateway 控制台 API 的稳定生成客户端名称由 `NameGenerator` 映射拥有，该映射位于 `Program.cs` 中。如果未来某个 Endpoint 需要 attribute 无法表达的高级 FastEndpoints 元数据，应将该 Endpoint 完整切换到 `Configure()`，并从类中移除路由/认证 attribute。
 
-- [ ] **Step 7: Run Gateway tests**
+- [ ] **步骤 7：运行 Gateway 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj
 ```
 
-Expected: exit code `0`; existing instance/operation tests and the new OpenAPI test all pass.
+预期结果：退出代码为 `0`；现有实例/操作测试和新的 OpenAPI 测试全部通过。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Directory.Packages.props backend/gateway/PlatformGateway
 git commit -m "feat: expose gateway console openapi"
 ```
 
-## Task 2: Add Frontend Workspace Skeleton
+## 任务 2：添加前端工作区骨架
 
-**Files:**
+**文件：**
 
-- Modify: `.gitignore`
-- Create: `frontend/package.json`
-- Create: `frontend/pnpm-workspace.yaml`
-- Create: `frontend/tsconfig.base.json`
-- Create: `frontend/vite.config.ts`
+- 修改：`.gitignore`
+- 创建：`frontend/package.json`
+- 创建：`frontend/pnpm-workspace.yaml`
+- 创建：`frontend/tsconfig.base.json`
+- 创建：`frontend/vite.config.ts`
 
-- [ ] **Step 1: Update root ignore rules**
+- [ ] **步骤 1：更新根级忽略规则**
 
-Append to `.gitignore`:
+追加到 `.gitignore`：
 
 ```gitignore
 node_modules/
@@ -359,9 +359,9 @@ frontend/**/coverage/
 frontend/.vite/
 ```
 
-- [ ] **Step 2: Create pnpm workspace manifest**
+- [ ] **步骤 2：创建 pnpm 工作区清单**
 
-Create `frontend/package.json`:
+创建 `frontend/package.json`：
 
 ```json
 {
@@ -399,9 +399,9 @@ Create `frontend/package.json`:
 }
 ```
 
-- [ ] **Step 3: Create workspace package map**
+- [ ] **步骤 3：创建工作区包映射**
 
-Create `frontend/pnpm-workspace.yaml`:
+创建 `frontend/pnpm-workspace.yaml`：
 
 ```yaml
 packages:
@@ -412,9 +412,9 @@ overrides:
   vitest: npm:@voidzero-dev/vite-plus-test@0.1.21
 ```
 
-- [ ] **Step 4: Create shared TypeScript baseline**
+- [ ] **步骤 4：创建共享 TypeScript 基线**
 
-Create `frontend/tsconfig.base.json`:
+创建 `frontend/tsconfig.base.json`：
 
 ```json
 {
@@ -435,9 +435,9 @@ Create `frontend/tsconfig.base.json`:
 }
 ```
 
-- [ ] **Step 5: Create root Vite+ config for shared checks, tests and workspace tasks**
+- [ ] **步骤 5：为共享检查、测试和工作区任务创建根级 Vite+ 配置**
 
-Create `frontend/vite.config.ts`:
+创建 `frontend/vite.config.ts`：
 
 ```ts
 import { fileURLToPath, URL } from 'node:url'
@@ -525,47 +525,47 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 6: Install workspace dependencies**
+- [ ] **步骤 6：安装工作区依赖**
 
-Run:
+运行：
 
 ```powershell
 corepack enable
 pnpm -C frontend install
 ```
 
-Expected: exit code `0`; `frontend/pnpm-lock.yaml` is created.
+预期结果：退出代码为 `0`；已创建 `frontend/pnpm-lock.yaml`。
 
-`pnpm check` / `pnpm lint` load `frontend/vite.config.ts` through the Vite+ lint/fmt path. Run these on Node.js `>=22.18.0`; Node.js `22.17.x` can install and run build/test tasks, but fails TS config loading for this path.
+`pnpm check` / `pnpm lint` 通过 Vite+ lint/fmt 路径加载 `frontend/vite.config.ts`。在 Node.js `>=22.18.0` 上运行这些命令；Node.js `22.17.x` 可以安装并运行构建/测试任务，但无法为此路径加载 TS 配置。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add .gitignore frontend/package.json frontend/pnpm-workspace.yaml frontend/tsconfig.base.json frontend/vite.config.ts frontend/pnpm-lock.yaml
 git commit -m "chore: bootstrap frontend workspace"
 ```
 
-## Task 3: Add API Client Generation Package
+## 任务 3：添加 API 客户端生成包
 
-**Files:**
+**文件：**
 
-- Create: `scripts/export-gateway-openapi.ps1`
-- Create: `frontend/packages/api-client/package.json`
-- Create: `frontend/packages/api-client/tsconfig.json`
-- Create: `frontend/packages/api-client/openapi-ts.config.ts`
-- Create: `frontend/packages/api-client/openapi/platform-gateway.v1.json`
-- Create: `frontend/packages/api-client/src/generated/*`
-- Create: `frontend/packages/api-client/src/transport/base-url.ts`
-- Create: `frontend/packages/api-client/src/transport/client-config.ts`
-- Create: `frontend/packages/api-client/src/transport/client-config.test.ts`
-- Create: `frontend/packages/api-client/src/console.ts`
-- Create: `frontend/packages/api-client/src/index.ts`
+- 创建：`scripts/export-gateway-openapi.ps1`
+- 创建：`frontend/packages/api-client/package.json`
+- 创建：`frontend/packages/api-client/tsconfig.json`
+- 创建：`frontend/packages/api-client/openapi-ts.config.ts`
+- 创建：`frontend/packages/api-client/openapi/platform-gateway.v1.json`
+- 创建：`frontend/packages/api-client/src/generated/*`
+- 创建：`frontend/packages/api-client/src/transport/base-url.ts`
+- 创建：`frontend/packages/api-client/src/transport/client-config.ts`
+- 创建：`frontend/packages/api-client/src/transport/client-config.test.ts`
+- 创建：`frontend/packages/api-client/src/console.ts`
+- 创建：`frontend/packages/api-client/src/index.ts`
 
-- [ ] **Step 1: Create OpenAPI export script**
+- [ ] **步骤 1：创建 OpenAPI 导出脚本**
 
-Create `scripts/export-gateway-openapi.ps1`:
+创建 `scripts/export-gateway-openapi.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -619,9 +619,9 @@ finally {
 }
 ```
 
-- [ ] **Step 2: Create api-client package manifest**
+- [ ] **步骤 2：创建 api-client 包清单**
 
-Create `frontend/packages/api-client/package.json`:
+创建 `frontend/packages/api-client/package.json`：
 
 ```json
 {
@@ -647,9 +647,9 @@ Create `frontend/packages/api-client/package.json`:
 }
 ```
 
-- [ ] **Step 3: Create api-client TypeScript config**
+- [ ] **步骤 3：创建 api-client TypeScript 配置**
 
-Create `frontend/packages/api-client/tsconfig.json`:
+创建 `frontend/packages/api-client/tsconfig.json`：
 
 ```json
 {
@@ -661,9 +661,9 @@ Create `frontend/packages/api-client/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 4: Configure Hey API generation**
+- [ ] **步骤 4：配置 Hey API 生成**
 
-Create `frontend/packages/api-client/openapi-ts.config.ts`:
+创建 `frontend/packages/api-client/openapi-ts.config.ts`：
 
 ```ts
 import { defineConfig } from '@hey-api/openapi-ts'
@@ -694,29 +694,29 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 5: Export Gateway OpenAPI JSON**
+- [ ] **步骤 5：导出 Gateway OpenAPI JSON**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/export-gateway-openapi.ps1
 ```
 
-Expected: exit code `0`; `frontend/packages/api-client/openapi/platform-gateway.v1.json` exists and contains the four console operation IDs.
+预期结果：退出代码为 `0`；`frontend/packages/api-client/openapi/platform-gateway.v1.json` 存在，并包含四个控制台 operation ID。
 
-- [ ] **Step 6: Generate API client**
+- [ ] **步骤 6：生成 API 客户端**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client generate
 ```
 
-Expected: exit code `0`; generated files include `src/generated/client.gen.ts`, `src/generated/sdk.gen.ts`, `src/generated/types.gen.ts` and `src/generated/@pinia/colada.gen.ts`.
+预期结果：退出代码为 `0`；生成文件包括 `src/generated/client.gen.ts`、`src/generated/sdk.gen.ts`、`src/generated/types.gen.ts` 和 `src/generated/@pinia/colada.gen.ts`。
 
-- [ ] **Step 7: Add transport base URL helpers**
+- [ ] **步骤 7：添加传输 base URL 辅助函数**
 
-Create `frontend/packages/api-client/src/transport/base-url.ts`:
+创建 `frontend/packages/api-client/src/transport/base-url.ts`：
 
 ```ts
 const defaultBrowserBaseUrl = ''
@@ -736,7 +736,7 @@ export function getApiBaseUrl(env: ImportMetaEnv = import.meta.env): string {
 }
 ```
 
-Create `frontend/packages/api-client/src/transport/client-config.ts`:
+创建 `frontend/packages/api-client/src/transport/client-config.ts`：
 
 ```ts
 import { client } from '../generated/client.gen'
@@ -755,9 +755,9 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
 }
 ```
 
-- [ ] **Step 8: Add transport test**
+- [ ] **步骤 8：添加传输测试**
 
-Create `frontend/packages/api-client/src/transport/client-config.test.ts`:
+创建 `frontend/packages/api-client/src/transport/client-config.test.ts`：
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -774,9 +774,9 @@ describe('getApiBaseUrl', () => {
 })
 ```
 
-- [ ] **Step 9: Add stable api-client exports**
+- [ ] **步骤 9：添加稳定 api-client 导出**
 
-Create `frontend/packages/api-client/src/console.ts`:
+创建 `frontend/packages/api-client/src/console.ts`：
 
 ```ts
 export {
@@ -795,7 +795,7 @@ export type {
 } from './generated/types.gen'
 ```
 
-Create `frontend/packages/api-client/src/index.ts`:
+创建 `frontend/packages/api-client/src/index.ts`：
 
 ```ts
 export { configureApiClient } from './transport/client-config'
@@ -803,44 +803,44 @@ export type { ConfigureApiClientOptions } from './transport/client-config'
 export * from './console'
 ```
 
-- [ ] **Step 10: Run api-client tests and typecheck**
+- [ ] **步骤 10：运行 api-client 测试和类型检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test
 pnpm -C frontend --filter @nerv-iip/api-client typecheck
 ```
 
-Expected: both commands exit with code `0`.
+预期结果：两条命令都以代码 `0` 退出。
 
-- [ ] **Step 11: Commit**
+- [ ] **步骤 11：提交**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/export-gateway-openapi.ps1 frontend/packages/api-client frontend/pnpm-lock.yaml
 git commit -m "feat: generate gateway api client"
 ```
 
-## Task 4: Add UI And App Shell Packages
+## 任务 4：添加 UI 和 App Shell 包
 
-**Files:**
+**文件：**
 
-- Create: `frontend/packages/ui/package.json`
-- Create: `frontend/packages/ui/tsconfig.json`
-- Create: `frontend/packages/ui/src/UiBadge.vue`
-- Create: `frontend/packages/ui/src/UiButton.vue`
-- Create: `frontend/packages/ui/src/UiPanel.vue`
-- Create: `frontend/packages/ui/src/index.ts`
-- Create: `frontend/packages/app-shell/package.json`
-- Create: `frontend/packages/app-shell/tsconfig.json`
-- Create: `frontend/packages/app-shell/src/AppShell.vue`
-- Create: `frontend/packages/app-shell/src/index.ts`
+- 创建：`frontend/packages/ui/package.json`
+- 创建：`frontend/packages/ui/tsconfig.json`
+- 创建：`frontend/packages/ui/src/UiBadge.vue`
+- 创建：`frontend/packages/ui/src/UiButton.vue`
+- 创建：`frontend/packages/ui/src/UiPanel.vue`
+- 创建：`frontend/packages/ui/src/index.ts`
+- 创建：`frontend/packages/app-shell/package.json`
+- 创建：`frontend/packages/app-shell/tsconfig.json`
+- 创建：`frontend/packages/app-shell/src/AppShell.vue`
+- 创建：`frontend/packages/app-shell/src/index.ts`
 
-- [ ] **Step 1: Create UI package manifest and tsconfig**
+- [ ] **步骤 1：创建 UI 包清单和 tsconfig**
 
-Create `frontend/packages/ui/package.json`:
+创建 `frontend/packages/ui/package.json`：
 
 ```json
 {
@@ -860,7 +860,7 @@ Create `frontend/packages/ui/package.json`:
 }
 ```
 
-Create `frontend/packages/ui/tsconfig.json`:
+创建 `frontend/packages/ui/tsconfig.json`：
 
 ```json
 {
@@ -872,9 +872,9 @@ Create `frontend/packages/ui/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 2: Add focused UI primitives**
+- [ ] **步骤 2：添加聚焦的 UI 原语**
 
-Create `frontend/packages/ui/src/UiBadge.vue`:
+创建 `frontend/packages/ui/src/UiBadge.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -924,7 +924,7 @@ withDefaults(defineProps<Props>(), {
 </style>
 ```
 
-Create `frontend/packages/ui/src/UiButton.vue`:
+创建 `frontend/packages/ui/src/UiButton.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -986,7 +986,7 @@ withDefaults(defineProps<Props>(), {
 </style>
 ```
 
-Create `frontend/packages/ui/src/UiPanel.vue`:
+创建 `frontend/packages/ui/src/UiPanel.vue`：
 
 ```vue
 <template>
@@ -1004,7 +1004,7 @@ Create `frontend/packages/ui/src/UiPanel.vue`:
 </style>
 ```
 
-Create `frontend/packages/ui/src/index.ts`:
+创建 `frontend/packages/ui/src/index.ts`：
 
 ```ts
 export { default as UiBadge } from './UiBadge.vue'
@@ -1012,9 +1012,9 @@ export { default as UiButton } from './UiButton.vue'
 export { default as UiPanel } from './UiPanel.vue'
 ```
 
-- [ ] **Step 3: Create app shell package**
+- [ ] **步骤 3：创建 App Shell 包**
 
-Create `frontend/packages/app-shell/package.json`:
+创建 `frontend/packages/app-shell/package.json`：
 
 ```json
 {
@@ -1034,7 +1034,7 @@ Create `frontend/packages/app-shell/package.json`:
 }
 ```
 
-Create `frontend/packages/app-shell/tsconfig.json`:
+创建 `frontend/packages/app-shell/tsconfig.json`：
 
 ```json
 {
@@ -1046,7 +1046,7 @@ Create `frontend/packages/app-shell/tsconfig.json`:
 }
 ```
 
-Create `frontend/packages/app-shell/src/AppShell.vue`:
+创建 `frontend/packages/app-shell/src/AppShell.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1134,52 +1134,52 @@ defineProps<{
 </style>
 ```
 
-Create `frontend/packages/app-shell/src/index.ts`:
+创建 `frontend/packages/app-shell/src/index.ts`：
 
 ```ts
 export { default as AppShell } from './AppShell.vue'
 ```
 
-- [ ] **Step 4: Typecheck shared packages**
+- [ ] **步骤 4：对共享包执行类型检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/ui typecheck
 pnpm -C frontend --filter @nerv-iip/app-shell typecheck
 ```
 
-Expected: both commands exit with code `0`.
+预期结果：两条命令都以代码 `0` 退出。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/packages/ui frontend/packages/app-shell frontend/pnpm-lock.yaml
 git commit -m "feat: add frontend shell packages"
 ```
 
-## Task 5: Add Console App Runtime And Routing
+## 任务 5：添加控制台应用运行时和路由
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/package.json`
-- Create: `frontend/apps/console/index.html`
-- Create: `frontend/apps/console/tsconfig.json`
-- Create: `frontend/apps/console/vite.config.ts`
-- Generate: `frontend/apps/console/typed-router.d.ts`
-- Create: `frontend/apps/console/src/main.ts`
-- Create: `frontend/apps/console/src/App.vue`
-- Create: `frontend/apps/console/src/router/index.ts`
-- Create: `frontend/apps/console/src/layouts/DefaultLayout.vue`
-- Create: `frontend/apps/console/src/pages/[...path].vue`
-- Create: `frontend/apps/console/src/assets/main.css`
-- Create: `frontend/apps/console/src/test/setup.ts`
+- 创建：`frontend/apps/console/package.json`
+- 创建：`frontend/apps/console/index.html`
+- 创建：`frontend/apps/console/tsconfig.json`
+- 创建：`frontend/apps/console/vite.config.ts`
+- 生成：`frontend/apps/console/typed-router.d.ts`
+- 创建：`frontend/apps/console/src/main.ts`
+- 创建：`frontend/apps/console/src/App.vue`
+- 创建：`frontend/apps/console/src/router/index.ts`
+- 创建：`frontend/apps/console/src/layouts/DefaultLayout.vue`
+- 创建：`frontend/apps/console/src/pages/[...path].vue`
+- 创建：`frontend/apps/console/src/assets/main.css`
+- 创建：`frontend/apps/console/src/test/setup.ts`
 
-- [ ] **Step 1: Create console package manifest**
+- [ ] **步骤 1：创建控制台包清单**
 
-Create `frontend/apps/console/package.json`:
+创建 `frontend/apps/console/package.json`：
 
 ```json
 {
@@ -1207,9 +1207,9 @@ Create `frontend/apps/console/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create app shell files**
+- [ ] **步骤 2：创建应用外壳文件**
 
-Create `frontend/apps/console/index.html`:
+创建 `frontend/apps/console/index.html`：
 
 ```html
 <!doctype html>
@@ -1226,7 +1226,7 @@ Create `frontend/apps/console/index.html`:
 </html>
 ```
 
-Create `frontend/apps/console/src/assets/main.css`:
+创建 `frontend/apps/console/src/assets/main.css`：
 
 ```css
 :root {
@@ -1261,7 +1261,7 @@ input {
 }
 ```
 
-Create `frontend/apps/console/src/App.vue`:
+创建 `frontend/apps/console/src/App.vue`：
 
 ```vue
 <template>
@@ -1269,9 +1269,9 @@ Create `frontend/apps/console/src/App.vue`:
 </template>
 ```
 
-- [ ] **Step 3: Create Vite and TypeScript configuration**
+- [ ] **步骤 3：创建 Vite 和 TypeScript 配置**
 
-Create `frontend/apps/console/tsconfig.json`:
+创建 `frontend/apps/console/tsconfig.json`：
 
 ```json
 {
@@ -1292,7 +1292,7 @@ Create `frontend/apps/console/tsconfig.json`:
 }
 ```
 
-Create `frontend/apps/console/vite.config.ts`:
+创建 `frontend/apps/console/vite.config.ts`：
 
 ```ts
 import { fileURLToPath, URL } from 'node:url'
@@ -1343,9 +1343,9 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 4: Create router and plugin bootstrap**
+- [ ] **步骤 4：创建路由和插件引导代码**
 
-Create `frontend/apps/console/src/router/index.ts`:
+创建 `frontend/apps/console/src/router/index.ts`：
 
 ```ts
 import { createRouter, createWebHistory } from 'vue-router'
@@ -1361,7 +1361,7 @@ if (import.meta.hot) {
 }
 ```
 
-Create `frontend/apps/console/src/main.ts`:
+创建 `frontend/apps/console/src/main.ts`：
 
 ```ts
 import { PiniaColada } from '@pinia/colada'
@@ -1393,7 +1393,7 @@ app.use(router)
 app.mount('#app')
 ```
 
-Create `frontend/apps/console/src/test/setup.ts`:
+创建 `frontend/apps/console/src/test/setup.ts`：
 
 ```ts
 import { afterEach } from 'vitest'
@@ -1402,9 +1402,9 @@ import { enableAutoUnmount } from '@vue/test-utils'
 enableAutoUnmount(afterEach)
 ```
 
-- [ ] **Step 5: Create default layout and not found page**
+- [ ] **步骤 5：创建默认布局和未找到页面**
 
-Create `frontend/apps/console/src/layouts/DefaultLayout.vue`:
+创建 `frontend/apps/console/src/layouts/DefaultLayout.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1422,7 +1422,7 @@ const navItems = [
 </template>
 ```
 
-Create `frontend/apps/console/src/pages/[...path].vue`:
+创建 `frontend/apps/console/src/pages/[...path].vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1455,41 +1455,41 @@ import DefaultLayout from '@/layouts/DefaultLayout.vue'
 </style>
 ```
 
-- [ ] **Step 6: Install and typecheck console shell**
+- [ ] **步骤 6：安装控制台外壳并执行类型检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend install
 pnpm -C frontend --filter @nerv-iip/console typecheck
 ```
 
-Expected: exit code `0`; `frontend/apps/console/typed-router.d.ts` is generated and included in git.
+预期结果：退出代码为 `0`；已生成 `frontend/apps/console/typed-router.d.ts` 并将其纳入 git。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console frontend/pnpm-lock.yaml
 git commit -m "feat: add console app shell"
 ```
 
-## Task 6: Build Console Instance And Operation Experience
+## 任务 6：构建控制台实例和操作体验
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/composables/useConsoleOperations.ts`
-- Create: `frontend/apps/console/src/components/console/InstanceTable.vue`
-- Create: `frontend/apps/console/src/components/console/InstanceDetailPanel.vue`
-- Create: `frontend/apps/console/src/components/console/OperationTimeline.vue`
-- Create: `frontend/apps/console/src/pages/index.vue`
-- Create: `frontend/apps/console/src/pages/operations/[operationTaskId].vue`
-- Create: `frontend/apps/console/src/pages/index.test.ts`
+- 创建：`frontend/apps/console/src/composables/useConsoleOperations.ts`
+- 创建：`frontend/apps/console/src/components/console/InstanceTable.vue`
+- 创建：`frontend/apps/console/src/components/console/InstanceDetailPanel.vue`
+- 创建：`frontend/apps/console/src/components/console/OperationTimeline.vue`
+- 创建：`frontend/apps/console/src/pages/index.vue`
+- 创建：`frontend/apps/console/src/pages/operations/[operationTaskId].vue`
+- 创建：`frontend/apps/console/src/pages/index.test.ts`
 
-- [ ] **Step 1: Write console page test**
+- [ ] **步骤 1：编写控制台页面测试**
 
-Create `frontend/apps/console/src/pages/index.test.ts`:
+创建 `frontend/apps/console/src/pages/index.test.ts`：
 
 ```ts
 import { PiniaColada } from '@pinia/colada'
@@ -1583,19 +1583,19 @@ describe('ConsoleIndexPage', () => {
 })
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **步骤 2：运行测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console exec vp test run src/pages/index.test.ts
 ```
 
-Expected: FAIL because the console page and components do not exist yet.
+预期结果：失败，因为控制台页面和组件尚不存在。
 
-- [ ] **Step 3: Add console operations composable**
+- [ ] **步骤 3：添加控制台操作 composable**
 
-Create `frontend/apps/console/src/composables/useConsoleOperations.ts`:
+创建 `frontend/apps/console/src/composables/useConsoleOperations.ts`：
 
 ```ts
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
@@ -1699,9 +1699,9 @@ export function useOperationTask(operationTaskId: string) {
 }
 ```
 
-- [ ] **Step 4: Add instance table component**
+- [ ] **步骤 4：添加实例表格组件**
 
-Create `frontend/apps/console/src/components/console/InstanceTable.vue`:
+创建 `frontend/apps/console/src/components/console/InstanceTable.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1808,9 +1808,9 @@ function healthTone(value: string): 'neutral' | 'success' | 'warning' | 'danger'
 </style>
 ```
 
-- [ ] **Step 5: Add instance detail and operation timeline components**
+- [ ] **步骤 5：添加实例详情和操作时间线组件**
 
-Create `frontend/apps/console/src/components/console/InstanceDetailPanel.vue`:
+创建 `frontend/apps/console/src/components/console/InstanceDetailPanel.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1898,7 +1898,7 @@ const capabilities = computed(() => props.instance?.capabilities ?? [])
 </style>
 ```
 
-Create `frontend/apps/console/src/components/console/OperationTimeline.vue`:
+创建 `frontend/apps/console/src/components/console/OperationTimeline.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1973,9 +1973,9 @@ const auditRecords = computed(() => props.operation?.auditRecords ?? [])
 </style>
 ```
 
-- [ ] **Step 6: Add console index page**
+- [ ] **步骤 6：添加控制台首页**
 
-Create `frontend/apps/console/src/pages/index.vue`:
+创建 `frontend/apps/console/src/pages/index.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2080,9 +2080,9 @@ async function restartInstance(instanceKey: string) {
 </style>
 ```
 
-- [ ] **Step 7: Add operation detail page**
+- [ ] **步骤 7：添加操作详情页面**
 
-Create `frontend/apps/console/src/pages/operations/[operationTaskId].vue`:
+创建 `frontend/apps/console/src/pages/operations/[operationTaskId].vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2134,9 +2134,9 @@ const operationQuery = useOperationTask(operationTaskId.value)
 </style>
 ```
 
-- [ ] **Step 8: Run console tests, typecheck and build**
+- [ ] **步骤 8：运行控制台测试、类型检查和构建**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console test
@@ -2144,28 +2144,28 @@ pnpm -C frontend --filter @nerv-iip/console typecheck
 pnpm -C frontend --filter @nerv-iip/console build
 ```
 
-Expected: all commands exit with code `0`.
+预期结果：所有命令都以代码 `0` 退出。
 
-- [ ] **Step 9: Commit**
+- [ ] **步骤 9：提交**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console frontend/pnpm-lock.yaml
 git commit -m "feat: add console instance operations view"
 ```
 
-## Task 7: Add Third Slice Verification And Documentation
+## 任务 7：添加第三阶段验证和文档
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-third-slice-console.ps1`
-- Modify: `README.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 创建：`scripts/verify-third-slice-console.ps1`
+- 修改：`README.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Create third-slice verification script**
+- [ ] **步骤 1：创建第三阶段验证脚本**
 
-Create `scripts/verify-third-slice-console.ps1`:
+创建 `scripts/verify-third-slice-console.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -2188,15 +2188,15 @@ pnpm -C frontend build
 Write-Host "Third vertical slice console verified."
 ```
 
-- [ ] **Step 2: Run third-slice verification**
+- [ ] **步骤 2：运行第三阶段验证**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-third-slice-console.ps1
 ```
 
-Expected:
+预期结果：
 
 ```text
 Second vertical slice verified with operationTaskId op-000001.
@@ -2204,17 +2204,17 @@ Gateway OpenAPI exported to ...
 Third vertical slice console verified.
 ```
 
-- [ ] **Step 3: Update README current status**
+- [ ] **步骤 3：更新 README 当前状态**
 
-Confirm the README "实施计划" list includes this plan, then add the third-slice verification paragraph after the second-slice paragraph in "当前状态":
+确认 README 的“实施计划”清单包含本计划，然后在“当前状态”的第二阶段段落后添加第三阶段验证段落：
 
 ```markdown
 第三阶段控制台纵切可以用 `scripts/verify-third-slice-console.ps1` 验证：Gateway 暴露稳定 OpenAPI，frontend 工作区可生成类型安全 api-client，console 可展示实例列表与详情、创建 restart 任务并查看 OperationTask 状态。
 ```
 
-- [ ] **Step 4: Update implementation readiness**
+- [ ] **步骤 4：更新实施就绪状态**
 
-Replace the existing "第三迭代计划范围" section with "第三迭代已落地范围":
+将现有“第三迭代计划范围”章节替换为“第三迭代已落地范围”：
 
 ```markdown
 ### 第三迭代已落地范围
@@ -2226,72 +2226,72 @@ Replace the existing "第三迭代计划范围" section with "第三迭代已落
 5. 以 docs/superpowers/plans/2026-05-16-third-vertical-slice-console.md 和 scripts/verify-third-slice-console.ps1 作为第三阶段验收口径。
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-third-slice-console.ps1 README.md docs/architecture/implementation-readiness.md
 git commit -m "docs: document third console vertical slice"
 ```
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 must be first because frontend code generation needs a stable OpenAPI document and operation IDs.
-2. Task 2 must finish before frontend packages can be installed and filtered with pnpm.
-3. Task 3 depends on Task 1 OpenAPI and Task 2 workspace setup.
-4. Task 4 depends on Task 2 workspace setup and can run in parallel with Task 3 after package manifests exist.
-5. Task 5 depends on Tasks 3 and 4 because the console app imports `api-client`, `ui` and `app-shell`.
-6. Task 6 depends on Task 5 runtime bootstrapping.
-7. Task 7 depends on all implementation tasks.
+1. 必须首先执行任务 1，因为前端代码生成需要稳定的 OpenAPI 文档和 operation ID。
+2. 必须完成任务 2 后，才能使用 pnpm 安装和过滤前端包。
+3. 任务 3 依赖任务 1 的 OpenAPI 和任务 2 的工作区设置。
+4. 任务 4 依赖任务 2 的工作区设置；包清单存在后，可以与任务 3 并行运行。
+5. 任务 5 依赖任务 3 和任务 4，因为控制台应用会导入 `api-client`、`ui` 和 `app-shell`。
+6. 任务 6 依赖任务 5 的运行时引导。
+7. 任务 7 依赖所有实施任务。
 
-Recommended parallelization after Task 2:
+任务 2 之后建议并行执行：
 
-1. One worker implements Task 3 API client generation.
-2. One worker implements Task 4 UI and shell packages.
-3. One worker prepares Task 5 console app bootstrapping after Tasks 3 and 4 expose package names.
+1. 一名执行者实施任务 3 的 API 客户端生成。
+2. 一名执行者实施任务 4 的 UI 和外壳包。
+3. 任务 3 和任务 4 公开包名后，一名执行者准备任务 5 的控制台应用引导。
 
-## Third Iteration Completion Definition
+## 第三次迭代完成定义
 
-The third iteration is complete when all statements are true:
+满足以下全部条件时，第三次迭代才算完成：
 
-1. Gateway exposes `/swagger/v1/swagger.json`.
-2. Gateway OpenAPI contains operation IDs `listConsoleInstances`, `getConsoleInstanceDetail`, `restartConsoleInstance` and `getConsoleOperationTask`.
-3. `frontend/packages/api-client` generates Hey API fetch SDK, TypeScript types and Pinia Colada query/mutation options from Gateway OpenAPI.
-4. Console app installs Pinia before Pinia Colada and configures the API client before mounting Vue.
-5. Console app uses Vue Router file-based routes under `src/pages` and commits `typed-router.d.ts`.
-6. Console index page renders instance list and detail from generated query options.
-7. Console restart action calls generated mutation options and exposes the latest OperationTask link.
-8. Operation detail page polls OperationTask status through generated query options.
-9. No console page handwrites Gateway URLs or service DTOs.
-10. `pwsh scripts/verify-third-slice-console.ps1` exits with code `0`.
+1. Gateway 公开 `/swagger/v1/swagger.json`。
+2. Gateway OpenAPI 包含 operation ID `listConsoleInstances`、`getConsoleInstanceDetail`、`restartConsoleInstance` 和 `getConsoleOperationTask`。
+3. `frontend/packages/api-client` 从 Gateway OpenAPI 生成 Hey API fetch SDK、TypeScript 类型和 Pinia Colada query/mutation 选项。
+4. 控制台应用先安装 Pinia，再安装 Pinia Colada，并在挂载 Vue 之前配置 API 客户端。
+5. 控制台应用使用 `src/pages` 下基于文件的 Vue Router 路由，并提交 `typed-router.d.ts`。
+6. 控制台首页使用生成的查询选项渲染实例列表和详情。
+7. 控制台重启操作调用生成的 mutation 选项，并公开最新 OperationTask 链接。
+8. 操作详情页面通过生成的查询选项轮询 OperationTask 状态。
+9. 控制台页面均不手写 Gateway URL 或服务 DTO。
+10. `pwsh scripts/verify-third-slice-console.ps1` 以代码 `0` 退出。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. README next-stage frontend workspace item: covered by Tasks 2, 4 and 5.
-2. API client generation chain: covered by Tasks 1 and 3.
-3. Instance query and low-risk restart console flow: covered by Task 6.
-4. Verification and documentation: covered by Task 7.
-5. Existing backend boundary rules: preserved by Task 1 tests and no service Domain/Infrastructure references.
+1. README 下一阶段前端工作区项：由任务 2、4 和 5 覆盖。
+2. API 客户端生成链：由任务 1 和任务 3 覆盖。
+3. 实例查询和低风险重启控制台流程：由任务 6 覆盖。
+4. 验证和文档：由任务 7 覆盖。
+5. 现有后端边界规则：由任务 1 的测试以及不引用服务 Domain/Infrastructure 来保持。
 
-Placeholder scan:
+占位符扫描：
 
-1. No unresolved markers or undefined fill-in work remains.
-2. All file paths are explicit.
-3. Each implementation task has commands and expected outputs.
+1. 不保留未解决标记或未定义的待填工作。
+2. 所有文件路径均明确。
+3. 每个实施任务都有命令和预期输出。
 
-Type consistency:
+类型一致性：
 
-1. Operation IDs used in Gateway OpenAPI match api-client exports and console composables.
-2. `organizationId`, `environmentId`, `instanceKey` and `operationTaskId` match existing Gateway request shapes.
-3. `lifecycle.restart` remains the only operation code used by the console action in this phase.
+1. Gateway OpenAPI 使用的 operation ID 与 api-client 导出和控制台 composable 一致。
+2. `organizationId`、`environmentId`、`instanceKey` 和 `operationTaskId` 与现有 Gateway 请求结构一致。
+3. `lifecycle.restart` 仍是本阶段控制台操作使用的唯一操作代码。
 
-## Source Notes
+## 来源说明
 
-1. FastEndpoints Swagger support uses `FastEndpoints.Swagger`, `.SwaggerDocument()` and `.UseSwaggerGen()`; operation IDs can be controlled with an endpoint name generator or `Description(x => x.WithName(...))`; attribute-based endpoint configuration is a limited alternative to `Configure()` and the two styles should not be mixed. See https://fast-endpoints.com/docs/swagger-support and https://fast-endpoints.com/docs/get-started.
-2. Vue Router file-based routing uses `vue-router/vite`, `vue-router/auto-routes` and committed `typed-router.d.ts` according to https://router.vuejs.org/file-based-routing/.
-3. Hey API Pinia Colada generation uses `@hey-api/client-fetch`, `@hey-api/sdk`, `@hey-api/typescript` and `@pinia/colada` plugin configuration according to https://mintlify.wiki/hey-api/openapi-ts/state-management/pinia-colada.
-4. Pinia Colada must be installed after Pinia through `app.use(PiniaColada, ...)` according to https://pinia-colada.esm.dev/guide/installation.html.
-5. Operation detail polling uses `@pinia/colada-plugin-auto-refetch` and per-query `autoRefetch` according to https://pinia-colada.esm.dev/plugins/official/auto-refetch.html.
+1. FastEndpoints Swagger 支持使用 `FastEndpoints.Swagger`、`.SwaggerDocument()` 和 `.UseSwaggerGen()`；operation ID 可以通过 endpoint 名称生成器或 `Description(x => x.WithName(...))` 控制；基于 attribute 的 endpoint 配置是 `Configure()` 的有限替代方案，不应混用两种风格。参见 https://fast-endpoints.com/docs/swagger-support 和 https://fast-endpoints.com/docs/get-started。
+2. 根据 https://router.vuejs.org/file-based-routing/，Vue Router 基于文件的路由使用 `vue-router/vite`、`vue-router/auto-routes` 和已提交的 `typed-router.d.ts`。
+3. 根据 https://mintlify.wiki/hey-api/openapi-ts/state-management/pinia-colada，Hey API 的 Pinia Colada 生成使用 `@hey-api/client-fetch`、`@hey-api/sdk`、`@hey-api/typescript` 和 `@pinia/colada` 插件配置。
+4. 根据 https://pinia-colada.esm.dev/guide/installation.html，必须在 Pinia 之后通过 `app.use(PiniaColada, ...)` 安装 Pinia Colada。
+5. 根据 https://pinia-colada.esm.dev/plugins/official/auto-refetch.html，操作详情轮询使用 `@pinia/colada-plugin-auto-refetch` 和逐 query 的 `autoRefetch`。

@@ -1,16 +1,16 @@
-# Fourth Vertical Slice Real Infrastructure Foundation Implementation Plan
+# 第四阶段纵切真实基础设施基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** 将第一、第二、第三阶段已经跑通的 AppHub、Ops、Gateway、Connector Host 和 Console 链路迁移到可验证的 netcorepal-first 真实基础设施底座，优先完成 PostgreSQL profile、结构化日志与 OpenTelemetry 输出、平台级 Aspire AppHost、框架代码分析入口和 database profile 边界。
+**目标：** 将第一、第二、第三阶段已经跑通的 AppHub、Ops、Gateway、Connector Host 和 Console 链路迁移到可验证的 netcorepal-first 真实基础设施底座，优先完成 PostgreSQL profile、结构化日志与 OpenTelemetry 输出、平台级 Aspire AppHost、框架代码分析入口和 database profile 边界。
 
-**Architecture:** 本阶段不扩展业务范围，先把 AppHub 和 Ops 当前内存态事实迁移到符合 netcorepal/CleanDDD 的 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 形态；PostgreSQL 作为首个 database profile，provider 选择只存在于 Infrastructure DI extension、配置、测试和部署脚本中。验证脚本用本地 `infra/docker-compose.dev.yml` 拉起依赖并证明数据跨 DbContext 生命周期存在。Aspire AppHost 作为统一拓扑入口落到 `infra/aspire/Nerv.IIP.AppHost`，但不替代既有验证脚本；日志采用 Console/OTLP 优先，本地滚动 JSONL 文件是第四阶段必须实现的持久化兜底；内置长期持久化目标是 Log Archive Worker 将关闭后的日志压缩成 File Storage chunk，并在 PostgreSQL 独立 `observability` schema 或 database 中记录可查询元数据索引；可选 .NET Aspire Dashboard 作为短期观测 UI；观测 profile 必须同时覆盖 Aspire AppHost、Docker Compose 和安装包/脚本三类部署入口；控制台日志查看通过 PlatformGateway 后续受控 API 接入，不让前端直连 Aspire Dashboard 或第三方观测后端；Gateway、Connector Host、Contracts/SDK、frontend api-client 和 console 保持轻量契约边界，不强行采用完整 netcorepal 三项目模型。
+**架构：** 本阶段不扩展业务范围，先把 AppHub 和 Ops 当前内存态事实迁移到符合 netcorepal/CleanDDD 的 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 形态；PostgreSQL 作为首个 database profile，provider 选择只存在于 Infrastructure DI extension、配置、测试和部署脚本中。验证脚本用本地 `infra/docker-compose.dev.yml` 拉起依赖并证明数据跨 DbContext 生命周期存在。Aspire AppHost 作为统一拓扑入口落到 `infra/aspire/Nerv.IIP.AppHost`，但不替代既有验证脚本；日志采用 Console/OTLP 优先，本地滚动 JSONL 文件是第四阶段必须实现的持久化兜底；内置长期持久化目标是 Log Archive Worker 将关闭后的日志压缩成 File Storage chunk，并在 PostgreSQL 独立 `observability` schema 或 database 中记录可查询元数据索引；可选 .NET Aspire Dashboard 作为短期观测 UI；观测 profile 必须同时覆盖 Aspire AppHost、Docker Compose 和安装包/脚本三类部署入口；控制台日志查看通过 PlatformGateway 后续受控 API 接入，不让前端直连 Aspire Dashboard 或第三方观测后端；Gateway、Connector Host、Contracts/SDK、frontend api-client 和 console 保持轻量契约边界，不强行采用完整 netcorepal 三项目模型。
 
-**Tech Stack:** .NET 10、netcorepal-cloud-framework/NetCorePal 3.3.0、FastEndpoints、MediatR、Entity Framework Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、NetCorePal CAP PostgreSQL storage 3.3.0、Serilog.AspNetCore、Serilog.Sinks.OpenTelemetry、Serilog.Sinks.File、OpenTelemetry Collector、.NET Aspire Dashboard optional short-term observability UI、PostgreSQL 17 primary profile、Redis 7、RabbitMQ 4、PowerShell、Docker Compose、Aspire.Hosting 13.3.3、pnpm 10.13.1、Vue 3、Hey API。GaussDB/DMDB are documented as template-supported future profiles, not implemented in this stage.
+**技术栈：** .NET 10、netcorepal-cloud-framework/NetCorePal 3.3.0、FastEndpoints、MediatR、Entity Framework Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、NetCorePal CAP PostgreSQL storage 3.3.0、Serilog.AspNetCore、Serilog.Sinks.OpenTelemetry、Serilog.Sinks.File、OpenTelemetry Collector、可选的短期可观测性 UI .NET Aspire Dashboard、PostgreSQL 17 主 profile、Redis 7、RabbitMQ 4、PowerShell、Docker Compose、Aspire.Hosting 13.3.3、pnpm 10.13.1、Vue 3、Hey API。GaussDB/DMDB 记录为模板支持的未来 profile，本阶段不实施。
 
 ---
 
-## Completion Record
+## 完成记录
 
 2026-05-17 本阶段真实基础设施门禁已通过：
 
@@ -26,7 +26,7 @@ Fourth vertical slice real infrastructure verified.
 
 验证环境使用 Docker Desktop；镜像拉取受限时已通过 Docker Desktop proxy 指向 `http://127.0.0.1:10808` 解决。PostgreSQL 本机端口改为 `15432`，避免与本机已有 `5432` PostgreSQL 冲突。AppHub 与 Ops 在 AppHost 和验证脚本中使用独立 database（默认 `nerv_iip_apphub` / `nerv_iip_ops`，第四阶段脚本使用 `nerv_iip_apphub_verify` / `nerv_iip_ops_verify`），避免共享 database 下 `EnsureCreated()` 因既有 schema/table 漏建服务表。
 
-## Execution Status
+## 执行状态
 
 2026-05-17 当前执行进度：
 
@@ -36,7 +36,7 @@ Fourth vertical slice real infrastructure verified.
 4. `/code-analysis` 已从 `Program.cs` 的 Minimal API 写法收敛到 FastEndpoints endpoint，`dotnet test backend/tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj --no-build`、AppHub/Ops CodeAnalysis smoke tests 和 `pwsh scripts/verify-second-slice-ops.ps1` 均已通过。
 5. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已完整通过：AppHub/Ops PostgreSQL profile tests、backend/connector-hosts 串行 solution tests、Gateway OpenAPI 导出、frontend api-client 生成、typecheck/test/build 和真实 AppHub/Ops/Gateway/Connector Host 联调均通过。
 
-## Current Gate
+## 当前门禁
 
 当前第四阶段真实基础设施门禁已经通过：
 
@@ -51,9 +51,9 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 3. GaussDB、DMDB、Kingbase、OceanBase 等信创数据库 profile 只冻结边界与替换约束，尚未实现生产 adapter。
 4. AppHost 当前覆盖 AppHub、Ops、Gateway、Connector Host、PostgreSQL、Redis 和 RabbitMQ；OpenTelemetry Collector、Log Archive Worker、长期日志索引和控制台日志查询仍按部署基线进入后续阶段。
 
-## Scope
+## 范围
 
-### In This Plan
+### 本计划范围内
 
 1. 引入 NetCorePal、EF Core、Npgsql、CAP RabbitMQ/CAP PostgreSQL storage、Serilog/OpenTelemetry sink 包版本，并保持 Central Package Management；provider 包只作为 PostgreSQL profile 的实现依赖。
 2. 将 AppHub 当前事实迁移为 netcorepal/CleanDDD 形态：Domain aggregate、Infrastructure repository/ApplicationDbContext、Web Application command/query、Endpoint 通过 mediator 调用。
@@ -70,7 +70,7 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 13. 固化观测部署入口：Aspire AppHost 使用 AppHost/Dashboard，Docker Compose 通过 `collector-only`、`aspire-dashboard` 与 `log-archive` profile/overlay，安装包和脚本通过 OTLP endpoint、滚动日志目录、File Storage 归档目标和可选 standalone Dashboard 配置实现。
 14. 更新 README、实施状态、部署基线、API 契约规范和 `.codex/environments/environment.toml` 的第四阶段入口。
 
-### Outside This Plan
+### 本计划范围外
 
 1. 不把 IAM 登录、JWT、refresh token 和权限 guard 全量迁移到 PostgreSQL。
 2. 不完成 FileStorage 的真实上传下载闭环和 MinIO provider。
@@ -82,7 +82,7 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 8. 不整包重跑 `dotnet new netcorepal-web` 覆盖已有 AppHub/Ops 代码；本阶段按模板形态迁移现有纵切，避免丢失已经验证过的契约和脚本。
 9. 不在第四阶段实现产品控制台日志查询页、日志 tail、生产级 Grafana/Loki/Elastic/Seq/ClickHouse 部署、Log Archive Worker 或长期日志保留任务；本阶段只冻结 Gateway 接入边界、Aspire Dashboard 短期观测 UI、滚动 JSONL 热日志和内置归档目标设计。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/
@@ -162,74 +162,74 @@ docs/architecture/deployment-baseline.md
 docs/architecture/implementation-readiness.md
 ```
 
-## Boundary Rules
+## 边界规则
 
-1. AppHub and Ops Web endpoints depend on MediatR commands/queries, not concrete in-memory stores or DbContext.
-2. Domain projects own aggregate roots, entities, value objects, strong typed IDs and domain events; they do not reference EF provider packages, CAP packages or infrastructure stores.
-3. Infrastructure projects own `ApplicationDbContext`, entity configurations, repository interfaces/implementations and database profile registration.
-4. Web projects own Endpoint、Application Commands、Queries、DomainEventHandlers、IntegrationEvents and framework registration.
-5. Gateway still calls AppHub and Ops through HTTP clients; it must not reference AppHub/Ops Domain or Infrastructure.
-6. Connector Host still uses Platform SDK clients; it must not reference backend service implementation projects.
-7. Database provider selection is isolated to Infrastructure DI extensions, profile tests, scripts and deployment configuration; Domain/Application/Endpoint/SDK code must not reference provider-specific packages, SQL dialects or PostgreSQL-only types.
-8. PostgreSQL schemas are service-owned: AppHub uses schema `apphub`, Ops uses schema `ops`; services must not read or write each other's schema.
-9. Redis and RabbitMQ are introduced into AppHost topology in this phase, and CAP storage is wired through netcorepal; actual cross-service messaging behavior remains follow-up scope unless needed for framework smoke tests.
-10. Business code uses `ILogger<T>` only; Serilog, Console sink, OpenTelemetry sink and deployment log backend choices stay in Host/Observability/deployment configuration.
-11. Runtime logs, Ops audit facts and business transaction data use separate storage and retention strategies; logs do not write to service PostgreSQL schemas.
-12. Local logging fallback is bounded: rolling JSONL files for minimum diagnostics, OpenTelemetry Collector `file_storage` queue for short-term export resilience, and optional .NET Aspire Dashboard only for short-term local telemetry viewing.
-13. Built-in persistent logs use Log Archive Worker, File Storage compressed chunks and a PostgreSQL independent `observability` metadata index; raw log bodies do not enter business schemas.
-14. Observability profiles must support Aspire AppHost, Docker Compose and package/script installs. Docker can run Dashboard and Log Archive Worker as optional services; direct installs must not require a container runtime.
-15. Console log viewing is a Gateway concern: frontend code must use generated `/api/console/**` clients, and Gateway must proxy any Aspire Dashboard, rolling-file, built-in archive, production-backend or customer-platform query through IAM authorization, organization/environment filters, bounded time windows, paging, rate limits and redaction.
-16. Log query DTOs must stay backend neutral; no LogQL, backend URL, credential, tenant header, File Storage object key or storage-specific field may leak into frontend contracts.
-17. Verification must keep the existing in-memory scripts usable. PostgreSQL mode is opt-in through a fourth-stage script and explicit environment variables.
+1. AppHub 和 Ops Web endpoint 依赖 MediatR command/query，而不是具体内存存储或 DbContext。
+2. Domain 项目拥有聚合根、实体、值对象、强类型 ID 和领域事件；不得引用 EF provider 包、CAP 包或基础设施存储。
+3. Infrastructure 项目拥有 `ApplicationDbContext`、实体配置、repository 接口/实现和 database profile 注册。
+4. Web 项目拥有 Endpoint、Application Command、Query、DomainEventHandler、IntegrationEvent 和框架注册。
+5. Gateway 继续通过 HTTP 客户端调用 AppHub 和 Ops；不得引用 AppHub/Ops Domain 或 Infrastructure。
+6. Connector Host 继续使用 Platform SDK 客户端；不得引用后端服务实现项目。
+7. Database provider 选择隔离在 Infrastructure DI 扩展、profile 测试、脚本和部署配置中；Domain/Application/Endpoint/SDK 代码不得引用 provider 特定包、SQL 方言或 PostgreSQL 专有类型。
+8. PostgreSQL schema 归服务所有：AppHub 使用 schema `apphub`，Ops 使用 schema `ops`；服务不得读写彼此的 schema。
+9. 本阶段将 Redis 和 RabbitMQ 引入 AppHost 拓扑，并通过 netcorepal 接入 CAP 存储；除非框架 smoke 测试需要，实际跨服务消息行为仍属于后续范围。
+10. 业务代码仅使用 `ILogger<T>`；Serilog、Console sink、OpenTelemetry sink 和部署日志后端选择保留在 Host/Observability/部署配置中。
+11. 运行时日志、Ops 审计事实和业务事务数据使用独立的存储与保留策略；日志不写入服务 PostgreSQL schema。
+12. 本地日志回退有界：滚动 JSONL 文件用于最低诊断，OpenTelemetry Collector `file_storage` 队列用于短期导出韧性，可选 .NET Aspire Dashboard 仅用于短期本地遥测查看。
+13. 内置持久化日志使用 Log Archive Worker、File Storage 压缩 chunk 和独立 PostgreSQL `observability` 元数据索引；原始日志正文不进入业务 schema。
+14. 可观测性 profile 必须支持 Aspire AppHost、Docker Compose 和包/脚本安装。Docker 可以将 Dashboard 和 Log Archive Worker 作为可选服务运行；直接安装不得要求容器运行时。
+15. 控制台日志查看属于 Gateway 职责：前端代码必须使用生成的 `/api/console/**` 客户端，Gateway 必须通过 IAM 授权、组织/环境过滤、有界时间窗口、分页、限流和脱敏代理任何 Aspire Dashboard、滚动文件、内置归档、生产后端或客户平台查询。
+16. 日志查询 DTO 必须保持后端中立；LogQL、后端 URL、凭证、租户 header、File Storage 对象 key 或存储特定字段均不得泄漏到前端契约。
+17. 验证必须保持现有内存态脚本可用。PostgreSQL 模式通过第四阶段脚本和显式环境变量选择启用。
 
-## Architecture Inputs
+## 架构输入
 
-Read these documents before executing the tasks:
+执行任务前阅读以下文档：
 
-1. `docs/adr/0003-data-and-messaging-baseline.md` for PostgreSQL, Redis, RabbitMQ, MinIO, outbox and service schema boundaries.
-2. `docs/architecture/backend-cleanddd-netcorepal-guidelines.md` for database profile and 信创 compatibility rules.
-3. `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` for the single AppHost strategy.
-4. `docs/architecture/deployment-baseline.md` for AppHost and Compose responsibility.
-5. `docs/architecture/implementation-readiness.md` for current stage status and verification commands.
-6. `docs/architecture/api-contract-and-codegen.md` for Gateway OpenAPI, generated frontend client and console log query API boundaries.
-7. `docs/architecture/third-vertical-slice-console.md` for Gateway OpenAPI and console codegen boundaries.
+1. `docs/adr/0003-data-and-messaging-baseline.md`：PostgreSQL、Redis、RabbitMQ、MinIO、outbox 和服务 schema 边界。
+2. `docs/architecture/backend-cleanddd-netcorepal-guidelines.md`：database profile 和信创兼容性规则。
+3. `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md`：单一 AppHost 策略。
+4. `docs/architecture/deployment-baseline.md`：AppHost 和 Compose 职责。
+5. `docs/architecture/implementation-readiness.md`：当前阶段状态和验证命令。
+6. `docs/architecture/api-contract-and-codegen.md`：Gateway OpenAPI、生成前端客户端和控制台日志查询 API 边界。
+7. `docs/architecture/third-vertical-slice-console.md`：Gateway OpenAPI 和控制台 codegen 边界。
 
-## NetCorePal Adoption Decision
+## NetCorePal 采用决策
 
 第四阶段从现在开始把 `netcorepal-cloud-framework` 明确为后端平台领域服务的默认框架。执行时按下表处理，不再把“只有 Web 项目使用框架”作为目标形态：
 
-| Project kind | Fourth-stage decision | Reason |
+| 项目类型 | 第四阶段决策 | 原因 |
 | --- | --- | --- |
-| AppHub | Adopt full netcorepal/CleanDDD shape | 已经拥有注册、心跳、状态查询和幂等事实，适合作为第一个真实持久化和 code-analysis 试点。 |
-| Ops | Adopt full netcorepal/CleanDDD shape | 已经拥有任务、尝试、审计和幂等事实，和 AppHub 一起验证命令、查询、仓储、事务、测试和 database profile。 |
-| Iam | Keep current slice in this plan; migrate later | IAM 认证、JWT、refresh token、权限 guard 风险面更大，第四阶段只记录为后续迁移对象。 |
-| FileStorage | Keep current slice in this plan; migrate later | 需要同时处理 MinIO/provider、对象元数据和下载授权，放到真实文件闭环阶段。 |
-| PlatformGateway | Do not force full netcorepal三项目结构 | Gateway 是 BFF/路由聚合层，默认只使用 ASP.NET/FastEndpoints、观测和契约消费约定；只有拥有自身持久化模型时再补 Infrastructure。 |
-| Connector Host | Do not adopt full netcorepal service model | Connector Host 是可独立安装升级的 worker，通过 Platform SDK/HTTP 与平台交互，不拥有平台领域数据库。 |
-| Contracts/SDK | Keep lightweight | 这些项目是跨进程契约和客户端封装，不能反向依赖服务端框架。 |
-| Frontend console/api-client | Not applicable | Vue、Hey API 和 pnpm 侧只消费 OpenAPI，不引入 .NET server framework。 |
+| AppHub | 采用完整 netcorepal/CleanDDD 形态 | 已经拥有注册、心跳、状态查询和幂等事实，适合作为第一个真实持久化和 code-analysis 试点。 |
+| Ops | 采用完整 netcorepal/CleanDDD 形态 | 已经拥有任务、尝试、审计和幂等事实，和 AppHub 一起验证命令、查询、仓储、事务、测试和 database profile。 |
+| Iam | 本计划保留当前纵切；稍后迁移 | IAM 认证、JWT、refresh token、权限 guard 风险面更大，第四阶段只记录为后续迁移对象。 |
+| FileStorage | 本计划保留当前纵切；稍后迁移 | 需要同时处理 MinIO/provider、对象元数据和下载授权，放到真实文件闭环阶段。 |
+| PlatformGateway | 不强制完整 netcorepal 三项目结构 | Gateway 是 BFF/路由聚合层，默认只使用 ASP.NET/FastEndpoints、观测和契约消费约定；只有拥有自身持久化模型时再补 Infrastructure。 |
+| Connector Host | 不采用完整 netcorepal 服务模型 | Connector Host 是可独立安装升级的 worker，通过 Platform SDK/HTTP 与平台交互，不拥有平台领域数据库。 |
+| Contracts/SDK | 保持轻量 | 这些项目是跨进程契约和客户端封装，不能反向依赖服务端框架。 |
+| Frontend console/api-client | 不适用 | Vue、Hey API 和 pnpm 侧只消费 OpenAPI，不引入 .NET server framework。 |
 
 执行本计划时，如果后续任务中的旧 store 代码片段与本节冲突，以本节为准：最终态应是 Endpoint -> MediatR command/query -> repository/query handler -> `ApplicationDbContext`，而不是 Endpoint 直接注入 concrete store。内存 store 只允许作为回归测试基线或临时 adapter 存在，不能成为新功能扩展方向。
 
 ---
 
-## Task 1: Add NetCorePal, Persistence And Analysis Package Baseline
+## 任务 1：添加 NetCorePal、持久化和分析包基线
 
-**Files:**
+**文件：**
 
-- Modify: `backend/Directory.Packages.props`
-- Modify: `backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj`
-- Modify: `backend/common/Observability/Nerv.IIP.Observability/NervIipObservability.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/Nerv.IIP.AppHub.Domain.csproj`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Domain/Nerv.IIP.Ops.Domain.csproj`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj`
+- 修改：`backend/Directory.Packages.props`
+- 修改：`backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj`
+- 修改：`backend/common/Observability/Nerv.IIP.Observability/NervIipObservability.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/Nerv.IIP.AppHub.Domain.csproj`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Domain/Nerv.IIP.Ops.Domain.csproj`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj`
 
-- [ ] **Step 1: Add central package versions**
+- [ ] **步骤 1：添加集中式包版本**
 
-Modify `backend/Directory.Packages.props` and add these entries in the existing `ItemGroup`:
+修改 `backend/Directory.Packages.props`，并在现有 `ItemGroup` 中添加以下条目：
 
 ```xml
 <PackageVersion Include="DotNetCore.CAP.Dashboard" Version="8.4.0" />
@@ -255,11 +255,11 @@ Modify `backend/Directory.Packages.props` and add these entries in the existing 
 <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.1.0" />
 ```
 
-The package line follows the current `NetCorePal.Template` generated package shape and the `dotnet package search` result checked on 2026-05-17. If restore reports a newer compatible template baseline during execution, update all NetCorePal packages together; do not mix minor versions.
+包行遵循当前 `NetCorePal.Template` 生成的包形态以及 2026-05-17 检查的 `dotnet package search` 结果。如果执行期间还原报告了更新且兼容的模板基线，应一起更新所有 NetCorePal 包；不得混用次版本。
 
-- [ ] **Step 2: Reference netcorepal Domain packages from AppHub.Domain and Ops.Domain**
+- [ ] **步骤 2：从 AppHub.Domain 和 Ops.Domain 引用 netcorepal Domain 包**
 
-Before editing domain projects, update `backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj` with host-level logging packages:
+编辑 Domain 项目前，使用宿主级日志包更新 `backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj`：
 
 ```xml
 <PackageReference Include="Serilog.AspNetCore" />
@@ -268,14 +268,14 @@ Before editing domain projects, update `backend/common/Observability/Nerv.IIP.Ob
 <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
 ```
 
-Extend `AddNervIipObservability(...)` so each host can configure Serilog from configuration, enrich logs with service name and correlation scope, write JSON to Console, write bounded rolling JSONL files when `Logging:LocalFile:Enabled=true`, and optionally write OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` or `OpenTelemetry:Endpoint` is configured. Keep `ILogger<T>` as the only API used by application code.
+扩展 `AddNervIipObservability(...)`，使每个宿主都能从配置中配置 Serilog，以服务名称和关联作用域丰富日志，将 JSON 写入 Console，在 `Logging:LocalFile:Enabled=true` 时写入有界滚动 JSONL 文件，并在配置了 `OTEL_EXPORTER_OTLP_ENDPOINT` 或 `OpenTelemetry:Endpoint` 时选择写入 OTLP。保持 `ILogger<T>` 为应用代码使用的唯一 API。
 
-Modify both Domain csproj files:
+修改两个 Domain csproj 文件：
 
 - `backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/Nerv.IIP.AppHub.Domain.csproj`
 - `backend/services/Ops/src/Nerv.IIP.Ops.Domain/Nerv.IIP.Ops.Domain.csproj`
 
-Add these package references:
+添加以下包引用：
 
 ```xml
 <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
@@ -283,14 +283,14 @@ Add these package references:
 <PackageReference Include="NetCorePal.Extensions.Primitives" />
 ```
 
-- [ ] **Step 3: Reference netcorepal Web packages from AppHub.Web and Ops.Web**
+- [ ] **步骤 3：从 AppHub.Web 和 Ops.Web 引用 netcorepal Web 包**
 
-Modify both Web csproj files:
+修改两个 Web csproj 文件：
 
 - `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj`
 - `backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj`
 
-Add these package references alongside existing FastEndpoints references:
+在现有 FastEndpoints 引用旁添加以下包引用：
 
 ```xml
 <PackageReference Include="DotNetCore.CAP.Dashboard" />
@@ -309,9 +309,9 @@ Add these package references alongside existing FastEndpoints references:
 <PackageReference Include="NetCorePal.Extensions.Primitives" />
 ```
 
-- [ ] **Step 4: Reference PostgreSQL profile packages from AppHub.Infrastructure**
+- [ ] **步骤 4：从 AppHub.Infrastructure 引用 PostgreSQL profile 包**
 
-Modify `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj`:
+修改 `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj`：
 
 ```xml
 <ItemGroup>
@@ -333,9 +333,9 @@ Modify `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppH
 </ItemGroup>
 ```
 
-- [ ] **Step 5: Reference PostgreSQL profile packages from Ops.Infrastructure**
+- [ ] **步骤 5：从 Ops.Infrastructure 引用 PostgreSQL profile 包**
 
-Modify `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj`:
+修改 `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj`：
 
 ```xml
 <ItemGroup>
@@ -357,39 +357,39 @@ Modify `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infras
 </ItemGroup>
 ```
 
-- [ ] **Step 6: Restore and build backend**
+- [ ] **步骤 6：还原并构建后端**
 
-Run:
+运行：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
 dotnet build backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```powershell
 git add backend/Directory.Packages.props backend/common/Observability/Nerv.IIP.Observability backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/Nerv.IIP.AppHub.Domain.csproj backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Nerv.IIP.AppHub.Infrastructure.csproj backend/services/Ops/src/Nerv.IIP.Ops.Domain/Nerv.IIP.Ops.Domain.csproj backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Nerv.IIP.Ops.Infrastructure.csproj
 git commit -m "chore: add netcorepal persistence package baseline"
 ```
 
-## Task 2: Map Existing AppHub Behavior Before CleanDDD Migration
+## 任务 2：在 CleanDDD 迁移前映射现有 AppHub 行为
 
-> Revised netcorepal execution note: this task is no longer a final "Endpoint -> store" refactor. Use the existing `InMemoryAppHubStateStore` API as the behavior map for registration, heartbeat, state snapshot, instance list and instance detail. The implementation completed by Task 3 must end as "Endpoint -> MediatR command/query -> repository/query handler -> `ApplicationDbContext`"; any `IAppHubStateStore` introduced here is a temporary adapter for preserving tests during migration.
+> 修订后的 netcorepal 执行说明：此任务不再是最终的“Endpoint -> store”重构。使用现有 `InMemoryAppHubStateStore` API 作为注册、心跳、状态快照、实例列表和实例详情的行为映射。任务 3 完成的实现最终必须是“Endpoint -> MediatR command/query -> repository/query handler -> `ApplicationDbContext`”；此处引入的任何 `IAppHubStateStore` 都只是迁移期间保留测试的临时 adapter。
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/AppHubFacts.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/Connectors/ConnectorIngestionEndpoints.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/Instances/InstanceQueryEndpoints.cs`
-- Modify: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/AppHubStateStoreTests.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/AppHubFacts.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/Connectors/ConnectorIngestionEndpoints.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/Instances/InstanceQueryEndpoints.cs`
+- 修改：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/AppHubStateStoreTests.cs`
 
-- [ ] **Step 1: Add the AppHub store interface**
+- [ ] **步骤 1：添加 AppHub 存储接口**
 
-Add the interface above `InMemoryAppHubStateStore` in `AppHubFacts.cs`:
+在 `InMemoryAppHubStateStore` 上方添加接口，位置在 `AppHubFacts.cs` 中：
 
 ```csharp
 public interface IAppHubStateStore
@@ -402,86 +402,86 @@ public interface IAppHubStateStore
 }
 ```
 
-Then change the class declaration:
+然后更改类声明：
 
 ```csharp
 public sealed class InMemoryAppHubStateStore : IAppHubStateStore
 ```
 
-- [ ] **Step 2: Register the interface in AppHub.Web**
+- [ ] **步骤 2：在 AppHub.Web 中注册接口**
 
-Modify `Program.cs`:
+修改 `Program.cs`：
 
 ```csharp
 builder.Services.AddSingleton<IAppHubStateStore, InMemoryAppHubStateStore>();
 ```
 
-Remove the previous direct singleton registration.
+移除先前直接的 singleton 注册。
 
-- [ ] **Step 3: Update endpoint constructors**
+- [ ] **步骤 3：更新 endpoint 构造函数**
 
-In `ConnectorIngestionEndpoints.cs` and `InstanceQueryEndpoints.cs`, replace every constructor parameter of type `InMemoryAppHubStateStore` with `IAppHubStateStore`.
+在 `ConnectorIngestionEndpoints.cs` 和 `InstanceQueryEndpoints.cs` 中，将每个 `InMemoryAppHubStateStore` 类型的构造函数参数替换为 `IAppHubStateStore`。
 
-Example:
+示例：
 
 ```csharp
 public sealed class RegisterApplicationEndpoint(IAppHubStateStore store) : Endpoint<ApplicationRegistration>
 ```
 
-- [ ] **Step 4: Keep domain tests on the in-memory implementation**
+- [ ] **步骤 4：保持领域测试使用内存态实现**
 
-In `AppHubStateStoreTests.cs`, keep the concrete construction:
+在 `AppHubStateStoreTests.cs` 中保留具体构造：
 
 ```csharp
 var store = new InMemoryAppHubStateStore();
 ```
 
-The test remains a fast behavioral baseline for the interface.
+该测试继续作为接口的快速行为基线。
 
-- [ ] **Step 5: Run AppHub tests**
+- [ ] **步骤 5：运行 AppHub 测试**
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/Nerv.IIP.AppHub.Domain.Tests.csproj
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add backend/services/AppHub
 git commit -m "refactor: introduce apphub state store interface"
 ```
 
-## Task 3: Implement AppHub NetCorePal Aggregate, Repository, Commands And PostgreSQL Profile
+## 任务 3：实施 AppHub NetCorePal 聚合、Repository、Command 和 PostgreSQL Profile
 
-> Revised netcorepal execution note: replace the earlier raw `PostgresAppHubStateStore` sketch with netcorepal/CleanDDD files. Keep the behavior in the old sketch as a mapping reference, but the final code should use `ApplicationDbContext : AppDbContextBase`, entity configurations, repositories based on `RepositoryBase`, command/query handlers and mediator-driven endpoints.
+> 修订后的 netcorepal 执行说明：使用 netcorepal/CleanDDD 文件替换早期的原始 `PostgresAppHubStateStore` 草图。保留旧草图中的行为作为映射参考，但最终代码应使用 `ApplicationDbContext : AppDbContextBase`、实体配置、基于 `RepositoryBase` 的 repository、command/query handler 和 mediator 驱动的 endpoint。
 
-Target CleanDDD shape for AppHub:
+AppHub 的目标 CleanDDD 形态：
 
-1. Domain aggregates live under `Nerv.IIP.AppHub.Domain/AggregatesModel`: `Application`, `ManagedNode`, `ApplicationInstance`, `InstanceHeartbeat`, `InstanceStateHistory` and idempotency facts as aggregate-owned entities or value objects.
-2. Strong typed IDs use `IGuidStronglyTypedId` unless an existing external key must stay string-based; public protocol keys remain contract strings at API boundaries.
-3. Commands live under `Nerv.IIP.AppHub.Web/Application/Commands`: `RegisterApplicationCommand`, `RecordApplicationHeartbeatCommand`, `RecordInstanceStateSnapshotCommand`.
-4. Queries live under `Nerv.IIP.AppHub.Web/Application/Queries`: `ListApplicationInstancesQuery`, `GetApplicationInstanceDetailQuery`.
-5. Endpoints call `IMediator.Send(...)` and return the existing contract response shapes.
-6. Infrastructure owns `ApplicationDbContext`, entity configurations and repositories; it implements PostgreSQL profile registration without leaking Npgsql types to Domain/Web Application code.
+1. Domain 聚合位于 `Nerv.IIP.AppHub.Domain/AggregatesModel` 下：`Application`、`ManagedNode`、`ApplicationInstance`、`InstanceHeartbeat`、`InstanceStateHistory`，以及作为聚合拥有实体或值对象的幂等事实。
+2. 强类型 ID 使用 `IGuidStronglyTypedId`，除非现有外部 key 必须保持字符串类型；公开协议 key 在 API 边界继续作为契约字符串。
+3. Command 位于 `Nerv.IIP.AppHub.Web/Application/Commands` 下：`RegisterApplicationCommand`、`RecordApplicationHeartbeatCommand`、`RecordInstanceStateSnapshotCommand`。
+4. Query 位于 `Nerv.IIP.AppHub.Web/Application/Queries` 下：`ListApplicationInstancesQuery`、`GetApplicationInstanceDetailQuery`。
+5. Endpoint 调用 `IMediator.Send(...)` 并返回现有契约响应形态。
+6. Infrastructure 拥有 `ApplicationDbContext`、实体配置和 repository；它实施 PostgreSQL profile 注册，且不向 Domain/Web Application 代码泄漏 Npgsql 类型。
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Repositories/*.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubPersistenceServiceCollectionExtensions.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Commands/*.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Queries/*.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
-- Create: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Repositories/*.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubPersistenceServiceCollectionExtensions.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Commands/*.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Queries/*.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
+- 创建：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs`
 
-- [ ] **Step 1: Create the AppHub `ApplicationDbContext` and entity configurations**
+- [ ] **步骤 1：创建 AppHub `ApplicationDbContext` 和实体配置**
 
-Legacy mapping reference below uses a single-file row sketch. Implement the final version as `ApplicationDbContext.cs` plus `EntityConfigurations/*.cs`; keep table/schema/column intent equivalent.
+下面的遗留映射参考使用单文件行模型草图。最终版本实施为 `ApplicationDbContext.cs` 加 `EntityConfigurations/*.cs`；保持表/schema/列意图等价。
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -588,16 +588,16 @@ public sealed class AppHubStatusChangeRow
 }
 ```
 
-- [ ] **Step 2: Create AppHub repositories and command/query handlers**
+- [ ] **步骤 2：创建 AppHub repository 和 command/query handler**
 
-Legacy mapping reference below shows the old store-shaped algorithm. Implement the final version through repositories and handlers:
+下面的遗留映射参考展示旧的存储形态算法。最终版本通过 repository 和 handler 实施：
 
-1. `RegisterApplicationCommandHandler` performs idempotency lookup, creates/updates application, node, instance and capability facts, and returns `RegistrationResult`.
-2. `RecordApplicationHeartbeatCommandHandler` updates heartbeat/liveness facts.
-3. `RecordInstanceStateSnapshotCommandHandler` records status history.
-4. `ListApplicationInstancesQueryHandler` and `GetApplicationInstanceDetailQueryHandler` return the existing contract response types.
+1. `RegisterApplicationCommandHandler` 执行幂等查找，创建/更新应用、节点、实例和能力事实，并返回 `RegistrationResult`。
+2. `RecordApplicationHeartbeatCommandHandler` 更新心跳/存活性事实。
+3. `RecordInstanceStateSnapshotCommandHandler` 记录状态历史。
+4. `ListApplicationInstancesQueryHandler` 和 `GetApplicationInstanceDetailQueryHandler` 返回现有契约响应类型。
 
-Do not inject this store into endpoints in the final implementation:
+最终实现中不得将此存储注入 endpoint：
 
 ```csharp
 using System.Text.Json;
@@ -819,11 +819,11 @@ public sealed class PostgresAppHubStateStore(AppHubDbContext db) : IAppHubStateS
 }
 ```
 
-- [ ] **Step 3: Add AppHub netcorepal persistence DI**
+- [ ] **步骤 3：添加 AppHub netcorepal 持久化 DI**
 
-Final DI must include `AddRepositories(typeof(ApplicationDbContext).Assembly)`, `AddUnitOfWork<ApplicationDbContext>()`, `AddContext().AddEnvContext().AddCapContextProcessor()`, `AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(...)`, and `AddCap(...UseNetCorePalStorage<ApplicationDbContext>()...)` when PostgreSQL mode is enabled. The legacy extension below is a provider switch sketch; update type names from `AppHubDbContext` to `ApplicationDbContext` and register repositories/handlers instead of a concrete `PostgresAppHubStateStore`.
+启用 PostgreSQL 模式时，最终 DI 必须包含 `AddRepositories(typeof(ApplicationDbContext).Assembly)`、`AddUnitOfWork<ApplicationDbContext>()`、`AddContext().AddEnvContext().AddCapContextProcessor()`、`AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(...)` 和 `AddCap(...UseNetCorePalStorage<ApplicationDbContext>()...)`。下面的遗留扩展是 provider 切换草图；将类型名称从 `AppHubDbContext` 更新为 `ApplicationDbContext`，并注册 repository/handler，而不是具体 `PostgresAppHubStateStore`。
 
-Create `AppHubPersistenceServiceCollectionExtensions.cs`:
+创建 `AppHubPersistenceServiceCollectionExtensions.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -857,27 +857,27 @@ public static class AppHubPersistenceServiceCollectionExtensions
 }
 ```
 
-- [ ] **Step 4: Wire AppHub.Web to Infrastructure**
+- [ ] **步骤 4：将 AppHub.Web 接入 Infrastructure**
 
-Modify `Nerv.IIP.AppHub.Web.csproj`:
+修改 `Nerv.IIP.AppHub.Web.csproj`：
 
 ```xml
 <ProjectReference Include="..\Nerv.IIP.AppHub.Infrastructure\Nerv.IIP.AppHub.Infrastructure.csproj" />
 ```
 
-Modify `Program.cs`:
+修改 `Program.cs`：
 
 ```csharp
 using Nerv.IIP.AppHub.Infrastructure;
 ```
 
-Replace the store registration with:
+将存储注册替换为：
 
 ```csharp
 builder.Services.AddAppHubPersistence(builder.Configuration);
 ```
 
-After `var app = builder.Build();`, add this development bootstrap for PostgreSQL mode:
+在 `var app = builder.Build();` 之后，为 PostgreSQL 模式添加以下开发引导代码：
 
 ```csharp
 if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase))
@@ -887,9 +887,9 @@ if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", S
 }
 ```
 
-- [ ] **Step 5: Add AppHub PostgreSQL integration test**
+- [ ] **步骤 5：添加 AppHub PostgreSQL 集成测试**
 
-Create `AppHubPostgresProfileTests.cs`:
+创建 `AppHubPostgresProfileTests.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -972,60 +972,60 @@ public sealed class AppHubPostgresProfileTests
 }
 ```
 
-- [ ] **Step 6: Run AppHub tests**
+- [ ] **步骤 6：运行 AppHub 测试**
 
-First run fast tests:
+先运行快速测试：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj
 ```
 
-Then with PostgreSQL available:
+然后在 PostgreSQL 可用时运行：
 
 ```powershell
 $env:NERV_IIP_TEST_POSTGRES="Host=localhost;Port=5432;Database=nerv_iip_apphub_test;Username=nerv;Password=nerv"
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter Postgres_store_persists_registration_heartbeat_and_state
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```powershell
 git add backend/services/AppHub
 git commit -m "feat: persist apphub facts in postgres"
 ```
 
-## Task 4: Implement Ops NetCorePal Aggregate, Repository, Commands And PostgreSQL Profile
+## 任务 4：实施 Ops NetCorePal 聚合、Repository、Command 和 PostgreSQL Profile
 
-> Revised netcorepal execution note: replace the earlier raw `PostgresOpsStateStore` sketch with netcorepal/CleanDDD files. Keep the old store behavior as a mapping reference for task creation, dispatch, result recording, audit and idempotency, but the final endpoint path must go through MediatR command/query handlers.
+> 修订后的 netcorepal 执行说明：使用 netcorepal/CleanDDD 文件替换早期的原始 `PostgresOpsStateStore` 草图。保留旧存储行为作为任务创建、调度、结果记录、审计和幂等性的映射参考，但最终 endpoint 路径必须经过 MediatR command/query handler。
 
-Target CleanDDD shape for Ops:
+Ops 的目标 CleanDDD 形态：
 
-1. Domain aggregate lives under `Nerv.IIP.Ops.Domain/AggregatesModel/OperationTaskAggregate`: `OperationTask` is the aggregate root, with `OperationAttempt`, `AuditRecord`, failure reason and idempotency facts as owned entities/value objects.
-2. Strong typed IDs use `IGuidStronglyTypedId` unless existing contract IDs must remain stable at the API boundary.
-3. Commands live under `Nerv.IIP.Ops.Web/Application/Commands`: `CreateOperationTaskCommand`, `DispatchPendingOperationsCommand`, `RecordOperationResultCommand`.
-4. Queries live under `Nerv.IIP.Ops.Web/Application/Queries`: `GetOperationTaskQuery` and any existing pending-task response projection.
-5. Endpoints call `IMediator.Send(...)` and keep existing route/request/response contracts stable.
-6. Infrastructure owns `ApplicationDbContext`, entity configurations and repositories; it implements PostgreSQL profile registration without leaking Npgsql types to Domain/Web Application code.
+1. Domain 聚合位于 `Nerv.IIP.Ops.Domain/AggregatesModel/OperationTaskAggregate` 下：`OperationTask` 是聚合根，并以拥有实体/值对象形式包含 `OperationAttempt`、`AuditRecord`、失败原因和幂等事实。
+2. 强类型 ID 使用 `IGuidStronglyTypedId`，除非现有契约 ID 必须在 API 边界保持稳定。
+3. Command 位于 `Nerv.IIP.Ops.Web/Application/Commands` 下：`CreateOperationTaskCommand`、`DispatchPendingOperationsCommand`、`RecordOperationResultCommand`。
+4. Query 位于 `Nerv.IIP.Ops.Web/Application/Queries` 下：`GetOperationTaskQuery` 和任何现有待处理任务响应投影。
+5. Endpoint 调用 `IMediator.Send(...)`，并保持现有路由/请求/响应契约稳定。
+6. Infrastructure 拥有 `ApplicationDbContext`、实体配置和 repository；它实施 PostgreSQL profile 注册，且不向 Domain/Web Application 代码泄漏 Npgsql 类型。
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Domain/InMemoryOpsStateStore.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Repositories/*.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsPersistenceServiceCollectionExtensions.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/Commands/*.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/Queries/*.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Endpoints/OperationTasks/OperationTaskEndpoints.cs`
-- Create: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Domain/InMemoryOpsStateStore.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Repositories/*.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsPersistenceServiceCollectionExtensions.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/Commands/*.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/Queries/*.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Nerv.IIP.Ops.Web.csproj`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Endpoints/OperationTasks/OperationTaskEndpoints.cs`
+- 创建：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs`
 
-- [ ] **Step 1: Add the Ops store interface**
+- [ ] **步骤 1：添加 Ops 存储接口**
 
-Add this interface above `InMemoryOpsStateStore`:
+在 `InMemoryOpsStateStore` 上方添加此接口：
 
 ```csharp
 public interface IOpsStateStore
@@ -1037,19 +1037,19 @@ public interface IOpsStateStore
 }
 ```
 
-Then change:
+然后更改：
 
 ```csharp
 public sealed class InMemoryOpsStateStore : IOpsStateStore
 ```
 
-- [ ] **Step 2: Update Ops endpoint constructors**
+- [ ] **步骤 2：更新 Ops endpoint 构造函数**
 
-In `OperationTaskEndpoints.cs`, replace every constructor parameter of type `InMemoryOpsStateStore` with `IOpsStateStore`.
+在 `OperationTaskEndpoints.cs` 中，将每个 `InMemoryOpsStateStore` 类型的构造函数参数替换为 `IOpsStateStore`。
 
-- [ ] **Step 3: Create Ops `ApplicationDbContext` and entity configurations**
+- [ ] **步骤 3：创建 Ops `ApplicationDbContext` 和实体配置**
 
-Legacy mapping reference below uses a single-file row sketch. Implement the final version as `ApplicationDbContext.cs` plus `EntityConfigurations/*.cs`; keep table/schema/column intent equivalent.
+下面的遗留映射参考使用单文件行模型草图。最终版本实施为 `ApplicationDbContext.cs` 加 `EntityConfigurations/*.cs`；保持表/schema/列意图等价。
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -1119,16 +1119,16 @@ public sealed class OpsIdempotencyRow
 }
 ```
 
-- [ ] **Step 4: Create Ops repositories and command/query handlers**
+- [ ] **步骤 4：创建 Ops repository 和 command/query handler**
 
-Legacy mapping reference below shows the old store-shaped algorithm. Implement the final version through repositories and handlers:
+下面的遗留映射参考展示旧的存储形态算法。最终版本通过 repository 和 handler 实施：
 
-1. `CreateOperationTaskCommandHandler` handles idempotent task creation and audit record creation.
-2. `DispatchPendingOperationsCommandHandler` leases pending work to a connector host and creates attempt facts.
-3. `RecordOperationResultCommandHandler` updates task/attempt status and audit facts.
-4. `GetOperationTaskQueryHandler` returns the existing contract response type.
+1. `CreateOperationTaskCommandHandler` 处理幂等任务创建和审计记录创建。
+2. `DispatchPendingOperationsCommandHandler` 将待处理工作租给 Connector Host，并创建尝试事实。
+3. `RecordOperationResultCommandHandler` 更新任务/尝试状态和审计事实。
+4. `GetOperationTaskQueryHandler` 返回现有契约响应类型。
 
-Do not inject this store into endpoints in the final implementation:
+最终实现中不得将此存储注入 endpoint：
 
 ```csharp
 using System.Text.Json;
@@ -1247,11 +1247,11 @@ public sealed class PostgresOpsStateStore(OpsDbContext db) : IOpsStateStore
 }
 ```
 
-- [ ] **Step 5: Add Ops netcorepal persistence DI and wire Web**
+- [ ] **步骤 5：添加 Ops netcorepal 持久化 DI 并接入 Web**
 
-Final DI must include `AddRepositories(typeof(ApplicationDbContext).Assembly)`, `AddUnitOfWork<ApplicationDbContext>()`, `AddContext().AddEnvContext().AddCapContextProcessor()`, `AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(...)`, and `AddCap(...UseNetCorePalStorage<ApplicationDbContext>()...)` when PostgreSQL mode is enabled. The legacy extension below is a provider switch sketch; update type names from `OpsDbContext` to `ApplicationDbContext` and register repositories/handlers instead of a concrete `PostgresOpsStateStore`.
+启用 PostgreSQL 模式时，最终 DI 必须包含 `AddRepositories(typeof(ApplicationDbContext).Assembly)`、`AddUnitOfWork<ApplicationDbContext>()`、`AddContext().AddEnvContext().AddCapContextProcessor()`、`AddIntegrationEvents(typeof(Program)).UseCap<ApplicationDbContext>(...)` 和 `AddCap(...UseNetCorePalStorage<ApplicationDbContext>()...)`。下面的遗留扩展是 provider 切换草图；将类型名称从 `OpsDbContext` 更新为 `ApplicationDbContext`，并注册 repository/handler，而不是具体 `PostgresOpsStateStore`。
 
-Create `OpsPersistenceServiceCollectionExtensions.cs`:
+创建 `OpsPersistenceServiceCollectionExtensions.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -1285,25 +1285,25 @@ public static class OpsPersistenceServiceCollectionExtensions
 }
 ```
 
-Modify `Nerv.IIP.Ops.Web.csproj` to reference Infrastructure:
+修改 `Nerv.IIP.Ops.Web.csproj` 以引用 Infrastructure：
 
 ```xml
 <ProjectReference Include="..\Nerv.IIP.Ops.Infrastructure\Nerv.IIP.Ops.Infrastructure.csproj" />
 ```
 
-Modify `Program.cs`:
+修改 `Program.cs`：
 
 ```csharp
 using Nerv.IIP.Ops.Infrastructure;
 ```
 
-Replace the store registration:
+替换存储注册：
 
 ```csharp
 builder.Services.AddOpsPersistence(builder.Configuration);
 ```
 
-After `var app = builder.Build();`, add:
+在 `var app = builder.Build();` 之后添加：
 
 ```csharp
 if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", StringComparison.OrdinalIgnoreCase))
@@ -1313,9 +1313,9 @@ if (string.Equals(builder.Configuration["Persistence:Provider"], "PostgreSQL", S
 }
 ```
 
-- [ ] **Step 6: Add Ops PostgreSQL integration test**
+- [ ] **步骤 6：添加 Ops PostgreSQL 集成测试**
 
-Create `OpsPostgresProfileTests.cs`:
+创建 `OpsPostgresProfileTests.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -1387,7 +1387,7 @@ public sealed class OpsPostgresProfileTests
 }
 ```
 
-- [ ] **Step 7: Run Ops tests**
+- [ ] **步骤 7：运行 Ops 测试**
 
 ```powershell
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj
@@ -1395,27 +1395,27 @@ $env:NERV_IIP_TEST_POSTGRES="Host=localhost;Port=5432;Database=nerv_iip_ops_test
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter Postgres_store_persists_task_attempt_and_audit_records
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 8: Commit**
+- [ ] **步骤 8：提交**
 
 ```powershell
 git add backend/services/Ops
 git commit -m "feat: persist ops task facts in postgres"
 ```
 
-## Task 5: Add NetCorePal Code Analysis Endpoints
+## 任务 5：添加 NetCorePal 代码分析 Endpoint
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
-- Modify: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests`
-- Modify: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
+- 修改：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests`
+- 修改：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests`
 
-- [ ] **Step 1: Add AppHub code-analysis endpoint**
+- [ ] **步骤 1：添加 AppHub code-analysis endpoint**
 
-Add the endpoint after normal route registration in AppHub `Program.cs`:
+在 AppHub `Program.cs` 的常规路由注册后添加 endpoint：
 
 ```csharp
 app.MapGet("/code-analysis", () =>
@@ -1433,11 +1433,11 @@ app.MapGet("/code-analysis", () =>
 });
 ```
 
-Add `using NetCorePal.Extensions.CodeAnalysis;` and adjust aggregate type names to the exact files created in Task 3.
+添加 `using NetCorePal.Extensions.CodeAnalysis;`，并将聚合类型名称调整为任务 3 创建的精确文件。
 
-- [ ] **Step 2: Add Ops code-analysis endpoint**
+- [ ] **步骤 2：添加 Ops code-analysis endpoint**
 
-Add the endpoint after normal route registration in Ops `Program.cs`:
+在 Ops `Program.cs` 的常规路由注册后添加 endpoint：
 
 ```csharp
 app.MapGet("/code-analysis", () =>
@@ -1455,40 +1455,40 @@ app.MapGet("/code-analysis", () =>
 });
 ```
 
-Add `using NetCorePal.Extensions.CodeAnalysis;` and adjust aggregate type names to the exact files created in Task 4.
+添加 `using NetCorePal.Extensions.CodeAnalysis;`，并将聚合类型名称调整为任务 4 创建的精确文件。
 
-- [ ] **Step 3: Add smoke tests**
+- [ ] **步骤 3：添加 smoke 测试**
 
-Add one web test per service that starts the web application and checks `/code-analysis` returns `text/html` and a non-empty body containing at least one command or aggregate type name.
+为每个服务添加一个 Web 测试，启动 Web 应用并检查 `/code-analysis` 返回 `text/html`，且非空正文至少包含一个 command 或聚合类型名称。
 
-- [ ] **Step 4: Run code-analysis tests**
+- [ ] **步骤 4：运行 code-analysis 测试**
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter CodeAnalysis
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter CodeAnalysis
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests
 git commit -m "feat: expose netcorepal code analysis"
 ```
 
-## Task 6: Add Real Infrastructure Verification Script
+## 任务 6：添加真实基础设施验证脚本
 
-**Files:**
+**文件：**
 
-- Modify: `scripts/verify-second-slice-ops.ps1`
-- Modify: `scripts/verify-third-slice-console.ps1`
-- Create: `scripts/verify-fourth-slice-real-infra.ps1`
-- Modify: `.codex/environments/environment.toml`
+- 修改：`scripts/verify-second-slice-ops.ps1`
+- 修改：`scripts/verify-third-slice-console.ps1`
+- 创建：`scripts/verify-fourth-slice-real-infra.ps1`
+- 修改：`.codex/environments/environment.toml`
 
-- [ ] **Step 1: Add PostgreSQL switch to second-slice script**
+- [ ] **步骤 1：为第二阶段脚本添加 PostgreSQL 开关**
 
-At the top of `scripts/verify-second-slice-ops.ps1`, after strict mode, add:
+在 `scripts/verify-second-slice-ops.ps1` 顶部的 strict mode 之后添加：
 
 ```powershell
 param(
@@ -1496,32 +1496,32 @@ param(
 )
 ```
 
-Before starting jobs, define:
+启动 job 前定义：
 
 ```powershell
 $appHubDb = "Host=localhost;Port=5432;Database=nerv_iip;Username=nerv;Password=nerv"
 $opsDb = "Host=localhost;Port=5432;Database=nerv_iip;Username=nerv;Password=nerv"
 ```
 
-Inside the AppHub Start-Job script block, accept `$usePostgres` and `$connectionString`; when enabled set:
+在 AppHub Start-Job 脚本块中接收 `$usePostgres` 和 `$connectionString`；启用时设置：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
 $env:ConnectionStrings__AppHubDb = $connectionString
 ```
 
-Inside the Ops Start-Job script block, accept `$usePostgres` and `$connectionString`; when enabled set:
+在 Ops Start-Job 脚本块中接收 `$usePostgres` 和 `$connectionString`；启用时设置：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
 $env:ConnectionStrings__OpsDb = $connectionString
 ```
 
-Keep the default in-memory path unchanged when `$UsePostgres` is not supplied.
+未提供 `$UsePostgres` 时，保持默认内存态路径不变。
 
-- [ ] **Step 2: Add PostgreSQL switch to third-slice script**
+- [ ] **步骤 2：为第三阶段脚本添加 PostgreSQL 开关**
 
-At the top of `scripts/verify-third-slice-console.ps1`, add:
+在 `scripts/verify-third-slice-console.ps1` 顶部添加：
 
 ```powershell
 param(
@@ -1529,7 +1529,7 @@ param(
 )
 ```
 
-Replace the second-slice invocation:
+替换第二阶段调用：
 
 ```powershell
 if ($UsePostgres) {
@@ -1540,9 +1540,9 @@ else {
 }
 ```
 
-- [ ] **Step 3: Create fourth-slice verification script**
+- [ ] **步骤 3：创建第四阶段验证脚本**
 
-Create `scripts/verify-fourth-slice-real-infra.ps1`:
+创建 `scripts/verify-fourth-slice-real-infra.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -1597,9 +1597,9 @@ pwsh scripts/verify-third-slice-console.ps1 -UsePostgres
 Write-Host "Fourth vertical slice real infrastructure verified."
 ```
 
-- [ ] **Step 4: Add Codex environment action**
+- [ ] **步骤 4：添加 Codex 环境操作**
 
-Append this action to `.codex/environments/environment.toml`:
+将此 action 追加到 `.codex/environments/environment.toml`：
 
 ```toml
 [[actions]]
@@ -1608,35 +1608,35 @@ icon = "tool"
 command = "pwsh scripts/verify-fourth-slice-real-infra.ps1"
 ```
 
-- [ ] **Step 5: Run the fourth-slice verification**
+- [ ] **步骤 5：运行第四阶段验证**
 
 ```powershell
 pwsh scripts/verify-fourth-slice-real-infra.ps1
 ```
 
-Expected final line:
+预期最后一行：
 
 ```text
 Fourth vertical slice real infrastructure verified.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add scripts/verify-second-slice-ops.ps1 scripts/verify-third-slice-console.ps1 scripts/verify-fourth-slice-real-infra.ps1 .codex/environments/environment.toml
 git commit -m "test: verify vertical slice on real infrastructure"
 ```
 
-## Task 7: Add Platform-Level Aspire AppHost
+## 任务 7：添加平台级 Aspire AppHost
 
-**Files:**
+**文件：**
 
-- Create: `infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`
-- Create: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- 创建：`infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`
+- 创建：`infra/aspire/Nerv.IIP.AppHost/Program.cs`
 
-- [ ] **Step 1: Create AppHost project file**
+- [ ] **步骤 1：创建 AppHost 项目文件**
 
-Create `Nerv.IIP.AppHost.csproj`:
+创建 `Nerv.IIP.AppHost.csproj`：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -1664,9 +1664,9 @@ Create `Nerv.IIP.AppHost.csproj`:
 </Project>
 ```
 
-- [ ] **Step 2: Create AppHost Program**
+- [ ] **步骤 2：创建 AppHost Program**
 
-Create `Program.cs`:
+创建 `Program.cs`：
 
 ```csharp
 var builder = DistributedApplication.CreateBuilder(args);
@@ -1712,59 +1712,59 @@ _ = gateway;
 builder.Build().Run();
 ```
 
-If the generated project type names differ, build once and adjust only the `Projects.*` identifiers to the generated names; keep project references and resource names unchanged.
+如果生成的项目类型名称不同，先构建一次，只将 `Projects.*` 标识符调整为生成的名称；保持项目引用和资源名称不变。
 
-- [ ] **Step 3: Build AppHost**
+- [ ] **步骤 3：构建 AppHost**
 
 ```powershell
 dotnet restore infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令都以 `0` 退出。
 
-- [ ] **Step 4: Smoke run AppHost**
+- [ ] **步骤 4：Smoke 运行 AppHost**
 
 ```powershell
 dotnet run --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
 ```
 
-Expected: AppHost starts and lists `postgres`, `redis`, `rabbitmq`, `apphub`, `ops`, `gateway`, and `connector-host` resources in the Aspire dashboard output. Stop it with Ctrl+C after confirming startup.
+预期结果：AppHost 启动，并在 Aspire dashboard 输出中列出 `postgres`、`redis`、`rabbitmq`、`apphub`、`ops`、`gateway` 和 `connector-host` 资源。确认启动后使用 Ctrl+C 停止。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```powershell
 git add infra/aspire/Nerv.IIP.AppHost
 git commit -m "feat: add platform aspire apphost"
 ```
 
-## Task 8: Update Documentation For Fourth Stage
+## 任务 8：更新第四阶段文档
 
-**Files:**
+**文件：**
 
-- Modify: `README.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/deployment-baseline.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md`
+- 修改：`README.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/deployment-baseline.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md`
 
-- [x] **Step 1: Update README status and plan index**
+- [x] **步骤 1：更新 README 状态和计划索引**
 
-Add this plan to the "实施计划" list:
+将本计划添加到“实施计划”清单：
 
 ```markdown
 4. docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md
 ```
 
-After the third-stage paragraph in "当前状态", add:
+在“当前状态”的第三阶段段落后添加：
 
 ```markdown
 第四阶段真实基础设施底座纵切可以用 `scripts/verify-fourth-slice-real-infra.ps1` 验证：脚本会拉起 PostgreSQL、Redis 和 RabbitMQ，本地验证 AppHub/Ops 的 netcorepal/CleanDDD PostgreSQL profile、code-analysis endpoint，并在 PostgreSQL 模式下复跑第三阶段控制台纵切。
 ```
 
-- [x] **Step 2: Update implementation readiness**
+- [x] **步骤 2：更新实施就绪状态**
 
-Add a "第四迭代计划范围" section under the third iteration section:
+在第三次迭代章节下添加“第四迭代计划范围”章节：
 
 ```markdown
 ### 第四迭代计划范围
@@ -1777,122 +1777,122 @@ Add a "第四迭代计划范围" section under the third iteration section:
 6. PlatformGateway、Connector Host、Contracts/SDK 和 frontend console 不强行套完整 netcorepal 三项目模型；IAM 完整授权、FileStorage 上传下载、CAP outbox、通知和审批不进入本阶段实现范围。
 ```
 
-- [x] **Step 3: Update deployment baseline**
+- [x] **步骤 3：更新部署基线**
 
-In "当前阶段", replace the statement that AppHost has not landed with:
+在“当前阶段”中，将 AppHost 尚未落地的说明替换为：
 
 ```markdown
 第四阶段已落地平台级 AppHost 到 `infra/aspire/Nerv.IIP.AppHost`，用于表达 AppHub、Ops、Gateway、Connector Host 与 PostgreSQL、Redis、RabbitMQ 的首批真实基础设施拓扑。`infra/docker-compose.dev.yml` 继续作为验证脚本拉起本地依赖的稳定入口。
 ```
 
-In the logging section, keep these deployment decisions explicit:
+在日志章节中，保持以下部署决策明确：
 
-1. Fourth stage defaults to `collector-only`; it must not require Grafana, Loki, Elasticsearch, Seq or ClickHouse.
-2. Microsoft-official, self-hostable, open-source/free and active community are selection preferences, not all-or-nothing gates.
-3. `aspire-dashboard` is the selected short-term observability UI profile for Aspire and Docker-compatible environments.
-4. Aspire Dashboard must be documented as short-term and in-memory; it is not a production log persistence backend.
-5. Docker Compose must support both `collector-only` and optional `aspire-dashboard` profile/overlay.
-6. Package/script installs must not require containers; they must at least configure rolling JSONL files and may configure OTLP endpoint or standalone Aspire Dashboard when available.
-7. Built-in log persistence uses rolling JSONL hot files, Log Archive Worker, File Storage `.jsonl.gz` chunks and independent `observability` metadata index.
-8. Product console log viewing goes through PlatformGateway; frontend must not directly query Aspire Dashboard, archive storage or any observability backend.
-9. Gateway must enforce IAM, organization/environment scope, time window limits, paging, rate limits and redaction before returning log entries.
-10. The default index database is PostgreSQL `observability` schema or database; SQLite is diagnostic-only and external search engines are adapters.
+1. 第四阶段默认为 `collector-only`；不得要求 Grafana、Loki、Elasticsearch、Seq 或 ClickHouse。
+2. Microsoft 官方、可自托管、开源/免费和社区活跃是选择偏好，而不是全有或全无的门禁。
+3. `aspire-dashboard` 是为 Aspire 和 Docker 兼容环境选定的短期可观测性 UI profile。
+4. Aspire Dashboard 必须记录为短期且内存态；它不是生产日志持久化后端。
+5. Docker Compose 必须同时支持 `collector-only` 和可选 `aspire-dashboard` profile/overlay。
+6. 包/脚本安装不得要求容器；它们至少必须配置滚动 JSONL 文件，并且在可用时可以配置 OTLP endpoint 或独立 Aspire Dashboard。
+7. 内置日志持久化使用滚动 JSONL 热文件、Log Archive Worker、File Storage `.jsonl.gz` chunk 和独立 `observability` 元数据索引。
+8. 产品控制台日志查看通过 PlatformGateway；前端不得直接查询 Aspire Dashboard、归档存储或任何可观测性后端。
+9. Gateway 在返回日志条目前必须强制执行 IAM、组织/环境范围、时间窗口限制、分页、限流和脱敏。
+10. 默认索引数据库为 PostgreSQL `observability` schema 或 database；SQLite 仅用于诊断，外部搜索引擎作为 adapter。
 
-- [x] **Step 4: Update API contract log query rules**
+- [x] **步骤 4：更新 API 契约日志查询规则**
 
-Update `docs/architecture/api-contract-and-codegen.md` with a `Console Log Query API` section. It must define these future Gateway operations without implementing them in fourth-stage code:
+在 `docs/architecture/api-contract-and-codegen.md` 中添加 `Console Log Query API` 章节。它必须定义以下未来 Gateway 操作，但不在第四阶段代码中实施：
 
-1. `queryConsoleLogs` for `/api/console/v1/logs/query`.
-2. `getConsoleInstanceLogs` for `/api/console/v1/instances/{instanceKey}/logs`.
-3. `getConsoleOperationLogs` for `/api/console/v1/operation-tasks/{operationTaskId}/logs`.
-4. A backend-neutral response DTO with `timestamp`、`level`、`service`、`message`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`labels`、`fields`、`source`、`nextCursor` and `partial`.
+1. `queryConsoleLogs` 对应 `/api/console/v1/logs/query`。
+2. `getConsoleInstanceLogs` 对应 `/api/console/v1/instances/{instanceKey}/logs`。
+3. `getConsoleOperationLogs` 对应 `/api/console/v1/operation-tasks/{operationTaskId}/logs`。
+4. 包含 `timestamp`、`level`、`service`、`message`、`instanceKey`、`operationTaskId`、`correlationId`、`traceId`、`labels`、`fields`、`source`、`nextCursor` 和 `partial` 的后端中立响应 DTO。
 
-- [x] **Step 5: Add completion record after verification**
+- [x] **步骤 5：验证后添加完成记录**
 
-After `pwsh scripts/verify-fourth-slice-real-infra.ps1` passes, add a `Completion Record` section near the top of this plan with the exact command and final output line.
+`pwsh scripts/verify-fourth-slice-real-infra.ps1` 通过后，在本计划顶部附近添加 `Completion Record` 章节，包含精确命令和最终输出行。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```powershell
 git add README.md docs/architecture/implementation-readiness.md docs/architecture/deployment-baseline.md docs/architecture/api-contract-and-codegen.md docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md
 git commit -m "docs: document fourth real infrastructure slice"
 ```
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 must run first because AppHub and Ops Domain/Web/Infrastructure need the netcorepal, EF, CAP and PostgreSQL profile package baseline.
-2. Task 2 must run before Task 3 because it freezes the AppHub behavior currently hidden in the in-memory store.
-3. Task 3 and Task 4 can run in parallel after Task 1; they touch different service folders and both follow the same netcorepal/CleanDDD target shape.
-4. Task 5 depends on Tasks 3 and 4 because code-analysis must include the migrated command/query/aggregate/repository flow.
-5. Task 6 depends on Tasks 3, 4 and 5 because the real-infra script must verify PostgreSQL mode and code-analysis smoke tests.
-6. Task 7 can run after Tasks 3 and 4 because AppHost should start services in PostgreSQL mode.
-7. Task 8 is last because it records verified behavior.
+1. 必须首先运行任务 1，因为 AppHub 和 Ops Domain/Web/Infrastructure 需要 netcorepal、EF、CAP 和 PostgreSQL profile 包基线。
+2. 必须在任务 3 之前运行任务 2，因为它冻结当前隐藏在内存态存储中的 AppHub 行为。
+3. 任务 1 完成后，任务 3 和任务 4 可以并行运行；它们涉及不同服务文件夹，并遵循相同的 netcorepal/CleanDDD 目标形态。
+4. 任务 5 依赖任务 3 和任务 4，因为 code-analysis 必须包含迁移后的 command/query/aggregate/repository 流程。
+5. 任务 6 依赖任务 3、4 和 5，因为真实基础设施脚本必须验证 PostgreSQL 模式和 code-analysis smoke 测试。
+6. 任务 7 可在任务 3 和任务 4 后运行，因为 AppHost 应以 PostgreSQL 模式启动服务。
+7. 任务 8 最后运行，因为它记录已经验证的行为。
 
-Recommended parallelization after Task 2:
+任务 2 之后建议并行执行：
 
-1. One worker implements Task 3 AppHub netcorepal/CleanDDD migration and PostgreSQL profile.
-2. One worker implements Task 4 Ops netcorepal/CleanDDD migration and PostgreSQL profile.
-3. One worker prepares Task 7 AppHost project after service DI shapes are known.
+1. 一名执行者实施任务 3 的 AppHub netcorepal/CleanDDD 迁移和 PostgreSQL profile。
+2. 一名执行者实施任务 4 的 Ops netcorepal/CleanDDD 迁移和 PostgreSQL profile。
+3. 服务 DI 形态已知后，一名执行者准备任务 7 的 AppHost 项目。
 
-## Fourth Iteration Completion Definition
+## 第四次迭代完成定义
 
-The fourth iteration is complete when all statements are true:
+满足以下全部条件时，第四次迭代才算完成：
 
-1. AppHub Web endpoints call MediatR commands/queries instead of concrete stores or DbContext.
-2. Ops Web endpoints call MediatR commands/queries instead of concrete stores or DbContext.
-3. AppHub and Ops Domain projects contain netcorepal aggregate roots, strong typed IDs and domain events, with provider-specific code absent.
-4. AppHub and Ops Infrastructure projects contain `ApplicationDbContext : AppDbContextBase`, entity configurations and repositories based on netcorepal repository patterns.
-5. In-memory AppHub and Ops behavior tests still pass as regression baselines.
-6. AppHub PostgreSQL integration test proves registration, heartbeat and state facts survive a new DbContext.
-7. Ops PostgreSQL integration test proves task, attempt and audit facts survive a new DbContext.
-8. AppHub and Ops expose `/code-analysis` endpoints returning non-empty netcorepal code-flow HTML.
-9. Backend services use `ILogger<T>` in application code, Serilog in Host/Observability registration, and OpenTelemetry/OTLP for log export.
-10. Local logging fallback is implemented as bounded rolling JSONL files; optional .NET Aspire Dashboard profile is documented for short-term local telemetry viewing.
-11. No runtime log table is added to AppHub/Ops/IAM/FileStorage PostgreSQL schemas; Ops `AuditRecord` remains audit-only, not a general log store.
-12. Deployment docs define the built-in log persistence target: Log Archive Worker, File Storage compressed chunks and PostgreSQL independent `observability` metadata index.
-13. Deployment docs define observability resource profiles across Aspire AppHost, Docker Compose and package/script installs.
-14. Deployment docs define `collector-only` default, optional `aspire-dashboard` short-term UI, optional `log-archive` persistence profile and no default Grafana/Loki/Elastic/Seq/ClickHouse dependency.
-15. API contract docs define console log query as a future Gateway OpenAPI capability, with frontend forbidden from direct observability-backend access.
-16. `scripts/verify-second-slice-ops.ps1` remains usable without PostgreSQL.
-17. `scripts/verify-fourth-slice-real-infra.ps1` starts local PostgreSQL, Redis and RabbitMQ and exits `0`.
-18. `scripts/verify-third-slice-console.ps1 -UsePostgres` exits `0`.
-19. Platform AppHost builds resources for AppHub, Ops, Gateway, Connector Host, PostgreSQL, Redis and RabbitMQ; OpenTelemetry Collector remains a documented follow-up observability resource profile.
-20. Provider-specific database code is isolated to Infrastructure DI extension, profile tests, scripts and AppHost/deployment configuration; Domain/Application/Endpoint/SDK code does not reference Npgsql or PostgreSQL-only SQL.
-21. Gateway, Connector Host, Contracts/SDK and frontend console remain outside the full netcorepal service model for the reasons documented in this plan.
-22. Documentation names the fourth-stage verification command and keeps IAM/FileStorage/approval/notification/GaussDB-DMDB production profiles as follow-up scope.
+1. AppHub Web endpoint 调用 MediatR command/query，而不是具体 store 或 DbContext。
+2. Ops Web endpoint 调用 MediatR command/query，而不是具体 store 或 DbContext。
+3. AppHub 和 Ops Domain 项目包含 netcorepal 聚合根、强类型 ID 和领域事件，且不含 provider 特定代码。
+4. AppHub 和 Ops Infrastructure 项目包含 `ApplicationDbContext : AppDbContextBase`、实体配置和基于 netcorepal repository 模式的 repository。
+5. 内存态 AppHub 和 Ops 行为测试仍作为回归基线通过。
+6. AppHub PostgreSQL 集成测试证明注册、心跳和状态事实在新 DbContext 中仍然存在。
+7. Ops PostgreSQL 集成测试证明任务、尝试和审计事实在新 DbContext 中仍然存在。
+8. AppHub 和 Ops 公开 `/code-analysis` endpoint，返回非空 netcorepal 代码流 HTML。
+9. 后端服务在应用代码中使用 `ILogger<T>`，在 Host/Observability 注册中使用 Serilog，并使用 OpenTelemetry/OTLP 导出日志。
+10. 本地日志回退实施为有界滚动 JSONL 文件；可选 .NET Aspire Dashboard profile 记录为短期本地遥测查看工具。
+11. 不向 AppHub/Ops/IAM/FileStorage PostgreSQL schema 添加运行时日志表；Ops `AuditRecord` 仍仅用于审计，不是通用日志存储。
+12. 部署文档定义内置日志持久化目标：Log Archive Worker、File Storage 压缩 chunk 和独立 PostgreSQL `observability` 元数据索引。
+13. 部署文档定义跨 Aspire AppHost、Docker Compose 和包/脚本安装的可观测性资源 profile。
+14. 部署文档定义默认 `collector-only`、可选 `aspire-dashboard` 短期 UI、可选 `log-archive` 持久化 profile，且默认不依赖 Grafana/Loki/Elastic/Seq/ClickHouse。
+15. API 契约文档将控制台日志查询定义为未来 Gateway OpenAPI 能力，并禁止前端直接访问可观测性后端。
+16. `scripts/verify-second-slice-ops.ps1` 在没有 PostgreSQL 时仍可使用。
+17. `scripts/verify-fourth-slice-real-infra.ps1` 启动本地 PostgreSQL、Redis 和 RabbitMQ，并以 `0` 退出。
+18. `scripts/verify-third-slice-console.ps1 -UsePostgres` 以 `0` 退出。
+19. 平台 AppHost 为 AppHub、Ops、Gateway、Connector Host、PostgreSQL、Redis 和 RabbitMQ 构建资源；OpenTelemetry Collector 继续作为已记录的后续可观测性资源 profile。
+20. Provider 特定数据库代码隔离在 Infrastructure DI 扩展、profile 测试、脚本和 AppHost/部署配置中；Domain/Application/Endpoint/SDK 代码不引用 Npgsql 或 PostgreSQL 专有 SQL。
+21. 出于本计划记录的原因，Gateway、Connector Host、Contracts/SDK 和前端控制台仍在完整 netcorepal 服务模型之外。
+22. 文档注明第四阶段验证命令，并将 IAM/FileStorage/审批/通知/GaussDB-DMDB 生产 profile 保持为后续范围。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. README next-stage item "PostgreSQL/RabbitMQ/Redis real infrastructure and database profile shape": covered by Tasks 1, 3, 4, 6 and 7.
-2. NetCorePal adoption decision: covered by the "NetCorePal Adoption Decision" section and Tasks 1, 3, 4 and 5.
-3. Logging library, fields and persistence boundary: covered by Task 1 and ADR/deployment documentation.
-4. Observability backend resource profile and console log query boundary: covered by deployment baseline and API contract documentation.
-5. Deployment baseline AppHost direction: covered by Task 7.
-6. Current third-stage console chain: preserved by Task 6 with `-UsePostgres`.
-7. IAM/FileStorage/Ops approval/notification follow-ups: explicitly outside this focused plan and recorded in docs.
+1. README 下一阶段“PostgreSQL/RabbitMQ/Redis 真实基础设施和 database profile 形态”项：由任务 1、3、4、6 和 7 覆盖。
+2. NetCorePal 采用决策：由“NetCorePal 采用决策”章节和任务 1、3、4、5 覆盖。
+3. 日志库、字段和持久化边界：由任务 1 和 ADR/部署文档覆盖。
+4. 可观测性后端资源 profile 和控制台日志查询边界：由部署基线和 API 契约文档覆盖。
+5. 部署基线 AppHost 方向：由任务 7 覆盖。
+6. 当前第三阶段控制台链路：由任务 6 使用 `-UsePostgres` 保持。
+7. IAM/FileStorage/Ops 审批/通知后续工作：明确位于此聚焦计划范围外，并记录在文档中。
 
-Placeholder scan:
+占位符扫描：
 
-1. No unresolved placeholder markers are present.
-2. File paths, commands and expected outputs are explicit.
-3. Code snippets define concrete method names, rows, interfaces and service registration shapes; revised netcorepal notes supersede legacy store snippets where the two differ.
+1. 不存在未解决的占位标记。
+2. 文件路径、命令和预期输出均明确。
+3. 代码片段定义具体方法名称、行模型、接口和服务注册形态；当修订后的 netcorepal 说明与遗留存储片段不同时，以前者为准。
 
-Type consistency:
+类型一致性：
 
-1. AppHub commands/queries preserve the current `InMemoryAppHubStateStore` public behavior.
-2. Ops commands/queries preserve the current `InMemoryOpsStateStore` public behavior.
-3. PostgreSQL connection strings use the same local credentials as `infra/docker-compose.dev.yml`.
-4. GaussDB/DMDB are not implemented in this stage; the code shape should make them future profile additions instead of business-layer rewrites.
-5. AppHost resource names match the service names used by existing verification scripts.
+1. AppHub command/query 保持当前 `InMemoryAppHubStateStore` 公开行为。
+2. Ops command/query 保持当前 `InMemoryOpsStateStore` 公开行为。
+3. PostgreSQL 连接字符串使用与 `infra/docker-compose.dev.yml` 相同的本地凭证。
+4. 本阶段不实施 GaussDB/DMDB；代码形态应使其成为未来 profile 添加项，而不是要求重写业务层。
+5. AppHost 资源名称与现有验证脚本使用的服务名称一致。
 
-## Execution Handoff
+## 执行交接
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md`. Two execution options:
+计划已完成并保存到 `docs/superpowers/plans/2026-05-17-fourth-vertical-slice-real-infra-foundation.md`。有两种执行选项：
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+**1. 子代理驱动（推荐）**——我为每个任务派发新的子代理，在任务之间审核，快速迭代
 
-**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
+**2. 内联执行**——在此会话中使用 executing-plans 执行任务，按检查点分批执行
 
-Which approach?
+采用哪种方式？
