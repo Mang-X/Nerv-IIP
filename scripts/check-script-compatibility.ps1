@@ -114,6 +114,7 @@ function Invoke-RecordedPwshScript {
 try {
   Invoke-RecordedNativeCommand -Command "dotnet" -Arguments @("--version") -Name "compat-dotnet-version" -TimeoutSeconds 60 | Out-Null
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/check-script-governance.ps1") -Name "compat-script-governance" -TimeoutSeconds 120
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-string.Tests.ps1") -Name "compat-ordinal-string-tests" -TimeoutSeconds 60
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/check-script-governance.Tests.ps1") -Name "compat-script-governance-tests" -TimeoutSeconds 180
   # The scan boundary lives in its own file (#1509) and is a compat-fast subject for the same reason
   # the checker itself is: it spawns the checker as a real process and builds a mirrored scripts tree
