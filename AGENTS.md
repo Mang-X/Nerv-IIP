@@ -80,7 +80,7 @@ scripts/verify-*.ps1                  # 验证脚本
 | 前端页面 / 功能 | frontend-structure | `pnpm -C frontend check && pnpm -C frontend typecheck && pnpm -C frontend test && pnpm -C frontend build` |
 | 脚本 | script-automation-governance | `scripts/check-script-governance.ps1` |
 | Connector Host | connector 边界文档 | `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`；不得引用后端服务实现 |
-| Infra / Aspire | deployment-baseline | `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` |
+| 基础设施 / Aspire 部署 | deployment-baseline | `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` |
 
 PDA 变更还须运行 `pnpm -C frontend --filter @nerv-iip/business-pda` 的 `typecheck`/`test`/`build`；影响原生 Capacitor 产物时运行 `cap:sync`。
 
@@ -108,7 +108,7 @@ Linear 中的项目名称与说明、Issue 标题与正文、评论、审核意�
 - 测试体中不得手写 `Environment.SetEnvironmentVariable` / `CultureInfo.Current*` / `ValidatorOptions.Global.*` 赋值；应使用 `GlobalTestStateScope` 的 mutator（`UseCulture`、`SetEnvironmentVariable`…）。它串行化全部 mutator、按行捕获旧值、精确恢复“不存在/空串/有值”三态，并在 dispose 后拒绝再写。自建的 `PreserveEnvironment`/`RestoreEnvironment` 只恢复而不串行化，是弱化复制品。
 - `backend/test-determinism-baseline.json`（schema 3）每行必须声明 `classification`：`expiring-debt` 是已承认债务而不是豁免，除 `ownerIssue`/`exitCondition`/`expiresOn` 外，还必须以 `registeredByIssue` 记录登记变更、以 `registeredOn` 记录登记日期；owner 必须是登记变更之外仍存在的 issue。`ownerIssue` 与 `registeredByIssue` 只接受 `MAN-\d+` 或 `#\d+`，按命名空间及去前导零后的数字比较 canonical identity，相同即为自担保并失败。`registeredOn`/`expiresOn` 都按 UTC、invariant `yyyy-MM-dd` 解析：登记日不得晚于 UTC 今日，expiry 必须在登记日到其后 45 天的含边界区间内，且早于 UTC 今日仍会失败；到期日按类别错开，`reason` 按行而非按文件书写。`permanent` 仅用于“被扫描构造本身就是受审计原语”的位点（原语实现与自身自测），必填 `rationale`，禁带 `ownerIssue`/`registeredByIssue`/`exitCondition`/`registeredOn`/`expiresOn`，且仅在 checker 持有的 `路径=pattern=maxRows` 白名单容量内生效。当前三条容量为 `GlobalTestStateScopeTests.cs=StaticSetter=12`、`GlobalTestStateScope.cs=StaticSetter=9`、`BoundedObservationWindow.cs=Task.Delay=1`。白名单按 path/pattern ordinal 精确匹配，容量统计通过行级校验的 permanent baseline 行数，而非 source occurrence 或 `occurrenceCount`；同一文件新增其他 pattern 不会被旧理由连带放行，baseline 也不能自行扩容。新增常设例外或提高容量必须修改 `scripts/check-backend-test-determinism.ps1` 并走脚本治理。`rationale` 按同一条常设理由书写（scope 外前置/teardown、scope 内被测变异、原语实现、轮询原语各一条）。当前到期债务为 0 行。
 - 扫描范围包含 `backend/common/Testing/**`：静态写入集中到 `GlobalTestStateScope` 后，该边界是受依赖的设计前提而非附带事实，因此共享测试基础设施目录必须处于门禁中（checker 找不到该目录下的项目会直接失败）。
-- Required/opt-in lanes、quarantine registry 与 enforcement 仅由 MAN-661 管理；普通测试变更不得自行建立 quarantine 规则。
+- 必需/按需启用的执行通道、隔离登记表及其强制执行仅由 MAN-661 管理；普通测试变更不得自行建立隔离规则。
 
 ## 核心原则
 

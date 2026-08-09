@@ -45,7 +45,6 @@ git ls-files | awk 'BEGIN{IGNORECASE=1} /(^|\/)(README|CHANGELOG|CONTRIBUTING|SE
 | `scripts/tests/fixtures/test-evidence/**` | 测试夹具、TRX、JSON、日志 | 测试以字节、字段和值验证解析、脱敏和失败分支；改写会改变输入语义。 |
 | `scripts/tests/fixtures/backend-test-determinism/**` | 测试夹具 | 源码片段和 baseline 是确定性检查器的受测输入，改写会改变扫描结果。 |
 | `scripts/tests/fixtures/fullstack/**`、`scripts/tests/fixtures/script-governance/**` | 测试夹具 | 模拟外部命令与治理失败条件，内容由断言按原样读取。 |
-| `artifacts/ui-remediation/**/*.md` | 运行证据 | 属于保留的检查发现与运行证据，不是维护性叙述；改写会破坏可追溯性。 |
 | `frontend/DESIGN/roadmaps/assets/**/l2-run-fingerprint.txt` | 指纹 | 用于识别特定运行，必须保持字节稳定。 |
 | `scripts/tests/fixtures/test-evidence/*.log.txt` | 日志样本 | 用于日志解析和脱敏测试，文本是程序输入。 |
 | `docs/superpowers/fixtures/**/*.json` | 协议/测试样本 | 结构和值供脚本或验证使用，不能作为自然语言翻译。 |
