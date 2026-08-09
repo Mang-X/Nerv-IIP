@@ -1,303 +1,303 @@
-# MES Operational Foundation Reset Implementation Plan
+# MES 运行基础重置实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Rebase MES PC delivery on a real operational foundation so the shock absorber manufacturing flow can run from demand, engineering and supply readiness through work order release, dispatch, reporting, receipt and traceability.
+**目标：**让 MES PC 交付重新建立在真实运行基础上，使减震器制造流程能够从需求、工程和供应就绪一路运行到工单下达、派工、报工、入库和追溯。
 
-**Architecture:** Stop treating MES pages as the first deliverable. Build source facts and server-side business behavior first, expose them through BusinessGateway, then implement Chinese PC pages that guide real users through linked workflows. MES owns execution facts only; MasterData, ProductEngineering, DemandPlanning, Scheduling/APS lite, ERP, Inventory, WMS, Quality, BarcodeLabel, Maintenance and IndustrialTelemetry remain the fact owners for their own domains.
+**架构：**不再将 MES 页面视为首要交付物。先构建来源事实与服务端业务行为，通过 BusinessGateway 暴露，再实现引导真实用户完成关联工作流的中文 PC 页面。MES 仅拥有执行事实；MasterData、ProductEngineering、DemandPlanning、Scheduling/APS lite、ERP、Inventory、WMS、Quality、BarcodeLabel、Maintenance 和 IndustrialTelemetry 仍是各自领域事实的所有者。
 
-**Tech Stack:** .NET 10, FastEndpoints, CleanDDD, EF Core PostgreSQL, BusinessGateway facade, Hey API generated `@nerv-iip/api-client`, Vue 3, Vite Plus, Pinia Colada, `@nerv-iip/ui`, Playwright.
+**技术栈：**.NET 10、FastEndpoints、CleanDDD、EF Core PostgreSQL、BusinessGateway facade、由 Hey API 生成的 `@nerv-iip/api-client`、Vue 3、Vite Plus、Pinia Colada、`@nerv-iip/ui`、Playwright。
 
 ---
 
-## Rebaseline Decision
+## 重定基线决定
 
-The 2026-05-26 PC workbench plan gave MES a broad page and facade surface, but it is not enough for delivery. A usable MES cannot start from work order CRUD or static page data. It requires released engineering facts, valid master data, available materials, purchasable supply, MRP suggestions, server-side numbering, release snapshots and execution state transitions.
+2026-05-26 PC 工作台计划为 MES 提供了广泛的页面与 facade 界面，但仍不足以交付。可用的 MES 不能从工单 CRUD 或静态页面数据起步，而是需要已发布的工程事实、有效主数据、可用物料、可采购供应、MRP 建议、服务端编号、下达快照和执行状态转换。
 
-From this plan onward, MES PC work is gated by a simple rule:
+自本计划起，MES PC 工作受以下简单规则约束：
 
-> No page is delivery-ready until the source facts it needs can be maintained or imported, resolved through backend contracts, selected in the UI, and verified through an end-to-end shock absorber manufacturing scenario.
+> 在页面所需的来源事实可以维护或导入、能通过后端契约解析、能在 UI 中选择，并能通过端到端减震器制造场景验证之前，该页面不得视为达到交付就绪状态。
 
-## Worker Review Findings
+## 执行代理审核结论
 
-Two delegated reviews reached the same conclusion:
+两次委派审核得出了相同结论：
 
-1. The repository already has more than pages. MasterData, ProductEngineering, DemandPlanning, ERP, Inventory, WMS, Quality, MES, Maintenance and IndustrialTelemetry services exist with real aggregates and endpoint surfaces.
-2. The current MES PC workbench still behaves like a contract surface in several P0 areas. Some readiness paths return static `Ready`, production plans can be empty, and several actions return `Accepted` without durable downstream facts.
-3. The 2026-05-26 plan mentioned BOM, routing, production versions, MRP, supply, quality, equipment and numbering, but it did not make them the release gate before page completion.
+1. 仓库中已有的不只是页面。MasterData、ProductEngineering、DemandPlanning、ERP、Inventory、WMS、Quality、MES、Maintenance 和 IndustrialTelemetry 服务均已有真实聚合与 endpoint 界面。
+2. 当前 MES PC 工作台在若干 P0 领域仍表现得像契约界面。部分就绪路径返回静态 `Ready`，生产计划可能为空，若干操作在没有持久化下游事实时便返回 `Accepted`。
+3. 2026-05-26 计划提到了 BOM、工艺路线、生产版本、MRP、供应、质量、设备和编号，但未将其作为页面完成前的下达门禁。
 
-Important current gaps called out by the reviews:
+审核指出的当前重要缺口如下：
 
-| Gap | Code fact |
+| 缺口 | 代码事实 |
 | --- | --- |
-| Foundation readiness can return static `Ready` instead of checking source facts. | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs` |
-| Production plan list/readiness and plan-to-work-order need a durable link to DemandPlanning/ERP suggestions. | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs`; `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs` |
-| Material readiness and material issue/line-side receipt are not yet a real Inventory/WMS loop. | MES workbench queries and commands under `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/` |
-| Quality context, shift handover and batch/material traceability contain empty or shallow responses. | MES workbench query handlers under `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/` |
-| DemandPlanning exists, but current input preparation still needs real ProductEngineering/Inventory/ERP source adapters before it can be the production-plan source. | `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs` |
-| Users can still be asked for durable business IDs in several creation flows. | MasterData, MES, ProductEngineering and ERP create requests currently include user-provided document numbers or codes. |
+| 基础就绪状态可能返回静态 `Ready`，而不是检查来源事实。 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs` |
+| 生产计划列表/就绪状态及计划转工单需要与 DemandPlanning/ERP 建议建立持久关联。 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs`; `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs` |
+| 物料就绪、发料/线边收料尚未构成真实的 Inventory/WMS 闭环。 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/` 下的 MES 工作台 query 和 command |
+| 质量上下文、班次交接和批次/物料追溯包含空响应或浅层响应。 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/` 下的 MES 工作台 query handler |
+| DemandPlanning 已存在，但当前输入准备仍需真实的 ProductEngineering/Inventory/ERP 来源适配器，才能成为生产计划来源。 | `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs` |
+| 若干创建流程仍可能要求用户提供持久业务 ID。 | MasterData、MES、ProductEngineering 和 ERP 创建请求目前包含用户提供的单据编号或代码。 |
 
-## Shock Absorber P0 Scenario
+## 减震器 P0 场景
 
-Use one realistic product family to prove the system can run:
+使用一个真实产品族证明系统能够运行：
 
-| Layer | Required scenario facts |
+| 层次 | 所需场景事实 |
 | --- | --- |
-| Finished goods | Front shock absorber assembly and rear shock absorber assembly. |
-| Components | Piston rod, outer tube, piston valve, seal kit, spring seat, shock absorber oil, carton, label and pallet. |
-| Suppliers | At least three approved suppliers: machining supplier, seal/oil supplier and packaging supplier. |
-| Plant model | One plant, two production lines, four work centers: tube welding, rod assembly, oil filling/sealing, damping test/packing. |
-| Engineering | Released MBOM, routing and ProductionVersion for each finished good; operation sequence includes standard duration, required work center, required skill and material demand. |
-| Demand | One sales order, one forecast demand and one safety-stock replenishment demand. |
-| Planning | MRP creates one planned work order suggestion and at least one planned purchase suggestion with pegging to demand. |
-| Procurement | Purchase suggestion can become purchase requisition, RFQ or purchase order; receipt can feed quality/inventory readiness. |
-| MES | Accepted production suggestion becomes a work order, checks readiness, releases a snapshot, creates material issue request, dispatches operations, records production, creates finished-goods receipt and supports traceability. |
+| 成品 | 前减震器总成和后减震器总成。 |
+| 组件 | 活塞杆、外筒、活塞阀、密封套件、弹簧座、减震器油、纸箱、标签和托盘。 |
+| 供应商 | 至少三个已批准供应商：机加工供应商、密封件/油品供应商和包装供应商。 |
+| 工厂模型 | 一个工厂、两条生产线、四个工作中心：筒体焊接、杆件装配、注油/密封、阻尼测试/包装。 |
+| 工程 | 每种成品均有已发布的 MBOM、工艺路线和 ProductionVersion；工序顺序包含标准时长、所需工作中心、所需技能和物料需求。 |
+| 需求 | 一个销售订单、一项预测需求和一项安全库存补货需求。 |
+| 计划 | MRP 创建一条计划工单建议，以及至少一条可追溯至需求的计划采购建议。 |
+| 采购 | 采购建议可转为采购申请、RFQ 或采购订单；收货可为质量/库存就绪提供事实。 |
+| MES | 已接受的生产建议转为工单，检查就绪状态、下达快照、创建发料请求、派发工序、记录生产、创建成品入库并支持追溯。 |
 
-## P0 Prerequisite Matrix
+## P0 前置条件矩阵
 
-| Capability | P0 requirement | Owner | Current gap to close |
+| 能力 | P0 要求 | 所有者 | 当前待弥补缺口 |
 | --- | --- | --- | --- |
-| Server-side numbering | Generate SKU, engineering document, BOM/routing, production version, demand, MRP run, purchase, sales, work order, operation task, report, defect, downtime, handover and receipt request numbers on the server. | Each owning service with shared governance. | No complete rule/counter/concurrency/idempotency strategy. |
-| Material master | Maintain product, semi-finished, raw material and packaging records with role flags, traceability, UOM and quality requirements. | MasterData | Business Console exposes only a narrow SKU page and still asks users for code. |
-| Partner master | Maintain customer and supplier records, roles, qualification and active status. | MasterData / ERP | Supplier/customer pages and linked selectors are missing or not prominent. |
-| Plant/resource master | Maintain plant, line, work center, device, shift, calendar, team, skill and resource capability. | MasterData | Backend exists, but UI, seed data and form linkages are incomplete. |
-| Engineering release | Maintain and release EBOM, MBOM, routing, operation definitions and ProductionVersion. | ProductEngineering | Backend exists; Business Console lacks a usable engineering workbench and MES does not yet force released snapshots in every path. |
-| Demand and MRP | Create sales/forecast/safety-stock demand, run MRP, show pegging and accept planned purchase/work-order suggestions. | DemandPlanning / ERP Sales | MRP exists but source adapters and UI workflow are not complete. |
-| Procurement supply | Convert purchase suggestions to procurement documents, track supplier quotation, purchase order and receipt readiness. | ERP Procurement / WMS / Inventory / Quality | ERP backend exists; PC pages and MES readiness links are incomplete. |
-| Inventory and line-side supply | Show available quantity, quality status, staging route, material issue request and line-side receipt. | Inventory / WMS / MES | MES material readiness currently needs real BOM and Inventory/WMS linkage. |
-| Quality gate | Resolve inspection plans, first-piece/in-process/final inspection, quality holds and NCR context. | Quality / MES | MES currently needs stronger quality readiness and drill-down. |
-| Equipment availability | Resolve static device capability plus runtime maintenance/alarm/downtime availability. | MasterData / Maintenance / IndustrialTelemetry / MES | Maintenance/telemetry facts exist but PC readiness linkage is incomplete. |
-| MES lifecycle | Convert accepted plan to work order, release snapshot, dispatch, start/pause/resume/complete, report, receipt, trace. | MES | Must stop accepting free-text work order IDs and fill sparse query handlers with durable facts. |
-| APS lite | Define scheduling input/output contracts, finite-capacity heuristic scheduling, resource load, conflict explanation, locked tasks and rush insertion. | Scheduling / MES / DemandPlanning / IndustrialTelemetry / Maintenance | P0 now includes #206 scheduling core and #207 equipment runtime facts. Full optimizer, simulation and auto-reschedule remain later. |
+| 服务端编号 | 在服务端生成 SKU、工程单据、BOM/工艺路线、生产版本、需求、MRP 运行、采购、销售、工单、工序任务、报工、缺陷、停机、交接和收货请求编号。 | 各归属服务，采用共享治理。 | 缺少完整的规则/计数器/并发/幂等策略。 |
+| 物料主数据 | 维护带有角色标记、可追溯性、UOM 和质量要求的产品、半成品、原材料和包装记录。 | MasterData | Business Console 仅暴露狭窄的 SKU 页面，且仍要求用户输入代码。 |
+| 合作方主数据 | 维护客户和供应商记录、角色、资质及启用状态。 | MasterData / ERP | 缺少供应商/客户页面和关联选择器，或其不够突出。 |
+| 工厂/资源主数据 | 维护工厂、产线、工作中心、设备、班次、日历、团队、技能和资源能力。 | MasterData | 后端已存在，但 UI、种子数据和表单关联尚不完整。 |
+| 工程发布 | 维护并发布 EBOM、MBOM、工艺路线、工序定义和 ProductionVersion。 | ProductEngineering | 后端已存在；Business Console 缺少可用的工程工作台，MES 尚未在每条路径强制使用已发布快照。 |
+| 需求与 MRP | 创建销售/预测/安全库存需求，运行 MRP，展示需求追溯并接受计划采购/工单建议。 | DemandPlanning / ERP Sales | MRP 已存在，但来源适配器和 UI 工作流尚不完整。 |
+| 采购供应 | 将采购建议转为采购单据，跟踪供应商报价、采购订单和收货就绪状态。 | ERP Procurement / WMS / Inventory / Quality | ERP 后端已存在；PC 页面和 MES 就绪关联尚不完整。 |
+| 库存与线边供应 | 展示可用数量、质量状态、备料路线、发料请求和线边收料。 | Inventory / WMS / MES | MES 物料就绪当前需要真实 BOM 与 Inventory/WMS 关联。 |
+| 质量门禁 | 解析检验计划、首件/过程/终检、质量冻结和 NCR 上下文。 | Quality / MES | MES 当前需要更强的质量就绪与下钻能力。 |
+| 设备可用性 | 解析静态设备能力以及运行时维护/报警/停机可用性。 | MasterData / Maintenance / IndustrialTelemetry / MES | Maintenance/telemetry 事实已存在，但 PC 就绪关联尚不完整。 |
+| MES 生命周期 | 将已接受计划转为工单，执行下达快照、派工、开始/暂停/恢复/完成、报工、入库和追溯。 | MES | 必须停止接受自由文本工单 ID，并用持久事实补齐稀疏 query handler。 |
+| APS lite | 定义排程输入/输出契约、有限产能启发式排程、资源负载、冲突说明、锁定任务和插急单。 | Scheduling / MES / DemandPlanning / IndustrialTelemetry / Maintenance | P0 现已包括 #206 排程核心和 #207 设备运行时事实。完整优化器、仿真和自动重排留待后续。 |
 
-## Delivery Phases
+## 交付阶段
 
-### P0-A: Operational Foundation Gate
+### P0-A：运行基础门禁
 
-**Goal:** Make source facts visible and enforce the "no backend, no page completion" rule.
+**目标：**使来源事实可见，并强制执行“没有后端，就不算页面完成”规则。
 
-**Files:**
-- Modify: `docs/superpowers/plans/2026-05-26-business-console-mes-pc-completion.md`
-- Modify: `frontend/DESIGN/roadmaps/business-console-mes-pc-workbench.md`
-- Create: `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`
-- Create: `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.html`
+**文件：**
+- 修改：`docs/superpowers/plans/2026-05-26-business-console-mes-pc-completion.md`
+- 修改：`frontend/DESIGN/roadmaps/business-console-mes-pc-workbench.md`
+- 创建：`docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`
+- 创建：`docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.html`
 
-- [ ] **Step 1: Freeze this rebaseline**
+- [ ] **步骤 1：冻结本次重定基线**
 
-Add a notice to the previous 2026-05-26 plan saying it is superseded for future MES work by this operational-foundation plan.
+在先前的 2026-05-26 计划中增加通知，说明后续 MES 工作改由本运行基础计划取代。
 
-- [ ] **Step 2: Add the UI delivery gate to DESIGN**
+- [ ] **步骤 2：向 DESIGN 增加 UI 交付门禁**
 
-Add a rule that MES pages must be backed by source facts, linked selectors, server-side numbering and Chinese business copy before they can be counted as delivered.
+增加规则：MES 页面必须由来源事实、关联选择器、服务端编号和中文业务文案支持，才能计为已交付。
 
-- [ ] **Step 3: Verify docs**
+- [ ] **步骤 3：验证文档**
 
-Run:
+运行：
 
 ```powershell
 rg -n "待确认|待补充" docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.html frontend/DESIGN/roadmaps/business-console-mes-pc-workbench.md
 ```
 
-Expected: no unresolved placeholder is introduced. Product-copy forbidden examples remain documented in DESIGN as negative examples, not product UI text.
+预期：未引入未解决的占位符。产品文案禁止示例仍在 DESIGN 中作为反例记录，而不是产品 UI 文本。
 
-### P0-B: Numbering and Idempotent Creation
+### P0-B：编号与幂等创建
 
-**Goal:** Remove user-generated system IDs from all create flows that produce durable business documents.
+**目标：**从所有生成持久业务单据的创建流程中移除用户生成的系统 ID。
 
-**2026-05-27 implementation note:** #188 now removes ordinary UI/manual number entry for Business Console SKU creation, MES rush order creation, MES plan-to-work-order conversion and MES reporting, and adds optional idempotency keys plus service-local persistent number allocation to MasterData, MES, ProductEngineering, DemandPlanning and ERP P0 create commands. The owning services now include `numbering_counters` and `numbering_idempotency_keys` migrations, schema convention tests and schema catalog entries, with MES also assigning persistent business numbers to report, material issue, defect, downtime, handover and finished-goods receipt request flows.
+**2026-05-27 实施说明：**#188 已移除 Business Console SKU 创建、MES 插急单创建、MES 计划转工单和 MES 报工中的普通 UI/手工编号输入，并为 MasterData、MES、ProductEngineering、DemandPlanning 和 ERP 的 P0 创建 command 增加可选幂等键及服务本地持久编号分配。归属服务现已包含 `numbering_counters` 和 `numbering_idempotency_keys` migration、schema 约定测试及 schema 目录条目；MES 还为报工、发料、缺陷、停机、交接和成品入库请求流程分配持久业务编号。
 
-**Files:**
-- Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
-- Modify: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs`
-- Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
-- Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/CreateRushWorkOrderCommand.cs`
-- Modify: equivalent create command files in ProductEngineering, DemandPlanning and ERP where user-provided numbers are currently required.
-- Test: service-level endpoint and concurrency tests under each affected service.
+**文件：**
+- 修改：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
+- 修改：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs`
+- 修改：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
+- 修改：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/CreateRushWorkOrderCommand.cs`
+- 修改：ProductEngineering、DemandPlanning 和 ERP 中目前需要用户提供编号的等效创建 command 文件。
+- 测试：各受影响服务下的服务级 endpoint 与并发测试。
 
-- [x] **Step 1: Add service-local numbering rule and counter aggregates**
+- [x] **步骤 1：增加服务本地编号规则与计数器聚合**
 
-Create per-service numbering rule and counter tables. Scope counters by organization, environment, document type, optional site/plant prefix and date segment. Use optimistic concurrency or row-level locking in Infrastructure; keep unique indexes on final document numbers.
+为每个服务创建编号规则和计数器表。按组织、环境、单据类型、可选场地/工厂前缀和日期段限定计数器作用域。在 Infrastructure 中使用乐观并发或行级锁；保留最终单据编号的唯一索引。
 
-- [x] **Step 2: Generate IDs inside the same transaction as document creation**
+- [x] **步骤 2：在创建单据的同一事务内生成 ID**
 
-Creation commands must allocate a number and persist the business document in one unit of work. UI requests may include an idempotency key; they must not include system IDs except privileged import/override paths.
+创建 command 必须在一个工作单元中分配编号并持久化业务单据。UI 请求可以包含幂等键；除特权导入/覆盖路径外，不得包含系统 ID。
 
-- [x] **Step 3: Add duplicate and concurrency tests**
+- [x] **步骤 3：增加重复与并发测试**
 
-Test 20 parallel create requests for SKU and MES work orders. Expected: all persisted system numbers are unique, ordered within rule scope, and retries do not create duplicate documents for the same idempotency key.
+测试 20 个并行的 SKU 和 MES 工单创建请求。预期：所有持久化系统编号均唯一、在规则作用域内有序，且对相同幂等键的重试不会创建重复单据。
 
-### P0-C: Master Data Workbench and Seed Scenario
+### P0-C：主数据工作台与种子场景
 
-**Goal:** Let a business user maintain the plant, resources, materials and partners needed by MES.
+**目标：**让业务用户能够维护 MES 所需的工厂、资源、物料和合作方。
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/MasterData/BusinessConsoleMasterDataEndpoints.cs`
-- Modify: `frontend/apps/business-console/src/pages/master-data/skus.vue`
-- Create or complete: Business Console pages for partners, resources, calendars, teams, skills and devices.
-- Create: deterministic seed/import fixture for the shock absorber scenario.
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/MasterData/BusinessConsoleMasterDataEndpoints.cs`
+- 修改：`frontend/apps/business-console/src/pages/master-data/skus.vue`
+- 创建或补齐：合作方、资源、日历、团队、技能和设备的 Business Console 页面。
+- 创建：减震器场景的确定性种子/导入 fixture。
 
-- [ ] **Step 1: Replace manual code fields with server-generated IDs**
+- [ ] **步骤 1：以服务端生成的 ID 替换手工代码字段**
 
-Remove "generate" buttons and ordinary user entry for system codes. Use business labels and selectors for material type, UOM, traceability, plant, line, work center, shift and supplier/customer roles.
+移除“生成”按钮和普通用户对系统代码的输入。物料类型、UOM、可追溯性、工厂、产线、工作中心、班次及供应商/客户角色应使用业务标签和选择器。
 
-- [ ] **Step 2: Complete linked selectors**
+- [ ] **步骤 2：补齐关联选择器**
 
-Forms must select from actual MasterData resources. Work center filters must depend on plant/line; device filters must depend on work center; team/shift filters must depend on effective date.
+表单必须从真实 MasterData 资源中选择。工作中心筛选必须依赖工厂/产线；设备筛选必须依赖工作中心；团队/班次筛选必须依赖生效日期。
 
-- [ ] **Step 3: Seed the shock absorber foundation**
+- [ ] **步骤 3：播种减震器基础数据**
 
-Seed at least finished goods, raw materials, suppliers, plant, lines, work centers, devices, shifts, calendar, teams and skills. The seed must be in backend/dev setup or documented import fixtures, not announced as sample data in the product UI.
+至少播种成品、原材料、供应商、工厂、产线、工作中心、设备、班次、日历、团队和技能。种子必须位于 backend/dev 设置或有文档记录的导入 fixture 中，不得在产品 UI 中宣称为示例数据。
 
-### P0-D: Product Engineering Release Workbench
+### P0-D：产品工程发布工作台
 
-**Goal:** Make BOM, BOM version, routing, operation and ProductionVersion usable before MES work order release.
+**目标：**确保 BOM、BOM 版本、工艺路线、工序和 ProductionVersion 在 MES 工单下达前可用。
 
-**Files:**
-- Modify: ProductEngineering endpoint/facade coverage as needed.
-- Create: Business Console engineering pages for engineering items, EBOM, MBOM, routing and production versions.
-- Test: ProductEngineering contract tests and BusinessGateway proxy tests.
+**文件：**
+- 按需修改：ProductEngineering endpoint/facade 覆盖。
+- 创建：工程物料、EBOM、MBOM、工艺路线和生产版本的 Business Console 工程页面。
+- 测试：ProductEngineering 契约测试和 BusinessGateway 代理测试。
 
-- [ ] **Step 1: Expose list/detail/resolve facades for released engineering facts**
+- [ ] **步骤 1：为已发布工程事实暴露列表/详情/解析 facade**
 
-BusinessGateway must expose released MBOM, routing, operation sequence and ProductionVersion resolution needed by planning and MES pages.
+BusinessGateway 必须暴露计划与 MES 页面所需的已发布 MBOM、工艺路线、工序顺序和 ProductionVersion 解析能力。
 
-- [ ] **Step 2: Add release-state UI**
+- [ ] **步骤 2：增加发布状态 UI**
 
-Engineering pages must show draft/released/archived state and prevent MES from choosing draft engineering data.
+工程页面必须显示草稿/已发布/已归档状态，并阻止 MES 选择草稿工程数据。
 
-- [ ] **Step 3: Lock release snapshots on MES work order release**
+- [ ] **步骤 3：MES 工单下达时锁定发布快照**
 
-MES release must store productionVersionId, MBOM version, routing version, operations, material demand and resource capability snapshots.
+MES 下达必须存储 productionVersionId、MBOM 版本、工艺路线版本、工序、物料需求和资源能力快照。
 
-### P0-E: Demand, MRP and Procurement Readiness
+### P0-E：需求、MRP 与采购就绪
 
-**Goal:** Make production plans come from real demand and MRP suggestions, not ad hoc pages.
+**目标：**使生产计划来自真实需求和 MRP 建议，而不是临时页面。
 
-**Files:**
-- Modify: DemandPlanning input adapters and BusinessGateway facade.
-- Modify: ERP procurement/sales facade and pages.
-- Modify: Business Console pages under `erp`, `planning` or a clearer domain route.
+**文件：**
+- 修改：DemandPlanning 输入适配器与 BusinessGateway facade。
+- 修改：ERP 采购/销售 facade 与页面。
+- 修改：`erp`、`planning` 或更清晰领域路由下的 Business Console 页面。
 
-- [ ] **Step 1: Feed MRP from sales order, forecast and safety stock**
+- [ ] **步骤 1：从销售订单、预测和安全库存向 MRP 提供输入**
 
-DemandPlanning must accept or import demand sources for the P0 scenario and list pegging links to the original demand.
+DemandPlanning 必须接受或导入 P0 场景的需求来源，并列出指向原始需求的追溯链接。
 
-- [ ] **Step 2: Connect MRP to ProductEngineering and Inventory snapshots**
+- [ ] **步骤 2：将 MRP 连接到 ProductEngineering 和 Inventory 快照**
 
-MRP must resolve ProductionVersion and BOM components and subtract inventory availability before creating planned work-order or purchase suggestions.
+MRP 必须解析 ProductionVersion 和 BOM 组件，并在创建计划工单或采购建议前扣减库存可用量。
 
-- [ ] **Step 3: Create procurement readiness flow**
+- [ ] **步骤 3：创建采购就绪流程**
 
-Planned purchase suggestion can become purchase requisition/order/receipt, with supplier selected from partner master and receipt status visible to MES material readiness.
+计划采购建议可以转为采购申请/订单/收货；供应商从合作方主数据中选择，且收货状态对 MES 物料就绪可见。
 
-### P0-F: MES Execution Backbone
+### P0-F：MES 执行主干
 
-**Goal:** Make MES work orders executable only after foundation, engineering, material, quality and equipment readiness pass.
+**目标：**仅在基础、工程、物料、质量和设备就绪检查通过后，MES 工单才能执行。
 
-**Files:**
-- Modify: MES command/query handlers for production plans, work order release, material readiness, dispatch, operation lifecycle, reporting, receipt, downtime, handover and traceability.
-- Modify: BusinessGateway MES facade.
-- Modify: Business Console MES pages after backend behavior is complete.
+**文件：**
+- 修改：生产计划、工单下达、物料就绪、派工、工序生命周期、报工、入库、停机、交接和追溯的 MES command/query handler。
+- 修改：BusinessGateway MES facade。
+- 修改：后端行为完成后的 Business Console MES 页面。
 
-- [ ] **Step 1: Restrict work order sources**
+- [ ] **步骤 1：限制工单来源**
 
-Normal work orders come from accepted planned work-order suggestions or released production plans. Rush orders remain allowed but still require production version, material, quality, equipment and numbering checks.
+普通工单来自已接受的计划工单建议或已发布生产计划。仍允许插急单，但依然需要生产版本、物料、质量、设备和编号检查。
 
-- [ ] **Step 2: Fill sparse query handlers with durable facts**
+- [ ] **步骤 2：使用持久事实补齐稀疏 query handler**
 
-Material issue requests, shift handovers, related quality items and traceability queries must read persisted facts or linked service facts. Empty stub responses are not acceptable for delivery.
+发料请求、班次交接、相关质量项和追溯 query 必须读取持久化事实或关联服务事实。空 stub 响应不可接受为交付结果。
 
-- [ ] **Step 3: Enforce lifecycle actions**
+- [ ] **步骤 3：强制执行生命周期操作**
 
-Release, dispatch, start, pause, resume, complete, report and receipt actions must validate readiness and current state. The UI can expose the action only when the backend returns it as allowed.
+下达、派工、开始、暂停、恢复、完成、报工和入库操作必须校验就绪状态与当前状态。仅当后端返回允许时，UI 才能暴露相应操作。
 
-### P0-G: PC UI Rebuild Around Workflows
+### P0-G：围绕工作流重建 PC UI
 
-**Goal:** Rework Business Console pages after the backend/data foundation exists.
+**目标：**在后端/数据基础就绪后改造 Business Console 页面。
 
-**Files:**
-- Modify: `frontend/apps/business-console/src/pages/**`
-- Modify: `frontend/apps/business-console/src/composables/**`
-- Modify: shared business components where needed.
+**文件：**
+- 修改：`frontend/apps/business-console/src/pages/**`
+- 修改：`frontend/apps/business-console/src/composables/**`
+- 按需修改：共享业务组件。
 
-- [ ] **Step 1: Rebuild navigation by work role**
+- [ ] **步骤 1：按工作角色重建导航**
 
-Use `主数据`, `工程资料`, `计划与采购`, `生产执行`, `质量与库存`, `设备异常` or equivalent business domains. Do not expose diagnostic pages as primary operator workflows.
+使用`主数据`、`工程资料`、`计划与采购`、`生产执行`、`质量与库存`、`设备异常`或等效业务领域。不得将诊断页面作为操作员的主要工作流暴露。
 
-- [ ] **Step 2: Replace isolated forms with guided actions**
+- [ ] **步骤 2：以引导式操作替换孤立表单**
 
-Main pages show queue, filter, KPI and table/detail. Create/report/confirm actions open from row context and prefill known facts.
+主页面显示队列、筛选器、KPI 和表格/详情。创建/报工/确认操作从行上下文中打开，并预填已知事实。
 
-- [ ] **Step 3: Verify the P0 scenario in browser**
+- [ ] **步骤 3：在浏览器中验证 P0 场景**
 
-Using the seeded shock absorber scenario, prove sales/forecast demand -> MRP -> purchase readiness -> production version -> work order -> material issue -> dispatch -> report -> receipt -> traceability. Capture screenshots for review.
+使用已播种的减震器场景，证明销售/预测需求 -> MRP -> 采购就绪 -> 生产版本 -> 工单 -> 发料 -> 派工 -> 报工 -> 入库 -> 追溯链路。截取屏幕截图供审核。
 
-### P0-H: Scheduling / APS Lite Core
+### P0-H：Scheduling / APS Lite 核心
 
-**Goal:** Make dispatch decisions reproducible before the Gantt view becomes a delivery surface.
+**目标：**在 Gantt 视图成为交付界面之前，确保派工决策可复现。
 
-**Files:**
-- Create or modify: Scheduling/APS contracts for `SchedulingProblem`, `SchedulePlan`, resource load and conflict reasons.
-- Modify: DemandPlanning/MES/BusinessGateway integration points once the contract exists.
-- Test: deterministic scheduling cases for the shock absorber scenario.
+**文件：**
+- 创建或修改：`SchedulingProblem`、`SchedulePlan`、资源负载和冲突原因的 Scheduling/APS 契约。
+- 修改：契约就绪后的 DemandPlanning/MES/BusinessGateway 集成点。
+- 测试：减震器场景的确定性排程用例。
 
-- [ ] **Step 1: Freeze scheduling contracts**
+- [ ] **步骤 1：冻结排程契约**
 
-Define schedule input from work orders, operations, released production versions, resources, calendars, material readiness, quality blocks and equipment availability. Output must include assignments, start/end windows, resource loads, conflict reasons and impossible-to-schedule reasons.
+定义来自工单、工序、已发布生产版本、资源、日历、物料就绪、质量阻塞和设备可用性的排程输入。输出必须包括分配结果、开始/结束窗口、资源负载、冲突原因和无法排程原因。
 
-- [ ] **Step 2: Implement deterministic finite-capacity scheduling**
+- [ ] **步骤 2：实现确定性有限产能排程**
 
-The first algorithm is a heuristic, not a solver. It must handle operation precedence, device capacity, shift calendars, maintenance windows, active alarms, locked tasks, due-date priority and rush insertion.
+首个算法是启发式算法，而不是求解器。它必须处理工序优先关系、设备产能、班次日历、维护窗口、活动报警、锁定任务、交期优先级和插急单。
 
-- [ ] **Step 3: Keep Gantt as a consumer**
+- [ ] **步骤 3：保持 Gantt 的消费者角色**
 
-The Gantt/scheduling UI consumes `SchedulePlan` and sends adjustment intent. It does not calculate the official schedule in the browser.
+Gantt/排程 UI 消费 `SchedulePlan` 并发送调整意图，不在浏览器中计算正式排程。
 
-### P0-I: Equipment IIoT Runtime Facts
+### P0-I：设备 IIoT 运行时事实
 
-**Goal:** Make device state, alarms, downtime and maintenance windows affect APS and MES readiness.
+**目标：**使设备状态、报警、停机和维护窗口影响 APS 与 MES 就绪状态。
 
-**Files:**
-- Modify: IndustrialTelemetry and Maintenance query/event surfaces as needed.
-- Modify: MES readiness and Scheduling availability integration once contracts exist.
-- Create or modify: Business Console equipment/IIoT pages after backend facts exist.
+**文件：**
+- 按需修改：IndustrialTelemetry 和 Maintenance query/event 界面。
+- 修改：契约就绪后的 MES 就绪与 Scheduling 可用性集成。
+- 创建或修改：后端事实就绪后的 Business Console 设备/IIoT 页面。
 
-- [ ] **Step 1: Map device runtime facts**
+- [ ] **步骤 1：映射设备运行时事实**
 
-Device assets, work centers, telemetry tags, state mapping, alarm severity, sampling policy and source sequence must be explicit and idempotent.
+设备资产、工作中心、遥测标签、状态映射、报警严重度、采样策略和来源序列必须明确且幂等。
 
-- [ ] **Step 2: Expose availability for APS**
+- [ ] **步骤 2：为 APS 暴露可用性**
 
-Scheduling must be able to query device availability for a time window, including active alarm, downtime, maintenance, inspection and substitute-device context.
+Scheduling 必须能够查询时间窗口内的设备可用性，包括活动报警、停机、维护、检验和替代设备上下文。
 
-- [ ] **Step 3: Expose readiness for MES**
+- [ ] **步骤 3：为 MES 暴露就绪状态**
 
-MES release, dispatch and start actions must use the same equipment reason codes as Scheduling, instead of showing device problems only on a separate diagnostics page.
+MES 下达、派工和开始操作必须与 Scheduling 使用相同的设备原因代码，而不是仅在独立诊断页面显示设备问题。
 
-## P1 Scope
+## P1 范围
 
-1. Richer schedule comparison, visual timeline interaction and dispatch simulation on top of APS lite.
-2. Saved views, column visibility, export, batch action and approval handoffs.
-3. Advanced quality workflow: first-piece inspection, SPC, NCR detail and CAPA handoff.
-4. Tooling/mold lifecycle, preventive maintenance windows and OEE loss tree.
-5. Supplier scorecard, lead-time variance and purchasing exception cockpit.
+1. 在 APS lite 之上提供更丰富的排程比较、可视化时间线交互和派工仿真。
+2. 已保存视图、列可见性、导出、批量操作和审批交接。
+3. 高级质量工作流：首件检验、SPC、NCR 详情和 CAPA 交接。
+4. 工装/模具生命周期、预防性维护窗口和 OEE 损失树。
+5. 供应商评分卡、交付周期偏差和采购异常驾驶舱。
 
-## P2 Scope
+## P2 范围
 
-1. Solver-grade APS optimization, scenario simulation and automatic rescheduling.
-2. PDA/mobile scanning and offline sync.
-3. WCS/AGV/AMR automation depth.
-4. Full QMS/LIMS and full CMMS/EAM.
-5. Finance costing close and full general ledger month-end.
+1. 求解器级 APS 优化、场景仿真和自动重排。
+2. PDA/移动端扫描和离线同步。
+3. 深度 WCS/AGV/AMR 自动化。
+4. 完整 QMS/LIMS 和完整 CMMS/EAM。
+5. 财务成本结算和完整总账月结。
 
-## Acceptance Gate
+## 验收门禁
 
-P0 is complete only when all are true:
+仅当以下条件全部满足时，P0 才算完成：
 
-1. Users do not manually enter system numbers for normal create flows.
-2. All P0 forms use linked selectors or row context instead of free-text IDs.
-3. The shock absorber scenario can be created or seeded and then run through MRP, procurement readiness, work order release, dispatch, report, receipt and traceability.
-4. MES refuses release/start actions when production version, BOM/routing, material, quality, equipment, calendar, shift, barcode or numbering readiness is blocked.
-5. APS lite can produce a deterministic schedule plan or conflict explanation from the P0 work orders, resources, calendars, material readiness and equipment runtime facts.
-6. Business Console visible copy is Chinese business copy and contains no developer metadata such as gateway contracts, implementation context or sample-data explanations.
-7. Verification includes backend tests, BusinessGateway proxy/authorization tests, generated client refresh, frontend typecheck/test/build and browser screenshots of the P0 scenario.
+1. 普通创建流程中，用户不手工输入系统编号。
+2. 所有 P0 表单均使用关联选择器或行上下文，而不是自由文本 ID。
+3. 减震器场景可以创建或播种，然后完整运行 MRP、采购就绪、工单下达、派工、报工、入库和追溯流程。
+4. 当生产版本、BOM/工艺路线、物料、质量、设备、日历、班次、条码或编号就绪受阻时，MES 拒绝下达/开始操作。
+5. APS lite 可以根据 P0 工单、资源、日历、物料就绪和设备运行时事实生成确定性排程计划或冲突说明。
+6. Business Console 可见文案采用中文业务文案，不包含 Gateway 契约、实施上下文或示例数据说明等开发者元数据。
+7. 验证包括后端测试、BusinessGateway 代理/授权测试、生成客户端刷新、前端 typecheck/test/build，以及 P0 场景的浏览器屏幕截图。
