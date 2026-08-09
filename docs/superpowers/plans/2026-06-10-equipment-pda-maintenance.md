@@ -107,7 +107,7 @@ export const inspectionFlow = defineStepFlow<InspectCtx>({
 
 ## 任务 6：首页点亮 3 个设备入口
 **文件：**`src/pages/index.vue` + index.test.ts
-- [ ] **步骤 1：测试（先红）**：断言 `报修`/`点检`/`查看报警` 应用墙按钮不再禁用，点击分别推入 `/equipment/repair`|`/equipment/inspect`|`/equipment/alarms`；MES/WMS 等其余仍禁用。
+- [ ] **步骤 1：测试（先红）**：断言 `报修`/`点检`/`查看报警` 应用墙按钮不再禁用，点击后分别跳转至 `/equipment/repair`|`/equipment/inspect`|`/equipment/alarms`；MES/WMS 等其余仍禁用。
 - [ ] **步骤 2：实现**：`openTask(route, routeReady)` 已按 routeReady 控制——字典点亮（含新增 equipment.alarms）后自动可跳；补/确认测试（注意：首页渲染 `PDA_TASK_KINDS`，新增 alarms 条目会自动出现在墙上）。
 - [ ] **步骤 3：运行通过 + 提交**：提交消息为 `test(business-pda): home wall lights up equipment entries`。
 

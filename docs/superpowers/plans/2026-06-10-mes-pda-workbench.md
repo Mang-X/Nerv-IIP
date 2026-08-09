@@ -126,7 +126,7 @@ export const finishedGoodsReceiptFlow = defineStepFlow<ReceiptCtx>({
 
 ## 任务 7：首页点亮 4 个 MES 入口
 **文件：**`src/pages/index.vue` + `index.test.ts`
-- [ ] **步骤 1：测试（先红）**：断言 `报工`/`领料`/`完工入库`/`工序执行` 应用墙按钮不再禁用，点击分别推入 `router.push('/mes/report'|'/mes/issue'|'/mes/receipt'|'/mes/operation')`；WMS 等其余仍禁用。
+- [ ] **步骤 1：测试（先红）**：断言 `报工`/`领料`/`完工入库`/`工序执行` 应用墙按钮不再禁用，点击后分别跳转至 `router.push('/mes/report'|'/mes/issue'|'/mes/receipt'|'/mes/operation')`；WMS 等其余仍禁用。
 - [ ] **步骤 2：实现**：现有 `openTask(route, routeReady)` 已按 `routeReady` 控制——字典点亮后自动可跳；补/确认测试。
 - [ ] **步骤 3：运行通过 + 提交**：提交消息为 `test(business-pda): home wall lights up MES entries`。
 
