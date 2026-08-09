@@ -1,4 +1,4 @@
-# FileUpload
+# 文件上传（FileUpload）
 
 `FileUpload` 是 Calm Control Plane 的上传 primitive，用于 FileStorage 支持的业务附件、
 质量证据、维护照片和工程文档。

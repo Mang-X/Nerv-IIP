@@ -1,4 +1,4 @@
-# Date Picker (NvDatePicker / NvDateRangePicker / NvTimePicker)
+# 日期选择器（NvDatePicker / NvDateRangePicker / NvTimePicker）
 
 桌面产品 UI 的日期/时间控件，从 `@nerv-iip/ui` 导出：
 

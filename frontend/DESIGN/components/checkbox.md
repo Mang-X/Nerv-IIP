@@ -1,4 +1,4 @@
-# Checkbox (NvCheckbox)
+# 复选框（NvCheckbox）
 
 布尔切换控件或多选列表项。应用代码使用 `NvCheckbox`（来自 `@nerv-iip/ui`；
 reka `CheckboxRoot` API：直接使用 `v-model` / `modelValue`，并支持

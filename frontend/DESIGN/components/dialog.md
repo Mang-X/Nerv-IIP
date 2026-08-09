@@ -1,4 +1,4 @@
-# Dialog / AlertDialog (NvDialog / NvAlertDialog)
+# 对话框 / 警告对话框（NvDialog / NvAlertDialog）
 
 用于创建/编辑表单和破坏性操作确认的模态覆盖层。应用代码使用 `Nv*` 系列，
 它们来自 `@nerv-iip/ui`；无前缀的 `Dialog*` / `AlertDialog*` 部件是
