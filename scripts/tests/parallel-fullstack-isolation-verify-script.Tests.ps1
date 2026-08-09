@@ -22,7 +22,7 @@ $tokens = $null
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($verifyScript, [ref] $tokens, [ref] $parseErrors)
 Assert-True ($parseErrors.Count -eq 0) 'Parallel full-stack verifier must parse before its path boundary can be tested.'
-$pathBelow = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-PathBelow' }, $true))
+$pathBelow = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and [string]::Equals([string] $node.Name, 'Test-PathBelow', [StringComparison]::OrdinalIgnoreCase) }, $true))
 Assert-True ($pathBelow.Count -eq 1) 'Parallel full-stack verifier must define exactly one Test-PathBelow helper.'
 . ([scriptblock]::Create($pathBelow[0].Extent.Text))
 
