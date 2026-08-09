@@ -40,6 +40,35 @@ $checkerAst = [System.Management.Automation.Language.Parser]::ParseInput($checke
 if ($checkerParseErrors -and $checkerParseErrors.Count -gt 0) {
     throw "Failed to parse the script governance checker: $($checkerParseErrors[0].Message)"
 }
+
+# The checker is excluded from its own command-governance rules because it must name the forbidden
+# commands as data. That exclusion does not exempt its identifier comparisons: its path extension
+# check and returned scan order are both machine-facing identities and must stay ordinal.
+. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
+$checkerOrdinalSweep = Get-NervOrdinalComparisonFindings -ScriptPath $checker -DisplayName 'check-script-governance.ps1'
+if ($checkerOrdinalSweep.Findings.Count -ne 0) {
+    throw "check-script-governance.ps1 must compare scan identities ordinally: $(@($checkerOrdinalSweep.Findings) -join '; ')"
+}
+$checkerMutationRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-checker-ordinal-mutation-{0}" -f [Guid]::NewGuid().ToString('N'))
+[System.IO.Directory]::CreateDirectory($checkerMutationRoot) | Out-Null
+try {
+    $checkerMutationPath = Join-Path $checkerMutationRoot 'check-script-governance.ps1'
+    $checkerMutation = $checkerText.Replace(
+        "[string]::Equals([System.IO.Path]::GetExtension(`$item.Path), '.ps1', [StringComparison]::OrdinalIgnoreCase)",
+        "[System.IO.Path]::GetExtension(`$item.Path) -eq '.ps1'")
+    $checkerMutation = $checkerMutation.Replace(
+        '$orderedScripts = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)',
+        '$orderedScripts = @($scripts | Sort-Object -Unique)')
+    [System.IO.File]::WriteAllText($checkerMutationPath, $checkerMutation, [System.Text.UTF8Encoding]::new($false))
+    $checkerMutationSweep = Get-NervOrdinalComparisonFindings -ScriptPath $checkerMutationPath -DisplayName 'check-script-governance.ps1'
+    if (@($checkerMutationSweep.Findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -ne 1 -or
+        @($checkerMutationSweep.Findings | Where-Object { $_.StartsWith('[sort-object]', [StringComparison]::Ordinal) }).Count -ne 1) {
+        throw "Weakening either checker comparison must be reported independently: $(@($checkerMutationSweep.Findings) -join '; ')"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $checkerMutationRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 $scanExclusionAssignment = $checkerAst.Find({
     param($node)
     $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and

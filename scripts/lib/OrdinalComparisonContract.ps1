@@ -101,7 +101,8 @@ function Get-NervOrdinalContractCoveredAxes {
         'parameterless-sort-method',
         'ambiguous-method-with-string-literal',
         'non-ordinal-stringcomparison',
-        'non-ordinal-stringcomparer'
+        'non-ordinal-stringcomparer',
+        'culture-created-stringcomparer'
     )
 }
 
@@ -365,6 +366,12 @@ function Get-NervOrdinalComparisonFindings {
         $member = [string] $invocation.Member.Value
         if ([string]::IsNullOrWhiteSpace($member)) { continue }
         $arguments = @($invocation.Arguments)
+        if ([string]::Equals($member, 'Create', [StringComparison]::OrdinalIgnoreCase) -and
+            $invocation.Expression -is [System.Management.Automation.Language.TypeExpressionAst] -and
+            ([string] $invocation.Expression.TypeName.FullName).EndsWith('StringComparer', [StringComparison]::OrdinalIgnoreCase)) {
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'culture-created-stringcomparer' -Message 'creates a StringComparer from a CultureInfo; use Ordinal or OrdinalIgnoreCase.'
+            continue
+        }
         if (@((Get-NervOrdinalContractStringMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
             if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments) { continue }
             Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'string-method-without-ordinal-comparison' -Message "calls .$member() without an explicit ordinal [StringComparison]."

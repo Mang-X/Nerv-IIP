@@ -82,7 +82,7 @@ function Get-GovernanceScripts {
         $resolved = Resolve-Path $inputPath -ErrorAction Stop
         foreach ($item in $resolved) {
             if (Test-Path $item.Path -PathType Leaf) {
-                if ([System.IO.Path]::GetExtension($item.Path) -eq '.ps1') {
+                if ([string]::Equals([System.IO.Path]::GetExtension($item.Path), '.ps1', [StringComparison]::OrdinalIgnoreCase)) {
                     $scripts.Add($item.Path)
                 }
                 continue
@@ -97,7 +97,9 @@ function Get-GovernanceScripts {
         }
     }
 
-    return @($scripts | Sort-Object -Unique)
+    $orderedScripts = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($scriptPath in $scripts) { [void] $orderedScripts.Add($scriptPath) }
+    return @($orderedScripts)
 }
 
 function Get-GovernanceBaseline {
