@@ -101,19 +101,19 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $fastShards = @($manifest.fastShards)
 $heavyLanes = @($manifest.heavyLanes)
 Assert-Contract ($fastShards.Count -eq 4) 'Phase 1 must define exactly four fast backend shards.'
-Assert-Contract (((@($fastShards.id) | Sort-Object) -join '|') -ceq 'business-core-a|business-core-b|business-gateway|platform') 'Fast shard IDs must remain the four phase-1 CI jobs.'
-Assert-Contract (((@($heavyLanes.id) | Sort-Object) -join '|') -ceq 'full-chain|performance|real-postgres') 'Heavy lane IDs must remain explicit and separate from fast shards.'
-$businessGatewayShard = @($fastShards | Where-Object { $_.id -eq 'business-gateway' })
+Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($fastShards.id)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('business-core-a|business-core-b|business-gateway|platform'), [StringComparison]::Ordinal)) 'Fast shard IDs must remain the four phase-1 CI jobs.'
+Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($heavyLanes.id)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('full-chain|performance|real-postgres'), [StringComparison]::Ordinal)) 'Heavy lane IDs must remain explicit and separate from fast shards.'
+$businessGatewayShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('business-gateway'), [StringComparison]::OrdinalIgnoreCase) })
 # The BusinessGateway assembly used to be alone in its shard because it cost 869s and serialized
 # every other assembly behind it. MAN-663 removed that cost (23s on run 30999368607) and MAN-669
 # PR-A rebalanced the shards by measured TRX elapsed, so "exactly one project" is no longer the
 # contract — the lane identity is. What must not drift is which shard owns that assembly, because
 # MAN-661 maps evidence lane backend-shard-1 to this job's name.
-Assert-Contract ($businessGatewayShard.Count -eq 1 -and @($businessGatewayShard[0].projects) -contains 'backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj') 'The BusinessGateway assembly must stay in the fast shard whose evidence lane is named after it.'
+Assert-Contract ($businessGatewayShard.Count -eq 1 -and [Collections.Generic.HashSet[string]]::new([string[]]@(@($businessGatewayShard[0].projects)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj'))) 'The BusinessGateway assembly must stay in the fast shard whose evidence lane is named after it.'
 # Which fast shard owns the acceptance suite is a balancing decision (PR-A moved it from
 # business-core-b to business-core-a); that it stays inside the *default fast gate* rather than
 # drifting into an opt-in heavy lane is the contract.
-$acceptanceOwners = @($fastShards | Where-Object { @($_.projects) -contains 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj' })
+$acceptanceOwners = @($fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.projects)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('backend/tests/Nerv.IIP.Business.Acceptance.Tests/Nerv.IIP.Business.Acceptance.Tests.csproj')) })
 Assert-Contract ($acceptanceOwners.Count -eq 1) 'Regular business acceptance facts must be part of the default fast gate.'
 $excludedSelectors = @(
     foreach ($shard in $fastShards) {
@@ -124,15 +124,15 @@ $excludedSelectors = @(
     }
 )
 Assert-Contract ($excludedSelectors.Count -eq 49) 'Every currently excluded real PostgreSQL test selector must be explicitly classified.'
-Assert-Contract ($excludedSelectors -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed') 'The PostgreSQL test database real selector must remain method-scoped.'
-Assert-Contract (-not ($excludedSelectors -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')) 'A mixed fast test class must not be excluded wholesale.'
-$platformShard = @($fastShards | Where-Object { $_.id -eq 'platform' })[0]
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must remain method-scoped.'
+Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')))) 'A mixed fast test class must not be excluded wholesale.'
+$platformShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('platform'), [StringComparison]::OrdinalIgnoreCase) })[0]
 $platformExcludedClasses = @($platformShard.excludedTestClasses)
 $platformExcludedTestsProperty = $platformShard.PSObject.Properties['excludedTests']
 $platformExcludedTests = if ($null -eq $platformExcludedTestsProperty) { @() } else { @($platformExcludedTestsProperty.Value) }
-Assert-Contract ($platformExcludedTests -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed') 'The PostgreSQL test database real selector must be in excludedTests, not the class selector list.'
-Assert-Contract ($platformExcludedTests -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics') 'Every narrowed PostgreSQL database selector must be method-scoped.'
-Assert-Contract (-not ($platformExcludedClasses -contains 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed')) 'A method selector must not be treated as a class selector.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedTests), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must be in excludedTests, not the class selector list.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedTests), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics'))) 'Every narrowed PostgreSQL database selector must be method-scoped.'
+Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedClasses), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed')))) 'A method selector must not be treated as a class selector.'
 Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics must use a separately testable helper, not a production command bypass.'
 Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
 . $diagnosticsPath
@@ -154,7 +154,7 @@ try {
 catch {
     $runnerBypassText = $_.Exception.Message
 }
-Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that matches parameter name 'TestCommand'")) 'The production fast-shard runner must reject a command replacement parameter before test execution.'
+Assert-Contract ($runnerBypassText.Contains("A parameter cannot be found that matches parameter name 'TestCommand'", [StringComparison]::Ordinal)) 'The production fast-shard runner must reject a command replacement parameter before test execution.'
 
 $staleSelectorText = ''
 try {
@@ -163,7 +163,7 @@ try {
 catch {
     $staleSelectorText = $_.Exception.Message
 }
-Assert-Contract ($staleSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.StaleSelector' discovery must match exactly one test")) 'A stale real PostgreSQL selector must fail discovery before execution.'
+Assert-Contract ($staleSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.StaleSelector' discovery must match exactly one test", [StringComparison]::Ordinal)) 'A stale real PostgreSQL selector must fail discovery before execution.'
 
 $classSelector = 'Nerv.IIP.Tests.ClassSelector'
 $classDiscovery = @(Assert-BackendTestShardSelectorDiscovery -Selector $classSelector -MethodSelector $false -DiscoveredTests @("$classSelector.CaseOne", "$classSelector.CaseTwo"))
@@ -180,12 +180,12 @@ try {
 catch {
     $notExecutedSelectorText = $_.Exception.Message
 }
-Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed")) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
+Assert-Contract ($notExecutedSelectorText.Contains("Real PostgreSQL selector 'Nerv.IIP.Tests.DiscoveredSelector' must execute every discovered test as Passed", [StringComparison]::Ordinal)) 'A discovered real PostgreSQL selector without TRX execution must fail closed.'
 
 $runnerSource = Get-Content -LiteralPath $runnerPath -Raw
-Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter')) 'The zero-execution guard must not depend on localized dotnet console text.'
-Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution')) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
-Assert-Contract ($runnerSource.Contains('"FullyQualifiedName!~$_."')) 'Class selectors must be anchored with a trailing dot so a sibling class sharing the prefix is not silently excluded.'
+Assert-Contract (-not $runnerSource.Contains('No test matches the given testcase filter', [StringComparison]::Ordinal)) 'The zero-execution guard must not depend on localized dotnet console text.'
+Assert-Contract ($runnerSource.Contains('Assert-BackendTestShardProjectExecution', [StringComparison]::Ordinal)) 'The fast shard runner must prove classified-project execution from the TRX the MAN-661 collector consumes.'
+Assert-Contract ($runnerSource.Contains('"FullyQualifiedName!~$_."', [StringComparison]::Ordinal)) 'Class selectors must be anchored with a trailing dot so a sibling class sharing the prefix is not silently excluded.'
 
 New-Item -ItemType Directory -Path $executionTrxDirectory -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $executionTrxDirectory 'shard.trx') -NoNewline -Value @'
@@ -197,7 +197,7 @@ Set-Content -LiteralPath (Join-Path $executionTrxDirectory 'shard.trx') -NoNewli
 </TestRun>
 '@
 $executedAssemblies = @(Get-BackendTestShardExecutedAssemblies -ResultsDirectory $executionTrxDirectory)
-Assert-Contract ((@($executedAssemblies) -join '|') -ceq 'Nerv.IIP.Coding.Tests.dll') 'Executed shard assemblies must be read from namespaced TRX storage attributes.'
+Assert-Contract ([string]::Equals([string]((@($executedAssemblies) -join '|')), [string]('Nerv.IIP.Coding.Tests.dll'), [StringComparison]::Ordinal)) 'Executed shard assemblies must be read from namespaced TRX storage attributes.'
 Assert-BackendTestShardProjectExecution -ShardId 'contract' -ClassifiedProjects @('backend/tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj') -ExecutedAssemblies $executedAssemblies
 
 $zeroExecutionText = ''
@@ -207,7 +207,7 @@ try {
 catch {
     $zeroExecutionText = $_.Exception.Message
 }
-Assert-Contract ($zeroExecutionText.Contains('produced no executed test result for classified projects: Nerv.IIP.Silent.Tests')) 'A classified project whose tests were all filtered away must fail closed regardless of console language.'
+Assert-Contract ($zeroExecutionText.Contains('produced no executed test result for classified projects: Nerv.IIP.Silent.Tests', [StringComparison]::Ordinal)) 'A classified project whose tests were all filtered away must fail closed regardless of console language.'
 
 $driftText = ''
 try {
@@ -216,7 +216,7 @@ try {
 catch {
     $driftText = $_.Exception.Message
 }
-Assert-Contract ($driftText.Contains('executed assemblies it does not classify: Nerv.IIP.Drifted.Tests')) 'A shard running an assembly it does not classify must fail closed.'
+Assert-Contract ($driftText.Contains('executed assemblies it does not classify: Nerv.IIP.Drifted.Tests', [StringComparison]::Ordinal)) 'A shard running an assembly it does not classify must fail closed.'
 
 # Ordinal identifier comparison (#1509). Every string these helpers compare is an identifier, and
 # PowerShell's defaults are culture-aware: `Sort-Object -Unique` folds two values the collation table
@@ -249,7 +249,7 @@ try {
 catch {
     $foldedKindText = $_.Exception.Message
 }
-Assert-Contract ($foldedKindText.Contains('Unsupported excluded-selector kind')) "A selector kind that only matches by culture folding must throw rather than silently select nothing. Reported: '$foldedKindText'."
+Assert-Contract ($foldedKindText.Contains('Unsupported excluded-selector kind', [StringComparison]::Ordinal)) "A selector kind that only matches by culture folding must throw rather than silently select nothing. Reported: '$foldedKindText'."
 Assert-Contract (@(Get-BackendTestShardExcludedSelectors -Shard $ordinalSelectorShard -Kind 'Class').Count -eq 2) 'The selector kind keyword stays case-insensitive, which is what [ValidateSet] promises.'
 
 $ordinalExecutionText = ''
@@ -262,7 +262,7 @@ try {
 catch {
     $ordinalExecutionText = $_.Exception.Message
 }
-Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests')) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
+Assert-Contract ($ordinalExecutionText.Contains('produced no executed test result for classified projects: Nerv.Probe.Ordinal.Tests', [StringComparison]::Ordinal)) 'An assembly whose name differs from a classified project by an ignorable character must not be accepted as that project having run; the execution membership test must be ordinal.'
 
 # …and the *other* side of the same guard, which had no probe at all (#1509 round 2): `$unexpected`
 # asks whether an executed assembly is one this shard classifies. Its membership test used to be the
@@ -280,7 +280,7 @@ try {
 catch {
     $ordinalDriftText = $_.Exception.Message
 }
-Assert-Contract ($ordinalDriftText.Contains("executed assemblies it does not classify: Nerv.Probe.Drift${ordinalSoftHyphen}.Tests")) "An executed assembly differing from every classified project by an ignorable character is not classified by this shard; the drift membership test must be ordinal. Reported: '$ordinalDriftText'."
+Assert-Contract ($ordinalDriftText.Contains("executed assemblies it does not classify: Nerv.Probe.Drift${ordinalSoftHyphen}.Tests", [StringComparison]::Ordinal)) "An executed assembly differing from every classified project by an ignorable character is not classified by this shard; the drift membership test must be ordinal. Reported: '$ordinalDriftText'."
 # Positive control, so the probe above cannot pass by reporting every executed assembly as drift.
 Assert-BackendTestShardProjectExecution `
     -ShardId 'ordinal-drift' `
@@ -301,7 +301,7 @@ try {
 catch {
     $ordinalSelectorExecutionText = $_.Exception.Message
 }
-Assert-Contract ($ordinalSelectorExecutionText.Contains("must execute every discovered test as Passed; discovered=1, trx=1, missing=1")) 'A TRX test name differing from a discovered test by an ignorable character must not satisfy that test; the selector execution membership must be ordinal.'
+Assert-Contract ($ordinalSelectorExecutionText.Contains("must execute every discovered test as Passed; discovered=1, trx=1, missing=1", [StringComparison]::Ordinal)) 'A TRX test name differing from a discovered test by an ignorable character must not satisfy that test; the selector execution membership must be ordinal.'
 # Positive control, so the probe above cannot pass by rejecting everything.
 Assert-BackendTestShardSelectorExecution `
     -Selector 'Nerv.Probe.Selector' `
@@ -328,7 +328,7 @@ try {
 catch {
     $foldedOutcomeText = $_.Exception.Message
 }
-Assert-Contract ($foldedOutcomeText.Contains('discovered=1, trx=1, missing=0, notPassed=1')) "An outcome that is not the literal token 'Passed' must count as not passed even when the collation table folds it into 'Passed'; the outcome comparison must be ordinal. Reported: '$foldedOutcomeText'."
+Assert-Contract ($foldedOutcomeText.Contains('discovered=1, trx=1, missing=0, notPassed=1', [StringComparison]::Ordinal)) "An outcome that is not the literal token 'Passed' must count as not passed even when the collation table folds it into 'Passed'; the outcome comparison must be ordinal. Reported: '$foldedOutcomeText'."
 
 $failedOutcomeText = ''
 try {
@@ -340,7 +340,7 @@ try {
 catch {
     $failedOutcomeText = $_.Exception.Message
 }
-Assert-Contract ($failedOutcomeText.Contains('notPassed=1')) 'A Failed result must still fail the selector execution gate.'
+Assert-Contract ($failedOutcomeText.Contains('notPassed=1', [StringComparison]::Ordinal)) 'A Failed result must still fail the selector execution gate.'
 
 # ...and the case axis, which the fixture above deliberately does not exercise. VSTest writes the
 # TRX `storage` path lowercased, so the executed side of this comparison never carries the manifest's
@@ -380,7 +380,7 @@ try {
     catch {
         $lowercaseDriftText = $_.Exception.Message
     }
-    Assert-Contract ($lowercaseDriftText.Contains('produced no executed test result for classified projects: Nerv.IIP.AppHub.Web.Tests')) 'Case-insensitive assembly matching must still reject an assembly that is a different project.'
+    Assert-Contract ($lowercaseDriftText.Contains('produced no executed test result for classified projects: Nerv.IIP.AppHub.Web.Tests', [StringComparison]::Ordinal)) 'Case-insensitive assembly matching must still reject an assembly that is a different project.'
 
     # Get-BackendTestShardExecutedAssemblies makes the same two-part decision when it deduplicates,
     # and both halves are pinned here because the two failure modes point in opposite directions:
@@ -532,21 +532,21 @@ Assert-Contract ($missingFromManifest.Count -eq 0) "Every backend test project i
 Assert-Contract ($notInSolution.Count -eq 0) "Every classified shard project must be a backend test project in backend/Nerv.IIP.sln; stale: $($notInSolution -join ', ')."
 # Report-only, deliberately: the inventory size is a measurement to read, never a gate to satisfy.
 Write-Host "  [report-only] classified backend test projects: $($classifiedProjects.Count)"
-Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj') 'MAN-662 shared test-infrastructure facts must run in the default fast gate.'
-Assert-Contract (@($fastShards | Where-Object { $_.id -eq 'platform' })[0].projects -contains 'backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj') 'MAN-662 FastEndpoints process-isolation facts must run in the default fast gate.'
-Assert-Contract (((@($fastShards.evidenceLane) | Sort-Object) -join '|') -ceq 'backend-shard-1|backend-shard-2|backend-shard-3|backend-shard-4') 'Every fast shard must own one MAN-661 schema-v1 backend shard lane.'
-Assert-Contract ((@($fastShards.jobName) | Sort-Object -Unique).Count -eq $fastShards.Count) 'Every fast shard evidence lane must be owned by exactly one CI job name.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@(@($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('platform'), [StringComparison]::OrdinalIgnoreCase) })[0].projects), [StringComparer]::OrdinalIgnoreCase).Contains([string]('backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj'))) 'MAN-662 shared test-infrastructure facts must run in the default fast gate.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@(@($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('platform'), [StringComparison]::OrdinalIgnoreCase) })[0].projects), [StringComparer]::OrdinalIgnoreCase).Contains([string]('backend/tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj'))) 'MAN-662 FastEndpoints process-isolation facts must run in the default fast gate.'
+Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($fastShards.evidenceLane)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('backend-shard-1|backend-shard-2|backend-shard-3|backend-shard-4'), [StringComparison]::Ordinal)) 'Every fast shard must own one MAN-661 schema-v1 backend shard lane.'
+Assert-Contract ((Get-NervStringsSorted -Values @(@($fastShards.jobName)) -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $fastShards.Count) 'Every fast shard evidence lane must be owned by exactly one CI job name.'
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
 $laneJobs = Get-NervTestEvidenceLaneJobs
 foreach ($shard in $fastShards) {
     Assert-Contract ($laneJobs.Contains([string] $shard.evidenceLane)) "Fast shard evidence lane '$($shard.evidenceLane)' must be allowlisted for MAN-661 rerun and baseline authority."
-    Assert-Contract ([string] $laneJobs[[string] $shard.evidenceLane] -ceq [string] $shard.jobName) "Fast shard evidence lane '$($shard.evidenceLane)' must be bound to its own CI job name."
+    Assert-Contract ([string]::Equals([string]([string] $laneJobs[[string] $shard.evidenceLane]), [string]([string] $shard.jobName), [StringComparison]::Ordinal)) "Fast shard evidence lane '$($shard.evidenceLane)' must be bound to its own CI job name."
 }
 
 foreach ($shard in $fastShards) {
     $filterPath = Join-Path $repoRoot $shard.solutionFilter
     $filter = Get-Content -LiteralPath $filterPath -Raw | ConvertFrom-Json
-    Assert-Contract ($filter.solution.path -eq '../Nerv.IIP.sln') "Solution filter $($shard.solutionFilter) must target the backend solution."
+    Assert-Contract ([string]::Equals([string]($filter.solution.path), [string]('../Nerv.IIP.sln'), [StringComparison]::OrdinalIgnoreCase)) "Solution filter $($shard.solutionFilter) must target the backend solution."
     Assert-Contract ((@($filter.solution.projects | Where-Object { $_ -match '^\.\./' })).Count -eq 0) "Solution filter $($shard.solutionFilter) project paths must be relative to backend/Nerv.IIP.sln."
 }
 
@@ -569,9 +569,9 @@ finally {
     }
 }
 Assert-Contract (-not $solutionMembership.Passed) 'A backend project outside backend/Nerv.IIP.sln must fail shard governance.'
-Assert-Contract ($solutionMembership.Message.Contains('bin/Debug')) 'Shard governance must reject a backend project that is not a solution member, naming the Release/Debug consequence.'
-Assert-Contract ($solutionMembership.Message.Contains('backend/common/Nerv.IIP.TemporarySolutionMembership/Nerv.IIP.TemporarySolutionMembership.csproj')) 'The solution-membership failure must identify the offending project path.'
-Assert-Contract (-not $solutionMembership.Message.Contains('Unclassified backend test')) 'The solution-membership contract must be tripped by a non-test project, not by the test classification rule.'
+Assert-Contract ($solutionMembership.Message.Contains('bin/Debug', [StringComparison]::Ordinal)) 'Shard governance must reject a backend project that is not a solution member, naming the Release/Debug consequence.'
+Assert-Contract ($solutionMembership.Message.Contains('backend/common/Nerv.IIP.TemporarySolutionMembership/Nerv.IIP.TemporarySolutionMembership.csproj', [StringComparison]::Ordinal)) 'The solution-membership failure must identify the offending project path.'
+Assert-Contract (-not $solutionMembership.Message.Contains('Unclassified backend test', [StringComparison]::Ordinal)) 'The solution-membership contract must be tripped by a non-test project, not by the test classification rule.'
 Assert-Contract (@(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln') | Where-Object { $_ -match 'Nerv\.IIP\.Contracts\.Mes\.csproj' }).Count -eq 1) 'Nerv.IIP.Contracts.Mes must stay a solution member; outside the solution every Release shard builds it as Debug.'
 
 try {
@@ -580,14 +580,14 @@ try {
 
     $unclassified = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unclassified-project' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
     Assert-Contract (-not $unclassified.Passed) 'An unclassified temporary backend test project must fail classification.'
-    Assert-Contract ($unclassified.Message.Contains('Unclassified backend test')) 'Unclassified project failure must identify the classification error.'
-    Assert-Contract ($unclassified.Message.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj')) 'Unclassified project failure must identify the temporary project path.'
+    Assert-Contract ($unclassified.Message.Contains('Unclassified backend test', [StringComparison]::Ordinal)) 'Unclassified project failure must identify the classification error.'
+    Assert-Contract ($unclassified.Message.Contains('backend/tests/Nerv.IIP.TemporaryShardClassification.Tests/Nerv.IIP.TemporaryShardClassification.Tests.csproj', [StringComparison]::Ordinal)) 'Unclassified project failure must identify the temporary project path.'
 
     $workflowContent = Get-Content -LiteralPath $workflowPath -Raw
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^\s+- backend-tests-business-core-b\r?\n', '') -NoNewline
     $workflowValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-workflow-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
-    Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.')) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
+    Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
 
     # The aggregate needs list is an exact job-identity set. U+00AD must not be folded into the
     # real platform job name by a culture-aware joined-string comparison.
@@ -597,32 +597,32 @@ try {
     Set-Content -LiteralPath $temporaryWorkflowPath -Value $workflowWithMutatedPlatformNeed -NoNewline
     $mutatedNeedValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-aggregate-needs-ordinal-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $mutatedNeedValidation.Passed) 'A U+00AD-mutated aggregate need must fail exact shard governance.'
-    Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.')) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
+    Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
     $noOpValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-noop-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $noOpValidation.Passed) 'A no-op aggregate dependency expression must fail structured shard governance.'
-    Assert-Contract ($noOpValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
+    Assert-Contract ($noOpValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'test "${{ needs.backend-tests-platform.result }}" = "success" || true') -NoNewline
     $maskedFailureValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-masked-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $maskedFailureValidation.Passed) 'An aggregate assertion masked with || true must fail structured shard governance.'
-    Assert-Contract ($maskedFailureValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.")) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
+    Assert-Contract ($maskedFailureValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(\s+- name: Require all backend fast shards\r?\n)', ('$1        continue-on-error: true' + [Environment]::NewLine)) -NoNewline
     $continueOnErrorValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $continueOnErrorValidation.Passed) 'An aggregate step with continue-on-error must fail structured shard governance.'
-    Assert-Contract ($continueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
+    Assert-Contract ($continueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(    if: always\(\)\r?\n)', ('$1    continue-on-error: true' + [Environment]::NewLine)) -NoNewline
     $jobContinueOnErrorValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-job-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $jobContinueOnErrorValidation.Passed) 'An aggregate job with continue-on-error must fail structured shard governance.'
-    Assert-Contract ($jobContinueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
+    Assert-Contract ($jobContinueOnErrorValidation.Message.Contains("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate job continue-on-error configuration.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)(-TrxFilePrefix backend-tests-platform)', '$1 -TestCommand "Write-Output pass"') -NoNewline
     $bypassValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-command-bypass-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $bypassValidation.Passed) 'A fast shard command replacement parameter must fail structured shard governance.'
-    Assert-Contract ($bypassValidation.Message.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.")) 'Structured workflow validation must reject a command replacement parameter.'
+    Assert-Contract ($bypassValidation.Message.Contains("Fast shard job 'backend-tests-platform' must not supply a command replacement parameter.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a command replacement parameter.'
 
     foreach ($evidenceMutation in @(
             @{
@@ -658,7 +658,7 @@ try {
 
     $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
     foreach ($rule in @($policy.rules)) {
-        if ([string] $rule.requiredLane -ceq 'postgres') {
+        if ([string]::Equals([string]([string] $rule.requiredLane), [string]('postgres'), [StringComparison]::Ordinal)) {
             $rule.testIdentities = @()
             $rule.expectedRuntimeTestCount = 0
             break
@@ -667,19 +667,19 @@ try {
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($policy | ConvertTo-Json -Depth 100) -NoNewline
     $policyCoverage = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-policy-coverage-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $policyCoverage.Passed) 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
-    Assert-Contract ($policyCoverage.Message.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip')) 'Shard governance must reject an exclusion the evidence policy does not register.'
+    Assert-Contract ($policyCoverage.Message.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip', [StringComparison]::Ordinal)) 'Shard governance must reject an exclusion the evidence policy does not register.'
 
     # The under-declaration has to be planted on whichever shard currently owns the one exclusion
     # whose MAN-661 requiredLane is not `postgres`; pinning that to a shard id made this negative
     # test silently pass the moment MAN-669 PR-A moved that exclusion to another shard.
     $laneManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $fullChainShards = @($laneManifest.fastShards | Where-Object { @($_.excludedTestLanes | ForEach-Object { [string] $_ }) -contains 'full-chain' })
+    $fullChainShards = @($laneManifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes | ForEach-Object { [string] $_ })), [StringComparer]::OrdinalIgnoreCase).Contains([string]('full-chain')) })
     Assert-Contract ($fullChainShards.Count -eq 1) 'Exactly one fast shard must own the full-chain exclusion for the lane-attribution contract to be able to under-declare it.'
     $fullChainShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
     $laneAttribution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-lane-attribution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
     Assert-Contract (-not $laneAttribution.Passed) 'A shard that under-declares its excluded test lanes must fail shard governance.'
-    Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [full-chain, real-postgres]')) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
+    Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [full-chain, real-postgres]', [StringComparison]::Ordinal)) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
 
     # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
     # readable file and would otherwise be reported as a malformed solution filter rather than as
@@ -711,8 +711,8 @@ try {
         Set-Content -LiteralPath $temporaryManifestPath -Value ($wholeSolutionManifest | ConvertTo-Json -Depth 100) -NoNewline
         $wholeSolution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-whole-solution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
         Assert-Contract (-not $wholeSolution.Passed) "A fast shard pointed at the whole backend solution ('$wholeSolutionSpelling') must fail shard governance."
-        Assert-Contract ($wholeSolution.Message.Contains('must build its own solution filter, not the whole backend solution')) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
-        Assert-Contract (-not $wholeSolution.Message.Contains('solution filter is invalid JSON')) "'$wholeSolutionSpelling' must be diagnosed as the whole solution, not as a malformed solution filter."
+        Assert-Contract ($wholeSolution.Message.Contains('must build its own solution filter, not the whole backend solution', [StringComparison]::Ordinal)) "Shard governance must reject a fast shard that rebuilds the entire backend solution, however '$wholeSolutionSpelling' is spelled."
+        Assert-Contract (-not $wholeSolution.Message.Contains('solution filter is invalid JSON', [StringComparison]::Ordinal)) "'$wholeSolutionSpelling' must be diagnosed as the whole solution, not as a malformed solution filter."
     }
 
     $collisionSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'
@@ -720,16 +720,16 @@ try {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null
     Set-Content -LiteralPath $temporaryCollisionSourcePath -NoNewline -Value "public sealed class Fixture { public void $collisionMethod() { } public void ${collisionMethod}Extra() { } }"
     $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
-    $collisionSourceIds = @($collisionPolicy.rules | Where-Object { @($_.testIdentities) -ccontains $collisionSelector } | ForEach-Object { [string] $_.sourceId })
+    $collisionSourceIds = @($collisionPolicy.rules | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.testIdentities)), [StringComparer]::Ordinal).Contains([string]($collisionSelector)) } | ForEach-Object { [string] $_.sourceId })
     foreach ($collisionSource in @($collisionPolicy.sources)) {
-        if ($collisionSourceIds -contains [string] $collisionSource.id) {
+        if ([Collections.Generic.HashSet[string]]::new([string[]]@($collisionSourceIds), [StringComparer]::OrdinalIgnoreCase).Contains([string]([string] $collisionSource.id))) {
             $collisionSource.sourcePath = $temporaryCollisionRelativePath
         }
     }
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($collisionPolicy | ConvertTo-Json -Depth 100) -NoNewline
     $collision = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-selector-collision-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $collision.Passed) 'A method selector that substring-excludes a sibling member must fail shard governance.'
-    Assert-Contract ($collision.Message.Contains('would also substring-exclude a sibling member')) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
+    Assert-Contract ($collision.Message.Contains('would also substring-exclude a sibling member', [StringComparison]::Ordinal)) 'Shard governance must reject a method selector that swallows a prefix-sharing sibling.'
 
     $timeoutText = ''
     $timedOut = $false
@@ -743,8 +743,8 @@ try {
         $timeoutDiagnostics = Get-BackendTestShardFailureDiagnostics -ErrorRecord $_ -TrxFilePrefix 'timeout-contract'
     }
     Assert-Contract ($timedOut -and -not [string]::IsNullOrWhiteSpace($timeoutText)) 'The bounded timeout diagnostic helper contract must time out.'
-    Assert-Contract ($timeoutDiagnostics.Contains('partial-diagnostic')) 'The bounded timeout diagnostic helper contract must preserve buffered stdout content.'
-    Assert-Contract (-not $timeoutDiagnostics.Contains('super-secret')) 'Buffered shard diagnostics must be redacted before they reach any retained log.'
+    Assert-Contract ($timeoutDiagnostics.Contains('partial-diagnostic', [StringComparison]::Ordinal)) 'The bounded timeout diagnostic helper contract must preserve buffered stdout content.'
+    Assert-Contract (-not $timeoutDiagnostics.Contains('super-secret', [StringComparison]::Ordinal)) 'Buffered shard diagnostics must be redacted before they reach any retained log.'
     Assert-Contract (-not (Test-Path -LiteralPath $timeoutResultsDirectory)) 'Buffered shard diagnostics must stay in the job log instead of an uploaded results directory.'
 }
 finally {
@@ -787,9 +787,8 @@ $validatorAst = [System.Management.Automation.Language.Parser]::ParseFile($valid
 $timingLibraryPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1'
 $timingLibraryAst = [System.Management.Automation.Language.Parser]::ParseFile($timingLibraryPath, [ref] $null, [ref] $null)
 $timingFunctionNames = @(
-    $timingLibraryAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
-        ForEach-Object { [string] $_.Name } |
-        Sort-Object -Unique
+    Get-NervStringsSorted -Values @($timingLibraryAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
+        ForEach-Object { [string] $_.Name }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
 Assert-Contract ($timingFunctionNames.Count -gt 0) 'The timing library must define functions for the dependency-boundary assertion to have anything to look for.'
 # Ordinal set membership, for the same reason the policy identity comparison is ordinal: a function
@@ -801,7 +800,7 @@ $timingFunctionNameSet = [System.Collections.Generic.HashSet[string]]::new([stri
 # BackendTestShardSelectors.ps1 is just as much a dependency of the gate, and the entry point's AST
 # cannot see it. The library set is derived from the gate's own dot-source statements rather than
 # listed here, so a new library joins the scan by being dot-sourced.
-$repoLibraries = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts/lib') -Filter '*.ps1' -File | Sort-Object FullName)
+$repoLibraries = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts/lib') -Filter '*.ps1' -File) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal))
 $boundaryScanPaths = [System.Collections.Generic.List[string]]::new()
 [void] $boundaryScanPaths.Add([string] $validatorPath)
 foreach ($command in @($validatorAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))) {
@@ -811,7 +810,7 @@ foreach ($command in @($validatorAst.FindAll({ param($node) $node -is [System.Ma
         if ($dotSourceText.Contains([string] $library.BaseName)) { [void] $boundaryScanPaths.Add([string] $library.FullName) }
     }
 }
-$boundaryScanPaths = @($boundaryScanPaths | Sort-Object -Unique)
+$boundaryScanPaths = @(Get-NervStringsSorted -Values @($boundaryScanPaths) -Comparer ([StringComparer]::Ordinal) -Unique)
 Assert-Contract (@($boundaryScanPaths).Count -gt 1) 'The dependency-boundary scan must reach at least one library the gate dot-sources; otherwise it silently degraded to scanning the entry point alone.'
 
 foreach ($scanPath in $boundaryScanPaths) {
@@ -823,7 +822,7 @@ foreach ($scanPath in $boundaryScanPaths) {
         # A dot-source is a CommandAst whose invocation operator is `.`; its single argument is the path.
         if ($command.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Dot) { continue }
         $dotSourced = ($command.Extent.Text -replace '\\', '/')
-        Assert-Contract (-not $dotSourced.Contains('BackendTestShardTimings')) "The shard policy hard gate must not dot-source the timing library (found in $scanName); timing lives in the report-only balance script."
+        Assert-Contract (-not $dotSourced.Contains('BackendTestShardTimings', [StringComparison]::Ordinal)) "The shard policy hard gate must not dot-source the timing library (found in $scanName); timing lives in the report-only balance script."
     }
 
     # String literals only — the parser hands back the *value* of a literal and never the text of a
@@ -867,9 +866,9 @@ try {
         '-TimingCachePath', $reducedCachePath, '-FallbackEvidencePath', $absentFallback, '-NoRefresh'
     )
     Assert-Contract ($reducedBalance.Passed) 'A shard assembly with no timing observation must stay report-only and exit 0.'
-    Assert-Contract ($reducedBalance.Message.Contains('timing-assembly-missing')) 'Missing timing data must be reported with its structured warning code.'
+    Assert-Contract ($reducedBalance.Message.Contains('timing-assembly-missing', [StringComparison]::Ordinal)) 'Missing timing data must be reported with its structured warning code.'
     Assert-Contract ($reducedBalance.Message.Contains($droppedAssembly)) 'The missing-timing warning must name the assembly it estimated.'
-    Assert-Contract ($reducedBalance.Message.Contains('report-only')) 'The missing-timing warning must say it is report-only.'
+    Assert-Contract ($reducedBalance.Message.Contains('report-only', [StringComparison]::Ordinal)) 'The missing-timing warning must say it is report-only.'
 
     # No timing data at all — the offline / no-token / expired-artifact path — is also report-only.
     $emptyCachePath = Join-Path $timingFixtureRoot 'empty-timings.json'
@@ -880,7 +879,7 @@ try {
         '-TimingCachePath', $emptyCachePath, '-FallbackEvidencePath', $absentFallback, '-NoRefresh'
     )
     Assert-Contract ($emptyBalance.Passed) 'A completely unavailable timing source must still exit 0.'
-    Assert-Contract ($emptyBalance.Message.Contains('timing-source-unavailable')) 'A completely unavailable timing source must be named, not silently estimated.'
+    Assert-Contract ($emptyBalance.Message.Contains('timing-source-unavailable', [StringComparison]::Ordinal)) 'A completely unavailable timing source must be named, not silently estimated.'
 
     # The committed snapshot is the offline fallback. What is asserted here is that the fallback
     # *source* is selected and that the report it produces is structurally complete — one priced row
@@ -904,7 +903,7 @@ try {
         '-NoRefresh'
     )
     Assert-Contract ($fallbackBalance.Passed) 'The balance report must fall back to the committed snapshot without failing.'
-    Assert-Contract ($fallbackBalance.Message.Contains('committed-evidence-snapshot')) 'The balance report must name the fallback timing source it used.'
+    Assert-Contract ($fallbackBalance.Message.Contains('committed-evidence-snapshot', [StringComparison]::Ordinal)) 'The balance report must name the fallback timing source it used.'
     foreach ($shard in $fastShards) {
         $shardRowPattern = "$([regex]::Escape([string] $shard.id)) [0-9,]+ ms over [0-9]+ assemblies \([0-9]+ measured, [0-9]+ estimated\) \[$([regex]::Escape([string] $shard.evidenceLane))\]"
         Assert-Contract ($fallbackBalance.Message -cmatch $shardRowPattern) "The committed-snapshot fallback report must price fast shard '$($shard.id)' with a measured/estimated split."
@@ -932,7 +931,7 @@ try {
     )
     Assert-Contract ($newProjectBalance.Passed) 'Adding a backend test project must not turn the shard balance report red; a coverage gap is report-only by construction.'
     Assert-Contract ($newProjectBalance.Message.Contains($newProjectAssembly)) 'A backend test project with no measurement must be named in a report-only warning rather than silently estimated.'
-    Assert-Contract ($newProjectBalance.Message.Contains('This is report-only.')) 'The coverage-gap warning must say it is report-only.'
+    Assert-Contract ($newProjectBalance.Message.Contains('This is report-only.', [StringComparison]::Ordinal)) 'The coverage-gap warning must say it is report-only.'
 
     # The aggregation口径 itself, offline: two runs' extracted evidence bundles in, one median per
     # assembly out. Also pins the two rules that are easy to get silently wrong — a bundle whose
@@ -976,10 +975,10 @@ try {
     $splitRow = @($aggregated | Where-Object { [string]::Equals([string] $_.assembly, 'split.tests.dll', [StringComparison]::Ordinal) })
     $soloRow = @($aggregated | Where-Object { [string]::Equals([string] $_.assembly, 'solo.tests.dll', [StringComparison]::Ordinal) })
     Assert-Contract ($splitRow.Count -eq 1 -and $soloRow.Count -eq 1) 'Aggregation must produce exactly one row per assembly across runs.'
-    Assert-Contract ([double] $splitRow[0].elapsedMilliseconds -eq 150.0) "An assembly split across two lanes of one run must be summed first, then medianed; got $($splitRow[0].elapsedMilliseconds)."
-    Assert-Contract ([int] $splitRow[0].observationCount -eq 2) 'Two lanes of one run must count as one observation, not two.'
-    Assert-Contract ([double] $soloRow[0].elapsedMilliseconds -eq 2000.0) "Two runs must produce the median of the two values; got $($soloRow[0].elapsedMilliseconds)."
-    Assert-Contract ([int] $soloRow[0].observationCount -eq 2) 'A failed-collection bundle must not become a third observation.'
+    Assert-Contract ((([double] $splitRow[0].elapsedMilliseconds) -eq (150.0))) "An assembly split across two lanes of one run must be summed first, then medianed; got $($splitRow[0].elapsedMilliseconds)."
+    Assert-Contract ((([int] $splitRow[0].observationCount) -eq (2))) 'Two lanes of one run must count as one observation, not two.'
+    Assert-Contract ((([double] $soloRow[0].elapsedMilliseconds) -eq (2000.0))) "Two runs must produce the median of the two values; got $($soloRow[0].elapsedMilliseconds)."
+    Assert-Contract ((([int] $soloRow[0].observationCount) -eq (2))) 'A failed-collection bundle must not become a third observation.'
 
     # (b) Simulate a shard rearrangement and prove the keys survive it.
     #
@@ -1013,7 +1012,7 @@ try {
                 if ($PolicyLaneToHeavyLane.ContainsKey($policyLane)) { [void] $lanes.Add([string] $PolicyLaneToHeavyLane[$policyLane]) }
             }
         }
-        return @($lanes | Sort-Object)
+        return @(Get-NervStringsSorted -Values @($lanes) -Comparer ([StringComparer]::Ordinal))
     }
 
     $rearranged = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -1032,22 +1031,22 @@ try {
 
     # The moved project is the donor project whose assembly owns the multi-lane exclusion.
     $donorExtraLane = @(@(Get-ShardDerivedExcludedTestLanes -Shard $donor -EvidencePolicy $evidencePolicy -PolicyLaneToHeavyLane $policyLaneToHeavyLane) | Where-Object { -not [string]::Equals($_, 'real-postgres', [StringComparison]::Ordinal) })[0]
-    $donorExtraLaneSelectors = @(
+    $donorExtraLaneSelectors = Get-NervStringsSorted -Values @(@(
         foreach ($selector in @(Get-BackendTestShardExcludedSelectors -Shard $donor)) {
             foreach ($match in @(Get-BackendTestShardPolicyIdentityMatches -Selector $selector -Rules @($evidencePolicy.rules))) {
                 if ([string]::Equals([string] $policyLaneToHeavyLane[[string] $match.requiredLane], $donorExtraLane, [StringComparison]::Ordinal)) { $selector }
             }
         }
-    ) | Sort-Object -Unique
+    )) -Comparer ([StringComparer]::Ordinal) -Unique
     Assert-Contract (@($donorExtraLaneSelectors).Count -gt 0) "The rearrangement fixture must find the donor selectors that require heavy lane '$donorExtraLane'."
-    $movedProjects = @(
+    $movedProjects = Get-NervStringsSorted -Values @(@(
         foreach ($project in @($donor.projects)) {
             $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension([string] $project)
             foreach ($selector in @($donorExtraLaneSelectors)) {
                 if (([string] $selector).StartsWith("$assemblyName.", [StringComparison]::Ordinal)) { [string] $project }
             }
         }
-    ) | Sort-Object -Unique
+    )) -Comparer ([StringComparer]::Ordinal) -Unique
     Assert-Contract (@($movedProjects).Count -eq 1) "The rearrangement fixture must resolve heavy lane '$donorExtraLane' to exactly one donor project; got $(@($movedProjects).Count)."
     $movedProject = [string] @($movedProjects)[0]
     $movedAssemblyName = [System.IO.Path]::GetFileNameWithoutExtension($movedProject)
@@ -1073,16 +1072,16 @@ try {
             $fromProperty.Value = @($all | Where-Object { -not $_.StartsWith("$AssemblyName.", [StringComparison]::Ordinal) })
             $toProperty = $ToShard.PSObject.Properties[$propertyName]
             if ($null -eq $toProperty) {
-                $ToShard | Add-Member -NotePropertyName $propertyName -NotePropertyValue (@($moving) | Sort-Object -Unique) -Force
+                $ToShard | Add-Member -NotePropertyName $propertyName -NotePropertyValue (Get-NervStringsSorted -Values @(@($moving)) -Comparer ([StringComparer]::Ordinal) -Unique) -Force
             }
             else {
-                $toProperty.Value = @(@(@($toProperty.Value) | ForEach-Object { [string] $_ }) + $moving) | Sort-Object -Unique
+                $toProperty.Value = Get-NervStringsSorted -Values @(@(@(@($toProperty.Value) | ForEach-Object { [string] $_ }) + $moving)) -Comparer ([StringComparer]::Ordinal) -Unique
             }
         }
     }
 
     $donor.projects = @(@($donor.projects) | Where-Object { -not [string]::Equals([string] $_, $movedProject, [StringComparison]::Ordinal) })
-    $receiver.projects = @(@($receiver.projects) + @($movedProject)) | Sort-Object -Unique
+    $receiver.projects = Get-NervStringsSorted -Values @(@(@($receiver.projects) + @($movedProject))) -Comparer ([StringComparer]::Ordinal) -Unique
     Move-ShardExclusionSelectors -FromShard $donor -ToShard $receiver -AssemblyName $movedAssemblyName
     $donor.excludedTestLanes = @(Get-ShardDerivedExcludedTestLanes -Shard $donor -EvidencePolicy $evidencePolicy -PolicyLaneToHeavyLane $policyLaneToHeavyLane)
     $receiver.excludedTestLanes = @(Get-ShardDerivedExcludedTestLanes -Shard $receiver -EvidencePolicy $evidencePolicy -PolicyLaneToHeavyLane $policyLaneToHeavyLane)
@@ -1127,8 +1126,8 @@ try {
 
     $originalResolution = $keyResolutionByLayout['original']
     $rearrangedResolution = $keyResolutionByLayout['rearranged']
-    $originalKeyText = (@($originalResolution.Keys) | Sort-Object) -join "`n"
-    $rearrangedKeyText = (@($rearrangedResolution.Keys) | Sort-Object) -join "`n"
+    $originalKeyText = (Get-NervStringsSorted -Values @(@($originalResolution.Keys)) -Comparer ([StringComparer]::Ordinal)) -join "`n"
+    $rearrangedKeyText = (Get-NervStringsSorted -Values @(@($rearrangedResolution.Keys)) -Comparer ([StringComparer]::Ordinal)) -join "`n"
     Assert-Contract (@($originalResolution.Keys).Count -gt 0) 'The timing-key stability check must resolve at least one key, otherwise it is vacuous.'
     Assert-Contract ([string]::Equals($originalKeyText, $rearrangedKeyText, [StringComparison]::Ordinal)) 'A shard rearrangement must not change the set of timing keys the layout resolves to.'
     foreach ($timingKey in @($originalResolution.Keys)) {
@@ -1209,7 +1208,7 @@ try {
             }
         }
 
-        return @($keys | Sort-Object -Unique)
+        return @(Get-NervStringsSorted -Values @($keys) -Comparer ([StringComparer]::Ordinal) -Unique)
     }
 
     $policyKeysBefore = @(Get-ShardPolicyKeySet -ShardManifest $manifest -EvidencePolicy $evidencePolicy)
@@ -1407,7 +1406,7 @@ try {
 
         # Project entries in a .slnf are relative to the solution the filter points at, which is
         # backend/Nerv.IIP.sln, so a manifest path is the same string minus its `backend/` prefix.
-        $projects = @(@($Shard.projects) | ForEach-Object { ([string] $_) -replace '^backend/', '' } | Sort-Object -Unique)
+        $projects = @(Get-NervStringsSorted -Values @(@($Shard.projects) | ForEach-Object { ([string] $_) -replace '^backend/', '' }) -Comparer ([StringComparer]::Ordinal) -Unique)
         $fileName = "shard-fixture-{0}-{1}.slnf" -f ([string] $Shard.id), ([Guid]::NewGuid().ToString('N'))
         $filterPath = Join-Path $Directory $fileName
         Set-Content -LiteralPath $filterPath -NoNewline -Value ([pscustomobject]@{
@@ -1441,7 +1440,7 @@ try {
         Set-Content -LiteralPath $underDeclaredManifestPath -NoNewline -Value ($underDeclaredManifest | ConvertTo-Json -Depth 100)
         $underDeclaredGate = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-rearranged-under-declared-lane' -Arguments @('-ManifestPath', $underDeclaredManifestPath)
         Assert-Contract (-not $underDeclaredGate.Passed) 'The rearrangement fixture must actually exercise the excludedTestLanes derivation; a shard that keeps a moved exclusion lane must fail.'
-        Assert-Contract ($underDeclaredGate.Message.Contains('must declare excludedTestLanes')) 'The under-declared control must fail at the excludedTestLanes coupling point, not somewhere else.'
+        Assert-Contract ($underDeclaredGate.Message.Contains('must declare excludedTestLanes', [StringComparison]::Ordinal)) 'The under-declared control must fail at the excludedTestLanes coupling point, not somewhere else.'
     }
     finally {
         foreach ($fixtureFilterPath in $fixtureFilterPaths) { Remove-Item -LiteralPath $fixtureFilterPath -Force -ErrorAction SilentlyContinue }
@@ -1485,7 +1484,7 @@ try {
         )
 
         $violations = @(Get-NervTestEvidenceViolations -Records $records -Policy $EvidencePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux')
-        return @($violations | ForEach-Object { "$([string] $_.code)|$([string] $_.id)" } | Sort-Object)
+        return @(Get-NervStringsSorted -Values @($violations | ForEach-Object { "$([string] $_.code)|$([string] $_.id)" }) -Comparer ([StringComparer]::Ordinal))
     }
 
     $donorLaneVerdicts = @(Get-HardGateVerdicts -Matches $movedIdentities -EvidencePolicy $evidencePolicy -Lane ([string] $donor.evidenceLane))
@@ -1544,9 +1543,8 @@ try {
         $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
         $probePolicy.rules = @(@($probePolicy.rules) + @($QuarantineRule))
         return @(
-            Get-NervTestEvidenceViolations -Records @() -Policy $probePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux' |
-                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" } |
-                Sort-Object
+            Get-NervStringsSorted -Values @(Get-NervTestEvidenceViolations -Records @() -Policy $probePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux' |
+                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" }) -Comparer ([StringComparer]::Ordinal)
         )
     }
 
@@ -1587,9 +1585,8 @@ try {
             }
         )
         return @(
-            Get-NervTestEvidenceViolations -Records $records -Policy $EvidencePolicy -SelectedLanes @($SelectedLane) -RunnerOs 'Linux' |
-                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" } |
-                Sort-Object
+            Get-NervStringsSorted -Values @(Get-NervTestEvidenceViolations -Records $records -Policy $EvidencePolicy -SelectedLanes @($SelectedLane) -RunnerOs 'Linux' |
+                ForEach-Object { "$([string] $_.code)|$([string] $_.id)" }) -Comparer ([StringComparer]::Ordinal)
         )
     }
 
@@ -1670,7 +1667,7 @@ try {
         }
 
         Assert-Contract ($degraded.Passed) 'An unavailable GitHub CLI must leave the timing refresher at exit 0; a timing cache miss is not a repository defect.'
-        Assert-Contract ($degraded.Message.Contains('was not refreshed')) 'The timing refresher must say it did not refresh instead of pretending it did.'
+        Assert-Contract ($degraded.Message.Contains('was not refreshed', [StringComparison]::Ordinal)) 'The timing refresher must say it did not refresh instead of pretending it did.'
         Assert-Contract (-not (Test-Path -LiteralPath $degradedCachePath)) 'A failed refresh must not write a cache file at all, so the previous cache stays authoritative.'
     }
 

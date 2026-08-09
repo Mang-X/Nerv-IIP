@@ -38,10 +38,10 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
 function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
-    $actual = @($Violations | ForEach-Object code | Sort-Object -Unique) -join ','
-    $expected = @($Codes | Sort-Object -Unique) -join ','
+    $actual = @(Get-NervStringsSorted -Values @($Violations | ForEach-Object code) -Comparer ([StringComparer]::Ordinal) -Unique) -join ','
+    $expected = @(Get-NervStringsSorted -Values @($Codes) -Comparer ([StringComparer]::Ordinal) -Unique) -join ','
     $callerLine = (Get-PSCallStack)[1].ScriptLineNumber
-    Assert-True ($actual -ceq $expected) "Violation code set mismatch at line $callerLine. Expected=[$expected] Actual=[$actual]"
+    Assert-True ([string]::Equals([string]($actual), [string]($expected), [StringComparison]::Ordinal)) "Violation code set mismatch at line $callerLine. Expected=[$expected] Actual=[$actual]"
 }
 
 function Invoke-TestPwshScript {
@@ -279,9 +279,9 @@ function Test-NervProductionCompositeKeyByteEvidenceFixture {
     }
 }
 
-Assert-True (-not $collectorSource.Contains('TestOnly')) 'Production collector must expose no test-only authority replacement parameter.'
-Assert-True (-not $baselineGeneratorSource.Contains('TestOnly')) 'Production baseline generator must expose no test-only authority replacement parameter.'
-Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling')) 'Collector governance Writes must declare its owned failure sibling output.'
+Assert-True (-not $collectorSource.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production collector must expose no test-only authority replacement parameter.'
+Assert-True (-not $baselineGeneratorSource.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production baseline generator must expose no test-only authority replacement parameter.'
+Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling', [StringComparison]::Ordinal)) 'Collector governance Writes must declare its owned failure sibling output.'
 Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
 Test-NervProductionCompositeKeyCallsites
 Test-NervProductionCompositeKeyByteEvidenceFixture
@@ -298,7 +298,7 @@ $violations = Test-NervTestEvidencePolicy -Policy $illegal -RepoRoot $repoRoot -
 # The fixture's rule is both illegally quarantined and not closed over a real source skip, so both
 # codes are expected; the set is asserted exactly so a third code could never slip in unnoticed.
 Assert-ViolationSet $violations @('illegal-quarantine', 'unregistered-skip')
-Assert-Equal 'Quarantine requires issue, valid unexpired ISO date, and exit condition.' ($violations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Policy validation must retain its illegal-quarantine detail.'
+Assert-Equal 'Quarantine requires issue, valid unexpired ISO date, and exit condition.' ($violations | Where-Object { [string]::Equals([string]$_.code, [string]('illegal-quarantine'), [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1).message 'Policy validation must retain its illegal-quarantine detail.'
 
 $quarantineBoundaryRule = [pscustomobject]@{
     responsibilityIssue = 'MAN-TEST'
@@ -313,7 +313,7 @@ Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue
 
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 Assert-Equal 40 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
-Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only')) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
+Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
@@ -462,22 +462,22 @@ $run = @{
 }
 $records = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
 Assert-Equal 3 $records.Count 'TRX must yield one record per UnitTestResult.'
-Assert-Equal 1 @($records | Where-Object outcome -eq 'passed').Count 'Passed outcome mismatch.'
-Assert-Equal 1 @($records | Where-Object outcome -eq 'failed').Count 'Failed outcome mismatch.'
-Assert-Equal 1 @($records | Where-Object outcome -eq 'skipped').Count 'NotExecuted must normalize to skipped.'
+Assert-Equal 1 @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Passed outcome mismatch.'
+Assert-Equal 1 @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Failed outcome mismatch.'
+Assert-Equal 1 @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).Count 'NotExecuted must normalize to skipped.'
 Assert-Equal 'backend-shard-1' $records[0].lane 'Shard lane must not alter schema.'
 Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $records[0].assembly 'Assembly must come from UnitTest storage.'
-Assert-Equal 1250.0 ($records | Where-Object outcome -eq 'passed').durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
-Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object outcome -eq 'skipped').skipReason 'Skip reason mismatch.'
+Assert-Equal 1250.0 ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
+Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipReason 'Skip reason mismatch.'
 Assert-Equal 3000.0 $run.trxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
 Assert-Equal 3000.0 $run.trxRuns[0].elapsedMilliseconds 'Per-assembly TRX elapsed time must be retained.'
 Assert-Equal $run.headSha $records[0].headSha 'Branch-head provenance must be retained separately.'
 Assert-Equal $run.testedSha $records[0].testedSha 'Actually-tested checkout provenance must be retained separately.'
-Assert-True (-not ($records[0].PSObject.Properties.Name -contains 'commitSha')) 'Ambiguous commitSha must not remain in the retained record schema.'
+Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($records[0].PSObject.Properties.Name), [StringComparer]::OrdinalIgnoreCase).Contains([string]('commitSha')))) 'Ambiguous commitSha must not remain in the retained record schema.'
 
 $counterMismatchFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) -RunMetadata $run | Out-Null }
-catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters') }
+catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters', [StringComparison]::Ordinal) }
 Assert-True $counterMismatchFailed 'TRX counter/result mismatches must fail closed.'
 
 # Normalized-TRX provenance is an identifier comparison too (#1509). A rewritten TRX carries the head
@@ -496,7 +496,7 @@ try {
     Set-Content -LiteralPath $foldedProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)$softHyphen`" testedSha=`"$($run.testedSha)`" id=`"")
     $foldedProvenanceRejected = $false
     try { Read-NervTrxResults -Path @($foldedProvenanceTrx) -RunMetadata $run.Clone() | Out-Null }
-    catch { $foldedProvenanceRejected = $_.Exception.Message.Contains('Normalized TRX provenance does not match') }
+    catch { $foldedProvenanceRejected = $_.Exception.Message.Contains('Normalized TRX provenance does not match', [StringComparison]::Ordinal) }
     Assert-True $foldedProvenanceRejected 'A persisted head SHA differing by an ignorable character must not be accepted as this run''s provenance; the comparison must be ordinal.'
 }
 finally {
@@ -504,21 +504,21 @@ finally {
 }
 
 $parameterized = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized-results.trx')) -RunMetadata $run
-Assert-Equal 2 @($parameterized.displayName | Sort-Object -Unique).Count 'Parameterized display names must remain distinct.'
-Assert-Equal 2 @($parameterized.testInstanceId | Sort-Object -Unique).Count 'Parameterized instances need stable distinct identities.'
-Assert-Equal 1 @($parameterized.definitionId | Sort-Object -Unique).Count 'Parameterized instances must share their method definition.'
+Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterized.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized display names must remain distinct.'
+Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterized.testInstanceId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized instances need stable distinct identities.'
+Assert-Equal 1 @(Get-NervStringsSorted -Values @($parameterized.definitionId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized instances must share their method definition.'
 Assert-Equal '66666666-6666-6666-6666-666666666611' $parameterized[0].testInstanceId 'Persisted execution identity must survive case-sensitive parameter displays.'
 
 $displayPayload = Read-NervTrxResults -Path @((Join-Path $fixtures 'display-payload-results.trx')) -RunMetadata $run
 Assert-Equal 3 $displayPayload.Count 'Display-payload fixture count mismatch.'
-Assert-Equal 3 @($displayPayload.testInstanceId | Sort-Object -Unique).Count 'Persisted execution IDs must preserve parameterized instance identity.'
+Assert-Equal 3 @(Get-NervStringsSorted -Values @($displayPayload.testInstanceId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Persisted execution IDs must preserve parameterized instance identity.'
 Assert-Equal '77777777-7777-7777-7777-777777777701' $displayPayload[0].testInstanceId 'TRX executionId must be preferred over a derived identity.'
 Assert-Equal 1000 $displayPayload[0].durationTicks 'Duration ticks must retain TRX precision exactly.'
 Assert-Equal 0.1 $displayPayload[0].durationMilliseconds 'Duration milliseconds must be derived reversibly from ticks.'
-Assert-Equal 1 @($displayPayload.testName | Sort-Object -Unique).Count 'Display redaction must not alter exact policy-matching test identity.'
-Assert-True ($displayPayload[0].displayName.Contains('enveloped: True')) 'Safe display parameters must remain visible.'
-Assert-True ($displayPayload[2].displayName.Contains('mode: "POSTGRESQL"')) 'Safe case-sensitive display parameters must survive redaction.'
-Assert-Equal 3 @($displayPayload.displayName | Sort-Object -Unique).Count 'Body redaction digests must preserve instance distinguishability.'
+Assert-Equal 1 @(Get-NervStringsSorted -Values @($displayPayload.testName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Display redaction must not alter exact policy-matching test identity.'
+Assert-True ($displayPayload[0].displayName.Contains('enveloped: True', [StringComparison]::Ordinal)) 'Safe display parameters must remain visible.'
+Assert-True ($displayPayload[2].displayName.Contains('mode: "POSTGRESQL"', [StringComparison]::Ordinal)) 'Safe case-sensitive display parameters must survive redaction.'
+Assert-Equal 3 @(Get-NervStringsSorted -Values @($displayPayload.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Body redaction digests must preserve instance distinguishability.'
 foreach ($record in $displayPayload) {
     Assert-True ($record.displayName -match '(?i)(?:body|requestBody|responseBody):\s*"<redacted-body:[0-9a-f]{16}>"') 'Body-valued display parameters must use the non-reversible marker.'
     foreach ($sentinel in @('org-secret-A','org-secret-B','inner-secret','still-secret','third-secret')) {
@@ -531,16 +531,16 @@ Assert-Equal 'sends(somebody: "safe-value", mode: True)' $boundaryDisplay.text '
 Assert-Equal 0 $boundaryDisplay.redactionCount 'Safe parameter names must not increment redaction count.'
 $nestedDisplay = ConvertTo-NervRetainedDisplayName 'sends(body: {"values":[1,{"text":","}]}, responseBODY: plain-secret, mode: True)'
 Assert-Equal 2 $nestedDisplay.redactionCount 'Nested and multiple unquoted body parameters must both be redacted.'
-Assert-True ($nestedDisplay.text.Contains('mode: True')) 'Multiple body redaction must preserve trailing safe parameters.'
-Assert-True (-not $nestedDisplay.text.Contains('plain-secret')) 'Unquoted response body value must not survive.'
+Assert-True ($nestedDisplay.text.Contains('mode: True', [StringComparison]::Ordinal)) 'Multiple body redaction must preserve trailing safe parameters.'
+Assert-True (-not $nestedDisplay.text.Contains('plain-secret', [StringComparison]::Ordinal)) 'Unquoted response body value must not survive.'
 $sensitiveBodyA = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Alice\",\"password\":\"first\"}")'
 $sensitiveBodyB = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Bob\",\"password\":\"second\"}")'
-Assert-True ($sensitiveBodyA.text -cne $sensitiveBodyB.text) 'Body digests must preserve instance distinction even when generic text redaction would collapse the raw values.'
+Assert-True (-not [string]::Equals([string]($sensitiveBodyA.text), [string]($sensitiveBodyB.text), [StringComparison]::Ordinal)) 'Body digests must preserve instance distinction even when generic text redaction would collapse the raw values.'
 
 $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
-Assert-Equal 'environment-gated' ($records | Where-Object outcome -eq 'skipped').skipClassification 'Matched skip classification must be retained for aggregation.'
-Assert-Equal 'postgres-gated' ($records | Where-Object outcome -eq 'skipped').skipPolicyId 'Matched skip policy entry must be retained for aggregation.'
+Assert-Equal 'environment-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipClassification 'Matched skip classification must be retained for aggregation.'
+Assert-Equal 'postgres-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipPolicyId 'Matched skip policy entry must be retained for aggregation.'
 $summaryRun = $run.Clone()
 $summaryRun.selectedLanes = @('backend')
 $classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
@@ -554,8 +554,8 @@ Assert-Equal 'pass' $classifiedSummary.selectedLaneResults[0].gateResult 'Select
 Assert-Equal 1 @($classifiedSummary.skipReasons).Count 'Summary must retain one exact nonempty skip-reason group.'
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' $classifiedSummary.skipReasons[0].reason 'Summary skip reason value mismatch.'
 Assert-Equal 1 $classifiedSummary.skipReasons[0].count 'Summary skip reason count mismatch.'
-Assert-Equal 1 ($classifiedSummary.skipClassifications | Where-Object classification -eq 'environment-gated').count 'Summary must aggregate matched skip classifications.'
-Assert-Equal 1 ($classifiedSummary.skipPolicies | Where-Object policyId -eq 'postgres-gated').count 'Summary must aggregate matched skip policy entries.'
+Assert-Equal 1 ($classifiedSummary.skipClassifications | Where-Object { [string]::Equals([string]$_.classification, [string]('environment-gated'), [StringComparison]::OrdinalIgnoreCase) }).count 'Summary must aggregate matched skip classifications.'
+Assert-Equal 1 ($classifiedSummary.skipPolicies | Where-Object { [string]::Equals([string]$_.policyId, [string]('postgres-gated'), [StringComparison]::OrdinalIgnoreCase) }).count 'Summary must aggregate matched skip policy entries.'
 
 # Exercise the real summary grouping call site. Restoring the old [string] casts in its composite
 # key selector folds null into empty before the wrapper sees it, merging these two records.
@@ -574,14 +574,14 @@ $combined = Read-NervTrxResults -Path @(
     (Join-Path $fixtures 'connector-results.trx')
 ) -RunMetadata $run
 Assert-Equal 4 $combined.Count 'Multiple TRX files must aggregate.'
-Assert-Equal 2 @($combined.assembly | Sort-Object -Unique).Count 'Assemblies must remain distinct.'
+Assert-Equal 2 @(Get-NervStringsSorted -Values @($combined.assembly) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Assemblies must remain distinct.'
 
 $malformedFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'malformed-results.trx')) -RunMetadata $run | Out-Null }
 catch {
     $malformedFailed = $true
-    Assert-True ($_.Exception.Message.Contains('malformed-results.trx')) 'Malformed diagnostic must name the redacted path.'
-    Assert-True (-not $_.Exception.Message.Contains('must-not-appear')) 'Malformed diagnostic must not include raw XML.'
+    Assert-True ($_.Exception.Message.Contains('malformed-results.trx', [StringComparison]::Ordinal)) 'Malformed diagnostic must name the redacted path.'
+    Assert-True (-not $_.Exception.Message.Contains('must-not-appear', [StringComparison]::Ordinal)) 'Malformed diagnostic must not include raw XML.'
 }
 Assert-True $malformedFailed 'Malformed TRX must fail parsing.'
 
@@ -609,12 +609,12 @@ $violations = Get-NervTestEvidenceViolations -Records $empty -Policy $livePolicy
 Assert-ViolationSet $violations 'zero-execution'
 
 $backendEmptyViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('backend-shard-1') -RunnerOs 'Linux'
-Assert-True (-not (@($backendEmptyViolations | ForEach-Object code) -contains 'zero-execution')) 'Ordinary backend shard zero execution is outside the MAN-661 real-dependency gate.'
+Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($backendEmptyViolations | ForEach-Object code)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('zero-execution')))) 'Ordinary backend shard zero execution is outside the MAN-661 real-dependency gate.'
 $currentShard = @([pscustomobject]@{ lane = 'postgres-shard-1'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
 $baseSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
-Assert-True (-not (@($baseSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A logical base-lane selection must recognize execution from its current physical shard.'
+Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($baseSelectedShardViolations | ForEach-Object code)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('zero-execution')))) 'A logical base-lane selection must recognize execution from its current physical shard.'
 $siblingSelectedShardViolations = Get-NervTestEvidenceViolations -Records $currentShard -Policy $livePolicy -SelectedLanes @('postgres-shard-1', 'postgres-shard-2') -RunnerOs 'Linux'
-Assert-True (-not (@($siblingSelectedShardViolations | ForEach-Object code) -contains 'zero-execution')) 'A single-lane collector must not report an unobserved selected sibling as zero execution.'
+Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($siblingSelectedShardViolations | ForEach-Object code)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('zero-execution')))) 'A single-lane collector must not report an unobserved selected sibling as zero execution.'
 $emptyShardViolations = Get-NervTestEvidenceViolations -Records @() -Policy $livePolicy -SelectedLanes @('postgres-shard-1') -RunnerOs 'Linux'
 Assert-ViolationSet $emptyShardViolations 'zero-execution'
 $otherShard = @([pscustomobject]@{ lane = 'postgres-shard-2'; outcome = 'passed'; testName = 'Fixture.Test'; skipReason = $null })
@@ -641,7 +641,7 @@ $foldedSummaryRun = @{
 }
 # Cloned from a real parsed record so the summary sees the full retained schema; only the lane
 # differs between the probes.
-$passedRecordTemplate = @($records | Where-Object outcome -eq 'passed')[0]
+$passedRecordTemplate = @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) })[0]
 $executedShardRecordSource = $passedRecordTemplate.PSObject.Copy()
 $executedShardRecordSource.lane = 'postgres-shard-1'
 $executedShardRecord = @($executedShardRecordSource)
@@ -704,11 +704,11 @@ $expiredViolations = Test-NervTestEvidencePolicy -Policy $expired -RepoRoot $rep
 Assert-ViolationSet $expiredViolations @('illegal-quarantine', 'unregistered-skip')
 $runtimeExpiredViolations = Get-NervTestEvidenceViolations -Records @() -Policy $expired -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-ViolationSet $runtimeExpiredViolations 'illegal-quarantine'
-Assert-Equal 'Quarantine metadata is missing, invalid, or expired.' ($runtimeExpiredViolations | Where-Object code -eq 'illegal-quarantine' | Select-Object -First 1).message 'Runtime validation must retain its illegal-quarantine detail.'
+Assert-Equal 'Quarantine metadata is missing, invalid, or expired.' ($runtimeExpiredViolations | Where-Object { [string]::Equals([string]$_.code, [string]('illegal-quarantine'), [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1).message 'Runtime validation must retain its illegal-quarantine detail.'
 $runtimeBoundaryPolicy = ($expired | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $runtimeBoundaryPolicy.rules[0].expiresOn = [DateTimeOffset]::UtcNow.AddDays(1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 $runtimeBoundaryViolations = Get-NervTestEvidenceViolations -Records @() -Policy $runtimeBoundaryPolicy -SelectedLanes @('backend') -RunnerOs 'Linux'
-Assert-Equal 0 @($runtimeBoundaryViolations | Where-Object code -eq 'illegal-quarantine').Count 'Runtime validation must accept complete unexpired quarantine metadata.'
+Assert-Equal 0 @($runtimeBoundaryViolations | Where-Object { [string]::Equals([string]$_.code, [string]('illegal-quarantine'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Runtime validation must accept complete unexpired quarantine metadata.'
 $allowedCodes = @('unregistered-skip', 'illegal-quarantine', 'zero-execution')
 Assert-Equal 0 @($expiredViolations | Where-Object { $allowedCodes -notcontains $_.code }).Count 'Evidence layer emitted an unapproved hard-gate code.'
 
@@ -723,7 +723,7 @@ try {
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) {
         Assert-True (Test-Path (Join-Path $artifactRoot $required)) "Missing retained artifact '$required'."
     }
-    $retainedRootFiles = @(Get-ChildItem $artifactRoot -File | ForEach-Object Name | Sort-Object)
+    $retainedRootFiles = @(Get-NervStringsSorted -Values @(Get-ChildItem $artifactRoot -File | ForEach-Object Name) -Comparer ([StringComparer]::Ordinal))
     Assert-Equal 'diagnostics.log,summary.json,summary.md,tests.jsonl' ($retainedRootFiles -join ',') 'Artifact root allowlist must remain unchanged.'
     Assert-True (-not (Test-Path (Join-Path $artifactRoot 'sensitive-results.trx'))) 'Raw source TRX must not be copied into retained evidence.'
     $normalizedTrx = @(Get-ChildItem (Join-Path $artifactRoot 'trx') -Filter '*.trx')
@@ -736,10 +736,10 @@ try {
     $roundTripRun = $run.Clone()
     $roundTrip = Read-NervTrxResults -Path @($normalizedTrx.FullName) -RunMetadata $roundTripRun
     Assert-Equal $sensitiveRecords.Count $roundTrip.Count 'Normalized TRX must round-trip through the parser.'
-    Assert-Equal @($sensitiveRecords | Where-Object outcome -eq 'failed').Count @($roundTrip | Where-Object outcome -eq 'failed').Count 'Round-trip counters must remain valid.'
+    Assert-Equal @($sensitiveRecords | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count @($roundTrip | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Round-trip counters must remain valid.'
     $recoveryRun = $run.Clone(); $recoveryRun.currentTestOutcome = 'success'; $recoveryRun.priorAttemptVerified = $true
     $recoverySummary = New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure'
-    Assert-True ($recoverySummary.attemptClassification -eq 'recovered-after-rerun') 'Verified prior failure and current successful non-empty rerun must be report-only recovery.'
+    Assert-True ([string]::Equals([string]($recoverySummary.attemptClassification), [string]('recovered-after-rerun'), [StringComparison]::OrdinalIgnoreCase)) 'Verified prior failure and current successful non-empty rerun must be report-only recovery.'
     $failedCurrentRun = $recoveryRun.Clone(); $failedCurrentRun.currentTestOutcome = 'failure'
     Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $failedCurrentRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A failed current native test step must never be called recovered.'
     Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records @() -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A zero-execution rerun must never be called recovered.'
@@ -748,10 +748,10 @@ try {
     Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -OutputDirectory $parameterArtifactRoot
     $parameterRoundTripRun = $recoveryRun.Clone()
     $parameterRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
-    Assert-Equal 2 @($parameterRoundTrip.displayName | Sort-Object -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
-    Assert-Equal 1 @($parameterRoundTrip.definitionId | Sort-Object -Unique).Count 'Parameterized definition identity must survive round-trip.'
+    Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterRoundTrip.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
+    Assert-Equal 1 @(Get-NervStringsSorted -Values @($parameterRoundTrip.definitionId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized definition identity must survive round-trip.'
     foreach ($expectedRecord in $parameterized) {
-        Assert-Equal 1 @($parameterRoundTrip | Where-Object testInstanceId -ceq $expectedRecord.testInstanceId).Count 'Parameterized persisted execution IDs must survive normalized TRX round-trip.'
+        Assert-Equal 1 @($parameterRoundTrip | Where-Object { [string]::Equals([string]$_.testInstanceId, [string]($expectedRecord.testInstanceId), [StringComparison]::Ordinal) }).Count 'Parameterized persisted execution IDs must survive normalized TRX round-trip.'
     }
     $displaySummary = New-NervTestEvidenceSummary -Records $displayPayload -RunMetadata $run -Violations @() -Baseline $null -PriorAttemptOutcome $null
     Write-NervTestEvidenceArtifacts -Records $displayPayload -Summary $displaySummary -OutputDirectory $displayPayloadArtifactRoot
@@ -762,14 +762,14 @@ try {
     $displayRoundTripRun = $run.Clone()
     $displayRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $displayPayloadArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $displayRoundTripRun
     foreach ($expectedRecord in $displayPayload) {
-        $actualRecord = @($displayRoundTrip | Where-Object testInstanceId -ceq $expectedRecord.testInstanceId)
+        $actualRecord = @($displayRoundTrip | Where-Object { [string]::Equals([string]$_.testInstanceId, [string]($expectedRecord.testInstanceId), [StringComparison]::Ordinal) })
         Assert-Equal 1 $actualRecord.Count 'Normalized TRX must preserve persisted execution IDs exactly.'
         Assert-Equal $expectedRecord.durationTicks $actualRecord[0].durationTicks 'Normalized TRX must preserve duration ticks exactly.'
         Assert-Equal $expectedRecord.durationMilliseconds $actualRecord[0].durationMilliseconds 'Normalized TRX must preserve duration milliseconds exactly.'
         Assert-Equal $expectedRecord.displayName $actualRecord[0].displayName 'Normalized TRX must preserve the redacted display name exactly.'
         Assert-Equal $expectedRecord.redactionCount $actualRecord[0].redactionCount 'Normalized TRX must preserve the privacy-redaction count exactly.'
     }
-    Assert-True ($summary.baseline.enforcement -eq 'report-only') 'Baseline delta must remain report-only.'
+    Assert-True ([string]::Equals([string]($summary.baseline.enforcement), [string]('report-only'), [StringComparison]::OrdinalIgnoreCase)) 'Baseline delta must remain report-only.'
     $summaryMarkdown = Get-Content (Join-Path $artifactRoot 'summary.md') -Raw
     foreach ($heading in @('## Assemblies', '## Slowest assemblies and tests', '## Skip reasons', 'Baseline source:', 'Privacy redactions:', 'Retained artifact:')) { Assert-True $summaryMarkdown.Contains($heading) "Markdown is missing '$heading'." }
     Write-NervTestEvidenceArtifacts -Records $records -Summary $classifiedSummary -OutputDirectory $classifiedArtifactRoot
@@ -782,8 +782,8 @@ try {
     Assert-Equal 'environment-gated' $classifiedJson.skipPolicies[0].classification 'Retained JSON skip policy classification mismatch.'
     Assert-Equal 1 $classifiedJson.skipPolicies[0].count 'Retained JSON skip policy count mismatch.'
     $classifiedMarkdown = Get-Content (Join-Path $classifiedArtifactRoot 'summary.md') -Raw
-    Assert-True $classifiedMarkdown.Contains('- Set NERV_IIP_TEST_POSTGRES to run the fixture.: 1') 'Markdown must render the exact nonempty skip reason and count.'
-    Assert-True $classifiedMarkdown.Contains('- environment-gated / postgres-gated: 1') 'Markdown must render the exact nonempty skip classification/policy/count.'
+    Assert-True $classifiedMarkdown.Contains('- Set NERV_IIP_TEST_POSTGRES to run the fixture.: 1', [StringComparison]::Ordinal) 'Markdown must render the exact nonempty skip reason and count.'
+    Assert-True $classifiedMarkdown.Contains('- environment-gated / postgres-gated: 1', [StringComparison]::Ordinal) 'Markdown must render the exact nonempty skip classification/policy/count.'
 }
 finally {
     if (Test-Path $artifactRoot) { Remove-Item $artifactRoot -Recurse -Force }
@@ -819,7 +819,7 @@ Assert-Equal '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d' $prCheckout.testedSha 'P
 function New-NervLaneProvenanceFor {
     param([Parameter(Mandatory)] [string[]] $Lanes, [string] $RunnerImage = 'ubuntu24@20260720.247.2', [string] $DotnetSdk = '10.0.302')
     $jobs = Get-NervTestEvidenceLaneJobs
-    return @($Lanes | Sort-Object -Unique | ForEach-Object {
+    return @(Get-NervStringsSorted -Values $Lanes -Comparer ([StringComparer]::Ordinal) -Unique | ForEach-Object {
         [pscustomobject][ordered]@{
             lane = [string]$_
             jobName = if ($jobs.Contains([string]$_)) { [string]$jobs[[string]$_] } else { 'Backend Tests' }
@@ -832,7 +832,7 @@ function New-NervLaneProvenanceFor {
 
 $imported = ConvertFrom-NervDotNetConsoleSummary -Text (Get-Content (Join-Path $fixtures 'github-backend-console.log.txt') -Raw) -RunMetadata $metadata
 Assert-Equal 'project' $imported.granularity 'Console import is project-granularity.'
-Assert-Equal 822000 ($imported.assemblies | Where-Object assembly -eq 'Nerv.IIP.BusinessGateway.Web.Tests.dll').elapsedMilliseconds '13m42s must normalize to milliseconds.'
+Assert-Equal 822000 ($imported.assemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]('Nerv.IIP.BusinessGateway.Web.Tests.dll'), [StringComparison]::OrdinalIgnoreCase) }).elapsedMilliseconds '13m42s must normalize to milliseconds.'
 $baselineA = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 $baselineB = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal ($baselineA | ConvertTo-Json -Depth 100) ($baselineB | ConvertTo-Json -Depth 100) 'Baseline generation must be deterministic.'
@@ -979,7 +979,7 @@ Assert-Equal 'push' $committedBaseline.source.event 'Committed snapshot must com
 Assert-Equal 'main' $committedBaseline.source.headBranch 'Committed snapshot must come from main.'
 Assert-Equal 'success' $committedBaseline.source.conclusion 'Committed snapshot must come from a successful run.'
 Assert-True (@($committedBaseline.assemblies).Count -gt 0) 'Committed snapshot must carry at least one assembly row.'
-Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [double]$_.elapsedMilliseconds -le 0 }).Count 'Committed snapshot must not contain non-positive assembly durations.'
+Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { ((([double]$_.elapsedMilliseconds) -le (0))) }).Count 'Committed snapshot must not contain non-positive assembly durations.'
 Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.assembly) }).Count 'Every committed snapshot row must carry the assembly that is now the comparison key.'
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
@@ -1012,7 +1012,7 @@ try {
                 $summary.jobName = [string] $evidenceLaneJobs[$laneName]
                 $summary.artifactName = "$laneName-evidence"
                 $summary.runnerImage = [string] $laneRunnerImages[$laneName]
-                if ($laneName -ceq $OverrideLane) {
+                if ([string]::Equals([string]($laneName), [string]($OverrideLane), [StringComparison]::Ordinal)) {
                     foreach ($key in $Overrides.Keys) { $summary[$key] = $Overrides[$key] }
                 }
                 , $summary
@@ -1063,23 +1063,23 @@ try {
     foreach ($authorityCase in @('partial-shard-family','wrong-workflow','wrong-job','not-latest','runner-os-mismatch','wrong-resolved-image','wrong-resolved-sdk','lane-image-swapped','single-lane-sdk-forged','forged-tested-sha','latest-attempt-drift','latest-sha-drift','latest-conclusion-drift','latest-event-drift','latest-branch-drift')) {
         $authority = ($authorityTemplate | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable)
         $caseSummaries = @($sourceSummaries | ForEach-Object { $_ | ConvertTo-Json -Depth 20 | ConvertFrom-Json })
-        if ($authorityCase -eq 'partial-shard-family') { $caseSummaries = @($caseSummaries | Where-Object { [string]$_.lane -cne 'backend-shard-3' }) }
-        elseif ($authorityCase -eq 'wrong-workflow') { $authority.run.workflowName = 'Other' }
-        elseif ($authorityCase -eq 'wrong-job') { $authority.run.jobs[0].name = 'Wrong Backend Job' }
-        elseif ($authorityCase -eq 'not-latest') { $authority.latestRuns[0].databaseId = '999' }
-        elseif ($authorityCase -eq 'runner-os-mismatch') { $caseSummaries | ForEach-Object { $_.runnerOs = 'Windows' } }
-        elseif ($authorityCase -eq 'wrong-resolved-image') { $caseSummaries | ForEach-Object { $_.runnerImage = 'ubuntu24@20260720.247.3' } }
-        elseif ($authorityCase -eq 'wrong-resolved-sdk') { $caseSummaries | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
+        if ([string]::Equals([string]($authorityCase), [string]('partial-shard-family'), [StringComparison]::OrdinalIgnoreCase)) { $caseSummaries = @($caseSummaries | Where-Object { -not [string]::Equals([string]([string]$_.lane), [string]('backend-shard-3'), [StringComparison]::Ordinal) }) }
+        elseif ([string]::Equals([string]($authorityCase), [string]('wrong-workflow'), [StringComparison]::OrdinalIgnoreCase)) { $authority.run.workflowName = 'Other' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('wrong-job'), [StringComparison]::OrdinalIgnoreCase)) { $authority.run.jobs[0].name = 'Wrong Backend Job' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('not-latest'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].databaseId = '999' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('runner-os-mismatch'), [StringComparison]::OrdinalIgnoreCase)) { $caseSummaries | ForEach-Object { $_.runnerOs = 'Windows' } }
+        elseif ([string]::Equals([string]($authorityCase), [string]('wrong-resolved-image'), [StringComparison]::OrdinalIgnoreCase)) { $caseSummaries | ForEach-Object { $_.runnerImage = 'ubuntu24@20260720.247.3' } }
+        elseif ([string]::Equals([string]($authorityCase), [string]('wrong-resolved-sdk'), [StringComparison]::OrdinalIgnoreCase)) { $caseSummaries | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
         # Dropping cross-lane equality must not let one lane borrow a sibling's image. The swapped value
         # is genuinely present in this very run, so only the per-lane job-log comparison can reject it.
-        elseif ($authorityCase -eq 'lane-image-swapped') { @($caseSummaries | Where-Object { [string]$_.lane -ceq 'backend-shard-1' }) | ForEach-Object { $_.runnerImage = [string]$laneRunnerImages['backend-shard-2'] } }
-        elseif ($authorityCase -eq 'single-lane-sdk-forged') { @($caseSummaries | Where-Object { [string]$_.lane -ceq 'connector-host' }) | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
-        elseif ($authorityCase -eq 'forged-tested-sha') { $caseSummaries | ForEach-Object { $_.testedSha = '1123456789abcdef0123456789abcdef01234567' } }
-        elseif ($authorityCase -eq 'latest-attempt-drift') { $authority.latestRuns[0].attempt = 2 }
-        elseif ($authorityCase -eq 'latest-sha-drift') { $authority.latestRuns[0].headSha = '1123456789abcdef0123456789abcdef01234567' }
-        elseif ($authorityCase -eq 'latest-conclusion-drift') { $authority.latestRuns[0].conclusion = 'failure' }
-        elseif ($authorityCase -eq 'latest-event-drift') { $authority.latestRuns[0].event = 'pull_request' }
-        elseif ($authorityCase -eq 'latest-branch-drift') { $authority.latestRuns[0].headBranch = 'feature' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('lane-image-swapped'), [StringComparison]::OrdinalIgnoreCase)) { @($caseSummaries | Where-Object { [string]::Equals([string]([string]$_.lane), [string]('backend-shard-1'), [StringComparison]::Ordinal) }) | ForEach-Object { $_.runnerImage = [string]$laneRunnerImages['backend-shard-2'] } }
+        elseif ([string]::Equals([string]($authorityCase), [string]('single-lane-sdk-forged'), [StringComparison]::OrdinalIgnoreCase)) { @($caseSummaries | Where-Object { [string]::Equals([string]([string]$_.lane), [string]('connector-host'), [StringComparison]::Ordinal) }) | ForEach-Object { $_.dotnetSdk = '10.0.303' } }
+        elseif ([string]::Equals([string]($authorityCase), [string]('forged-tested-sha'), [StringComparison]::OrdinalIgnoreCase)) { $caseSummaries | ForEach-Object { $_.testedSha = '1123456789abcdef0123456789abcdef01234567' } }
+        elseif ([string]::Equals([string]($authorityCase), [string]('latest-attempt-drift'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].attempt = 2 }
+        elseif ([string]::Equals([string]($authorityCase), [string]('latest-sha-drift'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].headSha = '1123456789abcdef0123456789abcdef01234567' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('latest-conclusion-drift'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].conclusion = 'failure' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('latest-event-drift'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].event = 'pull_request' }
+        elseif ([string]::Equals([string]($authorityCase), [string]('latest-branch-drift'), [StringComparison]::OrdinalIgnoreCase)) { $authority.latestRuns[0].headBranch = 'feature' }
         $authorityFailed = $false
         try { Assert-NervEvidenceRootAuthority -SourceSummaries $caseSummaries -Run ([pscustomobject]$authority.run) -LatestRuns @([pscustomobject]$authority.latestRuns[0]) -JobLogs $authority.jobLogs } catch { $authorityFailed = $true }
         Assert-True $authorityFailed "Actions authority case '$authorityCase' must fail."
@@ -1094,7 +1094,7 @@ try {
     # (1) A qualifying run whose jobs landed on different runner images is ACCEPTED.
     #     Weakening guard: put 'runnerOs'/'runnerImage'/'dotnetSdk' back into the run-identity list and
     #     this fails with "Evidence summaries have mixed provenance field '<f>'".
-    $mixedImages = @($sourceSummaries | ForEach-Object { [string]$_.runnerImage } | Sort-Object -Unique)
+    $mixedImages = @(Get-NervStringsSorted -Values @($sourceSummaries | ForEach-Object { [string]$_.runnerImage }) -Comparer ([StringComparer]::Ordinal) -Unique)
     Assert-True ($mixedImages.Count -gt 1) 'The mixed-environment fixture must actually span more than one runner image.'
     $mixedIdentity = Assert-NervEvidenceSourceSummaries -SourceSummaries $sourceSummaries
     Assert-Equal '101' $mixedIdentity.workflowRunId 'A mixed-runner-image run must still resolve one run identity.'
@@ -1102,7 +1102,7 @@ try {
     # The returned identity is narrowed on purpose: no caller can read a per-job field off it and
     # promote one lane's machine to a run-wide fact. Reintroducing those properties fails this.
     foreach ($leakedField in (Get-NervEvidenceLaneEnvironmentFields)) {
-        Assert-True (-not ($mixedIdentity.PSObject.Properties.Name -ccontains $leakedField)) "Run identity must not expose per-job environment field '$leakedField'."
+        Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($mixedIdentity.PSObject.Properties.Name), [StringComparer]::Ordinal).Contains([string]($leakedField)))) "Run identity must not expose per-job environment field '$leakedField'."
     }
     # Both memberships are pinned to a LITERAL list, not to the implementation's own list. Deriving
     # the expectation from `Get-NervEvidenceRunIdentityFields` would let a field be deleted from the
@@ -1115,17 +1115,14 @@ try {
     # (2) Run identity stays byte-for-byte equal across lanes. One mismatching lane is still REJECTED,
     #     field by field, with the exact message — so moving any field out of the identity set fails here.
     foreach ($identityField in (Get-NervEvidenceRunIdentityFields)) {
-        $driftValue = switch ($identityField) {
-            'workflowRunId' { '102' }
-            'runAttempt' { 2 }
-            'headSha' { '1123456789abcdef0123456789abcdef01234567' }
-            'testedSha' { '1123456789abcdef0123456789abcdef01234567' }
-            'repository' { 'Mang-X/Other' }
-            'event' { 'pull_request' }
-            'headBranch' { 'feature' }
-            'sourceUrl' { 'https://github.com/Mang-X/Nerv-IIP/actions/runs/102' }
-        }
-        $driftSummaries = @(New-NervEvidenceSummarySet -Overrides @{ $identityField = $driftValue } -OverrideLane 'connector-host' | ForEach-Object { [pscustomobject]$_ })
+        $driftValue = if ([string]::Equals([string]($identityField), [string]('workflowRunId'), [StringComparison]::OrdinalIgnoreCase)) { '102' }
+        elseif ([string]::Equals([string]($identityField), [string]('runAttempt'), [StringComparison]::OrdinalIgnoreCase)) { 2 }
+        elseif ([string]::Equals([string]($identityField), [string]('headSha'), [StringComparison]::OrdinalIgnoreCase)) { '1123456789abcdef0123456789abcdef01234567' }
+        elseif ([string]::Equals([string]($identityField), [string]('testedSha'), [StringComparison]::OrdinalIgnoreCase)) { '1123456789abcdef0123456789abcdef01234567' }
+        elseif ([string]::Equals([string]($identityField), [string]('repository'), [StringComparison]::OrdinalIgnoreCase)) { 'Mang-X/Other' }
+        elseif ([string]::Equals([string]($identityField), [string]('event'), [StringComparison]::OrdinalIgnoreCase)) { 'pull_request' }
+        elseif ([string]::Equals([string]($identityField), [string]('headBranch'), [StringComparison]::OrdinalIgnoreCase)) { 'feature' }
+        elseif ([string]::Equals([string]($identityField), [string]('sourceUrl'), [StringComparison]::OrdinalIgnoreCase)) { 'https://github.com/Mang-X/Nerv-IIP/actions/runs/102' }        $driftSummaries = @(New-NervEvidenceSummarySet -Overrides @{ $identityField = $driftValue } -OverrideLane 'connector-host' | ForEach-Object { [pscustomobject]$_ })
         $driftMessage = $null
         try { Assert-NervEvidenceSourceSummaries -SourceSummaries $driftSummaries | Out-Null } catch { $driftMessage = [string]$_.Exception.Message }
         Assert-Equal "Evidence summaries have mixed provenance field '$identityField'." $driftMessage "Mixed run identity field '$identityField' must be rejected by the cross-lane equality rule."
@@ -1140,15 +1137,15 @@ try {
         sourceKind = 'trx-evidence'; repository = 'Mang-X/Nerv-IIP'; workflowRunId = '101'; runAttempt = 1; jobId = ''
         headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'
         sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
-        laneProvenance = $laneProvenance; selectedLanes = @($sourceSummaries.lane | Sort-Object -Unique); generatorCommand = 'fixture'
+        laneProvenance = $laneProvenance; selectedLanes = @(Get-NervStringsSorted -Values @($sourceSummaries.lane) -Comparer ([StringComparer]::Ordinal) -Unique); generatorCommand = 'fixture'
     } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z')
     Assert-Equal 2 $provenanceBaseline.schemaVersion 'Per-lane provenance is schema 2; a schema-1 file carries the misleading flat trio instead.'
     foreach ($flatField in (Get-NervEvidenceLaneEnvironmentFields)) {
-        Assert-True (-not ($provenanceBaseline.source.PSObject.Properties.Name -ccontains $flatField)) "Baseline source must not carry a run-wide '$flatField'; one lane's value is not the run's."
+        Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($provenanceBaseline.source.PSObject.Properties.Name), [StringComparer]::Ordinal).Contains([string]($flatField)))) "Baseline source must not carry a run-wide '$flatField'; one lane's value is not the run's."
     }
     Assert-Equal @($sourceSummaries).Count @($provenanceBaseline.source.laneProvenance).Count 'Baseline must record one runner-environment row per evidence lane.'
     foreach ($expectedRow in $laneProvenance) {
-        $actualRow = @($provenanceBaseline.source.laneProvenance | Where-Object { [string]$_.lane -ceq [string]$expectedRow.lane })
+        $actualRow = @($provenanceBaseline.source.laneProvenance | Where-Object { [string]::Equals([string]([string]$_.lane), [string]([string]$expectedRow.lane), [StringComparison]::Ordinal) })
         Assert-Equal 1 $actualRow.Count "Baseline lane provenance must contain exactly one row for lane '$($expectedRow.lane)'."
         Assert-Equal ([string]$expectedRow.runnerImage) ([string]$actualRow[0].runnerImage) "Baseline lane provenance must record lane '$($expectedRow.lane)' own runner image."
         Assert-Equal ([string]$expectedRow.jobName) ([string]$actualRow[0].jobName) "Baseline lane provenance must bind lane '$($expectedRow.lane)' to its own job name."
@@ -1156,7 +1153,7 @@ try {
         Assert-Equal ([string]$expectedRow.runnerOs) ([string]$actualRow[0].runnerOs) "Baseline lane provenance must record lane '$($expectedRow.lane)' own runner OS."
     }
     # Both observed images survive into the baseline: collapsing the rows to a single value fails here.
-    Assert-Equal ($mixedImages -join ',') ((@($provenanceBaseline.source.laneProvenance | ForEach-Object { [string]$_.runnerImage }) | Sort-Object -Unique) -join ',') 'Baseline must preserve every distinct runner image the run actually used.'
+    Assert-Equal ($mixedImages -join ',') ((Get-NervStringsSorted -Values @(@($provenanceBaseline.source.laneProvenance | ForEach-Object { [string]$_.runnerImage })) -Comparer ([StringComparer]::Ordinal) -Unique) -join ',') 'Baseline must preserve every distinct runner image the run actually used.'
     # "Per lane" only means something if the rows cover the lanes the baseline actually records.
     # A partial record is worse than the old flat trio: it reads as complete while certifying one
     # lane's machine for five lanes of timing — literally the failure this whole split exists to
@@ -1164,14 +1161,14 @@ try {
     $provenanceSummaries = @($sourceSummaries | ForEach-Object {
         [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$_.lane; assembly = 'Shared.Tests.dll'; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 10 }) }
     })
-    $recordedLaneList = (@($sourceSummaries | ForEach-Object { [string]$_.lane } | Sort-Object -Unique) -join ', ')
+    $recordedLaneList = (@(Get-NervStringsSorted -Values @($sourceSummaries | ForEach-Object { [string]$_.lane }) -Comparer ([StringComparer]::Ordinal) -Unique) -join ', ')
     function Invoke-NervProvenanceBaseline {
         param([Parameter(Mandatory)] [object[]] $LaneProvenance, [object[]] $Summaries = $provenanceSummaries)
         New-NervTestEvidenceBaseline -Summaries $Summaries -SourceMetadata @{
             sourceKind = 'trx-evidence'; repository = 'Mang-X/Nerv-IIP'; workflowRunId = '101'; runAttempt = 1; jobId = ''
             headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'
             sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
-            laneProvenance = $LaneProvenance; selectedLanes = @($sourceSummaries.lane | Sort-Object -Unique); generatorCommand = 'fixture'
+            laneProvenance = $LaneProvenance; selectedLanes = @(Get-NervStringsSorted -Values @($sourceSummaries.lane) -Comparer ([StringComparer]::Ordinal) -Unique); generatorCommand = 'fixture'
         } -GeneratedAtUtc ([DateTimeOffset]'2026-08-07T00:00:00Z')
     }
     # Baseline for the negative cases: the full, correct row set is accepted.
@@ -1243,8 +1240,8 @@ try {
         'Privacy redactions: 0', 'Baseline comparison: unavailable (incompatible-granularity-or-duration-metric)', 'Assembly backend/Nerv.IIP.Connector.Sample.Tests.dll: 20ms elapsed',
         'Test Fixture.ConnectorTests.connector: 10ms', '## Skip reasons', '- None.'
     )) { Assert-True $successMarkdown.Contains($exact) "Job Summary is missing exact value '$exact'." }
-    Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%')) 'Unavailable baseline comparison must not render empty metric placeholders.'
-    Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)')) 'Each incompatible assembly comparison must render its unavailable reason.'
+    Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%', [StringComparison]::Ordinal)) 'Unavailable baseline comparison must not render empty metric placeholders.'
+    Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)', [StringComparison]::Ordinal)) 'Each incompatible assembly comparison must render its unavailable reason.'
 
     # Field-level assertions on the committed snapshot cannot show the one property that matters:
     # that the collector can actually consume it. So run the real collector end to end with
@@ -1252,8 +1249,8 @@ try {
     # assembly the snapshot covers — deliberately reported from a **different** shard lane than the
     # one the snapshot recorded it under (#1507). This is the whole-pipeline version of the unit
     # assertion above: if the lane ever re-enters the comparison key, this end-to-end case goes red.
-    $committedRow = @($committedBaseline.assemblies | Sort-Object lane, assembly | Select-Object -First 1)[0]
-    $committedLane = @((Get-NervTestEvidenceLaneJobs).Keys | Sort-Object | Where-Object { -not [string]::Equals([string]$_, [string]$committedRow.lane, [StringComparison]::Ordinal) })[0]
+    $committedRow = @(Get-NervItemsSortedByString -Items @($committedBaseline.assemblies) -KeySelector { param($row) Get-NervStringCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } -Comparer ([StringComparer]::Ordinal) | Select-Object -First 1)[0]
+    $committedLane = @(Get-NervStringsSorted -Values @((Get-NervTestEvidenceLaneJobs).Keys) -Comparer ([StringComparer]::Ordinal) | Where-Object { -not [string]::Equals([string]$_, [string]$committedRow.lane, [StringComparison]::Ordinal) })[0]
     Assert-True (-not [string]::IsNullOrWhiteSpace($committedLane)) 'The committed-snapshot collector case needs a second authenticated lane to report from.'
     $committedAssembly = [string]$committedRow.assembly
     $committedRaw = Join-Path $collectorRoot 'committed-baseline-raw'
@@ -1281,11 +1278,11 @@ try {
     $committedSummary = Get-Content (Join-Path $committedOut 'summary.json') -Raw | ConvertFrom-Json
     Assert-True ([bool]$committedSummary.baseline.available) "Committed baseline must be consumable by the collector for lane '$committedLane'."
     Assert-Equal $null $committedSummary.baseline.unavailableReason 'Collector comparison against the committed baseline must not report an unavailable reason.'
-    $committedDelta = @($committedSummary.baseline.assemblies | Where-Object { [string]$_.assembly -ceq $committedAssembly })
+    $committedDelta = @($committedSummary.baseline.assemblies | Where-Object { [string]::Equals([string]([string]$_.assembly), [string]($committedAssembly), [StringComparison]::Ordinal) })
     Assert-Equal 1 $committedDelta.Count "Collector must emit exactly one comparison row for '$committedAssembly'."
     Assert-True ([bool]$committedDelta[0].available) 'The comparison row backed by the committed baseline must be available.'
     Assert-Equal ([double]$committedRow.elapsedMilliseconds) ([double]$committedDelta[0].baselineDurationMilliseconds) 'Collector must compare against the committed baseline duration verbatim.'
-    Assert-True ((Get-Content (Join-Path $committedOut 'summary.md') -Raw).Contains('Baseline comparison: available')) 'Job Summary must render the committed baseline comparison as available.'
+    Assert-True ((Get-Content (Join-Path $committedOut 'summary.md') -Raw).Contains('Baseline comparison: available', [StringComparison]::Ordinal)) 'Job Summary must render the committed baseline comparison as available.'
 
     foreach ($adversarial in @(
         @{ Name = 'identity'; Lane = 'Authorization=Bearer lane-secret'; Selected = 'backend'; Run = 'Authorization=Bearer run-secret'; Repository = 'Authorization=Bearer repo-secret'; Job = 'Authorization=Bearer job-secret' },
@@ -1312,7 +1309,7 @@ try {
     Assert-Equal 'preserve-me' (Get-Content (Join-Path $conflictOut 'unrelated.txt') -Raw) 'Writer conflict must not overwrite unrelated data.'
     $conflictEvidencePath = ((Get-Content $conflictManifest -Raw).Trim() -replace '^evidence-path=', '')
     Assert-True ($conflictEvidencePath -ne $conflictOut -and (Test-Path (Join-Path $conflictEvidencePath 'summary.json'))) 'Writer conflict must publish an owned failure sibling selected for workflow upload.'
-    Assert-True ((Get-Content $conflictStep -Raw).Contains('evidence-collection-failed')) 'Writer conflict must publish Step Summary diagnostics.'
+    Assert-True ((Get-Content $conflictStep -Raw).Contains('evidence-collection-failed', [StringComparison]::Ordinal)) 'Writer conflict must publish Step Summary diagnostics.'
 
     foreach ($failureCase in @(
         @{ Name = 'missing'; Results = (Join-Path $collectorRoot 'does-not-exist'); Prepare = $false },
@@ -1320,7 +1317,7 @@ try {
         @{ Name = 'malformed'; Results = (Join-Path $collectorRoot 'malformed-raw'); Prepare = $true }
     )) {
         if ($failureCase.Prepare) { [IO.Directory]::CreateDirectory($failureCase.Results) | Out-Null }
-        if ($failureCase.Name -eq 'malformed') { Copy-Item (Join-Path $fixtures 'malformed-results.trx') $failureCase.Results }
+        if ([string]::Equals([string]($failureCase.Name), [string]('malformed'), [StringComparison]::OrdinalIgnoreCase)) { Copy-Item (Join-Path $fixtures 'malformed-results.trx') $failureCase.Results }
         $failureOut = Join-Path $collectorRoot "$($failureCase.Name)-out"
         $failureSummary = Join-Path $collectorRoot "$($failureCase.Name)-step.md"
         $caseFailed = $false
@@ -1346,7 +1343,7 @@ try {
     Assert-True $badFailed 'Unregistered runtime skip must exit nonzero.'
     Assert-True (Test-Path (Join-Path $collectorRoot 'bad/summary.json')) 'Violation collection must retain its summary.'
     $badRetained = [string]::Join("`n", @(Get-ChildItem (Join-Path $collectorRoot 'bad') -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
-    Assert-True (-not $badRetained.Contains('unregistered-secret')) 'Unregistered skip reasons must be omitted from every retained format.'
+    Assert-True (-not $badRetained.Contains('unregistered-secret', [StringComparison]::Ordinal)) 'Unregistered skip reasons must be omitted from every retained format.'
 
     $postgresRaw = Join-Path $collectorRoot 'postgres-raw'
     [IO.Directory]::CreateDirectory($postgresRaw) | Out-Null
@@ -1361,7 +1358,7 @@ try {
     }
     catch { $postgresFailed = $true }
     Assert-True $postgresFailed 'All-skipped real dependency lane must exit nonzero.'
-    Assert-True ((Get-Content (Join-Path $collectorRoot 'postgres/summary.json') -Raw).Contains('zero-execution')) 'Zero-execution summary is missing.'
+    Assert-True ((Get-Content (Join-Path $collectorRoot 'postgres/summary.json') -Raw).Contains('zero-execution', [StringComparison]::Ordinal)) 'Zero-execution summary is missing.'
 
     $rerunRaw = Join-Path $collectorRoot 'rerun-raw'
     [IO.Directory]::CreateDirectory($rerunRaw) | Out-Null
@@ -1372,7 +1369,7 @@ try {
         '-OutputDirectory', $rerunOut, '-WorkflowRunId', 'fixture-rerun', '-RunAttempt', '2',
         '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '89abcdef0123456789abcdef0123456789abcdef', '-RunnerOs', 'Linux', '-CurrentTestOutcome', 'success'
     ) | Out-Null
-    Assert-True ((Get-Content (Join-Path $rerunOut 'summary.md') -Raw).Contains('- Attempt: rerun ')) 'A rerun without authenticated GitHub evidence must not certify recovery.'
+    Assert-True ((Get-Content (Join-Path $rerunOut 'summary.md') -Raw).Contains('- Attempt: rerun ', [StringComparison]::Ordinal)) 'A rerun without authenticated GitHub evidence must not certify recovery.'
     $priorRun = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }
     $priorJobs = @([pscustomobject]@{ name = 'Backend Tests - Platform'; run_attempt = 1; conclusion = 'failure' })
     $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend-shard-2 -JobName 'Backend Tests - Platform'
@@ -1387,7 +1384,7 @@ try {
         @{ Name = 'nonfailure'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests - Platform'; run_attempt = 1; conclusion = 'success' }); JobName = 'Backend Tests - Platform' },
         @{ Name = 'aggregate-cannot-certify-a-lane'; Run = $priorRun; Jobs = @([pscustomobject]@{ name = 'Backend Tests'; run_attempt = 1; conclusion = 'failure' }); JobName = 'Backend Tests' }
     )) {
-        $invalidLane = if ($invalidPrior.Name -ceq 'aggregate-cannot-certify-a-lane') { 'backend' } else { 'backend-shard-2' }
+        $invalidLane = if ([string]::Equals([string]($invalidPrior.Name), [string]('aggregate-cannot-certify-a-lane'), [StringComparison]::Ordinal)) { 'backend' } else { 'backend-shard-2' }
         $invalidAuthority = Resolve-NervPriorAttemptAuthority -Run $invalidPrior.Run -Jobs $invalidPrior.Jobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane $invalidLane -JobName $invalidPrior.JobName
         Assert-True (-not $invalidAuthority.verified) "Prior-attempt authority case '$($invalidPrior.Name)' must fail closed."
     }
@@ -1400,44 +1397,44 @@ finally {
 $workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
 $compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
-if (-not $collectorSource.Contains('#   Category: check, generate')) { $reviewWiringGaps.Add('collector composite category') }
-if (-not $workflow.Contains('- name: Run test evidence contract tests') -or -not $workflow.Contains('run: ./scripts/tests/test-evidence.Tests.ps1')) { $reviewWiringGaps.Add('Script Governance CI runner') }
-if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1')) { $reviewWiringGaps.Add('compat-fast runner') }
-if ($workflow.Contains('-HeadBranch ${{ github.head_ref || github.ref_name }}')) { $reviewWiringGaps.Add('direct HeadBranch expression interpolation') }
-if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}') -or -not $workflow.Contains('-HeadBranch $env:HEAD_BRANCH')) { $reviewWiringGaps.Add('HeadBranch environment transport') }
+if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
+if (-not $workflow.Contains('- name: Run test evidence contract tests', [StringComparison]::Ordinal) -or -not $workflow.Contains('run: ./scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('Script Governance CI runner') }
+if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('compat-fast runner') }
+if ($workflow.Contains('-HeadBranch ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('direct HeadBranch expression interpolation') }
+if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal) -or -not $workflow.Contains('-HeadBranch $env:HEAD_BRANCH', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('HeadBranch environment transport') }
 Assert-Equal 0 $reviewWiringGaps.Count "Review wiring gaps remain: $([string]::Join(', ', $reviewWiringGaps))"
-Assert-True ($workflow.Contains('actions: read')) 'Rerun lookup needs read-only Actions permission.'
-Assert-True ($workflow.Contains('GH_TOKEN: ${{ github.token }}')) 'Rerun lookup must receive the read-only workflow token.'
-Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.shard-tests.outcome }}')) 'Backend shard native test outcome must flow into rerun classification.'
-Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}')) 'Connector native test outcome must flow into rerun classification.'
-Assert-True (-not $workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}')) 'The shard aggregate runs no tests and must not certify an outcome.'
-Assert-True ($workflow.Contains('dotnet-sdk=$(dotnet --version)')) 'Evidence provenance must resolve the actual SDK version.'
-Assert-True ($workflow.Contains('$testedSha = (git rev-parse HEAD).Trim()')) 'Evidence provenance must resolve the actual checked-out commit.'
-Assert-True ($workflow.Contains('Write-Host "tested-sha=$testedSha"')) 'The tested SHA must be independently recoverable from authoritative job logs.'
-Assert-True ($workflow.Contains('-HeadSha ${{ github.event.pull_request.head.sha || github.sha }}')) 'PR branch-head provenance must not use the synthetic merge SHA.'
-Assert-True ($workflow.Contains('-TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}')) 'Backend shard tested-checkout provenance must flow from git.'
-Assert-True ($workflow.Contains('-TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}')) 'Connector tested-checkout provenance must flow from git.'
-Assert-True (-not $workflow.Contains('-CommitSha')) 'Ambiguous commit SHA workflow input must be removed.'
-Assert-True (-not $workflow.Contains('TestOnly')) 'Production workflow must not use any test-only authority seam.'
-Assert-True ($workflow.Contains('outputs.evidence-path')) 'Workflow upload must use the collector-selected owned evidence path.'
-Assert-True (-not $workflow.Contains('continue-on-error')) 'MAN-661 forbids continue-on-error.'
-Assert-True ($workflow.Contains('--logger trx')) 'Connector Host must emit TRX.'
-Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"")) 'Backend shards must emit uniquely prefixed TRX.'
-Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1')) 'CI must use the governed collector.'
-Assert-True ($workflow.Contains('if: always()')) 'Collection/upload must run after failures.'
+Assert-True ($workflow.Contains('actions: read', [StringComparison]::Ordinal)) 'Rerun lookup needs read-only Actions permission.'
+Assert-True ($workflow.Contains('GH_TOKEN: ${{ github.token }}', [StringComparison]::Ordinal)) 'Rerun lookup must receive the read-only workflow token.'
+Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.shard-tests.outcome }}', [StringComparison]::Ordinal)) 'Backend shard native test outcome must flow into rerun classification.'
+Assert-True ($workflow.Contains('-CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}', [StringComparison]::Ordinal)) 'Connector native test outcome must flow into rerun classification.'
+Assert-True (-not $workflow.Contains('-CurrentTestOutcome ${{ steps.backend-tests.outcome }}', [StringComparison]::Ordinal)) 'The shard aggregate runs no tests and must not certify an outcome.'
+Assert-True ($workflow.Contains('dotnet-sdk=$(dotnet --version)', [StringComparison]::Ordinal)) 'Evidence provenance must resolve the actual SDK version.'
+Assert-True ($workflow.Contains('$testedSha = (git rev-parse HEAD).Trim()', [StringComparison]::Ordinal)) 'Evidence provenance must resolve the actual checked-out commit.'
+Assert-True ($workflow.Contains('Write-Host "tested-sha=$testedSha"', [StringComparison]::Ordinal)) 'The tested SHA must be independently recoverable from authoritative job logs.'
+Assert-True ($workflow.Contains('-HeadSha ${{ github.event.pull_request.head.sha || github.sha }}', [StringComparison]::Ordinal)) 'PR branch-head provenance must not use the synthetic merge SHA.'
+Assert-True ($workflow.Contains('-TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}', [StringComparison]::Ordinal)) 'Backend shard tested-checkout provenance must flow from git.'
+Assert-True ($workflow.Contains('-TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}', [StringComparison]::Ordinal)) 'Connector tested-checkout provenance must flow from git.'
+Assert-True (-not $workflow.Contains('-CommitSha', [StringComparison]::Ordinal)) 'Ambiguous commit SHA workflow input must be removed.'
+Assert-True (-not $workflow.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production workflow must not use any test-only authority seam.'
+Assert-True ($workflow.Contains('outputs.evidence-path', [StringComparison]::Ordinal)) 'Workflow upload must use the collector-selected owned evidence path.'
+Assert-True (-not $workflow.Contains('continue-on-error', [StringComparison]::Ordinal)) 'MAN-661 forbids continue-on-error.'
+Assert-True ($workflow.Contains('--logger trx', [StringComparison]::Ordinal)) 'Connector Host must emit TRX.'
+Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"", [StringComparison]::Ordinal)) 'Backend shards must emit uniquely prefixed TRX.'
+Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal)) 'CI must use the governed collector.'
+Assert-True ($workflow.Contains('if: always()', [StringComparison]::Ordinal)) 'Collection/upload must run after failures.'
 foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3', 'backend-shard-4')) {
-    Assert-True ($workflow.Contains("test-evidence-$shardLane-`${{ github.run_id }}-`${{ github.run_attempt }}")) "Backend shard artifact identity mismatch for '$shardLane'."
-    Assert-True ($workflow.Contains("-Lane $shardLane")) "Backend shard lane '$shardLane' must be collected."
-    Assert-True ($workflow.Contains("-SelectedLanes $shardLane")) "Backend shard lane '$shardLane' must select only itself."
+    Assert-True ($workflow.Contains("test-evidence-$shardLane-`${{ github.run_id }}-`${{ github.run_attempt }}", [StringComparison]::Ordinal)) "Backend shard artifact identity mismatch for '$shardLane'."
+    Assert-True ($workflow.Contains("-Lane $shardLane", [StringComparison]::Ordinal)) "Backend shard lane '$shardLane' must be collected."
+    Assert-True ($workflow.Contains("-SelectedLanes $shardLane", [StringComparison]::Ordinal)) "Backend shard lane '$shardLane' must select only itself."
 }
-Assert-True (-not $workflow.Contains('-Lane backend ')) 'The unsharded backend lane must no longer be collected once shards own it.'
+Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
 Assert-Equal 5 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover exactly the four backend shards and connector-host.'
-Assert-True (-not $laneJobAllowlist.Contains('backend')) 'No job may certify the unsharded backend lane once the shards own it.'
-Assert-True (-not (@($laneJobAllowlist.Values) -ccontains 'Backend Tests')) 'The test-free shard aggregate must own no evidence lane.'
-Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}')) 'Connector artifact identity mismatch.'
-Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw')) 'Raw TRX must not be uploaded.'
-Assert-True (-not $workflow.Contains('path: TestResults')) 'Backend shards must not upload unredacted result directories.'
+Assert-True (-not $laneJobAllowlist.Contains('backend', [StringComparison]::Ordinal)) 'No job may certify the unsharded backend lane once the shards own it.'
+Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($laneJobAllowlist.Values)), [StringComparer]::Ordinal).Contains([string]('Backend Tests')))) 'The test-free shard aggregate must own no evidence lane.'
+Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Connector artifact identity mismatch.'
+Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
+Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
 foreach ($laneContract in @(
     @{ Test = '- name: Test BusinessGateway shard'; Collect = '- name: Collect BusinessGateway shard evidence'; Upload = '- name: Upload BusinessGateway shard evidence' },
     @{ Test = '- name: Test platform shard'; Collect = '- name: Collect platform shard evidence'; Upload = '- name: Upload platform shard evidence' },
@@ -1450,10 +1447,10 @@ foreach ($laneContract in @(
     $uploadIndex = $workflow.IndexOf($laneContract.Upload, [StringComparison]::Ordinal)
     Assert-True ($testIndex -ge 0 -and $testIndex -lt $collectIndex -and $collectIndex -lt $uploadIndex) "Workflow order is invalid for '$($laneContract.Test)'."
     $testBlock = $workflow.Substring($testIndex, $collectIndex - $testIndex)
-    Assert-True (-not $testBlock.Contains('if:')) 'Test step must use natural failure semantics.'
-    Assert-True (-not $testBlock.Contains('|')) 'Test step must not pipe away the dotnet exit code.'
+    Assert-True (-not $testBlock.Contains('if:', [StringComparison]::Ordinal)) 'Test step must use natural failure semantics.'
+    Assert-True (-not $testBlock.Contains('|', [StringComparison]::Ordinal)) 'Test step must not pipe away the dotnet exit code.'
     $retainedBlock = $workflow.Substring($collectIndex, [Math]::Min($workflow.Length - $collectIndex, $uploadIndex - $collectIndex + 250))
-    Assert-True ($retainedBlock.Contains('if: always()')) 'Collector and upload must both be always().'
+    Assert-True ($retainedBlock.Contains('if: always()', [StringComparison]::Ordinal)) 'Collector and upload must both be always().'
 }
 
 # --- MAN-799 CI timeout-budget invariants -----------------------------------------------------
@@ -1478,7 +1475,7 @@ foreach ($expectedEvidenceJob in @(
         'backend-tests-business-core-b',
         'connector-host-tests',
         'erp-sales-order-demand-acceptance')) {
-    Assert-True (@($evidenceJobs | Where-Object Name -eq $expectedEvidenceJob).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
+    Assert-True (@($evidenceJobs | Where-Object { [string]::Equals([string]$_.Name, [string]($expectedEvidenceJob), [StringComparison]::OrdinalIgnoreCase) }).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
 }
 
 # The reader must actually be able to see a missing budget / an exceeded budget, otherwise "zero
@@ -1701,7 +1698,7 @@ jobs:
 '@
     $misparseDetected = $false
     try { Get-NervCiWorkflowBudgets -Path $unreadableJobPath | Out-Null }
-    catch { $misparseDetected = $_.Exception.Message.Contains('unreadable job header') }
+    catch { $misparseDetected = $_.Exception.Message.Contains('unreadable job header', [StringComparison]::Ordinal) }
     Assert-True $misparseDetected 'A job header the reader cannot open must fail closed.'
 
     # A tier-B job (no step that can run after a failure) is deliberately allowed to keep a job
@@ -1866,8 +1863,8 @@ Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweep
 # FullStackSessionState.ps1, BackendTestShardTimings.ps1, ScriptAutomation.ps1 and
 # LeaderDemoTelemetrySimulator.ps1 all depend on them — so this is a ban on the construct in the
 # files that were measured failing, not a claim that the construct is broken. The root cause is
-# still unidentified, which is registered as a follow-up on issue #1509: what this guard pins is a
-# construct, not yet the real invariant.
+# still unidentified. #1512 therefore closes the ruling as a local convention for these three
+# measured files, not as a repository-wide claim about closures or script scope.
 # The ban covers the library *and* the two contract tests that consume it, because the second CI red
 # was the test's own probe helper, not the library — the same construct, one file over.
 foreach ($capturedScopeCandidate in @(
@@ -1899,7 +1896,7 @@ Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 
 # Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
 # hit more than once is exempting call sites the reviewer of the original never saw.
 foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
-    Assert-True ([int]$evidenceSweep.ExceptionHits[$exceptionKey] -eq 1) `
+    Assert-True ((([int]$evidenceSweep.ExceptionHits[$exceptionKey]) -eq (1))) `
         "Ordinal sweep exception '$exceptionKey' matched $($evidenceSweep.ExceptionHits[$exceptionKey]) call sites; it must match exactly one."
 }
 
@@ -2019,7 +2016,7 @@ try {
     # scan cannot distinguish from a safe one; the assertion is that the scan stays silent, so the day
     # any of them becomes detectable this list and the documentation have to be edited together.
     $blindSpotProbes = [ordered]@{
-        'both-operands-non-literal-eq' = '$result = $left -eq $right'
+        'non-identity-variable-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
         'both-operands-non-literal-in' = '$result = $candidate -in $known'
         'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
         'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'
@@ -2108,7 +2105,7 @@ function Get-NervSomethingElse {
     Assert-True ($caseVariantProbe.Findings.Count -eq 2) `
         "An exception whose site differs only by case must not match, so both Group-Object calls stay reported; findings: $(@($caseVariantProbe.Findings) -join '; ')"
     foreach ($caseVariantKey in @($caseVariantProbe.ExceptionHits.Keys)) {
-        Assert-True ([int] $caseVariantProbe.ExceptionHits[$caseVariantKey] -eq 0) `
+        Assert-True ((([int] $caseVariantProbe.ExceptionHits[$caseVariantKey]) -eq (0))) `
             "Exception key '$caseVariantKey' differs from the source only by case and must be dead; it matched $($caseVariantProbe.ExceptionHits[$caseVariantKey]) call sites, so the lookup table is not ordinal."
     }
 }
@@ -2122,7 +2119,7 @@ $newRepoCommandLogs = @(
     if (Test-Path $repoScriptLogRoot) {
         Get-ChildItem $repoScriptLogRoot -Directory -Filter 'man-661-*' |
             ForEach-Object { Get-ChildItem $_.FullName -Directory | ForEach-Object FullName } |
-            Where-Object { $initialRepoCommandLogs -cnotcontains $_ }
+            Where-Object { (-not [Collections.Generic.HashSet[string]]::new([string[]]@($initialRepoCommandLogs), [StringComparer]::Ordinal).Contains([string]($_))) }
     }
 )
 Assert-Equal 0 $newRepoCommandLogs.Count 'Focused evidence suite must keep owned command logs under its temporary fixture roots.'
