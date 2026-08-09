@@ -76,7 +76,7 @@ backend/tests/Nerv.IIP.Contracts.Notification.Tests
 
 `NotificationMessage` 是用户可见的应用内消息。
 
-Fields:
+字段：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -93,7 +93,7 @@ Fields:
 
 `NotificationTask` 是供审批、失败处理或人工确认使用的可操作条目。
 
-Fields:
+字段：
 
 | 字段 | 含义 |
 | --- | --- |
