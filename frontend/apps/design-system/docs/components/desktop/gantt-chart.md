@@ -132,7 +132,7 @@ function onDrag(p) {
   </div>
 </Demo>
 
-### 图例 ↔ 实际效果 对照
+### 图例 ↔ 实际效果对照
 
 同一张甘特(即上例数据),对着右侧清单在图里逐一指认视觉语言——不是只看图例条,而是「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="order"`)嵌在图底作为速查条。
 
@@ -233,8 +233,8 @@ function onDrag(p) {
 | `startUtc` / `endUtc`               | 实际排程条                             | 已提供                    |
 | `plannedStartUtc` / `plannedEndUtc` | 计划与实际双层基线                     | 未提供 → demo 补,生产留空 |
 | `isMilestone` / `milestoneLabel`    | 独立里程碑菱形 / 条尾阶段点            | 未提供 → demo 补,生产留空 |
-| `blockKind`                         | 资源时间块(维护/停机/换线/换型 斜纹块) | 未提供 → demo 补,生产留空 |
-| `kitting`                           | 齐套率 chip(足/缺/危 分级)             | 未提供 → demo 补,生产留空 |
+| `blockKind`                         | 资源时间块(维护/停机/换线/换型斜纹块)  | 未提供 → demo 补,生产留空 |
+| `kitting`                           | 齐套率 chip(足/缺/危分级)              | 未提供 → demo 补,生产留空 |
 | `changeoverMin`                     | 换型耗时 chip                          | 未提供 → demo 补,生产留空 |
 | `load`                              | 资源占用率(>1 过载瓶颈)                | 未提供 → demo 补,生产留空 |
 | `isRush`                            | 插单高亮                               | 未提供 → demo 补,生产留空 |

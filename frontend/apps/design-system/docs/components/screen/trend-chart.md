@@ -29,7 +29,7 @@ const wsSeries = ref([
 
 ## 基础用法
 
-不传任何 props 时使用内置的全天产量示例(实际 vs 计划,十字光标钉在 10:00)。
+不传任何 props 时使用内置的全天产量示例(实际与计划,十字光标钉在 10:00)。
 
 <ScreenDemo wide>
   <NvScreenTrendChart />
