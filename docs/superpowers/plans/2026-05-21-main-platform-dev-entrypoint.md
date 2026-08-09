@@ -1,56 +1,56 @@
-# Main Platform Development Entrypoint Implementation Plan
+# 主平台开发入口实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能代理工作者：** 必须使用子技能：采用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Add a root-level `.\nerv.ps1` development CLI that starts the whole local platform through Aspire, exposes the canonical port matrix, moves platform HTTP ports to `5100-5105`, and switches local MinIO containers to `pgsty/minio`.
+**目标：** 添加仓库根级 `.\nerv.ps1` 开发 CLI，通过 Aspire 启动整个本地平台，公开规范端口矩阵，将平台 HTTP 端口迁移到 `5100-5105`，并把本地 MinIO 容器切换到 `pgsty/minio`。
 
-**Architecture:** Keep the root CLI thin and put real process execution in governed scripts under `scripts/`. Aspire remains the topology source for full-platform startup; Docker Compose remains dependency-only for `-InfraOnly` and verification scripts. Port changes are applied consistently across launch settings, fallback URLs, AppHost endpoints, Vite config and docs.
+**架构：** 根 CLI 保持轻量，真实进程执行放入 `scripts/` 下受治理的脚本。Aspire 继续作为完整平台启动的拓扑来源；Docker Compose 继续只为 `-InfraOnly` 和验证脚本提供依赖服务。端口变更必须在启动设置、后备 URL、AppHost 端点、Vite 配置和文档中保持一致。
 
-**Tech Stack:** PowerShell 7, .NET 10, Aspire 13.3.3, Docker Compose, pnpm 11.1.2, Vite 8, Vue 3.
-
----
-
-## File Structure
-
-Create:
-
-1. `nerv.ps1` - root command dispatcher for `dev`, `ports` and `help`.
-2. `scripts/dev.ps1` - governed development startup script that calls `Invoke-DotNet` or `Invoke-DockerCompose`.
-3. `scripts/tests/dev-entrypoint.Tests.ps1` - PowerShell smoke tests for the root command surface and generated output.
-
-Modify:
-
-1. `infra/aspire/Nerv.IIP.AppHost/Program.cs` - fixed local ports and `pgsty/minio` image tag.
-2. `infra/docker-compose.dev.yml` - `pgsty/minio` image tag.
-3. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Properties/launchSettings.json` - Gateway HTTP port `5100`.
-4. `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Properties/launchSettings.json` - AppHub HTTP port `5101`.
-5. `backend/services/Iam/src/Nerv.IIP.Iam.Web/Properties/launchSettings.json` - IAM HTTP port `5102`.
-6. `backend/services/Ops/src/Nerv.IIP.Ops.Web/Properties/launchSettings.json` - Ops HTTP port `5103`.
-7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Properties/launchSettings.json` - FileStorage HTTP port `5104`.
-8. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json` - AppHub/Ops local service URLs.
-9. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs` - AppHub/Ops/IAM fallback URLs.
-10. `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs` - IAM fallback URL.
-11. `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json` - AppHub/Ops local service URLs.
-12. `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs` - AppHub/Ops fallback URLs.
-13. `frontend/apps/console/package.json` - Console dev script port `5105`.
-14. `frontend/apps/console/vite.config.ts` - Vite dev server port `5105`.
-15. `frontend/packages/api-client/src/transport/base-url.ts` - keep Gateway default `5100` and verify it matches the matrix.
-16. `README.md` - add daily development entrypoint.
-17. `docs/architecture/deployment-baseline.md` - record root CLI over governed scripts and local MinIO image baseline.
-18. `docs/architecture/implementation-readiness.md` - update current readiness notes after the entrypoint lands.
+**技术栈：** PowerShell 7、.NET 10、Aspire 13.3.3、Docker Compose、pnpm 11.1.2、Vite 8、Vue 3。
 
 ---
 
-### Task 1: Add Root CLI And Tests
+## 文件结构
 
-**Files:**
-- Create: `nerv.ps1`
-- Create: `scripts/tests/dev-entrypoint.Tests.ps1`
-- Modify: none
+新增：
 
-- [ ] **Step 1: Write the failing root command smoke tests**
+1. `nerv.ps1` - `dev`、`ports` 和 `help` 的根命令分派器。
+2. `scripts/dev.ps1` - 调用 `Invoke-DotNet` 或 `Invoke-DockerCompose` 的受治理开发启动脚本。
+3. `scripts/tests/dev-entrypoint.Tests.ps1` - 针对根命令界面及其输出的 PowerShell 冒烟测试。
 
-Create `scripts/tests/dev-entrypoint.Tests.ps1`:
+修改：
+
+1. `infra/aspire/Nerv.IIP.AppHost/Program.cs` - 固定本地端口和 `pgsty/minio` 镜像标签。
+2. `infra/docker-compose.dev.yml` - `pgsty/minio` 镜像标签。
+3. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Properties/launchSettings.json` - Gateway HTTP 端口 `5100`。
+4. `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Properties/launchSettings.json` - AppHub HTTP 端口 `5101`。
+5. `backend/services/Iam/src/Nerv.IIP.Iam.Web/Properties/launchSettings.json` - IAM HTTP 端口 `5102`。
+6. `backend/services/Ops/src/Nerv.IIP.Ops.Web/Properties/launchSettings.json` - Ops HTTP 端口 `5103`。
+7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Properties/launchSettings.json` - FileStorage HTTP 端口 `5104`。
+8. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json` - AppHub/Ops 本地服务 URL。
+9. `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs` - AppHub/Ops/IAM 后备 URL。
+10. `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs` - IAM 后备 URL。
+11. `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json` - AppHub/Ops 本地服务 URL。
+12. `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs` - AppHub/Ops 后备 URL。
+13. `frontend/apps/console/package.json` - Console 开发脚本端口 `5105`。
+14. `frontend/apps/console/vite.config.ts` - Vite 开发服务器端口 `5105`。
+15. `frontend/packages/api-client/src/transport/base-url.ts` - 保持 Gateway 默认端口 `5100`，并验证其符合端口矩阵。
+16. `README.md` - 添加日常开发入口。
+17. `docs/architecture/deployment-baseline.md` - 记录基于受治理脚本的根 CLI 和本地 MinIO 镜像基线。
+18. `docs/architecture/implementation-readiness.md` - 入口落地后更新当前就绪状态说明。
+
+---
+
+### 任务 1：添加根 CLI 和测试
+
+**文件：**
+- 新增：`nerv.ps1`
+- 新增：`scripts/tests/dev-entrypoint.Tests.ps1`
+- 修改：无
+
+- [ ] **步骤 1：编写会失败的根命令冒烟测试**
+
+创建 `scripts/tests/dev-entrypoint.Tests.ps1`：
 
 ```powershell
 # Script-Governance:
@@ -126,19 +126,19 @@ if (-not $unknown.Output.Contains("Unknown command 'unknown-command'")) {
 Write-Host 'Development entrypoint smoke tests passed.'
 ```
 
-- [ ] **Step 2: Run the smoke tests to verify they fail**
+- [ ] **步骤 2：运行冒烟测试以验证其会失败**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/dev-entrypoint.Tests.ps1
 ```
 
-Expected: FAIL because `nerv.ps1` does not exist.
+预期：失败，因为 `nerv.ps1` 不存在。
 
-- [ ] **Step 3: Add the root CLI wrapper**
+- [ ] **步骤 3：添加根 CLI 包装器**
 
-Create `nerv.ps1`:
+创建 `nerv.ps1`：
 
 ```powershell
 [CmdletBinding()]
@@ -213,19 +213,19 @@ switch ($Command.ToLowerInvariant()) {
 }
 ```
 
-- [ ] **Step 4: Run the smoke tests to verify they pass**
+- [ ] **步骤 4：运行冒烟测试以验证其通过**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/dev-entrypoint.Tests.ps1
 ```
 
-Expected: PASS with `Development entrypoint smoke tests passed.`
+预期：通过，并输出 `Development entrypoint smoke tests passed.`。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add nerv.ps1 scripts/tests/dev-entrypoint.Tests.ps1
@@ -234,15 +234,15 @@ git commit -m "feat: add root development entrypoint"
 
 ---
 
-### Task 2: Add Governed Development Startup Script
+### 任务 2：添加受治理的开发启动脚本
 
-**Files:**
-- Create: `scripts/dev.ps1`
-- Modify: `scripts/tests/dev-entrypoint.Tests.ps1`
+**文件：**
+- 新增：`scripts/dev.ps1`
+- 修改：`scripts/tests/dev-entrypoint.Tests.ps1`
 
-- [ ] **Step 1: Extend smoke tests for `dev -Help` without starting services**
+- [ ] **步骤 1：扩展 `dev -Help` 冒烟测试且不启动服务**
 
-Append this block before the final `Write-Host` in `scripts/tests/dev-entrypoint.Tests.ps1`:
+在最后的 `Write-Host` 之前，将以下代码块追加到 `scripts/tests/dev-entrypoint.Tests.ps1`：
 
 ```powershell
 $devHelp = Invoke-Nerv -Arguments @('dev', '-Help')
@@ -257,19 +257,19 @@ foreach ($expected in @('-NoBuild', '-InfraOnly', '-OpenDashboard', 'Aspire AppH
 }
 ```
 
-- [ ] **Step 2: Run the smoke tests to verify they fail**
+- [ ] **步骤 2：运行冒烟测试以验证其会失败**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/dev-entrypoint.Tests.ps1
 ```
 
-Expected: FAIL because `scripts/dev.ps1` does not exist.
+预期：失败，因为 `scripts/dev.ps1` 不存在。
 
-- [ ] **Step 3: Add `scripts/dev.ps1`**
+- [ ] **步骤 3：添加 `scripts/dev.ps1`**
 
-Create `scripts/dev.ps1`:
+创建 `scripts/dev.ps1`：
 
 ```powershell
 # Script-Governance:
@@ -365,9 +365,9 @@ if ($NoBuild) {
 Invoke-DotNetInteractive -Arguments $arguments -WorkingDirectory $root -Name 'dev-apphost' | Out-Null
 ```
 
-- [ ] **Step 4: Add interactive native-command helpers**
+- [ ] **步骤 4：添加交互式原生命令辅助函数**
 
-Add these functions to `scripts/lib/ScriptAutomation.ps1` after `Invoke-DotNet`:
+在 `scripts/lib/ScriptAutomation.ps1` 的 `Invoke-DotNet` 之后添加以下函数：
 
 ```powershell
 function Invoke-NativeCommandInteractive {
@@ -452,27 +452,27 @@ function Invoke-DotNetInteractive {
 }
 ```
 
-This keeps direct process execution inside the shared helper while allowing `.\nerv.ps1 dev` to stream Aspire output, including the dashboard URL, to the current terminal.
+这样既能将直接进程执行保留在共享辅助工具内，也允许 `.\nerv.ps1 dev` 把包括仪表板 URL 在内的 Aspire 输出流式传到当前终端。
 
-- [ ] **Step 5: Run smoke and governance tests**
+- [ ] **步骤 5：运行冒烟测试和治理测试**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/dev-entrypoint.Tests.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/check-script-governance.ps1
 ```
 
-Expected:
+预期：
 
 ```text
 Development entrypoint smoke tests passed.
 Script governance check passed.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/dev.ps1 scripts/tests/dev-entrypoint.Tests.ps1 scripts/lib/ScriptAutomation.ps1
@@ -481,23 +481,23 @@ git commit -m "feat: add governed dev startup script"
 
 ---
 
-### Task 3: Standardize Backend And Connector Ports
+### 任务 3：统一后端与 Connector 端口
 
-**Files:**
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Properties/launchSettings.json`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Properties/launchSettings.json`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Properties/launchSettings.json`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Properties/launchSettings.json`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Properties/launchSettings.json`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json`
-- Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`
+**文件：**
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Properties/launchSettings.json`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Properties/launchSettings.json`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Properties/launchSettings.json`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Properties/launchSettings.json`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Properties/launchSettings.json`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json`
+- 修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`
 
-- [ ] **Step 1: Update launch settings HTTP ports**
+- [ ] **步骤 1：更新启动设置中的 HTTP 端口**
 
-Apply these exact port changes:
+严格应用以下端口变更：
 
 ```text
 PlatformGateway: http://localhost:5073 -> http://localhost:5100
@@ -507,11 +507,11 @@ Ops:             http://localhost:5105 -> http://localhost:5103
 FileStorage:     http://localhost:5261 -> http://localhost:5104
 ```
 
-For each `https` profile, keep the existing HTTPS URL and replace only the HTTP segment after the semicolon.
+对每个 `https` 配置档，保留现有 HTTPS URL，只替换分号后的 HTTP 部分。
 
-- [ ] **Step 2: Update Gateway development service URLs**
+- [ ] **步骤 2：更新 Gateway 开发服务 URL**
 
-Change `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json` to:
+将 `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json` 改为：
 
 ```json
 {
@@ -528,9 +528,9 @@ Change `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsett
 }
 ```
 
-- [ ] **Step 3: Update backend fallback URLs**
+- [ ] **步骤 3：更新后端后备 URL**
 
-In `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`, replace fallbacks:
+在 `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs` 中替换后备地址：
 
 ```csharp
 builder.Configuration["AppHub:BaseUrl"] ?? "http://localhost:5101"
@@ -538,15 +538,15 @@ builder.Configuration["Ops:BaseUrl"] ?? "http://localhost:5103"
 builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102"
 ```
 
-In `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`, replace the IAM fallback:
+在 `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs` 中替换 IAM 后备地址：
 
 ```csharp
 builder.Configuration["Iam:BaseUrl"] ?? "http://localhost:5102"
 ```
 
-- [ ] **Step 4: Update Connector Host development URLs**
+- [ ] **步骤 4：更新 Connector Host 开发 URL**
 
-Change `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json` to:
+将 `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json` 改为：
 
 ```json
 {
@@ -563,37 +563,37 @@ Change `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.
 }
 ```
 
-In `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs`, replace fallbacks:
+在 `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs` 中替换后备地址：
 
 ```csharp
 builder.Configuration["Platform:AppHubBaseUrl"] ?? "http://localhost:5101"
 builder.Configuration["Platform:OpsBaseUrl"] ?? "http://localhost:5103"
 ```
 
-- [ ] **Step 5: Verify no current runtime config still uses old local service ports**
+- [ ] **步骤 5：验证当前运行时配置均不再使用旧本地服务端口**
 
-Run:
+运行：
 
 ```powershell
 rg -n "localhost:(5073|5204|5283|5261|5173)|localhost:5104|localhost:5105" backend connector-hosts frontend infra README.md docs/architecture -g "!frontend/pnpm-lock.yaml"
 ```
 
-Expected: no hits for `5073`, `5204`, `5283`, `5261`, or `5173`. Hits for `5104` and `5105` are allowed only when they mean FileStorage and Console respectively; Ops must no longer use `5105`, and IAM must no longer use `5104`.
+预期：`5073`、`5204`、`5283`、`5261` 或 `5173` 均无匹配。`5104` 和 `5105` 仅在分别表示 FileStorage 与 Console 时允许匹配；Ops 不得继续使用 `5105`，IAM 不得继续使用 `5104`。
 
-- [ ] **Step 6: Build backend entrypoints**
+- [ ] **步骤 6：构建后端入口**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/Nerv.IIP.sln --no-restore
 dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln --no-restore
 ```
 
-Expected: both builds pass.
+预期：两项构建均通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend connector-hosts
@@ -602,29 +602,29 @@ git commit -m "chore: standardize local service ports"
 
 ---
 
-### Task 4: Standardize AppHost, Console Port And MinIO Image
+### 任务 4：统一 AppHost、Console 端口与 MinIO 镜像
 
-**Files:**
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
-- Modify: `infra/docker-compose.dev.yml`
-- Modify: `frontend/apps/console/package.json`
-- Modify: `frontend/apps/console/vite.config.ts`
+**文件：**
+- 修改：`infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- 修改：`infra/docker-compose.dev.yml`
+- 修改：`frontend/apps/console/package.json`
+- 修改：`frontend/apps/console/vite.config.ts`
 
-- [ ] **Step 1: Update AppHost MinIO image and fixed service endpoints**
+- [ ] **步骤 1：更新 AppHost MinIO 镜像和固定服务端点**
 
-In `infra/aspire/Nerv.IIP.AppHost/Program.cs`, replace:
+在 `infra/aspire/Nerv.IIP.AppHost/Program.cs` 中替换：
 
 ```csharp
 var minio = builder.AddContainer("minio", "minio/minio")
 ```
 
-with:
+为：
 
 ```csharp
 var minio = builder.AddContainer("minio", "pgsty/minio", "RELEASE.2026-04-17T00-00-00Z")
 ```
 
-Then add fixed HTTP endpoints to the project resources:
+然后为项目资源添加固定 HTTP 端点：
 
 ```csharp
 var apphub = builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")
@@ -651,7 +651,7 @@ var gateway = builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway
     .WithHttpEndpoint(port: 5100, name: "http")
 ```
 
-For the Console resource, add the endpoint after `AddViteApp`:
+对于 Console 资源，在 `AddViteApp` 后添加端点：
 
 ```csharp
 builder.AddViteApp("console", "../../../frontend/apps/console")
@@ -659,29 +659,29 @@ builder.AddViteApp("console", "../../../frontend/apps/console")
     .WithPnpm()
 ```
 
-- [ ] **Step 2: Update Docker Compose MinIO image**
+- [ ] **步骤 2：更新 Docker Compose MinIO 镜像**
 
-In `infra/docker-compose.dev.yml`, replace:
+在 `infra/docker-compose.dev.yml` 中替换：
 
 ```yaml
 image: minio/minio
 ```
 
-with:
+为：
 
 ```yaml
 image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
 ```
 
-- [ ] **Step 3: Update Console dev port**
+- [ ] **步骤 3：更新 Console 开发端口**
 
-In `frontend/apps/console/package.json`, change the dev script to:
+在 `frontend/apps/console/package.json` 中，将开发脚本改为：
 
 ```json
 "dev": "vp dev --host 127.0.0.1 --port 5105"
 ```
 
-In `frontend/apps/console/vite.config.ts`, change:
+在 `frontend/apps/console/vite.config.ts` 中改为：
 
 ```ts
 server: {
@@ -689,31 +689,31 @@ server: {
   proxy: {
 ```
 
-- [ ] **Step 4: Verify AppHost and frontend**
+- [ ] **步骤 4：验证 AppHost 和前端**
 
-Run:
+运行：
 
 ```powershell
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 pnpm -C frontend --filter @nerv-iip/console typecheck
 ```
 
-Expected: both pass.
+预期：两项均通过。
 
-- [ ] **Step 5: Verify image and port strings**
+- [ ] **步骤 5：验证镜像和端口字符串**
 
-Run:
+运行：
 
 ```powershell
 rg -n "minio/minio|127.0.0.1 --port 5173|port: 5173" infra frontend
 rg -n "pgsty/minio:RELEASE.2026-04-17T00-00-00Z|WithHttpEndpoint\\(port: 5105|--port 5105|port: 5105" infra frontend
 ```
 
-Expected: first command has no output. Second command shows the Compose image, AppHost MinIO image or endpoint changes, and Console port updates.
+预期：第一条命令没有输出。第二条命令显示 Compose 镜像、AppHost MinIO 镜像或端点变更，以及 Console 端口更新。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add infra frontend/apps/console
@@ -722,16 +722,16 @@ git commit -m "chore: align apphost ports and minio image"
 
 ---
 
-### Task 5: Update Documentation
+### 任务 5：更新文档
 
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/architecture/deployment-baseline.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+**文件：**
+- 修改：`README.md`
+- 修改：`docs/architecture/deployment-baseline.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Add README daily development section**
+- [ ] **步骤 1：添加 README 日常开发章节**
 
-Add this section after the "技术基线" list and before "仓库规划":
+在“技术基线”列表之后、“仓库规划”之前添加以下章节：
 
 ````markdown
 ## 日常开发启动
@@ -759,18 +759,18 @@ Add this section after the "技术基线" list and before "仓库规划":
 平台 HTTP 服务固定为 `5100-5105`：Gateway `5100`、AppHub `5101`、IAM `5102`、Ops `5103`、FileStorage `5104`、Console `5105`。Console 避开 Vite 默认 `5173`，降低与其他前端项目冲突的概率。
 ````
 
-- [ ] **Step 2: Update deployment baseline current stage**
+- [ ] **步骤 2：更新部署基线的当前阶段**
 
-In `docs/architecture/deployment-baseline.md`, add this current-stage note near the existing "当前阶段" list:
+在 `docs/architecture/deployment-baseline.md` 现有“当前阶段”列表附近添加以下当前阶段说明：
 
 ```markdown
 8. 本地开发统一入口收敛为根目录 `.\nerv.ps1 dev`，该命令只作为薄 CLI 包装，真实启动逻辑仍位于受脚本治理约束的 `scripts/dev.ps1`。完整平台启动走 Aspire AppHost；`.\nerv.ps1 dev -InfraOnly` 只启动 `infra/docker-compose.dev.yml` 中的依赖服务。
 9. 本地 MinIO 容器镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`，避免继续依赖停止更新的 `minio/minio` Docker image line；FileStorage 仍通过对象存储 provider 抽象与 MinIO 或等价 S3-compatible backend 交互。
 ```
 
-- [ ] **Step 3: Update implementation readiness**
+- [ ] **步骤 3：更新实施就绪状态**
 
-In `docs/architecture/implementation-readiness.md`, update the local execution/readiness section with:
+在 `docs/architecture/implementation-readiness.md` 中，用以下内容更新本地执行/就绪状态章节：
 
 ```markdown
 - 根目录 `.\nerv.ps1 dev` 已成为主平台本地联调入口；`.\nerv.ps1 ports` 输出 canonical local port matrix。
@@ -778,19 +778,19 @@ In `docs/architecture/implementation-readiness.md`, update the local execution/r
 - 本地 MinIO runtime image 使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`。
 ```
 
-- [ ] **Step 4: Verify documentation no longer gives old current guidance**
+- [ ] **步骤 4：验证文档不再提供旧的当前指引**
 
-Run:
+运行：
 
 ```powershell
 rg -n "localhost:(5073|5204|5283|5261|5173)|minio/minio" README.md docs/architecture infra frontend backend connector-hosts -g "!frontend/pnpm-lock.yaml"
 ```
 
-Expected: no hits in current guidance files. Historical `docs/superpowers/plans` and old specs are not part of this check.
+预期：当前指引文件中没有匹配。历史 `docs/superpowers/plans` 和旧规格不在本次检查范围内。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add README.md docs/architecture/deployment-baseline.md docs/architecture/implementation-readiness.md
@@ -799,14 +799,14 @@ git commit -m "docs: document unified development startup"
 
 ---
 
-### Task 6: Final Verification
+### 任务 6：最终验证
 
-**Files:**
-- Modify: none unless verification exposes a defect.
+**文件：**
+- 修改：无；除非验证暴露缺陷。
 
-- [ ] **Step 1: Run script command tests**
+- [ ] **步骤 1：运行脚本命令测试**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/dev-entrypoint.Tests.ps1
@@ -814,7 +814,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/tests/check-script-governa
 pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/check-script-governance.ps1
 ```
 
-Expected:
+预期：
 
 ```text
 Development entrypoint smoke tests passed.
@@ -822,9 +822,9 @@ Script governance fixture tests passed.
 Script governance check passed.
 ```
 
-- [ ] **Step 2: Run build/typecheck verification**
+- [ ] **步骤 2：运行构建/类型检查验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
@@ -833,11 +833,11 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln --no-restore
 pnpm -C frontend --filter @nerv-iip/console typecheck
 ```
 
-Expected: all commands exit 0.
+预期：所有命令均以退出码 0 结束。
 
-- [ ] **Step 3: Verify root command output**
+- [ ] **步骤 3：验证根命令输出**
 
-Run:
+运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\nerv.ps1 help
@@ -845,35 +845,35 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\nerv.ps1 ports
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\nerv.ps1 dev -Help
 ```
 
-Expected: help mentions `dev`, `ports`, and `help`; ports output includes `5100-5105`; dev help mentions `Aspire AppHost`, `-NoBuild`, `-InfraOnly`, and `-OpenDashboard`.
+预期：帮助文本提及 `dev`、`ports` 和 `help`；端口输出包含 `5100-5105`；开发帮助提及 `Aspire AppHost`、`-NoBuild`、`-InfraOnly` 和 `-OpenDashboard`。
 
-- [ ] **Step 4: Optional short AppHost smoke test**
+- [ ] **步骤 4：可选的短时 AppHost 冒烟测试**
 
-Run this only when Docker Desktop is running and the developer is ready to stop the process manually:
+仅当 Docker Desktop 正在运行且开发人员准备好手动停止进程时，才运行：
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\nerv.ps1 dev
 ```
 
-Expected: Aspire AppHost starts and prints dashboard/resource output. Stop it with `Ctrl+C` after resources begin starting. Do not leave the command running at final handoff.
+预期：Aspire AppHost 启动并打印仪表板/资源输出。资源开始启动后使用 `Ctrl+C` 停止。最终交接时不得让该命令继续运行。
 
-- [ ] **Step 5: Final grep checks**
+- [ ] **步骤 5：最终 grep 检查**
 
-Run:
+运行：
 
 ```powershell
 rg -n "minio/minio|localhost:(5073|5204|5283|5261|5173)" README.md docs/architecture infra frontend backend connector-hosts -g "!frontend/pnpm-lock.yaml"
 rg -n "5100 PlatformGateway|5101 AppHub|5102 IAM|5103 Ops|5104 FileStorage|5105 Console" nerv.ps1 README.md docs/architecture
 ```
 
-Expected: first command has no output. Second command shows the port matrix in `nerv.ps1` and README/docs.
+预期：第一条命令没有输出。第二条命令显示 `nerv.ps1` 和 README/文档中的端口矩阵。
 
-- [ ] **Step 6: Confirm no final verification patch is pending**
+- [ ] **步骤 6：确认没有待处理的最终验证补丁**
 
-Run:
+运行：
 
 ```powershell
 git status --short
 ```
 
-Expected: no output. If this command shows modified files, inspect those files, run the relevant verification command again, and create a normal fix commit with the exact files changed.
+预期：没有输出。如果该命令显示修改文件，请检查这些文件，重新运行相关验证命令，并仅用实际变更的文件创建常规修复提交。
