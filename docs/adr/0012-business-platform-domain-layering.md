@@ -1,14 +1,14 @@
-# ADR 0012: 业务平台关键链路与主平台边界
+# ADR 0012：业务平台关键链路与主平台边界
 
-- Status: Accepted
-- Date: 2026-05-20
-- Amended by: [ADR 0014: APS 与设备 IIoT 排程边界](0014-aps-and-iiot-scheduling-boundary.md)
+- 状态：已接受
+- 日期：2026-05-20
+- 修订依据：[ADR 0014：APS 与设备 IIoT 排程边界](0014-aps-and-iiot-scheduling-boundary.md)
 
-## Context
+## 背景
 
 主平台已经推进到 IAM 持久化认证、Gateway 权限门禁、Console Auth 和脚本治理阶段。业务平台需要并行规划，避免等主平台完全收尾后才开始拆工业业务域。
 
-GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础域、通用能力域、MES、WMS、ERP 和全链路验收。这一版方向合理，但它偏向“MES/WMS/ERP 三件套”，对工业关键链路中更靠前或更靠近设备现场的系统边界描述不足，例如 PDM/PLM、MPS/MRP、IIoT、CMMS，以及 CRM、SRM、CPQ、OMS、WCS、SCADA、PLC/DCS 等系统在首批链路中的位置。
+GitHub Issue #72 到 #77 给出了第一版业务域输入，覆盖共享基础域、通用能力域、MES、WMS、ERP 和全链路验收。这一版方向合理，但它偏向“MES/WMS/ERP 三件套”，对工业关键链路中更靠前或更靠近设备现场的系统边界描述不足，例如 PDM/PLM、MPS/MRP、IIoT、CMMS，以及 CRM、SRM、CPQ、OMS、WCS、SCADA、PLC/DCS 等系统在首批链路中的位置。
 
 这些系统不应该全部变成首批独立服务。否则业务平台会在开工前膨胀成完整工业软件套件，无法形成可验证纵切。正确做法是按关键链路筛选：
 
@@ -17,7 +17,7 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 3. 属于现场设备或第三方系统的，只定义适配边界，不把外部系统重写一遍。
 4. 只有特定场景才成立的，先预留升级边界。
 
-## Decision
+## 决策
 
 1. 业务平台继续作为主平台之外的行业领域扩展。主平台只提供 IAM、File Storage、AppHub、Ops、Notification、Knowledge、AI Integration、PlatformGateway、Connector Host 协议等通用控制面能力。
 2. 接受 #72 到 #77 作为业务平台基础输入，但将业务规划升级为“关键链路优先”模型，而不是只围绕 MES/WMS/ERP。
@@ -39,7 +39,7 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
    - CRM：首批压缩进 ERP Sales 的客户、商机、报价和销售订单；完整营销、跟进、线索池后置。
    - CPQ：只有配置型产品、按单设计或复杂报价规则成立时才独立；首批只预留报价配置边界。
    - OMS：首批由 ERP Sales + WMS fulfillment 承担订单履约；多渠道订单、拆单合单、履约路由后置。
-   - WCS：首批只定义 WMS 到 WCS 的任务/回执 adapter；自动化立库、输送线、AGV/AMR 接入后再独立。
+   - WCS：首批只定义 WMS 到 WCS 的任务/回执适配器；自动化立库、输送线、AGV/AMR 接入后再独立。
    - EAM：首批用 CMMS lite 覆盖设备维护；资产全生命周期、折旧、备件深度财务后置。
 5. 单仓过渡开发阶段允许把业务平台服务放在 `backend/services/Business/{Context}` 下，项目命名采用 `Nerv.IIP.Business.{Context}.Web|Domain|Infrastructure`。这只是开发期代码组织便利，不表示业务平台成为主平台核心能力。
 6. 主平台服务不得引用 `backend/services/Business` 下的 Web、Domain、Infrastructure 项目。业务服务只能通过 Platform SDK、公开 Contracts、OpenAPI、IntegrationEvent 和 IAM 授权上下文消费主平台能力。
@@ -53,10 +53,10 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 14. IndustrialTelemetry 只拥有工业数据采集后的平台侧事实，不控制 PLC/DCS，不替代 SCADA，也不绕过 Connector Host 直连现场。
 15. Maintenance 是维修、保养、点检和停机原因事实源。MES 可以消费停机和可用性结果，DemandPlanning 可以消费产能影响，但不直接改维修事实。
 16. 跨业务服务状态传播默认使用 ADR 0011 定义的 IntegrationEvent envelope、版本策略、幂等、DLQ 和 replay 规则。强一致入口可以使用同步 API，但不得通过共享数据库表或跨 schema 外键协作。
-17. 首批实施顺序固定为：MasterData → ProductEngineering → Inventory/Quality/Approval/Barcode 基础能力 → DemandPlanning → ERP Procurement/Sales/Finance MVP → WMS → MES → IndustrialTelemetry → Maintenance → full-chain acceptance。
+17. 首批实施顺序固定为：MasterData → ProductEngineering → Inventory/Quality/Approval/Barcode 基础能力 → DemandPlanning → ERP Procurement/Sales/Finance MVP → WMS → MES → IndustrialTelemetry → Maintenance → 全链路验收。
 18. 每个业务服务沿用 `docs/architecture/backend-cleanddd-netcorepal-guidelines.md`、数据库 schema 规范、OpenAPI 规范和权限矩阵。新增权限码先登记到授权矩阵，再进入 IAM seed、端点鉴权和测试。
 
-## Rationale
+## 理由
 
 1. 只做 MES/WMS/ERP 会缺少产品定义、工程变更、计划来源、设备数据和维修闭环，后续链路会靠手工假数据维持。
 2. 把 PDM/PLM lite 纳入首批规划，可以解释 CAD、EBOM、MBOM、工艺路线和工程变更如何进入制造链路。
@@ -66,7 +66,7 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 6. 将 PLC/DCS/SCADA/CAD 视为外部系统或适配来源，能避免业务平台误把现场控制系统和工程设计软件重做一遍。
 7. 保持主平台与业务平台分离，可以延续 Nerv-IIP “通用控制面 + 行业扩展”的定位。
 
-## Consequences
+## 后果
 
 1. 业务平台规划会比第一版更完整，早期文档和契约工作量会上升。
 2. 首批实现仍必须切片推进，不能因为规划覆盖 PDM/PLM、MRP、IIoT、CMMS 就一次性开多个大系统。
@@ -74,14 +74,14 @@ GitHub issues #72 到 #77 给出了第一版业务域输入，覆盖共享基础
 4. 业务服务之间需要严格的事件契约、幂等处理和版本引用，否则工程变更、MRP 重算、库存移动和设备事件会很难诊断。
 5. #77 全链路验收需要升级为“工程到制造、计划到采购/生产、设备到维护、订单到交付”的关键链路验收，而不仅是采购、生产、销售、盘点五条业务流。
 
-## Alternatives Considered
+## 已考虑的替代方案
 
 1. 继续只规划 MES/WMS/ERP。该方案较简单，但缺少产品工程、计划和设备现场链路，后续一定返工。
 2. 将 SRM、CRM、CPQ、OMS、WCS、SCADA、PLC/DCS、CAD 全部拆成独立首批服务。该方案覆盖面最大，但会导致范围爆炸，不利于形成可验证 MVP。
 3. 先按行业软件名称建系统，再思考链路。该方案容易堆名词，不能保证事实源清晰。
 4. 按关键链路筛选并区分事实源、子域、外部系统和升级边界。该方案兼顾完整性和可实施性，因此采用。
 
-## Implementation Notes
+## 实施说明
 
 1. 首批业务架构说明见 `docs/architecture/business-platform-domain-architecture.md`。
 2. 完整业务平台规格见 `docs/superpowers/specs/2026-05-20-business-platform-domain-design.md`。
