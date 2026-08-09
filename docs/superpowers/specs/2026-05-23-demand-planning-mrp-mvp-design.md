@@ -38,7 +38,7 @@ MVP 通过 adapter 接受输入，因此无需启动其他服务即可测试 MRP
 
 | 输入 | 来源 | MVP 处理方式 |
 | --- | --- | --- |
-| 已发布生产版本 | ProductEngineering resolve/list API 或 fixture adapter | 在运行中对 productionVersionId、mbomVersionId 和 routingVersionId 创建快照。 |
+| 已发布生产版本 | ProductEngineering 解析/列表 API 或 fixture adapter | 在运行中对 productionVersionId、mbomVersionId 和 routingVersionId 创建快照。 |
 | 已发布 MBOM 行 | ProductEngineering 事件/API 快照 | MVP 使用单层 BOM 展开。 |
 | 库存可用量 | Inventory `GET /api/inventory/v1/availability` 或 fixture adapter | 按 SKU/UOM/site 对可用数量创建快照。 |
 | 需求来源 | DemandPlanning command/API | 作为计划输入归 DemandPlanning 所有。 |
