@@ -30,11 +30,11 @@ $mergedContainerIds = @(Merge-NervSessionContainerIds `
     -RecordedIds @('recorded') `
     -DiscoveredRecords @([pscustomobject]@{ id = 'discovered' }, [pscustomobject]@{ id = 'recorded' }))
 Assert-True ($mergedContainerIds.Count -eq 2) 'Container cleanup candidates must include recorded and label-discovered IDs without duplicates.'
-Assert-True ($mergedContainerIds -ccontains 'discovered') 'A partially started label-discovered container must be recoverable.'
+Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($mergedContainerIds), [StringComparer]::Ordinal).Contains('discovered')) 'A partially started label-discovered container must be recoverable.'
 $discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers @(
     [pscustomobject]@{ NetworkSettings = [pscustomobject]@{ Networks = [pscustomobject]@{ session = [pscustomobject]@{ NetworkID = 'network-from-owned-container' } } } }
 ))
-Assert-True ($discoveredNetworkIds -ccontains 'network-from-owned-container') 'Networks attached to label-owned containers must be recoverable after partial startup.'
+Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($discoveredNetworkIds), [StringComparer]::Ordinal).Contains('network-from-owned-container')) 'Networks attached to label-owned containers must be recoverable after partial startup.'
 $recordableDcpNetwork = [pscustomobject]@{
     Id = 'dcp-session-network'
     Name = 'aspire-session-network-xgsryykh-Nerv.IIP'
@@ -55,7 +55,7 @@ $recordableNetworkIds = @(Get-NervRecordableDcpNetworkIds `
     ) `
     -OwnedContainerIds @('owned-container-id', 'owned-container-id-2'))
 Assert-True ($recordableNetworkIds.Count -eq 1) 'Only the ephemeral DCP network exclusively attached to owned containers may become manifest authority.'
-Assert-True ($recordableNetworkIds[0] -ceq 'dcp-session-network') 'The exact DCP session network ID must be recorded.'
+Assert-True ([string]::Equals([string]$recordableNetworkIds[0], 'dcp-session-network', [StringComparison]::Ordinal)) 'The exact DCP session network ID must be recorded.'
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
 $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
@@ -67,15 +67,15 @@ $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.
 Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
 Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
 Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
-Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'")) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
-Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"')) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
-Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')")) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
-Assert-True ($fullStackSessionText.Contains('$describe = if ($Scenario -eq ''man-440'')')) 'MAN-440 must not require unrelated public endpoint discovery before its external-process probe.'
-Assert-True ($appHostText.Contains('max_connections=300')) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
-Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'")) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
-Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'")) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
-Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'")) 'Full-stack startup must disable the persistent .NET build server.'
-Assert-True ($fullStackSessionText.Contains("'business-master-data'")) 'Full-stack startup must wait for the business service used by the browser smoke test.'
+Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'", [StringComparison]::Ordinal)) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
+Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"', [StringComparison]::Ordinal)) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
+Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
+Assert-True ($fullStackSessionText.Contains('$describe = if ([string]::Equals([string]($Scenario), [string](''man-440''), [StringComparison]::OrdinalIgnoreCase))', [StringComparison]::Ordinal)) 'MAN-440 must not require unrelated public endpoint discovery before its external-process probe.'
+Assert-True ($appHostText.Contains('max_connections=300', [StringComparison]::Ordinal)) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
+Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'", [StringComparison]::Ordinal)) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
+Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'", [StringComparison]::Ordinal)) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
+Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'", [StringComparison]::Ordinal)) 'Full-stack startup must disable the persistent .NET build server.'
+Assert-True ($fullStackSessionText.Contains("'business-master-data'", [StringComparison]::Ordinal)) 'Full-stack startup must wait for the business service used by the browser smoke test.'
 $volumeRegistrationIndex = $fullStackSessionText.IndexOf('.runtime.volumeNames = @(', [StringComparison]::Ordinal)
 $aspireStartIndex = $fullStackSessionText.IndexOf('Invoke-NervAspireStartWithRetry', [StringComparison]::Ordinal)
 Assert-True ($volumeRegistrationIndex -ge 0 -and $volumeRegistrationIndex -lt $aspireStartIndex) 'Deterministic session volume names must be persisted before Aspire can create resources.'
@@ -144,7 +144,7 @@ $identity = Get-NervAspireStartIdentity -StartObject $start
 $endpoint = Get-NervAspireResourceEndpoint -DescribeObject $describe -ResourceName 'business-console' -EndpointName 'http'
 Assert-True (-not [string]::IsNullOrWhiteSpace($identity.AppHostId)) 'AppHost ID was not parsed.'
 Assert-True ($identity.AppHostPid -eq 4242) 'AppHost PID was not parsed.'
-Assert-True ($endpoint -eq 'http://127.0.0.1:43125') "Unexpected endpoint '$endpoint'."
+Assert-True ([string]::Equals([string]$endpoint, 'http://127.0.0.1:43125', [StringComparison]::OrdinalIgnoreCase)) "Unexpected endpoint '$endpoint'."
 $emptyInspect = @(Get-NervDockerInspectObjects -Kind container -Identifiers @() -WorkingDirectory $repoRoot -Name 'empty-inspect-contract')
 Assert-True ($emptyInspect.Count -eq 0) 'Empty recorded Docker resources must not invoke inspect or fail cleanup.'
 $allDescribe = [pscustomobject]@{
