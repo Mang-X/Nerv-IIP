@@ -154,7 +154,7 @@ dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.We
 
 预期：事件转换器测试通过。
 
-## Task 4：添加 API 接口面
+## Task 4：添加 API 接口
 
 - [ ] **步骤 1：添加 endpoint 契约测试**
 
