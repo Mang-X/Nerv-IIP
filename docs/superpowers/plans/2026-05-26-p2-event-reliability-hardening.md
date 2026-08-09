@@ -1,8 +1,8 @@
 # P2 事件可靠性强化实施计划
 
-> **面向代理执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
+> **面向代理执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**目标：**通过持久化 Notification、AppHub 和 MES 的 DLQ 事实，并增加按需启用的跨服务 CAP 强化门禁，使 #170/#171 的事件可靠性达到足以用于 P2 生产环境的水平。
+**目标：**通过持久化 Notification、AppHub 和 MES 的 DLQ 事实，并增加按需启用的跨服务 CAP 强化门禁，使 #170/#171 的事件可靠性达到 P2 所需的生产级水平。
 
 **架构：**复用现有 Maintenance 持久化 DLQ 形态作为表契约，但基础 `Nerv.IIP.Messaging.CAP` 包仅保留契约、守卫逻辑和内存 DLQ。可复用的 EF 存储位于 `Nerv.IIP.Messaging.CAP.EntityFrameworkCore`，使 PostgreSQL 支持的服务无需复制粘贴即可按需启用，同时避免非持久化消费者引入 EF Core 传递依赖。每个服务在自己的 schema 内拥有独立的 `integration_event_dead_letters` 表。CAP `received` 仍作为消息代理级 inbox；服务自有的已处理事件表仍作为业务 inbox，并将逐步扩展。
 

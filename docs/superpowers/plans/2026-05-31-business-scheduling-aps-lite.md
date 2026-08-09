@@ -1,6 +1,6 @@
 # BusinessScheduling APS Lite 实施计划
 
-> **面向代理执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
+> **面向代理执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
 **目标：**通过创建 BusinessScheduling 服务、稳定的 APS lite 契约、确定性有限产能排程器、持久化/API 界面、BusinessGateway facade 和验证脚本来实施 #206。
 
