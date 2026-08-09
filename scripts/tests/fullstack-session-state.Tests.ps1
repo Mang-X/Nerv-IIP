@@ -42,6 +42,14 @@ try {
     Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
     $admission = Test-NervFullStackAdmission -StateRoot $testRoot -MaximumSessions 1 -ExcludeSessionId 'none'
     Assert-True (-not $admission.Allowed) 'A second active session must be denied at the configured ceiling.'
+    $softHyphen = [string][char]0x00AD
+    $softHyphenAdmission = Test-NervFullStackAdmission `
+        -StateRoot $testRoot `
+        -MaximumSessions 1 `
+        -ExcludeSessionId "$sessionId$softHyphen"
+    Assert-True (-not $softHyphenAdmission.Allowed) 'A session ID differing by U+00AD must not exclude the current active session from admission.'
+    Assert-True ($softHyphenAdmission.ActiveCount -eq 1) 'A U+00AD-distinct exclusion must retain the current active session in the admission count.'
+    Assert-True ([string]::Equals([string]$softHyphenAdmission.Reason, 'MaximumSessionsReached', [StringComparison]::Ordinal)) 'A U+00AD-distinct exclusion must retain the maximum-session blocker.'
 
     $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
     Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded -Now ([DateTimeOffset]::UtcNow)) 'Expired lease must be stale.'
