@@ -1,3 +1,4 @@
+using System.Reflection;
 using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
@@ -26,8 +27,20 @@ public sealed class DockerContainerLifecycleTests
         Assert.True(docker.CleanupRan);
         Assert.False(docker.TargetExists);
         Assert.True(docker.Elapsed > TimeSpan.FromMilliseconds(ConnectorTimeoutCollection.TestTimeoutMilliseconds));
+    }
 
-        var integrationTimeout = TimeSpan.FromMilliseconds(DockerCliIntegrationBudget.TestTimeoutMilliseconds);
+    [Fact]
+    public void Real_Docker_integration_fact_timeout_is_480_seconds_and_exceeds_maximum_internal_budget()
+    {
+        var integrationMethod = typeof(DockerCliIntegrationTests).GetMethod(
+            nameof(DockerCliIntegrationTests.Docker_connector_discovers_and_restarts_a_real_container),
+            BindingFlags.Instance | BindingFlags.Public);
+        var integrationFact = integrationMethod?.GetCustomAttribute<DockerCliFactAttribute>();
+
+        Assert.NotNull(integrationFact);
+        Assert.Equal(480_000, integrationFact.Timeout);
+
+        var integrationTimeout = TimeSpan.FromMilliseconds(integrationFact.Timeout);
         Assert.Equal(TimeSpan.FromSeconds(404), DockerCliIntegrationBudget.MaximumInternalBudget);
         Assert.True(
             integrationTimeout > DockerCliIntegrationBudget.MaximumInternalBudget,
@@ -97,6 +110,28 @@ public sealed class DockerContainerLifecycleTests
     }
 
     [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Cleanup_runs_all_five_sweeps_when_container_materializes_after_third_empty_snapshot()
+    {
+        const string containerName = "nerv-iip-after-third-empty-snapshot";
+        var docker = new FakeDockerCommands(containerName, materializeAfterThirdEmptySnapshot: true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DockerContainerLifecycle.RunAsync(
+                containerName,
+                docker.RunAsync,
+                () => Task.CompletedTask,
+                delayAsync: docker.DelayAsync));
+
+        Assert.Same(docker.CreateFailure, exception);
+        var cleanupException = Assert.IsType<Xunit.Sdk.XunitException>(exception.Data["DockerCleanupException"]);
+        Assert.Contains("could not confirm 3 stable exact-name absence observations", cleanupException.Message);
+        Assert.True(docker.DelayedContainerMaterialized);
+        Assert.Equal(5, docker.CleanupObservationCount);
+        Assert.False(docker.TargetExists);
+        Assert.True(docker.UnrelatedContainerExists);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Cleanup_failure_does_not_replace_the_original_scenario_exception()
     {
         const string containerName = "nerv-iip-primary-failure";
@@ -120,6 +155,7 @@ public sealed class DockerContainerLifecycleTests
         private readonly bool _materializeBeforeCreateFailure;
         private readonly bool _materializeAfterFirstCleanupSweep;
         private readonly bool _materializeAfterFirstEmptyObservation;
+        private readonly bool _materializeAfterThirdEmptySnapshot;
         private readonly bool _consumeCommandBudgets;
         private readonly bool _failCleanupCommands;
         private readonly HashSet<string> _containers = [UnrelatedContainerName];
@@ -131,6 +167,7 @@ public sealed class DockerContainerLifecycleTests
             bool materializeBeforeCreateFailure = false,
             bool materializeAfterFirstCleanupSweep = false,
             bool materializeAfterFirstEmptyObservation = false,
+            bool materializeAfterThirdEmptySnapshot = false,
             bool consumeCommandBudgets = false,
             bool failCleanupCommands = false,
             TimeSpan elapsedBeforeLifecycle = default)
@@ -139,6 +176,7 @@ public sealed class DockerContainerLifecycleTests
             _materializeBeforeCreateFailure = materializeBeforeCreateFailure;
             _materializeAfterFirstCleanupSweep = materializeAfterFirstCleanupSweep;
             _materializeAfterFirstEmptyObservation = materializeAfterFirstEmptyObservation;
+            _materializeAfterThirdEmptySnapshot = materializeAfterThirdEmptySnapshot;
             _consumeCommandBudgets = consumeCommandBudgets;
             _failCleanupCommands = failCleanupCommands;
             Elapsed = elapsedBeforeLifecycle;
@@ -148,6 +186,7 @@ public sealed class DockerContainerLifecycleTests
         public InvalidOperationException CleanupFailure { get; } = new("docker cleanup transport failed");
         public bool DelayedContainerMaterialized { get; private set; }
         public bool CleanupRan { get; private set; }
+        public int CleanupObservationCount { get; private set; }
         public TimeSpan Elapsed { get; private set; }
         public bool TargetExists => _containers.Contains(_targetContainerName);
         public bool UnrelatedContainerExists => _containers.Contains(UnrelatedContainerName);
@@ -196,12 +235,22 @@ public sealed class DockerContainerLifecycleTests
 
                 var expectedFilter = $"name=^/{_targetContainerName}$";
                 Assert.Equal(expectedFilter, filter);
+                CleanupObservationCount++;
                 var output = TargetExists ? "target-container-id\n" : string.Empty;
                 if (_materializeAfterFirstEmptyObservation
                     && string.IsNullOrEmpty(output)
                     && !DelayedContainerMaterialized)
                 {
                     _materializeOnNextDelay = true;
+                }
+
+                if (_materializeAfterThirdEmptySnapshot
+                    && CleanupObservationCount == 3
+                    && string.IsNullOrEmpty(output)
+                    && !DelayedContainerMaterialized)
+                {
+                    _containers.Add(_targetContainerName);
+                    DelayedContainerMaterialized = true;
                 }
 
                 return Task.FromResult(new DockerCommandResult(0, output));

@@ -263,10 +263,6 @@ internal static class DockerContainerLifecycle
                     consecutiveAbsentObservations = removedExactResource
                         ? 1
                         : consecutiveAbsentObservations + 1;
-                    if (consecutiveAbsentObservations >= RequiredStableAbsenceObservations)
-                    {
-                        return;
-                    }
                 }
                 else
                 {
@@ -283,6 +279,11 @@ internal static class DockerContainerLifecycle
             {
                 await delayAsync(CleanupSweepInterval);
             }
+        }
+
+        if (consecutiveAbsentObservations >= RequiredStableAbsenceObservations)
+        {
+            return;
         }
 
         if (lastCleanupException is not null)
