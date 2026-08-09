@@ -1,47 +1,47 @@
-# 数据库发布检查表与 Runbook
+# 数据库发布检查表与运行手册
 
-本文档把 ADR 0009 和 schema conventions 落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema governance metadata 和 service-schema migrations history 配置固化为门禁，第七阶段补齐 IAM `iam` schema、初始 migration、seed/auth profile 验证和持久化登录基线。真正 PoC 或私有化交付前，必须把本文档中的 release gate 补进安装脚本、migration bundle 或专用 migrator；承载这些动作的脚本还必须满足 docs/architecture/script-automation-governance.md。
+本文档把 ADR 0009 和 schema 约定落成发布执行口径。它不是当前仓库已经具备完整私有化安装包的声明；当前第五阶段验证了 AppHub/Ops 可以通过 migrations 从空 PostgreSQL 数据库建表，第六阶段进一步把 AppHub/Ops 的 schema 治理元数据和服务 schema 迁移历史配置固化为门禁，第七阶段补齐 IAM `iam` schema、初始 migration、seed/auth profile 验证和持久化登录基线。真正进行 PoC 或私有化交付前，必须把本文档中的发布门禁补进安装脚本、migration bundle 或专用 migrator；承载这些动作的脚本还必须满足 docs/architecture/script-automation-governance.md。
 
 ## 当前支持状态
 
-| Profile | Current status | Release-supported? | Evidence |
+| Profile（配置档） | 当前状态 | 是否支持发布 | 证据 |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops/IAM/FileStorage 已有 migrations 和 schema governance metadata/profile 门禁；FileStorage 另有显式受治理 migrator 与重启持久化 smoke。 | Not yet for complete customer release. FileStorage migration step 已具备，但仍需全服务安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1`、`scripts/install/migrate-file-storage.ps1` |
-| GaussDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
-| DMDB | Candidate only. | No. | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
-| Other databases | Evaluation only. | No. | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
+| PostgreSQL | AppHub/Ops/IAM/FileStorage 已有 migrations 和 schema 治理元数据/profile 门禁；FileStorage 另有显式受治理 migrator 与重启持久化冒烟测试。 | 尚不支持完整客户发布。FileStorage migration 步骤已具备，但仍需全服务安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1`、`scripts/install/migrate-file-storage.ps1` |
+| GaussDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
+| DMDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
+| 其他数据库 | 仅处于评估阶段。 | 否。 | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
 
 ## AutoMigrate 环境矩阵
 
 `Persistence:AutoMigrate=true` 只用于受控本地或开发验证。任何面向客户数据的环境都必须走显式发布入口。
 
-| Environment | AutoMigrate | Required migration path |
+| 环境 | AutoMigrate | 必需的迁移路径 |
 | --- | --- | --- |
-| Unit/integration tests | Allowed when test owns disposable database. | Test setup or verification script。 |
-| Local development | Allowed for disposable local database. | `Persistence:AutoMigrate=true` 或手动 `dotnet-ef database update`。 |
-| Shared dev / team environment | Discouraged; requires explicit owner approval. | Service-owned migrator or release script。 |
-| PoC with customer data | Forbidden. | Release script with backup, migration log and health check。 |
-| Private deployment / production | Forbidden. | Migration bundle or dedicated migrator step, executed before service rollout。 |
+| 单元/集成测试 | 测试拥有一次性数据库时允许。 | 测试设置或验证脚本。 |
+| 本地开发 | 对一次性本地数据库允许。 | `Persistence:AutoMigrate=true` 或手动 `dotnet-ef database update`。 |
+| 共享开发/团队环境 | 不建议使用；需要归属负责人明确批准。 | 服务自有 migrator 或发布脚本。 |
+| 使用客户数据的 PoC | 禁止。 | 带备份、迁移日志和健康检查的发布脚本。 |
+| 私有化部署/生产环境 | 禁止。 | 服务推出前执行 migration bundle 或专用 migrator 步骤。 |
 
-## 发布前 Preflight
+## 发布前检查
 
-1. 确认 release id、git commit、服务版本、目标 environment、数据库 profile 和连接串来源。
+1. 确认发布 ID、Git commit、服务版本、目标环境、数据库 profile 和连接串来源。
 2. 确认目标数据库是预期库，不是开发默认库、共享验证库或误连客户生产库。
-3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前 release 要求；当 release profile 设置 `Messaging:Provider=Redis` 时确认 Redis 持久卷、RDB/AOF 持久化和备份策略；仅当 release profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
-4. 确认安装脚本不会直接拼 SQL 写业务表，也不会使用绕过 EF migrations history 的建表路径。
-5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移，FileStorage 通过受治理专用入口迁移；Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入顺序。
+3. 确认 PostgreSQL、Redis、对象存储和观测依赖版本满足当前发布要求；当发布 profile 设置 `Messaging:Provider=Redis` 时确认 Redis 持久卷、RDB/AOF 持久化和备份策略；仅当发布 profile 设置 `Messaging:Provider=RabbitMQ` 时确认 RabbitMQ 版本和连通性。
+4. 确认安装脚本不会直接拼 SQL 写业务表，也不会使用绕过 EF 迁移历史的建表路径。
+5. 确认待执行服务清单和顺序。当前 AppHub/Ops/IAM 可独立迁移，FileStorage 通过受治理专用入口迁移；Notification、Knowledge、AI Integration、Observability 必须在各自 catalog 和迁移准备完成后加入执行顺序。
 6. 确认备份或快照已完成，并记录备份位置、时间、校验方式和恢复负责人。
-7. 确认本次 release 的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
+7. 确认本次发布的 seed 清单、幂等键、默认管理员/凭据处理方式和重复执行语义。
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
-9. 从第五阶段旧库升级到第六阶段及以后时，先执行“迁移历史表 schema 搬迁”前置步骤；否则 EF 会在新的 service schema history table 中看不到已应用的 `InitialCreate`，从而尝试重复建表。
-10. 确认执行脚本分类为 `release-install` 或受控 release migrator，并通过脚本治理门禁；不得用 `verify` 脚本直接处理客户数据环境。
+9. 从第五阶段旧库升级到第六阶段及以后时，先执行“迁移历史表 schema 搬迁”前置步骤；否则 EF 会在新的服务 schema 历史表中看不到已应用的 `InitialCreate`，从而尝试重复建表。
+10. 确认执行脚本分类为 `release-install` 或受控发布 migrator，并通过脚本治理门禁；不得用 `verify` 脚本直接处理客户数据环境。
 11. 执行 Quality migration `20260629074947_AddQualityLongtailReviewFixes` 前，先按 `docs/architecture/business-quality-inspection-duplicate-remediation.md` 检查并清理 `quality.inspection_records` 来源单据 + SKU 历史重复组；该路径不得静默删除或改写 NCR、事件或审计证据。
 
 ## 第六阶段迁移历史表 schema 搬迁
 
 第五阶段 AppHub/Ops 的 `__EFMigrationsHistory` 使用 provider 默认 schema。第六阶段开始，AppHub/Ops 显式使用 service schema 中的 history table：`apphub.__EFMigrationsHistory` 与 `ops.__EFMigrationsHistory`。
 
-从已有第五阶段数据库升级时，必须在执行 `dotnet-ef database update`、migration bundle 或专用 migrator 之前，把旧 history rows 复制到 service schema。这个步骤只搬迁 EF migration history，不修改业务表。
+从已有第五阶段数据库升级时，必须在执行 `dotnet-ef database update`、migration bundle 或专用 migrator 之前，把旧历史记录复制到服务 schema。这个步骤只搬迁 EF 迁移历史，不修改业务表。
 
 如果目标库是一次性本地验证库，可以直接删除并重建库；如果目标库保留任何需要延续的数据，必须执行下面的前置 SQL 并保留备份。
 
@@ -94,11 +94,11 @@ SELECT * FROM apphub."__EFMigrationsHistory" ORDER BY "MigrationId";
 SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
 ```
 
-确认目标 service schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops/IAM 手动迁移命令。不要在同一个 release 中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
+确认目标服务 schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops/IAM 手动迁移命令。不要在同一个发布中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
 
 ## 当前 AppHub/Ops/IAM 手动迁移命令与 FileStorage 受治理入口
 
-第五阶段已经为 AppHub/Ops 提供 migration runner 和 migrations，第七阶段已经为 IAM 提供 migration runner 和初始 persistent auth migration，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
+第五阶段已经为 AppHub/Ops 提供 migration runner 和 migrations，第七阶段已经为 IAM 提供 migration runner 和初始持久化认证 migration，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
 
 AppHub:
 
@@ -142,7 +142,7 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__IamDb -ErrorAction SilentlyContinue
 ```
 
-FileStorage 不再要求操作者直接拼接 `dotnet-ef` 命令。先完成备份 preflight，再把连接串只放入当前 PowerShell 进程并执行受治理 migrator：
+FileStorage 不再要求操作者直接拼接 `dotnet-ef` 命令。先完成备份前置检查，再把连接串只放入当前 PowerShell 进程并执行受治理 migrator：
 
 ```powershell
 $env:NERV_IIP_FILE_STORAGE_DB = "<file-storage-postgres-connection-string>"
@@ -151,11 +151,11 @@ pwsh scripts/install/migrate-file-storage.ps1 -ReleaseId "<release-id>"
 Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
 ```
 
-该脚本只应用仓库中的 FileStorage EF migrations，不删除或重建数据库、不执行 seed，并对命令参数和日志中的连接串做脱敏。`-ValidateOnly` 只确认变量、目标 database alias 和 release metadata，不连接数据库。目标数据库默认必须精确匹配 `nerv_iip_filestorage`；只有受控环境明确采用其他库名时，才同时传入 `-ExpectedDatabase <database-name>`，避免把 `filestorage` schema 误建到相邻服务数据库。PoC/private/prod 的 FileStorage Web host 必须保持 `Persistence:AutoMigrate=false`。
+该脚本只应用仓库中的 FileStorage EF migrations，不删除或重建数据库、不执行 seed，并对命令参数和日志中的连接串做脱敏。`-ValidateOnly` 只确认变量、目标数据库别名和发布元数据，不连接数据库。目标数据库默认必须精确匹配 `nerv_iip_filestorage`；只有受控环境明确采用其他库名时，才同时传入 `-ExpectedDatabase <database-name>`，避免把 `filestorage` schema 误建到相邻服务数据库。PoC/私有化部署/生产环境的 FileStorage Web host 必须保持 `Persistence:AutoMigrate=false`。
 
 重跑语义：
 
-1. `database update` 对已应用 migration 应为 no-op。
+1. `database update` 对已应用 migration 应不执行任何操作。
 2. 已失败的 migration 不允许靠手工改 `__EFMigrationsHistory` 修复；必须恢复备份或提交补救 migration。
 3. 同一目标数据库同一时间只允许一个 migrator 运行。
 
@@ -186,16 +186,16 @@ docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv 
 
 回滚口径：
 
-1. 默认采用向前修复，不依赖自动 downgrade。
+1. 默认采用向前修复，不依赖自动降级。
 2. 代码已发布但 migration 未完成时，停止新版本服务并回到旧版本服务。
 3. migration 已完成但服务健康检查失败时，优先判断是否可用补救配置或补救 migration；涉及数据破坏风险时恢复备份。
-4. 任何恢复都必须记录 release id、数据库、恢复点、执行人、开始/结束时间和结果。
+4. 任何恢复都必须记录发布 ID、数据库、恢复点、执行人、开始/结束时间和结果。
 
 ## Seed 执行契约
 
 Seed 必须是显式步骤，不混在普通 Web 启动里偷偷执行。
 
-每个 seed step 必须声明：
+每个 seed 步骤必须声明：
 
 1. `seedName`：例如 `iam-default-permissions`、`iam-initial-admin`。
 2. `seedVersion`：用于判断 seed 逻辑是否升级。
@@ -203,7 +203,7 @@ Seed 必须是显式步骤，不混在普通 Web 启动里偷偷执行。
 4. `idempotencyKey` 或幂等规则。
 5. 输入来源：配置文件、环境变量、安全输入、安装参数或内置常量。
 6. 重复执行结果：created、updated、skipped 或 failed。
-7. 敏感信息处理：初始管理员密码、client secret 和 connector credential 不写入日志。
+7. 敏感信息处理：初始管理员密码、客户端密钥和 Connector credential 不写入日志。
 
 安装脚本必须输出：
 
@@ -222,37 +222,37 @@ logPath=<path>
 exitCode=<code>
 ```
 
-## CAP System Tables 运维
+## CAP 系统表运维
 
-CAP tables 是 system-owned，不是业务表：
+CAP 表由系统所有，不是业务表：
 
 1. 不手工修改 `cap_published_messages`、`cap_received_messages`、`cap_locks`。
 2. 不把 CAP 表作为业务查询接口的数据源。
-3. 排障时只能读取消息状态、重试次数、时间戳、异常摘要和锁 key 等诊断信息。
-4. 清理策略必须由 CAP 配置、服务 migrator 或受控运维任务执行，不用 ad hoc SQL 删除。
-5. CAP storage/outbox 必须纳入 database profile 验证；只验证 EF business tables 不算 profile 支持完成。
-6. CAP 锁异常时先确认是否有并发 migrator、异常退出服务实例或 messaging provider 连接故障；使用 `Messaging:Provider=Redis` 时排查 Redis 连接、stream consumer group 和持久化状态，使用 `Messaging:Provider=RabbitMQ` 时排查 RabbitMQ 连接，再决定是否需要人工介入。
+3. 排障时只能读取消息状态、重试次数、时间戳、异常摘要和锁键等诊断信息。
+4. 清理策略必须由 CAP 配置、服务 migrator 或受控运维任务执行，不得用临时 SQL 删除。
+5. CAP storage/outbox 必须纳入数据库 profile 验证；只验证 EF 业务表不算 profile 支持完成。
+6. CAP 锁异常时先确认是否有并发 migrator、异常退出服务实例或消息 provider 连接故障；使用 `Messaging:Provider=Redis` 时排查 Redis 连接、流消费者组和持久化状态，使用 `Messaging:Provider=RabbitMQ` 时排查 RabbitMQ 连接，再决定是否需要人工介入。
 
 ## 发布后验证
 
-1. 查询每个服务的 applied migrations，确认目标 migration 已应用。
+1. 查询每个服务已应用的 migrations，确认目标 migration 已应用。
 2. 启动服务并通过 health endpoint 验证数据库、Redis 和外部依赖；使用 `Messaging:Provider=Redis` 时验证服务重启后的 stream 消费恢复，使用 `Messaging:Provider=RabbitMQ` 时同时验证 RabbitMQ。
-3. 对 AppHub 执行最小 registration/heartbeat/state-snapshot smoke test。
-4. 对 Ops 执行最小 operation task create/pending/result smoke test。
-5. 对 IAM 执行默认管理员登录、refresh、logout、`/me` 和 Connector Host credential validation smoke test。
+3. 对 AppHub 执行最小的 registration/heartbeat/state-snapshot 冒烟测试。
+4. 对 Ops 执行最小的操作任务创建、待处理状态及结果冒烟测试。
+5. 对 IAM 执行默认管理员登录、refresh、logout、`/me` 和 Connector Host 凭据验证冒烟测试。
 6. 确认 CAP outbox/inbox 无持续增长的异常失败消息。
-7. 确认日志包含 release id、service、profile、migration from/to、duration 和 correlation id。
-8. 归档诊断日志位置，保留到当前 release 验收结束。
+7. 确认日志包含发布 ID、服务、profile、迁移起止版本、耗时和关联 ID。
+8. 归档诊断日志位置，保留到当前发布验收结束。
 
-## Release Gate
+## 发布门禁
 
 面向 PoC 或私有化交付前，至少完成：
 
 1. AppHub/Ops/IAM 发布脚本或 migration bundle。
-2. FileStorage 受治理 migrator、schema catalog、migration、startup profile matrix 和重启持久化 smoke；完整安装流程仍需在调用 migrator 前后编排备份、健康检查与诊断归档。
+2. FileStorage 受治理 migrator、schema catalog、migration、启动 profile 矩阵和重启持久化冒烟测试；完整安装流程仍需在调用 migrator 前后编排备份、健康检查与诊断归档。
 3. PostgreSQL 备份/恢复演练记录。
 4. seed 清单和初始凭据安全处理方案。
-5. CAP system tables retention 和排障说明。
+5. CAP 系统表保留策略和排障说明。
 6. 安装脚本诊断输出契约。
-7. `Persistence:AutoMigrate=true` 在 PoC/private/prod profile 下被禁止或 hard fail。
+7. `Persistence:AutoMigrate=true` 在 PoC/私有化部署/生产环境 profile 下被禁止或强制失败。
 8. 发布安装脚本通过 ADR 0010 脚本治理门禁，包含超时、结构化日志、进程树清理、作用域环境变量、敏感信息脱敏和诊断包输出。

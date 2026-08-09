@@ -18,10 +18,10 @@
 
 1. 每个拥有持久化事实的服务拥有自己的 schema、DbContext、EntityConfigurations 和 migrations。
 2. 服务不得跨 schema 建外键，不得通过共享 DbContext 读写其他服务表。
-3. 跨服务引用使用稳定业务标识、IntegrationEvent、查询 API 或后续专用 projection，不用数据库外键表达。
+3. 跨服务引用使用稳定业务标识、IntegrationEvent、查询 API 或后续专用投影，不用数据库外键表达。
 4. 默认 PostgreSQL profile 下，每个服务使用独立默认 schema，已落地示例包括 `apphub`、`ops`、`iam`；后续示例包括 `filestorage`、`notification`、`knowledge`、`ai` 或 `observability`。
-5. CAP、EF migrations history 和框架自带表仍放在服务 schema 内，归属于该服务的基础设施边界。
-6. PostgreSQL profile 下必须显式配置 EF migrations history table，例如 `MigrationsHistoryTable("__EFMigrationsHistory", "apphub")`，避免历史表落到 provider 默认 schema 后削弱服务边界。
+5. CAP、EF 迁移历史和框架自带表仍放在服务 schema 内，归属于该服务的基础设施边界。
+6. PostgreSQL profile 下必须显式配置 EF 迁移历史表，例如 `MigrationsHistoryTable("__EFMigrationsHistory", "apphub")`，避免历史表落到 provider 默认 schema 后削弱服务边界。
 
 ## 命名
 
@@ -41,7 +41,7 @@
 3. EF Core migration，且能从空库迁移到当前模型。
 4. schema catalog 条目，说明表用途、所有者、关键列、索引意图和数据生命周期。
 5. profile 验证入口，至少覆盖 PostgreSQL；候选信创 profile 进入支持矩阵前必须单独验证迁移。
-6. 如果表需要初始化数据，必须设计幂等 seed command 或 migrator step，不允许安装脚本直接拼 SQL 写业务表。
+6. 如果表需要初始化数据，必须设计幂等 seed command 或 migrator 步骤，不允许安装脚本直接拼 SQL 写业务表。
 7. 如果字段会以 JSON/text 形式进入 API、SDK、IntegrationEvent 或外部协议，必须先定义 schema/version/compat 说明。
 
 ## 注释规范
@@ -50,13 +50,13 @@
 
 1. 每张业务表必须有表注释。EF 配置应使用 `ToTable("table_name", table => table.HasComment("..."))` 或等价写法。
 2. 每个业务列必须有列注释。包括 ID、业务键、状态、时间、软删除、行版本、JSON/text 序列化字段。
-3. 注释描述字段语义，不重复类型。例如写“Connector host 上报的能力集合 JSON”，不要只写“string column”。
-4. 序列化字段必须说明格式、生产方、消费方和兼容策略。至少写清是 JSON、是否由平台生成、是否允许 connector 扩展。
+3. 注释描述字段语义，不重复类型。例如写“Connector Host 上报的能力集合 JSON”，不要只写“字符串列”。
+4. 序列化字段必须说明格式、生产方、消费方和兼容策略。至少写清是 JSON、是否由平台生成、是否允许 Connector 扩展。
 5. 状态字段必须在 catalog 中链接或列出允许值来源，避免状态枚举只散落在代码里。
 6. 时间字段必须说明时区，默认使用 UTC。
-7. 软删除字段统一说明为“Soft delete flag”，RowVersion 统一说明为“Optimistic row version”，除非该服务另有 ADR。
+7. 软删除字段统一说明为“Soft delete flag”（软删除标志），RowVersion 统一说明为“Optimistic row version”（乐观并发版本），除非该服务另有 ADR。
 8. 注释语言默认使用简洁英文，便于数据库工具、OpenAPI 和多语言交付统一展示；如客户交付需要中文数据字典，在 catalog 中补中文解释，不改物理注释口径。
-9. CAP、EF migrations history 等框架表可以不逐列补注释，但必须在 catalog 中标记为 system-owned，并说明由哪个框架维护。
+9. CAP、EF 迁移历史等框架表可以不逐列补注释，但必须在 catalog 中标记为系统所有，并说明由哪个框架维护。
 
 ## 类型与强类型 ID
 
@@ -74,21 +74,21 @@
 
 1. 每个唯一业务规则必须落到唯一索引或唯一约束，不能只靠应用层判断。
 2. 每个列表查询、调度领取、幂等检查和状态扫描都必须有对应索引。
-3. 每个索引都要在 entity configuration 附近或 schema catalog 中说明服务的查询/约束意图。
+3. 每个索引都要在实体配置附近或 schema catalog 中说明服务的查询/约束意图。
 4. 外键删除行为必须显式配置。聚合内子实体通常 `Cascade`；跨聚合和跨服务不得用级联删除隐藏业务影响。
 5. 可空列必须有明确原因。业务必填字段应配置 `IsRequired()`。
 6. 字符串列必须配置长度。除非有明确大文本语义，不允许无边界 string。
-7. 默认唯一索引不包含 `Deleted`，表示软删除后的业务键不自动释放。若某服务允许软删除后复用业务键，必须使用明确的 filtered/partial unique index 或等价机制，并说明恢复、审计和重复注册语义。
+7. 默认唯一索引不包含 `Deleted`，表示软删除后的业务键不自动释放。若某服务允许软删除后复用业务键，必须使用明确的过滤式/部分唯一索引或等价机制，并说明恢复、审计和重复注册语义。
 
 ## 迁移与发布
 
-1. 生产、PoC 和可交付环境不得使用绕过 EF migrations history 的建表路径创建或升级业务库。
+1. 生产、PoC 和可交付环境不得使用绕过 EF 迁移历史的建表路径创建或升级业务库。
 2. Web/Worker 默认启动不得自动迁移；本地/dev 验证可通过 `Persistence:AutoMigrate=true` 显式开启。
 3. migration 文件属于服务 Infrastructure 项目或明确 migrations 项目，不放在 Web 项目。
-4. 修改实体配置后必须检查 pending model changes，并生成/调整 migration。
+4. 修改实体配置后必须检查待处理的模型变更，并生成/调整 migration。
 5. 每个 PostgreSQL profile DbContext 必须显式配置 `__EFMigrationsHistory` 所在 schema。
 6. 不手写与 EF migration 平行的建表 SQL，除非该 provider 无法可靠由 EF 表达；这种例外必须写入服务架构文档。
-7. 删除列、改类型、改唯一范围、拆表和迁移数据都要采用可前滚的兼容策略，并在 release notes 或服务计划中说明。
+7. 删除列、改类型、改唯一范围、拆表和迁移数据都要采用可前滚的兼容策略，并在发布说明或服务计划中说明。
 8. 每次 release 执行迁移前必须有备份/快照策略，并记录迁移版本、目标数据库和日志位置。
 9. `Persistence:AutoMigrate=true` 的环境边界以 `docs/architecture/database-release-runbook.md` 的矩阵为准。
 
@@ -106,7 +106,7 @@
 ## Seed 与基础数据
 
 1. Seed 数据必须幂等，可重复执行。
-2. 系统权限码、初始角色、初始管理员、系统配置、connector credential seed 通过服务内 command 或 migrator step 写入。
+2. 系统权限码、初始角色、初始管理员、系统配置、Connector 凭据 seed 通过服务内命令或 migrator 步骤写入。
 3. Seed 不绕过领域校验，不直接访问其他服务 schema。
 4. Seed 结果需要可诊断：失败时输出 correlation id、服务名、seed 名称、seed 版本、数据范围、结果和日志位置。
 5. 默认管理员密码、client secret、connector credential 等敏感 seed 输入不得写入日志或 catalog。
@@ -128,20 +128,20 @@
 4. 可视化工具需要的稳定信息优先来自数据库注释和 catalog，不依赖个人口头解释。
 5. 后续如果引入自动 ER 图或数据字典生成器，生成产物必须以 migrations 和注释为输入，不反向成为 schema 权威。
 
-## Schema Convention Tests
+## Schema 约定测试
 
-AppHub/Ops/IAM 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释（在相关字段存在时）、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
+AppHub/Ops/IAM 已通过 `Nerv.IIP.Testing` 中的 schema 约定辅助程序覆盖业务表注释、业务列注释、JSON/text 兼容注释（在相关字段存在时）、string ID 约束和服务 schema 的 `__EFMigrationsHistory`。后续 FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
 
 自动化测试至少检查：
 
-1. 每张 business table 有 table comment。
-2. 每个 business property 有 column comment。
-3. JSON/text property 的注释包含 JSON 格式、生产方或消费方、兼容策略。
-4. system-owned tables 在 catalog 中有条目。
+1. 每张业务表都有表注释。
+2. 每个业务属性都有列注释。
+3. JSON/text 属性的注释包含 JSON 格式、生产方或消费方、兼容策略。
+4. 系统所有的表在 catalog 中有条目。
 5. `IStringStronglyTypedId` 主键使用 `ValueGeneratedNever()` 和长度限制。
-6. PostgreSQL profile 显式配置 service schema 的 `__EFMigrationsHistory`。
+6. PostgreSQL profile 显式配置服务 schema 的 `__EFMigrationsHistory`。
 
 ## 当前必须补齐的已知差距
 
-1. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
-2. FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。
+1. CAP 系统表当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持系统所有标记。
+2. FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema 约定测试。
