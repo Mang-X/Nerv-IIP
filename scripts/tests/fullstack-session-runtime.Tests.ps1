@@ -314,7 +314,7 @@ Assert-True `
 
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
 Assert-True ([string]::Equals([string]$environment.NERV_IIP_EPHEMERAL, 'true', [StringComparison]::Ordinal)) 'Ephemeral flag missing.'
-Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
+Assert-True ([string]::Equals([string]$environment.NERV_IIP_SESSION_ID, [string]$sessionId, [StringComparison]::Ordinal)) 'Session ID missing.'
 Assert-True ([string]::Equals([string]$environment.Messaging__Provider, 'Redis', [StringComparison]::Ordinal)) 'Managed full-stack sessions must explicitly select Redis messaging.'
 Assert-True ([string]::Equals([string]$environment.Persistence__Provider, 'PostgreSQL', [StringComparison]::Ordinal)) 'Managed full-stack sessions must explicitly select PostgreSQL persistence.'
 foreach ($expected in @(
