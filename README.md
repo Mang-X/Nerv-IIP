@@ -25,7 +25,7 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 7. 主平台控制面不内置工厂、产线、设备等行业组织模型；这些语义由业务平台服务、BusinessGateway 和可插拔领域扩展承载。
 8. 主平台通过模块化 Platform SDK 向应用、Connector Host 和扩展模块提供契约、认证、授权上下文、文件存储、运维调用、通知意图和观测上下文等客户端能力；SDK 不成为新的运行时中心，外部演进单元不直接依赖主平台内部实现。
 9. 主平台提供通用 File Storage 能力，负责文件元数据、授权、上传下载会话与对象存储治理；业务服务只通过 fileId 或文件引用表达业务含义。
-10. 主平台提供通用 Notification 能力，当前已交付站内通知、待办入口、接收人解析、去重、投递状态和 in-app delivery attempt；偏好/订阅、外部通道 provider、限流和模板映射仍由 #728 后续补齐，业务服务只表达已发生事实或通知意图，不各自直连短信、邮件、企业 IM 或 Webhook。
+10. 主平台提供通用 Notification 能力，当前已交付站内通知、待办入口、接收人解析、去重、投递状态和应用内投递尝试；偏好/订阅、外部通道提供方、限流和模板映射仍由 #728 后续补齐，业务服务只表达已发生事实或通知意图，不各自直连短信、邮件、企业 IM 或 Webhook。
 11. 主平台与应用、Connector Host、行业扩展采用主版本对齐策略：同一主版本内小版本可以滞后并保持兼容，破坏性变更必须提升主版本。
 12. 文档、契约和目录职责优先稳定，以降低团队协作和 AI 协作成本。
 13. 部署采用“多部署目标，单一部署模型”：Aspire 作为统一编排模型和开发联调入口，Docker Compose、安装包和整合安装脚本作为面向不同环境的交付目标。
@@ -34,7 +34,7 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 ## 仓库与文档入口
 
 - 代码仓库：[Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP)
-- 当前能力基线：业务平台主干已进入持续深化阶段，已覆盖 MasterData、ProductEngineering、DemandPlanning、Inventory、Quality、MES、WMS、ERP、IndustrialTelemetry、Maintenance、BarcodeLabel、BusinessApproval、BusinessScheduling / APS lite、BusinessGateway、Business Console 和 Business PDA v1；平台底座已覆盖 IAM、Gateway-wide permission enforcement、Console Auth、IAM Admin、FileStorage、本地 tus hardening、Notification、ExternalClient、事件可靠性、生产安全和生产部署产物。
+- 当前能力基线：业务平台主干已进入持续深化阶段，已覆盖 MasterData、ProductEngineering、DemandPlanning、Inventory、Quality、MES、WMS、ERP、IndustrialTelemetry、Maintenance、BarcodeLabel、BusinessApproval、BusinessScheduling / APS lite、BusinessGateway、Business Console 和 Business PDA v1；平台底座已覆盖 IAM、Gateway 全局权限强制执行、Console Auth、IAM Admin、FileStorage、本地 tus 加固、Notification、ExternalClient、事件可靠性、生产安全和生产部署产物。
 - 架构总览：[docs/architecture/context-map.md](docs/architecture/context-map.md)
 - 业务平台领域架构：[docs/architecture/business-platform-domain-architecture.md](docs/architecture/business-platform-domain-architecture.md)
 - 业务模块交付清单：[docs/architecture/business-module-delivery-checklist.md](docs/architecture/business-module-delivery-checklist.md)
@@ -43,19 +43,19 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 - 流程型制造主数据补充：[docs/architecture/business-master-data-process-manufacturing-supplement.md](docs/architecture/business-master-data-process-manufacturing-supplement.md)
 - 业务平台完整规格：[docs/superpowers/specs/2026-05-20-business-platform-domain-design.md](docs/superpowers/specs/2026-05-20-business-platform-domain-design.md)
 - 业务平台实施计划入口：[docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md](docs/superpowers/plans/2026-05-20-business-main-platform-integration-readiness.md)
-- BusinessMasterData realignment 计划：[docs/superpowers/plans/2026-05-21-business-master-data-realignment.md](docs/superpowers/plans/2026-05-21-business-master-data-realignment.md)
+- BusinessMasterData 重新对齐计划：[docs/superpowers/plans/2026-05-21-business-master-data-realignment.md](docs/superpowers/plans/2026-05-21-business-master-data-realignment.md)
 - 移动端 PDA Capacitor PRD：[docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md](docs/superpowers/specs/2026-05-21-mobile-pda-capacitor-prd.md)
 - 移动端 PDA Capacitor 架构：[docs/architecture/mobile-pda-capacitor-architecture.md](docs/architecture/mobile-pda-capacitor-architecture.md)
 - 仓库结构：[docs/architecture/repo-layout.md](docs/architecture/repo-layout.md)
 - 实施状态：[docs/architecture/implementation-readiness.md](docs/architecture/implementation-readiness.md)
 - 前端结构：[docs/architecture/frontend-structure.md](docs/architecture/frontend-structure.md)
-- 前端 Design System 规划：[docs/architecture/frontend-design-system-planning.md](docs/architecture/frontend-design-system-planning.md)
+- 前端设计系统规划：[docs/architecture/frontend-design-system-planning.md](docs/architecture/frontend-design-system-planning.md)
 - API 契约与生成：[docs/architecture/api-contract-and-codegen.md](docs/architecture/api-contract-and-codegen.md)
 - 数据库 Schema 规范：[docs/architecture/database-schema-conventions.md](docs/architecture/database-schema-conventions.md)
-- 数据库 Schema Catalog：[docs/architecture/database-schema-catalog.md](docs/architecture/database-schema-catalog.md)
-- 数据库发布 Runbook：[docs/architecture/database-release-runbook.md](docs/architecture/database-release-runbook.md)
+- 数据库 Schema 目录：[docs/architecture/database-schema-catalog.md](docs/architecture/database-schema-catalog.md)
+- 数据库发布操作手册：[docs/architecture/database-release-runbook.md](docs/architecture/database-release-runbook.md)
 - 脚本自动化治理：[docs/architecture/script-automation-governance.md](docs/architecture/script-automation-governance.md)
-- Observability 基线：[docs/architecture/observability-baseline.md](docs/architecture/observability-baseline.md)
+- 可观测性基线：[docs/architecture/observability-baseline.md](docs/architecture/observability-baseline.md)
 - 第三阶段控制台纵切：[docs/architecture/third-vertical-slice-console.md](docs/architecture/third-vertical-slice-console.md)
 - 第四阶段真实基础设施纵切：[docs/architecture/fourth-vertical-slice-real-infra.md](docs/architecture/fourth-vertical-slice-real-infra.md)
 - 技术栈参考链接：[docs/architecture/technology-stack-references.md](docs/architecture/technology-stack-references.md)
@@ -71,12 +71,12 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 ### 前端
 
 - Node.js >= 22.18.0；仓库根 `.node-version` 保留 22.22.3 作为保守复现基线，当前工具链也允许使用更新的 Current 版本（如 Node.js 26）做本地开发验证。
-- pnpm 11.13.1 workspace。
-- Vite+ 0.2.4 作为工作区统一入口，负责 check、fmt、lint、test、run 与 workspace task 编排。
+- pnpm 11.13.1 工作区。
+- Vite+ 0.2.4 作为工作区统一入口，负责 check、fmt、lint、test、run 与工作区任务编排。
 - Vite 8.1.3 通过 Vite+ 的 `@voidzero-dev/vite-plus-core` override 接入；测试使用 Vite+ 内置并精确钉住的官方 Vitest 4.1.10。
 - Vue 3.5.39、Vue Router 5.2.0 官方文件路由插件、Pinia 4.0.2、Pinia Colada 1.4.2、Pinia Colada Auto Refetch 0.2.6。
-- Hey API OpenAPI TypeScript 0.99.0，生成 fetch client、TypeScript DTO、SDK 和 Pinia Colada query/mutation options。
-- shadcn-vue 2.7.4，使用 `reka-nova` style、Tailwind CSS v4、Calm Control Plane 蓝色 semantic tokens 和 `@nerv-iip/ui` 稳定导出边界。
+- Hey API OpenAPI TypeScript 0.99.0，生成 fetch 客户端、TypeScript DTO、SDK 和 Pinia Colada 查询/变更选项。
+- shadcn-vue 2.7.4，使用 `reka-nova` 风格、Tailwind CSS v4、Calm Control Plane 蓝色语义令牌和 `@nerv-iip/ui` 稳定导出边界。
 
 ### 后端
 
@@ -86,8 +86,8 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 - FastEndpoints
 - ASP.NET Core Authentication/Authorization
 - OpenTelemetry
-- PostgreSQL (primary persistence profile)
-- GaussDB / DMDB (信创替换候选 profile，需按环境验证)
+- PostgreSQL（主要持久化 profile）
+- GaussDB / DMDB（信创替换候选 profile，需按环境验证）
 - Redis
 - FusionCache
 - RabbitMQ
@@ -104,7 +104,7 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 - Microsoft.Extensions.AI
 - Microsoft.Extensions.DataIngestion
 - Microsoft.Extensions.VectorData
-- 复杂 AI 自主工作流框架仅在确有 autonomous workflow 需求时再评估引入
+- 复杂 AI 自主工作流框架仅在确有自主工作流需求时再评估引入
 
 ## 日常开发启动
 
@@ -123,7 +123,7 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 该命令会检查 .NET SDK 10、Node.js、pnpm、Docker、Aspire CLI，必要时通过
 `winget` 安装 Windows 侧缺失工具，初始化本地 Development AppHost
 user-secrets，检查/信任本地 HTTPS 开发证书，执行 `dotnet restore`、
-`pnpm install` 和 AppHost build。Docker Desktop 安装后如果 daemon 尚未运行，
+`pnpm install` 和 AppHost 构建。Docker Desktop 安装后如果守护进程尚未运行，
 需要先启动 Docker Desktop 再重跑 bootstrap。完成后日常启动使用：
 
 如需固定本地 IAM seed 管理员密码，可在首次数据库 seed 前显式传入
@@ -135,17 +135,17 @@ user-secrets，检查/信任本地 HTTPS 开发证书，执行 `dotnet restore`�
 ```
 
 该命令通过 `scripts/dev.ps1` 启动平台级 Aspire AppHost。Aspire 是完整本地拓扑入口，会编排 PlatformGateway、AppHub、IAM、Ops、FileStorage、Notification、Business 服务、Connector Host、Console 和本地依赖服务。
-首次启动前建议先运行 bootstrap；如需手工配置本机 Aspire secret parameters，可参考 [infra/aspire/README.md](infra/aspire/README.md)。
+首次启动前建议先运行 bootstrap；如需手工配置本机 Aspire 密钥参数，可参考 [infra/aspire/README.md](infra/aspire/README.md)。
 本地基础设施镜像版本由 AppHost 显式固定到新版 major：PostgreSQL 使用 `18`，
 Redis 使用 `8`。不要改成 `latest`；PostgreSQL 18+ 的官方 Docker 镜像数据目录
 布局与旧 `nerv-iip-postgres` 持久卷不兼容，所以本地开发使用
 `nerv-iip-postgres-18` 作为新的 PostgreSQL 18 卷。
-当前仓库如果以 linked worktree 方式打开，`.\nerv.ps1 dev` 会自动使用 Aspire
+当前仓库如果以关联 worktree 方式打开，`.\nerv.ps1 dev` 会自动使用 Aspire
 `--isolated`，实际前后端 URL 可能不是固定端口。用
 `.\nerv.ps1 describe business-console` 和 `.\nerv.ps1 describe business-gateway`
 查看本次启动的真实地址。
 
-并行会话需要真实全栈验证时，不复用持久 `dev` 环境，也不手工约定端口。使用一次性 full-stack session：
+并行会话需要真实全栈验证时，不复用持久 `dev` 环境，也不手工约定端口。使用一次性全栈会话：
 
 ```powershell
 .\nerv.ps1 fullstack run -Scenario smoke
@@ -158,7 +158,7 @@ Redis 使用 `8`。不要改成 `latest`；PostgreSQL 18+ 的官方 Docker 镜�
 .\nerv.ps1 fullstack gc
 ```
 
-`fullstack run` 是自动化验证入口，会启动独立 Aspire 拓扑、执行 smoke，并在成功或失败后回收该会话的 AppHost、项目进程、容器和专属卷；诊断产物保留在 `artifacts/fullstack/<sessionId>/`。`fullstack start` 只用于交互诊断，使用后必须执行 `fullstack stop`。公开端口由 Aspire 动态分配，真实 URL 从 session manifest 读取；每个会话使用自己的 DCP 代理，不维护会争用配置的全局 Nginx。默认最多允许三个活动会话，不设置最低可用内存门槛。
+`fullstack run` 是自动化验证入口，会启动独立 Aspire 拓扑、执行 smoke，并在成功或失败后回收该会话的 AppHost、项目进程、容器和专属卷；诊断产物保留在 `artifacts/fullstack/<sessionId>/`。`fullstack start` 只用于交互诊断，使用后必须执行 `fullstack stop`。公开端口由 Aspire 动态分配，真实 URL 从会话清单（session manifest）读取；每个会话使用自己的 DCP 代理，不维护会争用配置的全局 Nginx。默认最多允许三个活动会话，不设置最低可用内存门槛。
 
 只需要启动 PostgreSQL、Redis、RabbitMQ、MinIO 和 OpenTelemetry Collector 等依赖服务时，使用：
 
@@ -172,7 +172,7 @@ Redis 使用 `8`。不要改成 `latest`；PostgreSQL 18+ 的官方 Docker 镜�
 .\nerv.ps1 ports
 ```
 
-平台与业务开发端口固定在 `5100-5126`，另有 design-system 文档站 `5180`：PlatformGateway `5100`、AppHub `5101`、IAM `5102`、Ops `5103`、FileStorage `5104`、Console `5105`、Notification `5106`、BusinessMasterData `5107`、BusinessProductEngineering `5108`、BusinessInventory `5109`、BusinessQuality `5110`、BusinessMES `5111`、BusinessDemandPlanning `5112`、BusinessBarcodeLabel `5113`、BusinessApproval `5114`、BusinessWMS `5115`、BusinessIndustrialTelemetry `5116`、BusinessMaintenance `5117`、BusinessERP `5118`、BusinessGateway `5119`、BusinessScheduling `5120`、BusinessConsole `5125`、BusinessPDA `5126`、DesignSystem `5180`。完整端口矩阵以 `.\nerv.ps1 ports` 输出为准。
+平台与业务开发端口固定在 `5100-5126`，另有设计系统文档站 `5180`：PlatformGateway `5100`、AppHub `5101`、IAM `5102`、Ops `5103`、FileStorage `5104`、Console `5105`、Notification `5106`、BusinessMasterData `5107`、BusinessProductEngineering `5108`、BusinessInventory `5109`、BusinessQuality `5110`、BusinessMES `5111`、BusinessDemandPlanning `5112`、BusinessBarcodeLabel `5113`、BusinessApproval `5114`、BusinessWMS `5115`、BusinessIndustrialTelemetry `5116`、BusinessMaintenance `5117`、BusinessERP `5118`、BusinessGateway `5119`、BusinessScheduling `5120`、BusinessConsole `5125`、BusinessPDA `5126`、DesignSystem `5180`。完整端口矩阵以 `.\nerv.ps1 ports` 输出为准。
 
 ## 仓库规划
 
@@ -317,37 +317,37 @@ Nerv-IIP/
 已完成：
 
 1. 平台控制面 MVP：IAM、Gateway、Console Auth、AppHub、Ops、Connector Host、Notification、FileStorage、审计和基础观测已经形成可运行纵切。
-2. 业务平台服务主干：MasterData、ProductEngineering、DemandPlanning、Inventory、Quality、MES、WMS、ERP、IndustrialTelemetry、Maintenance、BarcodeLabel、BusinessApproval 和 BusinessScheduling / APS lite 均已落地服务、schema、AppHost 注册和 focused verify 入口。
+2. 业务平台服务主干：MasterData、ProductEngineering、DemandPlanning、Inventory、Quality、MES、WMS、ERP、IndustrialTelemetry、Maintenance、BarcodeLabel、BusinessApproval 和 BusinessScheduling / APS lite 均已落地服务、schema、AppHost 注册和聚焦验证入口。
 3. 业务前端主干：BusinessGateway `/api/business-console/v1/**`、Business Console PC 工作台和 Business PDA v1 已成为真实业务入口。
-4. 交付与治理底座：Aspire AppHost、Compose 生成入口、release-install/package 脚本、脚本治理、事件契约/DLQ 基线、生产安全和性能阈值化 gate 已存在。
+4. 交付与治理底座：Aspire AppHost、Compose 生成入口、release-install/package 脚本、脚本治理、事件契约/DLQ 基线、生产安全和性能阈值门禁均已存在。
 
 当前主线：
 
-1. 以业务链路真实可用为中心，继续深化 MES operational foundation、APS/IIoT 联动、ERP/WMS/MES/Quality/Inventory 的跨域闭环和 Business Console/PDA 工作流。
+1. 以业务链路真实可用为中心，继续深化 MES 运行基础、APS/IIoT 联动、ERP/WMS/MES/Quality/Inventory 的跨域闭环和 Business Console/PDA 工作流。
 2. 对已存在的业务服务继续做代码事实、OpenAPI/api-client、前端页面、权限和验收脚本的同步收口。
 3. 把平台能力作为业务主线的支撑面继续补强，而不是重新回到纯平台骨架阶段。
 
 ## 当前状态
 
-当前仓库已经进入业务平台持续交付阶段。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。业务服务按 CleanDDD 边界组织，并通过 BusinessGateway 暴露面向业务前端的 facade。
+当前仓库已经进入业务平台持续交付阶段。平台 HTTP 接口统一采用 FastEndpoints；Program.cs 只负责服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/` 目录。业务服务按 CleanDDD 边界组织，并通过 BusinessGateway 暴露面向业务前端的门面（facade）。
 
-控制面已经覆盖 Connector Host 注册/心跳/状态、低风险 Ops restart 闭环、Ops 高风险动作 approval gate、Gateway OpenAPI/api-client、IAM 持久化登录、Gateway-wide permission enforcement、Console Auth、IAM Admin Console、OIDC callback/MFA hook/SSO session binding、Notification 站内消息/任务纵切、ExternalClient client_credentials、resource-scope ABAC grant 和生产安全硬化。部署侧以 Aspire AppHost 为拓扑真相源，Compose/安装包/发布演练从该模型适配，不维护第二套完整服务图。
+控制面已经覆盖 Connector Host 注册/心跳/状态、低风险 Ops 重启闭环、Ops 高风险动作审批门禁、Gateway OpenAPI/api-client、IAM 持久化登录、Gateway 全局权限强制执行、Console Auth、IAM Admin Console、OIDC 回调/MFA hook/SSO 会话绑定、Notification 站内消息/任务纵切、ExternalClient client_credentials、资源范围 ABAC 授权和生产安全加固。部署侧以 Aspire AppHost 为拓扑真相源，Compose/安装包/发布演练从该模型适配，不维护第二套完整服务图。
 
-业务平台当前能力边界按“已交付 / 进行中 / 规划中”标注如下。更细状态仍以 [implementation-readiness](docs/architecture/implementation-readiness.md) 和对应 issue 为准。
+业务平台当前能力边界按“已交付 / 进行中 / 规划中”标注如下。更细状态仍以 [implementation-readiness](docs/architecture/implementation-readiness.md) 和对应 Issue 为准。
 
 | 能力区 | 已交付 | 进行中 | 规划中 / 未交付 |
 | --- | --- | --- | --- |
-| 平台控制面 | IAM、Gateway-wide permission enforcement、Console Auth、IAM Admin、AppHub、Ops restart/approval gate、Connector Host 注册/心跳/状态、FileStorage metadata/tus、本地 Notification 站内消息/任务、ExternalClient、事件可靠性与部署产物基线。 | DLQ replay、发布演练、生产安全和性能 gate 继续按 focused issue hardening。 | #728 Notification 外部通道 provider、偏好/订阅、限流、模板映射；完整 OAuth/OIDC/WebAuthn、日志 UI、客户现场备份恢复。 |
-| 主数据、工程与计划 | BusinessMasterData、ProductEngineering、DemandPlanning/MRP、BusinessScheduling / APS lite 均已有服务、schema、AppHost、BusinessGateway facade 或 focused verify；Scheduling 已支持排程问题、方案、资源负载、冲突、gantt 和 release handoff。 | Scheduling 继续接入库存、质量、维护和设备可用性变化；Business Console/PDA 继续补真实工作流、权限裁剪和错误处理。 | 高级 APS 优化器、复杂仿真、自动重排策略、前端甘特高级交互。 |
-| 执行、仓储、质量与经营 | MES、WMS、Inventory、Quality、ERP Procurement/Sales/Finance MVP 已形成 P0 业务闭环；BusinessApproval、BarcodeLabel 已有后端与部分前端入口。 | ERP/WMS/Inventory/MES/Quality/Approval/Notification 的事件、facade、页面和验收脚本继续按真实链路收口。 | ERP 月结/税务/银行/完整财务报表、FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、BarcodeLabel 打印管理/扫码记录正式前端。 |
-| 设备运行、维护与现场能力 | IndustrialTelemetry 已有 tag mapping、HTTP bucket 采样入口、DeviceStateSnapshot、TelemetrySummary、AlarmRaised/AlarmCleared、OEE/runtime-availability 读面；Connector Host 已提供 OPC UA、Modbus TCP 和 MQTT 采集连接器；Maintenance 已消费报警开单/清除并发布 AssetUnavailable/AssetRestored；MES/Scheduling 已消费维护可用性事件。 | 本批已立项 #683-#690：OPC UA/Modbus/MQTT 采集、报警通知联动、运行小时聚合、DeviceStateChanged 下游消费、报警 ack/shelve/escalation 等现场能力深化。 | 设备控制命令下发、historian raw/hourly/daily 分层存储、完整 CMMS 工作台、独立设备大屏。 |
-| 业务前端与移动 | BusinessGateway `/api/business-console/v1/**`、Business Console PC 工作台、Business PDA v1 已成为真实业务入口；Business Console 已有 MasterData、ProductEngineering、Planning、Inventory、Quality、MES、ERP、WMS、Equipment/Maintenance 和 APS lite route-ready 页面。 | 已落地页面继续补真实操作、上下文穿透、空状态和 focused verification。 | 独立 `/api/mobile/v1/**`、mobile OpenAPI/api-client、扫码解释、设备注册、离线 outbox/sync。 |
+| 平台控制面 | IAM、Gateway 全局权限强制执行、Console Auth、IAM Admin、AppHub、Ops 重启/审批门禁、Connector Host 注册/心跳/状态、FileStorage 元数据/tus、本地 Notification 站内消息/任务、ExternalClient、事件可靠性与部署产物基线。 | DLQ 重放、发布演练、生产安全和性能门禁继续按聚焦 Issue 加固。 | #728 Notification 外部通道提供方、偏好/订阅、限流、模板映射；完整 OAuth/OIDC/WebAuthn、日志 UI、客户现场备份恢复。 |
+| 主数据、工程与计划 | BusinessMasterData、ProductEngineering、DemandPlanning/MRP、BusinessScheduling / APS lite 均已有服务、schema、AppHost、BusinessGateway 门面（facade）或聚焦验证；Scheduling 已支持排程问题、方案、资源负载、冲突、甘特图和发布交接。 | Scheduling 继续接入库存、质量、维护和设备可用性变化；Business Console/PDA 继续补真实工作流、权限裁剪和错误处理。 | 高级 APS 优化器、复杂仿真、自动重排策略、前端甘特高级交互。 |
+| 执行、仓储、质量与经营 | MES、WMS、Inventory、Quality、ERP Procurement/Sales/Finance MVP 已形成 P0 业务闭环；BusinessApproval、BarcodeLabel 已有后端与部分前端入口。 | ERP/WMS/Inventory/MES/Quality/Approval/Notification 的事件、门面（facade）、页面和验收脚本继续按真实链路收口。 | ERP 月结/税务/银行/完整财务报表、FEFO/FIFO、ASN 差异、定向上架（directed putaway）、LPN/HU、BarcodeLabel 打印管理/扫码记录正式前端。 |
+| 设备运行、维护与现场能力 | IndustrialTelemetry 已有标签映射、HTTP 时间桶采样入口、DeviceStateSnapshot、TelemetrySummary、AlarmRaised/AlarmCleared、OEE/运行时可用性读面；Connector Host 已提供 OPC UA、Modbus TCP 和 MQTT 采集连接器；Maintenance 已消费报警开单/清除并发布 AssetUnavailable/AssetRestored；MES/Scheduling 已消费维护可用性事件。 | 本批已立项 #683-#690：OPC UA/Modbus/MQTT 采集、报警通知联动、运行小时聚合、DeviceStateChanged 下游消费、报警确认/搁置/升级等现场能力深化。 | 设备控制命令下发、historian 原始/每小时/每日分层存储、完整 CMMS 工作台、独立设备大屏。 |
+| 业务前端与移动 | BusinessGateway `/api/business-console/v1/**`、Business Console PC 工作台、Business PDA v1 已成为真实业务入口；Business Console 已有 MasterData、ProductEngineering、Planning、Inventory、Quality、MES、ERP、WMS、Equipment/Maintenance 和 APS lite 路由就绪页面。 | 已落地页面继续补真实操作、上下文穿透、空状态和聚焦验证。 | 独立 `/api/mobile/v1/**`、移动端 OpenAPI/api-client、扫码解释、设备注册、离线 outbox/sync。 |
 
-Business PDA v1 当前复用 `@nerv-iip/api-client` 的 business-console 稳定导出，通过 BusinessGateway 现有 `/api/business-console/v1/**` facade 工作；独立 `/api/mobile/v1/**`、mobile OpenAPI 快照、离线 outbox/sync、设备注册和扫码解释仍是后续移动专用 API 轨道。
+Business PDA v1 当前复用 `@nerv-iip/api-client` 的 business-console 稳定导出，通过 BusinessGateway 现有 `/api/business-console/v1/**` 门面（facade）工作；独立 `/api/mobile/v1/**`、移动端 OpenAPI 快照、离线 outbox/同步、设备注册和扫码解释仍是后续移动专用 API 轨道。
 
-FileStorage 已提供公开 contracts、`Sdk.FileStorage`、metadata API、PostgreSQL-backed API service、`filestorage` schema、本地 tus `HEAD`/`PATCH` 上传与 download content endpoint；MinIO/S3 multipart 仍是 post-MVP 对象存储部署联调项。
+FileStorage 已提供公开契约、`Sdk.FileStorage`、元数据 API、PostgreSQL 支持的 API 服务、`filestorage` schema、本地 tus `HEAD`/`PATCH` 上传与下载内容 endpoint；MinIO/S3 分段上传仍是 MVP 后的对象存储部署联调项。
 
-#77 P0 收口已完成：`scripts/verify-business-full-chain-acceptance.ps1` 覆盖 WMS public-surface/event contract、MES/ERP 支撑 surface 和七条链路 acceptance evidence。真实 PostgreSQL/RabbitMQ/外部设备联调属于后续 hardening，不是当前业务推进的前置阻塞。
+#77 P0 收口已完成：`scripts/verify-business-full-chain-acceptance.ps1` 覆盖 WMS 公开表面/事件契约、MES/ERP 支撑表面和七条链路验收证据。真实 PostgreSQL/RabbitMQ/外部设备联调属于后续加固，不是当前业务推进的前置阻塞。
 
 常用验证入口：
 
@@ -365,15 +365,15 @@ pnpm -C frontend --filter @nerv-iip/business-pda build
 
 ## 当前业务推进重点
 
-1. 继续收口 MES operational foundation：工单释放、执行生命周期、齐套/物料、质量设备 readiness、班次/追溯和 PC/PDA 一线流程必须与真实上游事实对齐。
+1. 继续收口 MES 运行基础：工单释放、执行生命周期、齐套/物料、质量设备就绪度、班次/追溯和 PC/PDA 一线流程必须与真实上游事实对齐。
 2. 深化 APS/IIoT/MES 联动：BusinessScheduling 继续消费库存、质量、设备和维护窗口变化，前端甘特/资源负载只消费 Scheduling 输出，不在 MES 或前端实现调度算法。
-3. 强化跨域业务闭环：ERP/WMS/Inventory/MES/Quality/Approval/Notification 的事件、facade、页面和验收脚本按真实链路推进，避免 metadata-only 或页面壳替代业务闭环。
-4. 补齐 Business Console 与 PDA 的正式工作流：已落地页面继续做真实操作、错误处理、权限裁剪、上下文穿透和 focused verification；PDA 后续再拆独立 `/api/mobile/v1/**`、扫码解释、设备注册和离线 outbox/sync。
-5. 平台 hardening 并行推进：MinIO/S3 multipart、DLQ replay executor、客户现场备份恢复、Windows Service/systemd 注册器、日志 UI、OAuth/OIDC/WebAuthn/外部通知 provider 等继续作为支撑线，不再把 README 叙事拉回“平台骨架阶段”。
+3. 强化跨域业务闭环：ERP/WMS/Inventory/MES/Quality/Approval/Notification 的事件、门面（facade）、页面和验收脚本按真实链路推进，避免仅有元数据或页面壳替代业务闭环。
+4. 补齐 Business Console 与 PDA 的正式工作流：已落地页面继续做真实操作、错误处理、权限裁剪、上下文穿透和聚焦验证；PDA 后续再拆独立 `/api/mobile/v1/**`、扫码解释、设备注册和离线 outbox/sync。
+5. 平台加固并行推进：MinIO/S3 分段上传、DLQ 重放执行器、客户现场备份恢复、Windows Service/systemd 注册器、日志 UI、OAuth/OIDC/WebAuthn/外部通知提供方等继续作为支撑线，不再把 README 叙事拉回“平台骨架阶段”。
 
 ## 非目标
 
-1. 当前已交付代码已有 OPC UA、Modbus TCP 和 MQTT 采集器，但还没有设备控制命令下发或 historian 明细存储；这些能力不再作为永久外部边界，而是由 Connector Host、IndustrialTelemetry、Ops 和后续 issue 分阶段纳入平台自有能力。
+1. 当前已交付代码已有 OPC UA、Modbus TCP 和 MQTT 采集器，但还没有设备控制命令下发或 historian（历史数据库）明细存储；这些能力不再作为永久外部边界，而是由 Connector Host、IndustrialTelemetry、Ops 和后续 Issue 分阶段纳入平台自有能力。
 2. 当前不承诺完整行业套件的所有高级能力；P0 聚焦数字工厂主链路，税务、银行、完整总账月结、高级 APS 优化、完整 CMMS、LPN/HU、FEFO/FIFO 等按业务优先级后续扩展。
 3. 当前不做模型托管平台；AI 能力先服务治理、查询、知识检索和低风险动作。
-4. 当前不做微前端与复杂前端运行时抽象；多应用前端通过明确 workspace app/package 边界演进。
+4. 当前不做微前端与复杂前端运行时抽象；多应用前端通过明确的工作区应用/包边界演进。

@@ -1,67 +1,67 @@
-# DemandPlanning MRP Gap Implementation Plan
+# DemandPlanning MRP 缺口实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Implement issue #409 MRP net-requirement hardening for DemandPlanning.
+**目标：**为 DemandPlanning 实施 issue #409 的 MRP 净需求强化。
 
-**Architecture:** Keep MRP as a pure calculation unit fed by immutable snapshots. DemandPlanning stores calculation results and suggestion release dates, but all upstream business facts remain owned by ProductEngineering, Inventory, ERP, MES, and MasterData.
+**架构：**MRP 保持为由不可变快照提供输入的纯计算单元。DemandPlanning 存储计算结果和建议下达日期，但所有上游业务事实仍由 ProductEngineering、Inventory、ERP、MES 和 MasterData 拥有。
 
-**Tech Stack:** .NET 10, FastEndpoints, EF Core PostgreSQL, xUnit, NetCorePal CleanDDD patterns.
+**技术栈：**.NET 10、FastEndpoints、EF Core PostgreSQL、xUnit、NetCorePal CleanDDD 模式。
 
 ---
 
-## Files
+## 文件
 
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/RunMrpCommand.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/PlanningSuggestionAggregate/PlanningSuggestion.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/EntityConfigurations/PlanningSuggestionEntityTypeConfiguration.cs`
-- Add: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/*_AddPlanningSuggestionReleaseDate.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Queries/DemandPlanningQueries.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEvents/DemandPlanningIntegrationEvents.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEventConverters/DemandPlanningIntegrationEventConverters.cs`
-- Modify: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Program.cs`
-- Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpCalculatorTests.cs`
-- Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/PlanningInputAdapterTests.cs`
-- Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningEndpointContractTests.cs`
-- Modify: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/DemandPlanningAggregateTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/RunMrpCommand.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/PlanningSuggestionAggregate/PlanningSuggestion.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/EntityConfigurations/PlanningSuggestionEntityTypeConfiguration.cs`
+- 添加： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/*_AddPlanningSuggestionReleaseDate.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Queries/DemandPlanningQueries.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEvents/DemandPlanningIntegrationEvents.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEventConverters/DemandPlanningIntegrationEventConverters.cs`
+- 修改： `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Program.cs`
+- 修改： `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpCalculatorTests.cs`
+- 修改： `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/PlanningInputAdapterTests.cs`
+- 修改： `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningEndpointContractTests.cs`
+- 修改： `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/DemandPlanningAggregateTests.cs`
+- 修改： `docs/architecture/database-schema-catalog.md`
+- 修改： `docs/architecture/implementation-readiness.md`
 
-## Task 1: Red Tests
+## Task 1：红灯测试
 
-- [ ] Add calculator tests for scheduled receipts, multi-level BOM, release date lead time, daily bucket lot sizing, and safety stock.
-- [ ] Add adapter tests proving ProductEngineering lot-size values and ERP purchase-order scheduled receipts enter snapshots.
-- [ ] Run `dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore --filter FullyQualifiedName~MrpCalculatorTests` and confirm the new tests fail for missing behavior.
+- [ ] 为计划收货、多级 BOM、下达日期提前期、日桶批量规则和安全库存添加计算器测试。
+- [ ] 添加适配器测试，证明 ProductEngineering 批量值和 ERP 采购订单计划收货会进入快照。
+- [ ] 运行 `dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore --filter FullyQualifiedName~MrpCalculatorTests`，确认新测试因缺失行为而失败。
 
-## Task 2: Calculator and Snapshot Implementation
+## Task 2：计算器与快照实施
 
-- [ ] Extend `MrpCalculationInput`, `ProductionVersionSnapshot`, and snapshot result records.
-- [ ] Implement bucketed netting with scheduled receipts and safety stock.
-- [ ] Implement recursive BOM expansion with make/buy split based on production-version availability.
-- [ ] Implement release-date offset and L4L/min/max/multiple lot sizing.
-- [ ] Run the focused calculator tests and keep the original deterministic fixture passing.
+- [ ] 扩展 `MrpCalculationInput`、`ProductionVersionSnapshot` 和快照结果记录。
+- [ ] 实现包含计划收货和安全库存的分桶净额计算。
+- [ ] 根据生产版本可用性实现带自制/外购拆分的递归 BOM 展开。
+- [ ] 实现下达日期偏移以及 L4L/min/max/multiple 批量规则。
+- [ ] 运行聚焦的计算器测试，并保持原有确定性夹具通过。
 
-## Task 3: Persistence/API Release Date
+## Task 3：持久化/API 下达日期
 
-- [ ] Add `ReleaseDate` to `PlanningSuggestion`, factory creation, EF configuration, query response, and integration event payload.
-- [ ] Generate or hand-maintain the EF migration and model snapshot for `planning_suggestions.release_date`.
-- [ ] Update aggregate and endpoint contract tests for `ReleaseDate`.
-- [ ] Run DemandPlanning Domain/Web focused tests.
+- [ ] 在 `PlanningSuggestion`、工厂创建、EF 配置、查询响应和集成事件载荷中添加 `ReleaseDate`。
+- [ ] 为 `planning_suggestions.release_date` 生成或手工维护 EF migration 和模型快照。
+- [ ] 更新 `ReleaseDate` 的聚合与 endpoint 契约测试。
+- [ ] 运行 DemandPlanning Domain/Web 聚焦测试。
 
-## Task 4: Upstream Adapter Wiring
+## Task 4：上游适配器接线
 
-- [ ] Preserve ProductEngineering `LotSizeMin` and `LotSizeMax` in `ProductionVersionSnapshot`.
-- [ ] Add an ERP purchase-order scheduled-receipt client using open purchase order line remaining quantities.
-- [ ] Register the ERP client in `Program.cs` with `Erp:BaseUrl`.
-- [ ] Keep MES scheduled receipts documented as pending because current MES work-order list lacks UOM.
+- [ ] 在 `ProductionVersionSnapshot` 中保留 ProductEngineering 的 `LotSizeMin` 和 `LotSizeMax`。
+- [ ] 添加 ERP 采购订单计划收货客户端，使用未结采购订单行的剩余数量。
+- [ ] 在 `Program.cs` 中使用 `Erp:BaseUrl` 注册 ERP 客户端。
+- [ ] 由于当前 MES 工单列表缺少 UOM，继续将 MES 计划收货记录为待处理事项。
 
-## Task 5: Docs and Verification
+## Task 5：文档与验证
 
-- [ ] Update database schema catalog and readiness to record `release_date` and the remaining MES scheduled-receipt limitation.
-- [ ] Run `dotnet test` for DemandPlanning Domain and Web projects.
-- [ ] Run `scripts/verify-business-demand-planning-mrp-mvp.ps1` if available and not blocked by environment.
-- [ ] Run `git diff --check`.
-- [ ] Commit, push `codex/issue-409-demand-planning-mrp-gap`, and open a PR with `Closes #409`.
+- [ ] 更新数据库 schema 目录和就绪清单，记录 `release_date` 以及仍存在的 MES 计划收货限制。
+- [ ] 对 DemandPlanning Domain 和 Web 项目运行 `dotnet test`。
+- [ ] 若脚本可用且环境未造成阻塞，运行 `scripts/verify-business-demand-planning-mrp-mvp.ps1`。
+- [ ] 运行 `git diff --check`。
+- [ ] 提交并推送 `codex/issue-409-demand-planning-mrp-gap`，然后创建包含 `Closes #409` 的 PR。

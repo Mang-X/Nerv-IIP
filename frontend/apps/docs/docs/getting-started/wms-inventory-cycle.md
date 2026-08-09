@@ -13,23 +13,23 @@
 
 - MasterData 中已有启用站点、SKU、UOM 和供应商/客户资料；当前没有独立仓库聚合，也没有面向作业输入的权威库位读目录。
 - WMS 中已有所选“本人 / 工作池 / 站点”授权范围内的收货、上架、拣货、出库或盘点作业事实；快捷候选来自这些事实，不代表全量库位或批次。
-- Inventory 已能处理 movement requested、posted 和 failed 事实。
-- WMS 与 Inventory 的公共契约和 BusinessGateway facade 已可用。
+- Inventory 已能处理移动请求、已过账和失败事实，对应状态保持为 `requested`、`posted` 和 `failed`。
+- WMS 与 Inventory 的公共契约和 BusinessGateway 门面已可用。
 
 ## 页面入口
 
-| 环节       | Business Console 路由     | 当前事实或缺口                                      |
-| ---------- | ------------------------- | --------------------------------------------------- |
-| WMS 总览   | `/wms`                    | 已有 route-ready 汇总页；侧栏主要入口是具体作业页。 |
-| 收货       | `/wms/inbound`            | 已在仓储作业域暴露，支持收货单列表和完成入库动作。  |
-| 上架       | `/wms/putaway`            | 已在仓储作业域暴露。                                |
-| 拣货       | `/wms/picking`            | 已在仓储作业域暴露。                                |
-| 出库       | `/wms/outbound`           | 已在仓储作业域暴露，支持复核发货相关动作。          |
-| 盘点       | `/wms/counts`             | 已在仓储作业域暴露。                                |
-| WCS 任务   | `/wms/wcs`                | 已在仓储作业域暴露为任务状态和基础动作读写面。      |
-| 库存可用量 | `/inventory/availability` | 已在库存管理域暴露。                                |
-| 库存移动   | `/inventory/movements`    | 已在库存管理域暴露。                                |
-| 库存盘点   | `/inventory/counts`       | 已在库存管理域暴露。                                |
+| 环节       | Business Console 路由     | 当前事实或缺口                                     |
+| ---------- | ------------------------- | -------------------------------------------------- |
+| WMS 总览   | `/wms`                    | 已有路由就绪的汇总页；侧栏主要入口是具体作业页。   |
+| 收货       | `/wms/inbound`            | 已在仓储作业域暴露，支持收货单列表和完成入库动作。 |
+| 上架       | `/wms/putaway`            | 已在仓储作业域暴露。                               |
+| 拣货       | `/wms/picking`            | 已在仓储作业域暴露。                               |
+| 出库       | `/wms/outbound`           | 已在仓储作业域暴露，支持复核发货相关动作。         |
+| 盘点       | `/wms/counts`             | 已在仓储作业域暴露。                               |
+| WCS 任务   | `/wms/wcs`                | 已在仓储作业域暴露为任务状态和基础动作读写面。     |
+| 库存可用量 | `/inventory/availability` | 已在库存管理域暴露。                               |
+| 库存移动   | `/inventory/movements`    | 已在库存管理域暴露。                               |
+| 库存盘点   | `/inventory/counts`       | 已在库存管理域暴露。                               |
 
 ## 移动作业范围与快捷候选
 
@@ -43,13 +43,13 @@ PDA 仓储作业只使用服务端返回的“本人 / 工作池 / 站点”范�
 2. 在 `/wms/putaway` 将已收货物料上架到库位。
 3. 在 `/inventory/availability` 查询 SKU 可用量，区分现有量、预留量和可用量。
 4. 在 `/wms/picking` 对出库单创建或查看拣货任务；当前拣货会通过 Inventory 内部服务 API 预留库存。
-5. 在 `/wms/outbound` 完成出库，Inventory 按 reservation id 分配预留并过账。
+5. 在 `/wms/outbound` 完成出库，Inventory 按预留 ID（reservation id）分配预留并过账。
 6. 在 `/inventory/movements` 查看库存移动结果；失败时根据失败原因重试或修正单据。手工补录调拨时必须同时填出库库位与入库库位：调拨按两腿等额过账，缺腿会被整笔拒绝。
 7. 在 `/wms/counts` 或 `/inventory/counts` 做盘点，确认差异并形成调整。
 
 ## 业务对象/单据流
 
-Inbound Order -> Receiving -> Putaway -> Stock Balance -> Reservation -> Picking Task -> Outbound Order -> Inventory Movement -> Posted/Failed Event -> Count Adjustment。
+入库单 -> 收货 -> 上架 -> 库存余额 -> 预留 -> 拣货任务 -> 出库单 -> 库存移动 -> 已过账/失败事件 -> 盘点调整。
 
 ## 状态变化
 
@@ -74,10 +74,10 @@ Inbound Order -> Receiving -> Putaway -> Stock Balance -> Reservation -> Picking
 
 ## 当前限制
 
-- FEFO/FIFO 拣货、ASN expected/received 差异、directed putaway、LPN/HU 仍未作为完整能力交付。
+- FEFO/FIFO 拣货、ASN 预期/实收差异、定向上架（directed putaway）、LPN/HU 仍未作为完整能力交付。
 - WMS 快捷候选是当前授权范围内的有界近期作业事实，不是 Inventory `StockLocation` 权威目录或全量批次目录。
 - 盘点作业当前没有批次筛选；不得用其它作业域的批次候选代替。
 - 条码标签已有后端能力和 PDA/扫码相关基础，但正式 BarcodeLabel 前端页面仍后置。
-- MinIO/S3 multipart 和对象存储直传不属于当前 WMS 上手路径。
+- MinIO/S3 分段上传和对象存储直传不属于当前 WMS 上手路径。
 
 [内部缺口记录](/internal/gaps/wms-inventory-cycle)

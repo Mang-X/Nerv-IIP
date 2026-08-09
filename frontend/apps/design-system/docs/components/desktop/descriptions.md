@@ -74,7 +74,7 @@ const clampItems = [
 
 ## 标题超长省略
 
-`ellipsis` + `label-width`：标题单行截断，悬停弹 Tooltip 看全文。
+`ellipsis` + `label-width`：标题单行截断，悬停时显示完整文本。
 
 <Demo block>
   <NvDescriptions :items="clampItems" :columns="2" bordered ellipsis label-width="6rem" />
@@ -93,5 +93,5 @@ const clampItems = [
 | `bordered`   | 带边框正式记录样式                             | `boolean`                | `false`      |
 | `layout`     | 标签布局：横排或上下                           | `horizontal \| vertical` | `horizontal` |
 | `labelWidth` | 固定标签列宽（如 `6rem`）                      | `string`                 | —            |
-| `ellipsis`   | 标签单行截断 + 悬停 Tooltip                    | `boolean`                | `false`      |
+| `ellipsis`   | 标签单行截断 + 悬停时显示完整文本              | `boolean`                | `false`      |
 | `size`       | 密度                                           | `default \| compact`     | `default`    |

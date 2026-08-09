@@ -1,32 +1,32 @@
-# PDA e2e + 视觉/布局回归测试 Implementation Plan（Plan 1.5）
+# PDA e2e + 视觉/布局回归测试实施计划（Plan 1.5）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`).
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development；所有步骤均使用复选框（`- [ ]`）跟踪。
 
-**Goal:** 给 `frontend/apps/business-pda` 补一套 Playwright e2e + 移动端视觉/布局回归，覆盖登录→首页真实流程，并通过一个**组件画廊页**让 `@nerv-iip/ui-mobile` 全部 5 个组件都被真实浏览器交互 + 布局/触控/安全区/暗色断言覆盖。
+**目标：**给 `frontend/apps/business-pda` 补一套 Playwright e2e + 移动端视觉/布局回归，覆盖登录→首页真实流程，并通过一个**组件画廊页**让 `@nerv-iip/ui-mobile` 全部 5 个组件都被真实浏览器交互 + 布局/触控/安全区/暗色断言覆盖。
 
-**Architecture:** 完全镜像 console/business-console 既有 Playwright 约定：`playwright.config.ts`（mobile 视口 + `vp dev` webServer + `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`），e2e 全程 `page.route` Mock 网关（无需后端），`seedStoredSession` 注入 localStorage 跳过登录。视觉断言走 `getComputedStyle`/`getBoundingClientRect`（仓库无像素快照基线，沿用计算样式 smoke）。新增 dev 画廊页渲染所有触摸组件供组件级 e2e。
+**架构：**完全镜像 console/business-console 既有 Playwright 约定：`playwright.config.ts`（移动视口 + `vp dev` 网页服务器 + `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`），e2e 全程使用 `page.route` 模拟网关（无需后端），通过 `seedStoredSession` 注入 localStorage 跳过登录。视觉断言走 `getComputedStyle`/`getBoundingClientRect`（仓库无像素快照基线，沿用计算样式冒烟检查）。新增开发环境画廊页，渲染所有触摸组件供组件级 e2e 使用。
 
-**Tech Stack:** @playwright/test@^1.60.0 / vite-plus(`vp dev`) / Vue 3 / 既有 jsdom 单测不变。
+**技术栈：**@playwright/test@^1.60.0 / vite-plus（`vp dev`）/ Vue 3 / 既有 jsdom 单测不变。
 
 ---
 
 ## 范围与门禁口径
 
-**交付：** business-pda 的 `playwright.config.ts` + `e2e/`（fixtures + 2 个 spec）+ dev 画廊页 + 真机冒烟清单文档。覆盖：登录流程、首页（扫码条/应用墙/我的任务空态）、5 个 ui-mobile 组件交互、移动视口无横向溢出、触控尺寸、安全区最小内边距、暗色渲染。
+**交付：**business-pda 的 `playwright.config.ts` + `e2e/`（夹具 + 2 个规格）+ 开发环境画廊页 + 真机冒烟清单文档。覆盖：登录流程、首页（扫码条/应用墙/我的任务空态）、5 个 ui-mobile 组件交互、移动视口无横向溢出、触控尺寸、安全区最小内边距、暗色渲染。
 
 **不在范围：** 像素级视觉快照（仓库无基线，且 PDA 设计稿未定稿——留作后续）；真机键盘楔入扫码与 Capacitor APK 内 WebView（CI 测不到，进**手动冒烟清单**）；M2+ 业务页 e2e（随各页落地）。
 
-**门禁口径（重要，沿用仓库 Playwright caveat）：** Playwright 需 Chromium。运行 `playwright test` 前需 `playwright install chromium` 或设 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。若本机浏览器不可用，**如实报告环境阻塞、不伪造结果**（同 readiness Phase 8 Task 9 口径）。在浏览器不可用时，最低验证是 `playwright test --list`（解析/发现 spec，不启浏览器）+ 既有 `typecheck`/`build` 仍绿。
+**门禁口径（重要，沿用仓库 Playwright 注意事项）：**Playwright 需 Chromium。运行 `playwright test` 前需 `playwright install chromium` 或设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`。若本机浏览器不可用，**必须如实报告环境阻塞、不得伪造结果**（与 readiness 第 8 阶段任务 9 口径一致）。在浏览器不可用时，最低验证是 `playwright test --list`（解析/发现规格，不启动浏览器）+ 既有 `typecheck`/`build` 仍然通过。
 
-**端口：** business-pda dev=5126；e2e webServer 用独立端口 **5176**（`PLAYWRIGHT_BUSINESS_PDA_PORT` 默认 5176），避免与 business-console e2e(5126) 及 pda dev(5126) 撞口。
+**端口：**business-pda 开发端口为 5126；e2e 网页服务器使用独立端口 **5176**（`PLAYWRIGHT_BUSINESS_PDA_PORT` 默认为 5176），避免与 business-console e2e（5126）及 PDA 开发服务（5126）端口冲突。
 
 ## 关键事实（零猜测，执行者照用）
 
-- PDA auth localStorage key：`'nerv-iip.business-pda.auth'`（见 `stores/auth.ts`）。
+- PDA 认证的 localStorage 键：`'nerv-iip.business-pda.auth'`（见 `stores/auth.ts`）。
 - PDA 登录页选择器：输入有 `aria-label="账号"`/`aria-label="密码"`，提交按钮文案 `登录`。登录成功跳 `/`。
 - 首页标题：`工作台`（`pages/index.vue` header `<h1>工作台</h1>`）；我的任务空态文案：`暂无分配给你的任务`；应用墙含 `收货入库`/`报工` 等且当前全 `disabled`（`PDA_TASK_KINDS` 全 `routeReady:false`）。
-- auth envelope：api-client `assertData` 要求响应体为 `{ success: true, data: <payload> }`。登录走 `POST /api/console/v1/auth/login`，会话恢复走 `/api/console/v1/auth/refresh`，`/me` 走 `/api/console/v1/auth/me`。
-- 路由 routesFolder 的 exclude 含 `**/components/**/*`——画廊页**不要**放在名为 `components` 的目录或文件里；用 `pages/design-system/gallery.vue`（路由 `/design-system/gallery`，meta 不设 `requiresAuth`，e2e 可直达）。
+- 认证封装：api-client `assertData` 要求响应体为 `{ success: true, data: <payload> }`。登录走 `POST /api/console/v1/auth/login`，会话恢复走 `/api/console/v1/auth/refresh`，`/me` 走 `/api/console/v1/auth/me`。
+- 路由 routesFolder 的排除项含 `**/components/**/*`——画廊页**不要**放在名为 `components` 的目录或文件里；用 `pages/design-system/gallery.vue`（路由 `/design-system/gallery`，meta 不设 `requiresAuth`，e2e 可直达）。
 - 安全区：Playwright 不模拟真机 `env(safe-area-inset-*)`（非刘海设备 inset=0）。`mobile.css` 用 `max(0.75rem, env(...))`/`max(0.5rem, env(...))`，所以**可断言的是 fallback 最小值生效**（header padding-top ≥ 12px、底栏 padding-bottom ≥ 8px），真机真实 inset 渲染进手动冒烟清单。
 
 ## 文件结构地图
@@ -48,19 +48,19 @@ docs/superpowers/specs/2026-06-09-mobile-pda-design.md  # 改：§13 增 e2e/视
 
 ---
 
-## Task 1: Playwright 脚手架（config + deps + e2e script + fixtures）
+## 任务 1：Playwright 脚手架（配置 + 依赖 + e2e 脚本 + 夹具）
 
-**Files:**
-- Modify: `frontend/apps/business-pda/package.json`
-- Create: `frontend/apps/business-pda/playwright.config.ts`
-- Create: `frontend/apps/business-pda/e2e/fixtures.ts`
+**文件：**
+- 修改：`frontend/apps/business-pda/package.json`
+- 新建：`frontend/apps/business-pda/playwright.config.ts`
+- 新建：`frontend/apps/business-pda/e2e/fixtures.ts`
 
-- [ ] **Step 1: 装 Playwright + 加 e2e script**
+- [ ] **步骤 1：安装 Playwright + 添加 e2e 脚本**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda add -D @playwright/test@^1.60.0`
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda add -D @playwright/test@^1.60.0`
 然后在 `frontend/apps/business-pda/package.json` 的 `scripts` 加：`"e2e": "playwright test"`（与 console/business-console 一致）。
 
-- [ ] **Step 2: 写 playwright.config.ts**
+- [ ] **步骤 2：编写 playwright.config.ts**
 
 `frontend/apps/business-pda/playwright.config.ts`：
 
@@ -96,7 +96,7 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 3: 写 e2e/fixtures.ts（mock + helper）**
+- [ ] **步骤 3：编写 e2e/fixtures.ts（模拟 + 辅助函数）**
 
 `frontend/apps/business-pda/e2e/fixtures.ts`：
 
@@ -188,13 +188,13 @@ export async function expectTouchTargets(page: Page) {
 }
 ```
 
-- [ ] **Step 4: 验证脚手架解析**
+- [ ] **步骤 4：验证脚手架解析**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list`
-Expected: 列出 0 个 spec（spec 还没写），命令本身不报解析错误。若 Playwright 报缺浏览器，这一步 `--list` 不需要浏览器，应仍可列出。
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda typecheck` → PASS（新增 config 不破坏 typecheck）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list`
+预期：列出 0 个规格（尚未编写规格），命令本身不报解析错误。若 Playwright 报缺浏览器，这一步 `--list` 不需要浏览器，应仍可列出。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda typecheck` → 通过（新增配置不破坏类型检查）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/apps/business-pda/package.json frontend/apps/business-pda/playwright.config.ts frontend/apps/business-pda/e2e/fixtures.ts frontend/pnpm-lock.yaml
@@ -203,12 +203,12 @@ git commit -m "test(business-pda): scaffold Playwright e2e (config + gateway moc
 
 ---
 
-## Task 2: 登录→首页 e2e（app-flow.spec.ts）
+## 任务 2：登录→首页 e2e（app-flow.spec.ts）
 
-**Files:**
-- Create: `frontend/apps/business-pda/e2e/app-flow.spec.ts`
+**文件：**
+- 新建：`frontend/apps/business-pda/e2e/app-flow.spec.ts`
 
-- [ ] **Step 1: 写 spec**
+- [ ] **步骤 1：编写规格**
 
 `frontend/apps/business-pda/e2e/app-flow.spec.ts`：
 
@@ -262,13 +262,13 @@ test('clicking a not-ready app-wall entry does not navigate away', async ({ page
 })
 ```
 
-- [ ] **Step 2: 跑 spec（浏览器可用时）**
+- [ ] **步骤 2：运行规格（浏览器可用时）**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts`
-Expected: 3 passed。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts`
+预期：3 项通过。
 若报缺 Chromium：先 `pnpm -C frontend --filter @nerv-iip/business-pda exec playwright install chromium`，或设 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 后重试。仍不可用则记录环境阻塞，并至少 `--list` 确认本 spec 被发现。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/apps/business-pda/e2e/app-flow.spec.ts
@@ -277,13 +277,13 @@ git commit -m "test(business-pda): e2e for login flow + home scan/app-wall/empty
 
 ---
 
-## Task 3: 组件画廊页 + ui-mobile 组件级 e2e（视觉/布局/暗色）
+## 任务 3：组件画廊页 + ui-mobile 组件级 e2e（视觉/布局/暗色）
 
-**Files:**
-- Create: `frontend/apps/business-pda/src/pages/design-system/gallery.vue`
-- Create: `frontend/apps/business-pda/e2e/ui-mobile.spec.ts`
+**文件：**
+- 新建：`frontend/apps/business-pda/src/pages/design-system/gallery.vue`
+- 新建：`frontend/apps/business-pda/e2e/ui-mobile.spec.ts`
 
-- [ ] **Step 1: 写画廊页（渲染全部 5 个组件）**
+- [ ] **步骤 1：编写画廊页（渲染全部 5 个组件）**
 
 `frontend/apps/business-pda/src/pages/design-system/gallery.vue`（路由 `/design-system/gallery`，无 `requiresAuth`，dev 可视化 + e2e 载体；用 `data-testid` 锚点便于断言）：
 
@@ -336,7 +336,7 @@ const listClicked = ref(false)
 </template>
 ```
 
-- [ ] **Step 2: 写组件级 e2e + 视觉/布局/暗色 spec**
+- [ ] **步骤 2：编写组件级 e2e + 视觉/布局/暗色规格**
 
 `frontend/apps/business-pda/e2e/ui-mobile.spec.ts`：
 
@@ -414,13 +414,13 @@ test('dark mode renders a dark surface (token wiring)', async ({ page }) => {
 })
 ```
 
-- [ ] **Step 3: 跑 spec（浏览器可用时）**
+- [ ] **步骤 3：运行规格（浏览器可用时）**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda e2e -- ui-mobile.spec.ts`
-Expected: 6 passed。浏览器不可用时同 Task 2 的降级口径（`--list` + 记录环境阻塞）。
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda typecheck` 与 `... build` → PASS（画廊页纳入构建，确认无 unused import / 类型错误）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda e2e -- ui-mobile.spec.ts`
+预期：6 项通过。浏览器不可用时同任务 2 的降级口径（`--list` + 记录环境阻塞）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda typecheck` 与 `... build` → 通过（画廊页纳入构建，确认无未使用导入或类型错误）。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add frontend/apps/business-pda/src/pages/design-system/gallery.vue frontend/apps/business-pda/e2e/ui-mobile.spec.ts
@@ -429,13 +429,13 @@ git commit -m "test(business-pda): ui-mobile component gallery + e2e (interactio
 
 ---
 
-## Task 4: 文档（e2e 运行说明 + 真机手动冒烟清单）
+## 任务 4：文档（e2e 运行说明 + 真机手动冒烟清单）
 
-**Files:**
-- Create: `docs/architecture/mobile-pda-testing-and-smoke.md`
-- Modify: `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`（§13）
+**文件：**
+- 新建：`docs/architecture/mobile-pda-testing-and-smoke.md`
+- 修改：`docs/superpowers/specs/2026-06-09-mobile-pda-design.md`（§ 13）
 
-- [ ] **Step 1: 写测试与冒烟文档**
+- [ ] **步骤 1：编写测试与冒烟文档**
 
 `docs/architecture/mobile-pda-testing-and-smoke.md`，至少含：
 - **测试层次**：jsdom 单元/组件测试（`vp test`，行为/事件/标记）；Playwright e2e（真实浏览器，移动视口，流程 + 布局/触控/安全区/暗色，网关全 Mock）。
@@ -446,7 +446,7 @@ git commit -m "test(business-pda): ui-mobile component gallery + e2e (interactio
   pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts
   ```
   浏览器缺失时设 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`；不可用则如实报环境阻塞（同 readiness 口径），最低用 `playwright test --list`。
-- **e2e 能/不能覆盖什么**：能——流程、DOM 交互、计算样式布局、无溢出、触控 ≥44px、安全区 fallback 最小值、暗色 token；不能——真机真实 `env(safe-area-inset-*)`、硬件扫码枪键盘楔入、Capacitor APK 内 WebView、真机手势/滚动惯性。
+- **e2e 能/不能覆盖什么**：能——流程、DOM 交互、计算样式布局、无溢出、触控 ≥ 44px、安全区回退最小值、暗色主题变量；不能——真机真实 `env(safe-area-inset-*)`、硬件扫码枪键盘楔入、Capacitor APK 内 WebView、真机手势/滚动惯性。
 - **真机手动冒烟清单（每次发版前在目标 PDA 上勾）**：
   1. 安装 APK 启动，登录成功，首页三段（顶栏/内容/底栏）无遮挡、刘海/手势条不压内容。
   2. 硬件扫码枪扫一段条码 → 扫码条捕获并显示，焦点常驻、失焦自动回抢。
@@ -454,11 +454,11 @@ git commit -m "test(business-pda): ui-mobile component gallery + e2e (interactio
   4. 暗色/动态主色切换后整屏一致；横竖屏（若启用）无错位。
   5. 弱网/断网下写操作有清晰失败反馈（M2 起逐页验证）。
 
-- [ ] **Step 2: 更新 spec §13**
+- [ ] **步骤 2：更新规格 § 13**
 
 在 `docs/superpowers/specs/2026-06-09-mobile-pda-design.md` §13 增一段：门禁除 typecheck/test/build 外，新增 Playwright e2e（移动视口流程 + 视觉/布局 smoke，网关 Mock），运行与降级口径见 `docs/architecture/mobile-pda-testing-and-smoke.md`；像素级视觉快照与真机扫码进手动冒烟清单。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add docs/architecture/mobile-pda-testing-and-smoke.md docs/superpowers/specs/2026-06-09-mobile-pda-design.md
@@ -467,11 +467,11 @@ git commit -m "docs(pda): e2e/visual testing layers + real-device smoke checklis
 
 ---
 
-## Task 5: 验收 + 推送
+## 任务 5：验收 + 推送
 
-- [ ] **Step 1: 门禁**
+- [ ] **步骤 1：门禁**
 
-Run（全绿）：
+运行（全部通过）：
 ```
 pnpm -C frontend --filter @nerv-iip/business-pda typecheck
 pnpm -C frontend --filter @nerv-iip/business-pda test
@@ -480,7 +480,7 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
 ```
 浏览器可用时另跑全量 `... e2e`（预期 9 passed：app-flow 3 + ui-mobile 6）；不可用则记录环境阻塞、附 `--list` 输出。
 
-- [ ] **Step 2: 推送到 PR #365**
+- [ ] **步骤 2：推送到 PR #365**
 
 ```bash
 git push origin claude/happy-chaum-c9eb8a
@@ -488,11 +488,10 @@ git push origin claude/happy-chaum-c9eb8a
 
 ---
 
-## Self-Review
+## 自我检查
 
-- **覆盖**：登录流程(Task2) + 首页交互/布局(Task2) + 5 组件交互/视觉/暗色(Task3,画廊页) + 文档/冒烟(Task4)。组件级 e2e 通过画廊页覆盖 ScanBar/ListRow/BottomSheet/Result/AppShellMobile，回答"组件是否有 e2e/视觉测试"。
+- **覆盖**：登录流程（任务 2）+ 首页交互/布局（任务 2）+ 5 组件交互/视觉/暗色（任务 3，画廊页）+ 文档/冒烟（任务 4）。组件级 e2e 通过画廊页覆盖 ScanBar/ListRow/BottomSheet/Result/AppShellMobile，回答“组件是否有 e2e/视觉测试”。
 - **占位符**：无 TODO；每步含完整代码/命令。环境阻塞口径明确（非占位）。
-- **一致性**：STORAGE_KEY、登录选择器(`账号`/`密码`/`登录`)、首页文案(`工作台`/`暂无分配给你的任务`)、画廊路由(`/design-system/gallery`，避开 `components` exclude)、安全区 fallback 阈值(12/8px) 与已落地代码一致；端口 5176 避撞。
+- **一致性**：STORAGE_KEY、登录选择器（`账号`/`密码`/`登录`）、首页文案（`工作台`/`暂无分配给你的任务`）、画廊路由（`/design-system/gallery`，避开 `components` 排除项）、安全区回退阈值（12/8px）与已落地代码一致；端口 5176 避免冲突。
 - **诚实边界**：像素快照与真机扫码/inset 明确不在 e2e 内，进手动冒烟清单。
 ```
-

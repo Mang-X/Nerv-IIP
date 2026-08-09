@@ -1,75 +1,75 @@
-# Business Master Data Field Matrix
+# 业务主数据字段矩阵
 
-This matrix freezes the first governance pass for BusinessMasterData. It is not a UI form specification. It defines which facts are owned by MasterData, which downstream services consume them, and which facts must stay in other domains.
+本矩阵冻结了 BusinessMasterData 的首轮治理结果。它不是 UI 表单规格，而是界定哪些事实归 MasterData 所有、哪些下游服务消费这些事实，以及哪些事实必须保留在其他领域。
 
-## Classification Rules
+## 分类规则
 
-| Category | Definition | Examples | Owner rule |
+| 类别 | 定义 | 示例 | 所有权规则 |
 | --- | --- | --- | --- |
-| Master data | Durable business identity or static attribute reused by multiple domains | SKU, UOM, partner, plant, work center, device asset | BusinessMasterData unless a more specific source is listed |
-| Reference data | Controlled code list or reusable definition | material type, storage condition, asset class, quality characteristic definition | BusinessMasterData when cross-domain |
-| Transactional data | Time-bound business event or process state | purchase order, stock movement, batch record, alarm, inspection record | Owning process domain |
-| External reference | ID owned by another platform or external system | IAM userId, fileId, connectorHostId, external ERP code | Original source; MasterData stores reference only |
+| 主数据（Master data） | 可由多个领域复用的持久化业务身份或静态属性 | SKU、UOM、合作伙伴、工厂、工作中心、设备资产 | 除非列出更具体的来源，否则归 BusinessMasterData 所有 |
+| 参考数据（Reference data） | 受控代码表或可复用定义 | 物料类型、存储条件、资产类别、质量特性定义 | 跨领域时归 BusinessMasterData 所有 |
+| 交易数据（Transactional data） | 受时间约束的业务事件或流程状态 | 采购订单、库存移动、批次记录、报警、检验记录 | 归所属流程领域所有 |
+| 外部引用（External reference） | 由其他平台或外部系统维护的 ID | IAM userId、fileId、connectorHostId、外部 ERP 代码 | 归原始来源所有；MasterData 仅存储引用 |
 
-## Core Objects
+## 核心对象
 
-| Object | MasterData-owned fields | Required downstream consumers | Explicitly not owned by MasterData |
+| 对象 | 由 MasterData 负责维护的字段 | 必需的下游消费者 | 明确不归 MasterData 所有 |
 | --- | --- | --- | --- |
-| SKU / Material | organizationId, environmentId, code, name, materialType, category, baseUomCode, inventoryUomCode, purchaseUomCode, salesUomCode, manufacturingUomCode, batchTrackingPolicy, serialTrackingPolicy, shelfLifePolicyCode, storageConditionCode, defaultBarcodeRuleCode, procurementType, mrpType, lotSizingPolicy, minimumLotSize, maximumLotSize, lotSizeMultiple, safetyStockQuantity, reorderPointQuantity, plannedDeliveryTimeDays, inHouseProductionTimeDays, goodsReceiptProcessingTimeDays, abcClass, lifecycleStatus, manufacturingEnabled, purchasingEnabled, salesEnabled, qualityRequired, disabled, lifecycle timestamps | ProductEngineering, Planning, Inventory, Quality, ERP, WMS, MES, BarcodeLabel, Maintenance | EBOM/MBOM/recipe versions, site-specific planning overrides, stock balance, batch instance, serial instance, order price, actual cost |
-| UnitOfMeasure | code, name, dimensionType, precision, roundingMode, disabled | SKU, ProductEngineering, Planning, Inventory, Quality, ERP, MES, Telemetry | Actual measured values in inspections, telemetry samples or reports |
-| UomConversion | fromUomCode, toUomCode, factor, offset, precision, roundingMode, effectiveFrom, effectiveTo | Planning, Inventory, ERP, MES, Quality | Formula-specific yield or batch-size scaling; those belong to ProductEngineering |
-| BusinessPartner | partnerCode, name, partnerRoles, status, taxId, taxRegionCode, defaultCurrencyCode, paymentTermsCode, primaryAddress, primaryContactName, primaryContactEmail, primaryContactPhone, creditLimit, creditCurrencyCode, complianceTags, disabled | ERP Procurement/Sales/Finance, WMS, Quality, Planning | RFQ, quotation, purchase order, sales order, AR/AP open amount, supplier scorecard transactions |
-| PartnerQualification | partnerCode, qualificationType, materialScope, certificateFileId, validFrom, validTo, status | ERP Procurement, Quality, Planning | Supplier audit workflow, quality release decision, purchase transaction |
-| Site / Plant / Area / Line | code, name, hierarchyParentCode, type, timezone, addressRef, disabled | Planning, Inventory, WMS, MES, Maintenance, Telemetry | IAM organization/environment; those remain IAM facts |
-| WorkCenter | code, name, resourceType, plantCode, lineCode, defaultCalendarCode, capacityUnit, capacityPerDay, utilizationRate, efficiencyRate, numberOfCapacities, finiteCapacity, bottleneck, costCenterCode, disabled | ProductEngineering, Planning, MES, ERP Costing, Maintenance | Schedule result, actual downtime, operation report |
-| WorkCalendar | code, name, timezone, workingTimeRules, exceptionDates, holidayCalendarCode, effectiveFrom, effectiveTo, disabled | Planning, MES, Maintenance | Actual shift attendance, overtime approval, production report |
-| Shift | code, name, startTime, endTime, crossesMidnight, paidMinutes, breakMinutes, disabled | MES, Planning, HR-adjacent business scheduling | IAM membership, payroll calculation |
-| Department | code, name, parentDepartmentCode, disabled | Approval, MES, Planning, reporting | IAM organization, IAM role or permission |
-| Team | code, name, departmentCode, shiftCode, effectiveFrom, effectiveTo, disabled | MES, Planning, Approval | IAM membership |
-| PersonnelSkill | userId, skillCode, level, qualificationRef, effectiveFrom, effectiveTo, disabled | MES dispatch, Maintenance, Approval, Quality | login name, email, roles, permissions, HR payroll |
-| DeviceAsset | code, name, assetClassCode, model, manufacturer, serialNo, siteCode, workshopCode, lineCode, workCenterCode, stationCode, parentDeviceId, component list, purchaseDate, purchaseCost, purchaseCurrencyCode, warrantyExpiresOn, supplierPartnerCode, retiredOn, criticality, maintainable, telemetryEnabled, externalRefs, disabled | Telemetry, Maintenance, MES, Planning, ERP Costing | PLC/DCS/SCADA secret, tag sample, alarm, maintenance work order, spare-part consumption, warranty claim workflow, supplier scorecard transaction |
-| ResourceCapability | resourceCode, resourceType, capabilityCode, validMaterialTypes, capacityMin, capacityMax, capacityUomCode, compatibleStorageConditions, effectiveFrom, effectiveTo | ProductEngineering, Planning, MES, Maintenance | Product-specific routing parameter; belongs to ProductEngineering |
-| ReferenceData | codeSet, code, name, description, status, effectiveFrom, effectiveTo | All business domains | Transaction-specific states that only one domain owns |
+| SKU / Material | organizationId, environmentId, code, name, materialType, category, baseUomCode, inventoryUomCode, purchaseUomCode, salesUomCode, manufacturingUomCode, batchTrackingPolicy, serialTrackingPolicy, shelfLifePolicyCode, storageConditionCode, defaultBarcodeRuleCode, procurementType, mrpType, lotSizingPolicy, minimumLotSize, maximumLotSize, lotSizeMultiple, safetyStockQuantity, reorderPointQuantity, plannedDeliveryTimeDays, inHouseProductionTimeDays, goodsReceiptProcessingTimeDays, abcClass, lifecycleStatus, manufacturingEnabled, purchasingEnabled, salesEnabled, qualityRequired, disabled, lifecycle timestamps | ProductEngineering、Planning、Inventory、Quality、ERP、WMS、MES、BarcodeLabel、Maintenance | EBOM/MBOM/配方版本、站点特定的计划覆盖项、库存余额、批次实例、序列号实例、订单价格、实际成本 |
+| UnitOfMeasure | code, name, dimensionType, precision, roundingMode, disabled | SKU、ProductEngineering、Planning、Inventory、Quality、ERP、MES、Telemetry | 检验、遥测样本或报告中的实际测量值 |
+| UomConversion | fromUomCode, toUomCode, factor, offset, precision, roundingMode, effectiveFrom, effectiveTo | Planning、Inventory、ERP、MES、Quality | 配方特定的收率或批次大小换算；这些属于 ProductEngineering |
+| BusinessPartner | partnerCode, name, partnerRoles, status, taxId, taxRegionCode, defaultCurrencyCode, paymentTermsCode, primaryAddress, primaryContactName, primaryContactEmail, primaryContactPhone, creditLimit, creditCurrencyCode, complianceTags, disabled | ERP Procurement/Sales/Finance、WMS、Quality、Planning | RFQ、报价单、采购订单、销售订单、AR/AP 未结金额、供应商记分卡交易 |
+| PartnerQualification | partnerCode, qualificationType, materialScope, certificateFileId, validFrom, validTo, status | ERP Procurement、Quality、Planning | 供应商审核工作流、质量放行决策、采购交易 |
+| Site / Plant / Area / Line | code, name, hierarchyParentCode, type, timezone, addressRef, disabled | Planning、Inventory、WMS、MES、Maintenance、Telemetry | IAM organization/environment；这些仍为 IAM 事实 |
+| WorkCenter | code, name, resourceType, plantCode, lineCode, defaultCalendarCode, capacityUnit, capacityPerDay, utilizationRate, efficiencyRate, numberOfCapacities, finiteCapacity, bottleneck, costCenterCode, disabled | ProductEngineering、Planning、MES、ERP Costing、Maintenance | 排程结果、实际停机、工序报告 |
+| WorkCalendar | code, name, timezone, workingTimeRules, exceptionDates, holidayCalendarCode, effectiveFrom, effectiveTo, disabled | Planning、MES、Maintenance | 实际班次出勤、加班审批、生产报告 |
+| Shift | code, name, startTime, endTime, crossesMidnight, paidMinutes, breakMinutes, disabled | MES、Planning、与 HR 相邻的业务排程 | IAM 成员关系、薪资计算 |
+| Department | code, name, parentDepartmentCode, disabled | Approval、MES、Planning、reporting | IAM organization、IAM role 或 permission |
+| Team | code, name, departmentCode, shiftCode, effectiveFrom, effectiveTo, disabled | MES、Planning、Approval | IAM 成员关系 |
+| PersonnelSkill | userId, skillCode, level, qualificationRef, effectiveFrom, effectiveTo, disabled | MES 派工、Maintenance、Approval、Quality | 登录名、电子邮件、角色、权限、HR 薪资 |
+| DeviceAsset | code, name, assetClassCode, model, manufacturer, serialNo, siteCode, workshopCode, lineCode, workCenterCode, stationCode, parentDeviceId, component list, purchaseDate, purchaseCost, purchaseCurrencyCode, warrantyExpiresOn, supplierPartnerCode, retiredOn, criticality, maintainable, telemetryEnabled, externalRefs, disabled | Telemetry、Maintenance、MES、Planning、ERP Costing | PLC/DCS/SCADA 密钥、测点样本、报警、维修工单、备件消耗、保修索赔工作流、供应商记分卡交易 |
+| ResourceCapability | resourceCode, resourceType, capabilityCode, validMaterialTypes, capacityMin, capacityMax, capacityUomCode, compatibleStorageConditions, effectiveFrom, effectiveTo | ProductEngineering、Planning、MES、Maintenance | 产品特定的工艺路线参数；属于 ProductEngineering |
+| ReferenceData | codeSet, code, name, description, status, effectiveFrom, effectiveTo | 所有业务领域 | 仅由单一领域所有的交易特定状态 |
 
-BusinessPartner `creditLimit` and `creditCurrencyCode` are nullable for onboarding and import compatibility, but the generic update API treats omitted or null values as "preserve existing". Clearing an existing credit limit is not currently exposed through that generic update surface; add a dedicated credit-limit command if that business operation becomes required.
+为兼容入驻和导入，BusinessPartner 的 `creditLimit` 与 `creditCurrencyCode` 可为 null；但通用更新 API 将省略值或 null 解释为“保留现有值”。当前该通用更新接口不支持清除已有信用额度；若该业务操作成为必需，应新增专用的信用额度命令。
 
-## Process-Manufacturing-Sensitive Fields
+## 流程制造敏感字段
 
-| Fact | MasterData role | ProductEngineering role | Quality / Inventory / MES role |
+| 事实 | MasterData 角色 | ProductEngineering 角色 | Quality / Inventory / MES 角色 |
 | --- | --- | --- | --- |
-| Concentration, potency, density, purity, moisture | Define reusable material attributes and allowed units when stable master attributes | Use values in formula version, yield and process parameter calculations | Record actual measured values in inspections, batch records and telemetry |
-| Shelf life and expiry rule | Store default shelf-life policy code and storage-condition dependency | Reference policy when recipe/formula version requires it | Inventory calculates actual expiry per batch; Quality controls release |
-| Hazard, allergen, regulatory tag | Store stable material and partner compliance tags | Use tags to validate recipe compatibility | WMS enforces storage segregation; Quality controls release |
-| Batch/serial tracking policy | Store whether SKU requires lot, serial, furnace heat, date code or expiry tracking | Reference policy in recipe and routing | Inventory owns actual batch/serial/heat/date-code instances |
-| Equipment capacity and compatibility | Store static capacity range, UOM, material compatibility and cleaning class | Use compatible resource class in routing/recipe | MES records actual equipment usage and cleaning execution |
-| Quality characteristic definition | Store reusable characteristic code, name, dimension and UOM | Reference required characteristics in product/recipe version | Quality owns inspection standard, sampling rule, result and release |
+| 浓度、效价、密度、纯度、水分 | 作为稳定主数据属性时，定义可复用的物料属性和允许单位 | 在配方版本、收率和工艺参数计算中使用这些值 | 在检验、批记录和遥测中记录实际测量值 |
+| 保质期和到期规则 | 存储默认保质期策略代码及其对存储条件的依赖 | 当配方/公式版本需要时引用该策略 | Inventory 按批次计算实际到期日；Quality 控制放行 |
+| 危险品、过敏原和监管标签 | 存储稳定的物料和合作伙伴合规标签 | 使用标签校验配方兼容性 | WMS 执行存储隔离；Quality 控制放行 |
+| 批次/序列号跟踪策略 | 存储 SKU 是否要求跟踪批次、序列号、炉次、日期代码或到期日 | 在配方和工艺路线中引用该策略 | 实际批次/序列号/炉次/日期代码实例归 Inventory 所有 |
+| 设备容量和兼容性 | 存储静态容量范围、UOM、物料兼容性和清洁类别 | 在工艺路线/配方中使用兼容的资源类别 | MES 记录实际设备使用和清洁执行 |
+| 质量特性定义 | 存储可复用的特性代码、名称、量纲和 UOM | 在产品/配方版本中引用必需特性 | 检验标准、抽样规则、结果和放行归 Quality 所有 |
 
-## Downstream Reference Contract
+## 下游引用契约
 
-Downstream services must use one of these patterns:
+下游服务必须采用以下模式之一：
 
-1. Resolve by code or ID through MasterData public API before creating a new business document.
-2. Store a lightweight immutable reference snapshot on the downstream document when historical readability is required.
-3. Subscribe to MasterData IntegrationEvents when caching active master data.
-4. Keep existing document history valid when a master record is disabled, archived, replaced or merged.
+1. 创建新的业务单据前，通过 MasterData 公共 API 按代码或 ID 解析。
+2. 需要历史可读性时，在下游单据上存储轻量、不可变的引用快照。
+3. 缓存有效主数据时，订阅 MasterData IntegrationEvents。
+4. 主记录被禁用、归档、替换或合并后，保持现有单据历史有效。
 
-MasterData public API must include batch resolve and validity-check endpoints before downstream services rely on it at scale.
+下游服务在大规模依赖 MasterData 前，其公共 API 必须包含批量解析和有效性检查 endpoint。
 
-## Governance Matrix
+## 治理矩阵
 
-| Area | Steward role | Approval needed before change | Minimum audit |
+| 范围 | 管理责任角色 | 变更前所需审批 | 最低审计要求 |
 | --- | --- | --- | --- |
-| SKU and UOM | Business administrator + planning/material owner | Required for UOM, traceability, shelf-life or enabled-role change | before/after values, reason, effective date, actor |
-| Partner identity | Sales/procurement owner | Required for role, tax/compliance or qualification change | before/after values, reason, actor |
-| Resource hierarchy | Production/maintenance owner | Required for plant/line/work-center/device reassignment | old/new parent, effective date, actor |
-| Device asset | Maintenance owner | Required for asset class, criticality, maintainable or telemetry-enabled change | before/after values, actor |
-| Reference data | Domain steward for code set | Required for code removal or semantic change | code set, code, old/new meaning, actor |
+| SKU 与 UOM | 业务管理员 + 计划/物料负责人 | UOM、可追溯性、保质期或启用角色变更必须审批 | 变更前/后值、原因、生效日期、操作者 |
+| 合作伙伴身份 | 销售/采购负责人 | 角色、税务/合规或资质变更必须审批 | 变更前/后值、原因、操作者 |
+| 资源层级 | 生产/维护负责人 | 工厂/产线/工作中心/设备重新归属必须审批 | 原/新父级、生效日期、操作者 |
+| 设备资产 | 维护负责人 | 资产类别、关键性、可维护性或启用遥测变更必须审批 | 变更前/后值、操作者 |
+| 参考数据 | 代码集的领域管理责任人 | 删除代码或改变语义必须审批 | 代码集、代码、原/新含义、操作者 |
 
-## Open Questions
+## 开放问题
 
-| Question | Why it matters | Owner |
+| 问题 | 重要性 | 负责人 |
 | --- | --- | --- |
-| Should warehouse and storage area identity move from Inventory to MasterData? | Warehouses can be static facilities, but stock location and balances are Inventory facts. | Inventory owner + architecture owner |
-| Which planning attributes belong on SKU versus DemandPlanning? | Resolved for shared defaults: SKU owns default lead time, lot sizing, MRP policy, safety stock and reorder point values; DemandPlanning may own site-specific or scenario-specific overrides and snapshots. | Planning owner + material owner |
-| Should quality characteristic definitions live in MasterData or Quality? | Reusable code definitions are cross-domain, but inspection standards are Quality facts. | Quality owner + architecture owner |
-| How much additional partner commercial data is allowed in MasterData? | Tax, bank and settlement fields have privacy and authorization implications; customer credit limit is now owned by MasterData for ERP sales credit checks. | ERP owner + security owner |
+| 仓库和存储区域身份是否应从 Inventory 移至 MasterData？ | 仓库可以是静态设施，但库存库位和余额属于 Inventory 事实。 | Inventory 负责人 + 架构负责人 |
+| 哪些计划属性应归 SKU，哪些应归 DemandPlanning？ | 已针对共享默认值解决：SKU 负责维护默认提前期、批量、MRP 策略、安全库存和再订货点值；DemandPlanning 可负责维护站点特定或场景特定的覆盖项和快照。 | 计划负责人 + 物料负责人 |
+| 质量特性定义应归 MasterData 还是 Quality？ | 可复用代码定义跨领域，但检验标准属于 Quality 事实。 | Quality 负责人 + 架构负责人 |
+| MasterData 可容纳多少额外的合作伙伴商业数据？ | 税务、银行和结算字段涉及隐私及授权；客户信用额度现归 MasterData 所有，用于 ERP 销售信用检查。 | ERP 负责人 + 安全负责人 |

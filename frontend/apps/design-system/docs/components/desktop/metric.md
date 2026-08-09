@@ -11,7 +11,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 给高频操作台用的 KPI 卡。**下半区永远承载可行动的数据**——一段趋势、一个离目标的差距、一组状态分布、一个处理入口——而不是被填成无意义的描述文本。`variant` 决定下半区结构；语义色沿用 `NvStatusBadge` 五 tone；数字一律 tabular-nums；内联微图带悬浮 tooltip（曲线复用 `NvAreaChart` 原生 crosshair）。
 
-> 平铺的「计划 vs 实际 / 目标 vs 当前」对比卡用 `NvMetricComparison`（自动算差值与达成率）。
+> 平铺的「计划与实际 / 目标与当前」对比卡用 `NvMetricComparison`（自动算差值与达成率）。
 
 ## variant 一览
 

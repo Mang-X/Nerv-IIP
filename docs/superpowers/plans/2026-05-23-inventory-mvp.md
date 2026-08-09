@@ -1,49 +1,49 @@
-# Inventory MVP Implementation Plan
+# Inventory MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Implement #131 by creating the Inventory service for stock locations, stock ledger, stock movements, availability queries and count adjustments.
+**目标：**通过创建 Inventory 服务来实施 #131，覆盖库存地点、库存台账、库存移动、可用量查询和盘点调整。
 
-**Architecture:** Inventory is a new CleanDDD business service under `backend/services/Business/Inventory`. It owns stock facts only and references MasterData by public codes or IDs. WMS, ERP, MES and DemandPlanning consume Inventory through APIs/events and never through shared tables.
+**架构：**Inventory 是 `backend/services/Business/Inventory` 下新增的 CleanDDD 业务服务。它只拥有库存事实，并通过公开编码或 ID 引用 MasterData。WMS、ERP、MES 和 DemandPlanning 通过 API/事件使用 Inventory，绝不通过共享表访问。
 
-**Tech Stack:** .NET 10, NetCorePal CleanDDD template, FastEndpoints, EF Core PostgreSQL, xUnit, CAP-style integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、NetCorePal CleanDDD 模板、FastEndpoints、EF Core PostgreSQL、xUnit、CAP 风格的集成事件转换、`Nerv.IIP.Testing` 数据库模式约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-inventory-mvp-design.md` as the domain contract for this plan.
+以 `docs/superpowers/specs/2026-05-23-inventory-mvp-design.md` 作为本计划的领域契约。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/Nerv.IIP.Business.Inventory.Domain.csproj`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Nerv.IIP.Business.Inventory.Infrastructure.csproj`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLocationAggregate/StockLocation.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLedgerAggregate/StockLedger.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockMovementAggregate/StockMovement.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountTaskAggregate/StockCountTask.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/DomainEvents/InventoryDomainEvents.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockLocationEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockLedgerEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockMovementEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockCountTaskEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockLocations/CreateStockLocationCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/GetStockAvailabilityQuery.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEvents/InventoryIntegrationEvents.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventConverters/InventoryIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Endpoints/Inventory/InventoryEndpoints.cs`
-- Create: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs`
-- Create: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
-- Create: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryIntegrationEventTests.cs`
-- Create: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventorySchemaConventionTests.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/Nerv.IIP.Business.Inventory.Domain.csproj`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Nerv.IIP.Business.Inventory.Infrastructure.csproj`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLocationAggregate/StockLocation.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLedgerAggregate/StockLedger.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockMovementAggregate/StockMovement.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountTaskAggregate/StockCountTask.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/DomainEvents/InventoryDomainEvents.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/ApplicationDbContext.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockLocationEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockLedgerEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockMovementEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockCountTaskEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockLocations/CreateStockLocationCommand.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/GetStockAvailabilityQuery.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEvents/InventoryIntegrationEvents.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventConverters/InventoryIntegrationEventConverters.cs`
+- 新建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Endpoints/Inventory/InventoryEndpoints.cs`
+- 新建：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs`
+- 新建：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
+- 新建：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryIntegrationEventTests.cs`
+- 新建：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventorySchemaConventionTests.cs`
 
-Shared files requested from #140:
+由 #140 请求的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `infra/aspire/Nerv.IIP.AppHost/Program.cs`
@@ -52,11 +52,11 @@ Shared files requested from #140:
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-inventory-mvp.ps1`
 
-## Task 1: Scaffold Inventory Service Locally
+## 任务 1：在本地搭建 Inventory 服务骨架
 
-- [ ] **Step 1: Create service projects**
+- [ ] **步骤 1：创建服务项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Inventory -o backend/services/Business/Inventory --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -64,44 +64,44 @@ dotnet new xunit -n Nerv.IIP.Business.Inventory.Domain.Tests -o backend/services
 dotnet new xunit -n Nerv.IIP.Business.Inventory.Web.Tests -o backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests --framework net10.0
 ```
 
-Expected: Inventory Domain, Infrastructure, Web and test projects exist.
+预期：Inventory 的领域层、基础设施层、Web 层和测试项目均已存在。
 
-- [ ] **Step 2: Remove template demo code**
+- [ ] **步骤 2：移除模板演示代码**
 
-Delete template demo endpoints, sample aggregates, sample migrations, demo SignalR hubs and demo tests. Verify no file contains `OrderAggregate`, `DeliverRecord`, `LoginEndpoint`, `ChatHub` or `LockEndpoint`.
+删除模板中的演示端点、示例聚合、示例数据库迁移、演示 SignalR Hub 和演示测试。验证没有文件包含 `OrderAggregate`、`DeliverRecord`、`LoginEndpoint`、`ChatHub` 或 `LockEndpoint`。
 
-Run:
+运行：
 
 ```powershell
 rg -n "OrderAggregate|DeliverRecord|LoginEndpoint|ChatHub|LockEndpoint" backend/services/Business/Inventory
 ```
 
-Expected: no matches.
+预期：没有匹配项。
 
-## Task 2: Implement Domain Model
+## 任务 2：实施领域模型
 
-- [ ] **Step 1: Write aggregate tests**
+- [ ] **步骤 1：编写聚合测试**
 
-Create `InventoryAggregateTests.cs` with tests for:
+创建 `InventoryAggregateTests.cs`，测试以下场景：
 
-1. Posting inbound movement increases on-hand quantity.
-2. Posting outbound movement decreases on-hand quantity.
-3. Duplicate idempotency key with the same payload returns the existing movement.
-4. Duplicate idempotency key with different payload is rejected.
-5. Outbound movement that would make on-hand negative is rejected.
-6. Count adjustment creates an adjustment movement and updates ledger quantity.
+1. 过账入库移动会增加在手数量。
+2. 过账出库移动会减少在手数量。
+3. 使用相同载荷的重复幂等键会返回已有移动。
+4. 使用不同载荷的重复幂等键会被拒绝。
+5. 会导致在手数量变为负数的出库移动会被拒绝。
+6. 盘点调整会创建调整移动并更新台账数量。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore
 ```
 
-Expected before implementation: compile failure because Inventory aggregates do not exist.
+实施前预期：由于 Inventory 聚合尚不存在，编译失败。
 
-- [ ] **Step 2: Implement aggregate roots**
+- [ ] **步骤 2：实施聚合根**
 
-Implement the aggregate files listed in the Files section. Required methods:
+实施“文件”一节列出的聚合文件。必须提供以下方法：
 
 1. `StockLocation.CreateOrUpdate(...)`
 2. `StockLedger.ApplyMovement(...)`
@@ -109,27 +109,27 @@ Implement the aggregate files listed in the Files section. Required methods:
 4. `StockCountTask.Create(...)`
 5. `StockCountTask.ConfirmAdjustment(...)`
 
-Use `Guid.CreateVersion7()` for entity IDs and keep all methods deterministic for unit tests.
+实体 ID 使用 `Guid.CreateVersion7()`，并保持所有方法具有确定性，以便进行单元测试。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore
 ```
 
-Expected: Inventory domain tests pass.
+预期：Inventory 领域测试通过。
 
-## Task 3: Add Persistence And Events
+## 任务 3：添加持久化与事件
 
-- [ ] **Step 1: Configure DbContext**
+- [ ] **步骤 1：配置 DbContext**
 
-Create `ApplicationDbContext.cs` and entity configurations using schema `inventory`. Configure `MigrationsHistoryTable("__EFMigrationsHistory", "inventory")`.
+创建 `ApplicationDbContext.cs` 和实体配置，使用 `inventory` 数据库模式。配置 `MigrationsHistoryTable("__EFMigrationsHistory", "inventory")`。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成数据库迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -137,57 +137,57 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add InitialInventorySchema --project backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Nerv.IIP.Business.Inventory.Infrastructure.csproj --startup-project backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj --output-dir Migrations
 ```
 
-Expected: initial Inventory migration is created.
+预期：已创建 Inventory 初始数据库迁移。
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Create `InventoryIntegrationEventTests.cs` and verify event names:
+创建 `InventoryIntegrationEventTests.cs` 并验证以下事件名称：
 
 1. `inventory.StockMovementPosted`
 2. `inventory.StockCountVarianceConfirmed`
 3. `inventory.StockAvailabilityChanged`
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore --filter FullyQualifiedName~InventoryIntegrationEventTests
 ```
 
-Expected: event converter tests pass.
+预期：事件转换器测试通过。
 
-## Task 4: Add API Surface
+## 任务 4：添加 API 接口
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Create `InventoryEndpointContractTests.cs` for:
+创建 `InventoryEndpointContractTests.cs`，覆盖以下场景：
 
-1. Internal authorization is required for all non-health endpoints.
-2. `POST /api/inventory/v1/locations` creates a location.
-3. `POST /api/inventory/v1/movements` posts a movement and returns movement ID.
-4. `GET /api/inventory/v1/availability` returns on-hand, reserved and available.
-5. `POST /api/inventory/v1/count-tasks` creates a count task.
-6. `POST /api/inventory/v1/count-tasks/{countTaskId}/adjustments` posts adjustments.
-7. OpenAPI operation IDs are stable.
+1. 所有非健康检查端点都必须进行内部授权。
+2. `POST /api/inventory/v1/locations` 创建库存地点。
+3. `POST /api/inventory/v1/movements` 过账库存移动并返回移动 ID。
+4. `GET /api/inventory/v1/availability` 返回在手量、预留量和可用量。
+5. `POST /api/inventory/v1/count-tasks` 创建盘点任务。
+6. `POST /api/inventory/v1/count-tasks/{countTaskId}/adjustments` 过账调整。
+7. OpenAPI 操作 ID 保持稳定。
 
-- [ ] **Step 2: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 2：实施命令、查询和 FastEndpoints**
 
-Implement files listed in the Files section. Use permission codes from the Inventory spec and `[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]` for internal APIs.
+实施“文件”一节列出的文件。内部 API 使用 Inventory 规格中的权限代码和 `[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]`。
 
-- [ ] **Step 3: Run Web tests**
+- [ ] **步骤 3：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore
 ```
 
-Expected: Inventory Web tests pass.
+预期：Inventory Web 层测试通过。
 
-## Task 5: Handoff Shared Changes To #140
+## 任务 5：向 #140 移交共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR body for this session, include:
+在本次会话的 PR 正文中包含以下内容：
 
 ```markdown
 ## Shared Changes Needed
@@ -199,13 +199,13 @@ In the PR body for this session, include:
 - Add `scripts/verify-business-inventory-mvp.ps1`.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两条命令均通过。

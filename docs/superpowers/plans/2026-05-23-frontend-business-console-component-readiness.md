@@ -1,24 +1,24 @@
-# Frontend Business Console Component Readiness Plan
+# Business Console 前端组件就绪计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向自主代理：**必须使用以下子技能之一逐项实施本计划：superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Implement #143 as design-system readiness for business console pages, with `frontend/DESIGN` as the canonical spec.
+**目标：**将 #143 实施为 Business Console 页面的设计系统就绪工作，并以 `frontend/DESIGN` 作为权威规范。
 
-**Architecture:** `frontend/packages/ui` owns primitives and wrappers. App pages import only from `@nerv-iip/ui`. FileUpload talks to FileStorage public upload-session/tus/download-grant contracts and never to MinIO directly.
+**架构：**`frontend/packages/ui` 拥有基础组件和封装组件。应用页面只从 `@nerv-iip/ui` 导入。FileUpload 与 FileStorage 的公开 upload-session/tus/download-grant 契约交互，绝不直接访问 MinIO。
 
-**Tech Stack:** Vue 3, Tailwind CSS v4, shadcn-vue, Reka UI, lucide icons, optional Uppy core/headless + `@uppy/tus` for resumable uploads.
+**技术栈：**Vue 3、Tailwind CSS v4、shadcn-vue、Reka UI、lucide 图标，以及用于断点续传的可选 Uppy core/headless + `@uppy/tus`。
 
 ---
 
-## Specification
+## 规格
 
-Use `frontend/DESIGN/roadmaps/business-console-readiness.md` as the design-system contract. Do not treat this plan as the source of visual truth.
+使用 `frontend/DESIGN/roadmaps/business-console-readiness.md` 作为设计系统契约。不得将本计划视为视觉事实来源。
 
-## Task 1: Update DESIGN Before Code
+## 任务 1：编码前更新 DESIGN
 
-- [ ] **Step 1: Create or update component docs**
+- [ ] **步骤 1：创建或更新组件文档**
 
-Add component docs before implementation:
+实施前添加组件文档：
 
 1. `frontend/DESIGN/components/tabs.md`
 2. `frontend/DESIGN/components/sheet.md`
@@ -28,66 +28,66 @@ Add component docs before implementation:
 6. `frontend/DESIGN/components/progress.md`
 7. `frontend/DESIGN/components/scroll-area.md`
 
-- [ ] **Step 2: Update index and backlog**
+- [ ] **步骤 2：更新索引和待办清单**
 
-Update `frontend/DESIGN/index.md` and `frontend/DESIGN/components/install-backlog.md` so future agents can see what is installed, what is still pending and which workflow owns each component.
+更新 `frontend/DESIGN/index.md` 和 `frontend/DESIGN/components/install-backlog.md`，让后续代理能够看到哪些组件已安装、哪些仍待处理，以及每个组件由哪个工作流负责。
 
-## Task 2: Install And Export shadcn-vue Primitives
+## 任务 2：安装并导出 shadcn-vue 基础组件
 
-- [ ] **Step 1: Install primitives from `frontend/`**
+- [ ] **步骤 1：从 `frontend/` 安装基础组件**
 
-Run:
+运行：
 
 ```powershell
 pnpm dlx shadcn-vue@latest add tabs sheet popover calendar range-calendar chart progress scroll-area
 ```
 
-- [ ] **Step 2: Export public parts**
+- [ ] **步骤 2：导出公开部件**
 
-Update `frontend/packages/ui/src/index.ts` to export all public parts from the installed primitives.
+更新 `frontend/packages/ui/src/index.ts`，导出已安装基础组件的所有公开部件。
 
-- [ ] **Step 3: Add export contract tests**
+- [ ] **步骤 3：添加导出契约测试**
 
-Update `frontend/packages/ui/src/design-system.contract.test.ts` or add a focused export test so new primitives are covered by stable `@nerv-iip/ui` exports.
+更新 `frontend/packages/ui/src/design-system.contract.test.ts`，或添加聚焦的导出测试，确保新基础组件由稳定的 `@nerv-iip/ui` 导出覆盖。
 
-## Task 3: Build FileUpload Wrapper
+## 任务 3：构建 FileUpload 封装组件
 
-- [ ] **Step 1: Add transport abstraction**
+- [ ] **步骤 1：添加传输抽象**
 
-Create a FileUpload transport boundary that can create FileStorage upload sessions and then use either server-proxy or tus instructions.
+创建 FileUpload 传输边界，使其能够创建 FileStorage 上传会话，然后使用 server-proxy 或 tus 指令。
 
-- [ ] **Step 2: Add Uppy tus adapter when resumability is needed**
+- [ ] **步骤 2：需要断点续传时添加 Uppy tus 适配器**
 
-Prefer Uppy core/headless plus `@uppy/tus` behind the FileUpload wrapper. Do not expose Uppy Dashboard as the default rendered shell.
+在 FileUpload 封装组件内部优先使用 Uppy core/headless 加 `@uppy/tus`。不得将 Uppy Dashboard 暴露为默认渲染外壳。
 
-- [ ] **Step 3: Implement shadcn-styled UI**
+- [ ] **步骤 3：实施 shadcn 风格的 UI**
 
-Use existing `Button`, `Input`, `Progress`, `Alert`, `Badge`, `Empty`, `Spinner` and `Tooltip` primitives for the upload shell.
+上传外壳使用现有的 `Button`、`Input`、`Progress`、`Alert`、`Badge`、`Empty`、`Spinner` 和 `Tooltip` 基础组件。
 
-- [ ] **Step 4: Test public behavior**
+- [ ] **步骤 4：测试公开行为**
 
-Test:
+测试：
 
-1. Accepted and rejected file type/size.
-2. Upload progress and retry state.
-3. Completed output contains `fileId`.
-4. Public state never exposes `objectKey` or direct object storage URL.
+1. 接受和拒绝文件类型/大小的行为。
+2. 上传进度和重试状态。
+3. 完成后的输出包含 `fileId`。
+4. 公开状态绝不暴露 `objectKey` 或对象存储直连 URL。
 
-## Task 4: Build Chart And Date Wrappers Only Where Needed
+## 任务 4：只在需要时构建 Chart 和 Date 封装组件
 
-- [ ] **Step 1: Chart primitive**
+- [ ] **步骤 1：Chart 基础组件**
 
-Export shadcn-vue chart primitives first. Add domain wrappers only after a repeated business page need appears, such as KPI mini-chart, production trend or stock movement trend.
+先导出 shadcn-vue 图表基础组件。只有在业务页面出现重复需求后才添加领域封装组件，例如 KPI 迷你图、生产趋势或库存移动趋势。
 
-- [ ] **Step 2: Date picker composition**
+- [ ] **步骤 2：组合日期选择器**
 
-Compose Popover + Calendar/RangeCalendar into compact date/date-range controls suitable for toolbar filters and forms.
+将 Popover + Calendar/RangeCalendar 组合成紧凑的日期/日期范围控件，适用于工具栏筛选器和表单。
 
-## Task 5: Verification
+## 任务 5：验证
 
-- [ ] **Step 1: Run frontend quality gates**
+- [ ] **步骤 1：运行前端质量门禁**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend typecheck
@@ -95,9 +95,9 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-Expected: commands pass for touched areas.
+预期：命令在受影响区域通过。
 
-- [ ] **Step 2: Run focused visual checks when pages consume components**
+- [ ] **步骤 2：页面使用组件时运行聚焦视觉检查**
 
-When any app page consumes these primitives, verify desktop and mobile screenshots with Playwright and check for text overflow, overlapping controls and broken focus states.
+当任何应用页面使用这些基础组件时，使用 Playwright 验证桌面端和移动端截图，并检查文本溢出、控件重叠和焦点状态失效问题。
 

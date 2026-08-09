@@ -1,28 +1,28 @@
-# Business Master Data Foundation Implementation Plan
+# 业务主数据基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Build the first Business Platform service with SKU, business partner, work center, calendar and device asset master data.
+**目标：**构建首个业务平台服务，提供 SKU、业务伙伴、工作中心、日历和设备资产主数据。
 
-**Architecture:** Create `backend/services/Business/MasterData` as a CleanDDD/netcorepal three-project service. MasterData owns business master data only, references IAM organization/environment identifiers as strings, and never reads IAM tables. PostgreSQL persistence uses the `business_masterdata` schema, service-local migrations and schema convention tests.
+**架构：**将 `backend/services/Business/MasterData` 创建为包含三个项目的 CleanDDD/netcorepal 服务。MasterData 仅拥有业务主数据，以字符串形式引用 IAM 的组织/环境标识符，绝不读取 IAM 表。PostgreSQL 持久化使用 `business_masterdata` schema、服务本地 migration 和 schema 约定测试。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal repository/unit-of-work primitives, xUnit, PostgreSQL profile tests.
+**技术栈：**.NET 10、FastEndpoints、MediatR、EF Core、Npgsql、netcorepal repository/unit-of-work 原语、xUnit、PostgreSQL profile 测试。
 
 ---
 
-## Realignment Gate
+## 重新对齐门禁
 
-2026-05-21 review found that this plan is a valid minimum skeleton but is not sufficient as the long-lived MasterData foundation for both discrete and process manufacturing. Before continuing with Task 4 or Task 5, execute `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`.
+2026-05-21 的审核发现，本计划是有效的最小骨架，但不足以作为同时支持离散制造和流程制造的长期 MasterData 基础。继续执行任务 4 或任务 5 前，先执行 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`。
 
-The realignment is governed by:
+重新对齐受以下文档治理：
 
 1. `docs/adr/0013-business-master-data-governance.md`
 2. `docs/architecture/business-master-data-field-matrix.md`
 3. `docs/architecture/business-master-data-process-manufacturing-supplement.md`
 
-Task 1 through Task 3 may be treated as historical foundation work. Task 4 and Task 5 must be updated by the realignment plan so API contracts, IAM permissions, schema catalog and readiness notes include UOM, SKU industrial attributes, resource hierarchy, process-manufacturing boundaries, downstream resolve APIs and MasterData change events.
+任务 1 至任务 3 可视为历史基础工作。任务 4 和任务 5 必须由重新对齐计划更新，以确保 API 契约、IAM 权限、schema 目录和就绪说明涵盖 UOM、SKU 工业属性、资源层级、流程制造边界、下游解析 API 和 MasterData 变更事件。
 
-## Source Inputs
+## 输入资料
 
 1. `docs/adr/0012-business-platform-domain-layering.md`
 2. `docs/architecture/business-platform-domain-architecture.md`
@@ -31,15 +31,15 @@ Task 1 through Task 3 may be treated as historical foundation work. Task 4 and T
 5. `docs/architecture/database-schema-conventions.md`
 6. `docs/architecture/authorization-matrix.md`
 
-## Boundaries
+## 边界
 
-1. Do not create ProductEngineering, Inventory, WMS, MES, ERP, Telemetry or Maintenance rules in this service.
-2. Do not duplicate IAM users, roles, memberships or permissions.
-3. Do not persist PLC/DCS/SCADA connection secrets on `DeviceAsset`.
-4. Do not add business pages in the frontend in this plan.
-5. Keep all database objects inside the `business_masterdata` schema.
+1. 不得在本服务中创建 ProductEngineering、Inventory、WMS、MES、ERP、Telemetry 或 Maintenance 规则。
+2. 不得复制 IAM 用户、角色、成员关系或权限。
+3. 不得在 `DeviceAsset` 上持久化 PLC/DCS/SCADA 连接密钥。
+4. 本计划不得在前端添加业务页面。
+5. 所有数据库对象必须位于 `business_masterdata` schema 内。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/
@@ -85,20 +85,20 @@ docs/architecture/implementation-readiness.md
 README.md
 ```
 
-## Task 1: Scaffold MasterData Service
+## 任务 1：搭建 MasterData 服务骨架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/Nerv.IIP.Business.MasterData.Domain.csproj`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/Nerv.IIP.Business.MasterData.Domain.csproj`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create the service from the approved template**
+- [ ] **步骤 1：使用已批准模板创建服务**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.MasterData -o backend/services/Business/MasterData --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -107,11 +107,11 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/MasterData/src/Ner
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj
 ```
 
-Expected: commands exit `0`; generated projects target `net10.0`; no service references `backend/services/Iam`.
+预期：命令以 `0` 退出；生成的项目以 `net10.0` 为目标；任何服务都不引用 `backend/services/Iam`。
 
-- [ ] **Step 2: Add test projects**
+- [ ] **步骤 2：添加测试项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new xunit -n Nerv.IIP.Business.MasterData.Domain.Tests -o backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests --framework net10.0
@@ -123,36 +123,36 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/MasterData/tests/N
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj
 ```
 
-Expected: test projects are added to the backend solution.
+预期：测试项目已添加到后端 solution。
 
-- [ ] **Step 3: Commit the scaffold**
+- [ ] **步骤 3：提交服务骨架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/services/Business/MasterData
 git commit -m "feat: scaffold business master data service"
 ```
 
-## Task 2: Add MasterData Domain Invariants
+## 任务 2：添加 MasterData 领域不变量
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/MasterDataFacts.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/SkuAggregate/Sku.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/BusinessPartnerAggregate/BusinessPartner.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DepartmentAggregate/Department.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/TeamAggregate/Team.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/PersonnelSkillAggregate/PersonnelSkill.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCenterAggregate/WorkCenter.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCalendarAggregate/WorkCalendar.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DeviceAssetAggregate/DeviceAsset.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/DomainEvents/MasterDataDomainEvents.cs`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/MasterDataAggregateTests.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/MasterDataFacts.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/SkuAggregate/Sku.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/BusinessPartnerAggregate/BusinessPartner.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DepartmentAggregate/Department.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/TeamAggregate/Team.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/PersonnelSkillAggregate/PersonnelSkill.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCenterAggregate/WorkCenter.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/WorkCalendarAggregate/WorkCalendar.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/AggregatesModel/DeviceAssetAggregate/DeviceAsset.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain/DomainEvents/MasterDataDomainEvents.cs`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/MasterDataAggregateTests.cs`
 
-- [ ] **Step 1: Write failing aggregate tests**
+- [ ] **步骤 1：编写预期失败的聚合测试**
 
-Create `MasterDataAggregateTests.cs` with these tests:
+创建包含以下测试的 `MasterDataAggregateTests.cs`：
 
 ```csharp
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
@@ -235,17 +235,17 @@ public sealed class MasterDataAggregateTests
 }
 ```
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj --no-restore
 ```
 
-Expected: FAIL because the aggregate types do not exist yet.
+预期：失败，因为聚合类型尚不存在。
 
-- [ ] **Step 2: Implement aggregate signatures and facts**
+- [ ] **步骤 2：实现聚合签名和事实**
 
-Implement the domain model with these public members:
+使用以下公共成员实现领域模型：
 
 ```csharp
 namespace Nerv.IIP.Business.MasterData.Domain;
@@ -257,49 +257,49 @@ public static class MasterDataFacts
 }
 ```
 
-Each aggregate must expose `OrganizationId`, `EnvironmentId`, `Code`, `Disabled`, `CreatedAtUtc`, `UpdatedAtUtc` and domain methods matching the tests. Use `ArgumentException` for blank text, `ArgumentOutOfRangeException` for non-positive capacity and `InvalidOperationException` for state transitions that would mutate a disabled aggregate.
+每个聚合都必须公开 `OrganizationId`、`EnvironmentId`、`Code`、`Disabled`、`CreatedAtUtc`、`UpdatedAtUtc`，以及与测试匹配的领域方法。空白文本使用 `ArgumentException`，非正数产能使用 `ArgumentOutOfRangeException`，会改变已禁用聚合的状态转换使用 `InvalidOperationException`。
 
-`PersonnelSkill` exposes `OrganizationId`, `EnvironmentId`, `UserId`, `SkillCode`, `Level`, `EffectiveFrom`, `EffectiveTo`, `Disabled`, `CreatedAtUtc`, `UpdatedAtUtc` and `IsValidOn(DateOnly date)`. It stores only IAM `userId` references and does not copy login name, email, roles or membership facts from IAM.
+`PersonnelSkill` 公开 `OrganizationId`、`EnvironmentId`、`UserId`、`SkillCode`、`Level`、`EffectiveFrom`、`EffectiveTo`、`Disabled`、`CreatedAtUtc`、`UpdatedAtUtc` 和 `IsValidOn(DateOnly date)`。它仅存储 IAM `userId` 引用，不从 IAM 复制登录名、电子邮件、角色或成员关系事实。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 4: Commit domain model**
+- [ ] **步骤 4：提交领域模型**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Domain backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests
 git commit -m "feat: add business master data aggregates"
 ```
 
-## Task 3: Add Persistence, Migration and Schema Catalog
+## 任务 3：添加持久化、migration 和 schema 目录
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/SkuEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/BusinessPartnerEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DepartmentEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/TeamEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/PersonnelSkillEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCenterEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCalendarEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DeviceAssetEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataSchemaConventionTests.cs`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataPostgresProfileTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/SkuEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/BusinessPartnerEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DepartmentEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/TeamEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/PersonnelSkillEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCenterEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/WorkCalendarEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/EntityConfigurations/DeviceAssetEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataSchemaConventionTests.cs`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataPostgresProfileTests.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
 
-- [ ] **Step 1: Write schema convention tests**
+- [ ] **步骤 1：编写 schema 约定测试**
 
-Create tests that call `SchemaConventionAssertions` against the MasterData `ApplicationDbContext` and assert:
+创建针对 MasterData `ApplicationDbContext` 调用 `SchemaConventionAssertions` 的测试，并断言：
 
 ```csharp
 Assert.Equal("business_masterdata", db.Model.GetDefaultSchema());
@@ -308,13 +308,13 @@ SchemaConventionAssertions.AssertBusinessColumnsHaveComments(db);
 SchemaConventionAssertions.AssertMigrationsHistoryTableUsesSchema(db, "business_masterdata");
 ```
 
-Expected initial result: FAIL because the DbContext and entity configurations do not exist yet.
+预期初始结果：失败，因为 DbContext 和实体配置尚不存在。
 
-- [ ] **Step 2: Configure tables and indexes**
+- [ ] **步骤 2：配置表和索引**
 
-Configure these tables and unique indexes:
+配置以下表和唯一索引：
 
-| Table | Unique key | Required list index |
+| 表 | 唯一键 | 必需的列表索引 |
 | --- | --- | --- |
 | `skus` | organizationId + environmentId + code | category + disabled |
 | `business_partners` | organizationId + environmentId + partnerType + code | partnerType + disabled |
@@ -325,71 +325,71 @@ Configure these tables and unique indexes:
 | `work_calendars` | organizationId + environmentId + code | disabled |
 | `device_assets` | organizationId + environmentId + code | workCenterCode + disabled |
 
-Every business property must have an English column comment that names the business meaning and unit where relevant.
+每个业务属性都必须具有英文列注释，注明业务含义，并在适用时注明单位。
 
-- [ ] **Step 3: Generate migration**
+- [ ] **步骤 3：生成 migration**
 
-Run:
+运行：
 
 ```powershell
 dotnet ef migrations add InitialBusinessMasterData --project backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure/Nerv.IIP.Business.MasterData.Infrastructure.csproj --startup-project backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Nerv.IIP.Business.MasterData.Web.csproj --output-dir Migrations
 ```
 
-Expected: migration creates the `business_masterdata` schema, eight business tables, indexes and the service schema migrations history configuration.
+预期：migration 创建 `business_masterdata` schema、八张业务表、索引和服务 schema 的 migration 历史配置。
 
-- [ ] **Step 4: Update schema catalog**
+- [ ] **步骤 4：更新 schema 目录**
 
-Add a `BusinessMasterData` section to `docs/architecture/database-schema-catalog.md` with table purpose, owner, key columns, index intent and lifecycle for each table listed above.
+在 `docs/architecture/database-schema-catalog.md` 中添加 `BusinessMasterData` 章节，说明上述各表的用途、所有者、关键列、索引意图和生命周期。
 
-- [ ] **Step 5: Run persistence tests**
+- [ ] **步骤 5：运行持久化测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~MasterDataSchemaConventionTests|FullyQualifiedName~MasterDataPostgresProfileTests"
 ```
 
-Expected: PASS when `NERV_IIP_TEST_POSTGRES` is configured; schema convention tests pass regardless of PostgreSQL availability.
+预期：配置 `NERV_IIP_TEST_POSTGRES` 时通过；无论 PostgreSQL 是否可用，schema 约定测试都通过。
 
-- [ ] **Step 6: Commit persistence**
+- [ ] **步骤 6：提交持久化实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Infrastructure backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests docs/architecture/database-schema-catalog.md
 git commit -m "feat: persist business master data"
 ```
 
-## Task 4: Add Commands, Queries, Endpoints and Authorization
+## 任务 4：添加命令、查询、endpoint 和授权
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateSkuCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateBusinessPartnerCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateDepartmentCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateTeamCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/AssignPersonnelSkillCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCenterCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCalendarCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/RegisterDeviceAssetCommand.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListSkusQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListBusinessPartnersQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListDepartmentsQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListTeamsQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListPersonnelSkillsQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListWorkCalendarsQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListResourcesQuery.cs`
-- Create: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataEndpointTests.cs`
-- Create: `backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataOpenApiTests.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Auth/BusinessPermissionCodes.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateSkuCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateBusinessPartnerCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateDepartmentCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateTeamCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/AssignPersonnelSkillCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCenterCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/CreateWorkCalendarCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/RegisterDeviceAssetCommand.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListSkusQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListBusinessPartnersQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListDepartmentsQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListTeamsQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListPersonnelSkillsQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListWorkCalendarsQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Queries/ListResourcesQuery.cs`
+- 创建：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/MasterData/MasterDataEndpoints.cs`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataEndpointTests.cs`
+- 创建：`backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataOpenApiTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
 
-- [ ] **Step 1: Write endpoint tests**
+- [ ] **步骤 1：编写 endpoint 测试**
 
-Cover these routes and permissions:
+覆盖以下路由和权限：
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/master-data/skus` | `business.masterdata.products.manage` |
 | `GET /api/business/v1/master-data/skus` | `business.masterdata.products.read` |
@@ -407,11 +407,11 @@ Cover these routes and permissions:
 | `POST /api/business/v1/master-data/device-assets` | `business.masterdata.resources.manage` |
 | `GET /api/business/v1/master-data/resources` | `business.masterdata.resources.read` |
 
-Tests must assert anonymous requests return `401`, missing permission returns `403`, successful create returns `200` or `201`, and duplicate business keys return a known error response.
+测试必须断言：匿名请求返回 `401`，缺少权限时返回 `403`，成功创建时返回 `200` 或 `201`，重复业务键返回已知错误响应。
 
-- [ ] **Step 2: Implement permission code constants**
+- [ ] **步骤 2：实现权限码常量**
 
-Create constants exactly matching `docs/architecture/authorization-matrix.md`:
+创建与 `docs/architecture/authorization-matrix.md` 完全匹配的常量：
 
 ```csharp
 public static class BusinessPermissionCodes
@@ -425,45 +425,45 @@ public static class BusinessPermissionCodes
 }
 ```
 
-- [ ] **Step 3: Implement commands and queries**
+- [ ] **步骤 3：实现命令和查询**
 
-Requests must include `organizationId` and `environmentId`. List queries must support `keyword`, `status`, `page`, `pageSize`; partner and resource lists also support `partnerType` or `resourceType`. Department lists support `parentDepartmentCode`, team lists support `departmentCode`, personnel skill lists support `userId`, `skillCode` and `validOn`, and work calendar lists support `keyword` and `status`.
+请求必须包含 `organizationId` 和 `environmentId`。列表查询必须支持 `keyword`、`status`、`page`、`pageSize`；伙伴列表和资源列表还支持 `partnerType` 或 `resourceType`。部门列表支持 `parentDepartmentCode`，班组列表支持 `departmentCode`，人员技能列表支持 `userId`、`skillCode` 和 `validOn`，工作日历列表支持 `keyword` 和 `status`。
 
-- [ ] **Step 4: Seed permissions in IAM**
+- [ ] **步骤 4：在 IAM 中初始化权限**
 
-Add the six MasterData permissions to the IAM seed permission list and assign them to the seeded admin role. Keep the permission strings identical to the authorization matrix.
+将六项 MasterData 权限添加到 IAM 种子权限列表，并将其分配给种子管理员角色。权限字符串必须与授权矩阵完全相同。
 
-- [ ] **Step 5: Run endpoint and OpenAPI tests**
+- [ ] **步骤 5：运行 endpoint 和 OpenAPI 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj --no-restore
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore --filter FullyQualifiedName~IamFoundationTests
 ```
 
-Expected: PASS. OpenAPI test confirms the fifteen operation IDs are stable and all endpoints require authorization.
+预期：通过。OpenAPI 测试确认十五个 operation ID 保持稳定，且所有 endpoint 都要求授权。
 
-- [ ] **Step 6: Commit API surface**
+- [ ] **步骤 6：提交 API 接口**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Business/MasterData backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs
 git commit -m "feat: expose business master data api"
 ```
 
-## Task 5: Add Verification Script Entry and Readiness Notes
+## 任务 5：添加验证脚本入口和就绪说明
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-business-master-data-foundation.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
+- 创建：`scripts/verify-business-master-data-foundation.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
 
-- [ ] **Step 1: Add verification script**
+- [ ] **步骤 1：添加验证脚本**
 
-The script must run:
+脚本必须运行：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
@@ -471,36 +471,36 @@ dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterD
 dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj --no-restore
 ```
 
-Expected: exits `0` when tests pass. Follow `docs/architecture/script-automation-governance.md` for classification and side-effect declaration.
+预期：测试通过时以 `0` 退出。分类和副作用声明遵循 `docs/architecture/script-automation-governance.md`。
 
-- [ ] **Step 2: Update readiness documentation**
+- [ ] **步骤 2：更新就绪文档**
 
-Document that Slice 1 is implemented, list the service path, schema, permissions, API coverage and verification script.
+记录纵切 1 已实施，并列出服务路径、schema、权限、API 覆盖范围和验证脚本。
 
-- [ ] **Step 3: Run final verification**
+- [ ] **步骤 3：运行最终验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-master-data-foundation.ps1
 git diff --check
 ```
 
-Expected: both commands exit `0`.
+预期：两条命令均以 `0` 退出。
 
-- [ ] **Step 4: Commit verification and docs**
+- [ ] **步骤 4：提交验证内容和文档**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-business-master-data-foundation.ps1 docs/architecture/implementation-readiness.md README.md
 git commit -m "docs: record business master data readiness"
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. Every MasterData requirement from BP-MD-001 through BP-MD-005 has a domain aggregate, endpoint test, migration and schema catalog entry.
-2. The service does not reference IAM Infrastructure or any Business service outside MasterData.
-3. Permission strings match `docs/architecture/authorization-matrix.md`.
-4. `business_masterdata` is the only default schema used by the service.
-5. PostgreSQL profile and schema convention tests cover comments, string lengths and migrations history schema.
+1. BP-MD-001 至 BP-MD-005 的每项 MasterData 需求都有领域聚合、endpoint 测试、migration 和 schema 目录条目。
+2. 本服务不引用 IAM Infrastructure，也不引用 MasterData 以外的任何业务服务。
+3. 权限字符串与 `docs/architecture/authorization-matrix.md` 匹配。
+4. `business_masterdata` 是本服务使用的唯一默认 schema。
+5. PostgreSQL profile 和 schema 约定测试覆盖注释、字符串长度及 migration 历史 schema。

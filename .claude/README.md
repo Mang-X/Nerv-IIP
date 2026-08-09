@@ -1,43 +1,32 @@
-# `.claude/` — Claude Code project configuration
+# `.claude/` — Claude Code 项目配置
 
-Claude Code equivalent of `.codex/environments/environment.toml`. Committed so a
-freshly created git worktree picks it up automatically.
+这是 `.codex/environments/environment.toml` 对应的 Claude Code 配置。该配置已提交到仓库，因此新建的 Git worktree 会自动获取它。
 
-## Environment setup (codex `[setup]` parity)
+## 环境设置（与 codex `[setup]` 对等）
 
-`SessionStart` hook in [`settings.json`](settings.json) runs
-[`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1) every time a session
-starts. The script is **idempotent** — heavy steps are guarded by their output
-artifacts, so it only does real work on a fresh worktree:
+每次会话启动时，[`settings.json`](settings.json) 中的 `SessionStart` 钩子（hook）都会运行 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)。该脚本具有**幂等性**：耗时步骤以其输出产物为执行条件，因此只会在新 worktree 中真正执行：
 
-- **Frontend deps** — `pnpm -C frontend install --frozen-lockfile` when
-  `frontend/node_modules` is missing. (Always on; needed for typecheck/test/build/preview.)
-- **Backend .NET restore** — **opt-in** (slow; not needed for frontend work).
-  Enable full parity with `$env:NERV_SETUP_BACKEND = '1'`, or run `/setup-env` on demand.
+- **前端依赖**：缺少 `frontend/node_modules` 时运行 `pnpm -C frontend install --frozen-lockfile`。（始终启用；typecheck/test/build/preview 均需要它。）
+- **后端 .NET 还原**：**按需启用**（速度较慢；前端工作不需要）。设置 `$env:NERV_SETUP_BACKEND = '1'` 可启用完整对等设置，也可按需运行 `/setup-env`。
 
-## Slash commands (codex `[[actions]]` parity)
+## 斜杠命令（与 codex `[[actions]]` 对等）
 
-| Command | Action |
+| 命令 | 操作 |
 |---|---|
-| `/setup-env` | Full env setup (frontend deps + backend `dotnet restore`). |
-| `/frontend-gate` | Frontend quality gate: `check` + `typecheck` + `test` + `build`. |
+| `/setup-env` | 完整环境设置（前端依赖 + 后端 `dotnet restore`）。 |
+| `/frontend-gate` | 前端质量门禁：`check` + `typecheck` + `test` + `build`。 |
 
-Add more under [`commands/`](commands/) — each `*.md` is a prompt run when invoked.
+可在 [`commands/`](commands/) 下添加更多命令；每个 `*.md` 都是命令调用时运行的提示词。
 
-## Mapping to codex
+## 与 codex 的映射
 
 | codex `environment.toml` | Claude Code |
 |---|---|
 | `[setup].script` | `settings.json` → `hooks.SessionStart` → `scripts/setup-worktree.ps1` |
-| `[[actions]]` named commands | `commands/*.md` slash commands |
-| (launching apps for preview) | `.claude/launch.json` is read by the preview tool, not the core CLI; create on demand. |
+| `[[actions]]` 命名命令 | `commands/*.md` 斜杠命令 |
+| （启动应用以供预览） | `.claude/launch.json` 由预览工具读取，而非核心 CLI；按需创建。 |
 
-## Notes
+## 注意事项
 
-- `settings.local.json` is per-developer local state (permissions etc.) and is **not**
-  committed — do not put shared config there.
-- The SessionStart hook runs `scripts/setup-worktree.ps1`, which lives in the **governed**
-  `scripts/` tree: it carries a `Script-Governance` header, dot-sources
-  `scripts/lib/ScriptAutomation.ps1`, and wraps `pnpm`/`dotnet` through `Invoke-Pnpm` /
-  `Invoke-DotNet` (timeout, logging, redaction, process cleanup). It is verified by
-  `scripts/check-script-governance.ps1` like every other script — no governance exemption.
+- `settings.local.json` 是每位开发者各自的本地状态（权限等），**不会**提交；不得在其中放置共享配置。
+- SessionStart 钩子运行的 `scripts/setup-worktree.ps1` 位于**受治理的** `scripts/` 目录树中：它包含 `Script-Governance` 标头，以 dot-source 方式加载 `scripts/lib/ScriptAutomation.ps1`，并通过 `Invoke-Pnpm` / `Invoke-DotNet` 封装 `pnpm`/`dotnet`（超时、日志、脱敏和进程清理）。与其他所有脚本一样，它由 `scripts/check-script-governance.ps1` 验证，不享有治理豁免。

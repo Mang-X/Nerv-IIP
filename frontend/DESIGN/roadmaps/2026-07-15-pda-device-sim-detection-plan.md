@@ -45,7 +45,7 @@ Android 输入栈注入（adb，经 IME/焦点系统）、Android WebView（AVD 
 | 4   | 真实 `env(safe-area-inset-*)`（刘海/手势条）                    | 仅 fallback 最小值                                                    | AVD 挖孔屏镜像（L3，**不保证非零**，须环境前置断言 §5）                 | 真机刘海实测            |
 | 5   | 弱网 / 断网 / 30s 超时（MAN-460 传输层）                        | 未覆盖                                                                | `context.setOffline` + CDP 节流 + route 故障注入（L2）                  | 真实蜂窝/漫游/DNS/TLS   |
 | 6   | 真实后端数据与写路径（非 mock）                                 | 全 mock                                                               | L2 真实栈走查（man457 先例工程化）                                      | —                       |
-| 7   | WebView 内核 vs 桌面 Chromium                                   | 不可                                                                  | AVD 系统 WebView（L3）                                                  | 厂商 ROM WebView        |
+| 7   | WebView 内核与桌面 Chromium 的差异                              | 不可                                                                  | AVD 系统 WebView（L3）                                                  | 厂商 ROM WebView        |
 | 8   | 相机能力（拍照采集，能力门控两个分支）                          | 不可（**当前基线无相机实现**，MAN-458 未合入）                        | Web 路径 `filechooser.setFiles()`（L2，后置）；原生插件（L3）           | 真机摄像头              |
 | 9   | 触感/单手可达/扫码枪握持姿势                                    | 不可                                                                  | 不可                                                                    | 保留                    |
 
@@ -222,7 +222,7 @@ PR body 固定声明格式：`走查层级：L2（真实栈仿真）｜证据：
 - **M1a（产品修复 + 契约）**：ScanBar 焦点契约修复（RAF 回调复查 `active`、watch `active`
   取消/重arm、S2 首字符竞态的产品级答案——document 级缓冲或 scanner mode 裁决）+
   组件契约测试 + gallery `:active` 失败样本修复 + 消费页 `active` 全扫。
-- **M1b（live harness 骨架）**：`playwright.live.config.ts` + `simulateScanGun`（Enter only）+
+- **M1b（live harness 骨架）**：`playwright.live.config.ts` + `simulateScanGun`（仅以 `Enter` 键结束）+
   真实登录 + quality 链路 1 条**只读** live spec + `pda-live-walkthrough.ps1` +
   更新 `mobile-pda-testing-and-smoke.md`（含 5 spec/25 用例基线纠偏）。
 - **M1c（写路径）**：1 条真实写路径 live spec：提交 + 幂等语义捕获（本链路无显式幂等键，

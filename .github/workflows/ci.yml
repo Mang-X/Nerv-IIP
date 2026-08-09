@@ -15,112 +15,112 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Timeout policy (MAN-799, re-derived for the MAN-669 shard topology). Every job declares
-  # `timeout-minutes` and every explicit step declares one. Beyond that there are two tiers, because
-  # "protect the evidence" only applies where there is evidence to protect:
+  # 超时策略（MAN-799，针对 MAN-669 分片拓扑重新推导）。每个 job 均声明
+  # `timeout-minutes`，每个显式 step 也声明一个。除此之外分为两个层级，因为
+  # “保护证据”仅适用于有证据可保护的地方：
   #
-  #   A) Jobs with `if: always()` evidence steps — the four backend shards, plus
-  #      erp-sales-order-demand-acceptance and connector-host-tests:
+  #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
+  #      erp-sales-order-demand-acceptance 和 connector-host-tests：
   #          sum(step timeout-minutes) < job timeout-minutes.
-  #      A job-level timeout cancels the *whole* job, `if: always()` steps included, and would take
-  #      the MAN-661 test-evidence artifacts down with it; a step-level timeout fails only that
-  #      step, so the job continues into `Collect …` / `Upload …`. The strict inequality is what
-  #      guarantees some step budget fires first. It holds only if *every* explicit step has a
-  #      budget, evidence collection/upload included. The remaining margin (job − sum) must also
-  #      absorb GitHub's implicit `Set up job` and post steps, which are not in `steps:` and cannot
-  #      carry `timeout-minutes`; the post steps run *after* Upload, so they can cost budget but
-  #      never cost evidence. Adding a step here means adding its budget *and* raising the job
-  #      budget. Every shard job below keeps a 6-minute margin for exactly that.
+  #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
+  #      连同 MAN-661 test-evidence 产物一起中断；step 级超时只会使该
+  #      step 失败，因此 job 会继续进入 `Collect …` / `Upload …`。严格不等式
+  #      保证某个 step 预算先触发。仅当*每个*显式 step 都有
+  #      预算（包括证据收集/上传）时，它才成立。剩余余量（job − sum）还必须
+  #      吸收 GitHub 隐式的 `Set up job` 和 post step；它们不在 `steps:` 中，也不能
+  #      设置 `timeout-minutes`；post step 在 Upload *之后*运行，因此会消耗预算，但
+  #      永远不会让证据丢失。在此新增 step 意味着增加该 step 的预算，*同时*提高 job
+  #      预算。以下每个分片 job 正是为此保留 6 分钟余量。
   #
-  #   B) Jobs with no step that can run after a failure — the `Backend Tests` aggregate,
-  #      backend-test-shard-governance, frontend, openapi-client-drift, script-governance: nothing
-  #      is lost when the job budget fires, so the budget is *not* inflated to clear the step sum.
-  #      Here the **job** budget is the fail-fast bound, sized from observed runtime. Step budgets
-  #      are per-step upper bounds only: with several steps in one job the later ones are not
-  #      individually reachable (`frontend` sums to 58m inside a 20m job, so its 15m build budget
-  #      can never fire on its own), and that is accepted rather than claimed otherwise. The only
-  #      thing enforced is the case that is dead under every schedule — a step budget at or above
-  #      the whole job budget.
+  #   B) 不含失败后仍可运行 step 的 job——`Backend Tests` 聚合、
+  #      backend-test-shard-governance、frontend、openapi-client-drift、script-governance：不会有任何内容
+  #      在 job 预算触发时丢失，因此预算*不会*为了超过 step 总和而抬高。
+  #      此处 **job** 预算是根据观测运行时长确定的快速失败界限。step 预算
+  #      仅为逐 step 上限：当一个 job 含多个 step 时，靠后的 step 无法
+  #      分别触达（`frontend` 在 20m job 内合计为 58m，因此其 15m build 预算
+  #      永远无法单独触发），对此明确接受，而非作出相反声明。唯一
+  #      强制的是在任何调度下都不可能生效的情形——step 预算大于或等于
+  #      整个 job 预算。
   #
-  # The four backend fast shards take ONE shared test-step budget, sized at ~2x the maximum
-  # observed across all four (not per shard). Short fixed-cost steps (checkout, SDK setup, cache
-  # restore, evidence collect/upload) get a 3–8 minute floor that no healthy run comes near.
+  # 四个 backend 快速分片采用同一份共享测试 step 预算，按最大值的 ~2x 确定，该最大值
+  # 从全部四个分片整体观测得出（而非逐分片）。短时固定成本 step（checkout、SDK setup、cache
+  # restore、evidence collect/upload）设置 3–8 分钟下限，健康 run 远不会接近该值。
   #
-  # MAN-669 PR-A re-homed the shard contents, so the four shards no longer have four different
-  # shapes and no longer take four different budgets. The old spread (8m / 10m / 15m / 12m) was
-  # sized from the pre-rebalance split where one shard carried 357s of TRX elapsed and another 23s;
-  # that topology no longer exists, and a budget inherited across a topology change describes
-  # nothing. **Which projects each shard owns is defined only in scripts/backend-test-shards.json** —
-  # these comments deliberately do not restate it, because a restated list drifts the next time the
-  # shards are rebalanced.
+  # MAN-669 PR-A 重新归置了分片内容，因此四个分片不再具有四种不同的
+  # 形态，也不再采用四种不同预算。旧的差异（8m / 10m / 15m / 12m）
+  # 按重平衡前的拆分确定：一个分片的 TRX elapsed 为 357s，另一个为 23s；
+  # 该拓扑已不存在，而跨拓扑变更继承的预算
+  # 不代表任何含义。**每个分片拥有的 project 仅由 scripts/backend-test-shards.json 定义**——
+  # 这些注释有意不复述该列表，因为下次
+  # 重新平衡分片时，复述的列表就会漂移。
   #
-  # One weighting input from that rebalance did NOT survive it. Recorded here so the next pass does
-  # not inherit it: business-core-b (backend-shard-4) was given the lowest TRX share because it had
-  # the worst step-to-TRX ratio on the pre-rebalance run 30999368607 — 265s step for 191.7s TRX,
-  # ratio 1.38, against business-core-a's 372s/357.5s = 1.04. That ratio described a project set
-  # that no longer exists: the rebalance moved 7 of that shard's 9 projects out, and step-minus-TRX
-  # is the dependency closure's restore/build cost, which travels with the projects, not with the
-  # lane label. Post-rebalance, on the three runs where both shards produced a reading
-  # (31114441118, 31115903098, 31118427925), business-core-b is the *fastest* shard of the four
-  # (144s / 196s / 142s test step) and business-core-a is the critical path (249s / 252s / 234s) —
-  # the shard was over-lightened, not correctly lightened. The gap sits inside runner variance, so
-  # PR-A does not re-cut the split; but the next rebalance (MAN-664) must re-derive weights from
-  # post-rebalance measurements and must NOT carry the 1.38 forward.
+  # 此次重平衡的一项权重输入并未保留下来。记录于此，确保下次调整
+  # 不会继承它：business-core-b（backend-shard-4）被赋予最低 TRX 份额，因为它
+  # 在重平衡前的 run 30999368607 中拥有最差的 step-to-TRX 比率——265s step 对 191.7s TRX，
+  # 比率为 1.38，而 business-core-a 为 372s/357.5s = 1.04。该比率描述的 project 集合
+  # 已不存在：重平衡移出了该分片 9 个 project 中的 7 个，而 step-minus-TRX
+  # 是依赖闭包的 restore/build 成本，它随 project 移动，而不随
+  # lane 标签移动。重平衡后，在两个分片均产生读数的三次 run 中
+  # （31114441118、31115903098、31118427925），business-core-b 是四者中*最快*的分片
+  # （144s / 196s / 142s test step），而 business-core-a 是 critical path（249s / 252s / 234s）——
+  # 该分片被过度减轻，而非正确减轻。差距落在 runner 方差范围内，因此
+  # PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据
+  # 重平衡后的测量重新推导权重，且绝不能继续沿用 1.38。
   #
-  # Re-derived from three runs of this branch (31114441118, 31115903098, 31116998822). Per-shard
-  # test steps were 3.5m / 3.0m / 4.2m / 2.4m, then 4.5m / 3.0m / 4.2m / 3.3m, then 4.7m / 3.1m /
-  # (setup-failed) / 3.1m; TRX elapsed 129.8s / 150.6s / 164.5s / 112.9s, then 215.5 / 144.5 /
-  # 139.6 / 130.2, then 177.4 / 133.6 / — / 129.1. Two things follow. Hosted-runner variance on the
-  # *same commit* is tens of percent and moves which shard tops the list, so per-shard budgets
-  # would only encode noise — all four take one budget. And the bound is sized on the maximum over
-  # the three runs, 4.7m. Hence, identically for all four shards:
+  # 根据本分支三次 run（31114441118、31115903098、31116998822）重新推导。每个分片的
+  # test step 依次为 3.5m / 3.0m / 4.2m / 2.4m，然后为 4.5m / 3.0m / 4.2m / 3.3m，然后为 4.7m / 3.1m /
+  # (setup-failed) / 3.1m；TRX elapsed 为 129.8s / 150.6s / 164.5s / 112.9s，然后为 215.5 / 144.5 /
+  # 139.6 / 130.2，然后为 177.4 / 133.6 / — / 129.1。由此得出两点。Hosted-runner 在
+  # *同一 commit* 上的方差达到数十个百分点，并会改变哪个分片居首，因此逐分片预算
+  # 只会编码噪声——四者采用同一预算。该界限按观测范围内的最大值确定，而观测范围是
+  # 这三次 run，最大值为 4.7m。因此，对全部四个分片同样有：
   #
   #     checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3
   #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
   #
-  # That arithmetic is the tier A obligation above; changing any one number means re-checking it.
+  # 该算术是上述层级 A 的义务；变更任何一个数字都需要重新检查这项算术。
   #
-  # Note what the shared budget does *not* let you do. This holds identically for all four shards —
-  # their step vectors are the same 3 / 5 / 8 / 3 / 10 / 5 / 5 — so it is stated once here rather
-  # than in any one job: the six non-test steps already carry a mandatory 29m of shared-convention
-  # budget, so tier A's strict job > step-sum requirement makes 45m the structural floor the
-  # invariant leaves behind, not a claim about any shard's runtime. The budget that actually fires
-  # on a hung run is the 10m test step. If it ever approaches 10m, raise both budgets rather than
-  # only the step one, or the strict inequality stops protecting the evidence steps.
+  # 注意共享预算*不*允许你做什么。这对全部四个分片同样成立——
+  # 它们的 step 向量均为 3 / 5 / 8 / 3 / 10 / 5 / 5——所以只在此处声明，而
+  # 不在任一 job 中声明：六个非 test step 已带有强制的 29m shared-convention
+  # 预算，因此层级 A 的严格 job > step-sum 要求使 45m 成为
+  # 该不变量留下的结构下限，而非对任一分片运行时的声明。实际会触发的预算
+  # 在挂起的 run 上是 10m test step。若它接近 10m，应同时提高两项预算，而不是
+  # 只提高 step 预算，否则严格不等式将不再保护证据 step。
   #
-  # Enforced by scripts/tests/test-evidence.Tests.ps1 (run by the Script Governance job below).
-  # Narrative copy of this rule: docs/architecture/test-evidence-governance.md.
+  # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
+  # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
   #
   # ---------------------------------------------------------------------------------------------
-  # Build strategy (MAN-669 PR-B / PR-C). Separate subject from the timeout policy above; neither PR
-  # changed a budget, so nothing here feeds the arithmetic enforced by Test-NervCiWorkflowBudgets.
-  # Conclusions only — every measurement, run id, sample caveat and re-open condition lives in ONE
-  # place, docs/architecture/backend-ci-build-strategy.md. Do not restate the numbers here: MAN-664
-  # will re-measure, and a number copied into four files is a number that drifts in three of them.
+  # 构建策略（MAN-669 PR-B / PR-C）。此主题与上述超时策略分开；两个 PR
+  # 都未变更预算，因此这里的任何内容都不参与 Test-NervCiWorkflowBudgets 强制的算术。
+  # 这里只保留结论——每项测量、run id、样本限制和重新开启条件仅位于唯一的
+  # 位置：docs/architecture/backend-ci-build-strategy.md。不得在此复述数字：MAN-664
+  # 将重新测量，而复制到四个文件中的数字会在其中三个文件中漂移。
   #
-  #   * Each shard keeps restoring and building only its own .slnf. build-once (a serial build job
-  #     feeding prebuilt output to the shards) was measured on four hosted-runner runs, two hot and
-  #     two cold, and is slower under both accounting conventions — the whole-solution build alone
-  #     costs more than any single shard's own restore+build, so hoisting it onto the critical path
-  #     loses even before the multi-GB output is moved between jobs. Splitting a shard into
-  #     restore / build --no-restore / test is also slower.
-  #   * The three specialist jobs (erp-sales-order-demand-acceptance, connector-host-tests,
-  #     openapi-client-drift) were inventoried for the same duplication and none of their build
-  #     commands changed: none builds the whole solution, and all three sit well below the critical
-  #     path, so zeroing their build time would buy zero CI wall clock.
+  #   * 每个分片继续只 restore 和 build 自己的 .slnf。build-once（一个串行 build job，
+  #     向各分片提供预构建输出）已在四次 hosted-runner run 上测量，其中两次热缓存、
+  #     两次冷缓存；在两种核算口径下均更慢——仅 whole-solution build 本身
+  #     就比任何单个分片自身的 restore+build 成本更高，因此将它置于 critical path
+  #     即使尚未在 job 间传输数 GB 输出，也得不偿失。把一个分片拆分为
+  #     restore / build --no-restore / test 也更慢。
+  #   * 对三个专业 job（erp-sales-order-demand-acceptance、connector-host-tests、
+  #     openapi-client-drift）也按相同的重复问题做了清点，其 build
+  #     命令均未改变：没有一个会 build 整个 solution，且三者都远低于 critical
+  #     path，因此即使将它们的 build 时间降为零，也不会缩短 CI wall clock。
   #
-  # Re-open either decision only on the executable conditions listed in that document (slowest
-  # shard's build approaching the whole-solution build, runner spec change, an order-of-magnitude
-  # artifact-transfer improvement, another sharp drop in total test time, or a specialist job
-  # reaching the critical path) — and re-measure rather than reason. Otherwise cite the document.
+  # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢
+  # 分片的 build 接近 whole-solution build、runner 规格变化、出现一个数量级的
+  # artifact-transfer 提升、总 test 时间再次大幅下降，或某个专业 job
+  # 到达 critical path）——并应重新测量，而非靠推理。否则引用该文档。
   #
-  # One definition that must not be re-derived either way: "critical path" means the largest job of
-  # the run, not the slowest shard. The two are no longer the same thing — a frontend job has
-  # already exceeded the slowest shard — so sizing anything off "slowest shard" understates the
-  # run's wall clock.
+  # 还有一项定义无论如何都不得重新推导：“critical path”指最大的 job，其判定范围是
+  # 该次 run，而不是最慢的分片。二者已不再相同——已有一个 frontend job
+  # 超过最慢的分片——因此依据“最慢分片”估算任何内容都会低估
+  # run 的 wall clock。
   backend-tests:
     name: Backend Tests
-    # Tier B. Pure aggregate: five `test` comparisons over needs results, ~2s observed.
+    # 层级 B。纯聚合：对 needs 结果进行五次 `test` 比较，观测值为 ~2s。
     timeout-minutes: 5
     runs-on: ubuntu-latest
     if: always()
@@ -142,9 +142,9 @@ jobs:
 
   backend-test-shard-governance:
     name: Backend Test Shard Governance
-    # Tier B (no step runs after a failure). Read-only manifest + structured `ci.yml` validation,
-    # observed max 0.8m. The 15m job budget is the fail-fast bound; step budgets sum to 18m and
-    # are per-step upper bounds only.
+    # 层级 B（失败后没有 step 运行）。只读 manifest + 结构化 `ci.yml` 验证，
+    # 观测最大值为 0.8m。15m job 预算是快速失败界限；step 预算合计为 18m，且
+    # 仅为逐 step 上限。
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -158,9 +158,9 @@ jobs:
         with:
           ruby-version: '3.4'
 
-      # One script per step, not chained in one `run:` block: both scripts report findings on stdout
-      # and exit 1, and chaining would let the second script's `$LASTEXITCODE` overwrite the first's
-      # and turn a real failure green (measured). Why:
+      # 每个 step 只运行一个 script，不在一个 `run:` 块中串联：两个 script 都会在 stdout 报告发现的问题
+      # 并以 1 退出；若串联，第二个 script 的 `$LASTEXITCODE` 会覆盖第一个的值，
+      # 使真实失败变绿（已测量）。原因：
       # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
       - name: Validate backend test shard classification
         timeout-minutes: 5
@@ -174,10 +174,10 @@ jobs:
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
-    # Tier A; shared shard budget 39m < 45m, derived once in the timeout policy at the top of
-    # `jobs:`. The job name is frozen because MAN-661 maps evidence lane backend-shard-1 to it in
-    # scripts/lib/TestEvidence.ps1 — the name identifies the lane, not the shard's contents, which
-    # live only in scripts/backend-test-shards.json.
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结，因为 MAN-661 将证据 lane backend-shard-1 映射到它，映射定义在
+    # scripts/lib/TestEvidence.ps1 中——该名称标识 lane，而非分片内容；这些内容
+    # 仅存在于 scripts/backend-test-shards.json 中。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -264,8 +264,8 @@ jobs:
 
   backend-tests-platform:
     name: Backend Tests - Platform
-    # Tier A; shared shard budget 39m < 45m, derived once in the timeout policy at the top of
-    # `jobs:`. Job name frozen: MAN-661 maps evidence lane backend-shard-2 to it.
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-2 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -352,8 +352,8 @@ jobs:
 
   backend-tests-business-core-a:
     name: Backend Tests - Business Core A
-    # Tier A; shared shard budget 39m < 45m, derived once in the timeout policy at the top of
-    # `jobs:`. Job name frozen: MAN-661 maps evidence lane backend-shard-3 to it.
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-3 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -440,10 +440,10 @@ jobs:
 
   backend-tests-business-core-b:
     name: Backend Tests - Business Core B
-    # Tier A; shared shard budget 39m < 45m, derived once in the timeout policy at the top of
-    # `jobs:`. Job name frozen: MAN-661 maps evidence lane backend-shard-4 to it. MAN-669 PR-A gave
-    # this shard the lowest TRX share; that weighting rested on a pre-rebalance step-to-TRX ratio
-    # which the rebalance itself falsified — see the timeout policy at the top of `jobs:`.
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-4 映射到它。MAN-669 PR-A 为
+    # 此分片赋予最低 TRX 份额；该权重依赖于重平衡前的 step-to-TRX 比率，
+    # 而重平衡本身已将该比率证伪——参见 `jobs:` 顶部的超时策略。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -530,8 +530,8 @@ jobs:
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
-    # Tier A (evidence steps). Observed max 4.2m / avg 3.9m; extra headroom for Docker image
-    # pulls. Step budgets sum to 46m, leaving 9m of margin for the implicit setup/post steps.
+    # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image
+    # 拉取预留额外余量。step 预算合计为 46m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 55
     runs-on: ubuntu-latest
     env:
@@ -582,8 +582,8 @@ jobs:
 
   connector-host-tests:
     name: Connector Host Tests
-    # Tier A (evidence steps). Observed max 1.9m / avg 1.6m. This is the job that hung for 28m
-    # in MAN-799. Step budgets sum to 41m, leaving 9m of margin for the implicit setup/post steps.
+    # 层级 A（证据 step）。观测最大值为 1.9m / 平均值为 1.6m。这就是挂起 28m 的那个 job，
+    # 该事件发生在 MAN-799 中。step 预算合计为 41m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 50
     runs-on: ubuntu-latest
     steps:
@@ -669,8 +669,8 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
-    # Tier B (no step runs after a failure). Observed max 4.9m / avg 4.4m; the 20m job budget is the
-    # fail-fast bound. Step budgets sum to 58m and are per-step upper bounds only.
+    # 层级 B（失败后没有 step 运行）。观测最大值为 4.9m / 平均值为 4.4m；20m job 预算是
+    # 快速失败界限。step 预算合计为 58m，且仅为逐 step 上限。
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -710,8 +710,8 @@ jobs:
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
-    # Tier B (no step runs after a failure). Observed max 2.0m / avg 1.8m; the 20m job budget is the
-    # fail-fast bound. Step budgets sum to 39m and are per-step upper bounds only.
+    # 层级 B（失败后没有 step 运行）。观测最大值为 2.0m / 平均值为 1.8m；20m job 预算是
+    # 快速失败界限。step 预算合计为 39m，且仅为逐 step 上限。
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -755,18 +755,18 @@ jobs:
 
   script-governance:
     name: Script Governance
-    # Tier B (no step runs after a failure). Observed max 1.9m / avg 1.8m over the runs that already
-    # include the evidence contract-test step; the 0.7m average this comment used to quote predates
-    # that step. The 10m job budget is the fail-fast bound; step budgets sum to 48m (10 steps: 3m
-    # checkout + 9 × 5m) and are per-step upper bounds only. That sum exceeding the job budget is
-    # correct for tier B and is *not* what scripts/lib/CiWorkflowBudgets.ps1 enforces: the
-    # "step budgets sum below the job budget" invariant is tier A only, i.e. jobs that publish
-    # evidence from an `if: always()` step which a job-level timeout would cancel. This job has no
-    # such step, so the gate never reads this number — keep it accurate by hand when adding a step.
-    # MAN-669 PR-C added the two solution-configuration-membership steps; both run in under 5s
-    # locally (0.8s for the checker, 3.6s for its contract test), so the job budget is unchanged.
-    # #1509 added the scan-boundary contract step (5.2s locally); the job budget is unchanged for the
-    # same reason, and the sum moved 43m → 48m.
+    # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
+    # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
+    # 10m job 预算是快速失败界限；step 预算合计为 48m（10 个 step：3m
+    # checkout + 9 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
+    # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
+    # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
+    # 此类 step，因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
+    # MAN-669 PR-C 添加了两个 solution-configuration-membership step；两者
+    # 在本地均于 5s 内完成（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算保持不变。
+    # #1509 添加了扫描边界契约 step（本地 5.2s）；基于同一理由，job 预算保持不变，
+    # step 预算合计由 43m 调整为 48m。
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:

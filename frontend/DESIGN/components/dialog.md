@@ -1,24 +1,23 @@
-# Dialog / AlertDialog (NvDialog / NvAlertDialog)
+# 对话框 / 警告对话框（NvDialog / NvAlertDialog）
 
-Modal overlays for create/edit forms and destructive confirmations. App code
-uses the `Nv*` families from `@nerv-iip/ui`; the un-prefixed `Dialog*` /
-`AlertDialog*` parts are the shadcn 原版 primitives — library-internal only.
+用于创建/编辑表单和破坏性操作确认的模态覆盖层。应用代码使用 `Nv*` 系列，
+它们来自 `@nerv-iip/ui`；无前缀的 `Dialog*` / `AlertDialog*` 部件是
+shadcn 原版 primitives，仅限组件库内部使用。
 
-## When to use which
+## 何时使用哪一种
 
-| Use `NvDialog`             | Use `NvAlertDialog`     |
-| -------------------------- | ----------------------- |
-| Create entity form (short) | Confirm delete          |
-| Edit entity form (short)   | Confirm disable/revoke  |
-| View details overlay       | Any irreversible action |
-| Multi-step wizard          | —                       |
+| 使用 `NvDialog`      | 使用 `NvAlertDialog` |
+| -------------------- | -------------------- |
+| 创建实体表单（简短） | 确认删除             |
+| 编辑实体表单（简短） | 确认禁用/撤销        |
+| 查看详情覆盖层       | 任何不可逆操作       |
+| 多步骤向导           | —                    |
 
-For longer create/edit forms that should preserve list context, prefer
-`NvSheet` (see `business-console-primitives.md`). For a lightweight inline
-confirm anchored to the trigger, `NvPopconfirm` exists — but irreversible
-actions still get a full `NvAlertDialog`.
+对于需要保留列表上下文的较长创建/编辑表单，应优先使用
+`NvSheet`（参见 `business-console-primitives.md`）。对于锚定在触发器上的轻量
+行内确认，可使用 `NvPopconfirm`；但不可逆操作仍必须使用完整的 `NvAlertDialog`。
 
-## NvDialog Usage (Create/Edit Form)
+## NvDialog 用法（创建/编辑表单）
 
 ```vue
 <NvDialog v-model:open="dialogOpen">
@@ -47,7 +46,7 @@ actions still get a full `NvAlertDialog`.
 </NvDialog>
 ```
 
-## NvAlertDialog Usage (Confirm Destructive)
+## NvAlertDialog 用法（确认破坏性操作）
 
 ```vue
 <NvAlertDialog v-model:open="confirmOpen">
@@ -70,11 +69,11 @@ actions still get a full `NvAlertDialog`.
 </NvAlertDialog>
 ```
 
-## Do NOT
+## 禁止
 
-- Do not use a plain `NvDialog` for destructive confirmations — use `NvAlertDialog`.
-- Do not put the submit `NvButton` outside `NvDialogFooter`.
-- Do not forget `NvDialogDescription` — it's required for screen reader accessibility.
-- Do not use `window.confirm` anywhere.
-- Do not disable the Cancel button during submission.
-- Do not let `@update:open` close the dialog while a mutation is pending — guard the close.
+- 不得将普通 `NvDialog` 用于破坏性操作确认；应使用 `NvAlertDialog`。
+- 不得将提交 `NvButton` 放在 `NvDialogFooter` 外部。
+- 不得遗漏 `NvDialogDescription`；屏幕阅读器无障碍访问必须提供它。
+- 不得在任何位置使用 `window.confirm`。
+- 提交期间不得禁用取消按钮。
+- 变更请求处于 pending 时不得让 `@update:open` 关闭对话框；应守卫关闭操作。

@@ -1,70 +1,70 @@
-# FileStorage MVP Completion Implementation Plan
+# FileStorage MVP 补全实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能代理工作者：** 必须使用子技能：采用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Complete FileStorage MVP after the metadata/schema baseline by adding stable public contracts, PostgreSQL-backed API behavior, and tus as the MVP binary-transfer path.
+**目标：** 在元数据/schema 基线之后补全 FileStorage MVP：加入稳定的公共契约、由 PostgreSQL 支持的 API 行为，并以 tus 作为 MVP 二进制传输路径。
 
-**Architecture:** FileStorage keeps `server-proxy` metadata stub as the first slice and now moves toward durable PostgreSQL facts plus a stable SDK boundary. tus is the MVP complete upload/download transfer capability; MinIO/S3 multipart is explicitly post-MVP deployment integration. Public contracts never expose `objectKey` or `object_key`.
+**架构：** FileStorage 保留 `server-proxy` 元数据桩作为首个纵切，现转向持久化的 PostgreSQL 事实与稳定的 SDK 边界。tus 是 MVP 的完整上传/下载传输能力；MinIO/S3 multipart 明确属于 MVP 后的部署集成。公共契约绝不暴露 `objectKey` 或 `object_key`。
 
-**Tech Stack:** .NET 10, FastEndpoints, EF Core PostgreSQL, xUnit, Platform SDK, tus protocol/provider abstraction, Nerv.IIP.Testing schema convention helpers.
+**技术栈：** .NET 10、FastEndpoints、EF Core PostgreSQL、xUnit、Platform SDK、tus 协议/提供程序抽象、Nerv.IIP.Testing schema 约定辅助工具。
 
 ---
 
-## File Structure
+## 文件结构
 
-Create:
+新增：
 
-1. `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj` - public FileStorage DTO package.
-2. `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/FileStorageContracts.cs` - request/response DTOs shared by SDK and Web boundary tests.
-3. `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj` - JSON contract test project.
-4. `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/FileStorageContractJsonTests.cs` - verifies web JSON names and `objectKey` non-exposure.
-5. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs` - `IFileStorageClient` and `HttpFileStorageClient`.
-6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs` - PostgreSQL-backed implementation of the existing API behavior.
-7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/FileStorageUploadProvider.cs` - provider abstraction used by server-proxy and tus.
-8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/TusUploadProvider.cs` - MVP tus provider shape.
-9. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs` - persistence behavior tests using EF in-memory SQLite or provider-light test DbContext if available.
-10. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs` - tus instruction and completion behavior tests.
+1. `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj` - 公共 FileStorage DTO 软件包。
+2. `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/FileStorageContracts.cs` - 由 SDK 和 Web 边界测试共享的请求/响应 DTO。
+3. `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj` - JSON 契约测试项目。
+4. `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/FileStorageContractJsonTests.cs` - 验证 Web JSON 名称以及不暴露 `objectKey`。
+5. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs` - `IFileStorageClient` 和 `HttpFileStorageClient`。
+6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs` - 现有 API 行为的 PostgreSQL 持久化实现。
+7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/FileStorageUploadProvider.cs` - 供 server-proxy 和 tus 使用的提供程序抽象。
+8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/TusUploadProvider.cs` - MVP tus 提供程序形状。
+9. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs` - 持久化行为测试；如可用，使用 EF 内存 SQLite 或轻量提供程序测试 DbContext。
+10. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs` - tus 指令与完成行为测试。
 
-Modify:
+修改：
 
-1. `backend/Nerv.IIP.sln` - add FileStorage contracts and tests.
-2. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj` - reference `Contracts.FileStorage`.
-3. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs` - keep backward compatible aliases or move skeleton records behind contracts.
-4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs` - consume contracts or stay aligned with contract DTO names.
-5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileStorageEndpoints.cs` - use contract DTOs.
-6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs` - choose in-memory or PostgreSQL service by `Persistence:Provider`; register upload provider.
-7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Records/*.cs` - add factory methods/constructors needed by the PostgreSQL service.
-8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs` - update model only if service implementation reveals a missing column or relationship.
-9. `docs/architecture/file-storage-baseline.md` - update only after code evidence exists.
-10. `docs/architecture/platform-sdk-baseline.md` - update SDK status after contracts/client land.
+1. `backend/Nerv.IIP.sln` - 添加 FileStorage 契约和测试。
+2. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj` - 引用 `Contracts.FileStorage`。
+3. `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs` - 保留向后兼容的别名，或将骨架记录类型移到契约之后。
+4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs` - 使用契约，或与契约 DTO 名称保持一致。
+5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileStorageEndpoints.cs` - 使用契约 DTO。
+6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs` - 根据 `Persistence:Provider` 选择内存或 PostgreSQL 服务；注册上传提供程序。
+7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Records/*.cs` - 添加 PostgreSQL 服务所需的工厂方法/构造函数。
+8. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs` - 仅在服务实现表明确实缺少列或关系时更新模型。
+9. `docs/architecture/file-storage-baseline.md` - 仅在代码证据存在后更新。
+10. `docs/architecture/platform-sdk-baseline.md` - 契约/客户端落地后更新 SDK 状态。
 
-## Task 1: Contracts And SDK Boundary
+## 任务 1：契约与 SDK 边界
 
-**Files:**
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/FileStorageContracts.cs`
-- Create: `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj`
-- Create: `backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/FileStorageContractJsonTests.cs`
-- Modify: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj`
-- Modify: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs`
-- Modify: `backend/Nerv.IIP.sln`
+**文件：**
+- 新增：`backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/Nerv.IIP.Contracts.FileStorage.csproj`
+- 新增：`backend/common/Contracts/Nerv.IIP.Contracts.FileStorage/FileStorageContracts.cs`
+- 新增：`backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj`
+- 新增：`backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/FileStorageContractJsonTests.cs`
+- 修改：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj`
+- 修改：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs`
+- 新增：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Write failing contract JSON tests**
+- [ ] **步骤 1：编写会失败的契约 JSON 测试**
 
-Add `FileStorageContractJsonTests` with one round-trip for `CreateUploadSessionResponse`, `FileMetadataResponse`, and `DownloadGrantResponse`. Assert web JSON contains `uploadSessionId`, `uploadMode`, `download`, `fileId`, and does not contain `objectKey` or `object_key`.
+添加 `FileStorageContractJsonTests`，分别对 `CreateUploadSessionResponse`、`FileMetadataResponse` 和 `DownloadGrantResponse` 做一次往返测试。断言 Web JSON 包含 `uploadSessionId`、`uploadMode`、`download`、`fileId`，且不包含 `objectKey` 或 `object_key`。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj --no-restore
 ```
 
-Expected: FAIL because the contracts project does not exist yet.
+预期：失败，因为契约项目尚不存在。
 
-- [ ] **Step 2: Add public contracts**
+- [ ] **步骤 2：添加公共契约**
 
-Create DTOs:
+创建 DTO：
 
 ```csharp
 namespace Nerv.IIP.Contracts.FileStorage;
@@ -120,9 +120,9 @@ public sealed record DownloadGrantResponse(
     TransferInstructions Download);
 ```
 
-- [ ] **Step 3: Add SDK client**
+- [ ] **步骤 3：添加 SDK 客户端**
 
-Add:
+添加：
 
 ```csharp
 public interface IFileStorageClient
@@ -134,56 +134,56 @@ public interface IFileStorageClient
 }
 ```
 
-`HttpFileStorageClient` must call the four existing `/api/files/v1/**` endpoints and escape route ids with `Uri.EscapeDataString`.
+`HttpFileStorageClient` 必须调用现有四个 `/api/files/v1/**` 端点，并使用 `Uri.EscapeDataString` 转义路由 ID。
 
-- [ ] **Step 4: Verify contracts and SDK build**
+- [ ] **步骤 4：验证契约和 SDK 构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj --no-restore
 dotnet build backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 2: Use Contracts At The FileStorage Web Boundary
+## 任务 2：在 FileStorage Web 边界使用契约
 
-**Files:**
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileStorageEndpoints.cs`
-- Modify: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Nerv.IIP.FileStorage.Web.csproj`
+**文件：**
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileStorageEndpoints.cs`
+- 修改：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Nerv.IIP.FileStorage.Web.csproj`
 
-- [ ] **Step 1: Add failing Web contract alignment test**
+- [ ] **步骤 1：添加会失败的 Web 契约对齐测试**
 
-Update the API test to deserialize responses with `Nerv.IIP.Contracts.FileStorage` DTOs. Expected before implementation: compile failure because Web does not reference contracts.
+更新 API 测试，使用 `Nerv.IIP.Contracts.FileStorage` DTO 反序列化响应。实施前预期：编译失败，因为 Web 尚未引用契约。
 
-- [ ] **Step 2: Replace local public DTOs with contracts**
+- [ ] **步骤 2：用契约替换本地公共 DTO**
 
-Use contract request/response types in FastEndpoints and service interface. Keep `FileStorageResult<T>` internal to Web. Keep internal Domain `OwnerReference` and `FileMetadata` mapping private; public responses use contract `OwnerReference`.
+在 FastEndpoints 和服务接口中使用契约请求/响应类型。`FileStorageResult<T>` 保持为 Web 内部类型。内部领域 `OwnerReference` 和 `FileMetadata` 映射保持私有；公共响应使用契约 `OwnerReference`。
 
-- [ ] **Step 3: Re-run FileStorage tests**
+- [ ] **步骤 3：重新运行 FileStorage 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS with the existing 4 tests.
+预期：现有 4 个测试全部通过。
 
-## Task 3: PostgreSQL-Backed API Service
+## 任务 3：由 PostgreSQL 支持的 API 服务
 
-**Files:**
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Records/*.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
-- Create: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs`
+**文件：**
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Records/*.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
+- 新增：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs`
 
-- [ ] **Step 1: Write failing persistence behavior tests**
+- [ ] **步骤 1：编写会失败的持久化行为测试**
 
-Add tests that use a real EF service provider with `ApplicationDbContext` and assert:
+添加使用真实 EF 服务提供程序和 `ApplicationDbContext` 的测试，并断言：
 
 ```text
 CreateUploadSession persists upload_sessions.
@@ -193,50 +193,50 @@ CreateDownloadGrant inserts download_grants.
 object_key is not present in public response JSON.
 ```
 
-Expected before implementation: FAIL because there is no PostgreSQL-backed service.
+实施前预期：失败，因为尚无 PostgreSQL 持久化服务。
 
-- [ ] **Step 2: Add record factories**
+- [ ] **步骤 2：添加记录类型工厂方法**
 
-Add explicit public static factory methods to `StoredFileRecord`, `UploadSessionRecord`, and `DownloadGrantRecord`; keep setters private for EF materialization.
+为 `StoredFileRecord`、`UploadSessionRecord` 和 `DownloadGrantRecord` 添加显式公共静态工厂方法；赋值器保持私有，供 EF 具体化使用。
 
-- [ ] **Step 3: Implement `PostgreSqlFileStorageService`**
+- [ ] **步骤 3：实现 `PostgreSqlFileStorageService`**
 
-Use `ApplicationDbContext` with async EF calls and cancellation tokens. Keep behavior equivalent to the current in-memory service: validation, expiry checks, context mismatch checks, internal object key generation, server-proxy placeholder URLs.
+通过 `ApplicationDbContext` 使用异步 EF 调用和取消令牌。行为与当前内存服务保持等价：验证、过期检查、上下文不匹配检查、内部对象键生成，以及 server-proxy 占位 URL。
 
-- [ ] **Step 4: Register by provider**
+- [ ] **步骤 4：按提供程序注册**
 
-In `Program.cs`, register:
+在 `Program.cs` 中注册：
 
 ```text
 Persistence:Provider=PostgreSQL -> PostgreSqlFileStorageService
 default/InMemory -> InMemoryFileStorageService
 ```
 
-Do not require a real PostgreSQL connection in default tests.
+默认测试不得要求真实 PostgreSQL 连接。
 
-- [ ] **Step 5: Verify**
+- [ ] **步骤 5：验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 4: Tus MVP Provider Shape
+## 任务 4：Tus MVP 提供程序形状
 
-**Files:**
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/FileStorageUploadProvider.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/TusUploadProvider.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`
-- Create: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
+**文件：**
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/FileStorageUploadProvider.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/UploadProviders/TusUploadProvider.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`
+- 新增：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
 
-- [ ] **Step 1: Write failing tus provider tests**
+- [ ] **步骤 1：编写会失败的 tus 提供程序测试**
 
-Assert that selecting the tus provider returns:
+断言选择 tus 提供程序后返回：
 
 ```text
 uploadMode = tus
@@ -245,11 +245,11 @@ upload.url = /api/files/v1/tus/{uploadSessionId}
 headers include x-nerv-upload-mode = tus
 ```
 
-Expected before implementation: FAIL because only server-proxy exists.
+实施前预期：失败，因为当前仅存在 server-proxy。
 
-- [ ] **Step 2: Add provider abstraction**
+- [ ] **步骤 2：添加提供程序抽象**
 
-Define:
+定义：
 
 ```csharp
 public interface IFileStorageUploadProvider
@@ -260,37 +260,37 @@ public interface IFileStorageUploadProvider
 }
 ```
 
-- [ ] **Step 3: Implement tus provider**
+- [ ] **步骤 3：实现 tus 提供程序**
 
-Add `TusUploadProvider` that only creates platform-owned tus instructions. Do not add MinIO/S3 multipart. Do not expose object key.
+添加仅创建平台自有 tus 指令的 `TusUploadProvider`。不得添加 MinIO/S3 multipart。不得暴露对象键。
 
-- [ ] **Step 4: Wire selection**
+- [ ] **步骤 4：接入选择逻辑**
 
-Keep default provider `server-proxy` until configuration says `FileStorage:UploadProvider=tus`. Preserve existing tests by default.
+默认提供程序保持为 `server-proxy`，直到配置指定 `FileStorage:UploadProvider=tus`。默认情况下保持现有测试不变。
 
-- [ ] **Step 5: Verify**
+- [ ] **步骤 5：验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 5: Docs And Final Verification
+## 任务 5：文档与最终验证
 
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/architecture/file-storage-baseline.md`
-- Modify: `docs/architecture/platform-sdk-baseline.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+**文件：**
+- 修改：`README.md`
+- 修改：`docs/architecture/file-storage-baseline.md`
+- 修改：`docs/architecture/platform-sdk-baseline.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Update docs from actual diff**
+- [ ] **步骤 1：根据实际差异更新文档**
 
-Document only completed behavior:
+只记录已完成的行为：
 
 ```text
 Contracts/SDK landed.
@@ -299,9 +299,9 @@ tus landed if Task 4 completed.
 MinIO/S3 multipart remains post-MVP.
 ```
 
-- [ ] **Step 2: Run final verification**
+- [ ] **步骤 2：运行最终验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj --no-restore
@@ -309,19 +309,19 @@ dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Ne
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: all PASS.
+预期：全部通过。
 
-## Self-Review
+## 自查
 
-Spec coverage:
+规格覆盖：
 
-1. Public contracts and SDK boundary are covered in Task 1.
-2. Web boundary alignment is covered in Task 2.
-3. PostgreSQL-backed API behavior is covered in Task 3.
-4. tus as the MVP complete transfer path is covered in Task 4.
-5. MinIO/S3 multipart is excluded from all implementation tasks and documented as post-MVP.
-6. Documentation and verification are covered in Task 5.
+1. 公共契约和 SDK 边界由任务 1 覆盖。
+2. Web 边界对齐由任务 2 覆盖。
+3. PostgreSQL 持久化 API 行为由任务 3 覆盖。
+4. tus 作为 MVP 完整传输路径由任务 4 覆盖。
+5. 所有实施任务都排除 MinIO/S3 multipart，并将其记录为 MVP 后事项。
+6. 文档与验证由任务 5 覆盖。
 
-Placeholder scan: no TODO/TBD placeholders remain; every task has concrete files, behavior, and commands.
+占位符扫描：没有遗留 TODO/TBD 占位符；每项任务都有具体文件、行为和命令。
 
-Type consistency: DTO names match the existing API semantics and keep `objectKey/object_key` out of public contracts.
+类型一致性：DTO 名称符合现有 API 语义，并确保公共契约中没有 `objectKey/object_key`。

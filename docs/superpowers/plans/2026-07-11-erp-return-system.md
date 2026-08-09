@@ -1,88 +1,88 @@
-# ERP Return System Implementation Plan
+# ERP 退货系统实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Deliver MAN-397's auditable purchase-return and sales-RMA closure without crossing service data boundaries.
+**目标：**在不跨越服务数据边界的前提下，交付 MAN-397 可审计的采购退货与销售 RMA 闭环。
 
-**Architecture:** WMS publishes completed physical return facts; ERP records immutable compensating documents and vouchers; Quality supplies the RMA credit decision. Public contracts carry stable business identifiers and each consumer uses its local inbox.
+**架构：**WMS 发布已完成的实物退货事实；ERP 记录不可变的冲销单据和凭证；Quality 提供 RMA 贷项决策。公开契约携带稳定的业务标识符，每个消费者使用自己的本地 inbox（收件箱）。
 
-**Tech Stack:** .NET 10, CleanDDD/NetCorePal, FastEndpoints, EF Core migrations, CAP integration events, xUnit.
+**技术栈：**.NET 10、CleanDDD/NetCorePal、FastEndpoints、EF Core migration、CAP 集成事件、xUnit。
 
 ---
 
-### Task 1: Freeze the accounting policy and public event contracts
+### 任务 1：冻结会计政策和公开事件契约
 
-**Files:**
-- Create: `docs/architecture/erp-return-accounting-rules.md`
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.Erp/ErpIntegrationEvents.cs`
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`
-- Test: `backend/tests/Nerv.IIP.Contracts.IntegrationEvents.Tests/IntegrationEventContractTests.cs`
+**文件：**
+- 创建：`docs/architecture/erp-return-accounting-rules.md`
+- 修改：`backend/common/Contracts/Nerv.IIP.Contracts.Erp/ErpIntegrationEvents.cs`
+- 修改：`backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`
+- 测试：`backend/tests/Nerv.IIP.Contracts.IntegrationEvents.Tests/IntegrationEventContractTests.cs`
 
-- [ ] **Step 1: Write failing serialization tests** for `erp.SalesReturnAuthorized` and the supplier-return WMS completion source metadata, asserting required envelope fields and line references.
-- [ ] **Step 2: Run** `dotnet test backend/tests/Nerv.IIP.Contracts.IntegrationEvents.Tests/Nerv.IIP.Contracts.IntegrationEvents.Tests.csproj --no-restore` and verify the new contract tests fail because the types/constants do not exist.
-- [ ] **Step 3: Add additive v1 contracts** with `RmaNo`, customer/site/line facts and WMS `SourceDocumentType`/`SourceDocumentId`; preserve existing fields and event versions.
-- [ ] **Step 4: Re-run** the contract project and verify it passes.
+- [ ] **步骤 1：编写失败的序列化测试**，覆盖 `erp.SalesReturnAuthorized` 和供应商退货 WMS 完成事件的来源元数据，并断言必需的信封字段和行引用。
+- [ ] **步骤 2：运行** `dotnet test backend/tests/Nerv.IIP.Contracts.IntegrationEvents.Tests/Nerv.IIP.Contracts.IntegrationEvents.Tests.csproj --no-restore`，确认新契约测试因类型/常量不存在而失败。
+- [ ] **步骤 3：添加只增不减的 v1 契约**，包含 `RmaNo`、客户/站点/行事实和 WMS `SourceDocumentType`/`SourceDocumentId`；保留既有字段和事件版本。
+- [ ] **步骤 4：重新运行**契约项目并确认通过。
 
-### Task 2: Make WMS own both physical return executions
+### 任务 2：让 WMS 负责两种实物退货执行
 
-**Files:**
-- Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/SupplierReturnAggregate/SupplierReturnRequest.cs`
-- Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/ErpSalesReturnAuthorizedIntegrationEventHandler.cs`
-- Modify: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs`
-- Test: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsReturnIntegrationEventTests.cs`
+**文件：**
+- 修改：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/SupplierReturnAggregate/SupplierReturnRequest.cs`
+- 修改：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/ErpSalesReturnAuthorizedIntegrationEventHandler.cs`
+- 修改：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs`
+- 测试：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsReturnIntegrationEventTests.cs`
 
-- [ ] **Step 1: Write failing WMS tests** that a rejected supplier receipt creates one `purchase-receipt-return` outbound and that a replayed ERP RMA authorization creates one quality-gated inbound.
-- [ ] **Step 2: Run** the named WMS test and verify it fails for missing return execution/consumer behavior.
-- [ ] **Step 3: Implement only the tested behavior:** create outbound lines from the rejected receipt dimensions, consume the ERP RMA event through an inbox guard, and publish actual WMS completion facts with original source references.
-- [ ] **Step 4: Re-run** the WMS test and verify it passes without inspecting another service database.
+- [ ] **步骤 1：编写失败的 WMS 测试**，验证被拒绝的供应商收货会创建一个 `purchase-receipt-return` 出库，重放的 ERP RMA 授权会创建一个经过质量门禁的入库。
+- [ ] **步骤 2：运行**指定的 WMS 测试，并确认它因缺少退货执行/消费者行为而失败。
+- [ ] **步骤 3：只实现已测试的行为：**根据被拒收货的维度创建出库行，通过 inbox（收件箱）守卫消费 ERP RMA 事件，并发布带原始来源引用的实际 WMS 完成事实。
+- [ ] **步骤 4：重新运行** WMS 测试，确认它在不检查其他服务数据库的情况下通过。
 
-### Task 3: Add ERP compensating return and note aggregates
+### 任务 3：添加 ERP 冲销退货和通知单聚合
 
-**Files:**
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReturnAggregate/PurchaseReturn.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesReturnAuthorizationAggregate/SalesReturnAuthorization.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DebitNoteAggregate/DebitNote.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/CreditNoteAggregate/CreditNote.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
-- Test: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpReturnAggregateTests.cs`
+**文件：**
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReturnAggregate/PurchaseReturn.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesReturnAuthorizationAggregate/SalesReturnAuthorization.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DebitNoteAggregate/DebitNote.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/CreditNoteAggregate/CreditNote.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
+- 测试：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpReturnAggregateTests.cs`
 
-- [ ] **Step 1: Write failing aggregate tests** for receipt-line return limits, AP debit-note application, AR credit-note application, and RMA quality states.
-- [ ] **Step 2: Run** `dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore` and verify failure on the new aggregates/methods.
-- [ ] **Step 3: Implement minimal immutable documents and AP/AR application counters**; reject over-return, over-credit, and repeated state transitions.
-- [ ] **Step 4: Re-run** the ERP domain tests and verify they pass.
+- [ ] **步骤 1：编写失败的聚合测试**，覆盖收货行退货上限、AP 借项通知单应用、AR 贷项通知单应用和 RMA 质量状态。
+- [ ] **步骤 2：运行** `dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore`，确认新聚合/方法导致测试失败。
+- [ ] **步骤 3：实现最小的不可变单据和 AP/AR 应用计数器**；拒绝超额退货、超额贷记和重复状态转换。
+- [ ] **步骤 4：重新运行** ERP 领域测试并确认通过。
 
-### Task 4: Persist and post ERP return compensation
+### 任务 4：持久化并入账 ERP 退货冲销
 
-**Files:**
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpProcurementEntityTypeConfigurations.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpSalesFinanceEntityTypeConfigurations.cs`
-- Create: an EF-generated `AddErpReturnSystem` migration in `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs`
-- Test: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpReturnAccountingTests.cs`
+**文件：**
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpProcurementEntityTypeConfigurations.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpSalesFinanceEntityTypeConfigurations.cs`
+- 创建：由 EF 生成的 `AddErpReturnSystem` migration，位于 `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs`
+- 测试：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpReturnAccountingTests.cs`
 
-- [ ] **Step 1: Write failing command tests** for un-invoiced GR/IR reversal, invoice-matched debit note/AP reduction, and credit-note/AR reduction with balanced vouchers.
-- [ ] **Step 2: Run** the named ERP Web test and verify it fails before return posting exists.
-- [ ] **Step 3: Add table mappings, explicit column comments/indexes, migration, and voucher factory methods:** purchase return uses Dr `GR-IR`/Cr `1401` for un-invoiced quantity; debit note uses Dr `2202`/Cr `1401`; credit note uses Dr `6001`/Cr `1122`.
-- [ ] **Step 4: Re-run** the ERP Web tests and the ERP schema convention test.
+- [ ] **步骤 1：编写失败的命令测试**，覆盖未开票 GR/IR 冲销、已匹配发票的借项通知单/AP 减记，以及凭证借贷平衡的贷项通知单/AR 减记。
+- [ ] **步骤 2：运行**指定的 ERP Web 测试，确认它在退货入账实现前失败。
+- [ ] **步骤 3：添加表映射、显式列注释/索引、migration 和凭证 factory 方法：**采购退货对未开票数量使用借方 `GR-IR`/贷方 `1401`；借项通知单使用借方 `2202`/贷方 `1401`；贷项通知单使用借方 `6001`/贷方 `1122`。
+- [ ] **步骤 4：重新运行** ERP Web 测试和 ERP schema 约定测试。
 
-### Task 5: Wire consumers, API governance, and real closure verification
+### 任务 5：接入消费者、API 治理和真实闭环验证
 
-**Files:**
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/WmsReturnIntegrationEventHandlers.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/QualityRmaInspectionResultIntegrationEventHandler.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesFinanceIntegrationEventConverters.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesFinanceEndpoints.cs`
-- Modify: `docs/architecture/integration-event-consumption-matrix.md`
-- Modify: `docs/architecture/facade-coverage-matrix.json`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Test: `backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs`
+**文件：**
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/WmsReturnIntegrationEventHandlers.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/QualityRmaInspectionResultIntegrationEventHandler.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesFinanceIntegrationEventConverters.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesFinanceEndpoints.cs`
+- 修改：`docs/architecture/integration-event-consumption-matrix.md`
+- 修改：`docs/architecture/facade-coverage-matrix.json`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 测试：`backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs`
 
-- [ ] **Step 1: Write a failing cross-boundary acceptance test** that drives RMA authorization -> WMS inbound completion -> Quality pass -> credit note/AR, plus supplier return WMS outbound completion -> purchase return/debit-or-GRIR compensation; replay both events and assert exactly one document/voucher effect.
-- [ ] **Step 2: Run** the targeted test and verify failure because the event consumers do not exist.
-- [ ] **Step 3: Implement guarded consumers and deferred facade rows**, update event/schema documentation, and generate an EF migration using the PostgreSQL profile. The endpoints remain deferred, so do not alter Gateway OpenAPI or generated client code.
-- [ ] **Step 4: Run** ERP/WMS/contract tests, schema/facade gates, full backend solution tests, and the real PostgreSQL acceptance test when `NERV_IIP_TEST_POSTGRES` is configured.
+- [ ] **步骤 1：编写失败的跨边界验收测试**，驱动 RMA 授权 → WMS 入库完成 → Quality 通过 → 贷项通知单/AR，以及供应商退货 WMS 出库完成 → 采购退货/借项或 GRIR 冲销；重放两个事件并断言只产生一次单据/凭证效果。
+- [ ] **步骤 2：运行**目标测试，确认它因事件消费者不存在而失败。
+- [ ] **步骤 3：实现带守卫的消费者和延期的 facade 行**，更新事件/schema 文档，并使用 PostgreSQL profile 生成 EF migration。endpoint 仍为延期状态，因此不得改动 Gateway OpenAPI 或生成的客户端代码。
+- [ ] **步骤 4：运行** ERP/WMS/契约测试、schema/facade 门禁、完整后端解决方案测试；配置 `NERV_IIP_TEST_POSTGRES` 时，还要运行真实 PostgreSQL 验收测试。

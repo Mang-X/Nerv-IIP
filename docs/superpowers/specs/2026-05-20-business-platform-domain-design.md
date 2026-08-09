@@ -1,6 +1,6 @@
-# Business Platform Critical Chain Design
+# 业务平台关键链路设计
 
-## Context
+## 背景
 
 GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基础域、通用能力域、MES、WMS、ERP 和全链路验收。审阅后确认：MES/WMS/ERP 是主干，但不是完整关键链路。工业业务还需要解释工程版本来源、计划数量来源、设备数据来源、维修与产能影响，以及 CRM/SRM/CPQ/OMS/WCS/SCADA/PLC/DCS 这些系统应如何进入或不进入首批范围。
 
@@ -19,7 +19,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 
 2026-05-27 起，本 spec 的 APS 边界按 `docs/adr/0014-aps-and-iiot-scheduling-boundary.md` 修订：APS lite 进入 P0，高级优化器、仿真、自动重排和现场控制闭环仍后置。
 
-## Goals
+## 目标
 
 1. 将 MES/WMS/ERP 规划升级为覆盖工程、计划、执行、库存、设备、维护和财务的关键链路规划。
 2. 明确 SRM、CRM、CPQ、OMS、WCS、CAD、SCADA、PLC/DCS 的首批处理方式，避免全量建设。
@@ -27,7 +27,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 4. 定义可拆 implementation plan 的业务切片顺序。
 5. 保持主平台与业务平台边界清晰，业务平台只通过公开能力消费 IAM、File Storage、AppHub、Ops、Notification 和 Connector Host。
 
-## Non-Goals
+## 非目标
 
 1. 不在本阶段实现代码、迁移、OpenAPI 快照或前端页面。
 2. 不实现 CAD、SCADA、PLC/DCS、WCS、AGV/AMR 这类外部系统本体。
@@ -37,7 +37,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 6. 不做完整 EAM，首批只做 CMMS lite。
 7. 不改变 IAM、AppHub、Ops、File Storage、Notification 的主平台事实源职责。
 
-## System Scope
+## 系统范围
 
 | 系统名 | 首批策略 | 进入原因或后置原因 |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | CMMS | Maintenance lite | 维修、保养、点检和停机会影响产能与排产。 |
 | EAM | 后置 | 资产财务、折旧、全生命周期后续再扩。 |
 
-## Stakeholders
+## 干系人
 
 | 角色 | 目标/痛点 | 权限/限制 | 备注 |
 | --- | --- | --- | --- |
@@ -77,7 +77,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | Connector Host | 上报工业数据、设备状态或执行受控采集 | 机器身份；不获得业务管理权限 | 接入 SCADA/PLC/DCS/WCS。 |
 | 外部业务客户端 | 对接采购、销售、计划或仓储 API | 受 IAM external-client 授权约束 | 不直接访问业务服务内部表。 |
 
-## Requirements
+## 需求
 
 | 需求ID | 场景描述 | 干系人/对象 | 所属业务实体 | 操作类型 | 约束/前置 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -125,7 +125,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | BP-E2E-006 | 验证设备到维护到产能链路 | 运维、生产计划员 | 跨域链路 | 集成验收 | Telemetry/Maintenance/MES 可用 | 新增关键链路。 |
 | BP-E2E-007 | 验证 WCS adapter 边界 | 仓储、Connector Host | 跨域链路 | 集成验收 | WMS/WCS adapter 可模拟 | 自动化仓预留。 |
 
-## Business Entity View
+## 业务实体视图
 
 | 业务实体 | 主要职责/规则 | 关键输入/输出 |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | AccountReceivable/Payable | 应收应付台账 | 输入来源单据和金额；输出账款状态。 |
 | CostCalculation | 材料、人工、制造费用和单位成本 | 输入报工、库存、费用；输出成本结果。 |
 
-## Trigger And Follow-Up Actions
+## 触发条件与后续动作
 
 | 触发条件 | 后续动作/影响 | 受影响实体 | 备注 |
 | --- | --- | --- | --- |
@@ -184,9 +184,9 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | 维修工单导致设备不可用 | MES 排产和 Planning 产能受影响 | MaintenanceWorkOrder、ScheduleResult、MPS | 不直接改 WorkCenter 主数据。 |
 | WCS adapter 回执失败 | WMS 标记任务异常并可补偿重发 | WcsTask、WarehouseTask | 外部 WCS 不进入事务。 |
 
-## CleanDDD Modeling
+## CleanDDD 建模
 
-### Aggregates
+### 聚合
 
 | 名称 | 职责摘要 | 关键不变式 |
 | --- | --- | --- |
@@ -243,7 +243,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | MaintenanceWorkOrder | 维修工单 | 关闭必须有维修结果和停机归因。 |
 | MaintenancePlan | 保养计划 | 周期和下次执行时间必须明确。 |
 
-### Commands
+### 命令
 
 | 名称 | 作用聚合 | 输入 | 触发行为/事件 | 幂等性 |
 | --- | --- | --- | --- | --- |
@@ -307,7 +307,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | CreateMaintenancePlanCommand | MaintenancePlan | deviceAssetId, planCode, interval, nextDueDate | MaintenancePlanCreatedDomainEvent | planCode。 |
 | RecordMaintenanceInspectionCommand | MaintenanceInspection | planId, operatorId, result, occurredAtUtc | MaintenanceInspectionRecordedDomainEvent | planId+occurredAtUtc。 |
 
-### Queries
+### 查询
 
 | 名称 | 过滤/排序/分页 | 输出 DTO |
 | --- | --- | --- |
@@ -345,7 +345,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | GetInventoryReportQuery | skuScope, locationScope, asOfDate, page | InventoryReportResponse。 |
 | GetFinanceSummaryQuery | period, partnerScope | FinanceSummaryResponse。 |
 
-### API Endpoints
+### API 端点
 
 本表是业务平台公开 API 的规范摘要，覆盖本 spec 中列出的命令与查询入口；各 implementation plan 内的路由表负责冻结对应切片执行时的文件、测试、权限 seed 和 OpenAPI 细节。
 
@@ -451,7 +451,7 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `GET /api/business/v1/maintenance/plans` | ListMaintenancePlansQuery | `business.maintenance.plans.read` | 只读分页查询。 |
 | `POST /api/business/v1/maintenance/inspections` | RecordMaintenanceInspectionCommand | `business.maintenance.plans.manage` | planId+occurredAtUtc。 |
 
-## Integration Events
+## 集成事件
 
 所有集成事件遵循 [ADR 0011](../../adr/0011-integration-event-contract-baseline.md) 定义的 envelope 格式，`messageId`、`eventType`、`schemaVersion`、`occurredAtUtc` 和 `payload` 必填；下表只列业务 payload 的关键附加字段。
 
@@ -477,153 +477,153 @@ GitHub issues #72 到 #77 提供了业务平台第一版输入，覆盖共享基
 | `maintenance.AssetUnavailable` | Maintenance | deviceAssetId, reason, fromUtc | MES、Planning、Notification；契约位于 `Nerv.IIP.Contracts.Maintenance`，MES 将 deviceAssetId 映射为 WorkCenter 不可用窗口并按配置触发 `asset-unavailable` 重排。 |
 | `maintenance.AssetRestored` | Maintenance | deviceAssetId, restoredAtUtc | MES、Planning、Notification；MES 关闭对应 WorkCenter 不可用窗口并按配置触发 `asset-restored` 重排。 |
 
-## Slices
+## 切片
 
-### Slice 0. Documentation Freeze
+### 切片 0：文档冻结
 
-Scope:
+范围：
 
 1. ADR 0012。
 2. 业务平台领域架构。
 3. 本 spec。
 4. README、repo layout、权限矩阵入口。
 
-Acceptance:
+验收：
 
 1. 文档解释哪些系统进入关键链路，哪些作为子域、外部系统或升级边界。
 2. 文档明确主平台与业务平台边界。
 3. 文档给出后续 CleanDDD implementation plan 输入。
 
-### Slice 1. MasterData Foundation
+### 切片 1：MasterData 基础
 
-Scope:
+范围：
 
 1. SKU、业务伙伴、工作中心、工作日历、设备资产。
 2. 业务组织属性：部门、班组、人员技能资质。
 
-Acceptance:
+验收：
 
 1. 可通过 API 创建和查询主数据。
 2. 业务键唯一约束、schema 注释、catalog、migration、OpenAPI 测试齐备。
 3. 不直接读写 IAM、AppHub 或 Telemetry 表。
 
-### Slice 2. ProductEngineering MVP
+### 切片 2：ProductEngineering MVP
 
-Scope:
+范围：
 
 1. EngineeringDocument、EngineeringItem。
 2. EBOM、MBOM、Routing、ProductionVersion。
 3. ECO/ECN 和发布状态。
 
-Acceptance:
+验收：
 
 1. CAD/图纸文件通过 File Storage 引用。
 2. EBOM/MBOM/工艺路线可发布，发布版本不可直接修改；ProductionVersion 绑定已发布 MBOM + Routing，并提供解析 API。
 3. 工程变更发布事件可被 Planning/MES 消费。
 
-### Slice 3. Common Capability Foundation
+### 切片 3：通用能力基础
 
-Scope:
+范围：
 
 1. Inventory 库位、批次、序列号、库存台账、库存移动。
 2. Quality 检验标准、计划、记录和 NonconformanceReport 不合格处置闭环。
 3. BarcodeLabel 条码规则、标签模板、扫码记录。
 4. BusinessApproval 审批模板、审批链、审批记录。
 
-Acceptance:
+验收：
 
 1. Inventory 是唯一库存余额事实源。
 2. 业务审批不替代 Ops。
 3. 质检不合格不能直接入可用库存。
 
-### Slice 4. DemandPlanning MVP
+### 切片 4：DemandPlanning MVP
 
-Scope:
+范围：
 
 1. DemandSource。
 2. MPS。
 3. MRP run。
 4. PlanningSuggestion 和 Pegging。
 
-Acceptance:
+验收：
 
 1. MRP 使用已发布 BOM/路线、库存余额和需求来源。
 2. 可生成计划采购建议和计划工单建议。
 3. 建议可追溯到需求来源和供应来源。
 
-### Slice 5. ERP Procurement/Sales/Finance MVP
+### 切片 5：ERP Procurement/Sales/Finance MVP
 
-Scope:
+范围：
 
 1. Procurement + SRM-lite：采购申请、RFQ、供应商报价、采购订单、收货、退货。
 2. Sales + CRM-lite + OMS-lite：客户、商机、报价、销售订单、发货请求、退货。
 3. Finance MVP：应收、应付、凭证、成本核算。
 
-Acceptance:
+验收：
 
 1. 采购建议可转采购申请。
 2. 销售订单可释放发货请求。
 3. 库存入账事实能驱动应收、应付或成本核算候选。
 4. 凭证借贷平衡校验生效。
 
-### Slice 6. WMS Execution MVP
+### 切片 6：WMS 执行 MVP
 
-Scope:
+范围：
 
 1. 收货通知、入库单、上架任务。
 2. 出库单、拣货任务、复核包装。
 3. 盘点执行。
 4. WCS adapter 任务和回执模拟。
 
-Acceptance:
+验收：
 
 1. 入库完成后请求 Inventory 创建库存增加移动。
 2. 出库完成后请求 Inventory 创建库存扣减移动。
 3. WMS schema 不保存库存余额字段。
 4. WCS adapter 失败可诊断、可补偿。
 
-### Slice 7. MES Execution MVP
+### 切片 7：MES 执行 MVP
 
-Scope:
+范围：
 
 1. 从计划工单建议创建正式工单。
 2. 工序任务、报工、规则排产、Gantt 查询。
 3. 完工入库请求和生产日报。
 
-Acceptance:
+验收：
 
 1. 工单引用已发布 MBOM/工艺路线。
 2. 报工数量不破坏工序不变式。
 3. 完工入库请求能创建 WMS 入库单。
 
-### Slice 8. IndustrialTelemetry MVP
+### 切片 8：IndustrialTelemetry MVP
 
-Scope:
+范围：
 
 1. tag 映射、采集点、设备状态快照、报警事件、时序摘要。
 
-Acceptance:
+验收：
 
 1. Connector Host 可写入受控工业数据事实。
 2. 设备状态和报警事件可被 Maintenance、MES、Planning 和 Notification 消费。
 3. 不实现 PLC/DCS 控制和 SCADA 画面。
 
-### Slice 9. Maintenance MVP
+### 切片 9：Maintenance MVP
 
-Scope:
+范围：
 
 1. 维修工单、保养计划、点检记录、停机原因。
 2. 报警到维修工单的异步消费。
 
-Acceptance:
+验收：
 
 1. 报警可触发维修工单。
 2. 设备不可用/恢复事件可被 MES/Planning 消费。
 3. Maintenance 不拥有设备资产主数据和库存余额。
 
-### Slice 10. Full-Chain Acceptance
+### 切片 10：全链路验收
 
-Scope:
+范围：
 
 1. 工程到制造。
 2. 计划到采购/生产。
@@ -633,7 +633,7 @@ Scope:
 6. 设备到维护到产能。
 7. WMS 到 WCS adapter。
 
-Acceptance:
+验收：
 
 1. API 端到端可调用。
 2. 库存域在采购、生产、销售、盘点链路下数量正确。
@@ -643,7 +643,7 @@ Acceptance:
 6. 基础页面覆盖创建单据、列表、详情、审批和关键状态。
 7. 条码打印、扫码、Gantt、库存报表、生产日报、应收应付汇总可走通。
 
-## Testing Strategy
+## 测试策略
 
 1. 聚合测试覆盖构造、状态流转、不变式、领域事件和异常路径。
 2. 命令测试覆盖权限上下文、幂等键、重复提交和 KnownException。
@@ -653,7 +653,7 @@ Acceptance:
 6. PostgreSQL profile 测试覆盖 migration、schema convention、唯一约束、索引意图和 JSON/text 注释。
 7. 全链路测试覆盖 Slice 10 七条链路，重点断言库存余额、MRP pegging、工程版本引用、财务候选事实和设备维护影响。
 
-## Open Questions
+## 待决问题
 
 | 项 | 描述 | 责任人 | 优先级 |
 | --- | --- | --- | --- |
@@ -664,7 +664,7 @@ Acceptance:
 | IIoT 原始时序保存策略 | 高频原始数据保存在哪里，业务库只保存摘要还是全部。 | 设备负责人 + 架构负责人 | 中 |
 | 财务入账时点 | 应收/应付由业务单据、库存入账，还是组合校验后触发。 | 财务负责人 | 高 |
 
-## Handoff
+## 交接
 
 本 spec 已完成关键链路级需求分析与 CleanDDD 建模输入。进入实现前，应先补齐主平台 SDK/公开契约最小集成就绪项，再按切片分别执行 implementation plan。业务切片只能通过主平台公开 API、公开 Contracts、Platform SDK、IntegrationEvent 和 IAM 授权上下文消费主平台能力，不得引用主平台服务的 Domain 或 Infrastructure 项目。
 

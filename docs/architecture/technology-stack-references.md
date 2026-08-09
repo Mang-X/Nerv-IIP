@@ -1,83 +1,83 @@
-# Technology Stack References
+# 技术栈参考链接
 
 本文档为 Nerv-IIP 当前已落地和已冻结规划技术栈的链接索引。每个条目都尽量给出官方文档与源码仓库，避免同名生态、旧仓库或社区分叉造成歧义。
 
-## Repository
+## 仓库（Repository）
 
-| Item | Link |
+| 项目（Item） | 链接（Link） |
 |---|---|
-| Nerv-IIP repository | [Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP) |
-| Current baseline | 当前能力基线随主平台实现持续演进；最新实施状态、Phase 8 控制台能力和统一本地开发入口见 [implementation-readiness.md](implementation-readiness.md)。 |
+| Nerv-IIP 仓库（repository） | [Mang-X/Nerv-IIP](https://github.com/Mang-X/Nerv-IIP) |
+| 当前基线（Current baseline） | 当前能力基线随主平台实现持续演进；最新实施状态、阶段（Phase 8）控制台能力和统一本地开发入口见 [implementation-readiness.md](implementation-readiness.md)。 |
 
-## Frontend
+## 前端（Frontend）
 
-| Technology | Current status | Documentation | Repository |
+| 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
-| Node.js | Required. `.node-version` pins `22.22.3`; Vite+ requires `>=22.18.0` for TS config loading in lint/fmt paths. | [Node.js docs](https://nodejs.org/api/) | [nodejs/node](https://github.com/nodejs/node) |
-| pnpm | Required package manager, pinned by `packageManager` to `pnpm@11.13.1`. | [pnpm docs](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
-| Vite+ | Required workspace toolchain for check, fmt, lint, test and run tasks. | [Vite+ docs](https://viteplus.dev/) | [voidzero-dev/vite-plus](https://github.com/voidzero-dev/vite-plus) |
-| Vite | Used through Vite+ core override; app-level dev/build config remains Vite-compatible. | [Vite docs](https://vite.dev/guide/) | [vitejs/vite](https://github.com/vitejs/vite) |
-| Vitest | Official Vitest is pinned to the exact version bundled by Vite+ so `vp test` and workspace packages share one runner instance. | [Vitest docs](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
-| TypeScript | Required frontend language and type-checking baseline. | [TypeScript docs](https://www.typescriptlang.org/docs/) | [microsoft/TypeScript](https://github.com/microsoft/TypeScript) |
-| Vue | Required console runtime, using Vue 3 Composition API. | [Vue docs](https://vuejs.org/guide/introduction.html) | [vuejs/core](https://github.com/vuejs/core) |
-| Vue Router | Required router, using official file-routing plugin and typed routes. | [Vue Router docs](https://router.vuejs.org/guide/) | [vuejs/router](https://github.com/vuejs/router) |
-| Pinia | Required client-state store. | [Pinia docs](https://pinia.vuejs.org/) | [vuejs/pinia](https://github.com/vuejs/pinia) |
-| Pinia Colada | Required server-state/query layer. | [Pinia Colada docs](https://pinia-colada.esm.dev/) | [posva/pinia-colada](https://github.com/posva/pinia-colada) |
-| Pinia Colada Auto Refetch | Required for OperationTask polling behavior. | [Pinia Colada docs](https://pinia-colada.esm.dev/) | [posva/pinia-colada](https://github.com/posva/pinia-colada) |
-| Hey API OpenAPI TypeScript | Required for generated frontend API client. | [Hey API openapi-ts docs](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
-| VueUse | Frozen frontend planning baseline; introduce only when a real composable need appears. | [VueUse docs](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
-| shadcn-vue | Required UI-system baseline for Console Auth and later console UI work; initialized in `frontend/packages/ui` with `reka-nova` style and stable `@nerv-iip/ui` exports. | [shadcn-vue docs](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
-| es-toolkit | Frozen utility-library planning baseline; introduce only when it replaces real local utility complexity. | [es-toolkit docs](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
+| Node.js | 必需。`.node-version` 固定为 `22.22.3`；Vite+ 在 lint/fmt 路径加载 TypeScript 配置时要求 `>=22.18.0`。 | [Node.js 文档](https://nodejs.org/api/) | [nodejs/node](https://github.com/nodejs/node) |
+| pnpm | 必需的包管理器；`packageManager` 将其固定为 `pnpm@11.13.1`。 | [pnpm 文档](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
+| Vite+ | 必需的工作区工具链，用于 check、fmt、lint、test 和 run 任务。 | [Vite+ 文档](https://viteplus.dev/) | [voidzero-dev/vite-plus](https://github.com/voidzero-dev/vite-plus) |
+| Vite | 通过 Vite+ 核心覆盖使用；应用级 dev/build 配置仍与 Vite 兼容。 | [Vite 文档](https://vite.dev/guide/) | [vitejs/vite](https://github.com/vitejs/vite) |
+| Vitest | 官方 Vitest 固定为 Vite+ 内置的精确版本，使 `vp test` 与工作区包共用一个 runner 实例。 | [Vitest 文档](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
+| TypeScript | 必需的前端语言和类型检查基线。 | [TypeScript 文档](https://www.typescriptlang.org/docs/) | [microsoft/TypeScript](https://github.com/microsoft/TypeScript) |
+| Vue | 必需的控制台运行时，使用 Vue 3 Composition API。 | [Vue 文档](https://vuejs.org/guide/introduction.html) | [vuejs/core](https://github.com/vuejs/core) |
+| Vue Router | 必需的路由器，使用官方文件路由插件和类型化路由。 | [Vue Router 文档](https://router.vuejs.org/guide/) | [vuejs/router](https://github.com/vuejs/router) |
+| Pinia | 必需的客户端状态存储。 | [Pinia 文档](https://pinia.vuejs.org/) | [vuejs/pinia](https://github.com/vuejs/pinia) |
+| Pinia Colada | 必需的服务端状态/查询层。 | [Pinia Colada 文档](https://pinia-colada.esm.dev/) | [posva/pinia-colada](https://github.com/posva/pinia-colada) |
+| Pinia Colada Auto Refetch | OperationTask 轮询行为所必需。 | [Pinia Colada 文档](https://pinia-colada.esm.dev/) | [posva/pinia-colada](https://github.com/posva/pinia-colada) |
+| Hey API OpenAPI TypeScript | 生成前端 API 客户端所必需。 | [Hey API openapi-ts 文档](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
+| VueUse | 已冻结的前端规划基线；仅在出现真实的组合式函数需求时引入。 | [VueUse 文档](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
+| shadcn-vue | Console Auth 和后续控制台 UI 工作所必需的 UI 系统基线；已在 `frontend/packages/ui` 以 `reka-nova` 风格初始化，并提供稳定的 `@nerv-iip/ui` 导出。 | [shadcn-vue 文档](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
+| es-toolkit | 已冻结的工具库规划基线；仅在其能替代真实的本地工具复杂度时引入。 | [es-toolkit 文档](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
-## Mobile PDA
+## 移动 PDA（Mobile PDA）
 
-| Technology | Current status | Documentation | Repository |
+| 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
-| Capacitor | Selected planning baseline for Android-first PDA app development; see [mobile-pda-capacitor-architecture.md](mobile-pda-capacitor-architecture.md). | [Capacitor docs](https://capacitorjs.com/docs) / [Android guide](https://capacitorjs.com/docs/android) / [Support policy](https://capacitorjs.com/docs/main/reference/support-policy) | [ionic-team/capacitor](https://github.com/ionic-team/capacitor) |
-| Capacitor official plugins | Selected baseline for common native APIs such as Barcode Scanner, Camera, Device, Filesystem, File Transfer, Network, Preferences and Push Notifications. PDA hardware scanners still require vendor intent/SDK adapters. | [Official plugins](https://capacitorjs.com/docs/apis) / [Android plugin guide](https://capacitorjs.com/docs/plugins/android) | [ionic-team/capacitor-plugins](https://github.com/ionic-team/capacitor-plugins) |
-| Zebra DataWedge | Recommended first hardware scanner integration path for Zebra or DataWedge-compatible Android PDA devices. | [Intent Output](https://techdocs.zebra.com/datawedge/latest/guide/output/intent/) / [Barcode Input](https://techdocs.zebra.com/datawedge/latest/guide/input/barcode/) | Vendor runtime and samples; no repo baseline in this monorepo yet. |
-| Android Enterprise | Recommended production distribution and remote configuration path for managed PDA fleets when customer environments allow it. | [Private app distribution](https://support.google.com/work/android/answer/9495634?hl=en) / [Managed configurations](https://developer.android.com/work/managed-configurations?hl=en) | Platform capability, not a project dependency. |
+| Capacitor | 面向 Android 优先 PDA 应用开发的已选规划基线；见 [mobile-pda-capacitor-architecture.md](mobile-pda-capacitor-architecture.md)。 | [Capacitor 文档](https://capacitorjs.com/docs) / [Android 指南](https://capacitorjs.com/docs/android) / [支持策略](https://capacitorjs.com/docs/main/reference/support-policy) | [ionic-team/capacitor](https://github.com/ionic-team/capacitor) |
+| Capacitor 官方插件 | 常用原生 API 的已选基线，包括 Barcode Scanner、Camera、Device、Filesystem、File Transfer、Network、Preferences 和 Push Notifications。PDA 硬件扫描头仍需要厂商 intent/SDK 适配器。 | [官方插件](https://capacitorjs.com/docs/apis) / [Android 插件指南](https://capacitorjs.com/docs/plugins/android) | [ionic-team/capacitor-plugins](https://github.com/ionic-team/capacitor-plugins) |
+| Zebra DataWedge | 面向 Zebra 或 DataWedge 兼容 Android PDA 设备的推荐首选硬件扫码集成路径。 | [Intent Output（意图输出）](https://techdocs.zebra.com/datawedge/latest/guide/output/intent/) / [Barcode Input（条码输入）](https://techdocs.zebra.com/datawedge/latest/guide/input/barcode/) | 厂商运行时和示例；本单体仓库尚无仓库基线。 |
+| Android Enterprise | 当客户环境允许时，面向受管 PDA 设备群的推荐生产分发和远程配置路径。 | [私有应用分发](https://support.google.com/work/android/answer/9495634?hl=en) / [托管配置](https://developer.android.com/work/managed-configurations?hl=en) | 平台能力，不是项目依赖。 |
 
-## Backend And Platform
+## 后端与平台（Backend And Platform）
 
-| Technology | Current status | Documentation | Repository |
+| 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
-| .NET SDK | Required backend target SDK; projects target `net10.0`. | [.NET docs](https://learn.microsoft.com/dotnet/) | [dotnet/sdk](https://github.com/dotnet/sdk) |
-| ASP.NET Core | Required HTTP host/runtime surface for Web projects. | [ASP.NET Core docs](https://learn.microsoft.com/aspnet/core/) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
-| ASP.NET Core Authentication/Authorization | Required platform security baseline; IAM persistent auth, Gateway permission enforcement, Console Auth flow, OIDC callback/MFA hook and resource-scope ABAC grants exist, while a full OAuth/OIDC authorization server, WebAuthn and complex policy language remain future work. | [Authentication docs](https://learn.microsoft.com/aspnet/core/security/authentication/) / [Authorization docs](https://learn.microsoft.com/aspnet/core/security/authorization/introduction) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
-| FastEndpoints | Required endpoint framework for platform HTTP APIs. | [FastEndpoints docs](https://fast-endpoints.com/) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
-| FastEndpoints.Swagger | Required Gateway OpenAPI generation path. | [FastEndpoints Swagger docs](https://fast-endpoints.com/docs/swagger-support) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
-| netcorepal-cloud-framework | Required backend architectural baseline for platform domain services; AppHub and Ops have adopted the CleanDDD/netcorepal shape in the fourth slice. | [netcorepal-cloud-framework docs](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |
-| Aspire AppHost | Required deployment/development orchestration baseline; platform-level AppHost exists at `infra/aspire/Nerv.IIP.AppHost` and currently covers PlatformGateway, BusinessGateway, AppHub, IAM, Ops, FileStorage, Notification, Connector Host, Console, BusinessConsole, the registered Business services, PostgreSQL, Redis, optional RabbitMQ, MinIO, VictoriaLogs and optional OpenTelemetry Collector. RabbitMQ is created only for the `Messaging:Provider=RabbitMQ` profile; Redis is reused for CAP when `Messaging:Provider=Redis`. | [.NET Aspire docs](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
-| .NET Aspire Dashboard | Selected Microsoft-official, self-hostable, open-source short-term observability UI for local development, integration and PoC diagnostics; not a production log persistence backend. | [Aspire Dashboard docs](https://aspire.dev/dashboard/standalone/) | [microsoft/aspire](https://github.com/microsoft/aspire) |
-| PowerShell | Required verification-script runtime. | [PowerShell docs](https://learn.microsoft.com/powershell/) | [PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) |
-| OpenTelemetry | Required observability baseline. | [OpenTelemetry .NET docs](https://opentelemetry.io/docs/languages/dotnet/) | [open-telemetry/opentelemetry-dotnet](https://github.com/open-telemetry/opentelemetry-dotnet) |
-| Serilog | Required host-level structured logging provider; business code still uses `Microsoft.Extensions.Logging`. | [Serilog docs](https://serilog.net/) | [serilog/serilog](https://github.com/serilog/serilog) |
-| VictoriaLogs | Required built-in logs-only centralized storage and query backend for #304; pinned to `victoriametrics/victoria-logs:v1.50.0`, Apache License 2.0, OTLP logs endpoint `/insert/opentelemetry/v1/logs`, LogsQL query endpoint `/select/logsql/query`. | [VictoriaLogs docs](https://docs.victoriametrics.com/victorialogs/) / [OTLP ingestion](https://docs.victoriametrics.com/victorialogs/data-ingestion/opentelemetry/) / [LogsQL querying](https://docs.victoriametrics.com/victorialogs/querying/) | [VictoriaMetrics/VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaLogs) |
-| FusionCache | Required cache abstraction baseline. | [FusionCache docs](https://fusioncache.net/) | [ZiggyCreatures/FusionCache](https://github.com/ZiggyCreatures/FusionCache) |
-| NetCorePal.Template | Required backend service scaffold reference. Current `--Database` choices include PostgreSQL, GaussDB and DMDB; Nerv-IIP defaults to PostgreSQL profile. | [NuGet package](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal/netcorepal-cloud-template](https://github.com/netcorepal/netcorepal-cloud-template) |
+| .NET SDK | 必需的后端目标 SDK；项目目标为 `net10.0`。 | [.NET 文档](https://learn.microsoft.com/dotnet/) | [dotnet/sdk](https://github.com/dotnet/sdk) |
+| ASP.NET Core | Web 项目必需的 HTTP 宿主/运行时表面。 | [ASP.NET Core 文档](https://learn.microsoft.com/aspnet/core/) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
+| ASP.NET Core Authentication/Authorization | 必需的平台安全基线；IAM 持久化认证、Gateway 权限执行、Console Auth 流程、OIDC 回调/MFA 钩子和资源范围 ABAC 授权已存在，而完整 OAuth/OIDC 授权服务器、WebAuthn 和复杂策略语言仍是后续工作。 | [认证文档](https://learn.microsoft.com/aspnet/core/security/authentication/) / [授权文档](https://learn.microsoft.com/aspnet/core/security/authorization/introduction) | [dotnet/aspnetcore](https://github.com/dotnet/aspnetcore) |
+| FastEndpoints | 平台 HTTP API 所必需的 endpoint 框架。 | [FastEndpoints 文档](https://fast-endpoints.com/) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
+| FastEndpoints.Swagger | Gateway OpenAPI 生成的必需路径。 | [FastEndpoints Swagger 文档](https://fast-endpoints.com/docs/swagger-support) | [FastEndpoints/FastEndpoints](https://github.com/FastEndpoints/FastEndpoints) |
+| netcorepal-cloud-framework | 平台领域服务所必需的后端架构基线；AppHub 和 Ops 已在第四切片中采用 CleanDDD/netcorepal 结构。 | [netcorepal-cloud-framework 文档](https://netcorepal.github.io/netcorepal-cloud-framework/) | [netcorepal/netcorepal-cloud-framework](https://github.com/netcorepal/netcorepal-cloud-framework) |
+| Aspire AppHost | 必需的部署/开发编排基线；平台级 AppHost 位于 `infra/aspire/Nerv.IIP.AppHost`，当前覆盖 PlatformGateway、BusinessGateway、AppHub、IAM、Ops、FileStorage、Notification、Connector Host、Console、BusinessConsole、已登记的业务服务、PostgreSQL、Redis、可选 RabbitMQ、MinIO、VictoriaLogs 和可选 OpenTelemetry Collector。RabbitMQ 仅在 `Messaging:Provider=RabbitMQ` 配置档创建；当 `Messaging:Provider=Redis` 时，Redis 复用于 CAP。 | [.NET Aspire 文档](https://learn.microsoft.com/dotnet/aspire/) | [dotnet/aspire](https://github.com/dotnet/aspire) |
+| .NET Aspire Dashboard | 已选 Microsoft 官方、可自托管、开源的短期可观测性 UI，用于本地开发、集成和 PoC 诊断；不是生产日志持久化后端。 | [Aspire Dashboard 文档](https://aspire.dev/dashboard/standalone/) | [microsoft/aspire](https://github.com/microsoft/aspire) |
+| PowerShell | 必需的验证脚本运行时。 | [PowerShell 文档](https://learn.microsoft.com/powershell/) | [PowerShell/PowerShell](https://github.com/PowerShell/PowerShell) |
+| OpenTelemetry | 必需的可观测性基线。 | [OpenTelemetry .NET 文档](https://opentelemetry.io/docs/languages/dotnet/) | [open-telemetry/opentelemetry-dotnet](https://github.com/open-telemetry/opentelemetry-dotnet) |
+| Serilog | 必需的宿主级结构化日志提供方；业务代码仍使用 `Microsoft.Extensions.Logging`。 | [Serilog 文档](https://serilog.net/) | [serilog/serilog](https://github.com/serilog/serilog) |
+| VictoriaLogs | #304 所必需的内置仅日志集中存储和查询后端；固定为 `victoriametrics/victoria-logs:v1.50.0`、Apache License 2.0、OTLP 日志 endpoint `/insert/opentelemetry/v1/logs`、LogsQL 查询 endpoint `/select/logsql/query`。 | [VictoriaLogs 文档](https://docs.victoriametrics.com/victorialogs/) / [OTLP 摄取](https://docs.victoriametrics.com/victorialogs/data-ingestion/opentelemetry/) / [LogsQL 查询](https://docs.victoriametrics.com/victorialogs/querying/) | [VictoriaMetrics/VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaLogs) |
+| FusionCache | 必需的缓存抽象基线。 | [FusionCache 文档](https://fusioncache.net/) | [ZiggyCreatures/FusionCache](https://github.com/ZiggyCreatures/FusionCache) |
+| NetCorePal.Template | 必需的后端服务脚手架参考。当前 `--Database` 可选 PostgreSQL、GaussDB 和 DMDB；Nerv-IIP 默认使用 PostgreSQL 配置档。 | [NuGet 包](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal/netcorepal-cloud-template](https://github.com/netcorepal/netcorepal-cloud-template) |
 
-## Data, Messaging And Storage
+## 数据、消息与存储（Data, Messaging And Storage）
 
-| Technology | Current status | Documentation | Repository |
+| 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
-| PostgreSQL | Required primary persistence baseline; AppHub/Ops/IAM PostgreSQL profiles are implemented with migration-based verification, dev-only auto-migration gates and idempotent seed baseline where applicable. Production migrations and seed flow are governed by ADR 0009. | [PostgreSQL docs](https://www.postgresql.org/docs/current/) | [postgres/postgres](https://github.com/postgres/postgres) |
-| GaussDB / DMDB | Template-supported domestic database profile candidates for 信创 validation; not the default profile and not production-supported in Nerv-IIP until provider, CAP storage, migrations and tests are verified in this repo. | [NetCorePal.Template package](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal-cloud-template template.json](https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json) |
-| Redis | Required cache/backplane baseline; fourth-stage AppHost and local compose include Redis. When `Messaging:Provider=Redis`, Redis also carries CAP Redis Streams and must use persistent storage plus RDB/AOF-level durability settings. | [Redis docs](https://redis.io/docs/latest/) | [redis/redis](https://github.com/redis/redis) |
-| RabbitMQ | Optional messaging provider for multi-instance or higher-reliability cross-process event delivery. RabbitMQ remains the preferred broker profile when Redis Streams durability, throughput or operational semantics are insufficient. | [RabbitMQ docs](https://www.rabbitmq.com/docs) | [rabbitmq/rabbitmq-server](https://github.com/rabbitmq/rabbitmq-server) |
-| DotNetCore.CAP.RedisStreams | Optional CAP transport for single-machine or moderate-throughput deployments where Redis can carry both cache/session and message bus duties. Uses package version `10.0.1`, aligned with the main CAP packages. | [CAP Redis Streams docs](https://cap.dotnetcore.xyz/user-guide/en/transport/redis-streams/) / [NuGet package](https://www.nuget.org/packages/DotNetCore.CAP.RedisStreams/10.0.1) | [dotnetcore/CAP](https://github.com/dotnetcore/CAP) |
-| Savorboard.CAP.InMemoryMessageQueue | Required default Development CAP transport where `Messaging:Provider` is omitted or set to `InMemory`; CAP outbox storage still uses the service database profile. Non-Development environments must not use it. | [CAP In-Memory Queue docs](https://cap.dotnetcore.xyz/user-guide/en/transport/in-memory-queue/) | [dotnetcore/CAP](https://github.com/dotnetcore/CAP) |
-| S3-compatible object storage | Frozen object-storage baseline; local development uses the S3-compatible local runtime image `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`, while FileStorage continues to depend on the provider abstraction for MinIO, AIStor or equivalent S3-compatible backends. | [MinIO/AIStor S3 compatibility reference](https://docs.min.io/community/minio-object-store/reference/s3-api-compatibility.html) | [pgsty/minio local runtime image](https://hub.docker.com/r/pgsty/minio) |
-| Qdrant | Frozen vector-store baseline for future knowledge/RAG work. | [Qdrant docs](https://qdrant.tech/documentation/) | [qdrant/qdrant](https://github.com/qdrant/qdrant) |
+| PostgreSQL | 必需的主持久化基线；AppHub/Ops/IAM 的 PostgreSQL 配置档已通过基于迁移的验证、仅开发环境自动迁移门禁和适用时的幂等 seed 基线落地。生产迁移和 seed 流程由 ADR 0009 治理。 | [PostgreSQL 文档](https://www.postgresql.org/docs/current/) | [postgres/postgres](https://github.com/postgres/postgres) |
+| GaussDB / DMDB | 模板支持的国产数据库配置档候选，用于信创验证；在本仓库验证 provider、CAP 存储、迁移和测试前，不是 Nerv-IIP 的默认配置档，也不受生产支持。 | [NetCorePal.Template 包](https://www.nuget.org/packages/NetCorePal.Template) | [netcorepal-cloud-template template.json](https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json) |
+| Redis | 必需的缓存/背板基线；第四阶段 AppHost 和本地 compose 包含 Redis。当 `Messaging:Provider=Redis` 时，Redis 还承载 CAP Redis Streams，且必须使用持久化存储及 RDB/AOF 级耐久性设置。 | [Redis 文档](https://redis.io/docs/latest/) | [redis/redis](https://github.com/redis/redis) |
+| RabbitMQ | 用于多实例或更高可靠性跨进程事件传递的可选消息提供方。当 Redis Streams 的耐久性、吞吐量或运维语义不足时，RabbitMQ 仍是首选 broker 配置档。 | [RabbitMQ 文档](https://www.rabbitmq.com/docs) | [rabbitmq/rabbitmq-server](https://github.com/rabbitmq/rabbitmq-server) |
+| DotNetCore.CAP.RedisStreams | 用于单机或中等吞吐量部署的可选 CAP transport，此时 Redis 可同时承担 cache/session 和消息总线职责。使用包版本 `10.0.1`，与主 CAP 包对齐。 | [CAP Redis Streams 文档](https://cap.dotnetcore.xyz/user-guide/en/transport/redis-streams/) / [NuGet 包](https://www.nuget.org/packages/DotNetCore.CAP.RedisStreams/10.0.1) | [dotnetcore/CAP](https://github.com/dotnetcore/CAP) |
+| Savorboard.CAP.InMemoryMessageQueue | 当 `Messaging:Provider` 省略或设为 `InMemory` 时必需的默认 Development CAP transport；CAP outbox 存储仍使用服务数据库配置档。非 Development 环境不得使用。 | [CAP In-Memory Queue 文档](https://cap.dotnetcore.xyz/user-guide/en/transport/in-memory-queue/) | [dotnetcore/CAP](https://github.com/dotnetcore/CAP) |
+| S3-compatible 对象存储 | 已冻结的对象存储基线；本地开发使用 S3 兼容的本地运行时镜像 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`，而 FileStorage 继续依赖 provider 抽象以支持 MinIO、AIStor 或等效 S3 兼容后端。 | [MinIO/AIStor S3 兼容性参考](https://docs.min.io/community/minio-object-store/reference/s3-api-compatibility.html) | [pgsty/minio 本地运行时镜像](https://hub.docker.com/r/pgsty/minio) |
+| Qdrant | 面向未来知识/RAG 工作的已冻结向量存储基线。 | [Qdrant 文档](https://qdrant.tech/documentation/) | [qdrant/qdrant](https://github.com/qdrant/qdrant) |
 
-## AI And Knowledge
+## AI 与知识（AI And Knowledge）
 
-| Technology | Current status | Documentation | Repository |
+| 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
-| Microsoft.Extensions.AI | Frozen AI integration baseline. | [Microsoft.Extensions.AI docs](https://learn.microsoft.com/dotnet/ai/ai-extensions) | [dotnet/extensions](https://github.com/dotnet/extensions) |
-| Microsoft.Extensions.DataIngestion | Frozen knowledge-ingestion baseline; code not yet implemented in current slices. | [Data ingestion docs](https://learn.microsoft.com/dotnet/ai/conceptual/data-ingestion) | [dotnet/extensions](https://github.com/dotnet/extensions) |
-| Microsoft.Extensions.VectorData | Frozen vector abstraction baseline. | [Vector store docs](https://learn.microsoft.com/dotnet/ai/vector-stores/overview) | [dotnet/extensions](https://github.com/dotnet/extensions) |
+| Microsoft.Extensions.AI | 已冻结的 AI 集成基线。 | [Microsoft.Extensions.AI 文档](https://learn.microsoft.com/dotnet/ai/ai-extensions) | [dotnet/extensions](https://github.com/dotnet/extensions) |
+| Microsoft.Extensions.DataIngestion | 已冻结的知识摄取基线；当前切片尚未实现代码。 | [数据摄取文档](https://learn.microsoft.com/dotnet/ai/conceptual/data-ingestion) | [dotnet/extensions](https://github.com/dotnet/extensions) |
+| Microsoft.Extensions.VectorData | 已冻结的向量抽象基线。 | [向量存储文档](https://learn.microsoft.com/dotnet/ai/vector-stores/overview) | [dotnet/extensions](https://github.com/dotnet/extensions) |
 
-## Update Rule
+## 更新规则（Update Rule）
 
-When adding a new long-lived framework, runtime, database, broker, SDK, or code-generation tool, update this file in the same change that introduces the dependency. For transient implementation-only packages, prefer package manifests and lockfiles as the source of truth instead of expanding this reference table.
+新增长期使用的框架、运行时（runtime）、数据库、broker、SDK 或代码生成工具时，必须在引入依赖的同一变更中更新本文件。对于短暂的仅实现期包，应以 package manifest 和 lockfile 为事实来源，而不是扩充本参考表。

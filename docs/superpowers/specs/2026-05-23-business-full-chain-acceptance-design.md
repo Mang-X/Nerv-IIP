@@ -1,28 +1,28 @@
-# Business Full-Chain Acceptance Design
+# 业务全链验收设计
 
-## Context
+## 背景
 
-The business platform now has code for MasterData, ProductEngineering, Inventory, Quality, MES, DemandPlanning, BarcodeLabel, BusinessApproval, WMS, IndustrialTelemetry and Maintenance. ERP is the remaining business service. Full-chain acceptance #77 should start only after ERP #137, #138 and #139 pass their final verify script.
+业务平台当前已经具备 MasterData、ProductEngineering、Inventory、Quality、MES、DemandPlanning、BarcodeLabel、BusinessApproval、WMS、IndustrialTelemetry 和 Maintenance 的代码。ERP 是尚未完成的业务服务。只有在 ERP #137、#138 和 #139 通过其最终验证脚本后，才应启动全链验收 #77。
 
-This design refreshes the older 2026-05-20 full-chain plan with current code facts and issue state.
+本设计根据当前代码事实和 issue 状态更新此前的 2026-05-20 全链计划。
 
-## Goals
+## 目标
 
-1. Create an acceptance test project outside individual business services.
-2. Verify seven critical business chains through public HTTP APIs and integration-event-visible facts.
-3. Use authorized clients and service-level contracts, not service database reads, for primary assertions.
-4. Produce a single `scripts/verify-business-full-chain-acceptance.ps1` entrypoint.
-5. Record enough document IDs and event names in failures to make cross-service defects diagnosable.
+1. 在各个业务服务之外创建一个验收测试项目。
+2. 通过公开 HTTP API 和集成事件可见事实验证七条关键业务链。
+3. 主要断言使用已授权客户端和服务级契约，而不是读取服务数据库。
+4. 提供统一入口 `scripts/verify-business-full-chain-acceptance.ps1`。
+5. 在失败信息中记录足够的单据 ID 和事件名，使跨服务缺陷可诊断。
 
-## Non-Goals
+## 非目标
 
-1. Do not implement missing service domain behavior in the acceptance project.
-2. Do not read service tables directly for primary assertions.
-3. Do not add a visual Gantt or scheduling UI.
-4. Do not use production object storage, external PLC/DCS/SCADA or real WCS hardware.
-5. Do not require RabbitMQ unless the verify run explicitly chooses `Messaging:Provider=RabbitMQ`.
+1. 不在验收项目中实现缺失的服务领域行为。
+2. 主要断言不得直接读取服务表。
+3. 不新增可视化 Gantt 或排程 UI。
+4. 不使用生产对象存储、外部 PLC/DCS/SCADA 或真实 WCS 硬件。
+5. 除非验证运行显式选择 `Messaging:Provider=RabbitMQ`，否则不要求使用 RabbitMQ。
 
-## Prerequisites
+## 前置条件
 
 1. `scripts/verify-business-wave1-foundation.ps1`
 2. `scripts/verify-business-wave2-execution.ps1`
@@ -30,67 +30,67 @@ This design refreshes the older 2026-05-20 full-chain plan with current code fac
 4. `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
 5. `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`
 
-## Pre-Acceptance Review
+## 验收前审查
 
-Before writing the seven chain tests, inspect and either fix or document these audit findings:
+在编写七条业务链测试之前，检查以下审计发现，并修复或记录它们：
 
-1. WMS Inventory posting must be real enough for acceptance. A no-op movement client is acceptable for service-local tests but not for procure-to-pay or order-to-cash proof.
-2. WMS public event contracts should be consumable outside WMS. If the events remain Web-local, the acceptance harness must use public HTTP outcomes instead of pretending a shared contract exists.
-3. MES may need public query endpoints for work order, operation task, production report, schedule and finished-goods receipt request facts.
-4. MasterData, ProductEngineering and Quality endpoint authorization should match the repository rule for internal service APIs.
-5. CAP/outbox delivery can remain InMemory for the default local profile, but the event assertions must be written so a RabbitMQ profile can be added later without changing domain expectations.
+1. WMS Inventory 过账必须达到足以验收的真实性。空操作的库存移动客户端可用于服务本地测试，但不能用于证明采购到付款或订单到收款流程。
+2. WMS 公开事件契约应当可在 WMS 外部消费。如果事件仍然仅限 Web 层，验收工具必须使用公开 HTTP 结果，而不得假装存在共享契约。
+3. MES 可能需要为工单、工序任务、生产报工、排程和成品入库申请事实提供公开查询 endpoint。
+4. MasterData、ProductEngineering 和 Quality endpoint 的授权应当符合仓库对内部服务 API 的规则。
+5. 默认本地 profile 的 CAP/outbox 投递可以继续使用 InMemory，但事件断言的编写方式必须支持日后添加 RabbitMQ profile，而无需改变领域预期。
 
-## Acceptance Harness
+## 验收工具
 
-The test project lives at:
+测试项目位于：
 
 ```text
 backend/tests/Nerv.IIP.Business.Acceptance.Tests/
 ```
 
-The harness should:
+验收工具应当：
 
-1. Start service test hosts through existing WebApplicationFactory patterns where available.
-2. Use isolated test databases or in-memory profiles consistent with each service's existing tests.
-3. Seed IAM/internal-service authorization through existing test helpers.
-4. Expose typed or minimal `HttpClient` wrappers for each service.
-5. Capture integration events through public event converters, test bus hooks, or visible service API outcomes.
-6. Reset state between tests without reaching into another service's production database.
+1. 在现有 WebApplicationFactory 模式可用时，通过该模式启动服务测试宿主。
+2. 使用与各服务现有测试一致的隔离测试数据库或内存运行配置。
+3. 通过现有测试辅助工具预置 IAM/内部服务授权。
+4. 为每个服务公开强类型或最小化的 `HttpClient` 包装器。
+5. 通过公开事件转换器、测试总线钩子或可见的服务 API 结果捕获集成事件。
+6. 在测试之间重置状态，但不得访问另一个服务的生产数据库。
 
-## Chains
+## 业务链
 
-| Chain | Required Assertions |
+| 业务链 | 必需断言 |
 | --- | --- |
-| Engineering to manufacturing | Released ProductionVersion references MBOM and Routing; MES work order references ProductionVersion and released route facts. |
-| Plan to procure/produce | MRP creates planned purchase and planned work order suggestions; ERP and MES accept them with downstream document IDs; DemandPlanning marks suggestions accepted idempotently. |
-| Procure to inventory to payable | ERP receipt, Quality inspection, WMS inbound completion and Inventory movement produce an AP candidate with matching quantity and amount. |
-| Order to delivery to receivable | ERP sales order and delivery order, WMS outbound completion and Inventory movement produce an AR candidate with matching shipped quantity and amount. |
-| Production execution to cost | MES operation report and finished goods receipt request flow through WMS/Inventory and produce an ERP cost candidate. |
-| Equipment to maintenance to capacity | IndustrialTelemetry alarm opens Maintenance work order; Maintenance asset unavailable/restored events are visible to MES scheduling constraints. |
-| WMS to WCS adapter | WMS dispatches WCS task, records failure diagnostics, retries and completes task; Inventory movement is not posted before warehouse completion. |
+| 工程到制造 | 已发布的 ProductionVersion 引用 MBOM 和 Routing；MES 工单引用 ProductionVersion 和已发布路线事实。 |
+| 计划到采购/生产 | MRP 创建计划采购和计划工单建议；ERP 和 MES 接受这些建议并返回下游单据 ID；DemandPlanning 以幂等方式将建议标记为已接受。 |
+| 采购到库存到应付 | ERP 收货、Quality 检验、WMS 入库完成和 Inventory 移动产生数量与金额匹配的 AP 候选。 |
+| 订单到交付到应收 | ERP 销售订单和交付单、WMS 出库完成及 Inventory 移动产生已发货数量与金额匹配的 AR 候选。 |
+| 生产执行到成本 | MES 工序报工和成品入库申请流经 WMS/Inventory，并产生 ERP 成本候选。 |
+| 设备到维护到产能 | IndustrialTelemetry 告警创建 Maintenance 工单；Maintenance 资产不可用/已恢复事件对 MES 排程约束可见。 |
+| WMS 到 WCS 适配器 | WMS 下发 WCS 任务、记录失败诊断、重试并完成任务；仓库作业完成前不得执行 Inventory 移动过账。 |
 
-## Test Rules
+## 测试规则
 
-1. Tests use public APIs and documented integration event contracts.
-2. Assertions should prefer stable IDs, statuses, quantities, event names and downstream references.
-3. Database reads are allowed only in service-local fixtures already used by that service's own tests, and not as the cross-service acceptance proof.
-4. Tests should make failures actionable by including source document ID, downstream document ID, event name and chain name.
-5. Tests should be grouped so partial acceptance can run by chain while the full verify script runs everything.
+1. 测试使用公开 API 和已记录的集成事件契约。
+2. 断言应当优先使用稳定 ID、状态、数量、事件名和下游引用。
+3. 仅允许在服务自身测试已经使用的服务本地测试夹具（fixture）中读取数据库，并且不得将这种读取作为跨服务验收证明。
+4. 测试失败信息应当包含来源单据 ID、下游单据 ID、事件名和业务链名称，以便直接采取行动。
+5. 测试应当分组，使局部验收可按业务链运行，而完整验证脚本运行全部测试。
 
-## Issue Mapping
+## Issue 映射
 
-| Issue | Role |
+| Issue | 作用 |
 | --- | --- |
-| #77 | Full-chain acceptance epic and final gate. |
-| #76, #137, #138, #139 | ERP prerequisite for finance and commercial chains. |
-| #75, #136 | WMS prerequisite for warehouse chains. |
-| #74, #135 | MES prerequisite for manufacturing and production-to-cost chains. |
-| #129, #130 | Equipment reliability prerequisite for equipment-to-maintenance chain. |
+| #77 | 全链验收 epic 和最终门禁。 |
+| #76, #137, #138, #139 | 财务与商业业务链的 ERP 前置条件。 |
+| #75, #136 | 仓储业务链的 WMS 前置条件。 |
+| #74, #135 | 制造及生产到成本业务链的 MES 前置条件。 |
+| #129, #130 | 设备到维护业务链的设备可靠性前置条件。 |
 
-## Acceptance
+## 验收
 
-1. `backend/tests/Nerv.IIP.Business.Acceptance.Tests` is in `backend/Nerv.IIP.sln`.
-2. Each of the seven chains has at least one focused test.
-3. `scripts/verify-business-full-chain-acceptance.ps1` runs all prerequisites and the acceptance test project.
-4. Readiness docs and README point to the new verify script.
-5. #77 can be closed only after the verify script passes in the target local profile.
+1. `backend/tests/Nerv.IIP.Business.Acceptance.Tests` 位于 `backend/Nerv.IIP.sln` 中。
+2. 七条业务链中的每一条都至少有一个聚焦测试。
+3. `scripts/verify-business-full-chain-acceptance.ps1` 运行所有前置验证和验收测试项目。
+4. 实施就绪文档和 README 指向新的验证脚本。
+5. 只有在验证脚本于目标本地 profile 中通过后，才能关闭 #77。

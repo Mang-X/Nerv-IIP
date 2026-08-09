@@ -1,51 +1,51 @@
-# Business Wave 3 ERP Registration Verify Readiness Implementation Plan
+# 业务平台第 3 波 ERP 注册、验证与就绪状态实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Coordinate shared integration for ERP after #137, #138 and #139 service slices are ready.
+**目标：**在 #137、#138 和 #139 服务切片就绪后，协调 ERP 的共享集成工作。
 
-**Architecture:** ERP service slices own domain behavior. This plan owns shared solution/AppHost/IAM/schema/readiness/script integration and prepares Full-chain acceptance #77.
+**架构：**ERP 服务切片负责领域行为。本计划负责共享解决方案、AppHost、IAM、schema、就绪状态和脚本集成，并为全链路验收 #77 做准备。
 
-**Tech Stack:** .NET 10, Aspire AppHost, IAM seed, governed PowerShell scripts, Markdown architecture docs.
+**技术栈：**.NET 10、Aspire AppHost、IAM 初始数据、受治理的 PowerShell 脚本、Markdown 架构文档。
 
 ---
 
-## Specification
+## 规格
 
-Use:
+使用：
 
 1. `docs/superpowers/specs/2026-05-23-business-wave-3-agent-session-design.md`
 2. `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`
 
-## Files
+## 文件
 
-- Modify: `backend/Nerv.IIP.sln`
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
-- Modify: `docs/architecture/authorization-matrix.md`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
-- Create: `scripts/verify-business-erp-procurement-mvp.ps1`
-- Create: `scripts/verify-business-erp-sales-mvp.ps1`
-- Create: `scripts/verify-business-erp-finance-mvp.ps1`
-- Create: `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
+- 修改：`backend/Nerv.IIP.sln`
+- 修改：`infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 修改：`docs/architecture/authorization-matrix.md`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
+- 创建：`scripts/verify-business-erp-procurement-mvp.ps1`
+- 创建：`scripts/verify-business-erp-sales-mvp.ps1`
+- 创建：`scripts/verify-business-erp-finance-mvp.ps1`
+- 创建：`scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
 
-## Task 1: Confirm ERP Slice Readiness
+## 任务 1：确认 ERP 切片就绪状态
 
-- [ ] **Step 1: Inspect slice handoffs**
+- [ ] **步骤 1：检查切片交接信息**
 
-Read the final summaries for:
+阅读以下切片的最终摘要：
 
-1. #137 ERP Procurement
-2. #138 ERP Sales
-3. #139 ERP Finance
+1. #137 ERP 采购
+2. #138 ERP 销售
+3. #139 ERP 财务
 
-Copy each `Shared Changes Needed` section into the integration summary.
+将每个 `Shared Changes Needed` 章节复制到集成摘要中。
 
-- [ ] **Step 2: Verify local project presence**
+- [ ] **步骤 2：验证本地项目是否存在**
 
-Run:
+运行：
 
 ```powershell
 rg --files backend/services/Business/Erp
@@ -53,33 +53,33 @@ dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tes
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore
 ```
 
-Expected: ERP projects exist and focused tests pass.
+预期：ERP 项目存在，且聚焦测试通过。
 
-## Task 2: Add Solution And AppHost Registration
+## 任务 2：添加解决方案和 AppHost 注册
 
-- [ ] **Step 1: Add solution entries**
+- [ ] **步骤 1：添加解决方案条目**
 
-Add ERP Domain, Infrastructure, Web, Domain.Tests and Web.Tests projects to `backend/Nerv.IIP.sln`.
+将 ERP Domain、Infrastructure、Web、Domain.Tests 和 Web.Tests 项目添加到 `backend/Nerv.IIP.sln`。
 
-- [ ] **Step 2: Build backend solution**
+- [ ] **步骤 2：构建后端解决方案**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: solution builds. If ERP fails, return the blocker to the owning slice instead of hiding it in integration.
+预期：解决方案构建成功。如果 ERP 失败，应将阻塞问题退回所属切片，不得将其隐藏在集成工作中。
 
-- [ ] **Step 3: Register ERP in AppHost**
+- [ ] **步骤 3：在 AppHost 中注册 ERP**
 
-Add PostgreSQL database:
+添加 PostgreSQL 数据库：
 
 ```csharp
 var businessErpDatabase = postgres.AddDatabase("business-erp-db", "nerv_iip_erp");
 ```
 
-Register the service as `business-erp`, using local port `5118` unless the port matrix changed:
+将服务注册为 `business-erp`；除非端口矩阵已经变更，否则使用本地端口 `5118`：
 
 ```csharp
 var businessErp = builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp")
@@ -93,23 +93,23 @@ var businessErp = builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("busine
     .WaitFor(otelCollector);
 ```
 
-Add RabbitMQ reference under the existing `rabbitmq is not null` pattern, add Gateway reference if needed, and include `businessErp` in Gateway references.
+按照现有的 `rabbitmq is not null` 模式添加 RabbitMQ 引用；如有需要，添加 Gateway 引用，并将 `businessErp` 纳入 Gateway 引用列表。
 
-- [ ] **Step 4: Build AppHost**
+- [ ] **步骤 4：构建 AppHost**
 
-Run:
+运行：
 
 ```powershell
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: AppHost builds.
+预期：AppHost 构建成功。
 
-## Task 3: Add IAM, Schema And Readiness Docs
+## 任务 3：添加 IAM、schema 和就绪状态文档
 
-- [ ] **Step 1: Seed permissions**
+- [ ] **步骤 1：写入初始权限数据**
 
-Add:
+添加：
 
 1. `business.erp.procurement.read`
 2. `business.erp.procurement.manage`
@@ -118,60 +118,60 @@ Add:
 5. `business.erp.finance.read`
 6. `business.erp.finance.manage`
 
-- [ ] **Step 2: Update authorization matrix**
+- [ ] **步骤 2：更新授权矩阵**
 
-Document each permission and owner area.
+记录每项权限及其所属区域。
 
-- [ ] **Step 3: Update schema catalog**
+- [ ] **步骤 3：更新 schema 目录**
 
-Add `erp` tables from Procurement, Sales and Finance. Confirm comments and JSON/text column guidance match schema convention tests.
+添加采购、销售和财务中的 `erp` 表。确认注释以及 JSON/文本列指导与 schema 约定测试一致。
 
-- [ ] **Step 4: Update readiness and README**
+- [ ] **步骤 4：更新就绪状态文档和 README**
 
-Update current facts:
+更新当前事实：
 
-1. ERP is implemented only when all three slice verify scripts pass.
-2. ERP uses port 5118.
-3. Full-chain acceptance is unblocked only after ERP final verify passes.
+1. 只有三个切片的验证脚本全部通过，才能将 ERP 标记为已实现。
+2. ERP 使用端口 5118。
+3. 只有 ERP 最终验证通过后，才能将全链路验收标记为已解除阻塞。
 
-## Task 4: Create Verify Scripts
+## 任务 4：创建验证脚本
 
-- [ ] **Step 1: Create focused scripts**
+- [ ] **步骤 1：创建聚焦验证脚本**
 
-Each script must dot-source `scripts/lib/ScriptAutomation.ps1` and use helper functions rather than direct native command calls.
+每个脚本都必须点引用 `scripts/lib/ScriptAutomation.ps1`，并使用辅助函数，不得直接调用原生命令。
 
-Focused scripts:
+聚焦验证脚本：
 
 1. `scripts/verify-business-erp-procurement-mvp.ps1`
 2. `scripts/verify-business-erp-sales-mvp.ps1`
 3. `scripts/verify-business-erp-finance-mvp.ps1`
 
-Each script runs ERP Domain/Web tests with filters appropriate to its slice plus schema convention tests when mappings are touched.
+每个脚本都应使用适合所属切片的筛选条件运行 ERP Domain/Web 测试；如果触及映射，还应运行 schema 约定测试。
 
-- [ ] **Step 2: Create final ERP aggregate script**
+- [ ] **步骤 2：创建 ERP 最终聚合脚本**
 
-`scripts/verify-business-erp-procurement-sales-finance-mvp.ps1` should run:
+`scripts/verify-business-erp-procurement-sales-finance-mvp.ps1` 应运行：
 
-1. ERP procurement verify.
-2. ERP sales verify.
-3. ERP finance verify.
+1. ERP 采购验证。
+2. ERP 销售验证。
+3. ERP 财务验证。
 4. `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`.
 
-- [ ] **Step 3: Run governance**
+- [ ] **步骤 3：运行治理门禁**
 
-Run:
+运行：
 
 ```powershell
 scripts/check-script-governance.ps1
 ```
 
-Expected: script governance passes.
+预期：脚本治理门禁通过。
 
-## Task 5: Run Final ERP Integration Verification
+## 任务 5：运行 ERP 最终集成验证
 
-- [ ] **Step 1: Run focused and aggregate checks**
+- [ ] **步骤 1：运行聚焦检查和聚合检查**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-erp-procurement-mvp.ps1
@@ -181,11 +181,11 @@ scripts/verify-business-erp-procurement-sales-finance-mvp.ps1
 git diff --check
 ```
 
-Expected: all checks pass.
+预期：所有检查均通过。
 
-- [ ] **Step 2: Record Wave 3 integration state**
+- [ ] **步骤 2：记录第 3 波集成状态**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Wave 3 ERP Integration State
@@ -197,9 +197,9 @@ In the PR/session summary, include:
 - Full-chain acceptance: unblocked | blocked - reason
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. ERP is the only new Wave 3 service.
-2. Local port 5118 is documented everywhere it is used.
-3. IAM seed, authorization matrix, schema catalog and readiness agree.
-4. Full-chain acceptance is not marked unblocked until final ERP verify passes.
+1. ERP 是第 3 波唯一新增的服务。
+2. 所有使用本地端口 5118 的位置都已记录该端口。
+3. IAM 初始数据、授权矩阵、schema 目录和就绪状态相互一致。
+4. ERP 最终验证通过前，不得将全链路验收标记为已解除阻塞。

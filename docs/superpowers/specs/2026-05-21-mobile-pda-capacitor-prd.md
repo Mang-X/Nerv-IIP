@@ -1,4 +1,4 @@
-# Mobile PDA Capacitor PRD
+# 移动 PDA Capacitor 产品需求文档
 
 本文档定义 Nerv-IIP 移动端 PDA 应用的产品需求、范围边界、验收标准和阶段规划。技术选型结论见 [mobile-pda-capacitor-architecture.md](../../architecture/mobile-pda-capacitor-architecture.md)。
 
@@ -398,7 +398,7 @@ PDA 首批复用现有业务权限码：
 
 ## 发布计划
 
-### Milestone 0. 技术验证
+### 里程碑 0：技术验证
 
 目标：验证 Capacitor + Vue + Android PDA 硬件扫描 + 本地 outbox 的可行性。
 
@@ -410,7 +410,7 @@ PDA 首批复用现有业务权限码：
 4. 本地 SQLite/outbox 原型。
 5. 与 BusinessGateway mock/mobile facade 的一次端到端提交。
 
-### Milestone 1. WMS MVP
+### 里程碑 1：WMS MVP
 
 目标：交付收货、上架、拣货、复核、盘点。
 
@@ -422,7 +422,7 @@ PDA 首批复用现有业务权限码：
 4. 真实业务服务 OpenAPI 和权限 enforcement。
 5. 2 个 PDA 型号验收。
 
-### Milestone 2. MES/Quality/Maintenance 扩展
+### 里程碑 2：MES/Quality/Maintenance 扩展
 
 目标：把 PDA 扩展到产线报工、质检和维修。
 
@@ -433,7 +433,7 @@ PDA 首批复用现有业务权限码：
 3. Maintenance 点检/维修。
 4. 标签打印和设备诊断增强。
 
-### Milestone 3. 企业化交付
+### 里程碑 3：企业化交付
 
 目标：形成客户现场可规模部署的移动应用能力。
 

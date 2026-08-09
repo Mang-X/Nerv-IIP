@@ -19,11 +19,11 @@ const orders = [
 
 # NvCarousel 轮播图
 
-横向轮播——移动端 [NvSwiper](/components/mobile/swiper) 的桌面版。指针可拖拽、吸附到最近一屏，并补充 PC 专属的**左右箭头**（hover 浮现）与**悬停暂停**的自动播放。幻灯片由默认插槽直接书写，或 `:items` 数据驱动。自包含，不依赖外部轮播库。
+横向轮播——移动端 [NvSwiper](/components/mobile/swiper) 的桌面版。指针可拖拽、吸附到最近一屏，并补充 PC 专属的**左右箭头**（悬停时浮现）与**悬停暂停**的自动播放。幻灯片由默认插槽直接书写，或 `:items` 数据驱动。自包含，不依赖外部轮播库。
 
 ## 基础用法
 
-`autoplay` 设自动切换毫秒，`loop` 首尾循环。鼠标移入暂停，箭头随 hover 浮现。
+`autoplay` 设置自动切换间隔（毫秒），`loop` 控制首尾循环。鼠标移入时暂停，箭头随悬停状态浮现。
 
 <Demo block>
   <NvCarousel :autoplay="3500" loop class="aspect-[21/9]">
@@ -73,9 +73,9 @@ const orders = [
 | 属性            | 说明                                     | 类型        | 默认    |
 | --------------- | ---------------------------------------- | ----------- | ------- |
 | `items`         | 数据驱动幻灯片（省略则用默认插槽）       | `unknown[]` | —       |
-| `autoplay`      | 自动切换间隔（毫秒，0 关闭；hover 暂停） | `number`    | `0`     |
+| `autoplay`      | 自动切换间隔（毫秒，0 关闭；悬停时暂停） | `number`    | `0`     |
 | `loop`          | 首尾循环                                 | `boolean`   | `false` |
-| `arrows`        | 左右箭头（hover 浮现）                   | `boolean`   | `true`  |
+| `arrows`        | 左右箭头（悬停时浮现）                   | `boolean`   | `true`  |
 | `dots`          | 圆点指示器                               | `boolean`   | `true`  |
 | `frame`         | 视口圆角灰底背板                         | `boolean`   | `true`  |
 | `v-model:index` | 当前页索引                               | `number`    | `0`     |

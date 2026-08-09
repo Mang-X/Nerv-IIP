@@ -1,24 +1,24 @@
-# Business Industrial Telemetry MVP Implementation Plan
+# 业务工业遥测 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Build IndustrialTelemetry lite for tag mapping, controlled telemetry ingestion, device state snapshots, alarm events and coarse time-series summaries.
+**目标：**构建精简版 IndustrialTelemetry（工业遥测），用于标签映射、受控遥测摄取、设备状态快照、报警事件和粗粒度时序摘要。
 
-**Architecture:** IndustrialTelemetry is an independent CleanDDD service under `backend/services/Business/IndustrialTelemetry`. It accepts telemetry facts from Connector Host or authorized external clients through public APIs and business integration contracts. It does not own DeviceAsset master data, does not control PLC/DCS/SCADA and does not store high-frequency raw time-series data in the MVP.
+**架构：**IndustrialTelemetry（工业遥测）是 `backend/services/Business/IndustrialTelemetry` 下的独立 CleanDDD 服务。它通过公开 API 和业务集成契约接收来自 Connector Host（连接器宿主）或已授权外部客户端的遥测事实。它不持有 DeviceAsset（设备资产）主数据，不控制 PLC/DCS/SCADA，并且在 MVP 中不存储高频原始时序数据。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
+**技术栈：**.NET 10、FastEndpoints、MediatR、EF Core、Npgsql、netcorepal 集成事件、xUnit。
 
 ---
 
-## Boundaries
+## 边界
 
-1. Do not implement PLC/DCS control commands.
-2. Do not implement SCADA screen building.
-3. Do not store PLC/DCS credentials or raw control payloads.
-4. Do not own `DeviceAsset`; reference device assets by stable ID/code from MasterData.
-5. Do not create Maintenance work orders directly; publish alarm events for Maintenance to consume.
+1. 不得实现 PLC/DCS 控制命令。
+2. 不得实现 SCADA 画面构建。
+3. 不得存储 PLC/DCS 凭据或原始控制载荷。
+4. 不得持有 `DeviceAsset`；通过来自 MasterData（主数据服务）的稳定 ID/编码引用设备资产。
+5. 不得直接创建 Maintenance（维护）工单；发布报警事件供维护服务消费。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/
@@ -56,20 +56,20 @@ backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.Industrial
   IndustrialTelemetrySchemaConventionTests.cs
 ```
 
-## Task 1: Scaffold IndustrialTelemetry Service
+## 任务 1：搭建工业遥测（IndustrialTelemetry）服务脚手架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Nerv.IIP.Business.IndustrialTelemetry.Web.csproj`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/Nerv.IIP.Business.IndustrialTelemetry.Domain.csproj`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.csproj`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.csproj`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Nerv.IIP.Business.IndustrialTelemetry.Web.csproj`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/Nerv.IIP.Business.IndustrialTelemetry.Domain.csproj`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.csproj`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.csproj`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create service and test projects**
+- [ ] **步骤 1：创建服务和测试项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.IndustrialTelemetry -o backend/services/Business/IndustrialTelemetry --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -82,31 +82,31 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/IndustrialTelemetr
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj
 ```
 
-Expected: projects are added and no Maintenance project is created by this plan.
+预期结果：项目已添加，且本计划未创建 Maintenance（维护）项目。
 
-- [ ] **Step 2: Commit scaffold**
+- [ ] **步骤 2：提交脚手架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/services/Business/IndustrialTelemetry
 git commit -m "feat: scaffold industrial telemetry service"
 ```
 
-## Task 2: Implement Telemetry Domain Facts
+## 任务 2：实现遥测领域事实
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/IndustrialTelemetryFacts.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/TelemetryTagAggregate/TelemetryTag.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/DeviceStateSnapshotAggregate/DeviceStateSnapshot.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/AlarmEventAggregate/AlarmEvent.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/TelemetrySummaryAggregate/TelemetrySummary.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/IndustrialTelemetryAggregateTests.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/IndustrialTelemetryFacts.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/TelemetryTagAggregate/TelemetryTag.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/DeviceStateSnapshotAggregate/DeviceStateSnapshot.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/AlarmEventAggregate/AlarmEvent.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Domain/AggregatesModel/TelemetrySummaryAggregate/TelemetrySummary.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/IndustrialTelemetryAggregateTests.cs`
 
-- [ ] **Step 1: Write failing telemetry tests**
+- [ ] **步骤 1：编写失败的遥测测试**
 
-Create tests covering:
+创建涵盖以下内容的测试：
 
 ```csharp
 var tag = TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "spindle.speed", "number", "rpm", "sample-10s");
@@ -115,15 +115,15 @@ var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-CNC-01", "OVER_TEMP", "c
 alarm.Clear(DateTimeOffset.UtcNow.AddMinutes(10), "operator-001");
 ```
 
-Assert tag key is unique per device, source sequence is idempotent per tag/state stream, alarm external ID is idempotent, and no aggregate exposes a control command payload.
+断言标签键在每台设备内唯一、源序列对每条标签/状态流具有幂等性、报警外部 ID 具有幂等性，并且没有聚合暴露控制命令载荷。
 
-- [ ] **Step 2: Implement events**
+- [ ] **步骤 2：实现事件**
 
-Create `TelemetryTagCreatedDomainEvent`, `TelemetrySampleRecordedDomainEvent`, `DeviceStateChangedDomainEvent`, `AlarmRaisedDomainEvent` and `AlarmClearedDomainEvent`.
+创建 `TelemetryTagCreatedDomainEvent`、`TelemetrySampleRecordedDomainEvent`、`DeviceStateChangedDomainEvent`、`AlarmRaisedDomainEvent` 和 `AlarmClearedDomainEvent`。
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests/Nerv.IIP.Business.IndustrialTelemetry.Domain.Tests.csproj --no-restore
@@ -131,29 +131,29 @@ git add backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.Indu
 git commit -m "feat: add industrial telemetry facts"
 ```
 
-Expected: tests pass before commit.
+预期结果：测试在提交前通过。
 
-## Task 3: Add Persistence and Events
+## 任务 3：添加持久化和事件
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/TelemetryTagEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/DeviceStateSnapshotEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/AlarmEventEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/TelemetrySummaryEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/IntegrationEvents/IndustrialTelemetryIntegrationEvents.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryIntegrationEventTests.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetrySchemaConventionTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/TelemetryTagEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/DeviceStateSnapshotEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/AlarmEventEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Infrastructure/EntityConfigurations/TelemetrySummaryEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/IntegrationEvents/IndustrialTelemetryIntegrationEvents.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryIntegrationEventTests.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetrySchemaConventionTests.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
 
-- [ ] **Step 1: Configure schema**
+- [ ] **步骤 1：配置 schema**
 
-Use schema `industrial_telemetry`. Tables are `telemetry_tags`, `device_state_snapshots`, `alarm_events`, `telemetry_summaries`. Add unique indexes for `deviceAssetId + tagKey`, `deviceAssetId + sourceSequence`, and `externalAlarmId`.
+使用 schema `industrial_telemetry`。数据表为 `telemetry_tags`、`device_state_snapshots`、`alarm_events`、`telemetry_summaries`。为 `deviceAssetId + tagKey`、`deviceAssetId + sourceSequence` 和 `externalAlarmId` 添加唯一索引。
 
-- [ ] **Step 2: Define integration events**
+- [ ] **步骤 2：定义集成事件**
 
-Create:
+创建：
 
 ```csharp
 public sealed record DeviceStateChangedIntegrationEvent(string DeviceAssetId, string PreviousState, string CurrentState, DateTimeOffset OccurredAtUtc);
@@ -161,44 +161,44 @@ public sealed record AlarmRaisedIntegrationEvent(string AlarmId, string DeviceAs
 public sealed record AlarmClearedIntegrationEvent(string AlarmId, string DeviceAssetId, DateTimeOffset ClearedAtUtc);
 ```
 
-- [ ] **Step 3: Run schema and event tests**
+- [ ] **步骤 3：运行 schema 和事件测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~IndustrialTelemetrySchemaConventionTests|FullyQualifiedName~IndustrialTelemetryIntegrationEventTests"
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 4: Commit persistence**
+- [ ] **步骤 4：提交持久化实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Business/IndustrialTelemetry docs/architecture/database-schema-catalog.md
 git commit -m "feat: persist industrial telemetry facts"
 ```
 
-## Task 4: Add Telemetry API and Permissions
+## 任务 4：添加遥测 API 和权限
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/CreateTelemetryTagCommand.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/RecordTelemetrySampleCommand.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/RaiseAlarmCommand.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/ClearAlarmCommand.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/ListTelemetryTagsQuery.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/QueryDeviceStateTimelineQuery.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/ListAlarmEventsQuery.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Endpoints/Iiot/IiotEndpoints.cs`
-- Create: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryEndpointTests.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Auth/IndustrialTelemetryPermissionCodes.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/CreateTelemetryTagCommand.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/RecordTelemetrySampleCommand.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/RaiseAlarmCommand.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/ClearAlarmCommand.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/ListTelemetryTagsQuery.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/QueryDeviceStateTimelineQuery.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/ListAlarmEventsQuery.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Endpoints/Iiot/IiotEndpoints.cs`
+- 创建：`backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryEndpointTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
 
-- [ ] **Step 1: Add routes**
+- [ ] **步骤 1：添加路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/iiot/tags` | `business.iiot.tags.manage` |
 | `GET /api/business/v1/iiot/tags` | `business.iiot.telemetry.read` |
@@ -207,13 +207,13 @@ git commit -m "feat: persist industrial telemetry facts"
 | `GET /api/business/v1/iiot/alarms` | `business.iiot.alarms.read` |
 | `GET /api/business/v1/iiot/devices/{deviceAssetId}/timeline` | `business.iiot.telemetry.read` |
 
-- [ ] **Step 2: Seed permissions**
+- [ ] **步骤 2：写入初始权限数据**
 
-Seed `business.iiot.tags.manage`, `business.iiot.telemetry.read`, `business.iiot.telemetry.write`, `business.iiot.alarms.read`, `business.iiot.alarms.write`. Connector-host and external-client write tests must include organization/environment and capability scope.
+写入 `business.iiot.tags.manage`、`business.iiot.telemetry.read`、`business.iiot.telemetry.write`、`business.iiot.alarms.read`、`business.iiot.alarms.write` 的初始数据。Connector Host（连接器宿主）和外部客户端的写入测试必须包含组织/环境和能力范围。
 
-- [ ] **Step 3: Run tests and commit**
+- [ ] **步骤 3：运行测试并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --no-restore
@@ -222,39 +222,39 @@ git add backend/services/Business/IndustrialTelemetry backend/services/Iam/src/N
 git commit -m "feat: expose industrial telemetry api"
 ```
 
-Expected: tests pass before commit.
+预期结果：测试在提交前通过。
 
-## Task 5: Add Verification and Readiness
+## 任务 5：添加验证与就绪状态记录
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-business-industrial-telemetry-mvp.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
+- 创建：`scripts/verify-business-industrial-telemetry-mvp.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
 
-- [ ] **Step 1: Run verification**
+- [ ] **步骤 1：运行验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-industrial-telemetry-mvp.ps1
 git diff --check
 ```
 
-Expected: script runs IndustrialTelemetry domain and web tests and exits `0`.
+预期结果：脚本运行工业遥测领域测试和 Web 测试，并以 `0` 退出。
 
-- [ ] **Step 2: Commit docs**
+- [ ] **步骤 2：提交文档**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-business-industrial-telemetry-mvp.ps1 docs/architecture/implementation-readiness.md README.md
 git commit -m "docs: record industrial telemetry readiness"
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. IndustrialTelemetry is tracked independently from Maintenance.
-2. Connector-host writes are permissioned by telemetry write or alarm write permissions.
-3. No PLC/DCS/SCADA control command is modeled.
-4. Alarm and device-state events are available for Maintenance, MES, Planning and Notification consumers.
+1. IndustrialTelemetry（工业遥测）与 Maintenance（维护）分开跟踪。
+2. Connector Host（连接器宿主）写入由遥测写入权限或报警写入权限授权。
+3. 未建模任何 PLC/DCS/SCADA 控制命令。
+4. 报警事件和设备状态事件可供 Maintenance（维护）、MES、Planning（计划）和 Notification（通知）消费者使用。
