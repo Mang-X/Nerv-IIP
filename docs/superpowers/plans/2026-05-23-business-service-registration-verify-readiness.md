@@ -1,6 +1,6 @@
 # 业务服务注册、验证与就绪状态实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
 **目标：**实施 #140，协调第 1 波次的共享集成变更，包括解决方案条目、AppHost 注册、验证脚本模式、授权/schema 文档和就绪状态跟踪。
 

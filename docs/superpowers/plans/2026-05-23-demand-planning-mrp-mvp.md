@@ -1,6 +1,6 @@
 # DemandPlanning MPS/MRP MVP 实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**通过创建 DemandPlanning 实现 #128，使其成为需求来源、MPS、按日分桶的确定性 MRP 运行、计划采购/工单建议和需求追溯的事实来源。
 

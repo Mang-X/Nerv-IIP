@@ -1,6 +1,6 @@
 # 业务全链路验收实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
 **目标：**在 ERP 完成后，为七条关键业务链增加端到端验收覆盖，以实施 #77。
 

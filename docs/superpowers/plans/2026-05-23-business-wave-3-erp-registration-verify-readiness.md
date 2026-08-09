@@ -1,6 +1,6 @@
 # 业务平台第 3 波 ERP 注册、验证与就绪状态实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**在 #137、#138 和 #139 服务切片就绪后，协调 ERP 的共享集成工作。
 

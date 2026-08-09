@@ -1,6 +1,6 @@
 # ERP 财务 MVP 实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**通过向 ERP 添加财务 MVP 事实来实现 #139：AP、AR、借贷平衡的凭证和成本候选。
 

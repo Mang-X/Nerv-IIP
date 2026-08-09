@@ -1,6 +1,6 @@
 # 业务第 2 波次注册、验证与就绪状态实施计划
 
-> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
 **目标：**协调第 2 波次服务在 #128、#133、#134 和 #136 的服务分支就绪后的共享集成。
 
