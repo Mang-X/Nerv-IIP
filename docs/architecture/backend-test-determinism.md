@@ -1,15 +1,15 @@
 # 后端测试确定性与隔离契约
 
-本文定义 MAN-662 交付的共享测试时间、等待、超时、网络诊断、全局状态隔离和本地重复性验证契约。它不把一次本地通过解释为 CI 趋势、flake rate、lane timing 或 skip budget 证据。
+本文定义 MAN-662 交付的共享测试时间、等待、超时、网络诊断、全局状态隔离和本地重复性验证契约。它不把一次本地通过解释为 CI 趋势、偶发失败率、执行通道耗时或跳过预算证据。
 
 ## 时间与等待决策
 
 | 被测行为 | 时钟与等待方式 | 判定边界 |
 | --- | --- | --- |
-| scheduler、lease、expiry、renewal、retention | 注入 `TimeProvider`；测试使用 `FakeTimeProvider` 推进时间 | 不等待真实时间；生产代码与 timeout/timer 必须使用同一个 provider |
-| 真实 transport、进程启动、容器就绪、外部消费者可见性 | 使用 wall clock，并通过 `Eventually` 有界轮询可观察事实 | 不用一次固定 sleep 猜完成时刻；超时必须报告最后一次脱敏观测 |
-| 单次可能挂起的异步操作 | 使用 `TestTimeout.RunAsync` 和显式 timeout | helper 自己触发的 timeout 与 caller cancellation 分开；caller cancellation 原样传播 |
-| 负向断言（"不再发生第二次"）的 settle 窗口 | 使用 `Consistently.StaysAsync` 有界稳定性断言 | 整个窗口持续观测，第一次观测到违例即失败并报告脱敏观测；不得"睡一次再断言一次"。窗口关闭时仍在飞的那次观测不被丢弃：它在独立的 grace 预算内被等完再照常裁定（丢掉它等于丢掉最可能暴露违例的那一次）；grace 也超时才判**超时**（`ConsistentlyObservationTimeoutException`）——verdict unknown，既不是 pass 也不是违例。窗口本身仍是对"该事件没有可观测边沿"的承认——只要被测代码能给出边沿（例如未推进的注入时钟让计时器驱动的事件结构上不可能发生），就应当先消除窗口 |
+| 调度、租约、过期、续期、保留期 | 注入 `TimeProvider`；测试使用 `FakeTimeProvider` 推进时间 | 不等待真实时间；生产代码与超时/计时器必须使用同一个时间提供程序 |
+| 真实传输、进程启动、容器就绪、外部消费者可见性 | 使用真实时钟，并通过 `Eventually` 有界轮询可观察事实 | 不用一次固定休眠猜完成时刻；超时必须报告最后一次脱敏观测 |
+| 单次可能挂起的异步操作 | 使用 `TestTimeout.RunAsync` 和显式超时 | 辅助程序自己触发的超时与调用方取消分开；调用方取消原样传播 |
+| 负向断言（"不再发生第二次"）的稳定窗口 | 使用 `Consistently.StaysAsync` 有界稳定性断言 | 整个窗口持续观测，第一次观测到违例即失败并报告脱敏观测；不得"睡一次再断言一次"。窗口关闭时仍在飞的那次观测不被丢弃：它在独立的宽限预算内被等完再照常裁定（丢掉它等于丢掉最可能暴露违例的那一次）；宽限期也超时才判**超时**（`ConsistentlyObservationTimeoutException`）——裁定未知，既不是通过也不是违例。窗口本身仍是对"该事件没有可观测边沿"的承认——只要被测代码能给出边沿（例如未推进的注入时钟让计时器驱动的事件结构上不可能发生），就应当先消除窗口 |
 
 `Eventually` 的每次观测都必须可读、稳定并脱敏。示例：
 
@@ -36,123 +36,123 @@ await TestTimeout.RunAsync(
 ```
 
 **推进假时钟前必须先确认计时器已注册。** `FakeTimeProvider.Advance` 只会触发**当时已注册**的计时器；若被测代码在 `Advance`
-之后才创建 `Task.Delay`/`ITimer`，该计时器以已推进的 now 为基准重新定期，而此后没有任何东西再推进时钟——tick 永久丢失，
+之后才创建 `Task.Delay`/`ITimer`，该计时器以已推进的当前时刻为基准重新定期，而此后没有任何东西再推进时钟——触发永久丢失，
 等待方永远不返回。`await Task.Yield()` **不是**这种同步屏障：它只让出一次调度，不保证目标代码已跑到注册那一行。
 `BackgroundService.StartAsync` 返回时并不保证 `ExecuteAsync` 的方法体已执行，因此「`StartAsync` 之后计时器一定已注册」
 是不成立的假设。正确做法是有界地等待**「计时器已注册」这条边沿本身**再 `Advance`：现行标准设施是
 `TimerRegistrationObservingTimeProvider.WaitForTimerCountAsync(n)`（`CreateTimer` 内先 `base.CreateTimer` 再计数，
 信号严格晚于注册）；被测替身自己发边沿信号（`CapTestHostTests.FakeBootstrapper.BootstrapTimersRegistered`）只用在
-替身本来就要创建 pending 任务的场合，且该信号必须发在创建 pending 任务**之后**——发在之前就又变回一个不保证注册
-已发生的假屏障。业务结果——「命令已派发」「metric 已出现」——**都不是**这条边沿：它们仅在「生产代码今天恰好先建
+替身本来就要创建待处理任务的场合，且该信号必须发在创建待处理任务**之后**——发在之前就又变回一个不保证注册
+已发生的假屏障。业务结果——「命令已派发」「指标已出现」——**都不是**这条边沿：它们仅在「生产代码今天恰好先建
 计时器再干活」时才顺带成立，`ApprovalOverdueSchedulerTests`（S4）与
 `InventoryReservationExpirationTests`（#1491）各栽过一次。同一失败模式在 Connector Host 侧由 MAN-799 的
-`WaitForTimerCreatedAsync` 屏障处理；两套 helper 分处两个 solution，按仓库边界规则不得互相引用，结构重复是有意的。
+`WaitForTimerCreatedAsync` 屏障处理；两套辅助程序分处两个解决方案，按仓库边界规则不得互相引用，结构重复是有意的。
 
-超时诊断必须保留 `condition` 或 `operation`、尝试次数、elapsed 和最后一次业务观测；显式 sensitive values 以及 password、secret、token、credential、API key、connection string、headers 和 request body 必须经 `TestDiagnostic.Sanitize` 清除。不得把完整请求头、请求体、连接串或响应体放进 describe、异常或测试输出。
+超时诊断必须保留 `condition` 或 `operation`、尝试次数、已用时间和最后一次业务观测；显式敏感值以及密码、密钥、令牌、凭据、API 密钥、连接字符串、请求头和请求体必须经 `TestDiagnostic.Sanitize` 清除。不得把完整请求头、请求体、连接串或响应体放进观测描述、异常或测试输出。
 
 ## 网络结果与预算
 
-连接 timeout 和总 request timeout 都必须由调用方显式配置为正数；测试不得用一个模糊的总时长同时冒充 DNS、连接和业务响应预算。生产默认值按真实依赖的正常抖动取秒级（Ops→IAM 为 connect 5s / request 10s），毫秒级预算只由测试通过配置节覆盖；把测试预算写成发布默认值会让依赖的任何一次抖动变成 fail-closed 拒绝。
+连接超时和总请求超时都必须由调用方显式配置为正数；测试不得用一个模糊的总时长同时冒充 DNS、连接和业务响应预算。生产默认值按真实依赖的正常抖动取秒级（Ops→IAM 为连接 5s / 请求 10s），毫秒级预算只由测试通过配置节覆盖；把测试预算写成发布默认值会让依赖的任何一次抖动变成失败关闭式拒绝。
 
-`NetworkFailureClassifier.FromException` 强制传入 caller 的 `CancellationToken`：token 已取消时原样重抛原异常（`ExceptionDispatchInfo`），只有 helper 自己的超时才归类为 `RequestTimeout`。分类器不允许有"猜"caller 意图的默认参数。
+`NetworkFailureClassifier.FromException` 强制传入调用方的 `CancellationToken`：令牌已取消时原样重抛原异常（`ExceptionDispatchInfo`），只有辅助程序自己的超时才归类为 `RequestTimeout`。分类器不允许有"猜"调用方意图的默认参数。
 
-**分类优先级：取消/超时语义先于内层 socket 错误码。** 一个 `OperationCanceledException` 完全可能裹着一个 `SocketException`（放弃的那一刻恰好有一跳在飞）。此时按**取消**定论，不去读内层错误码：caller token 已取消则原样重抛，未取消则归 `RequestTimeout`，哪怕内层写着 `ConnectionRefused`。理由是四分法保留的判据是**谁拥有这次放弃**——放弃的是 helper 自己，内层那个错误码只是放弃时刻的一个实现细节，不是本次失败的结论；让它胜出等于用一个更靠里的偶然事实盖掉调用方唯一能据以决策的信息。两侧行为一致但落点不同：测试侧 `FromException` 把取消判定**前置**于 socket 搜索；生产侧 `IamOpsConnectorCredentialValidator` 的 `OperationCanceledException` catch 块根本不进 `ClassifyTransportFailure`（后者只接 `HttpRequestException`）。该优先级由 `NetworkFailureClassifierTests.FromException_RanksHelperOwnedCancellationAboveANestedTransportError` 与生产侧镜像 `OpsConnectorCredentialValidationTests.CancellationsWrappingATransportError` 逐行钉住。
+**分类优先级：取消/超时语义先于内层 socket 错误码。** 一个 `OperationCanceledException` 完全可能裹着一个 `SocketException`（放弃的那一刻恰好有一跳在飞）。此时按**取消**定论，不去读内层错误码：调用方令牌已取消则原样重抛，未取消则归 `RequestTimeout`，哪怕内层写着 `ConnectionRefused`。理由是四分法保留的判据是**谁拥有这次放弃**——放弃的是辅助程序自己，内层那个错误码只是放弃时刻的一个实现细节，不是本次失败的结论；让它胜出等于用一个更靠里的偶然事实盖掉调用方唯一能据以决策的信息。两侧行为一致但落点不同：测试侧 `FromException` 把取消判定**前置**于 socket 搜索；生产侧 `IamOpsConnectorCredentialValidator` 的 `OperationCanceledException` 捕获块根本不进 `ClassifyTransportFailure`（后者只接 `HttpRequestException`）。该优先级由 `NetworkFailureClassifierTests.FromException_RanksHelperOwnedCancellationAboveANestedTransportError` 与生产侧镜像 `OpsConnectorCredentialValidationTests.CancellationsWrappingATransportError` 逐行钉住。
 
 非 HTTP 客户端（Npgsql、裸 socket）不另立一套词汇：它们的传输失败以 `SocketException` 呈现，按 `SocketErrorCode` 归入同一四分法。两侧的 socket 搜索都从**异常自身**起步而不是从 `InnerException` 起步，因此裸 `SocketException` 与被驱动异常包裹的 `SocketException` 分类一致。
 
-`SocketError.TimedOut` 归入 `RequestTimeout`，这**不表示**建连阶段超时被并进了 request 预算：connect 预算与 request 预算始终分开配置（`OpsIamClientOptions` 的 `ConnectTimeout` 5s / `RequestTimeout` 10s），四分法保留的区分是 **caller 拥有的取消 vs helper 拥有的超时**，不是 connect 阶段 vs 交换阶段。枚举**不为此扩容**：再切一类 `ConnectTimeout` 会把「谁拥有这次放弃」这个真正的判据换成一个调用方无法据以决策的阶段标签。阶段信息属于诊断字段（预算、elapsed、脱敏 operation），不属于分类。
+`SocketError.TimedOut` 归入 `RequestTimeout`，这**不表示**建连阶段超时被并进了请求预算：连接预算与请求预算始终分开配置（`OpsIamClientOptions` 的 `ConnectTimeout` 5s / `RequestTimeout` 10s），四分法保留的区分是**调用方拥有的取消与辅助程序拥有的超时**，不是连接阶段与交换阶段。枚举**不为此扩容**：再切一类 `ConnectTimeout` 会把「谁拥有这次放弃」这个真正的判据换成一个调用方无法据以决策的阶段标签。阶段信息属于诊断字段（预算、已用时间、脱敏操作），不属于分类。
 
-生产侧的等价分类（如 `IamOpsConnectorCredentialValidator.ClassifyTransportFailure`）**刻意不复用** `Nerv.IIP.Testing`：发布程序集不得引用测试程序集。两处的相似结构是有意的边界重复，不是待消除的 duplication；任一侧改变分类语义时必须同步另一侧和本表。该同步不靠自觉：`OpsConnectorCredentialValidationTests.TransportFailures` 逐行同时断言 `NetworkFailureKind` 与生产侧的 `FailureKind` 字符串，任一侧漏同步即在此处变红。
+生产侧的等价分类（如 `IamOpsConnectorCredentialValidator.ClassifyTransportFailure`）**刻意不复用** `Nerv.IIP.Testing`：发布程序集不得引用测试程序集。两处的相似结构是有意的边界重复，不是待消除的重复代码；任一侧改变分类语义时必须同步另一侧和本表。该同步不靠自觉：`OpsConnectorCredentialValidationTests.TransportFailures` 逐行同时断言 `NetworkFailureKind` 与生产侧的 `FailureKind` 字符串，任一侧漏同步即在此处变红。
 
-镜像的**范围只到异常路径**（`ClassifyTransportFailure`）。HTTP **响应**路径两侧刻意不同，下表如实登记：测试侧 `FromResponse` 把对端上报的 408/504 归为 `RequestTimeout`，而生产侧只按 `IsSuccessStatusCode` 分叉，所有非成功且非 401 的响应一律记 `FailureKind=business-response`，数字 status code 走**独立的** `StatusCode` 日志属性而不是塞进 `FailureKind`。这不是漏同步：生产此处唯一的决策是 fail-closed 拒绝，它不需要区分对端超时与对端业务拒绝；需要区分的是测试断言。若哪天生产要按对端超时做重试，才把这条分叉补上并同步本表。
+镜像的**范围只到异常路径**（`ClassifyTransportFailure`）。HTTP **响应**路径两侧刻意不同，下表如实登记：测试侧 `FromResponse` 把对端上报的 408/504 归为 `RequestTimeout`，而生产侧只按 `IsSuccessStatusCode` 分叉，所有非成功且非 401 的响应一律记 `FailureKind=business-response`，数字状态码走**独立的** `StatusCode` 日志属性而不是塞进 `FailureKind`。这不是漏同步：生产此处唯一的决策是失败关闭式拒绝，它不需要区分对端超时与对端业务拒绝；需要区分的是测试断言。若哪天生产要按对端超时做重试，才把这条分叉补上并同步本表。
 
 | 结果 | 测试侧分类（`NetworkFailureClassifier`） | 生产侧 `FailureKind`（`IamOpsConnectorCredentialValidator`） | 必须保留 | 禁止混淆或输出 |
 | --- | --- | --- | --- | --- |
 | DNS 解析失败（`HttpRequestError.NameResolutionError`，或 socket `HostNotFound`/`NoData`/`TryAgain`/`NoRecovery`） | `NetworkFailureKind.Dns` | `dns` | 脱敏的 DNS 失败类别 | 不伪装为 HTTP 503；不输出目标凭据 |
-| 连接被拒绝（socket `ConnectionRefused`） | `NetworkFailureKind.ConnectionRefused` | `connection-refused` | 脱敏的 refused 类别 | 不伪装为 request timeout |
-| helper 自己的超时（HTTP 侧的 helper-owned cancellation，或 socket `TimedOut`；connect 与交换两个阶段同归此类） | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 预算、elapsed、脱敏 operation | caller cancellation 必须原样传播，不能改写成 timeout |
-| 取消异常内层裹着 socket 错误码（caller token **未**取消） | `NetworkFailureKind.RequestTimeout`（取消判定前置于 socket 搜索，内层错误码不参与） | `request-timeout`（`OperationCanceledException` catch 块，不进 `ClassifyTransportFailure`） | 预算、elapsed、脱敏 operation | 不按内层 `ConnectionRefused`/`HostNotFound` 改判；caller token 已取消时仍必须原样重抛 |
+| 连接被拒绝（socket `ConnectionRefused`） | `NetworkFailureKind.ConnectionRefused` | `connection-refused` | 脱敏的拒绝类别 | 不伪装为请求超时 |
+| 辅助程序自己的超时（HTTP 侧由辅助程序拥有的取消，或 socket `TimedOut`；连接与交换两个阶段同归此类） | `NetworkFailureKind.RequestTimeout` | `request-timeout` | 预算、已用时间、脱敏操作 | 调用方取消必须原样传播，不能改写成超时 |
+| 取消异常内层裹着 socket 错误码（调用方令牌**未**取消） | `NetworkFailureKind.RequestTimeout`（取消判定前置于 socket 搜索，内层错误码不参与） | `request-timeout`（`OperationCanceledException` 捕获块，不进 `ClassifyTransportFailure`） | 预算、已用时间、脱敏操作 | 不按内层 `ConnectionRefused`/`HostNotFound` 改判；调用方令牌已取消时仍必须原样重抛 |
 | 其余传输失败（未列入上面三行的 socket 错误码，以及不带 socket 异常的 `HttpRequestException`） | 分类器抛 `ArgumentException`（测试侧必须显式扩表） | `transport-error` | 脱敏的类别 | 不静默归入以上任何一类 |
-| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | `business-response`，`StatusCode=408`/`504`（生产不单独分叉，见上一段） | 数字 status code | 测试侧不并入 `BusinessError`，否则四分法失去意义 |
-| 其余非成功 HTTP 响应（401 除外） | `NetworkFailureKind.BusinessError` | `business-response`，数字 status code 记在 `StatusCode` | 数字 status code 与脱敏 reason phrase | 不记录 response body 或 headers；不降级成 transport fault |
+| 对端上报的 408 / 504 | `NetworkFailureKind.RequestTimeout` | `business-response`，`StatusCode=408`/`504`（生产不单独分叉，见上一段） | 数字状态码 | 测试侧不并入 `BusinessError`，否则四分法失去意义 |
+| 其余非成功 HTTP 响应（401 除外） | `NetworkFailureKind.BusinessError` | `business-response`，数字状态码记在 `StatusCode` | 数字状态码与脱敏原因短语 | 不记录响应体或请求头；不降级成传输故障 |
 | HTTP 401 | 无（不是网络失败） | 不记日志，直接 `iam-rejected` | 拒绝判定本身 | 不记为传输故障，也不写入凭据 |
-| 成功响应但 body 不可解析或 principal 不完整 | 无（不是网络失败） | `invalid-response`，`StatusCode` 为该成功码 | 数字 status code 与异常 | 不记录 response body |
+| 成功响应但响应体不可解析或主体不完整 | 无（不是网络失败） | `invalid-response`，`StatusCode` 为该成功码 | 数字状态码与异常 | 不记录响应体 |
 
 ## 可变全局状态隔离矩阵
 
 | 状态面 | 隔离方式 | 契约 |
 | --- | --- | --- |
-| FluentValidation global resolvers、current/default culture、`TZ` 与显式环境变量 | scoped capture/restore；所有 mutator 串行进入 `GlobalTestStateScope` | 精确区分原本不存在、空字符串和有值；`DisposeAsync` 必须恢复并释放 scope |
-| 同一服务内的 host startup 与共享 host fixture | xUnit collection serialization | 同一 service 的启动/停止不得跨 collection 并发；该约束不等于整个 solution 串行 |
-| BusinessGateway host startup（`Nerv.IIP.BusinessGateway.Web.Tests`） | `BusinessGatewayTestHostGate` 多读单写 permit：构建独占，请求共享；permit 由**服务端**中间件持有 | 见下方 MAN-663 一节。构建期间无请求在飞，请求期间无构建发生；程序集不再关闭并行 |
-| BusinessGateway 逐测试下游 fake 与 downstream health | 逐请求 scope header 路由到租约实例，租约释放即注销 | 无「写入再重置」步骤；旧 header 显式报错，不静默回落 |
-| FastEndpoints serializer、validation 和 discovery mutation | collection serialization **加** sacrificial process isolation | 变异只发生在一次性测试进程；进程结束即丢弃。FastEndpoints 进程静态状态不可恢复，绝不描述为 restore |
-| JSON 全局序列化选项 | 与上一行同源：`Config.Serializer.Options` 即 FastEndpoints 进程静态状态 | 不单独提供 restore 路径；普通程序集只断言"未观测到该变异" |
-| 静态缓存（`static readonly` 字典/`Lazy<T>`/`ConcurrentDictionary` memo） | 已盘点：目标程序集内无跨测试可写静态缓存；被测缓存均随 DI scope 或 `DbContext` 生命周期创建 | 新增可写静态缓存必须同时给出 scope 化方案，不得靠测试顺序回避 |
-| 服务定位器（静态 `IServiceProvider` / `ServiceLocator` 单例） | 已盘点：本仓库不使用静态服务定位器，依赖一律构造函数注入 | 引入任何进程级 provider 单例前先改本表；`WebApplicationFactory` 的 provider 属于 fixture 生命周期，不是全局状态 |
+| FluentValidation 全局解析器、当前/默认区域性、`TZ` 与显式环境变量 | 有作用域的捕获/恢复；所有变异器串行进入 `GlobalTestStateScope` | 精确区分原本不存在、空字符串和有值；`DisposeAsync` 必须恢复并释放作用域 |
+| 同一服务内的宿主启动与共享宿主夹具 | xUnit 测试集合串行化 | 同一服务的启动/停止不得跨测试集合并发；该约束不等于整个解决方案串行 |
+| BusinessGateway 宿主启动（`Nerv.IIP.BusinessGateway.Web.Tests`） | `BusinessGatewayTestHostGate` 多读单写许可：构建独占，请求共享；许可由**服务端**中间件持有 | 见下方 MAN-663 一节。构建期间无请求在飞，请求期间无构建发生；程序集不再关闭并行 |
+| BusinessGateway 逐测试下游替身与下游健康状态 | 逐请求作用域请求头路由到租约实例，租约释放即注销 | 无「写入再重置」步骤；旧请求头显式报错，不静默回落 |
+| FastEndpoints 序列化、验证和发现变异 | 测试集合串行化**加**一次性进程隔离 | 变异只发生在一次性测试进程；进程结束即丢弃。FastEndpoints 进程静态状态不可恢复，绝不描述为恢复 |
+| JSON 全局序列化选项 | 与上一行同源：`Config.Serializer.Options` 即 FastEndpoints 进程静态状态 | 不单独提供恢复路径；普通程序集只断言"未观测到该变异" |
+| 静态缓存（`static readonly` 字典/`Lazy<T>`/`ConcurrentDictionary` 记忆化缓存） | 已盘点：目标程序集内无跨测试可写静态缓存；被测缓存均随 DI 作用域或 `DbContext` 生命周期创建 | 新增可写静态缓存必须同时给出作用域化方案，不得靠测试顺序回避 |
+| 服务定位器（静态 `IServiceProvider` / `ServiceLocator` 单例） | 已盘点：本仓库不使用静态服务定位器，依赖一律构造函数注入 | 引入任何进程级提供程序单例前先改本表；`WebApplicationFactory` 的提供程序属于夹具生命周期，不是全局状态 |
 
-隔离的两侧都有断言：`Nerv.IIP.FastEndpoints.ProcessIsolation.Tests` 证明变异确实进程级泄漏且不可恢复；`Nerv.IIP.Ops.Web.Tests` 的 `FastEndpointsStaticStateIsolationTests` 从普通 lane 反向证明该变异不可被观测。"一程序集一进程"因此是有断言支撑的结论，而不是散文。
+隔离的两侧都有断言：`Nerv.IIP.FastEndpoints.ProcessIsolation.Tests` 证明变异确实进程级泄漏且不可恢复；`Nerv.IIP.Ops.Web.Tests` 的 `FastEndpointsStaticStateIsolationTests` 从普通执行通道反向证明该变异不可被观测。"一程序集一进程"因此是有断言支撑的结论，而不是散文。
 
-MAN-664 的 IndustrialTelemetry order-sensitive host surface 结构拆分仍明确 defer。
+MAN-664 的 IndustrialTelemetry 顺序敏感宿主界面结构拆分仍明确延后。
 
-## MAN-663 BusinessGateway 共享宿主 profile 与安全并行
+## MAN-663 BusinessGateway 共享宿主配置与安全并行
 
 `Nerv.IIP.BusinessGateway.Web.Tests` 原先为**每个**测试新建一个 `WebApplicationFactory<Program>`，并以
-`[assembly: CollectionBehavior(DisableTestParallelization = true)]` 关闭整程序集并行。该 attribute 不是隔离
+`[assembly: CollectionBehavior(DisableTestParallelization = true)]` 关闭整程序集并行。该特性不是隔离
 手段，只是把「每测试一宿主」这一成本掩盖成串行执行；同时存在的 `BusinessGatewayTestIsolationTests` 断言该
-attribute 必须存在，因此保护的是 workaround 本身，而不是它替代的隔离性质。两者已一并移除。
+特性必须存在，因此保护的是变通方案本身，而不是它替代的隔离性质。两者已一并移除。
 
 **为什么原来必须串行。** 唯一的进程级危险来自宿主构建：`Program.cs` 的
 `app.UseFastEndpoints(c => c.Serializer.Options.Converters.Add(...))` 写 FastEndpoints 进程静态状态。
-`BusinessGatewayTestHostGate` 精确处理这一点——多读单写信号量，宿主构建独占全部 permit，网关请求各占一个
-permit。因此「构建时无请求在飞、请求时无构建发生」，请求之间仍完全并行。这是真实互斥，
-**不宣称 FastEndpoints 静态状态可恢复**。这是根 `AGENTS.md`「Backend Test Determinism」允许的第三种手段
-（互斥门），与 collection serialization、sacrificial process isolation 并列，同样不声称 restore。
+`BusinessGatewayTestHostGate` 精确处理这一点——多读单写信号量，宿主构建独占全部许可，网关请求各占一个
+许可。因此「构建时无请求在飞、请求时无构建发生」，请求之间仍完全并行。这是真实互斥，
+**不宣称 FastEndpoints 静态状态可恢复**。这是根 `AGENTS.md`「后端测试确定性」允许的第三种手段
+（互斥门），与测试集合串行化、一次性进程隔离并列，同样不声称恢复。
 
-**permit 必须由服务端持有。** permit 曾由客户端 `DelegatingHandler` 环绕 `base.SendAsync` 持有，这是**不成立**的：
-TestServer 的 `ClientHandler` 在响应头 flush 时即返回，服务端仍在写 body；而 `HttpClient` 的
-`ResponseContentRead` 缓冲发生在 handler 链**之外**。于是存在「permit 已还、服务端仍在跑」的窗口，正是这道门要
-排除的竞态。现由 `RequestPermitStartupFilter` 注册的最外层中间件持有 permit，覆盖整条服务端管线。回归测试
+**许可必须由服务端持有。** 许可曾由客户端 `DelegatingHandler` 环绕 `base.SendAsync` 持有，这是**不成立**的：
+TestServer 的 `ClientHandler` 在刷新响应头时即返回，服务端仍在写响应体；而 `HttpClient` 的
+`ResponseContentRead` 缓冲发生在处理程序链**之外**。于是存在「许可已还、服务端仍在跑」的窗口，正是这道门要
+排除的竞态。现由 `RequestPermitStartupFilter` 注册的最外层中间件持有许可，覆盖整条服务端管线。回归测试
 `Host_construction_waits_for_a_response_body_that_is_still_being_written` 在旧的客户端实现下**会失败**（实测：
 `Host construction completed while the gateway was still writing a response body`），因此这条不是散文。
-副产物是 permit 只可能被服务端管线持有、永远不会被测试线程持有，构建取全部 permit 因此不可能被发起它的线程阻塞。
+副产物是许可只可能被服务端管线持有、永远不会被测试线程持有，构建取得全部许可，因此不可能被发起它的线程阻塞。
 
-**租约释放前先 drain。** 租约注销与「仍在飞的请求解析自己的 fake」必须互斥，而不是「大概率不重叠」：
-每条请求在中间件里登记到自己的 scope，`ReleaseScopeAsync` 先等到该 scope 在飞数归零（有界预算，超时报告
-in-flight 数、elapsed 与 attempts）再从注册表移除。
+**租约释放前先排空。** 租约注销与「仍在飞的请求解析自己的替身」必须互斥，而不是「大概率不重叠」：
+每条请求在中间件里登记到自己的作用域，`ReleaseScopeAsync` 先等到该作用域在飞数归零（有界预算，超时报告
+在飞数、已用时间与尝试次数）再从注册表移除。
 
-**profile 表。**
+**配置表。**
 
-| profile | 设置 | 用途 | 宿主数 |
+| 配置 | 设置 | 用途 | 宿主数 |
 | --- | --- | --- | --- |
-| `Default` | JWT（JWKS/issuer/audience）+ 抬高的 rate-limit permit | 未固定下游 base URL 的代理/授权/维护面测试、`/swagger`、`/health` | 1（整程序集） |
-| `ServiceBaseUrls` | `Default` + 全部下游 base URL 固定为 `*.local` | 授权、WMS、搜索、工作台等原本调用 `BusinessGatewayTestServiceBaseUrls.Configure` 的测试 | 1（整程序集） |
-| dedicated（自动回退） | 逐测试 `IWebHostBuilder` 设置 | 生产安全（`Production` 环境、缺失 CORS/base URL）、`IHttpMessageHandlerBuilderFilter` 弹性、`TimeProvider` 替换、rate limit 预算 | 按测试，仍走同一 gate |
+| `Default` | JWT（JWKS/签发方/受众）+ 抬高的限流许可 | 未固定下游基础 URL 的代理/授权/维护面测试、`/swagger`、`/health` | 1（整程序集） |
+| `ServiceBaseUrls` | `Default` + 全部下游基础 URL 固定为 `*.local` | 授权、WMS、搜索、工作台等原本调用 `BusinessGatewayTestServiceBaseUrls.Configure` 的测试 | 1（整程序集） |
+| 独占宿主（自动回退） | 逐测试 `IWebHostBuilder` 设置 | 生产安全（`Production` 环境、缺失 CORS/基础 URL）、`IHttpMessageHandlerBuilderFilter` 弹性、`TimeProvider` 替换、限流预算 | 按测试，仍走同一互斥门 |
 
-**可变状态与 reset 机制。** 共享宿主不做「写入再重置」——没有可被遗忘的 reset 步骤：
+**可变状态与重置机制。** 共享宿主不做「写入再重置」——没有可被遗忘的重置步骤：
 
 | 状态面 | 机制 |
 | --- | --- |
-| 下游 fake（16 个 `IBusiness*Client`、`IBusinessGatewayAuthorizationClient`、`IInternalServiceTokenProvider`） | 每租约一个 scope id；客户端逐请求带 `X-Nerv-IIP-Test-Scope`，容器按该 header 解析实例。租约释放即注销，之后带旧 header 的请求**显式报错**而非静默回落 |
+| 下游替身（16 个 `IBusiness*Client`、`IBusinessGatewayAuthorizationClient`、`IInternalServiceTokenProvider`） | 每租约一个作用域 ID；客户端逐请求带 `X-Nerv-IIP-Test-Scope`，容器按该请求头解析实例。租约释放即注销，之后带旧请求头的请求**显式报错**而非静默回落 |
 | 未被覆盖的下游 | 回落到真实注册，语义与「每测试一宿主」完全一致 |
-| `BusinessGatewayDownstreamHealthState` | 唯一真正跨测试可变的单例，按租约一份；无 scope 的匿名请求（`/swagger`、`/health` 契约面）用独立实例 |
+| `BusinessGatewayDownstreamHealthState` | 唯一真正跨测试可变的单例，按租约一份；无作用域的匿名请求（`/swagger`、`/health` 契约面）用独立实例 |
 | IAM 授权缓存 | 位于 `HttpBusinessGatewayAuthorizationClient` 内，而所有测试都替换该客户端，故共享宿主上不存在该缓存面 |
-| rate limiter（按 principal 分区，全部测试同一 principal） | 共享 profile 抬高 permit；限流本身由 `BusinessGatewayRateLimitTests` 在 dedicated 宿主上以自有预算覆盖（本次**新增**覆盖，此前为零） |
-| NSwag 文档生成 | 并发生成会产生半填充 schema 字典；文档按 profile 生成一次后缓存复用，断言仍针对真实生成结果 |
-| 无法逐请求表达的配置（builder 设置、非实例注册、名单外类型、**只移除不重注册**） | 由 `BusinessGatewayTestHost.Lease` 自动回退到 dedicated 宿主，正确性不依赖共享是否适用 |
+| 限流器（按主体分区，全部测试使用同一主体） | 共享配置抬高许可数；限流本身由 `BusinessGatewayRateLimitTests` 在独占宿主上以自有预算覆盖（本次**新增**覆盖，此前为零） |
+| NSwag 文档生成 | 并发生成会产生半填充 schema 字典；文档按配置生成一次后缓存复用，断言仍针对真实生成结果 |
+| 无法逐请求表达的配置（构建器设置、非实例注册、名单外类型、**只移除不重注册**） | 由 `BusinessGatewayTestHost.Lease` 自动回退到独占宿主，正确性不依赖共享是否适用 |
 
-**「只移除不重注册」为什么要专门检测。** 租约把测试的 `configureServices` 块回放到一个探针 collection 上以收割
+**「只移除不重注册」为什么要专门检测。** 租约把测试的 `configureServices` 块回放到一个探针集合上以收割
 实例。若探针是空的，`RemoveAll<T>()` 不留任何痕迹，于是「移除某注册但不放回」的块会被误判为可共享，而共享宿主
-仍保留真实注册——测试跑在与 dedicated 宿主不同的接线上，且没有任何提示。因此探针以共享宿主自己的注册清单
-（开放泛型除外，它们无法用工厂 descriptor 注册且从不被网关测试替换）预置哨兵 descriptor：回放后缺失的哨兵即为
-移除意图，只有该类型同时被补上逐请求实例才算可共享，否则回退 dedicated 宿主。
+仍保留真实注册——测试跑在与独占宿主不同的接线上，且没有任何提示。因此探针以共享宿主自己的注册清单
+（开放泛型除外，它们无法用工厂描述符注册且从不被网关测试替换）预置哨兵描述符：回放后缺失的哨兵即为
+移除意图，只有该类型同时被补上逐请求实例才算可共享，否则回退独占宿主。
 `A_configuration_block_that_only_removes_a_registration_falls_back_to_a_dedicated_host` 断言这一点。
 
-**反向证明。** `BusinessGatewaySharedHostIsolationTests` 是行为断言而非 attribute 断言。三次故意注入泄漏均被
-捕获：把 health state 改回单例 → 1 失败；把逐请求 scope 解析改成「最近一个租约」的共享槽 → 3 失败；让 builder
-设置不再强制 dedicated 宿主 → 1 失败。第四次：把 permit 改回客户端 `DelegatingHandler` 持有 → 1 失败。
-宿主复用断言使用引用同一性（两个 profile 各一个宿主、25 轮租约同宿主），不使用全局宿主计数——该计数只由两个
-`Lazy<T>` profile 工厂自增，结构上不可能大于 2，断言它的上界等于自证。
+**反向证明。** `BusinessGatewaySharedHostIsolationTests` 是行为断言而非特性断言。三次故意注入泄漏均被
+捕获：把健康状态改回单例 → 1 失败；把逐请求作用域解析改成「最近一个租约」的共享槽 → 3 失败；让构建器
+设置不再强制独占宿主 → 1 失败。第四次：把许可改回客户端 `DelegatingHandler` 持有 → 1 失败。
+宿主复用断言使用引用同一性（两个配置各一个宿主、25 轮租约同宿主），不使用全局宿主计数——该计数只由两个
+`Lazy<T>` 配置工厂自增，结构上不可能大于 2，断言它的上界等于自证。
 
 ### 测试分层清单（哪些必须启 HTTP 宿主）
 
@@ -160,151 +160,150 @@ in-flight 数、elapsed 与 attempts）再从注册表移除。
 | --- | --- | --- | --- |
 | (a) 纯合同/元数据 | 否 | `BusinessConsoleSearchableDirectoryPolicyTests`、`BusinessGatewayWmsTrustedCompletionContractTests`、`MaintenanceLifecycleWireRoundTripTests` | 本来就是轻量路径，本次未改动 |
 | (b) 直接应用行为 | 否 | `BusinessGatewayAuthorizationClientTests`、`BusinessMesAcceptedReceiptClientTests`、`BusinessMesMaterialIssueClientTests`、`BusinessMesQualityHoldClientTests`、`BusinessConsoleWorkerDirectoryValidationTests`、`PublicIdempotencyRequestValidationTests`、`SchedulingWorkbenchValidationTests`、`WmsTrustedRequestContextTests`、`BusinessGatewayIdempotencySafetyTests`、`BusinessGatewayPrincipalWorkContextResolverTests` | 本来就是轻量路径，本次未改动 |
-| (c) 必须启宿主，已迁到共享 profile 租约 | **是** | `BusinessGatewayProxyTests`、`BusinessGatewayAuthorizationTests`、`BusinessGatewayMaintenanceTelemetryTests`、`BusinessGatewayWmsTests`、`BusinessGatewayWorkbenchTests`、`BusinessGatewaySearchTests`、`BusinessConsoleSearchableDirectoryWireTests`、`BusinessGatewayPrincipalWorkContextEndpointTests`、`BusinessGatewayConnectorTagCoverageTests`、`BusinessGatewayOpenApiTests`、`BusinessGatewayNotificationOpenApiTests`、`BusinessGatewayLifecycleConflictOpenApiTests` | 共享宿主 + 逐租约 scope |
-| (d) 必须启宿主，且需要独立启动 profile | **是**（dedicated） | `BusinessGatewayProductionSecurityTests`、`BusinessGatewayHttpClientResilienceTests`、`BusinessGatewayRateLimitTests`，以及 `BusinessGatewayAuthorizationTests` 中断言缺失 JWT 配置的用例 | 保留 dedicated 宿主，构建仍走同一 gate |
+| (c) 必须启宿主，已迁到共享配置租约 | **是** | `BusinessGatewayProxyTests`、`BusinessGatewayAuthorizationTests`、`BusinessGatewayMaintenanceTelemetryTests`、`BusinessGatewayWmsTests`、`BusinessGatewayWorkbenchTests`、`BusinessGatewaySearchTests`、`BusinessConsoleSearchableDirectoryWireTests`、`BusinessGatewayPrincipalWorkContextEndpointTests`、`BusinessGatewayConnectorTagCoverageTests`、`BusinessGatewayOpenApiTests`、`BusinessGatewayNotificationOpenApiTests`、`BusinessGatewayLifecycleConflictOpenApiTests` | 共享宿主 + 逐租约作用域 |
+| (d) 必须启宿主，且需要独立启动配置 | **是**（独占宿主） | `BusinessGatewayProductionSecurityTests`、`BusinessGatewayHttpClientResilienceTests`、`BusinessGatewayRateLimitTests`，以及 `BusinessGatewayAuthorizationTests` 中断言缺失 JWT 配置的用例 | 保留独占宿主，构建仍走同一互斥门 |
 | (e) 隔离机制自身 | **是** | `BusinessGatewaySharedHostIsolationTests` | 本次新增 |
 
 (a)(b) 两类约 150 例本来就不启宿主。(c) 类断言的是认证、授权、中间件、序列化与真实路由，**必须**经过 HTTP 宿主，
 因此改造方向是让它们共用宿主，而不是把它们降级成反射断言（那会丢覆盖）。
 
-### 未做的优化及其理由（spec §7 评估结论）
+### 未做的优化及其理由（规格 §7 评估结论）
 
-spec §7 要求**评估**把 697 个细粒度重复的路由/权限用例合并成数据驱动 contract matrix。**结论：评估后不做。**
+规格 §7 要求**评估**把 697 个细粒度重复的路由/权限用例合并成数据驱动契约矩阵。**结论：评估后不做。**
 该合并的收益前提是「每个用例各付一次宿主构建成本」，而共享宿主后单个用例的边际成本已降到毫秒级（整程序集
-1036 例合计 wall 约 10 s），收益基本消失；代价则是确定的——`[Theory]` 行的失败定位粒度显著劣于独立命名用例，
+1036 例合计墙钟约 10 s），收益基本消失；代价则是确定的——`[Theory]` 行的失败定位粒度显著劣于独立命名用例，
 而这些用例覆盖的正是权限与 401/403 语义。若将来该程序集重新变成瓶颈，应重新评估而不是把本结论当成永久决定。
 
 ### 耗时验收证据
 
-验收标准是 **GitHub hosted runner 热缓存 ≤ 2 min**，因此以 hosted runner 数据为准（本机 macOS 数据只作参考）。
-两侧同为 `ubuntu24@20260720.247.2` / SDK `10.0.302`，取自 MAN-661 evidence artifact 的 per-assembly
-`elapsedMilliseconds`（TRX 执行窗口，不含 restore/build）：
+验收标准是 **GitHub 托管运行器热缓存 ≤ 2 min**，因此以托管运行器数据为准（本机 macOS 数据只作参考）。
+两侧同为 `ubuntu24@20260720.247.2` / SDK `10.0.302`，取自 MAN-661 证据产物的逐程序集
+`elapsedMilliseconds`（TRX 执行窗口，不含还原/构建）：
 
-| | 用例数 | hosted runner 该程序集 TRX elapsed | 来源 |
+| | 用例数 | 托管运行器上该程序集的 TRX 已用时间 | 来源 |
 | --- | --- | --- | --- |
-| 改造前 | 1023 | **869.4 s（14 m 29 s）** | main push run `30890682487`，tested SHA `90715433b` |
-| 改造后 | 1036 | **22.0 s（22 034.6 ms）** | PR run `30899938177`，tested SHA `1c374177` |
+| 改造前 | 1023 | **869.4 s（14 m 29 s）** | main 推送运行 `30890682487`，受测 SHA `90715433b` |
+| 改造后 | 1036 | **22.0 s（22 034.6 ms）** | PR 运行 `30899938177`，受测 SHA `1c374177` |
 
-本机 macOS `--no-build` wall 为 8.7–11.3 s，作为 5 seed × 5 并发档矩阵的稳定性证据保留，但**不**用于 ≤2 min 验收。
+本机 macOS `--no-build` 墙钟耗时为 8.7–11.3 s，作为 5 个种子 × 5 个并发档矩阵的稳定性证据保留，但**不**用于 ≤2 min 验收。
 
-上表两个 run 都发生在 MAN-669 分片**之前**，两侧 evidence lane 均为当时的 `backend`。合并 MAN-669 后该程序集的证据落在
-`backend-shard-1`（job `Backend Tests - BusinessGateway`）。per-assembly TRX elapsed 只取决于该程序集自己的执行窗口，
-不受 lane 拓扑影响，因此上表的 before/after 对比在分片后依然成立；变的只是后续 refresh 要从哪条 lane 取数。
+上表两次运行都发生在 MAN-669 分片**之前**，两侧证据通道均为当时的 `backend`。合并 MAN-669 后该程序集的证据落在
+`backend-shard-1`（作业 `Backend Tests - BusinessGateway`）。逐程序集 TRX 已用时间只取决于该程序集自己的执行窗口，
+不受执行通道拓扑影响，因此上表的前后对比在分片后依然成立；变的只是后续刷新要从哪条执行通道取数。
 
-spec §8 要求「使用 MAN-661 的每用例基线对比」。MAN-663 落地当时该 baseline 为
-`unavailableReason: incompatible-granularity-or-duration-metric`（committed baseline 是 project-wall-clock，
-运行摘要是 test-granularity trx-elapsed，不可比），因此上表改用同一 evidence artifact 的 **per-assembly TRX
-elapsed** 做 before/after 对比。局限如实记录：这是程序集粒度而非每用例粒度，两个 run 的 runner 硬件不完全同机，
-且不含 restore/build 时间；结论「量级下降」稳健，但不应被当作每用例 baseline 已经建立。2026-08-05 已用合并后
-首个合格 main push run `30999368607` 的 normalized artifacts 完成 refresh：committed baseline 自此为
+规格 §8 要求「使用 MAN-661 的每用例基线对比」。MAN-663 落地当时该基线为
+`unavailableReason: incompatible-granularity-or-duration-metric`（已提交基线是项目墙钟口径，
+运行摘要是测试粒度的 TRX 已用时间口径，不可比），因此上表改用同一证据产物的**逐程序集 TRX 已用时间**做前后对比。局限如实记录：这是程序集粒度而非每用例粒度，两次运行的运行器硬件不完全同机，
+且不含还原/构建时间；结论「量级下降」稳健，但不应被当作每用例基线已经建立。2026-08-05 已用合并后
+首个合格 main 推送运行 `30999368607` 的规范化产物完成刷新：已提交基线自此为
 `granularity: test` / `durationMetric: trx-elapsed`，`backend-shard-1` 的
 `nerv.iip.businessgateway.web.tests.dll` 当时记为 **22 996.0 ms / 1036 例**，耗时对比恢复为 `available` 的
-report-only delta。2026-08-07 又因 MAN-669 PR-A 换片导致的 (lane, assembly) 失键刷新到 run
-`31185687984`（schema 2、per-lane provenance），该行现为 **20 726.0 ms / 1036 例**；差额落在 hosted
-runner 抖动内。**换片失键这件事本身已在 #1507 被消除**：耗时比较键改成「程序集」单键、耗时改为自动缓存，
-因此后续任何分片/宿主变更都不再欠一次 baseline 刷新（见 `test-evidence-governance.md` 的
-「Timing data is a cache, not a governed asset」）。上表保留为 MAN-663 当时的取证过程，权威数字以 committed baseline 为准。另注：
+仅报告差值。2026-08-07 又因 MAN-669 PR-A 换片导致的（执行通道，程序集）失键刷新到运行
+`31185687984`（schema 2、逐通道来源），该行现为 **20 726.0 ms / 1036 例**；差额落在托管
+运行器抖动内。**换片失键这件事本身已在 #1507 被消除**：耗时比较键改成「程序集」单键、耗时改为自动缓存，
+因此后续任何分片/宿主变更都不再欠一次基线刷新（见 `test-evidence-governance.md` 的
+「耗时数据是缓存，而不是受治理资产（Timing data is a cache, not a governed asset）」）。上表保留为 MAN-663 当时的取证过程，权威数字以已提交基线为准。另注：
 implementation-readiness 里「822 000 ms → 22 996 ms（约 −97.2%）」是**跨口径**百分比（分母取自旧
-project-wall-clock baseline，分子是 trx-elapsed），只作量级参考；**同口径**佐证正是上表两行——
-869.4 s / 1023 例 → 22.0 s / 1036 例，同为 hosted runner 的 per-assembly TRX elapsed。
+项目墙钟基线，分子是 TRX 已用时间），只作量级参考；**同口径**佐证正是上表两行——
+869.4 s / 1023 例 → 22.0 s / 1036 例，同为托管运行器的逐程序集 TRX 已用时间。
 
-## Seeded order 与本地六轮验证
+## 种子化顺序与本地六轮验证
 
-`Nerv.IIP.Testing.Xunit` 的 case/collection orderer 读取 `NERV_IIP_TEST_ORDER_SEED`；变量缺失时使用固定 `nerv-iip-default`。排序键为 `SHA-256(seed + display-name)`，hash 相同再按 name 做 ordinal 排序；display name 是 `ITestCase` 与 `ITestCollection` 共有的唯一稳定标识，`[Theory]` 的 display name 含参数文本但每行数据固定，排序仍然稳定。四个目标程序集通过 `SeededTestOrdering.targets` 链接同一份 assembly attribute 文件声明 orderer（不是四份副本），不改变 collection serialization 或业务测试职责。
+`Nerv.IIP.Testing.Xunit` 的用例/测试集合排序器读取 `NERV_IIP_TEST_ORDER_SEED`；变量缺失时使用固定 `nerv-iip-default`。排序键为 `SHA-256(seed + display-name)`，哈希相同再按名称做 Ordinal 排序；显示名称是 `ITestCase` 与 `ITestCollection` 共有的唯一稳定标识，`[Theory]` 的显示名称含参数文本但每行数据固定，排序仍然稳定。四个目标程序集通过 `SeededTestOrdering.targets` 链接同一份程序集特性文件声明排序器（不是四份副本），不改变测试集合串行化或业务测试职责。
 
-`pwsh scripts/verify-backend-test-determinism.ps1` 先经受治理的 `New-ExclusiveInvocationClaim`（`FileMode.CreateNew`）原子取得 invocation claim，再创建新的 `artifacts/test-determinism/man-662/<invocation-id>/`，执行六轮、每轮四项目：seed 固定为 `man662-01` 至 `man662-06`，serial/parallel 交替，`MaxParallelThreads` 为 1/4，项目顺序逐轮旋转。profile 只由受支持的 VSTest `<xUnit>` runsettings 设置，不通过 compile-time attribute 切换；第一轮构建后后续轮次使用同一程序集。同一显式 invocation ID 的并发失败者在执行项目前即被拒绝，既有或失败证据都不能被 rerun 覆盖。
+`pwsh scripts/verify-backend-test-determinism.ps1` 先经受治理的 `New-ExclusiveInvocationClaim`（`FileMode.CreateNew`）原子取得调用声明，再创建新的 `artifacts/test-determinism/man-662/<invocation-id>/`，执行六轮、每轮四项目：种子固定为 `man662-01` 至 `man662-06`，串行/并行交替，`MaxParallelThreads` 为 1/4，项目顺序逐轮旋转。配置只由受支持的 VSTest `<xUnit>` 运行设置指定，不通过编译期特性切换；第一轮构建后，后续轮次使用同一程序集。同一显式调用 ID 的并发失败者在执行项目前即被拒绝，既有或失败证据都不能被重新运行覆盖。
 
-每个 `summary.json` 含六个本地复现字段 `run`、`seed`、`profile`、`projectOrder`、`elapsedMs`、`exitCode`，外加 `projectResults`：逐项目的 `exitCode` 与 `total/passed/skipped/failed` 计数（以 `DOTNET_CLI_UI_LANGUAGE=en` 保证解析与 locale 无关）。退出码相等**不等于**结果一致——某轮静默跳过测试时退出码仍为 0，因此验证器跨轮比对同一项目的四个计数，任一不一致即失败。MAN-662 仍不生成 TRX、`trxPaths`、per-test/lane timing、skip budget 或 rerun accounting。
+每个 `summary.json` 含六个本地复现字段 `run`、`seed`、`profile`、`projectOrder`、`elapsedMs`、`exitCode`，外加 `projectResults`：逐项目的 `exitCode` 与 `total/passed/skipped/failed` 计数（以 `DOTNET_CLI_UI_LANGUAGE=en` 保证解析与区域设置无关）。退出码相等**不等于**结果一致——某轮静默跳过测试时退出码仍为 0，因此验证器跨轮比对同一项目的四个计数，任一不一致即失败。MAN-662 仍不生成 TRX、`trxPaths`、逐测试/执行通道耗时、跳过预算或重新运行计数。
 
-## Quarantine 与外部证据边界
+## 隔离登记与外部证据边界
 
-MAN-661 独占 required-lane/opt-in-lane policy、machine-readable quarantine registry 与 enforcement；MAN-662 不创建 quarantine registry 或规则。MAN-661 的定量 trend/flake evidence 是外部证据，不阻塞本变更实现、评审、合并或 code-completion。当前 baseline status 为 `awaiting MAN-661`；只能在 MAN-661 落地后用真实 artifact identifier 替换，不能填推测值。
+MAN-661 独占必需/按需执行通道政策、机器可读隔离登记表与强制执行；MAN-662 不创建隔离登记表或规则。MAN-661 的定量趋势/偶发失败证据是外部证据，不阻塞本变更实现、评审、合并或代码完成。当前基线状态为 `awaiting MAN-661`；只能在 MAN-661 落地后用真实产物标识符替换，不能填推测值。
 
-`backend/test-determinism-baseline.json` 的**到期债务行现为 0**。登记之初的三类均已清零：`Task.Delay` 33 行 → `#1470`（2026-09-05）、`UnreachableAddress` 7 行 → `#1472`（2026-08-25）、`StaticSetter` 47 行 → `#1471`（2026-09-12，见下节）。checker 的 `$allowedPatterns` 仍保留全部 pattern，以便回潮时能被重新识别；零登记行不等于该 pattern 被豁免，而是它当前确实不存在。
+`backend/test-determinism-baseline.json` 的**到期债务行现为 0**。登记之初的三类均已清零：`Task.Delay` 33 行 → `#1470`（2026-09-05）、`UnreachableAddress` 7 行 → `#1472`（2026-08-25）、`StaticSetter` 47 行 → `#1471`（2026-09-12，见下节）。检查器的 `$allowedPatterns` 仍保留全部模式，以便回潮时能被重新识别；零登记行不等于该模式被豁免，而是它当前确实不存在。
 
-#1470 的 33 行分三批清偿。第一批 8 行（`CapTestHostTests`、`TestTimeoutTests`、`ProcessMemorySamplerTests`、`FileStorageTusProviderTests`、`NotificationCapOutboxAcceptanceTests`、`OpsConnectorCredentialValidationTests`）：「挂起到被取消」的哨兵改为 `PendingOperation.UntilCanceledAsync`（不再创建任何计时器），TUS 上传会话过期改为注入 `TimeProvider`，CAP outbox 可见性改为 `Eventually` 有界轮询，进程内存采样改为等显式的「已采样」信号。第二批 12 行（`ErpSalesOrderDemandConsumerTests` 4 行、`DemandPlanningEndpointContractTests`、`PlanningInputAdapterTests`、`ApprovalOverdueSchedulerTests` 2 行、`ErpCostAccountingPostgresAcceptanceTests`、`InventoryDirectoryPostgresTests`、`MaintenanceCommandLockTests`、`HttpSchedulingEquipmentAvailabilityProviderBatchingTests`）：`ApprovalOverdueScheduler` 的 `PeriodicTimer` 改为跑在注入的 `TimeProvider` 上（未推进的假时钟让第二次 tick 结构上不可能发生，而不只是不太可能）；真实 PostgreSQL/Redis/CAP 的可见性（advisory-lock waiter、容器就绪、MRP run 终态、CAP 立即重试与 fallback 扫描）一律改为 `Eventually` 有界轮询并报告脱敏的最后观测；两处 HTTP 并发上限测试（MasterData SKU 明细、设备可用性批次）用测试自己控制的 gate 取代 50 ms 持有时间——先等在飞数**到达**上限这个真实边沿，再断言它在全部请求在飞期间**保持**不越界，因此断言从「不超过」升级为等值；负向断言的 settle 窗口收敛到新的共享原语 `Consistently.StaysAsync`（`Eventually` 的反向对偶：整窗轮询、第一次观测到违例即失败并报告脱敏观测/尝试次数/elapsed，而不是睡一次再断言一次）。
+#1470 的 33 行分三批清偿。第一批 8 行（`CapTestHostTests`、`TestTimeoutTests`、`ProcessMemorySamplerTests`、`FileStorageTusProviderTests`、`NotificationCapOutboxAcceptanceTests`、`OpsConnectorCredentialValidationTests`）：「挂起到被取消」的哨兵改为 `PendingOperation.UntilCanceledAsync`（不再创建任何计时器），TUS 上传会话过期改为注入 `TimeProvider`，CAP 发件箱可见性改为 `Eventually` 有界轮询，进程内存采样改为等显式的「已采样」信号。第二批 12 行（`ErpSalesOrderDemandConsumerTests` 4 行、`DemandPlanningEndpointContractTests`、`PlanningInputAdapterTests`、`ApprovalOverdueSchedulerTests` 2 行、`ErpCostAccountingPostgresAcceptanceTests`、`InventoryDirectoryPostgresTests`、`MaintenanceCommandLockTests`、`HttpSchedulingEquipmentAvailabilityProviderBatchingTests`）：`ApprovalOverdueScheduler` 的 `PeriodicTimer` 改为跑在注入的 `TimeProvider` 上（未推进的假时钟让第二次触发结构上不可能发生，而不只是不太可能）；真实 PostgreSQL/Redis/CAP 的可见性（等待 advisory lock 的后端、容器就绪、MRP 运行终态、CAP 立即重试与后备扫描）一律改为 `Eventually` 有界轮询并报告脱敏的最后观测；两处 HTTP 并发上限测试（MasterData SKU 明细、设备可用性批次）用测试自己控制的门取代 50 ms 持有时间——先等在飞数**到达**上限这个真实边沿，再断言它在全部请求在飞期间**保持**不越界，因此断言从「不超过」升级为等值；负向断言的稳定窗口收敛到新的共享原语 `Consistently.StaysAsync`（`Eventually` 的反向对偶：整窗轮询、第一次观测到违例即失败并报告脱敏观测/尝试次数/已用时间，而不是睡一次再断言一次）。
 
 第三批 13 行清空剩余全部 `Task.Delay`，覆盖 `Nerv.IIP.Business.FullChain.Tests` 与 `Nerv.IIP.Business.Mes.Web.Tests` 两个程序集：
 
-- **真实 transport / 容器就绪**（第 2 类）改为 `Eventually` 有界轮询：Docker PostgreSQL/Redis 就绪、Maintenance 与 MES/Inventory 的 Redis CAP consumer group 注册、ERP↔WMS 重放回执计数、DemandPlanning 重复/乱序事件的消费证据、MES/Inventory produced-lot 双路径终态、以及 `MesCapSubscriptionTests` 的断言重试循环。诊断字段一律走 `EventuallyTimeoutException`（condition + attempts + elapsed + 脱敏最后观测），连接串作为 sensitive value 传入。MES/Inventory 那一处**保留**原先的 messaging 诊断：`ReadMessagingFactsAsync` 只在超时分支读一次，它是超时的诊断而不是被等待条件的一部分。
-- **外部调度进程的负向断言**改为 `Consistently.StaysAsync`：`MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` 的「阈值以下不生成工单」与「后续 tick 不重复生成」两个窗口。调度器跑在另一个进程的真实时钟上，测试无法给它注入 `TimeProvider`，所以窗口本身仍是承认；变化在于整窗持续观测、第一次违例即失败并报告脱敏观测。
-- **三处 PostgreSQL 并发序列化的 settle 窗口被直接消除**（`MesSchedulePlanProvenancePostgresTests`、`SkuDisabledConsumerTests`、`WorkOrderCapitalizationConcurrencyPostgresTests`）：MES 的 scope coordinator 用 `pg_advisory_xact_lock` 序列化竞争写者，而 `pg_stat_activity` 把这次等待**暴露成可观测事实**。新增共享 helper `MesPostgresAdvisoryLockProbe.WaitForWaitersAsync` 有界等到「本库有一个 backend 停在 advisory lock 上」这个真实边沿，再断言竞争任务未完成——观测到阻塞，而不是假定阻塞发生在某个睡眠之内。每个用例各用一个临时库，因此 `datname = current_database()` 足以与并发测试类区分——这不是注释里的声称：三个调用方都在**测试方法体内**用 `Guid.CreateVersion7()` 命名新建库（`nerv_mes_schedule_*`、`nerv_mes_sku_disabled_*`、`nerv_mes_cost_race_*`），并在 dispose 时 `DROP DATABASE ... WITH (FORCE)`。上一个用例即使泄漏了一个仍在等锁的 backend，它停在探针连接根本看不见的另一个库上，因此不可能被计入。哪天有调用方改成跨用例共享库，这条判据就必须收紧到 `pg_locks` 的 `classid`/`objid` 精确匹配本用例申请的那把锁——该约束写在 `MesPostgresAdvisoryLockProbe` 的 XML 注释里。
-- **MES 端点重放**（`MesEndpointContractTests`）改为向宿主注入 `FakeTimeProvider`：端点在调用方未给 `ChangedAtUtc` 时用注入的 `TimeProvider` 打时间戳，因此「两次请求带着不同的服务端时间戳」从「5 ms 墙钟间隔大概率产生两个不同瞬时」变成测试自己控制的事实。锚点取**真实 now**（链路上仍有按真实日期评估的就绪判定），只有两次请求之间的差值是伪造的。
-- **`ConcurrentLifecycleSaveGate`** 的 `Task.WhenAny(allArrived, Task.Delay(budget))` 改为 `TestTimeout.RunAsync` + 显式 catch：这是一个真实并发屏障上的预算（输掉幂等竞争的参与者可能根本不到达），不是 sleep-before-assert；改写把「刻意的回退」写成显式分支，而不是藏在一个 loser 被静默丢弃的 `WhenAny` 竞速里。
+- **真实传输/容器就绪**（第 2 类）改为 `Eventually` 有界轮询：Docker PostgreSQL/Redis 就绪、Maintenance 与 MES/Inventory 的 Redis CAP 消费者组注册、ERP↔WMS 重放回执计数、DemandPlanning 重复/乱序事件的消费证据、MES/Inventory 生产批次双路径终态，以及 `MesCapSubscriptionTests` 的断言重试循环。诊断字段一律走 `EventuallyTimeoutException`（条件 + 尝试次数 + 已用时间 + 脱敏最后观测），连接串作为敏感值传入。MES/Inventory 那一处**保留**原先的消息诊断：`ReadMessagingFactsAsync` 只在超时分支读一次，它是超时的诊断而不是被等待条件的一部分。
+- **外部调度进程的负向断言**改为 `Consistently.StaysAsync`：`MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` 的「阈值以下不生成工单」与「后续触发不重复生成」两个窗口。调度器跑在另一个进程的真实时钟上，测试无法给它注入 `TimeProvider`，所以窗口本身仍是承认；变化在于整窗持续观测、第一次违例即失败并报告脱敏观测。
+- **三处 PostgreSQL 并发序列化的稳定窗口被直接消除**（`MesSchedulePlanProvenancePostgresTests`、`SkuDisabledConsumerTests`、`WorkOrderCapitalizationConcurrencyPostgresTests`）：MES 的作用域协调器用 `pg_advisory_xact_lock` 序列化竞争写者，而 `pg_stat_activity` 把这次等待**暴露成可观测事实**。新增共享辅助程序 `MesPostgresAdvisoryLockProbe.WaitForWaitersAsync` 有界等到「本库有一个后端停在 advisory lock 上」这个真实边沿，再断言竞争任务未完成——观测到阻塞，而不是假定阻塞发生在某个睡眠之内。每个用例各用一个临时库，因此 `datname = current_database()` 足以与并发测试类区分——这不是注释里的声称：三个调用方都在**测试方法体内**用 `Guid.CreateVersion7()` 命名新建库（`nerv_mes_schedule_*`、`nerv_mes_sku_disabled_*`、`nerv_mes_cost_race_*`），并在释放时 `DROP DATABASE ... WITH (FORCE)`。上一个用例即使泄漏了一个仍在等锁的后端，它停在探针连接根本看不见的另一个库上，因此不可能被计入。哪天有调用方改成跨用例共享库，这条判据就必须收紧到 `pg_locks` 的 `classid`/`objid` 精确匹配本用例申请的那把锁——该约束写在 `MesPostgresAdvisoryLockProbe` 的 XML 注释里。
+- **MES 端点重放**（`MesEndpointContractTests`）改为向宿主注入 `FakeTimeProvider`：端点在调用方未给 `ChangedAtUtc` 时用注入的 `TimeProvider` 打时间戳，因此「两次请求带着不同的服务端时间戳」从「5 ms 墙钟间隔大概率产生两个不同瞬时」变成测试自己控制的事实。锚点取**真实当前时刻**（链路上仍有按真实日期评估的就绪判定），只有两次请求之间的差值是伪造的。
+- **`ConcurrentLifecycleSaveGate`** 的 `Task.WhenAny(allArrived, Task.Delay(budget))` 改为 `TestTimeout.RunAsync` + 显式捕获：这是一个真实并发屏障上的预算（输掉幂等竞争的参与者可能根本不到达），不是断言前休眠；改写把「刻意的回退」写成显式分支，而不是藏在一个失败分支被静默丢弃的 `WhenAny` 竞速里。
 
-上面五条只描述第三批各自的位点。以下是 baseline 治理规则与 MAN-662 的运行历史，它们属于 baseline 章节的散文，与 `ConcurrentLifecycleSaveGate` 这道并发屏障无关：
+上面五条只描述第三批各自的位点。以下是基线治理规则与 MAN-662 的运行历史，它们属于基线章节的叙述，与 `ConcurrentLifecycleSaveGate` 这道并发屏障无关：
 
-owner 必须在登记它的变更合并之后依然存在：`registeredByIssue` 记录登记变更，`ownerIssue` 记录独立跟进责任，两者相同即是自担保并被 checker 拒绝。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。checker 通过只证明 inventory 与元数据吻合，不代表债务已清零。前两次六轮运行保留为 RED 历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的 exit 序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中 Task 4 首次观测的 SourceLookup EF InMemory 排序异常已经由 Task 8 的显式不同业务时间戳隔离关闭，不再登记为未修复 flake。
+责任方必须在登记它的变更合并之后依然存在：`registeredByIssue` 记录登记变更，`ownerIssue` 记录独立跟进责任，两者相同即是自担保并被检查器拒绝。`reason` 按行而非按文件书写：同一文件里结构不同的位点（例如轮询间隔与负向断言的稳定性窗口）不得共用一句解释。检查器通过只证明清单与元数据吻合，不代表债务已清零。前两次六轮运行保留为红灯历史：`20260803T192749730Z-18bd13f4bc794fbd9f054c1be2bb1410/summary.json` 的退出序列为 `[1,0,1,1,1,0]`，`20260803T200756805Z-929b74e11b494261941716a905a10563/summary.json` 为 `[1,1,1,0,1,1]`。其中任务 4 首次观测的 SourceLookup EF InMemory 排序异常已经由任务 8 的显式不同业务时间戳隔离关闭，不再登记为未修复偶发失败。
 
-Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部 exit 0；对应 solution 证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 passed、87 skipped、0 failed。最终 code review 修复后又以新 invocation `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，exit 序列仍为 `[0,0,0,0,0,0]`。复审全解先后用 RED 日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧 sanitizer 断言与单次 scheduler yield 假设；最终 GREEN 为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 passed、87 skipped、0 failed，stderr 为空。MAN-661 仍只负责 lane timing、TRX、trend、skip/rerun 与 quarantine 的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地 code-completion 结论。
+任务 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T203911574Z-46fea15ab6ae4a6687fed1add88ad86b/summary.json`：6 轮、24 个项目运行全部退出 0；对应解决方案证据 `artifacts/script-logs/man662-task8-fix2-full-solution/20260804-044915-206/` 为 66 个测试程序集、5849 个通过、87 个跳过、0 个失败。最终代码评审修复后又以新调用 `artifacts/test-determinism/man-662/20260804T053200000Z-final-review-fixes/summary.json` 重跑，退出序列仍为 `[0,0,0,0,0,0]`。复审全解先后用红灯日志 `artifacts/script-logs/man662-final-review-fixes-full-solution/20260804-054231-650/` 和 `artifacts/script-logs/man662-final-review-fixes-full-solution-green/20260804-055257-685/` 坐实并关闭了旧脱敏器断言与单次调度器让出假设；最终绿灯为 `artifacts/script-logs/man662-final-review-fixes-full-solution-green2/20260804-060229-765/`：66 个测试程序集，5853 个通过、87 个跳过、0 个失败，标准错误为空。MAN-661 仍只负责执行通道耗时、TRX、趋势、跳过/重跑与隔离登记的外部定量证据，当前状态继续是 `awaiting MAN-661`，不改变上述 MAN-662 本地代码完成结论。
 
-## baseline schema 3：有界 `expiring-debt` 与 `permanent`（#1471 / #1487 / #1488）
+## 基线 schema 3：有界 `expiring-debt` 与 `permanent`（#1471 / #1487 / #1488）
 
-#1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把 setter 写得更礼貌」——checker 命中的是**赋值语句本身**，
-包一层 try/finally 或在旁边 `await using` 一个 scope 都不会让它消失。真正的出路只有两条，本次两条都用上了：
+#1471 清偿了 47 行 `StaticSetter`。清偿方式不是「把赋值器写得更礼貌」——检查器命中的是**赋值语句本身**，
+包一层 try/finally 或在旁边 `await using` 一个作用域都不会让它消失。真正的出路只有两条，本次两条都用上了：
 
 1. **把静态写入搬进 `GlobalTestStateScope`。** 受审计的共享测试基建集中承担这些写入，测试体里不再散落裸
-   setter。scope 只提供**当前真有调用点**的 `UseCulture`（同时设 current 与 current UI culture）与
-   `SetEnvironmentVariable` 两个 mutator——首版还写了 `UseCurrentCulture` / `UseCurrentUiCulture` /
+   赋值器。作用域只提供**当前真有调用点**的 `UseCulture`（同时设置当前区域性与当前 UI 区域性）与
+   `SetEnvironmentVariable` 两个变异器——首版还写了 `UseCurrentCulture` / `UseCurrentUiCulture` /
    `UseDefaultThreadCulture` / `UseDefaultThreadUiCulture` / `UsePropertyNameResolver` /
    `UseDisplayNameResolver` 六个，全仓零调用、零覆盖，等于推荐一段没有任何会变红的测试的代码，已删除；
-   capture/restore 面**不跟着缩**：默认线程 culture 与 FluentValidation 两个 resolver 仍然被捕获与恢复，
-   所以绕过 mutator 直接写这些静态的测试同样会被清理干净。需要新 mutator 时连同调用点与自测一起加。
+   捕获/恢复面**不跟着缩**：默认线程区域性与 FluentValidation 两个解析器仍然被捕获与恢复，
+   所以绕过变异器直接写这些静态的测试同样会被清理干净。需要新变异器时连同调用点与自测一起加。
    `SetEnvironmentVariable` 在**首次写入该变量时**捕获旧值，因此
-   「忘了在 `CaptureAsync` 里报名」不再是静默且不可恢复的错误；dispose 后再调用任何 mutator 抛
+   「忘了在 `CaptureAsync` 里报名」不再是静默且不可恢复的错误；释放后再调用任何变异器抛
    `ObjectDisposedException`，而不是做一次无人恢复的写入。三态（不存在 / 空串 / 有值）恢复语义未变。
    35 行按此迁移：`IamPostgresProfileTests`(11)、`BusinessGatewayProxyTests`(4)、
    `AppHubServiceReadinessTests`(4)、`IamRepositoryTests`(4)、`NervIipLocalizationTests`(4)、
    `IamManagementEndpointAuthorizationTests`(3)、`MaintenanceWorkOrderIdempotencyTests`(2)、
    `NervIipObservabilityRegistrationTests`(2)、`PerformanceMetricTests`(1)。各文件里手写的
-   `PreserveEnvironment`/`RestoreEnvironment` 私有 helper 一并删除：它们只恢复不串行化，是 scope 的弱化复制品。
-   FastEndpoints serializer/validation/discovery 类的静态变异**本批不存在**（实测这 47 行全是 culture 与
-   环境变量），因此没有动用 collection serialization / 一次性进程隔离；那两条手段的适用面不变。
+   `PreserveEnvironment`/`RestoreEnvironment` 私有辅助程序一并删除：它们只恢复不串行化，是作用域的弱化复制品。
+   FastEndpoints 序列化/验证/发现类的静态变异**本批不存在**（实测这 47 行全是区域性与
+   环境变量），因此没有动用测试集合串行化/一次性进程隔离；那两条手段的适用面不变。
 
-2. **隔离机制自身的位点重新分类为常设例外（22 行 / 23 个 finding）。** 分三处：`GlobalTestStateScopeTests.cs`
+2. **隔离机制自身的位点重新分类为常设例外（22 行 / 23 个发现项）。** 分三处：`GlobalTestStateScopeTests.cs`
    的 12 行是自测，变异就是被测行为；`GlobalTestStateScope.cs` 的 9 行（含一行文本出现两次、占 10 个
-   occurrence）是这条机制的实现本身，也就是仓库指定的静态写入落点，没有别处可搬；`BoundedObservationWindow.cs`
-   的 1 行是有界轮询原语的 poll interval（见下一节「共享测试基建已纳入扫描」）。三者都不会随任何后续重构消失，
-   给它们一个到期日是编造 deadline 而不是设 deadline。
-   #1471 曾把 baseline 升到 schema 2，引入显式 `classification` 与两种互斥分类；#1487 在不改变分类边界的前提下把当前 schema 升到 **3**，为到期债务增加登记身份与登记日期，并限制离线可验证的最大寿命：
+   出现项）是这条机制的实现本身，也就是仓库指定的静态写入落点，没有别处可搬；`BoundedObservationWindow.cs`
+   的 1 行是有界轮询原语的轮询间隔（见下一节「共享测试基建已纳入扫描」）。三者都不会随任何后续重构消失，
+   给它们一个到期日是编造截止日期而不是设截止日期。
+   #1471 曾把基线升到 schema 2，引入显式 `classification` 与两种互斥分类；#1487 在不改变分类边界的前提下把当前 schema 升到 **3**，为到期债务增加登记身份与登记日期，并限制离线可验证的最大寿命：
 
-   | classification | 必填 | 禁止 | 到期硬失败 |
+   | 分类 | 必填 | 禁止 | 到期硬失败 |
    |---|---|---|---|
    | `expiring-debt` | `ownerIssue`、`registeredByIssue`、`exitCondition`、`registeredOn`、`expiresOn` | `rationale` | 是 |
    | `permanent` | `rationale` | `ownerIssue`、`registeredByIssue`、`exitCondition`、`registeredOn`、`expiresOn` | 否 |
 
-   两组元数据**互斥**：permanent 行带任何登记/债务字段、或 debt 行带 `rationale`，都直接判失败，而不是挑一个生效——
+   两组元数据**互斥**：常设行带任何登记/债务字段，或债务行带 `rationale`，都直接判失败，而不是挑一个生效——
    混用会让人以为该行是按另一套规则审过的。`classification` 缺失或取值不在这两者之内同样失败，所以
-   旧 schema 的行不会被当成默认 debt 悄悄放行。
+   旧 schema 的行不会被当成默认债务悄悄放行。
 
-   schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须指向不同 issue；身份比较按命名空间与去掉前导零后的数字进行，因此 `#1487` / `#01487` 仍是同一个 GitHub issue，不能绕过自担保拒绝。`registeredOn`/`expiresOn` 均以 invariant `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；expiry 不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。checker 不访问 GitHub 或 Linear：它只验证 baseline 自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
+   schema 3 的 `expiring-debt` 还有三条离线硬约束：`ownerIssue` 与 `registeredByIssue` 均只能是 `MAN-\d+` 或 `#\d+` 且必须指向不同 Issue；身份比较按命名空间与去掉前导零后的数字进行，因此 `#1487` / `#01487` 仍是同一个 GitHub Issue，不能绕过自担保拒绝。`registeredOn`/`expiresOn` 均以不变区域性的 `DateOnly` 严格解析 `yyyy-MM-dd`，登记日不得晚于 UTC 今日；到期日不得早于登记日，也不得晚于 `registeredOn + 45 days`，**正好 45 天允许**，并继续保留 `expiresOn` 早于 UTC 今日即失败的既有规则。检查器不访问 GitHub 或 Linear：它只验证基线自带的可复核元数据，因此离线、CI、隔离开发机得到同一结论，也不会把外部服务可用性误当成仓库治理状态。
 
-   防止 permanent 退化成万能豁免，靠三道锁：
-   - **`路径=pattern=maxRows` 白名单及容量由 checker 自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
+   防止常设分类退化成万能豁免，靠三道锁：
+   - **`路径=pattern=maxRows` 白名单及容量由检查器自己持有**（`$PermanentAllowlist` 参数默认值，当前三条：
      `backend/tests/Nerv.IIP.Testing.Tests/GlobalTestStateScopeTests.cs=StaticSetter=12`、
      `backend/common/Testing/Nerv.IIP.Testing/GlobalTestStateScope.cs=StaticSetter=9`、
-     `backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay=1`）。path、pattern 都按 ordinal
-     精确匹配，`maxRows` 必须是正整数且同一 pair 不得重复声明。容量统计的是通过全部行级校验后的 **permanent
-     baseline 行数**，不是源代码 occurrence 数，也不是各行 `occurrenceCount` 的和；实际行数只要求不超过容量，
-     删除一行无需先降低 cap。**锁到 pattern 一级**
-     是关键：只锁路径的话，白名单文件里将来出现的任何 pattern（`Thread.Sleep`、`ShortLease`…）都能拿一条为
-     culture setter 写的理由蒙混过关，而「变异即被测行为」只覆盖 `StaticSetter`。baseline 不能把自己写进
-     白名单——新增一个常设例外或提高既有容量必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是 checker
-     自测 harness 的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
+     `backend/common/Testing/Nerv.IIP.Testing/BoundedObservationWindow.cs=Task.Delay=1`）。路径、模式都按 Ordinal
+     精确匹配，`maxRows` 必须是正整数且同一组合不得重复声明。容量统计的是通过全部行级校验后的**常设
+     基线行数**，不是源代码出现次数，也不是各行 `occurrenceCount` 的和；实际行数只要求不超过容量，
+     删除一行无需先降低上限。**锁到模式一级**
+     是关键：只锁路径的话，白名单文件里将来出现的任何模式（`Thread.Sleep`、`ShortLease`…）都能拿一条为
+     区域性赋值器写的理由蒙混过关，而「变异即被测行为」只覆盖 `StaticSetter`。基线不能把自己写进
+     白名单——新增一个常设例外或提高既有容量必须改脚本，走脚本治理与评审，而不是往 JSON 里再加一行。参数本身只是检查器
+     自测工具的接缝，CI 与 `.\nerv.ps1` 调用一律不传参、用默认值。
    - **`rationale` 与 `reason` 都必填**：`reason` 逐行写「这一行为什么在这里写」，`rationale` 按常设理由
-     分类写。当前四类：scope **之外**的前置/teardown（scope 造不出自己要恢复的状态）、scope **之内**的变异
-     （变异即被测行为）、原语实现本身（没有别处可搬）、有界轮询原语的 poll interval（等待栈的底，无处可迁）。
+     分类写。当前四类：作用域**之外**的前置/清理（作用域造不出自己要恢复的状态）、作用域**之内**的变异
+     （变异即被测行为）、原语实现本身（没有别处可搬）、有界轮询原语的轮询间隔（等待栈的底，无处可迁）。
      全文件一串样板等于没写。
-   - **checker 自测覆盖被削弱的形态**（`scripts/tests/check-backend-test-determinism.Tests.ps1`）：白名单内通过、
-     用**默认白名单**校验同一行必须失败（白名单一旦放宽成「permanent 即放行」，这条立刻变红）、白名单指向别的
-     文件必须失败、**白名单未覆盖的 pattern（同一路径）必须失败、把该 pattern 写进白名单后必须通过**（这一对
-     锁住 pattern 一级，白名单退回只锁 path 即变红）、两条不同 permanent 行超过 cap 必须失败且 cap=2 必须通过、
-     旧 `path=pattern` 语法、空字段、非正整数/非整数容量、重复 pair 或不支持的 pattern 必须失败、
-     permanent 带 debt 元数据失败、permanent 缺 `rationale` 失败、未知/缺失 `classification` 失败、
-     debt 行带 `rationale` 失败；schema 3 另以真实 checker 覆盖登记票自担保、两项登记字段缺失/畸形、未来登记日、
-     expiry 早于登记日、46 天超限，并以正好 45 天作为通过对照；所有正向日期与 45/46 天边界都从测试启动时的
-     UTC 今日动态生成，静态 fixture 只保存占位模板，不会在 45 天后无代码变更地自然变红。另有 `#1487` / `#01487`
-     对抗用例锁住 issue 数字身份的规范化比较。
+   - **检查器自测覆盖被削弱的形态**（`scripts/tests/check-backend-test-determinism.Tests.ps1`）：白名单内通过、
+     用**默认白名单**校验同一行必须失败（白名单一旦放宽成「常设项即放行」，这条立刻变红）、白名单指向别的
+     文件必须失败、**白名单未覆盖的模式（同一路径）必须失败、把该模式写进白名单后必须通过**（这一对
+     锁住模式一级，白名单退回只锁路径即变红）、两条不同常设行超过上限必须失败且上限为 2 时必须通过、
+     旧 `path=pattern` 语法、空字段、非正整数/非整数容量、重复组合或不支持的模式必须失败、
+     常设行带债务元数据失败、常设行缺 `rationale` 失败、未知/缺失 `classification` 失败、
+     债务行带 `rationale` 失败；schema 3 另以真实检查器覆盖登记票自担保、两项登记字段缺失/畸形、未来登记日、
+     到期日早于登记日、46 天超限，并以正好 45 天作为通过对照；所有正向日期与 45/46 天边界都从测试启动时的
+     UTC 今日动态生成，静态夹具只保存占位模板，不会在 45 天后无代码变更地自然变红。另有 `#1487` / `#01487`
+     对抗用例锁住 Issue 数字身份的规范化比较。
 
    通过输出也随之细化为 `... admitted=N, expiringDebtRows=X, permanentRows=Y.`，「到期债务是否归零」在门禁输出里
    一眼可读，不必去数 JSON。
@@ -312,39 +311,39 @@ Task 8 首次终态六轮证据为 `artifacts/test-determinism/man-662/20260803T
 ## 共享测试基建已纳入扫描（#1471 前是盲区）
 
 `scripts/check-backend-test-determinism.ps1` 的 `Get-SolutionTestSourceFiles` 先 `dotnet sln list`，再用
-`Test-IsTestProject` 过滤：项目名以 `Tests` 结尾，或 csproj 里写了 `<IsTestProject>true</IsTestProject>`。
+`Test-IsTestProject` 过滤：项目名以 `Tests` 结尾，或项目文件中写了 `<IsTestProject>true</IsTestProject>`。
 `backend/common/Testing/` 下的三个项目（`Nerv.IIP.Testing`、`Nerv.IIP.Testing.Xunit`、`Nerv.IIP.Testing.PostgreSql`）
-两个条件都不满足，因此**整个目录曾不在扫描清单里**。2026-08-06 实测：solution 共 162 个项目，按测试项目口径选中
-66 个，`common/Testing` 下的 3 个项目全部落选；#1471 清偿前 checker 的输出为 `files=577, findings=89, admitted=47`。
+两个条件都不满足，因此**整个目录曾不在扫描清单里**。2026-08-06 实测：解决方案共 162 个项目，按测试项目口径选中
+66 个，`common/Testing` 下的 3 个项目全部落选；#1471 清偿前检查器的输出为 `files=577, findings=89, admitted=47`。
 
-#1471 把 35 处 culture / 环境变量写入迁进 `GlobalTestStateScope`，也就是把静态写入集中到了这条边界的**内侧**。
+#1471 把 35 处区域性/环境变量写入迁进 `GlobalTestStateScope`，也就是把静态写入集中到了这条边界的**内侧**。
 那一步把「不扫描 `common/Testing`」从顺带的事实升级成被依赖的设计前提，而该目录里的裸静态变异当时没有任何门禁
-会发现——口头约定而已。因此 checker 现在**显式**把 `backend/common/Testing/**` 的项目并入扫描
+会发现——口头约定而已。因此检查器现在**显式**把 `backend/common/Testing/**` 的项目并入扫描
 （`Test-IsSharedTestingProject`），并在该目录一个项目都没选中时直接失败，避免改名/搬迁把覆盖面悄悄缩回去。
 纳入后当时的实测输出为 `files=597, findings=23, admitted=22, expiringDebtRows=0, permanentRows=22`：新增的 11 个
-finding 全部登记为 `permanent`——`GlobalTestStateScope.cs` 的 10 个 `StaticSetter`（`Environment.SetEnvironmentVariable(name, value);`
+发现项全部登记为 `permanent`——`GlobalTestStateScope.cs` 的 10 个 `StaticSetter`（`Environment.SetEnvironmentVariable(name, value);`
 一行文本出现两次，占一行 `occurrenceCount: 2`）与 `BoundedObservationWindow.cs` 的 1 个轮询 `Task.Delay`。
 `admitted` 计的是去重后的 `path|pattern|hash` 键数，所以它比 `findings` 少 1 是这条重复行造成的，不是漏登记。
-`Nerv.IIP.Testing.Xunit` 与 `Nerv.IIP.Testing.PostgreSql` 实测零 finding。
+`Nerv.IIP.Testing.Xunit` 与 `Nerv.IIP.Testing.PostgreSql` 实测零发现项。
 
 **曾落在盲区、现已登记或仍需人读的等待原语**：`Eventually.WaitAsync` / `Eventually.AssertAsync` 的轮询 `Task.Delay`、
 `Consistently.StaysAsync` 的轮询 `Task.Delay`（两者现在共用 `BoundedObservationWindow`）、`ConcurrencyFanOutGate` 经由 `TestTimeout` 的预算等待，
 以及 `PendingOperation`、`CapTestHost` 里的等待路径。
 
-**为什么可以接受**：这些 `Task.Delay` 是**有界轮询的间隔**，不是 sleep-before-assert。它们的语义由
-`Nerv.IIP.Testing.Tests` 里的直接单测钉住（超时必须报告 condition/attempts/elapsed/脱敏最后观测；caller
-cancellation 原样传播；窗口关闭时在飞的观测在 grace 内被裁定、grace 也超时才抛 `ConsistentlyObservationTimeoutException` 而不是判 pass），
+**为什么可以接受**：这些 `Task.Delay` 是**有界轮询的间隔**，不是断言前休眠。它们的语义由
+`Nerv.IIP.Testing.Tests` 里的直接单测钉住（超时必须报告条件/尝试次数/已用时间/脱敏最后观测；调用方
+取消原样传播；窗口关闭时在飞的观测在宽限期内被裁定，宽限期也超时才抛 `ConsistentlyObservationTimeoutException` 而不是判通过），
 且每个原语都接受注入的 `TimeProvider`，测试用 `FakeTimeProvider` 驱动而不是等真实时间。换句话说：这一层的
-正确性由行为断言保证，而不是由文本扫描保证。这与 main 上既有的 `Eventually.cs` 同源，不是本次新造的规避手段。
+正确性由行为断言保证，而不是由文本扫描保证。这与 main 分支上既有的 `Eventually.cs` 同源，不是本次新造的规避手段。
 
-**回潮如何识别**：#1471 起，`Nerv.IIP.Testing` 里新增的 `Task.Delay` / `Thread.Sleep` / 静态 setter 会作为
-**未登记 finding 直接变红**——白名单只覆盖 `BoundedObservationWindow.cs=Task.Delay` 与
-`GlobalTestStateScope.cs=StaticSetter` 两条，别的文件、别的 pattern 都不在内。文本扫描仍然只能问「有没有」，
+**回潮如何识别**：#1471 起，`Nerv.IIP.Testing` 里新增的 `Task.Delay` / `Thread.Sleep` / 静态赋值器会作为
+**未登记发现项直接变红**——白名单只覆盖 `BoundedObservationWindow.cs=Task.Delay` 与
+`GlobalTestStateScope.cs=StaticSetter` 两条，别的文件、别的模式都不在内。文本扫描仍然只能问「有没有」，
 不能问「是不是有界轮询」：`Task.WhenAny(x, Task.Delay(...))` 无预算竞速、或读 `DateTimeOffset.UtcNow` 而不是
-注入 `TimeProvider` 的计时，扫描器分不出好坏，只能在 code review 里拦。判据不变：新等待必须(1)接受
-`TimeProvider`，(2)接受 caller 的 `CancellationToken` 并原样传播取消，(3)超时抛带诊断的专用异常，(4)在
-`Nerv.IIP.Testing.Tests` 里有一条会在该性质被削弱时变红的测试。扫描范围到此为止：required/opt-in lane 与
-enforcement 归 MAN-661，普通测试变更不得自行再改门禁口径。
+注入 `TimeProvider` 的计时，扫描器分不出好坏，只能在代码评审里拦。判据不变：新等待必须(1)接受
+`TimeProvider`，(2)接受调用方的 `CancellationToken` 并原样传播取消，(3)超时抛带诊断的专用异常，(4)在
+`Nerv.IIP.Testing.Tests` 里有一条会在该性质被削弱时变红的测试。扫描范围到此为止：必需/按需启用的执行通道与
+强制执行归 MAN-661，普通测试变更不得自行再改门禁口径。
 
 ## 第一轮走查修复（#1470 / PR #1482）
 
@@ -355,55 +354,55 @@ enforcement 归 MAN-661，普通测试变更不得自行再改门禁口径。
   方向是让**所有**读写这批列的路径解析同一个 `TimeProvider` 注册。`FileStoragePostgreSqlServiceTests` 的
   `GarbageCollector_ReadsUploadSessionExpiryThroughTheClockThatWroteIt` 与
   `GarbageCollector_KeepsSessionsWrittenByAClockAnchoredBehindTheWallClock` 在 GC 退回墙钟时**都会失败**
-  （实测 2 FAIL）。扫描器写的 `ScannedAtUtc` 是审计戳、没有任何过期比较读它，刻意留在墙钟上。
+  （实测 2 个失败）。扫描器写的 `ScannedAtUtc` 是审计戳、没有任何过期比较读它，刻意留在墙钟上。
 - **`Consistently.StaysAsync` 区分「超时」与「违例」。** 窗口在首次观测返回前就到期时抛
   `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族），而不是 `ConsistentlyViolatedException`。
   否则一次冷启动的 Docker PostgreSQL 查询会把「基础设施慢」误诊成「负向断言被违反」，而且诊断只能编造一个
-  从未存在的「最后一次观测」。异常报告 condition（脱敏）、attempts 与 elapsed。
-- **共享 fan-out gate。** MasterData SKU 明细与设备可用性两处的并发上限断言曾是同形状的两份手抄，且已经在
-  「safety budget 是否接收 caller 的 `CancellationToken`」上分叉（前者不传，请求被取消时要挂满 30 s）。
+  从未存在的「最后一次观测」。异常报告条件（脱敏）、尝试次数与已用时间。
+- **共享扇出门。** MasterData SKU 明细与设备可用性两处的并发上限断言曾是同形状的两份手抄，且已经在
+  「安全预算是否接收调用方的 `CancellationToken`」上分叉（前者不传，请求被取消时要挂满 30 s）。
   两处收编为 `Nerv.IIP.Testing.ConcurrencyFanOutGate`，跨两个测试程序集共用同一份语义。
 - **`Eventually.AssertAsync`。** `ErpSalesOrderDemandConsumerTests`、`MesCapSubscriptionTests`、
-  `NotificationCapOutboxAcceptanceTests` 三份「重试断言块直到成立」的 helper（观测类型还分两种形状）收编为
+  `NotificationCapOutboxAcceptanceTests` 三份「重试断言块直到成立」的辅助程序（观测类型还分两种形状）收编为
   一个原语。只重试断言形状的失败（`XunitException` 与 EF 的 `InvalidOperationException`），其余异常立即上抛，
   不被当成「还没就绪」重试满整个预算。为此 `Nerv.IIP.Testing` 引用了 xUnit 断言包（落点与白名单口径在第二轮
   收窄，见下节 S2/S3）。
 - **显式预算/取消。** `ErpCostAccountingPostgresAcceptanceTests` 与 `MesPostgresAdvisoryLockProbe` 的探针
-  连接改回显式 10 s 预算并接收 caller 的 `CancellationToken`（此前一处退回 Npgsql 默认 15 s，一处传
+  连接改回显式 10 s 预算并接收调用方的 `CancellationToken`（此前一处退回 Npgsql 默认 15 s，一处传
   `CancellationToken.None`）。
 
 ## 第二轮走查修复（#1470 / PR #1482）
 
 - **窗口内的观测有了结构性预算（S1/S8）。** `Eventually.WaitAsync` 与 `Consistently.StaysAsync` 现在都经由共享驱动器
-  `BoundedObservationWindow`（第二轮时叫 `Eventually.ObserveWithinWindowAsync`）发起观测：token 仍然交给 `observe`，但**即使 `observe` 完全忽略它**，
+  `BoundedObservationWindow`（第二轮时叫 `Eventually.ObserveWithinWindowAsync`）发起观测：令牌仍然交给 `observe`，但**即使 `observe` 完全忽略它**，
   窗口关闭时该次观测也会被放弃。此前一次卡住的 Npgsql 连接有两个不同的后果——`Eventually` 一侧是测试**挂死
   而不是变红**（最贵的失败形态），`Consistently` 一侧是**窗口静默退化成单次观测**，负向断言根本没有被复查。
   放弃掉的观测会显式消费它后来的异常，不会以 `UnobservedTaskException` 落到别的测试头上。
   `ObservationBudgetTests` 钉住这一层：删掉那个 `WaitAsync` 后它们从「失败」变成「挂起」，因此每条都自带有界
   外层预算。（其中「晚故障被谁消费」那一条在第三轮被证明并未真正钉住，见下节 A2。）
-- **同时把 token 真正接到 IO 上。** `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.ReadFactsAsync`、
+- **同时把令牌真正接到 IO 上。** `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.ReadFactsAsync`、
   `ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.CountSiblingConsumerReceiptsAsync`、
   `MesInventoryProducedLotPostgresRedisAcceptanceTests` 的 `ReadMesFactsAsync`/`ReadInventoryFactsAsync`
   改为**必填**的 `CancellationToken` 参数并传到 `OpenAsync`/`ExecuteReaderAsync`/`ReadAsync`；三处
-  `Eventually.AssertAsync` 的 helper（Notification/MES/DemandPlanning）签名从 `Func<Task>` 改为
-  `Func<CancellationToken, Task>`，token 一路进到 EF 查询与裸 ADO 诊断查询。必填参数本身就是「不许再丢」的
+  `Eventually.AssertAsync` 的辅助程序（Notification/MES/DemandPlanning）签名从 `Func<Task>` 改为
+  `Func<CancellationToken, Task>`，令牌一路进到 EF 查询与裸 ADO 诊断查询。必填参数本身就是「不许再丢」的
   编译期护栏。**这句穷举在第二轮写错过一次**（漏了 `ErpSalesOrderDemandConsumerTests` 等位点），第三轮重新
-  逐个调用点核过，完整清单见下节「丢弃观测 token 的位点（完整清单）」——声明穷举就必须真穷举，不真穷举的
+  逐个调用点核过，完整清单见下节「丢弃观测令牌的位点（完整清单）」——声明穷举就必须真穷举，不真穷举的
   穷举比不写更糟。
 - **`Eventually.AssertAsync` 的白名单与它的契约对齐（S2）。** 原实现写的是
   `exception is XunitException or InvalidOperationException`，而 `ObjectDisposedException` 与 Npgsql 的
   `NpgsqlOperationInProgressException` 都**继承自** `InvalidOperationException`，于是注释里宣称「立即上抛」
-  的那两类失败恰好会被重试满整个 30 s 预算再报成 timeout。现在改为**精确类型**判定
+  的那两类失败恰好会被重试满整个 30 s 预算再报成超时。现在改为**精确类型**判定
   （`exception.GetType() == typeof(InvalidOperationException)`，EF 的 `SingleAsync` 正好抛这个精确类型），
-  派生类型一律立即上抛。`EventuallyAssertTests` 双向钉住：plain 与 `XunitException` 重试、
+  派生类型一律立即上抛。`EventuallyAssertTests` 双向钉住：普通异常与 `XunitException` 重试、
   `ObjectDisposedException`/派生类型/无关异常在第一次尝试就原样抛出。
-- **xUnit 依赖收到最窄落点（S3）。** `Nerv.IIP.Testing` 此前引 `xunit` 元包（core + assert + analyzers），
+- **xUnit 依赖收到最窄落点（S3）。** `Nerv.IIP.Testing` 此前引 `xunit` 元包（核心 + 断言 + 分析器），
   实际只用到 `Xunit.Sdk.XunitException` 一个类型，该类型位于 `xunit.assert`，故改为只引 `xunit.assert`。
   **同目录的 `Nerv.IIP.Testing.Xunit` 评估后不是更窄落点**：它带的是 `xunit.extensibility.core`，而
   `xunit.core.dll` 里根本没有 `XunitException`（仍要额外加 `xunit.assert`）；把 `AssertAsync` 挪过去还会
   把它与它转调的 `WaitAsync` 拆开，而它的三个真实消费方（Erp/Mes/Notification 验收测试）引用的是
   `Nerv.IIP.Testing` 而不是 `Nerv.IIP.Testing.Xunit`。边界口径同时更正：22 个消费方中 21 个是 xUnit 测试
-  项目，第 22 个是 `common/Testing` 下的共享库 `Nerv.IIP.Testing.PostgreSql`（checker 的
+  项目，第 22 个是 `common/Testing` 下的共享库 `Nerv.IIP.Testing.PostgreSql`（检查器的
   `Test-IsTestProject` 也判它不是测试项目）；真正成立的不变量是**没有任何可发布程序集**引用它们。
 - **假时钟推进的屏障换成显式边沿（S4）。** `ApprovalOverdueSchedulerTests` 的 `clock.Advance(1h)` 此前以
   「已派发一条命令」为屏障，这只在 `ApprovalOverdueScheduler.ExecuteAsync` 今天恰好先建 `PeriodicTimer`
@@ -411,33 +410,33 @@ enforcement 归 MAN-661，普通测试变更不得自行再改门禁口径。
   `TimerRegistrationObservingTimeProvider.WaitForTimerCountAsync(1)`，即计时器**注册**这件事本身。为此
   `TimerRegistrationObservingTimeProvider` 与 `BoundedSignal` 从 `Nerv.IIP.Testing.Tests` 提升为
   `Nerv.IIP.Testing` 的公开设施（原 `FakeClockBarriers.cs` 删除；`BoundedSignal` 第三轮再迁到自己的文件），业务测试程序集可以直接用同一道屏障。
-- **`ConcurrencyFanOutGate.StaysWithinAsync` 的 describe 改为描述被观测值（S5）。** 原来是
+- **`ConcurrencyFanOutGate.StaysWithinAsync` 的观测描述改为描述被观测值（S5）。** 原来是
   `describe: _ => Describe(InFlight)`：丢掉传入的 `MaxInFlight` 改为在诊断时刻**重读** `InFlight`，报出来的
   可能不是触发违例的那个值。
 - **`ConsistentlyObservationTimeoutException` 去掉恒为 0 的 `attempts`（S6）。** 该异常只在
   `!observedAtLeastOnce` 分支抛出，所以「已完成观测数」结构上恒为 0、「已发起观测数」结构上恒为 1，两者都是
-  伪装成诊断的常量。现在只保留 condition 与 elapsed，消息里那句「(0 completed observations)」一并删除。
-  **该结论在第三轮被 A1 推翻**：加上 grace 裁定之后完成观测数不再恒为 0，`CompletedObservations` 重新加回，
+  伪装成诊断的常量。现在只保留条件与已用时间，消息里那句「(0 completed observations)」一并删除。
+  **该结论在第三轮被 A1 推翻**：加上宽限裁定之后完成观测数不再恒为 0，`CompletedObservations` 重新加回，
   见下节。
-- **`ProcessMemorySampler` 的 J9 契约补齐另一半（S7）。** 此前只覆盖「取过样之后 stop，信号仍是
+- **`ProcessMemorySampler` 的 J9 契约补齐另一半（S7）。** 此前只覆盖「取过样之后停止，信号仍是
   `RanToCompletion`」；新增 `FirstIntervalSampleTaken_is_cancelled_when_the_sampler_stops_before_its_first_tick`
-  覆盖「从未 tick 就结束时必须取消」——采样间隔取 1 小时，让「从未 tick」是结构事实而不是竞态。
+  覆盖「从未触发就结束时必须取消」——采样间隔取 1 小时，让「从未触发」是结构事实而不是竞态。
 
 ## 第三轮走查修复（#1470 / PR #1482）
 
 - **`Consistently.StaysAsync` 窗口关闭时不再放弃在飞观测（A1）。** 第二轮把「窗口静默退化」的退化点后移了一次
   观测而已：窗口关闭时若已有 ≥1 次完成观测，原实现直接 `return lastObservation`，被放弃的那次观测继续跑完但
   结论被丢弃。**最可能暴露违例的恰恰是那一次观测**（它跨过了整个窗口的尾部），丢掉它 = 负向断言的灵敏度被
-  静默削弱，真阳性可能被吞——与 spec 第 3 条「第一次观测到额外事件即失败」直接冲突。现在：
-  - 在飞观测拿到的**不是**窗口 token，而是只与 caller 绑定的 token，窗口关闭不再打断它；
-  - 窗口关闭后它在一个**独立的** grace 预算内被等完，然后照常裁定：违例就抛
+  静默削弱，真阳性可能被吞——与规格第 3 条「第一次观测到额外事件即失败」直接冲突。现在：
+  - 在飞观测拿到的**不是**窗口令牌，而是只与调用方绑定的令牌，窗口关闭不再打断它；
+  - 窗口关闭后它在一个**独立的**宽限预算内被等完，然后照常裁定：违例就抛
     `ConsistentlyViolatedException`，成立就作为最后一次观测返回；
-  - grace 也超时则抛 `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族）——**verdict
-    unknown，既不是 pass 也不是违例**；
-  - grace 默认取 `options.Timeout`（与调用方已经认可的窗口同数量级），可由 `observationGrace` 覆盖。
+  - 宽限期也超时则抛 `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族）——**裁定
+    未知，既不是通过也不是违例**；
+  - 宽限期默认取 `options.Timeout`（与调用方已经认可的窗口同数量级），可由 `observationGrace` 覆盖。
 
   `ConsistentlyObservationTimeoutException` 因此改带 `CompletedObservations` 与 `Grace`。第二轮 S6 曾以
-  「attempts 恒为 0，是伪装成诊断的常量」为由删掉计数——该理由随本改动失效：现在它是 0（窗口内一次都没读到）
+  「尝试次数恒为 0，是伪装成诊断的常量」为由删掉计数——该理由随本改动失效：现在它是 0（窗口内一次都没读到）
   或 N（前 N 次干净、尾部那次读不到），两种情况的读法完全不同，消息也分别措辞。
 
   **护栏**：`ConsistentlyTests.StaysAsync_AdjudicatesAnObservationThatStartedInsideTheWindowAndFinishedAfterItClosed`
@@ -446,86 +445,86 @@ enforcement 归 MAN-661，普通测试变更不得自行再改门禁口径。
   closed. Verdict: returned commands=1 (a pass)`（同批 6 条变红）。
 - **`Eventually` 一侧刻意不跟进。** 正向断言的预算存在的意义就是拒绝「满足了，但晚了」，所以窗口关闭时它继续
   放弃在飞观测。两侧语义不同这件事写在 `BoundedObservationWindow` 的 XML 里，抽共享驱动器时不许抹平。
-- **两个原语的逐行克隆收编为 `BoundedObservationWindow`（A6）。** 8 条参数校验、时钟与 linked CTS、观测/裁定/
-  轮询循环、两条 cancellation 过滤器只剩一份；裁定语义（adjudicate / onWindowClosed / grace 策略）作为
-  callback 留在各自一侧。分叉风险此前已可见（两侧 attempts 递增与脱敏时机已经不一致）。
+- **两个原语的逐行克隆收编为 `BoundedObservationWindow`（A6）。** 8 条参数校验、时钟与链接的 CTS、观测/裁定/
+  轮询循环、两条取消过滤器只剩一份；裁定语义（裁定/窗口关闭时处理/宽限策略）作为
+  回调留在各自一侧。分叉风险此前已可见（两侧尝试次数递增与脱敏时机已经不一致）。
 - **被放弃观测的资源前提写进契约（A4）。** `BoundedObservationWindow` 的 XML 现在把它写成不变量：**`observe`
-  必须自持它触碰的一切资源**（连接、DI scope、`DbContext`），因为它可能在启动它的窗口结束之后仍在运行。
-  `ReadFactsAsync` 自建 `NpgsqlConnection`，三处 `Eventually.AssertAsync` 都在 lambda 内 `CreateScope()`；
+  必须自持它触碰的一切资源**（连接、DI 作用域、`DbContext`），因为它可能在启动它的窗口结束之后仍在运行。
+  `ReadFactsAsync` 自建 `NpgsqlConnection`，三处 `Eventually.AssertAsync` 都在 lambda 表达式内 `CreateScope()`；
   当时漏掉的唯一违反位点是 `MesPostgresAdvisoryLockProbe`（闭包复用调用者作用域的连接），已在第五轮修正——
   见下文。违反的症状是 EF 的「A second operation was started on this context instance」从某个不相干的
   后续行抛出，因此与下一条互为兜底。
 - **`Eventually.AssertAsync` 白名单补上 EF 拼写（A5）。** EF Core 的并发使用错误是**精确**
   `InvalidOperationException`，第二轮的精确类型判据只挡住了 Npgsql 的 `NpgsqlOperationInProgressException`
-  拼写，EF 拼写会被重试满 30 s 再报 timeout。现在按 EF 自己的 `CoreStrings.ConcurrentMethodInvocation` 措辞
+  拼写，EF 拼写会被重试满 30 s 再报超时。现在按 EF 自己的 `CoreStrings.ConcurrentMethodInvocation` 措辞
   排除，措辞钉在真实 EF 程序集上（改词即变红）。
   **实测记录（EF Core 10.0.8，2026-08-06）**：持有 context 自己的 `IConcurrencyDetector` 临界区后，再次进入该
   临界区，以及 `ToListAsync`/`SaveChangesAsync`/`FindAsync`/`AnyAsync`，**全部未抛出**——EF Core 10 无法被
-  确定性地驱动抛出该异常，剩下的唯一办法是真线程竞态，那会是 flaky 测试。因此测试如实声明：它钉的是**措辞与
+  确定性地驱动抛出该异常，剩下的唯一办法是真线程竞态，那会是偶发测试。因此测试如实声明：它钉的是**措辞与
   行为**，**不钉运行时类型**；类型判断若有误只会让该分支失效（派生类早已被精确类型判据立即上抛），不会造成危害。
 - **`BoundedSignal` 落点与预算（A7）。** 从 `TimerRegistrationObservingTimeProvider.cs` 迁到
   `BoundedSignal.cs`；5 s 预算从不可注入的 `private static readonly` 改为带默认值的参数
   （`BoundedSignal.DefaultBudget` / `TimerRegistrationObservingTimeProvider(registrationBudget:)`）。
-- **A2：一条自称钉住却没钉住的用例改真。** `ObservationBudgetTests` 里那条用例的 XML 写着「fault 必须被原语的
-  `ContinueWith` 消费」，但用例自己 `await` 了被放弃的 task——**这个 await 本身就消费了异常**。实测把
+- **A2：一条自称钉住却没钉住的用例改真。** `ObservationBudgetTests` 里那条用例的 XML 写着「故障必须被原语的
+  `ContinueWith` 消费」，但用例自己 `await` 了被放弃的任务——**这个 await 本身就消费了异常**。实测把
   `ConsumeLateFault` 整段删空后 86 条测试仍全绿。现在拆成两条：
-  - verdict 一条保留原形状，XML 如实写明**它不钉 `ContinueWith`**；
-  - `TheLateFaultOfAnAbandonedObservationIsConsumedByThePrimitive` 真钉住：全程不持有被放弃 task 的强引用
-    （只留 `WeakReference`，创建它的 helper 标 `NoInlining`），挂 `TaskScheduler.UnobservedTaskException`
-    并强制 GC/终结器，按唯一 marker 过滤掉并行测试的串扰。实测把 `ConsumeLateFault` 删空后**只有这一条**变红：
+  - 裁定用例保留原形状，XML 如实写明**它不钉 `ContinueWith`**；
+  - `TheLateFaultOfAnAbandonedObservationIsConsumedByThePrimitive` 真钉住：全程不持有被放弃任务的强引用
+    （只留 `WeakReference`，创建它的辅助程序标 `NoInlining`），挂 `TaskScheduler.UnobservedTaskException`
+    并强制 GC/终结器，按唯一标记过滤掉并行测试的串扰。实测把 `ConsumeLateFault` 删空后**只有这一条**变红：
     `The abandoned observation's fault reached TaskScheduler.UnobservedTaskException, which means the
     bounded-window driver no longer consumes it`。
 
-### 丢弃观测 token 的位点（完整清单）
+### 丢弃观测令牌的位点（完整清单）
 
 第二轮那句「剩余只有 StackExchange.Redis 那几处 + `ConcurrencyFanOutGate`/`ApprovalOverdueSchedulerTests`」
 **不成立**。2026-08-06 对全部 `Eventually.WaitAsync` / `Eventually.AssertAsync` / `Consistently.StaysAsync`
-调用点逐个核过，丢弃 token 的 observe 共 13 处（不含 `Nerv.IIP.Testing.Tests` 内部刻意如此的用例）：
+调用点逐个核过，丢弃令牌的观测共 13 处（不含 `Nerv.IIP.Testing.Tests` 内部刻意如此的用例）：
 
 | 位点 | 类别 |
 | --- | --- |
-| `MaintenanceLifecycleDockerAcceptanceTests`（Redis PING/Connect） | StackExchange.Redis 无 `CancellationToken` 重载 |
+| `MaintenanceLifecycleDockerAcceptanceTests`（Redis PING/连接） | StackExchange.Redis 无 `CancellationToken` 重载 |
 | `MesInventoryProducedLotPostgresRedisAcceptanceTests`（`StreamGroupInfoAsync`） | 同上 |
 | `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests`（`StreamGroupInfoAsync`） | 同上 |
 | `ConcurrencyFanOutGate` × 2（`InFlight` / `MaxInFlight`） | 内存计数器，不可能阻塞 |
 | `ErpSalesOrderDemandConsumerTests` × 2（`InjectedFailureCount` / `AttemptCount`） | 内存计数器（第二轮**漏登记**，本轮补注释） |
 | `ApprovalOverdueSchedulerTests` × 2 | 内存计数器 |
-| `InventoryReservationExpirationTests` × 2（Prometheus 文本导出到 `MemoryStream`、内存字段读取） | 内存；main 上既有，本 PR 未改动 |
-| `MaintenancePlanDueSchedulerTests` × 2（`sender.LastCommand` / `sender.Attempts`） | 内存；main 上既有，本 PR 未改动 |
+| `InventoryReservationExpirationTests` × 2（Prometheus 文本导出到 `MemoryStream`、内存字段读取） | 内存；main 分支上既有，本 PR 未改动 |
+| `MaintenancePlanDueSchedulerTests` × 2（`sender.LastCommand` / `sender.Attempts`） | 内存；main 分支上既有，本 PR 未改动 |
 
-Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `BoundedObservationWindow` 的结构性放弃提供；
-内存那十处不可能阻塞，丢 token 不构成丢预算。两类都在位点处逐条注明（本 PR 未改动的两个文件除外）。
+Redis 三处的预算由多路复用器自己的连接/同步超时加上 `BoundedObservationWindow` 的结构性放弃提供；
+内存那十处不可能阻塞，丢令牌不构成丢预算。两类都在位点处逐条注明（本 PR 未改动的两个文件除外）。
 
 ## 第四轮走查修复（#1470 / PR #1482）
 
-- **checker 数字更正（B1）。** 上一节曾写 `files=576`；2026-08-06 实跑 `pwsh
+- **检查器数字更正（B1）。** 上一节曾写 `files=576`；2026-08-06 实跑 `pwsh
   scripts/check-backend-test-determinism.ps1` 的输出是
   `Backend test determinism check passed: files=577, findings=89, admitted=47.`，已按实测更正。同批复核的其余
   数字与实测吻合：`dotnet sln backend/Nerv.IIP.sln list` 为 162 个项目，按 `Test-IsTestProject` 口径选中 66 个，
   `backend/common/Testing/` 下 3 个项目全部落选；`backend/test-determinism-baseline.json` 为 47 行、全部
-  `StaticSetter`；上表丢 token 位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 3 一节；
+  `StaticSetter`；上表丢令牌位点合计 13 处。（这 47 行已由 #1471 清偿，当前值见上面的 schema 3 一节；
   此处保留的是第四轮走查当时的实测快照；当前契约见上面的 schema 3 一节。）
-- **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** grace 计时器是在**窗口关闭那一刻**才用注入的
-  `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的 grace 计时器仍未
+- **`Consistently.StaysAsync` 的假时钟使用约束写进契约（B2）。** 宽限计时器是在**窗口关闭那一刻**才用注入的
+  `TimeProvider` 创建的，所以 `FakeTimeProvider` 下只 `Advance` 一次只能关掉窗口，随即注册的宽限计时器仍未
   到期；若在飞观测永不返回，调用会**永久挂起而不是变红**——正是 MAN-799 与 MAN-663 各踩过一次的「计时器晚注册」
   形态。XML 现在明确要求推进第二次，并指向正面钉住它的
   `ObservationBudgetTests.StaysAsync_ReportsATimeoutWhenTheObservationIgnoresItsTokenPastTheWindowAndTheGrace`
   （删掉它的第二次 `Advance` 即复现挂起）。
-- **`describe` 的取值时机写成不变量，并且不再能顶替它要解释的失败（B3）。** `describe` 只在失败路径上求值一次
+- **观测描述（`describe`）的取值时机写成不变量，并且不再能顶替它要解释的失败（B3）。** `describe` 只在失败路径上求值一次
   （超时的最后观测、或违例的那次观测），不是每轮观测后立即求值。两件事因此成立：
-  - **观测必须是值快照。** 若观测是活句柄（`DbContext`、观测自己已释放的 scope 里的实体、别的线程仍在改的集合、
+  - **观测必须是值快照。** 若观测是活句柄（`DbContext`、观测自己已释放的作用域里的实体、别的线程仍在改的集合、
     未关闭的连接），诊断报告的会是**诊断时刻**的状态而不是失败时刻的状态，或者干脆在已释放资源上抛异常。
     `Eventually.WaitAsync` 的 XML 现在把它写成不变量，`Consistently.StaysAsync` 引用同一条。
   - **穷举复核结果：当前全部 27 个 `describe` 都是值快照，零活对象。** 逐个位点见下表。
   - **`describe` 自己抛异常不再让诊断消失。** 此前它会**顶替** `EventuallyTimeoutException` /
-    `ConsistentlyViolatedException`，测试只会看到「某个 lambda 抛了 NRE」，而 condition / attempts / elapsed
+    `ConsistentlyViolatedException`，测试只会看到「某个 lambda 表达式抛了 NRE」，而条件/尝试次数/已用时间
     全部丢失。新增 `BoundedObservationWindow.SafeDescribe`：抛异常时降级为脱敏的
     `<describe threw {类型}: {消息}>` 占位串，原始失败照常抛出。占位串同样过 `TestDiagnostic.Sanitize`。
     护栏：`EventuallyTests.WaitAsync_StillReportsTheTimeoutWhenDescribeItselfThrows` 与
     `ConsistentlyTests.StaysAsync_StillReportsTheViolationWhenDescribeItselfThrows`（`Nerv.IIP.Testing.Tests`
     因此从 86 条增至 88 条）。
 
-### `describe` 位点穷举（27 处，全部为值快照）
+### 观测描述（`describe`）位点穷举（27 处，全部为值快照）
 
 | 位点 | 观测类型 | 判定 |
 | --- | --- | --- |
@@ -536,17 +535,17 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
 | `InventoryDirectoryPostgresTests`（PG 就绪） | `(bool, Exception?)` | 同上 |
 | `ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests` | `int` | 值；闭包只含 `int` 局部量 |
 | `SalesOrderDemandPlanningPostgresRedisAcceptanceTests` | `int` | 值 |
-| `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` × 3（`DescribeFacts`） | `MaintenanceFacts` | 只含标量的只读快照，scope 内读完即脱离 |
+| `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` × 3（`DescribeFacts`） | `MaintenanceFacts` | 只含标量的只读快照，作用域内读完即脱离 |
 | `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests`（Redis 消费组） | `string` | 值 |
 | `MesInventoryProducedLotPostgresRedisAcceptanceTests`（双库事实） | 标量元组 | 值 |
 | `MesInventoryProducedLotPostgresRedisAcceptanceTests`（消费组） | `List<string>` | **每次观测新建**的列表，无共享可变状态 |
 | `MesPostgresAdvisoryLockProbe` | `int` | 值 |
 | `InventoryReservationExpirationTests` × 2 | `string` / `decimal` | 值（Prometheus 导出文本、已读出的数量） |
-| `DemandPlanningEndpointContractTests` | `MrpRun` | `AsNoTracking` 且 scope 已释放；只读已物化的标量 `Status`/`FailureReason`，无导航属性 |
-| `ErpSalesOrderDemandConsumerTests` × 3 | `int` / 标量元组 | 值；闭包另读 probe 计数器作补充上下文 |
+| `DemandPlanningEndpointContractTests` | `MrpRun` | `AsNoTracking` 且作用域已释放；只读已物化的标量 `Status`/`FailureReason`，无导航属性 |
+| `ErpSalesOrderDemandConsumerTests` × 3 | `int` / 标量元组 | 值；闭包另读探针计数器作补充上下文 |
 | `MaintenancePlanDueSchedulerTests` × 2 | 命令对象 / `int` | 命令的 `BusinessDate` 为不可变标量 |
 | `ErpCostAccountingPostgresAcceptanceTests` | `int` | 值 |
-| `IndustrialTelemetryHistorianTests` | `(bool, bool)` | 值；`DbContext` 在 observe 内 `await using` 自持并释放 |
+| `IndustrialTelemetryHistorianTests` | `(bool, bool)` | 值；`DbContext` 在观测内以 `await using` 自持并释放 |
 | `ApprovalOverdueSchedulerTests` × 2 | `int` / `bool` | 值 |
 
 三处「闭包另读活计数器」（`ConcurrencyFanOutGate` × 2、`ErpSalesOrderDemandConsumerTests` × 3）是**有意**的：
@@ -554,26 +553,26 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
 
 ## 第五轮走查修复（#1470 / PR #1482）
 
-- **`MesPostgresAdvisoryLockProbe` 的 observe 改为自持连接（C1）。** 这是仓库里最后一处违反
+- **`MesPostgresAdvisoryLockProbe` 的观测改为自持连接（C1）。** 这是仓库里最后一处违反
   `BoundedObservationWindow` 资源不变量的位点：`observe` 闭包复用 `WaitForWaitersAsync` 作用域里的
-  `NpgsqlConnection`/`NpgsqlCommand`。`Eventually` 是正向断言、**不给 grace**，窗口关闭时在飞观测被直接放弃，
+  `NpgsqlConnection`/`NpgsqlCommand`。`Eventually` 是正向断言、**不给宽限期**，窗口关闭时在飞观测被直接放弃，
   随后方法返回触发 `await using` 释放——被弃观测与释放竞态成立（后果是一个被 `ConsumeLateFault` 吞掉的
-  `ObjectDisposedException`，即「症状被吞、不变量被破」的最坏组合）。现在每次观测在 lambda 内
-  `await using` 自建连接与命令：被弃观测自带资源，随窗口 token 取消后把连接还给 Npgsql 池，方法返回时不再有
-  共享对象被释放。显式 10 s 连接预算与 caller token 传递（第二轮 S1/H3）原样保留，`connectionString` 继续作为
-  sensitive value 传给 `TestTimeout` 与 `EventuallyOptions`。
+  `ObjectDisposedException`，即「症状被吞、不变量被破」的最坏组合）。现在每次观测在 lambda 表达式内
+  以 `await using` 自建连接与命令：被弃观测自带资源，随窗口令牌取消后把连接还给 Npgsql 池，方法返回时不再有
+  共享对象被释放。显式 10 s 连接预算与调用方令牌传递（第二轮 S1/H3）原样保留，`connectionString` 继续作为
+  敏感值传给 `TestTimeout` 与 `EventuallyOptions`。
 - **开销实测（2026-08-06，`postgres:18` 容器，各 3 轮）。** 最坏情况是 15 s 预算 / 50 ms 轮询 = 约 300 次
-  open/close，但每测试库连接串未关闭池化（只有 admin 串设 `Pooling=false`），因此除首次外都是池的租/还。三个
+  打开/关闭，但每测试库连接串未关闭池化（只有管理连接串设 `Pooling=false`），因此除首次外都是池的租/还。三个
   调用点（`MesSchedulePlanProvenancePostgresTests`、`SkuDisabledConsumerTests`、
   `WorkOrderCapitalizationConcurrencyPostgresTests`，共 10 条用例）实测墙钟：改前 5.19 / 5.79 / 4.41 s，
   改后 4.40 / 4.16 / 4.25 s——无退化（差异落在噪声内，实际轮询次数远小于最坏值，因为等待边沿在数十毫秒内出现）。
 
-## MAN-808 假时钟锚点与 Inventory 过期 worker 第二趟屏障（#1491 / PR #1501）
+## MAN-808 假时钟锚点与 Inventory 过期工作进程第二趟屏障（#1491 / PR #1501）
 
 - **`TimerRegistrationObservingTimeProvider` 新增锚定起点的构造函数
   （`(DateTimeOffset startDateTime, TimeSpan? registrationBudget = null)`）。** 注入 `TimeProvider` 只覆盖「读注入
-  时钟」那一面；下游可能还有读**进程 wall clock** 的领域守卫，`StockReservation.NormalizeFutureUtc`（「到期时间必须
-  在未来」）就是一条。这类被测对象配上停在 2000 年的默认 `FakeTimeProvider` 会直接抛，假时钟必须锚在真实 now 再从
+  时钟」那一面；下游可能还有读**进程墙钟**的领域守卫，`StockReservation.NormalizeFutureUtc`（「到期时间必须
+  在未来」）就是一条。这类被测对象配上停在 2000 年的默认 `FakeTimeProvider` 会直接抛，假时钟必须锚在真实当前时刻再从
   那里 `Advance`。锚点做成**构造参数**而不是事后 `SetUtcNow`：向前设时钟会立即触发所有**触发点已被这次跳跃跨过**
   的已注册计时器（锚定这一跳通常宽达几十年，实际就是全部），「先构造、后锚定」只在还没人注册时才安全——那正是一条
   隐式顺序假设，而这个类存在的意义就是让测试不再依赖顺序。原无参构造函数（A7 的 `registrationBudget:`）语义不变，
@@ -584,25 +583,25 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
   （#1502）：两个**业务侧**消费点（`InventoryReservationExpirationTests`、`ApprovalOverdueSchedulerTests`；
   `Nerv.IIP.Testing.Tests` 下的调用点——`ObservationBudgetTests`/`ConsistentlyTests`/`EventuallyAssertTests`/
   `TimerRegistrationObservingTimeProviderTests`——属原语自测，不受此约束）都在
-  **`StopAsync` 之后**加了 `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或 worker 循环
+  **`StopAsync` 之后**加了 `Assert.Equal(1, clock.TimersCreated)`——前提被削弱（多出第二个注册方，或工作进程循环
   改成逐轮注册）时计数改变，每次跑都确定性红且直指前提，而不是退化成间歇红。注释不算保障、可执行断言才算，与
   「互斥门必须有一个在门被削弱时会失败的回归测试」是同一条治理先例。
   **断言位置是这条保障的一部分**（#1502 走查）：多出第二个注册方那条主危害与位置无关（断言时计数已是 2），
   但逐轮注册那条分支里，Inventory 的形状（先 `RunOnceAsync`、后建计时器）使下一轮的注册发生在「第二趟结果已可
-  观测」**之后**，停机前断言会与它赛跑（Approval 是先建计时器后 dispatch，同样的重写大概率在下次 dispatch 前就
+  观测」**之后**，停机前断言会与它赛跑（Approval 是先建计时器后派发，同样的重写大概率在下次派发前就
   注册完，停机前位置未必输——但「大概率」不是保障，两处统一取结构上成立的那个位置）。因此两处断言都放在
-  `StopAsync` 之后——`StopAsync` 是「用调用者交进来的 token 有界地等 `ExecuteTask`」，因此只有传 `None` 才会一直
-  等到循环真正退出；带超时的 token 可能提前返回、少数掉注册。（这里刻意只写行为、不写它当下用的是哪个 BCL API：
-  该实现细节在 runtime 版本间已经变过一次，行为没变。）传 `None` 时循环退出前的最后一次注册必然已计入，赛跑变成
+  `StopAsync` 之后——`StopAsync` 是「用调用者交进来的令牌有界地等 `ExecuteTask`」，因此只有传 `None` 才会一直
+  等到循环真正退出；带超时的令牌可能提前返回、少数掉注册。（这里刻意只写行为、不写它当下用的是哪个 BCL API：
+  该实现细节在运行时版本间已经变过一次，行为没变。）传 `None` 时循环退出前的最后一次注册必然已计入，赛跑变成
   结构保证。断言钉住的范围是「停机返回前已完成的注册」，更晚出现的注册方不在其内——这两个宿主里注册都发生在
-  arrange/execute 期，该边界不留现实缺口，但它是 guard 的诚实边界而不是「无所不包」。实测（把 Inventory worker 改成
+  准备/执行期，该边界不留现实缺口，但它是守卫的诚实边界而不是「无所不包」。实测（把 Inventory 工作进程改成
   逐轮新建 `PeriodicTimer`）：窗口不放大时停机前位置也 3/3 红（本机赢了这场赛跑），但按 MAN-808 同一手法在
   `RunOnceAsync` 与下一次构造之间插 1.5 s 放大重注册窗口后，停机前位置变绿（假绿），停机后位置仍 3/3 报
   `Assert.Equal() Failure: Expected 1, Actual 2`。两次临时改动均已撤销。
-- **Inventory 过期 worker 第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
+- **Inventory 过期工作进程第二趟（#1491）。** `ExpiredStockReservationHostedService` 先无条件跑一趟 `RunOnceAsync`，
   **返回之后**才 `new PeriodicTimer(interval, timeProvider)`，而 `expired_total` 在第一趟内部就已写入。原测试以
-  「metric 出现」为屏障随即 `Advance`，一旦落进这个窗口，tick 永久丢失、第二趟永不发生（CI 上表现为 153 次观测全部
-  `openQuantity=1`，即 worker 根本没再跑，放宽预算无效）。现改为等 `WaitForTimerCountAsync(1)`，**生产代码零改动**。
+  「指标出现」为屏障随即 `Advance`，一旦落进这个窗口，触发永久丢失、第二趟永不发生（CI 上表现为 153 次观测全部
+  `openQuantity=1`，即工作进程根本没再跑，放宽预算无效）。现改为等 `WaitForTimerCountAsync(1)`，**生产代码零改动**。
   实测护栏：在第一趟与计时器构造之间临时插 1.5 s 延时放大注册窗口，去掉屏障复现同一条 `EventuallyTimeoutException`
   （`openQuantity=1`），加回屏障即绿。
 
@@ -610,7 +609,7 @@ Redis 三处的预算由 multiplexer 自己的 connect/sync timeout 加上 `Boun
 
 | MAN-650 项 | 状态 |
 | --- | --- |
-| Maintenance Redis renewal | migrated by MAN-662 |
-| Inventory expiry metric | migrated by MAN-662 |
-| Ops Production fake credential | migrated by MAN-662 |
-| IndustrialTelemetry out-of-range/order-sensitive host surface | isolated here, structural split tracked by MAN-664 |
+| Maintenance Redis 续期 | 已由 MAN-662 迁移 |
+| Inventory 过期指标 | 已由 MAN-662 迁移 |
+| Ops Production 替身凭据 | 已由 MAN-662 迁移 |
+| IndustrialTelemetry 越界/顺序敏感宿主界面 | 已在此处隔离，结构拆分由 MAN-664 跟踪 |
