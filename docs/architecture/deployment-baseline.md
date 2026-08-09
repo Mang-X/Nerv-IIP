@@ -1,6 +1,6 @@
 # 部署基线
 
-本文档承接 ADR 0008，定义 Nerv-IIP 的部署目标、工程落点与交付边界。它描述当前已落地的 AppHost、Compose、package baseline，以及 PoC、私有化和生产部署仍需补齐的客户现场发布、注册、备份恢复边界；不得把本地开发/验证入口等同于最终客户安装器。脚本可信执行、分类、副作用声明和诊断门禁按 ADR 0010 与 docs/architecture/script-automation-governance.md 执行。
+本文档承接 ADR 0008，定义 Nerv-IIP 的部署目标、工程落点与交付边界。它描述当前已落地的 AppHost、Compose、交付物基线，以及 PoC、私有化和生产部署仍需补齐的客户现场发布、注册、备份恢复边界；不得把本地开发/验证入口等同于最终客户安装器。脚本可信执行、分类、副作用声明和诊断门禁按 ADR 0010 与 docs/architecture/script-automation-governance.md 执行。
 
 ## 目标
 
@@ -14,7 +14,7 @@
 | 部署目标 | 主要场景 | 入口 | 边界要求 |
 | --- | --- | --- | --- |
 | Aspire | 本地开发、联调、Dashboard、服务发现、生成部署产物 | 平台级 AppHost | 只能有一个平台级编排入口，不为每个服务生成局部 AppHost。 |
-| 联网空白机 bootstrap | 新开发机、实施前联网预检、可访问公网的 PoC 机器 | `.\nerv.ps1 bootstrap` / `scripts/bootstrap-online.ps1` | 只负责工具链检查/可选安装、依赖 restore、本地 secrets 初始化和 AppHost build/start，不替代离线安装器。 |
+| 联网空白机引导（bootstrap） | 新开发机、实施前联网预检、可访问公网的 PoC 机器 | `.\nerv.ps1 bootstrap` / `scripts/bootstrap-online.ps1` | 只负责工具链检查/可选安装、依赖 restore、本地 secrets 初始化和 AppHost build/start，不替代离线安装器。 |
 | Docker Compose | PoC、小规模私有化、容器化单机部署、演示环境 | Aspire 生成的 Compose；受控 overlay 仅作过渡或依赖兜底 | 不把手写 compose 作为长期拓扑真相源。 |
 | 安装包 | 无容器或传统运维环境 | Windows Service、systemd、zip/tar/deb/rpm 等制品 | 主平台服务与 Connector Host 分开分发。 |
 | 整合安装脚本 | 实施交付、离线或弱联网部署、环境初始化 | PowerShell、Bash | 脚本负责检查、配置、初始化、注册服务、启动和诊断。 |
@@ -32,7 +32,7 @@
 9. 生产和 PoC 部署 profile 必须为 IAM 配置 `Iam:Secrets:Pepper`（环境变量形态为 `Iam__Secrets__Pepper`；AppHost 参数形态为 `Parameters:iam-secrets-pepper`；release-install 脚本参数为 `-IamSecretsPepper`），用于 ExternalClient、ConnectorHostCredential 和 refresh token 的版本化 HMAC 摘要；不得把 pepper 写入仓库、Compose 明文模板或脚本日志。当前只支持单一 active pepper，轮换 pepper 会使现存机器凭据和 refresh token 全部失效；轮换必须作为维护窗口操作，配套重置 ExternalClient/ConnectorHostCredential secret、重跑受控 seed 或凭据重置流程，并通知用户重新登录。
 10. 生产和 PoC 部署 profile 必须为 AppHub 配置 `ConnectorIngestionToken:SigningKey`（环境变量形态为 `ConnectorIngestionToken__SigningKey`；AppHost 参数形态为 `Parameters:connector-ingestion-token-signing-key`；至少 32 bytes），用于签发注册实例绑定的 ingestion token；不得把该 signing key 写入仓库、Compose 明文模板或脚本日志。AppHub 还必须配置当前 header-secret 兼容入口允许的 `ConnectorHostCredential:ConnectorHostId`、`ConnectorHostCredential:OrganizationId` 和 `ConnectorHostCredential:EnvironmentId`，并与 Connector Host 的 `ConnectorHost:*` 运行时配置一致；`ConnectorIngestionToken:LifetimeMinutes` 默认 10 分钟，可由部署 profile 下调。
 
-## 服务间 HTTP Endpoint 配置
+## 服务间 HTTP 端点配置
 
 服务间 HTTP 调用的运行时地址属于部署模型输入，而不是服务代码的隐式 localhost 知识。当前基线继续使用既有 `Xxx:BaseUrl` 配置键，例如 `Iam:BaseUrl`、`MasterData:BaseUrl`、`Inventory:BaseUrl`，环境变量形态为 `Iam__BaseUrl`、`MasterData__BaseUrl`、`Inventory__BaseUrl`。不得为了本轮修复把配置键批量改名为 `Services:Xxx:BaseUrl`，也不为端点解析新建宽泛共享包。
 
@@ -78,7 +78,7 @@ Nerv-IIP/
 当前平台级 AppHost 已覆盖 PlatformGateway、BusinessGateway、AppHub、IAM、Ops、FileStorage、Notification、BusinessMasterData、BusinessProductEngineering、BusinessInventory、BusinessQuality、BusinessMES、BusinessDemandPlanning、BusinessBarcodeLabel、BusinessApproval、BusinessWMS、BusinessIndustrialTelemetry、BusinessMaintenance、BusinessERP、BusinessScheduling、Connector Host、Console、BusinessConsole、PostgreSQL、Redis、MinIO、VictoriaLogs、可选 OpenTelemetry Collector 和 Aspire Dashboard；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选资源，`Messaging:Provider=Redis` 时 Redis 同时承担缓存/会话和 CAP Redis Streams transport。本地开发默认由 Aspire AppHost 注入 OTLP endpoint，其中 logs 指向 VictoriaLogs，traces/metrics 继续用于 Dashboard/OTLP 诊断；只有显式设置 `Observability:UseCollector=true` 时，才启用 AppHost 内的 Collector 资源用于 Collector/Compose-like 测试。后续 AppHost 应继续覆盖：
 
 1. Knowledge、AI Integration 和 Qdrant。
-2. 后续新增业务服务、domain extension 或客户 profile 需要的受控依赖资源。
+2. 后续新增业务服务、领域扩展（domain extension）或客户 profile 需要的受控依赖资源。
 3. Aspire Dashboard 只作为微软官方、自托管、开源免费的短期观测 UI，不作为生产日志持久化后端。
 
 后续 Knowledge、AI Integration 等能力进入可运行状态后，应纳入同一 AppHost，而不是新增第二套平台编排入口。
@@ -87,7 +87,7 @@ Nerv-IIP/
 
 BusinessMaintenance 的运行小时 PM provider 由 AppHost 显式注入 `IndustrialTelemetry:BaseUrl` 并等待 BusinessIndustrialTelemetry，禁止在动态端口 session 中回退到固定 localhost。AppHost 同时转发 `Maintenance:PmGeneration:*`，默认仍关闭；`.\nerv.ps1 fullstack run -Scenario man-440` 仅在该一次性 session 中为固定验收租户启用 1 秒调度周期，资源与数据随 session 精确清理。
 
-## CAP Redis Streams transport
+## CAP Redis Streams 传输
 
 `Messaging:Provider` 当前支持 `InMemory`、`RabbitMQ` 和 `Redis`。`InMemory` 只允许 Development profile；非 Development profile 必须选择 `RabbitMQ` 或 `Redis`。Redis profile 使用 CAP 官方 `DotNetCore.CAP.RedisStreams` 包，连接串读取优先级为 `Messaging:Redis:ConnectionString`、`ConnectionStrings:Redis`、`Caching:Redis`。
 
@@ -99,8 +99,8 @@ CAP RedisStreams 在订阅和读取 consumer group 前会创建缺失的 stream 
 
 ## 日志持久化
 
-1. 服务运行日志默认通过 Console 和 OpenTelemetry/OTLP 输出。本地 `.\nerv.ps1 dev` 由 Aspire AppHost 把 logs 连接到 VictoriaLogs，并保留 Dashboard/OTLP 作为 traces、metrics 和短期诊断路径。
-2. Docker Compose、安装包和显式 Collector 测试路径由 OpenTelemetry Collector 统一接收并转发 telemetry；Collector 可以把 logs 转发到 VictoriaLogs，把 OTLP/HTTP 数据转发到 standalone Aspire Dashboard 作为短期可视化入口。
+1. 服务运行日志默认通过 Console 和 OpenTelemetry/OTLP 输出。本地 `.\nerv.ps1 dev` 由 Aspire AppHost 将日志连接到 VictoriaLogs，并保留 Dashboard/OTLP 作为 traces、metrics 和短期诊断路径。
+2. Docker Compose、安装包和显式 Collector 测试路径由 OpenTelemetry Collector 统一接收并转发 telemetry；Collector 可以将日志转发到 VictoriaLogs，将 OTLP/HTTP 数据转发到 standalone Aspire Dashboard 作为短期可视化入口。
 3. PoC、私有化和生产部署必须在部署 profile 中选择日志后端、索引策略、保留周期和清理任务；当前内置 logs-only 后端为 VictoriaLogs。
 4. 日志不得写入业务 PostgreSQL schema，也不得复用 Ops `AuditRecord` 表。审计事实、业务事实和诊断日志保持独立存储与独立 retention。
 5. 运维日志包、诊断包、导出包和长期归档附件通过 File Storage 保存到 MinIO 或等价对象存储，只在业务表中保留 `fileId`/`FileReference`。
@@ -119,7 +119,7 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 | 层 | 默认存储 | 存什么 | 不存什么 |
 | --- | --- | --- | --- |
 | 日志正文 | 本机滚动 JSONL、File Storage `.jsonl.gz` chunk | 完整结构化日志行、可下载诊断包 | 不放入业务 PostgreSQL schema |
-| 集中日志后端 | VictoriaLogs | OTLP logs ingestion、LogsQL query、retention | logs-only，不承担 metrics/traces 后端 |
+| 集中日志后端 | VictoriaLogs | OTLP 日志摄入、LogsQL 查询、保留期 | 仅日志，不承担 metrics/traces 后端 |
 | 查询索引 | PostgreSQL 独立 `observability` schema，或等价独立元数据存储 | chunk 目录、时间范围、服务、实例、`operationTaskId`、`correlationId`、`traceId`、level、`fileId`、过期时间 | 不保存完整原始日志正文 |
 | 页面查询 | PlatformGateway | 受控过滤、分页、脱敏、按索引定位 chunk 并扫描返回 | 不暴露 File Storage object key 或内部表结构 |
 
@@ -151,7 +151,7 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 
 ## 观测后端资源分层
 
-1. `victorialogs` 是当前内置 logs-only profile：提供 OTLP logs ingestion、LogsQL query 和本地持久卷；它不接收 metrics/traces，不替代 Aspire Dashboard 的短期 trace/metric 诊断。
+1. `victorialogs` 是当前内置仅日志 profile：提供 OTLP 日志摄入、LogsQL 查询和本地持久卷；它不接收 metrics/traces，不替代 Aspire Dashboard 的短期 trace/metric 诊断。
 2. `collector-only` 是第四阶段 profile：只保证日志、trace、metric 能被 OpenTelemetry Collector 接收和转发，资源要求低，主要受采集量、批处理、重试队列和是否启用 `file_storage` 影响；它不提供日志查询 UI。
 3. `aspire-dashboard` 是默认推荐的本地观测 UI profile：它同时符合微软官方、自部署、开源免费和社区活跃等优先特征，可通过 Aspire CLI 或 `mcr.microsoft.com/dotnet/aspire-dashboard` 容器运行，接收 OTLP/gRPC 和 OTLP/HTTP。
 4. `aspire-dashboard` 只用于开发、联调、PoC 和短期诊断；其 telemetry 存储是内存态，超过限制会丢弃，进程重启后不保留，因此不能承诺生产级日志持久化、长期检索或审计保留。
@@ -167,13 +167,13 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 | Docker Compose | Compose 或 overlay 启动 VictoriaLogs 与 OpenTelemetry Collector；可选启动 `aspire-dashboard` 与 Log Archive Worker 容器 | `aspire-dashboard` 作为可选 service，不作为 Compose 必选项；Collector 可通过 `NERV_IIP_VICTORIA_LOGS_OTLP_HTTP_ENDPOINT` 转发 logs 到 VictoriaLogs，并通过 `NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT` 转发到 Dashboard OTLP/HTTP | volumes 必须覆盖 VictoriaLogs 数据、滚动日志目录和 Collector `file_storage` 目录；归档 chunk 上传 File Storage，Dashboard 不承担长期保留 |
 | 安装包/脚本 | Windows Service/systemd 通过环境变量或配置文件声明 OTLP endpoint 和滚动日志目录 | 脚本可选择启动 standalone Aspire Dashboard、连接已有 Collector，或只保留滚动文件诊断 | 无容器环境必须至少具备滚动 JSONL 文件；需要集中保留时安装 Log Archive Worker 或计划任务上传 File Storage |
 
-1. 三种部署目标都必须使用同一套日志字段、OTLP 配置键和滚动文件策略，不能因为入口不同而产生不同日志语义。
+1. 三种部署目标都必须使用同一套日志字段、OTLP 配置键和滚动文件策略，不能因为入口不同而产生不同的日志语义。
 2. Docker Compose 和安装脚本可以不启用 Aspire Dashboard，但必须保留 Collector/OTLP 或滚动文件路径，保证现场可诊断。
 3. 若客户环境已有日志平台，PlatformGateway 只通过 adapter 接入其查询能力；前端契约和日志 DTO 不随部署目标变化。
 
 ## 告警部署配置
 
-AppHost 和 Compose baseline 为 Notification 注入 `Observability:Alerts` 配置，用于首版指标阈值告警闭环。默认规则覆盖 AppHub health、Notification CAP/DLQ backlog、Connector Host heartbeat stale、PostgreSQL connection watermark 和 PostgreSQL database-size watermark。部署时必须按现场调整：
+AppHost 和 Compose 基线为 Notification 注入 `Observability:Alerts` 配置，用于首版指标阈值告警闭环。默认规则覆盖 AppHub health、Notification CAP/DLQ backlog、Connector Host heartbeat stale、PostgreSQL connection watermark 和 PostgreSQL database-size watermark。部署时必须按现场调整：
 
 1. `Observability__Alerts__Enabled`：是否启用内置轻量扫描器。
 2. `Observability__Alerts__OrganizationId` / `EnvironmentId`：告警 intent 所属租户环境。
