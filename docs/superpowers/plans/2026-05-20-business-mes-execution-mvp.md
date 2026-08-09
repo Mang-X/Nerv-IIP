@@ -1,28 +1,28 @@
-# Business MES Execution MVP Implementation Plan
+# 业务 MES 执行 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Build MES MVP covering work orders, operation tasks, rule scheduling, reporting, finished goods receipt requests and production day reports.
+**目标：**构建 MES MVP，覆盖工单、工序任务、规则排程、报工、完工入库请求和生产日报。
 
-**Architecture:** MES owns manufacturing execution facts and references ProductEngineering ProductionVersion ids, which resolve to released MBOM/routing versions. It accepts planned work order suggestions from DemandPlanning but does not own MRP calculation. Finished goods receipt is requested from WMS; inventory balance remains in Inventory.
+**架构：**MES 拥有制造执行事实，并引用 ProductEngineering 的 ProductionVersion ID；这些 ID 可解析到已发布的 MBOM/工艺路线版本。MES 接受 DemandPlanning 提供的计划工单建议，但不负责 MRP 计算。完工入库向 WMS 发起请求；库存余额仍归 Inventory 所有。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
+**技术栈：**.NET 10、FastEndpoints、MediatR、EF Core、Npgsql、netcorepal 集成事件、xUnit。
 
 ---
 
-## MasterData Realignment Dependency
+## MasterData 重对齐依赖
 
-Before executing this plan, complete `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`. MES must resolve SKU, UOM, work center, work calendar, device asset, team and personnel skill references through MasterData contracts. For process manufacturing, MES owns batch execution, actual consumption/output, batch records, deviations, cleaning execution and genealogy; it does not own recipe/formula versions or static material/resource master facts.
+执行本计划前，必须先完成 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`。MES 必须通过 MasterData 契约解析 SKU、UOM、工作中心、工作日历、设备资产、团队和人员技能引用。对于流程制造，MES 拥有批次执行、实际消耗/产出、批记录、偏差、清洗执行和谱系；它不拥有配方版本或静态物料/资源主数据事实。
 
-## Boundaries
+## 边界
 
-1. No APS optimizer; scheduling is deterministic rule scheduling.
-2. No direct inventory balance writes.
-3. No direct maintenance fact mutation; MES consumes availability events.
-4. Work orders require a ProductEngineering productionVersionId that resolves to released MBOM and routing references.
-5. Process batch records, actual process values and deviations are MES execution facts; reusable material attributes, UOM and static resource capability remain MasterData facts.
+1. 不包含 APS 优化器；排程采用确定性规则排程。
+2. 不直接写入库存余额。
+3. 不直接变更维护事实；MES 消费可用性事件。
+4. 工单必须提供 ProductEngineering 的 productionVersionId，并能解析到已发布的 MBOM 和工艺路线引用。
+5. 流程批记录、实际工艺值和偏差属于 MES 执行事实；可复用物料属性、UOM 和静态资源能力仍属于 MasterData 事实。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/
@@ -43,16 +43,16 @@ backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/
   Endpoints/Mes/MesEndpoints.cs
 ```
 
-## Task 1: Scaffold MES Service
+## 任务 1：搭建 MES 服务脚手架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Mes/*`
-- Modify: `backend/Nerv.IIP.sln`
+- 新增：`backend/services/Business/Mes/*`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create service and tests**
+- [ ] **步骤 1：创建服务和测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Mes -o backend/services/Business/Mes --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -65,27 +65,27 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Mes/tests/Nerv.IIP
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj
 ```
 
-- [ ] **Step 2: Commit scaffold**
+- [ ] **步骤 2：提交脚手架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/services/Business/Mes
 git commit -m "feat: scaffold mes service"
 ```
 
-## Task 2: Implement Work Order and Reporting Model
+## 任务 2：实现工单与报工模型
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/WorkOrderAggregate/WorkOrder.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ProductionReportAggregate/ProductionReport.cs`
-- Create: `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Domain.Tests/MesAggregateTests.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/WorkOrderAggregate/WorkOrder.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ProductionReportAggregate/ProductionReport.cs`
+- 新增：`backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Domain.Tests/MesAggregateTests.cs`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **步骤 1：编写失败测试**
 
-Cover:
+覆盖：
 
 ```csharp
 var workOrder = WorkOrder.FromPlanningSuggestion("org-001", "env-dev", "suggestion-wo-001", "SKU-FG-1000", 8m, "production-version-A");
@@ -94,15 +94,15 @@ var task = OperationTask.Create("org-001", "env-dev", workOrder.Id.Value, 10, "W
 var report = task.Report(5m, 1m, "surface-defect", 120, "idem-report-001");
 ```
 
-Assert creation requires a productionVersionId that can be traced to MBOM/routing references, good plus defect quantity cannot exceed remaining quantity, defect quantity requires a reason, and reporting requires an idempotency key.
+断言创建时必须提供可追溯至 MBOM/工艺路线引用的 productionVersionId，合格数量与缺陷数量之和不得超过剩余数量，缺陷数量必须附带原因，并且报工必须提供幂等键。
 
-- [ ] **Step 2: Implement events**
+- [ ] **步骤 2：实现事件**
 
-Create `WorkOrderReleasedDomainEvent`, `OperationReportedDomainEvent`, `FinishedGoodsReceiptRequestedDomainEvent` and `DowntimeRecordedDomainEvent`.
+创建 `WorkOrderReleasedDomainEvent`、`OperationReportedDomainEvent`、`FinishedGoodsReceiptRequestedDomainEvent` 和 `DowntimeRecordedDomainEvent`。
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Domain.Tests/Nerv.IIP.Business.Mes.Domain.Tests.csproj --no-restore
@@ -110,34 +110,34 @@ git add backend/services/Business/Mes
 git commit -m "feat: add mes work order reporting model"
 ```
 
-Expected: tests pass before commit.
+预期：测试在提交前通过。
 
-## Task 3: Implement Rule Scheduler and Gantt Query
+## 任务 3：实现规则排程器与甘特图查询
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ScheduleResultAggregate/ScheduleResult.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Scheduling/RuleScheduler.cs`
-- Create: `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/RuleSchedulerTests.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ScheduleResultAggregate/ScheduleResult.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Scheduling/RuleScheduler.cs`
+- 新增：`backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/RuleSchedulerTests.cs`
 
-- [ ] **Step 1: Write failing scheduler tests**
+- [ ] **步骤 1：编写失败的排程器测试**
 
-Fixture:
+测试数据：
 
-| Operation | Work center | Duration |
+| 工序 | 工作中心 | 时长 |
 | --- | --- | --- |
-| 10 | WC-CNC-01 | 60 minutes |
-| 20 | WC-ASSY-01 | 45 minutes |
+| 10 | WC-CNC-01 | 60 分钟 |
+| 20 | WC-ASSY-01 | 45 分钟 |
 
-Calendar is 08:00 to 16:00 UTC on 2026-06-01. Expected schedule places operation 10 first and operation 20 after operation 10 completion, with no overlap inside the same work center.
+日历为 2026-06-01 UTC 08:00 至 16:00。预期排程先安排工序 10，并在工序 10 完成后安排工序 20；同一工作中心内不得发生重叠。
 
-- [ ] **Step 2: Implement scheduler**
+- [ ] **步骤 2：实现排程器**
 
-`RuleScheduler` sorts by work order priority, due date, operation sequence and earliest available work center slot. It returns immutable `ScheduleResult` entries with start/end UTC timestamps and reason text `rule-sequenced`.
+`RuleScheduler` 按工单优先级、交期、工序顺序和工作中心最早可用时段排序。它返回不可变的 `ScheduleResult` 条目，其中包含 UTC 开始/结束时间戳和原因文本 `rule-sequenced`。
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj --no-restore --filter FullyQualifiedName~RuleSchedulerTests
@@ -145,29 +145,29 @@ git add backend/services/Business/Mes
 git commit -m "feat: add mes rule scheduling"
 ```
 
-Expected: tests pass before commit.
+预期：测试在提交前通过。
 
-## Task 4: Add Persistence, API, Events and Permissions
+## 任务 4：添加持久化、API、事件和权限
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/*.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/*.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEvents/MesIntegrationEvents.cs`
-- Create: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
-- Create: `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesEndpointTests.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/EntityConfigurations/*.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/*.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/*.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEvents/MesIntegrationEvents.cs`
+- 新增：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
+- 新增：`backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesEndpointTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
 
-- [ ] **Step 1: Configure schema**
+- [ ] **步骤 1：配置 schema**
 
-Use schema `mes`. Tables include `work_orders`, `operation_tasks`, `production_reports`, `schedule_results`, `finished_goods_receipt_requests`.
+使用 `mes` schema。数据表包括 `work_orders`、`operation_tasks`、`production_reports`、`schedule_results`、`finished_goods_receipt_requests`。
 
-- [ ] **Step 2: Add routes**
+- [ ] **步骤 2：添加路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/mes/work-orders/from-suggestion` | `business.mes.work-orders.manage` |
 | `POST /api/business/v1/mes/work-orders/{workOrderId}/release` | `business.mes.work-orders.manage` |
@@ -177,9 +177,9 @@ Use schema `mes`. Tables include `work_orders`, `operation_tasks`, `production_r
 | `POST /api/business/v1/mes/schedules/run` | `business.mes.schedules.manage` |
 | `GET /api/business/v1/mes/schedules/gantt` | `business.mes.schedules.read` |
 
-- [ ] **Step 3: Run tests and commit**
+- [ ] **步骤 3：运行测试并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj --no-restore
@@ -188,39 +188,39 @@ git add backend/services/Business/Mes backend/services/Iam/src/Nerv.IIP.Iam.Web/
 git commit -m "feat: expose mes execution api"
 ```
 
-Expected: tests pass before commit.
+预期：测试在提交前通过。
 
-## Task 5: Add Verification and Readiness
+## 任务 5：添加验证与就绪状态说明
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-business-mes-execution-mvp.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
+- 新增：`scripts/verify-business-mes-execution-mvp.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
 
-- [ ] **Step 1: Add and run verification**
+- [ ] **步骤 1：添加并运行验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-mes-execution-mvp.ps1
 git diff --check
 ```
 
-Expected: script runs MES domain/web tests and exits `0`.
+预期：脚本运行 MES 领域层/Web 层测试，并以退出码 `0` 结束。
 
-- [ ] **Step 2: Commit docs**
+- [ ] **步骤 2：提交文档**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/verify-business-mes-execution-mvp.ps1 docs/architecture/implementation-readiness.md README.md
 git commit -m "docs: record mes execution readiness"
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. Work orders reference ProductEngineering productionVersionId values that resolve to released MBOM and routing versions.
-2. Reporting is idempotent and rejects over-reporting.
-3. Rule scheduling is deterministic and documented as the MVP boundary.
-4. Finished goods receipt is a WMS request, not an Inventory balance write.
+1. 工单引用 ProductEngineering 的 productionVersionId 值，且这些值可解析到已发布的 MBOM 和工艺路线版本。
+2. 报工具有幂等性，并拒绝超量报工。
+3. 规则排程具有确定性，并明确记录为 MVP 边界。
+4. 完工入库是向 WMS 发起的请求，而不是写入 Inventory 库存余额。
