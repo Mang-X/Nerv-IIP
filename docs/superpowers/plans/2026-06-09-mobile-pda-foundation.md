@@ -1,12 +1,12 @@
-# 移动端地基与 PDA 应用壳（M0+M1）Implementation Plan
+# 移动端地基与 PDA 应用壳（M0+M1）实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐个任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** 搭出可运行的 PDA 应用壳 `business-pda`，建立移动端组件包 `@nerv-iip/ui-mobile`（5 个地基组件）与同源内核包 `@nerv-iip/business-core` 骨架，并接好 Capacitor APK 打包基线。
+**目标：**搭出可运行的 PDA 应用壳 `business-pda`，建立移动端组件包 `@nerv-iip/ui-mobile`（5 个地基组件）与同源内核包 `@nerv-iip/business-core` 骨架，并接好 Capacitor APK 打包基线。
 
-**Architecture:** 复用现有前端单仓约定——Tailwind v4（CSS 驱动 token）、文件路由、`@pinia/colada` + generated `@nerv-iip/api-client`、`@nerv-iip/ui` 的 `theme.css`/`useTheme` 主题机制。新增两包一应用：`ui-mobile`（Reka UI + Tailwind 触摸组件，复用 `@nerv-iip/ui` 的 token 与 `cn`，原版零改）、`business-core`（SOP 状态机 + PDA 任务字典，PC/移动端同源）、`business-pda`（Capacitor 套壳的 Vue Web app，键盘楔入扫码）。
+**架构：**复用现有前端单仓约定——Tailwind v4（CSS 驱动 token）、文件路由、`@pinia/colada` + 生成的 `@nerv-iip/api-client`、`@nerv-iip/ui` 的 `theme.css`/`useTheme` 主题机制。新增两包一应用：`ui-mobile`（Reka UI + Tailwind 触摸组件，复用 `@nerv-iip/ui` 的 token 与 `cn`，原版零改）、`business-core`（SOP 状态机 + PDA 任务字典，PC/移动端同源）、`business-pda`（Capacitor 套壳的 Vue Web 应用，键盘楔入扫码）。
 
-**Tech Stack:** Vue 3.5 / TypeScript / Tailwind v4 / reka-ui 2.9 / @vueuse/core 14 / @pinia/colada / vite-plus(`vp`) / vitest + @vue/test-utils / Capacitor（Android）。
+**技术栈：**Vue 3.5 / TypeScript / Tailwind v4 / reka-ui 2.9 / @vueuse/core 14 / @pinia/colada / vite-plus（`vp`）/ vitest + @vue/test-utils / Capacitor（Android）。
 
 ---
 
@@ -14,18 +14,18 @@
 
 **交付（可独立运行、可测试）：** 一个能登录、展示首页（常驻扫码条 + 我的任务占位 + 快捷应用墙）的 PDA 应用，跑在浏览器与 Android WebView（Capacitor APK）；外加 5 个移动端地基组件与 SOP/字典内核骨架，全部带测试与三项门禁（typecheck/test/build）。
 
-**不在本计划：** WMS/MES/设备业务作业页（Plan 2-4）、扫码解析增强（Plan 5）、离线写队列（phase 2）、后端缺口端点（后端 consolidated issue）。这些业务页落地前在应用墙上以 disabled/`route-ready` 占位，不做空跳转。
+**不在本计划：**WMS/MES/设备业务作业页（计划 2-4）、扫码解析增强（计划 5）、离线写队列（阶段 2）、后端缺口端点（后端汇总 Issue）。这些业务页落地前在应用墙上以禁用/`route-ready` 状态占位，不做空跳转。
 
 ## 约定速查（零上下文工程师先读这一段）
 
-- **包脚手架**：每个新 package/app 的 `package.json` 含 `"type":"module"`、`"private":true`、`"exports":{".":"./src/index.ts"}`、`"scripts":{"typecheck":"vue-tsc --noEmit -p tsconfig.json","test":"vp test run src"}`；workspace 依赖用 `"workspace:*"`。
-- **tsconfig**：每个 package/app 的 `tsconfig.json` 用 `{"extends":"../../tsconfig.base.json"}`（app 在 `apps/*`、包在 `packages/*`，相对根都是 `../../`）。
+- **包脚手架**：每个新包/应用的 `package.json` 含 `"type":"module"`、`"private":true`、`"exports":{".":"./src/index.ts"}`、`"scripts":{"typecheck":"vue-tsc --noEmit -p tsconfig.json","test":"vp test run src"}`；工作区依赖用 `"workspace:*"`。
+- **tsconfig**：每个包/应用的 `tsconfig.json` 用 `{"extends":"../../tsconfig.base.json"}`（应用在 `apps/*`、包在 `packages/*`，相对根都是 `../../`）。
 - **别名登记**：新 `@nerv-iip/*` 必须同时加入 `frontend/tsconfig.base.json` 的 `paths` 与消费方 `vite.config.ts` 的 `resolve.alias`。
-- **样式**：token 不重复，只 `@import` `packages/ui/src/styles/theme.css`；Tailwind v4 用 `@tailwindcss/vite`，无 config 文件。
+- **样式**：token 不重复，只 `@import` `packages/ui/src/styles/theme.css`；Tailwind v4 用 `@tailwindcss/vite`，无配置文件。
 - **主题复用**：`import { initTheme } from '@nerv-iip/ui'` 在 `main.ts` mount 前调用；`useColorMode`/`useThemeAccent` 复用同机制。
-- **测试**：`vp test run src`（vitest globals + jsdom）；组件测试用 `@vue/test-utils` 的 `mount`；composable/数据测试 mock `@nerv-iip/api-client` 和 `@pinia/colada`（样式见 `frontend/apps/business-console/src/composables/useBusinessEquipment.test.ts`）。
+- **测试**：`vp test run src`（vitest globals + jsdom）；组件测试用 `@vue/test-utils` 的 `mount`；composable/数据测试模拟 `@nerv-iip/api-client` 和 `@pinia/colada`（写法见 `frontend/apps/business-console/src/composables/useBusinessEquipment.test.ts`）。
 - **单测单文件命令**：`pnpm -C frontend --filter <pkgName> exec vp test run <相对 src 的路径>`。
-- **门禁三连**：`pnpm -C frontend --filter <pkgName> typecheck`、`... test`、（app 才有）`... build`。
+- **门禁三连**：`pnpm -C frontend --filter <pkgName> typecheck`、`... test`、（仅应用）`... build`。
 - **UI 禁忌**：界面不得出现 operationId/sourceSystem/code/policy/demo/seed/mock/issue 号；不做假数据/假分页（同 PC 金标准）。
 
 ## 文件结构地图
@@ -68,17 +68,17 @@ frontend/apps/business-pda/
 
 ---
 
-## Phase 0 — 文档先行（先文档后代码铁律）
+## 阶段 0 — 文档先行（先文档后代码铁律）
 
-### Task 1: 新建 PDA 模块产品业务文档 + 更新架构文档
+### Task 1：新建 PDA 模块产品业务文档 + 更新架构文档
 
-**Files:**
-- Create: `docs/architecture/mobile-pda-module-product-design.md`
-- Modify: `docs/architecture/frontend-navigation-map.md`（"用户导航形态" 表 PDA 行附近）
-- Modify: `docs/architecture/frontend-structure.md`（apps/packages 清单）
-- Modify: `docs/architecture/implementation-readiness.md`（"当前初步使用方式" 端口段）
+**文件：**
+- 创建：`docs/architecture/mobile-pda-module-product-design.md`
+- 修改：`docs/architecture/frontend-navigation-map.md`（“用户导航形态”表 PDA 行附近）
+- 修改：`docs/architecture/frontend-structure.md`（apps/packages 清单）
+- 修改：`docs/architecture/implementation-readiness.md`（“当前初步使用方式”端口段）
 
-- [ ] **Step 1: 写模块产品业务文档**
+- [ ] **步骤 1：写模块产品业务文档**
 
 新建 `docs/architecture/mobile-pda-module-product-design.md`，内容至少含以下小节（正文用中文业务语言，事实引用 spec `docs/superpowers/specs/2026-06-09-mobile-pda-design.md`）：
 
@@ -111,7 +111,7 @@ M0 ui-mobile 地基 → M1 PDA 壳 → M2 WMS → M3 MES → M4 设备 → M5 �
 每页过"产品·业务·UX"三关；UI 无工程语言、无假数据/假分页；touched 范围门禁三连。
 ```
 
-- [ ] **Step 2: 更新导航地图 PDA 段**
+- [ ] **步骤 2：更新导航地图 PDA 段**
 
 在 `docs/architecture/frontend-navigation-map.md` 的 "用户导航形态" 表 `PDA/mobile` 行下，补一段引用：
 
@@ -121,12 +121,12 @@ M0 ui-mobile 地基 → M1 PDA 壳 → M2 WMS → M3 MES → M4 设备 → M5 �
 > `frontend/apps/business-pda`，不复用 PC 菜单树。
 ```
 
-- [ ] **Step 3: 更新 frontend-structure 与 readiness**
+- [ ] **步骤 3：更新 frontend-structure 与 readiness**
 
 在 `docs/architecture/frontend-structure.md` 的 apps/packages 清单中新增条目：`apps/business-pda`（PDA 一线作业，Capacitor APK）、`packages/ui-mobile`（触摸组件层）、`packages/business-core`（同源 SOP/字典/类型）；并标注 `business-workstation`/`business-board` 为 roadmap 预留。
-在 `docs/architecture/implementation-readiness.md` "当前初步使用方式" 端口段补一句：`business-pda` 本地 dev 端口建议 `5126`（待 `nerv.ps1 ports` 矩阵确认），移动端为独立实施轨，详见 PDA 模块产品文档与 spec。
+在 `docs/architecture/implementation-readiness.md`“当前初步使用方式”端口段补一句：`business-pda` 本地开发端口建议 `5126`（待 `nerv.ps1 ports` 矩阵确认），移动端为独立实施轨，详见 PDA 模块产品文档与规格。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add docs/architecture/mobile-pda-module-product-design.md docs/architecture/frontend-navigation-map.md docs/architecture/frontend-structure.md docs/architecture/implementation-readiness.md docs/superpowers/specs/2026-06-09-mobile-pda-design.md docs/superpowers/plans/2026-06-09-mobile-pda-foundation.md
@@ -135,17 +135,17 @@ git commit -m "docs(pda): add mobile PDA module product design + spec/plan, regi
 
 ---
 
-## Phase 1 — `business-core` 同源内核骨架
+## 阶段 1 — `business-core` 同源内核骨架
 
-### Task 2: 创建 `@nerv-iip/business-core` 包骨架
+### Task 2：创建 `@nerv-iip/business-core` 包骨架
 
-**Files:**
-- Create: `frontend/packages/business-core/package.json`
-- Create: `frontend/packages/business-core/tsconfig.json`
-- Create: `frontend/packages/business-core/src/index.ts`
-- Modify: `frontend/tsconfig.base.json`
+**文件：**
+- 创建：`frontend/packages/business-core/package.json`
+- 创建：`frontend/packages/business-core/tsconfig.json`
+- 创建：`frontend/packages/business-core/src/index.ts`
+- 修改：`frontend/tsconfig.base.json`
 
-- [ ] **Step 1: 写 package.json**
+- [ ] **步骤 1：写 package.json**
 
 `frontend/packages/business-core/package.json`：
 
@@ -173,7 +173,7 @@ git commit -m "docs(pda): add mobile PDA module product design + spec/plan, regi
 }
 ```
 
-- [ ] **Step 2: 写 tsconfig.json**
+- [ ] **步骤 2：写 tsconfig.json**
 
 `frontend/packages/business-core/tsconfig.json`：
 
@@ -184,7 +184,7 @@ git commit -m "docs(pda): add mobile PDA module product design + spec/plan, regi
 }
 ```
 
-- [ ] **Step 3: 写占位 barrel**
+- [ ] **步骤 3：写占位 barrel**
 
 `frontend/packages/business-core/src/index.ts`：
 
@@ -195,7 +195,7 @@ export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
 export type { PdaTaskKind } from './tasks/pdaTaskKinds'
 ```
 
-- [ ] **Step 4: 登记 tsconfig.base.json paths**
+- [ ] **步骤 4：登记 tsconfig.base.json paths**
 
 在 `frontend/tsconfig.base.json` 的 `compilerOptions.paths` 中新增三条（与现有 `@nerv-iip/ui` 等并列）：
 
@@ -205,18 +205,18 @@ export type { PdaTaskKind } from './tasks/pdaTaskKinds'
 "@nerv-iip/business-pda": ["apps/business-pda/src/index.ts"]
 ```
 
-- [ ] **Step 5: 安装依赖**
+- [ ] **步骤 5：安装依赖**
 
-Run: `pnpm -C frontend install`
-Expected: 新增 workspace 包被识别，无 lockfile 报错。
+运行：`pnpm -C frontend install`
+预期：新增 workspace 包被识别，无 lockfile 报错。
 
-### Task 3: `defineStepFlow` SOP 状态机原语
+### Task 3：`defineStepFlow` SOP 状态机原语
 
-**Files:**
-- Create: `frontend/packages/business-core/src/sop/defineStepFlow.ts`
-- Test: `frontend/packages/business-core/src/sop/defineStepFlow.test.ts`
+**文件：**
+- 创建：`frontend/packages/business-core/src/sop/defineStepFlow.ts`
+- 测试：`frontend/packages/business-core/src/sop/defineStepFlow.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `frontend/packages/business-core/src/sop/defineStepFlow.test.ts`：
 
@@ -256,12 +256,12 @@ describe('defineStepFlow', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/sop/defineStepFlow.test.ts`
-Expected: FAIL（`defineStepFlow` 未定义）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/sop/defineStepFlow.test.ts`
+预期：失败（`defineStepFlow` 未定义）。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `frontend/packages/business-core/src/sop/defineStepFlow.ts`：
 
@@ -302,25 +302,25 @@ export function defineStepFlow<TCtx extends StepFlowContext>(config: {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/sop/defineStepFlow.test.ts`
-Expected: PASS（3 个用例）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/sop/defineStepFlow.test.ts`
+预期：通过（3 个用例）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/business-core frontend/tsconfig.base.json frontend/pnpm-lock.yaml
 git commit -m "feat(business-core): scaffold package + defineStepFlow SOP primitive"
 ```
 
-### Task 4: `PDA_TASK_KINDS` 任务字典
+### Task 4：`PDA_TASK_KINDS` 任务字典
 
-**Files:**
-- Create: `frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`
-- Test: `frontend/packages/business-core/src/tasks/pdaTaskKinds.test.ts`
+**文件：**
+- 创建：`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`
+- 测试：`frontend/packages/business-core/src/tasks/pdaTaskKinds.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `frontend/packages/business-core/src/tasks/pdaTaskKinds.test.ts`：
 
@@ -348,14 +348,14 @@ describe('PDA task kinds dictionary', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/tasks/pdaTaskKinds.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/tasks/pdaTaskKinds.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
-`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`（`routeReady:false` 表示页面在后续 Plan 才落地，应用墙据此 disable，不做空跳转）：
+`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`（`routeReady:false` 表示页面在后续计划才落地，应用墙据此禁用，不做空跳转）：
 
 ```typescript
 export interface PdaTaskKind {
@@ -388,15 +388,15 @@ export function getPdaTaskKind(id: string): PdaTaskKind | undefined {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/tasks/pdaTaskKinds.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/business-core exec vp test run src/tasks/pdaTaskKinds.test.ts`
+预期：通过。
 
-- [ ] **Step 5: 包级门禁 + Commit**
+- [ ] **步骤 5：包级门禁 + 提交**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-core typecheck` → Expected: PASS
-Run: `pnpm -C frontend --filter @nerv-iip/business-core test` → Expected: PASS（全部用例）
+运行：`pnpm -C frontend --filter @nerv-iip/business-core typecheck` → 预期：通过
+运行：`pnpm -C frontend --filter @nerv-iip/business-core test` → 预期：通过（全部用例）
 
 ```bash
 git add frontend/packages/business-core/src/tasks
@@ -405,18 +405,18 @@ git commit -m "feat(business-core): add PDA task-kind dictionary with route-read
 
 ---
 
-## Phase 2 — `@nerv-iip/ui-mobile` 包骨架与安全区基线
+## 阶段 2 — `@nerv-iip/ui-mobile` 包骨架与安全区基线
 
-### Task 5: 创建 `@nerv-iip/ui-mobile` 包 + 安全区工具类
+### Task 5：创建 `@nerv-iip/ui-mobile` 包 + 安全区工具类
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/package.json`
-- Create: `frontend/packages/ui-mobile/tsconfig.json`
-- Create: `frontend/packages/ui-mobile/src/index.ts`
-- Create: `frontend/packages/ui-mobile/src/lib/utils.ts`
-- Create: `frontend/packages/ui-mobile/src/styles/mobile.css`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/package.json`
+- 创建：`frontend/packages/ui-mobile/tsconfig.json`
+- 创建：`frontend/packages/ui-mobile/src/index.ts`
+- 创建：`frontend/packages/ui-mobile/src/lib/utils.ts`
+- 创建：`frontend/packages/ui-mobile/src/styles/mobile.css`
 
-- [ ] **Step 1: 写 package.json**
+- [ ] **步骤 1：写 package.json**
 
 `frontend/packages/ui-mobile/package.json`：
 
@@ -450,7 +450,7 @@ git commit -m "feat(business-core): add PDA task-kind dictionary with route-read
 }
 ```
 
-- [ ] **Step 2: 写 tsconfig.json**
+- [ ] **步骤 2：写 tsconfig.json**
 
 `frontend/packages/ui-mobile/tsconfig.json`：
 
@@ -461,7 +461,7 @@ git commit -m "feat(business-core): add PDA task-kind dictionary with route-read
 }
 ```
 
-- [ ] **Step 3: 写 cn 复用**
+- [ ] **步骤 3：复用 cn**
 
 `frontend/packages/ui-mobile/src/lib/utils.ts`（复用 `@nerv-iip/ui` 的 `cn`，不另造一套）：
 
@@ -469,7 +469,7 @@ git commit -m "feat(business-core): add PDA task-kind dictionary with route-read
 export { cn } from '@nerv-iip/ui'
 ```
 
-- [ ] **Step 4: 写安全区/触控基线 CSS**
+- [ ] **步骤 4：写安全区/触控基线 CSS**
 
 `frontend/packages/ui-mobile/src/styles/mobile.css`（Tailwind v4 `@utility`；app 的 main.css 会 `@import` 它）：
 
@@ -497,7 +497,7 @@ export { cn } from '@nerv-iip/ui'
 }
 ```
 
-- [ ] **Step 5: 写占位 barrel**
+- [ ] **步骤 5：写占位 barrel**
 
 `frontend/packages/ui-mobile/src/index.ts`：
 
@@ -510,20 +510,20 @@ export { default as BottomSheet } from './components/bottom-sheet/BottomSheet.vu
 export { default as Result } from './components/result/Result.vue'
 ```
 
-> 注：此时 barrel 引用的 .vue 还未建，typecheck 会失败——下一 Task 起逐个补齐后再跑包级门禁。
+> 注：此时 barrel 引用的 .vue 还未建，typecheck 会失败——下一任务起逐个补齐后再跑包级门禁。
 
-- [ ] **Step 6: 安装依赖**
+- [ ] **步骤 6：安装依赖**
 
-Run: `pnpm -C frontend install`
-Expected: `@nerv-iip/ui-mobile` 被识别为 workspace 包。
+运行：`pnpm -C frontend install`
+预期：`@nerv-iip/ui-mobile` 被识别为 workspace 包。
 
-### Task 6: `AppShellMobile` 壳组件（三段安全区）
+### Task 6：`AppShellMobile` 壳组件（三段安全区）
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/src/components/app-shell-mobile/AppShellMobile.vue`
-- Test: `frontend/packages/ui-mobile/src/components/app-shell-mobile/AppShellMobile.test.ts`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/src/components/app-shell-mobile/AppShellMobile.vue`
+- 测试：`frontend/packages/ui-mobile/src/components/app-shell-mobile/AppShellMobile.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `AppShellMobile.test.ts`：
 
@@ -557,12 +557,12 @@ describe('AppShellMobile', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/app-shell-mobile/AppShellMobile.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/app-shell-mobile/AppShellMobile.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `AppShellMobile.vue`：
 
@@ -600,25 +600,25 @@ const slots = useSlots()
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/app-shell-mobile/AppShellMobile.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/app-shell-mobile/AppShellMobile.test.ts`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/ui-mobile
 git commit -m "feat(ui-mobile): scaffold package + AppShellMobile with safe-area regions"
 ```
 
-### Task 7: `ScanBar` 扫码焦点条（键盘楔入）
+### Task 7：`ScanBar` 扫码焦点条（键盘楔入）
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/src/components/scan-bar/ScanBar.vue`
-- Test: `frontend/packages/ui-mobile/src/components/scan-bar/ScanBar.test.ts`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/src/components/scan-bar/ScanBar.vue`
+- 测试：`frontend/packages/ui-mobile/src/components/scan-bar/ScanBar.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `ScanBar.test.ts`（扫码枪以快速键入 + 回车结束；组件捕获并 `emit('scan', value)`，随后清空）：
 
@@ -652,12 +652,12 @@ describe('ScanBar', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/scan-bar/ScanBar.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/scan-bar/ScanBar.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `ScanBar.vue`（自动聚焦 + 失焦自动重聚焦；回车提交去空白；trim 去重交给消费方）：
 
@@ -713,25 +713,25 @@ onMounted(() => {
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/scan-bar/ScanBar.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/scan-bar/ScanBar.test.ts`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/ui-mobile/src/components/scan-bar
 git commit -m "feat(ui-mobile): add ScanBar keyboard-wedge scan input"
 ```
 
-### Task 8: `ListRow` 大行列表项
+### Task 8：`ListRow` 大行列表项
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/src/components/list-row/ListRow.vue`
-- Test: `frontend/packages/ui-mobile/src/components/list-row/ListRow.test.ts`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/src/components/list-row/ListRow.vue`
+- 测试：`frontend/packages/ui-mobile/src/components/list-row/ListRow.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `ListRow.test.ts`：
 
@@ -761,12 +761,12 @@ describe('ListRow', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/list-row/ListRow.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/list-row/ListRow.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `ListRow.vue`：
 
@@ -805,25 +805,25 @@ const emit = defineEmits<{ select: [] }>()
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/list-row/ListRow.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/list-row/ListRow.test.ts`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/ui-mobile/src/components/list-row
 git commit -m "feat(ui-mobile): add ListRow touch list item"
 ```
 
-### Task 9: `BottomSheet` 底部抽屉（基于 reka-ui Dialog）
+### Task 9：`BottomSheet` 底部抽屉（基于 reka-ui Dialog）
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/src/components/bottom-sheet/BottomSheet.vue`
-- Test: `frontend/packages/ui-mobile/src/components/bottom-sheet/BottomSheet.test.ts`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/src/components/bottom-sheet/BottomSheet.vue`
+- 测试：`frontend/packages/ui-mobile/src/components/bottom-sheet/BottomSheet.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `BottomSheet.test.ts`（用 `v-model:open` 控制；reka-ui Dialog 用 Teleport 渲染到 body，断言查 `document.body`）：
 
@@ -855,12 +855,12 @@ describe('BottomSheet', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/bottom-sheet/BottomSheet.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/bottom-sheet/BottomSheet.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `BottomSheet.vue`（直接组合 reka-ui Dialog 原语；底部滑入；含拖拽手柄视觉；`useBodyScrollLock` 已由 reka-ui 内部处理）：
 
@@ -902,25 +902,25 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/bottom-sheet/BottomSheet.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/bottom-sheet/BottomSheet.test.ts`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/ui-mobile/src/components/bottom-sheet
 git commit -m "feat(ui-mobile): add BottomSheet built on reka-ui dialog"
 ```
 
-### Task 10: `Result` 结果页（操作闭环大反馈）
+### Task 10：`Result` 结果页（操作闭环大反馈）
 
-**Files:**
-- Create: `frontend/packages/ui-mobile/src/components/result/Result.vue`
-- Test: `frontend/packages/ui-mobile/src/components/result/Result.test.ts`
+**文件：**
+- 创建：`frontend/packages/ui-mobile/src/components/result/Result.vue`
+- 测试：`frontend/packages/ui-mobile/src/components/result/Result.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `Result.test.ts`：
 
@@ -950,12 +950,12 @@ describe('Result', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/result/Result.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/result/Result.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写实现**
+- [ ] **步骤 3：写实现**
 
 `Result.vue`：
 
@@ -989,15 +989,15 @@ const tone = computed(() =>
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/result/Result.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile exec vp test run src/components/result/Result.test.ts`
+预期：通过。
 
-- [ ] **Step 5: 包级门禁 + Commit**
+- [ ] **步骤 5：包级门禁 + 提交**
 
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile typecheck` → Expected: PASS（barrel 引用的 5 个组件均已存在）
-Run: `pnpm -C frontend --filter @nerv-iip/ui-mobile test` → Expected: PASS（全部组件用例）
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile typecheck` → 预期：通过（barrel 引用的 5 个组件均已存在）
+运行：`pnpm -C frontend --filter @nerv-iip/ui-mobile test` → 预期：通过（全部组件用例）
 
 ```bash
 git add frontend/packages/ui-mobile/src/components/result
@@ -1006,20 +1006,20 @@ git commit -m "feat(ui-mobile): add Result feedback screen; ui-mobile foundation
 
 ---
 
-## Phase 3 — `business-pda` 应用壳
+## 阶段 3 — `business-pda` 应用壳
 
-### Task 11: 应用脚手架（config / 入口 / 样式 / App）
+### Task 11：应用脚手架（配置 / 入口 / 样式 / App）
 
-**Files:**
-- Create: `frontend/apps/business-pda/package.json`
-- Create: `frontend/apps/business-pda/tsconfig.json`
-- Create: `frontend/apps/business-pda/index.html`
-- Create: `frontend/apps/business-pda/vite.config.ts`
-- Create: `frontend/apps/business-pda/src/assets/main.css`
-- Create: `frontend/apps/business-pda/src/App.vue`
-- Create: `frontend/apps/business-pda/src/test/setup.ts`
+**文件：**
+- 创建：`frontend/apps/business-pda/package.json`
+- 创建：`frontend/apps/business-pda/tsconfig.json`
+- 创建：`frontend/apps/business-pda/index.html`
+- 创建：`frontend/apps/business-pda/vite.config.ts`
+- 创建：`frontend/apps/business-pda/src/assets/main.css`
+- 创建：`frontend/apps/business-pda/src/App.vue`
+- 创建：`frontend/apps/business-pda/src/test/setup.ts`
 
-- [ ] **Step 1: 写 package.json**
+- [ ] **步骤 1：写 package.json**
 
 `frontend/apps/business-pda/package.json`：
 
@@ -1050,7 +1050,7 @@ git commit -m "feat(ui-mobile): add Result feedback screen; ui-mobile foundation
 }
 ```
 
-- [ ] **Step 2: 写 tsconfig.json**
+- [ ] **步骤 2：写 tsconfig.json**
 
 `frontend/apps/business-pda/tsconfig.json`：
 
@@ -1061,7 +1061,7 @@ git commit -m "feat(ui-mobile): add Result feedback screen; ui-mobile foundation
 }
 ```
 
-- [ ] **Step 3: 写 index.html（开启安全区计算）**
+- [ ] **步骤 3：写 index.html（开启安全区计算）**
 
 `frontend/apps/business-pda/index.html`：
 
@@ -1080,7 +1080,7 @@ git commit -m "feat(ui-mobile): add Result feedback screen; ui-mobile foundation
 </html>
 ```
 
-- [ ] **Step 4: 写 vite.config.ts**
+- [ ] **步骤 4：写 vite.config.ts**
 
 `frontend/apps/business-pda/vite.config.ts`（端口 5126；代理 BusinessGateway 5119；别名含 ui-mobile/business-core）：
 
@@ -1138,7 +1138,7 @@ export default defineConfig({
 
 > 若 `unplugin-vue-router` 在 business-console 中是以其它导入名引入（核对 `frontend/apps/business-console/vite.config.ts` 顶部 import），照抄同名导入与版本，勿臆造。
 
-- [ ] **Step 5: 写 main.css**
+- [ ] **步骤 5：写 main.css**
 
 `frontend/apps/business-pda/src/assets/main.css`（token 来自 ui，安全区来自 ui-mobile）：
 
@@ -1157,7 +1157,7 @@ export default defineConfig({
 @import '../../../../packages/ui-mobile/src/styles/mobile.css';
 ```
 
-- [ ] **Step 6: 写 App.vue + 测试 setup**
+- [ ] **步骤 6：写 App.vue + 测试 setup**
 
 `frontend/apps/business-pda/src/App.vue`：
 
@@ -1197,31 +1197,31 @@ if (!globalThis.localStorage) {
 }
 ```
 
-- [ ] **Step 7: 安装并 commit**
+- [ ] **步骤 7：安装并提交**
 
-Run: `pnpm -C frontend install` → Expected: business-pda 被识别。
+运行：`pnpm -C frontend install` → 预期：business-pda 被识别。
 
 ```bash
 git add frontend/apps/business-pda frontend/tsconfig.base.json frontend/pnpm-lock.yaml
 git commit -m "chore(business-pda): scaffold app (vite/tailwind/router config + shell entry)"
 ```
 
-### Task 12: 鉴权（store / api / guard / unauthorized）
+### Task 12：鉴权（store / API / 路由守卫 / 未授权处理）
 
-**Files:**
-- Create: `frontend/apps/business-pda/src/api/auth.ts`
-- Create: `frontend/apps/business-pda/src/api/unauthorized.ts`
-- Create: `frontend/apps/business-pda/src/stores/auth.ts`
-- Create: `frontend/apps/business-pda/src/router/guards/auth.ts`
-- Test: `frontend/apps/business-pda/src/stores/auth.test.ts`
+**文件：**
+- 创建：`frontend/apps/business-pda/src/api/auth.ts`
+- 创建：`frontend/apps/business-pda/src/api/unauthorized.ts`
+- 创建：`frontend/apps/business-pda/src/stores/auth.ts`
+- 创建：`frontend/apps/business-pda/src/router/guards/auth.ts`
+- 测试：`frontend/apps/business-pda/src/stores/auth.test.ts`
 
-> 复用 business-console 已验证的 console-auth 端点（`loginConsoleUser`/`getConsolePrincipal`/`refreshConsoleSession`/`logoutConsoleSession`）。本计划落地一个精简 store（login/logout/token provider/restore）；后续若 PC 与 PDA 需共享，再抽 `@nerv-iip/auth` 包（readiness 已预留）。
+> 复用 business-console 已验证的 console-auth 端点（`loginConsoleUser`/`getConsolePrincipal`/`refreshConsoleSession`/`logoutConsoleSession`）。本计划落地一个精简 store（登录/退出/令牌提供器/恢复）；后续若 PC 与 PDA 需共享，再抽 `@nerv-iip/auth` 包（readiness 已预留）。
 
-- [ ] **Step 1: 复制 api/auth.ts 与 unauthorized.ts**
+- [ ] **步骤 1：复制 api/auth.ts 与 unauthorized.ts**
 
 把 `frontend/apps/business-console/src/api/auth.ts` 与 `frontend/apps/business-console/src/api/unauthorized.ts` 原样复制到 `frontend/apps/business-pda/src/api/` 下（两文件不依赖 business-console 私有内容，内容见约定核查报告第 7 项；逐字复制即可）。
 
-- [ ] **Step 2: 写精简 auth store 测试**
+- [ ] **步骤 2：写精简 auth store 测试**
 
 `frontend/apps/business-pda/src/stores/auth.test.ts`：
 
@@ -1272,12 +1272,12 @@ describe('pda auth store', () => {
 })
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [ ] **步骤 3：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/stores/auth.test.ts`
-Expected: FAIL（store 未建）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/stores/auth.test.ts`
+预期：失败（store 未建）。
 
-- [ ] **Step 4: 写精简 auth store**
+- [ ] **步骤 4：写精简 auth store**
 
 `frontend/apps/business-pda/src/stores/auth.ts`：
 
@@ -1384,9 +1384,9 @@ export const useAuthStore = defineStore('pda-auth', () => {
 })
 ```
 
-> 核对 `@nerv-iip/api-client` 中 `ConsoleRefreshRequest`/`ConsoleLogoutRequest` 的真实字段名（约定核查报告第 7 项显示用 `{ refreshToken, sessionId }` / `{ sessionId }`）；若字段名不同，按 generated 类型调整。
+> 核对 `@nerv-iip/api-client` 中 `ConsoleRefreshRequest`/`ConsoleLogoutRequest` 的真实字段名（约定核查报告第 7 项显示用 `{ refreshToken, sessionId }` / `{ sessionId }`）；若字段名不同，按生成类型调整。
 
-- [ ] **Step 5: 写路由守卫**
+- [ ] **步骤 5：写路由守卫**
 
 `frontend/apps/business-pda/src/router/guards/auth.ts`：
 
@@ -1419,25 +1419,25 @@ export function installAuthGuard(router: Router) {
 }
 ```
 
-- [ ] **Step 6: 跑测试确认通过**
+- [ ] **步骤 6：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/stores/auth.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/stores/auth.test.ts`
+预期：通过。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```bash
 git add frontend/apps/business-pda/src/api frontend/apps/business-pda/src/stores frontend/apps/business-pda/src/router/guards
 git commit -m "feat(business-pda): auth store/api + route guard reusing console auth"
 ```
 
-### Task 13: router + main.ts（接 api-client / 主题 / colada）
+### Task 13：router + main.ts（接入 api-client / 主题 / colada）
 
-**Files:**
-- Create: `frontend/apps/business-pda/src/router/index.ts`
-- Create: `frontend/apps/business-pda/src/main.ts`
+**文件：**
+- 创建：`frontend/apps/business-pda/src/router/index.ts`
+- 创建：`frontend/apps/business-pda/src/main.ts`
 
-- [ ] **Step 1: 写 router**
+- [ ] **步骤 1：写 router**
 
 `frontend/apps/business-pda/src/router/index.ts`：
 
@@ -1458,7 +1458,7 @@ if (import.meta.hot) {
 }
 ```
 
-- [ ] **Step 2: 写 main.ts（顺序照 business-console）**
+- [ ] **步骤 2：写 main.ts（顺序照 business-console）**
 
 `frontend/apps/business-pda/src/main.ts`：
 
@@ -1494,7 +1494,7 @@ app.mount('#app')
 
 > `unauthorized.ts` 的 `handleUnauthorized(auth, router)` 需要 `auth.clearSession(reason)`——store 已导出该方法，签名匹配。
 
-- [ ] **Step 3: typecheck（router 依赖 pages，先建占位避免空 routes 报错）**
+- [ ] **步骤 3：类型检查（router 依赖 pages，先建占位避免空 routes 报错）**
 
 先建空占位页 `frontend/apps/business-pda/src/pages/index.vue`：
 
@@ -1509,25 +1509,25 @@ definePage({ meta: { requiresAuth: true, title: '工作台' } })
 </template>
 ```
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda typecheck`
-Expected: PASS（占位页 + router 可编译）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda typecheck`
+预期：通过（占位页 + router 可编译）。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add frontend/apps/business-pda/src/router/index.ts frontend/apps/business-pda/src/main.ts frontend/apps/business-pda/src/pages/index.vue
 git commit -m "feat(business-pda): router + app bootstrap wiring (api-client/theme/colada)"
 ```
 
-### Task 14: 登录页
+### Task 14：登录页
 
-**Files:**
-- Create: `frontend/apps/business-pda/src/pages/login.vue`
-- Test: `frontend/apps/business-pda/src/pages/login.test.ts`
+**文件：**
+- 创建：`frontend/apps/business-pda/src/pages/login.vue`
+- 测试：`frontend/apps/business-pda/src/pages/login.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
-`login.test.ts`（mock store 的 `login`，断言提交后跳转）：
+`login.test.ts`（模拟 store 的 `login`，断言提交后跳转）：
 
 ```typescript
 import { mount, flushPromises } from '@vue/test-utils'
@@ -1565,12 +1565,12 @@ describe('PDA login page', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/login.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/login.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写登录页**
+- [ ] **步骤 3：写登录页**
 
 `frontend/apps/business-pda/src/pages/login.vue`：
 
@@ -1641,25 +1641,25 @@ async function onSubmit() {
 </template>
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/login.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/login.test.ts`
+预期：通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/apps/business-pda/src/pages/login.vue frontend/apps/business-pda/src/pages/login.test.ts
 git commit -m "feat(business-pda): login page reusing console auth"
 ```
 
-### Task 15: 首页（扫码条 + 我的任务占位 + 应用墙）
+### Task 15：首页（扫码条 + 我的任务占位 + 应用墙）
 
-**Files:**
-- Modify: `frontend/apps/business-pda/src/pages/index.vue`
-- Test: `frontend/apps/business-pda/src/pages/index.test.ts`
+**文件：**
+- 修改：`frontend/apps/business-pda/src/pages/index.vue`
+- 测试：`frontend/apps/business-pda/src/pages/index.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：写失败测试**
 
 `index.test.ts`：
 
@@ -1689,14 +1689,14 @@ describe('PDA home', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/index.test.ts`
-Expected: FAIL。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/index.test.ts`
+预期：失败。
 
-- [ ] **Step 3: 写首页**
+- [ ] **步骤 3：写首页**
 
-`frontend/apps/business-pda/src/pages/index.vue`（应用墙按 `routeReady` disable，不做空跳转；"我的任务"先真空态，待后端缺口 4 落地再接）：
+`frontend/apps/business-pda/src/pages/index.vue`（应用墙按 `routeReady` 禁用，不做空跳转；“我的任务”先显示真实空态，待后端缺口 4 落地再接）：
 
 ```vue
 <script setup lang="ts">
@@ -1758,24 +1758,24 @@ function openTask(route: string, ready: boolean) {
 </template>
 ```
 
-> `ListRow` 此处暂未用到，但 barrel 已导出供后续业务页；为避免 unused import lint，先不 import 它（仅 import `AppShellMobile, ScanBar`）。上面的 import 已去掉 ListRow——若 lint 提示，删除未用导入即可。
+> `ListRow` 此处暂未用到，但 barrel 已导出供后续业务页；为避免未使用导入的 lint 报错，先不导入它（仅导入 `AppShellMobile, ScanBar`）。上面的 import 已去掉 ListRow——若 lint 提示，删除未用导入即可。
 
-- [ ] **Step 4: 修正 import（去掉未用的 ListRow）**
+- [ ] **步骤 4：修正 import（去掉未用的 ListRow）**
 
-把 Step 3 文件首行 import 改为：
+把步骤 3 文件首行 import 改为：
 
 ```typescript
 import { AppShellMobile, ScanBar } from '@nerv-iip/ui-mobile'
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [ ] **步骤 5：运行测试并确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/index.test.ts`
-Expected: PASS。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda exec vp test run src/pages/index.test.ts`
+预期：通过。
 
 > 注：测试断言 `findComponent({ name: 'ScanBar' })`——确保 `ScanBar.vue` 有 `name` 或通过 SFC 文件名推断（vue-tsc/test-utils 用文件名 `ScanBar` 作为组件名，通常可命中）。若未命中，改为断言存在 `input[placeholder^="扫描"]`。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/apps/business-pda/src/pages/index.vue frontend/apps/business-pda/src/pages/index.test.ts
@@ -1784,25 +1784,25 @@ git commit -m "feat(business-pda): home with scan bar, my-tasks empty state, tas
 
 ---
 
-## Phase 4 — Capacitor APK 打包基线
+## 阶段 4 — Capacitor APK 打包基线
 
 > 本阶段需要本机 Android 工具链（Android Studio / SDK / JDK 17+ / Gradle）。无 Android 环境时，Web 构建（`vp build`）仍是门禁；APK 产出在有环境时验证。
 
-### Task 16: 接入 Capacitor 与 Android 平台
+### Task 16：接入 Capacitor 与 Android 平台
 
-**Files:**
-- Modify: `frontend/apps/business-pda/package.json`（新增 Capacitor 依赖与脚本）
-- Create: `frontend/apps/business-pda/capacitor.config.ts`
+**文件：**
+- 修改：`frontend/apps/business-pda/package.json`（新增 Capacitor 依赖与脚本）
+- 创建：`frontend/apps/business-pda/capacitor.config.ts`
 
-- [ ] **Step 1: 装 Capacitor 依赖**
+- [ ] **步骤 1：安装 Capacitor 依赖**
 
-Run:
+运行：
 ```bash
 pnpm -C frontend --filter @nerv-iip/business-pda add @capacitor/core @capacitor/cli @capacitor/android @capacitor/status-bar @capacitor/keyboard @capacitor/app
 ```
-Expected: 依赖写入 business-pda 的 package.json。
+预期：依赖写入 business-pda 的 package.json。
 
-- [ ] **Step 2: 写 capacitor.config.ts**
+- [ ] **步骤 2：写 capacitor.config.ts**
 
 `frontend/apps/business-pda/capacitor.config.ts`（`webDir` 指向 vp 构建产物目录——核对 `vp build` 实际输出目录，business-console build 后查看产物路径，通常为 `dist`）：
 
@@ -1821,7 +1821,7 @@ const config: CapacitorConfig = {
 export default config
 ```
 
-- [ ] **Step 3: 加打包脚本**
+- [ ] **步骤 3：添加打包脚本**
 
 在 `frontend/apps/business-pda/package.json` 的 `scripts` 中追加：
 
@@ -1831,16 +1831,16 @@ export default config
 "cap:apk": "vp build . && cap sync android && cd android && ./gradlew assembleDebug"
 ```
 
-- [ ] **Step 4: 生成 Android 平台（有 Android 环境时）**
+- [ ] **步骤 4：生成 Android 平台（有 Android 环境时）**
 
-Run（在 `frontend/apps/business-pda` 目录）:
+运行（在 `frontend/apps/business-pda` 目录）：
 ```bash
 pnpm exec cap add android
 ```
-Expected: 生成 `android/` 原生工程。
+预期：生成 `android/` 原生工程。
 若无 Android SDK：跳过本步，记录为环境依赖，不视为代码失败（同 AGENTS.md 对 Docker 不可用的处理口径）。
 
-- [ ] **Step 5: 提交（android/ 视团队约定决定是否入库）**
+- [ ] **步骤 5：提交（android/ 视团队约定决定是否入库）**
 
 ```bash
 git add frontend/apps/business-pda/package.json frontend/apps/business-pda/capacitor.config.ts frontend/pnpm-lock.yaml
@@ -1851,41 +1851,41 @@ git commit -m "build(business-pda): add Capacitor Android packaging baseline"
 
 ---
 
-## Phase 5 — 验收门禁
+## 阶段 5 — 验收门禁
 
-### Task 17: 三包/应用门禁三连 + 工作区构建
+### Task 17：三包/应用门禁三连 + 工作区构建
 
-- [ ] **Step 1: typecheck 全绿**
+- [ ] **步骤 1：类型检查全部通过**
 
-Run:
+运行：
 ```bash
 pnpm -C frontend --filter @nerv-iip/business-core typecheck
 pnpm -C frontend --filter @nerv-iip/ui-mobile typecheck
 pnpm -C frontend --filter @nerv-iip/business-pda typecheck
 ```
-Expected: 三者均 PASS。
+预期：三者均通过。
 
-- [ ] **Step 2: test 全绿**
+- [ ] **步骤 2：测试全部通过**
 
-Run:
+运行：
 ```bash
 pnpm -C frontend --filter @nerv-iip/business-core test
 pnpm -C frontend --filter @nerv-iip/ui-mobile test
 pnpm -C frontend --filter @nerv-iip/business-pda test
 ```
-Expected: 全部用例 PASS。
+预期：全部用例通过。
 
-- [ ] **Step 3: business-pda 生产构建**
+- [ ] **步骤 3：business-pda 生产构建**
 
-Run: `pnpm -C frontend --filter @nerv-iip/business-pda build`
-Expected: PASS（vue-tsc + vp build 通过，产出 web 资源）。
+运行：`pnpm -C frontend --filter @nerv-iip/business-pda build`
+预期：通过（vue-tsc + vp build 通过，产出 Web 资源）。
 
-- [ ] **Step 4: 确认未回归既有工作区 typecheck**
+- [ ] **步骤 4：确认既有工作区类型检查未回归**
 
-Run: `pnpm -C frontend typecheck`
-Expected: 既有 console/business-console 不受影响（新增 paths 不破坏现有）；如 `check`/`fmt` 命中既有范围外格式问题，按 AGENTS.md「已知基线 caveat」如实记录，不视为本次回归。
+运行：`pnpm -C frontend typecheck`
+预期：既有 console/business-console 不受影响（新增 paths 不破坏现有）；如 `check`/`fmt` 命中既有范围外格式问题，按 AGENTS.md“已知基线注意事项”如实记录，不视为本次回归。
 
-- [ ] **Step 5: 最终 commit**
+- [ ] **步骤 5：最终提交**
 
 ```bash
 git add -A
@@ -1894,10 +1894,9 @@ git commit -m "test(business-pda): foundation gates green (typecheck/test/build)
 
 ---
 
-## Self-Review（计划作者自检结论）
+## 自我审核（计划作者自检结论）
 
-- **Spec 覆盖**：§3 组件库/打包 → Task 5-16；§4 目录结构/包边界 → Task 2/5/11 + tsconfig 登记；§5 组件契约（5 个地基件）→ Task 6-10；§6 UI/UX 安全区/触控 → Task 5(mobile.css)/6/7/14；§7 首页范式 → Task 15；§8 同源 SOP → Task 3；§11 M0/M1 → 全部 Phase；§12 文档 → Task 1。WMS/MES/设备业务页（§7 其余）、扫码解析（§9 缺口5）、离线（§10）明确划归 Plan 2-5，非本计划缺口。
-- **占位符扫描**：无 TBD/TODO；每个代码步骤含完整代码与可运行命令。两处"核对真实导入/字段名"是**对 generated 类型与既有 config 的核验提示**（api-client 类型、unplugin-vue-router 导入名、vp 构建产物目录），非占位逻辑，工程师按既有文件逐字对齐即可。
+- **规格覆盖**：§3 组件库/打包 → Task 5-16；§4 目录结构/包边界 → Task 2/5/11 + tsconfig 登记；§5 组件契约（5 个地基件）→ Task 6-10；§6 UI/UX 安全区/触控 → Task 5（mobile.css）/6/7/14；§7 首页范式 → Task 15；§8 同源 SOP → Task 3；§11 M0/M1 → 全部阶段；§12 文档 → Task 1。WMS/MES/设备业务页（§7 其余）、扫码解析（§9 缺口5）、离线（§10）明确划归计划 2-5，并非本计划缺口。
+- **占位符扫描**：无 TBD/TODO；每个代码步骤含完整代码与可运行命令。两处“核对真实导入/字段名”是**对生成类型与既有配置的核验提示**（api-client 类型、unplugin-vue-router 导入名、vp 构建产物目录），并非占位逻辑，工程师按既有文件逐字对齐即可。
 - **类型一致性**：`defineStepFlow`/`StepFlow` 在 Task 3 定义、barrel 在 Task 2 导出一致；`PdaTaskKind.routeReady` 在 Task 4 定义、Task 15 消费一致；`useAuthStore` 暴露的 `accessToken/clearSession/login/logout/restoreSession/setSessionExpiredHandler` 在 Task 12 定义、Task 13/14 消费一致；`ScanBar` 的 `@scan` 事件在 Task 7 定义、Task 15 消费一致。
 ```
-
