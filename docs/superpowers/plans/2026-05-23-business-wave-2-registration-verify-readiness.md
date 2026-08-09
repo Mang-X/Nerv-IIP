@@ -1,193 +1,192 @@
-# Business Wave 2 Registration Verify Readiness Implementation Plan
+# 业务第 2 波次注册、验证与就绪状态实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Coordinate shared integration for Wave 2 services after #128, #133, #134 and #136 service branches are ready.
+**目标：**协调第 2 波次服务在 #128、#133、#134 和 #136 的服务分支就绪后的共享集成。
 
-**Architecture:** This is a coordinator plan. It applies shared solution, AppHost, verify script and readiness changes after service sessions produce compiling projects and focused tests. It must not implement service domain behavior.
+**架构：**这是协调计划。它在各服务会话产出可编译项目和聚焦测试后，应用共享的解决方案、AppHost、验证脚本和就绪状态变更。它不得实现服务领域行为。
 
-**Tech Stack:** .NET 10, Aspire AppHost, governed PowerShell scripts, `scripts/lib/ScriptAutomation.ps1`, Markdown architecture docs.
+**技术栈：**.NET 10、Aspire AppHost、受治理的 PowerShell 脚本、`scripts/lib/ScriptAutomation.ps1`、Markdown 架构文档。
 
 ---
 
-## Inputs
+## 输入
 
-This plan consumes service-session outputs from:
+本计划使用以下服务会话的输出：
 
-1. #128 DemandPlanning MVP.
-2. #133 BarcodeLabel MVP.
-3. #134 BusinessApproval MVP.
-4. #136 WMS execution MVP.
+1. #128 DemandPlanning MVP。
+2. #133 BarcodeLabel MVP。
+3. #134 BusinessApproval MVP。
+4. #136 WMS 执行 MVP。
 
-Each service PR/session should include `Shared Changes Needed`. If a service does not compile, skip registration and record it as blocked.
+每个服务 PR/会话都应包含 `Shared Changes Needed`。如果某个服务无法编译，则跳过注册并将其记录为受阻。
 
-## Files
+## 文件
 
-- Modify: `backend/Nerv.IIP.sln`
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
-- Modify: `docs/architecture/authorization-matrix.md`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Create: `scripts/verify-business-demand-planning-mvp.ps1`
-- Create: `scripts/verify-business-barcode-label-mvp.ps1`
-- Create: `scripts/verify-business-approval-mvp.ps1`
-- Create: `scripts/verify-business-wms-execution-mvp.ps1`
-- Create: `scripts/verify-business-wave2-execution.ps1`
+- 修改：`backend/Nerv.IIP.sln`
+- 修改：`infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- 修改：`docs/architecture/authorization-matrix.md`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 创建：`scripts/verify-business-demand-planning-mvp.ps1`
+- 创建：`scripts/verify-business-barcode-label-mvp.ps1`
+- 创建：`scripts/verify-business-approval-mvp.ps1`
+- 创建：`scripts/verify-business-wms-execution-mvp.ps1`
+- 创建：`scripts/verify-business-wave2-execution.ps1`
 
-## Task 1: Collect Service Outputs
+## 任务 1：收集服务输出
 
-- [ ] **Step 1: Inspect service directories**
+- [ ] **步骤 1：检查服务目录**
 
-Run:
+运行：
 
 ```powershell
 rg --files backend/services/Business/DemandPlanning backend/services/Business/BarcodeLabel backend/services/Business/Approval backend/services/Business/Wms
 ```
 
-Expected: only services that exist and compile are considered for registration.
+预期：只有已存在并可编译的服务才会纳入注册范围。
 
-- [ ] **Step 2: Inspect shared-change notes**
+- [ ] **步骤 2：检查共享变更说明**
 
-For each Wave 2 branch or session, copy its `Shared Changes Needed` section into the integration summary. If no section exists, inspect the service tests and project files before deciding shared changes.
+对于每个第 2 波次分支或会话，将其 `Shared Changes Needed` 章节复制到集成摘要中。如果该章节不存在，必须先检查服务测试和项目文件，再决定共享变更。
 
-## Task 2: Add Solution Entries
+## 任务 2：添加解决方案条目
 
-- [ ] **Step 1: Add ready projects to backend solution**
+- [ ] **步骤 1：将就绪项目添加到后端解决方案**
 
-Run `dotnet sln backend/Nerv.IIP.sln add` for each ready Domain, Infrastructure, Web and test project.
+对每个就绪的 Domain、Infrastructure、Web 和测试项目运行 `dotnet sln backend/Nerv.IIP.sln add`。
 
-Candidate service roots:
+候选服务根目录：
 
 1. `backend/services/Business/DemandPlanning`
 2. `backend/services/Business/BarcodeLabel`
 3. `backend/services/Business/Approval`
 4. `backend/services/Business/Wms`
 
-- [ ] **Step 2: Verify solution build**
+- [ ] **步骤 2：验证解决方案构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: solution builds. If a Wave 2 service fails, remove only that service from this integration batch and document the blocker.
+预期：解决方案构建成功。如果某个第 2 波次服务失败，只从本次集成批次中移除该服务，并记录阻塞原因。
 
-## Task 3: Register AppHost Services
+## 任务 3：注册 AppHost 服务
 
-- [ ] **Step 1: Add AppHost databases and service registrations**
+- [ ] **步骤 1：添加 AppHost 数据库和服务注册**
 
-Use the existing Wave 1 business service registration style. Candidate service names:
+使用现有第 1 波次业务服务的注册风格。候选服务名称：
 
 1. `business-demand-planning`
 2. `business-barcode-label`
 3. `business-approval`
 4. `business-wms`
 
-Proposed next local ports after Wave 1 are `5112-5115`, but preserve any existing port matrix if it has already been updated.
+第 1 波次之后建议使用的下一组本地端口是 `5112-5115`，但如果现有端口矩阵已更新，则保持其定义不变。
 
-- [ ] **Step 2: Add cross-service base URLs only when needed**
+- [ ] **步骤 2：仅在需要时添加跨服务基础 URL**
 
-If WMS calls Inventory over HTTP in this batch, pass `Inventory__BaseUrl` or the service's established configuration equivalent. If DemandPlanning calls ProductEngineering/Inventory over HTTP, pass `ProductEngineering__BaseUrl` and `Inventory__BaseUrl`.
+如果本批次中的 WMS 通过 HTTP 调用 Inventory，则传入 `Inventory__BaseUrl` 或该服务既定的等效配置。如果 DemandPlanning 通过 HTTP 调用 ProductEngineering/Inventory，则传入 `ProductEngineering__BaseUrl` 和 `Inventory__BaseUrl`。
 
-- [ ] **Step 3: Verify AppHost build**
+- [ ] **步骤 3：验证 AppHost 构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: AppHost builds.
+预期：AppHost 构建成功。
 
-## Task 4: Add Verify Scripts
+## 任务 4：添加验证脚本
 
-- [ ] **Step 1: Create service verify scripts**
+- [ ] **步骤 1：创建服务验证脚本**
 
-Each script must dot-source `scripts/lib/ScriptAutomation.ps1` and use helper functions such as `Invoke-DotNet`. Do not call `dotnet` directly inside scripts.
+每个脚本都必须点源 `scripts/lib/ScriptAutomation.ps1`，并使用 `Invoke-DotNet` 等辅助函数。脚本内部不得直接调用 `dotnet`。
 
-Create scripts for ready services:
+为已就绪的服务创建以下脚本：
 
 1. `scripts/verify-business-demand-planning-mvp.ps1`
 2. `scripts/verify-business-barcode-label-mvp.ps1`
 3. `scripts/verify-business-approval-mvp.ps1`
 4. `scripts/verify-business-wms-execution-mvp.ps1`
 
-Each script runs only focused Domain and Web tests for its service.
+每个脚本只运行其所属服务的聚焦 Domain 和 Web 测试。
 
-- [ ] **Step 2: Create Wave 2 aggregate verify script**
+- [ ] **步骤 2：创建第 2 波次聚合验证脚本**
 
-Create `scripts/verify-business-wave2-execution.ps1`. It should run:
+创建 `scripts/verify-business-wave2-execution.ps1`。该脚本应运行：
 
 1. `scripts/verify-business-wave1-foundation.ps1`
-2. Every ready Wave 2 service verify script.
-3. `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`.
+2. 所有已就绪的第 2 波次服务验证脚本。
+3. `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`。
 
-- [ ] **Step 3: Run script governance**
+- [ ] **步骤 3：运行脚本治理**
 
-Run:
+运行：
 
 ```powershell
 scripts/check-script-governance.ps1
 ```
 
-Expected: script governance passes.
+预期：脚本治理通过。
 
-## Task 5: Update Authorization, Schema Catalog And Readiness
+## 任务 5：更新授权、schema 目录和就绪状态
 
-- [ ] **Step 1: Update authorization matrix and IAM seed**
+- [ ] **步骤 1：更新授权矩阵和 IAM 初始权限数据**
 
-Add permissions from the service specs:
+添加服务规格中的权限：
 
 1. `business.planning.*`
 2. `business.barcodes.*`
 3. `business.approvals.*`
 4. `business.wms.*`
 
-- [ ] **Step 2: Update database schema catalog**
+- [ ] **步骤 2：更新数据库 schema 目录**
 
-Add or refresh entries for:
+添加或刷新以下条目：
 
 1. `demand_planning`
 2. `barcode`
 3. `business_approval`
 4. `wms`
 
-Only document tables that exist in migrations in the current branch.
+只记录当前分支的 migration 中实际存在的表。
 
-- [ ] **Step 3: Update implementation readiness**
+- [ ] **步骤 3：更新实施就绪状态**
 
-Record:
+记录：
 
-1. Which Wave 2 services compile.
-2. Which verify scripts exist and pass.
-3. Which services are registered in AppHost.
-4. Which downstream ERP issues are unblocked.
-5. Which services are blocked or intentionally deferred.
+1. 哪些第 2 波次服务可以编译。
+2. 哪些验证脚本已存在并通过。
+3. 哪些服务已注册到 AppHost。
+4. 哪些下游 ERP Issue 已解除阻塞。
+5. 哪些服务受阻或被有意延后。
 
-## Task 6: Final Verification
+## 任务 6：最终验证
 
-- [ ] **Step 1: Run focused Wave 2 verification**
+- [ ] **步骤 1：运行第 2 波次聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-wave2-execution.ps1
 ```
 
-Expected: script exits `0` for registered services.
+预期：对于已注册的服务，脚本以 `0` 退出。
 
-- [ ] **Step 2: Run backend build**
+- [ ] **步骤 2：运行后端构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet build backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: build passes.
+预期：构建通过。
 
-- [ ] **Step 3: Report integration state**
+- [ ] **步骤 3：报告集成状态**
 
-In the session summary, include a `Wave 2 Integration State` section. Each service line must use one of these exact state words: `registered`, `skipped`, or `blocked`, followed by the reason and verification command.
-
+在会话摘要中加入 `Wave 2 Integration State` 章节。每个服务条目都必须使用以下精确状态词之一：`registered`、`skipped` 或 `blocked`，并在其后写明原因和验证命令。
