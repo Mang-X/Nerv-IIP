@@ -1,18 +1,18 @@
-# Product Engineering Gap Completion Implementation Plan
+# 产品工程缺口补全实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Complete #127 by extending the existing ProductEngineering service beyond ProductionVersion into engineering documents, engineering items, EBOM, MBOM, routing and ECO/ECN release facts.
+**目标：**扩展现有 ProductEngineering 服务，使其能力从 ProductionVersion 延伸到工程文档、工程物料、EBOM、MBOM、工艺路线和 ECO/ECN 发布事实，从而完成 #127。
 
-**Architecture:** This is a delta plan, not a scaffold plan. Preserve the existing ProductEngineering service, migration baseline and ProductionVersion APIs, then add missing aggregates and release APIs around them. ProductEngineering owns released engineering facts and emits release events; it references MasterData and FileStorage by public IDs only.
+**架构：**这是增量计划，不是搭建骨架的计划。保留现有 ProductEngineering 服务、数据库迁移基线和 ProductionVersion API，再围绕它们添加缺失的聚合和发布 API。ProductEngineering 拥有已发布的工程事实并发出发布事件；它只能通过公开 ID 引用 MasterData 和 FileStorage。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, EF Core PostgreSQL, xUnit, CAP-style integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、EF Core PostgreSQL、xUnit、CAP 风格的集成事件转换、`Nerv.IIP.Testing` 数据库模式约定辅助工具。
 
 ---
 
-## Current Code Facts
+## 当前代码事实
 
-Existing files include:
+现有文件包括：
 
 1. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs`
 2. `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/ApplicationDbContext.cs`
@@ -20,38 +20,38 @@ Existing files include:
 4. `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductionVersionAggregateTests.cs`
 5. `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductionVersionApiContractTests.cs`
 
-Do not run `dotnet new` for this service.
+不得为此服务运行 `dotnet new`。
 
-## Files
+## 文件
 
-- Modify: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/ProductEngineeringFacts.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringDocumentAggregate/EngineeringDocument.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringItemAggregate/EngineeringItem.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringBomAggregate/EngineeringBom.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ManufacturingBomAggregate/ManufacturingBom.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/RoutingAggregate/Routing.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringChangeAggregate/EngineeringChange.cs`
-- Modify: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs`
-- Modify: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringDocumentEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringItemEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringBomEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/ManufacturingBomEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/RoutingEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringChangeEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/IntegrationEvents/ProductEngineeringIntegrationEvents.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/IntegrationEventConverters/ProductEngineeringIntegrationEventConverters.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringDocuments/EngineeringDocumentEndpoints.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringBoms/EngineeringBomEndpoints.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/ManufacturingBoms/ManufacturingBomEndpoints.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/Routings/RoutingEndpoints.cs`
-- Create: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringChanges/EngineeringChangeEndpoints.cs`
-- Create: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductEngineeringReleaseAggregateTests.cs`
-- Create: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringReleaseApiContractTests.cs`
-- Create: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringIntegrationEventTests.cs`
-- Create: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringSchemaConventionTests.cs`
+- 修改：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/ProductEngineeringFacts.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringDocumentAggregate/EngineeringDocument.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringItemAggregate/EngineeringItem.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringBomAggregate/EngineeringBom.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ManufacturingBomAggregate/ManufacturingBom.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/RoutingAggregate/Routing.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/EngineeringChangeAggregate/EngineeringChange.cs`
+- 修改：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs`
+- 修改：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/ApplicationDbContext.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringDocumentEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringItemEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringBomEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/ManufacturingBomEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/RoutingEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/EntityConfigurations/EngineeringChangeEntityTypeConfiguration.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/IntegrationEvents/ProductEngineeringIntegrationEvents.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/IntegrationEventConverters/ProductEngineeringIntegrationEventConverters.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringDocuments/EngineeringDocumentEndpoints.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringBoms/EngineeringBomEndpoints.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/ManufacturingBoms/ManufacturingBomEndpoints.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/Routings/RoutingEndpoints.cs`
+- 新建：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/EngineeringChanges/EngineeringChangeEndpoints.cs`
+- 新建：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductEngineeringReleaseAggregateTests.cs`
+- 新建：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringReleaseApiContractTests.cs`
+- 新建：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringIntegrationEventTests.cs`
+- 新建：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringSchemaConventionTests.cs`
 
-Shared files requested from #140:
+由 #140 请求的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `docs/architecture/authorization-matrix.md`
@@ -59,11 +59,11 @@ Shared files requested from #140:
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-product-engineering-mvp.ps1`
 
-## Task 1: Baseline Current ProductEngineering
+## 任务 1：建立当前 ProductEngineering 的基线
 
-- [ ] **Step 1: Read current aggregate and endpoint facts**
+- [ ] **步骤 1：读取当前聚合和端点事实**
 
-Read:
+读取：
 
 ```powershell
 Get-Content backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Domain/AggregatesModel/ProductionVersionAggregate/ProductionVersion.cs
@@ -71,46 +71,46 @@ Get-Content backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.P
 Get-Content backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductionVersionApiContractTests.cs
 ```
 
-Expected: current ProductionVersion behavior is understood before adding new release facts.
+预期：在添加新的发布事实前，已理解当前 ProductionVersion 行为。
 
-- [ ] **Step 2: Run focused baseline tests**
+- [ ] **步骤 2：运行聚焦的基线测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj --no-restore
 ```
 
-Expected: tests pass before changes. If they fail, record the failing test names in the PR before implementing.
+预期：变更前测试通过。如果测试失败，必须在实施前将失败测试名称记录到 PR 中。
 
-## Task 2: Add Engineering Release Domain Model
+## 任务 2：添加工程发布领域模型
 
-- [ ] **Step 1: Add failing domain tests**
+- [ ] **步骤 1：添加预期失败的领域测试**
 
-Add tests in `ProductEngineeringReleaseAggregateTests.cs` for:
+在 `ProductEngineeringReleaseAggregateTests.cs` 中添加测试，覆盖以下场景：
 
-1. EngineeringDocument registers a FileStorage file reference and rejects blank `fileId`.
-2. EngineeringItem creates a released item reference for one SKU code and revision.
-3. EngineeringBom release makes its components immutable.
-4. ManufacturingBom release references a released EngineeringBom and process recipe/formula lines.
-5. Routing release creates ordered operation steps with work center references.
-6. EngineeringChange release references affected documents, EBOM, MBOM, routing or ProductionVersion IDs.
-7. ProductionVersion cannot bind an unpublished MBOM or routing.
+1. EngineeringDocument 登记 FileStorage 文件引用，并拒绝空白的 `fileId`。
+2. EngineeringItem 为一个 SKU 编码和修订版创建已发布的物料引用。
+3. EngineeringBom 发布后，其组件不可变。
+4. ManufacturingBom 发布时引用已发布的 EngineeringBom 和工艺配方/公式行。
+5. Routing 发布时创建有序的工序步骤，并包含工作中心引用。
+6. EngineeringChange 发布时引用受影响的文档、EBOM、MBOM、工艺路线或 ProductionVersion ID。
+7. ProductionVersion 不得绑定未发布的 MBOM 或工艺路线。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~ProductEngineeringReleaseAggregateTests
 ```
 
-Expected before implementation: compile failure because the new aggregate types do not exist.
+实施前预期：由于新的聚合类型尚不存在，编译失败。
 
-- [ ] **Step 2: Implement aggregate roots and value objects**
+- [ ] **步骤 2：实施聚合根和值对象**
 
-Implement the aggregate files listed in the Files section. Use `Guid.CreateVersion7()` for new entity IDs, async repository patterns in Infrastructure repositories, and public MasterData/FileStorage IDs instead of cross-service object references.
+实施“文件”一节列出的聚合文件。新实体 ID 使用 `Guid.CreateVersion7()`，基础设施层仓储使用异步仓储模式，并使用公开的 MasterData/FileStorage ID，而不是跨服务对象引用。
 
-Required aggregate behaviors:
+必须具备以下聚合行为：
 
 1. `EngineeringDocument.Register(...)`
 2. `EngineeringItem.CreateRevision(...)`
@@ -118,32 +118,32 @@ Required aggregate behaviors:
 4. `ManufacturingBom.ReleaseFromEngineeringBom(...)`
 5. `Routing.Release(...)`
 6. `EngineeringChange.Release(...)`
-7. `ProductionVersion.Create(...)` or equivalent must verify published MBOM and routing references by status fields available in ProductEngineering.
+7. `ProductionVersion.Create(...)` 或等效方法必须通过 ProductEngineering 中可用的状态字段验证已发布的 MBOM 和工艺路线引用。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj --no-restore
 ```
 
-Expected: all ProductEngineering domain tests pass.
+预期：所有 ProductEngineering 领域测试均通过。
 
-## Task 3: Add Persistence And Events
+## 任务 3：添加持久化和事件
 
-- [ ] **Step 1: Add DbSets and entity configurations**
+- [ ] **步骤 1：添加 DbSet 和实体配置**
 
-Update `ApplicationDbContext.cs` with DbSets for all new aggregate roots and add entity configurations with:
+更新 `ApplicationDbContext.cs`，为所有新聚合根添加 DbSet，并添加满足以下要求的实体配置：
 
-1. Schema `product_engineering`.
-2. Table comments and column comments.
-3. Required unique indexes for business keys such as document number/revision, item code/revision, BOM code/revision and routing code/revision.
-4. Migrations history already configured to `product_engineering.__EFMigrationsHistory`.
+1. 使用 `product_engineering` 数据库模式。
+2. 包含表注释和列注释。
+3. 为文档编号/修订版、物料编码/修订版、BOM 编码/修订版和工艺路线编码/修订版等业务键建立必需的唯一索引。
+4. 数据库迁移历史记录已经配置为 `product_engineering.__EFMigrationsHistory`。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成数据库迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -151,39 +151,39 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add CompleteProductEngineeringReleaseFacts --project backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Infrastructure/Nerv.IIP.Business.ProductEngineering.Infrastructure.csproj --startup-project backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Nerv.IIP.Business.ProductEngineering.Web.csproj --output-dir Migrations
 ```
 
-Expected: a new migration is created under ProductEngineering Infrastructure migrations.
+预期：在 ProductEngineering 基础设施层的数据库迁移目录下创建新的数据库迁移。
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Create `ProductEngineeringIntegrationEventTests.cs` and verify these event names:
+创建 `ProductEngineeringIntegrationEventTests.cs` 并验证以下事件名称：
 
 1. `productEngineering.BomReleased`
 2. `productEngineering.RoutingReleased`
 3. `productEngineering.ProductionVersionCreated`
 4. `productEngineering.EngineeringChangeReleased`
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj --no-restore --filter FullyQualifiedName~ProductEngineeringIntegrationEventTests
 ```
 
-Expected: event converter tests pass.
+预期：事件转换器测试通过。
 
-## Task 4: Add API Surface
+## 任务 4：添加 API 接口
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Create `ProductEngineeringReleaseApiContractTests.cs` and assert:
+创建 `ProductEngineeringReleaseApiContractTests.cs` 并断言：
 
-1. New endpoints require internal service authorization.
-2. Operation IDs are stable and use ProductEngineering names.
-3. Release commands reject blank organization, environment, code, revision and file IDs.
-4. Resolve ProductionVersion still returns current behavior for existing tests.
+1. 新端点必须进行内部服务授权。
+2. 操作 ID 保持稳定并使用 ProductEngineering 命名。
+3. 发布命令拒绝空白的组织、环境、编码、修订版和文件 ID。
+4. 解析 ProductionVersion 的行为仍与现有测试预期一致。
 
-- [ ] **Step 2: Implement endpoints and commands**
+- [ ] **步骤 2：实施端点和命令**
 
-Add FastEndpoints under the endpoint folders listed in the Files section. Required endpoints:
+在“文件”一节列出的端点文件夹下添加 FastEndpoints。必须提供以下端点：
 
 1. `POST /api/business/v1/engineering/documents`
 2. `POST /api/business/v1/engineering/items`
@@ -194,21 +194,21 @@ Add FastEndpoints under the endpoint folders listed in the Files section. Requir
 7. `GET /api/business/v1/engineering/engineering-boms`
 8. `GET /api/business/v1/engineering/routings`
 
-- [ ] **Step 3: Run Web tests**
+- [ ] **步骤 3：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj --no-restore
 ```
 
-Expected: all ProductEngineering Web tests pass.
+预期：所有 ProductEngineering Web 层测试均通过。
 
-## Task 5: Handoff Shared Changes To #140
+## 任务 5：向 #140 移交共享变更
 
-- [ ] **Step 1: Create PR summary section**
+- [ ] **步骤 1：创建 PR 摘要章节**
 
-In the PR body for this session, include:
+在本次会话的 PR 正文中包含以下内容：
 
 ```markdown
 ## Shared Changes Needed
@@ -220,13 +220,13 @@ In the PR body for this session, include:
 - Add or refresh `scripts/verify-business-product-engineering-mvp.ps1`.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两条命令均通过。
