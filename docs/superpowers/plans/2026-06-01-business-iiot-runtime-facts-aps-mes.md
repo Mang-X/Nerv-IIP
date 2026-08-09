@@ -1,6 +1,6 @@
 # 业务 IIoT 运行时事实与 APS/MES 实施计划
 
-> **供代理执行者使用：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
 **目标：**实施 #207，使 IndustrialTelemetry 与 Maintenance 运行时事实产出统一的设备可用性语言，供 BusinessScheduling、MES 就绪状态和 Business Console 设备视图使用。
 
@@ -947,7 +947,7 @@ public async Task Operation_start_rejects_same_equipment_reason_code_used_by_rea
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~Equipment_readiness_returns_shared_active_alarm_reason_code|FullyQualifiedName~Operation_start_rejects_same_equipment_reason_code_used_by_readiness"
 ```
 
-预期：失败，因为 MES 仍通过旧式大写代码和字符串启发式规则映射原因。
+预期：失败，因为 MES 仍通过旧式大写原因码和字符串启发式规则映射原因。
 
 - [ ] **步骤 4：替换设备就绪状态代码分类**
 
