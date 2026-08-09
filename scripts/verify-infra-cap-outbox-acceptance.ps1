@@ -52,12 +52,12 @@ if ([string]::IsNullOrWhiteSpace($effectivePostgresConnectionString)) {
     throw "Set -PostgresConnectionString or NERV_IIP_TEST_POSTGRES to run #171 CAP/outbox acceptance against real PostgreSQL."
 }
 
-if (($Profile -eq "rabbitmq" -or $Profile -eq "all") -and ([string]::IsNullOrWhiteSpace($RabbitMqHost) -or $RabbitMqPort -le 0)) {
+if (([string]::Equals([string]($Profile), [string]("rabbitmq"), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($Profile), [string]("all"), [StringComparison]::OrdinalIgnoreCase)) -and ([string]::IsNullOrWhiteSpace($RabbitMqHost) -or $RabbitMqPort -le 0)) {
     throw "RabbitMQ profile requires -RabbitMqHost and a positive -RabbitMqPort."
 }
 
 $project = "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj"
-$profilesToRun = if ($Profile -eq "all") {
+$profilesToRun = if ([string]::Equals([string]($Profile), [string]("all"), [StringComparison]::OrdinalIgnoreCase)) {
     @("inmemory", "rabbitmq")
 }
 else {
@@ -82,10 +82,8 @@ Invoke-WithScopedEnvironment -Variables $environment -ScriptBlock {
             $testArguments += "--no-restore"
         }
 
-        $categoryFilter = switch ($profileToRun) {
-            "inmemory" { "Category=cap-inmemory" }
-            "rabbitmq" { "Category=cap-rabbitmq" }
-        }
+        $categoryFilter = if ([string]::Equals([string]($profileToRun), [string]("inmemory"), [StringComparison]::OrdinalIgnoreCase)) { "Category=cap-inmemory" }
+elseif ([string]::Equals([string]($profileToRun), [string]("rabbitmq"), [StringComparison]::OrdinalIgnoreCase)) { "Category=cap-rabbitmq" }
 
         $testArguments += @(
             "--filter",

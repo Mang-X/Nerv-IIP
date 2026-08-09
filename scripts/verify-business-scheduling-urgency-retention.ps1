@@ -107,7 +107,7 @@ if (-not (Test-Path -LiteralPath $evidencePath)) {
     throw "Order urgency retention capacity evidence was not written: $evidencePath"
 }
 $evidence = Get-Content -Raw -LiteralPath $evidencePath | ConvertFrom-Json
-if ($evidence.provider -ne "PostgreSQL" -or $evidence.seededSnapshots -ne 10002) {
+if ((-not [string]::Equals([string]($evidence.provider), [string]("PostgreSQL"), [StringComparison]::OrdinalIgnoreCase)) -or $evidence.seededSnapshots -ne 10002) {
     throw "Order urgency retention capacity evidence does not match the governed PostgreSQL profile."
 }
 if ($evidence.overlappingWorkerLeaseAcquired -ne $false -or $evidence.latestSnapshotsRemaining -ne 5001) {

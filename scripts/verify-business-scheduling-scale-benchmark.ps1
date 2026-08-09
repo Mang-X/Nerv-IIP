@@ -133,7 +133,7 @@ if (-not (Test-Path -LiteralPath $markdownPath)) {
 
 $evidence = Get-Content -Raw -LiteralPath $jsonPath | ConvertFrom-Json
 $profileNames = @($evidence.profiles | ForEach-Object { $_.profile })
-if (($profileNames -join ",") -ne "demo,medium,stress") {
+if ((-not [string]::Equals([string](($profileNames -join ",")), [string]("demo,medium,stress"), [StringComparison]::OrdinalIgnoreCase))) {
     throw "APS Lite scale benchmark profiles must be exactly demo,medium,stress; actual: $($profileNames -join ',')."
 }
 foreach ($profile in $evidence.profiles) {
@@ -144,10 +144,10 @@ foreach ($profile in $evidence.profiles) {
         throw "APS Lite scale benchmark profile '$($profile.profile)' must contain exactly three runs."
     }
 }
-if ($evidence.disclaimer -ne "APS Lite deterministic finite-capacity heuristic; no global optimality claim.") {
+if ((-not [string]::Equals([string]($evidence.disclaimer), [string]("APS Lite deterministic finite-capacity heuristic; no global optimality claim."), [StringComparison]::OrdinalIgnoreCase))) {
     throw "APS Lite scale benchmark capability disclaimer is missing or changed."
 }
-if ($evidence.persistenceProvider -ne "PostgreSQL") {
+if ((-not [string]::Equals([string]($evidence.persistenceProvider), [string]("PostgreSQL"), [StringComparison]::OrdinalIgnoreCase))) {
     throw "APS Lite scale benchmark must use PostgreSQL persistence."
 }
 

@@ -13,6 +13,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 . (Join-Path $repoRoot 'scripts/lib/LeaderDemoTelemetrySimulator.ps1')
 
 function Assert-True {
@@ -25,13 +26,13 @@ function Assert-Equal {
     if ($Expected -is [array] -or $Actual -is [array]) {
         $expectedJson = ConvertTo-Json @($Expected) -Compress
         $actualJson = ConvertTo-Json @($Actual) -Compress
-        if ($expectedJson -cne $actualJson) {
+        if ((-not [string]::Equals([string]($expectedJson), [string]($actualJson), [StringComparison]::Ordinal))) {
             throw "$Message Expected '$expectedJson', got '$actualJson'."
         }
         return
     }
 
-    if ($Expected -cne $Actual) {
+    if ((-not [string]::Equals([string]($Expected), [string]($Actual), [StringComparison]::Ordinal))) {
         throw "$Message Expected '$Expected', got '$Actual'."
     }
 }
@@ -67,16 +68,16 @@ $timeline = @(
 
 Assert-Equal `
     @('normal', 'degrading', 'alarm', 'recovered') `
-    @($timeline | Select-Object -ExpandProperty Profile -Unique) `
+    @(Get-NervStringsUniqueInOrder -Values @($timeline | ForEach-Object { [string]$_.Profile }) -Comparer ([StringComparer]::Ordinal)) `
     'The deterministic timeline must traverse the governed profile order.'
 Assert-True (
-    [decimal](($timeline | Where-Object Profile -eq 'degrading')[-1].Vibration) -lt [decimal]8
+    ((([decimal](($timeline | Where-Object { [string]::Equals([string]$_.Profile, [string]('degrading'), [StringComparison]::OrdinalIgnoreCase) })[-1].Vibration)) -lt ([decimal]8)))
 ) 'The degrading profile must approach but remain below the vibration alarm threshold.'
 Assert-True (
-    [decimal](($timeline | Where-Object Profile -eq 'alarm')[0].Vibration) -gt [decimal]8
+    ((([decimal](($timeline | Where-Object { [string]::Equals([string]$_.Profile, [string]('alarm'), [StringComparison]::OrdinalIgnoreCase) })[0].Vibration)) -gt ([decimal]8)))
 ) 'The alarm profile must cross the vibration threshold.'
 Assert-True (
-    [decimal](($timeline | Where-Object Profile -eq 'recovered')[0].Vibration) -lt [decimal]7.7
+    ((([decimal](($timeline | Where-Object { [string]::Equals([string]$_.Profile, [string]('recovered'), [StringComparison]::OrdinalIgnoreCase) })[0].Vibration)) -lt ([decimal]7.7)))
 ) 'The recovered profile must fall below the rule deadband.'
 
 $repeatedTimeline = @(
@@ -94,7 +95,7 @@ Assert-Equal `
     ($repeatedTimeline | ConvertTo-Json -Depth 10 -Compress) `
     'Identical run inputs must produce byte-equivalent timeline facts.'
 
-$degrading = $timeline | Where-Object Profile -eq 'degrading' | Select-Object -First 1
+$degrading = $timeline | Where-Object { [string]::Equals([string]$_.Profile, [string]('degrading'), [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
 $vibrationBody = New-NervLeaderDemoTelemetrySampleBody `
     -OrganizationId 'org-001' `
     -EnvironmentId 'env-dev' `
@@ -124,7 +125,7 @@ $script:acceptedHistoricalPacingCount = 0
 $acceptedHttpAction = {
     param($Method, $Path, $Body)
     $script:acceptedRequests.Add([pscustomobject]@{ Method = $Method; Path = $Path; Body = $Body })
-    if ($Method -ceq 'POST') {
+    if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal)) {
         return [pscustomobject]@{
             data = [pscustomobject]@{
                 telemetrySummaryId = "summary:$($Body.sourceSequence)"
@@ -188,14 +189,14 @@ Assert-True $acceptedEvidence.Replay.IdentityStable 'The replay probe must retur
 Assert-True ($acceptedEvidence.History.ItemCount -ge 1) 'The public history verification must observe run data.'
 Assert-Equal 'cleared' $acceptedEvidence.Alarm.Status 'The alarm verification must observe the recovered lifecycle.'
 Assert-True (
-    @($script:acceptedRequests | Where-Object Method -eq 'POST' | Where-Object Path -ne '/api/business-console/v1/telemetry/samples').Count -eq 0
+    @($script:acceptedRequests | Where-Object { [string]::Equals([string]$_.Method, [string]('POST'), [StringComparison]::OrdinalIgnoreCase) } | Where-Object { -not ([string]::Equals([string]$_.Path, [string]('/api/business-console/v1/telemetry/samples'), [StringComparison]::OrdinalIgnoreCase)) }).Count -eq 0
 ) 'All simulator fact writes must use only the public telemetry sample facade.'
 Assert-Equal (
-    @($script:acceptedRequests | Where-Object Method -eq 'POST').Count
+    @($script:acceptedRequests | Where-Object { [string]::Equals([string]$_.Method, [string]('POST'), [StringComparison]::OrdinalIgnoreCase) }).Count
 ) $script:acceptedPostPacingCount 'The replay pacing hook must run exactly once after every public POST.'
 Assert-Equal (
     @($script:acceptedRequests | Where-Object {
-        $_.Method -ceq 'POST' -and "$($_.Body.sourceSequence)" -match ':(history-probe|history):'
+        [string]::Equals([string]($_.Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($_.Body.sourceSequence)" -match ':(history-probe|history):'
     }).Count
 ) $script:acceptedHistoricalPacingCount 'The historical pacing hook must run exactly once after every historical public POST.'
 Assert-True (
@@ -209,12 +210,12 @@ $script:fallbackRequests = [System.Collections.Generic.List[object]]::new()
 $fallbackHttpAction = {
     param($Method, $Path, $Body)
     $script:fallbackRequests.Add([pscustomobject]@{ Method = $Method; Path = $Path; Body = $Body })
-    if ($Method -ceq 'POST' -and "$($Body.sourceSequence)" -like '*:history-probe:*') {
+    if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($Body.sourceSequence)" -like '*:history-probe:*') {
         $exception = [System.InvalidOperationException]::new('historical timestamp rejected by public facade')
         $exception.Data['HttpStatusCode'] = 400
         throw $exception
     }
-    if ($Method -ceq 'POST') {
+    if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal)) {
         return [pscustomobject]@{
             data = [pscustomobject]@{
                 telemetrySummaryId = "summary:$($Body.sourceSequence)"
@@ -249,10 +250,10 @@ $fallbackEvidence = Invoke-NervLeaderDemoTelemetrySimulator `
 Assert-Equal 'rejected-fallback' $fallbackEvidence.HistoricalBackfill.Mode 'A rejected late sample must select the declared session-window fallback.'
 Assert-True ($fallbackEvidence.HistoricalBackfill.Reason -like '*historical timestamp rejected*') 'The fallback evidence must retain a sanitized rejection reason.'
 Assert-True (
-    @($script:fallbackRequests | Where-Object { $_.Method -ceq 'POST' -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*' }).Count -gt 0
+    @($script:fallbackRequests | Where-Object { [string]::Equals([string]($_.Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*' }).Count -gt 0
 ) 'The rejected historical probe must be followed by explicit session-window samples.'
 $fallbackBodies = @($script:fallbackRequests | Where-Object {
-    $_.Method -ceq 'POST' -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*'
+    [string]::Equals([string]($_.Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*'
 } | Select-Object -ExpandProperty Body)
 Assert-Equal $sessionStartedAt ([DateTimeOffset]::Parse($fallbackEvidence.HistoricalBackfill.WindowStartUtc)) 'Fallback must begin at the real session boundary when it is newer than the five-minute lookback.'
 Assert-True (
@@ -285,7 +286,7 @@ try {
         -DelayAction { param($Seconds) } | Out-Null
 }
 catch {
-    $invalidWindowRejected = $_.Exception.Message.Contains('session start')
+    $invalidWindowRejected = $_.Exception.Message.Contains('session start', [StringComparison]::Ordinal)
 }
 Assert-True $invalidWindowRejected 'A scenario before the exact session boundary must be rejected.'
 Assert-Equal 0 $script:invalidWindowRequests 'An invalid session/scenario window must fail before publishing the historical probe.'
@@ -294,7 +295,7 @@ $script:transportRequests = [System.Collections.Generic.List[object]]::new()
 $transportHttpAction = {
     param($Method, $Path, $Body)
     $script:transportRequests.Add([pscustomobject]@{ Method = $Method; Path = $Path; Body = $Body })
-    if ($Method -ceq 'POST' -and "$($Body.sourceSequence)" -like '*:history-probe:*') {
+    if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($Body.sourceSequence)" -like '*:history-probe:*') {
         throw 'connection reset during historical probe'
     }
     return & $acceptedHttpAction $Method $Path $Body
@@ -320,12 +321,12 @@ try {
         -DelayAction { param($Seconds) } | Out-Null
 }
 catch {
-    $transportFailurePropagated = $_.Exception.Message.Contains('connection reset')
+    $transportFailurePropagated = $_.Exception.Message.Contains('connection reset', [StringComparison]::Ordinal)
 }
 Assert-True $transportFailurePropagated 'Transport failures must fail the run instead of being mislabeled as historical timestamp rejection.'
 Assert-True (
     @($script:transportRequests | Where-Object {
-        $_.Method -ceq 'POST' -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*'
+        [string]::Equals([string]($_.Method), [string]('POST'), [StringComparison]::Ordinal) -and "$($_.Body.sourceSequence)" -like '*:session-backfill:*'
     }).Count -eq 0
 ) 'Transport failures must not publish fallback facts.'
 
@@ -391,7 +392,7 @@ try {
         -ScenarioContract $mismatchedContract
 }
 catch {
-    $replayMismatchRejected = $_.Exception.Message.Contains('DurationSeconds')
+    $replayMismatchRejected = $_.Exception.Message.Contains('DurationSeconds', [StringComparison]::Ordinal)
 }
 Assert-True $replayMismatchRejected 'Replay must reject any timeline parameter that differs from the completed real-time evidence.'
 

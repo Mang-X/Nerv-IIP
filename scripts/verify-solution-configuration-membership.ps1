@@ -131,7 +131,7 @@ function Select-GitIgnoredPath {
             # behaviour nobody reasoned about. Only reachable past 100 discovered solutions, and it
             # fails in the safe direction (everything checked).
             $exitCode = $_.Exception.Data['ExitCode']
-            if ($null -eq $exitCode -or [int] $exitCode -ne 1) {
+            if ($null -eq $exitCode -or (-not (([int] $exitCode) -eq (1)))) {
                 return @()
             }
         }
@@ -148,10 +148,9 @@ function Get-DiscoveredSolutionPath {
     # Build output is excluded structurally as well: it is never a solution anyone edits, and this
     # keeps working when the root is not a git work tree.
     $discovered = @(
-        Get-ChildItem -LiteralPath $Root -Recurse -File -Filter '*.sln' -ErrorAction SilentlyContinue |
+        Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $Root -Recurse -File -Filter '*.sln' -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notmatch '[/\\](bin|obj|node_modules|artifacts|\.git)[/\\]' } |
-            ForEach-Object { ([System.IO.Path]::GetRelativePath($Root, $_.FullName) -replace '\\', '/') } |
-            Sort-Object -Unique
+            ForEach-Object { ([System.IO.Path]::GetRelativePath($Root, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
     )
 
     $ignored = @(Select-GitIgnoredPath -Root $Root -RelativePath $discovered)
@@ -196,7 +195,7 @@ function Get-SolutionModel {
             continue
         }
 
-        if ($section -eq 'solution-configs' -and $line -match '^(?<name>[^=]+?)\s*=\s*\S') {
+        if ([string]::Equals([string]($section), [string]('solution-configs'), [StringComparison]::OrdinalIgnoreCase) -and $line -match '^(?<name>[^=]+?)\s*=\s*\S') {
             $solutionConfigurations.Add($Matches.name.Trim())
             continue
         }
@@ -204,7 +203,7 @@ function Get-SolutionModel {
         # {guid}.<solution configuration>.ActiveCfg = <project configuration>
         # Build.0/Deploy.0 lines are ignored: ActiveCfg is what selects the configuration, Build.0
         # only decides whether the solution builds it.
-        if ($section -eq 'project-configs' -and
+        if ([string]::Equals([string]($section), [string]('project-configs'), [StringComparison]::OrdinalIgnoreCase) -and
             $line -match '^\{(?<guid>[^}]+)\}\.(?<solutionConfiguration>.+?)\.ActiveCfg\s*=\s*(?<projectConfiguration>.+)$') {
             $activeConfiguration["$($Matches.guid.ToUpperInvariant())|$($Matches.solutionConfiguration.Trim())"] =
                 $Matches.projectConfiguration.Trim()
@@ -213,7 +212,7 @@ function Get-SolutionModel {
 
     return [pscustomobject]@{
         Projects = $projects
-        SolutionConfigurations = @($solutionConfigurations | Sort-Object -Unique)
+        SolutionConfigurations = @(Get-NervStringsSorted -Values @($solutionConfigurations) -Comparer ([StringComparer]::Ordinal) -Unique)
         ActiveConfiguration = $activeConfiguration
     }
 }
@@ -253,7 +252,7 @@ function Expand-ProjectReferenceGlob {
     $patternSegments = @($segments | Select-Object -Skip $fixedSegments.Count)
     $regexPattern = '^' + (
         @($patternSegments | ForEach-Object {
-            if ($_ -ceq '**') {
+            if ([string]::Equals([string]($_), [string]('**'), [StringComparison]::Ordinal)) {
                 '(?:.*/)?'
             } else {
                 [regex]::Escape($_).Replace('\*', '[^/]*').Replace('\?', '[^/]') + '/'
@@ -265,11 +264,10 @@ function Expand-ProjectReferenceGlob {
     $regexPattern += '$'
 
     return @(
-        Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter '*.csproj' |
+        Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $searchRoot -Recurse -File -Filter '*.csproj' |
             Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
             ForEach-Object { Get-NormalizedFullPath -Path $_.FullName } |
-            Where-Object { $_.Substring($searchRoot.Length).TrimStart('/') -match $regexPattern } |
-            Sort-Object -Unique
+            Where-Object { $_.Substring($searchRoot.Length).TrimStart('/') -match $regexPattern }) -Comparer ([StringComparer]::Ordinal) -Unique
     )
 }
 
@@ -281,11 +279,10 @@ function Get-ProjectReferencePath {
     $projectDirectory = Split-Path -Parent $ProjectFullPath
     $projectText = Get-Content -LiteralPath $ProjectFullPath -Raw
     return @(
-        [regex]::Matches($projectText, '<ProjectReference\s[^>]*?Include\s*=\s*"(?<path>[^"]+)"') |
+        Get-NervStringsSorted -Values @([regex]::Matches($projectText, '<ProjectReference\s[^>]*?Include\s*=\s*"(?<path>[^"]+)"') |
             ForEach-Object { $_.Groups['path'].Value -split ';' } |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            ForEach-Object { Expand-ProjectReferenceGlob -ProjectDirectory $projectDirectory -Include $_.Trim() } |
-            Sort-Object -Unique
+            ForEach-Object { Expand-ProjectReferenceGlob -ProjectDirectory $projectDirectory -Include $_.Trim() }) -Comparer ([StringComparer]::Ordinal) -Unique
     )
 }
 
@@ -313,7 +310,7 @@ foreach ($relativeSolution in $solutionPaths) {
     }
 
     $model = Get-SolutionModel -SolutionFullPath $solutionFullPath
-    $members = @($model.Projects.FullPath | Sort-Object -Unique)
+    $members = @(Get-NervStringsSorted -Values @($model.Projects.FullPath) -Comparer ([StringComparer]::Ordinal) -Unique)
     if ($members.Count -eq 0) {
         $errors.Add("Solution declares no projects, which means it was parsed wrong: $relativeSolution.")
         continue
@@ -379,7 +376,7 @@ foreach ($relativeSolution in $solutionPaths) {
         }
     }
 
-    $nonMembers = @($visited | Where-Object { -not $memberSet.Contains($_) } | Sort-Object)
+    $nonMembers = @(Get-NervStringsSorted -Values @($visited | Where-Object { -not $memberSet.Contains($_) }) -Comparer ([StringComparer]::Ordinal))
     foreach ($nonMember in $nonMembers) {
         $referencedBy = if ($introducedBy.ContainsKey($nonMember)) { $introducedBy[$nonMember] } else { '(unknown)' }
         $nonMemberRelative = $nonMember.Replace("$normalizedRoot/", '')

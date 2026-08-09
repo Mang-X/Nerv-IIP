@@ -33,7 +33,7 @@ function Test-PathBelow([string] $Path, [string] $Parent) {
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
     $resolvedParent = [System.IO.Path]::GetFullPath($Parent).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
     $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-    return $resolvedPath.StartsWith($resolvedParent, $comparison)
+    return $resolvedPath.StartsWith($resolvedParent, $comparison, [StringComparison]::Ordinal)
 }
 
 function Stop-AcceptanceStartProcess([object] $Record) {
@@ -53,7 +53,7 @@ function Get-AcceptanceWorktreeProcessCount([string] $WorktreePath) {
     return @(
         Get-CimInstance Win32_Process |
             Where-Object {
-                $allowedNames -ccontains "$($_.Name)".ToLowerInvariant() -and
+                [Collections.Generic.HashSet[string]]::new([string[]]@($allowedNames), [StringComparer]::Ordinal).Contains([string]("$($_.Name)".ToLowerInvariant())) -and
                 -not [string]::IsNullOrWhiteSpace("$($_.CommandLine)") -and
                 "$($_.CommandLine)".Replace('/', '\').Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)
             }
@@ -108,10 +108,10 @@ function Wait-AcceptanceSessions([object[]] $Records, [int] $TimeoutSeconds = 90
                 continue
             }
             $manifest = Read-NervFullStackManifest -SessionId $record.SessionId
-            if ("$($manifest.state)" -eq 'Failed' -or "$($manifest.state)" -eq 'CleanupFailed') {
+            if ([string]::Equals([string]("$($manifest.state)"), [string]('Failed'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]("$($manifest.state)"), [string]('CleanupFailed'), [StringComparison]::OrdinalIgnoreCase)) {
                 throw "Acceptance session '$($record.SessionId)' entered $($manifest.state)."
             }
-            if ("$($manifest.state)" -ne 'Running') { $pending++ }
+            if ((-not [string]::Equals([string]("$($manifest.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase))) { $pending++ }
         }
         if ($pending -eq 0) { return }
         Start-Sleep -Seconds 2
@@ -194,7 +194,7 @@ try {
 
     Wait-AcceptanceSessions -Records @($records)
     foreach ($record in $records) { $record.Manifest = Read-NervFullStackManifest -SessionId $record.SessionId }
-    Assert-Acceptance (@($records.AdminPassword | Select-Object -Unique).Count -eq $Sessions) 'Each session must use a unique IAM seed password for cross-proxy isolation proof.'
+    Assert-Acceptance (@(Get-NervStringsSorted -Values @($records.AdminPassword) -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $Sessions) 'Each session must use a unique IAM seed password for cross-proxy isolation proof.'
 
     if ($InjectFailure) {
         $injectedFailureObserved = $true
@@ -203,11 +203,11 @@ try {
 
     foreach ($resourceName in @('gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
         $urls = @($records | ForEach-Object { Get-NervFullStackEndpointValue -Manifest $_.Manifest -ResourceName $resourceName })
-        Assert-Acceptance (@($urls | Select-Object -Unique).Count -eq $Sessions) "Endpoint '$resourceName' was not isolated."
+        Assert-Acceptance (@(Get-NervStringsSorted -Values @($urls) -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $Sessions) "Endpoint '$resourceName' was not isolated."
     }
     foreach ($volumeKey in @('NERV_IIP_POSTGRES_VOLUME', 'NERV_IIP_REDIS_VOLUME', 'NERV_IIP_MINIO_VOLUME', 'NERV_IIP_VICTORIA_LOGS_VOLUME')) {
         $names = @($records | ForEach-Object { (Get-NervFullStackEnvironment -SessionId $_.SessionId)[$volumeKey] })
-        Assert-Acceptance (@($names | Select-Object -Unique).Count -eq $Sessions) "Volume contract '$volumeKey' was not isolated."
+        Assert-Acceptance (@(Get-NervStringsSorted -Values @($names) -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $Sessions) "Volume contract '$volumeKey' was not isolated."
     }
 
     foreach ($record in $records) {
@@ -225,8 +225,8 @@ try {
         }
     }
 
-    $firstPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[0].SessionId -WorkingDirectory $records[0].WorktreePath | Where-Object { "$($_.resourceName)" -eq 'postgres' })
-    $secondPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[1].SessionId -WorkingDirectory $records[1].WorktreePath | Where-Object { "$($_.resourceName)" -eq 'postgres' })
+    $firstPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[0].SessionId -WorkingDirectory $records[0].WorktreePath | Where-Object { [string]::Equals([string]("$($_.resourceName)"), [string]('postgres'), [StringComparison]::OrdinalIgnoreCase) })
+    $secondPostgres = @(Get-NervFullStackContainerRecords -OwnedSessionId $records[1].SessionId -WorkingDirectory $records[1].WorktreePath | Where-Object { [string]::Equals([string]("$($_.resourceName)"), [string]('postgres'), [StringComparison]::OrdinalIgnoreCase) })
     Assert-Acceptance ($firstPostgres.Count -eq 1 -and $secondPostgres.Count -eq 1) 'Each running session must own one canonical postgres container.'
     Invoke-NativeCommandOutput `
         -Command 'docker' `
@@ -259,7 +259,7 @@ try {
     Invoke-WebRequest -Uri (Get-NervFullStackEndpointValue -Manifest $records[1].Manifest -ResourceName 'gateway') -TimeoutSec 30 -UseBasicParsing -SkipHttpErrorCheck | Out-Null
 }
 catch {
-    if ($InjectFailure -and $_.Exception.Message -eq 'Intentional parallel full-stack acceptance failure.') {
+    if ($InjectFailure -and [string]::Equals([string]($_.Exception.Message), [string]('Intentional parallel full-stack acceptance failure.'), [StringComparison]::OrdinalIgnoreCase)) {
         $injectedFailureObserved = $true
     }
     else { $primaryFailure = $_ }
@@ -278,7 +278,7 @@ finally {
                     -TimeoutSeconds 300 `
                     -Name "parallel-fullstack-final-stop-$($record.Index)" | Out-Null
                 $manifest = Read-NervFullStackManifest -SessionId $record.SessionId
-                Assert-Acceptance ("$($manifest.state)" -eq 'Stopped') "Session '$($record.SessionId)' did not stop."
+                Assert-Acceptance ([string]::Equals([string]("$($manifest.state)"), [string]('Stopped'), [StringComparison]::OrdinalIgnoreCase)) "Session '$($record.SessionId)' did not stop."
                 $remainingResources = Get-NervSessionDockerResources -Manifest $manifest -WorkingDirectory $record.WorktreePath
                 Assert-Acceptance (
                     @($remainingResources.Containers).Count -eq 0 -and
@@ -301,7 +301,7 @@ finally {
         Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Arguments @('gc') -WorkingDirectory $repoRoot -TimeoutSeconds 300 -Name 'parallel-fullstack-gc' | Out-Null
     }
     catch { $cleanupFailures.Add("gc: $($_.Exception.Message)") }
-    foreach ($record in @($records | Sort-Object Index -Descending)) {
+    foreach ($record in @(Get-NervItemsSorted -Items @($records) -Comparison { param($left, $right) if ([int]$right.Index -gt [int]$left.Index) { 1 } elseif ([int]$right.Index -lt [int]$left.Index) { -1 } else { 0 } })) {
         try {
             Remove-AcceptanceWorktree -WorktreePath $record.WorktreePath -WorktreeParent $worktreeParent -Index $record.Index
         }

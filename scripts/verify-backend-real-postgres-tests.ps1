@@ -28,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
-$lane = @($manifest.heavyLanes | Where-Object { $_.id -eq 'real-postgres' })
+$lane = @($manifest.heavyLanes | Where-Object { [string]::Equals([string]($_.id), [string]('real-postgres'), [StringComparison]::OrdinalIgnoreCase) })
 if ($lane.Count -ne 1) {
     throw 'The backend test shard manifest must define exactly one real-postgres heavy lane.'
 }
@@ -39,8 +39,8 @@ foreach ($variable in @('NERV_IIP_TEST_POSTGRES', 'NERV_IIP_TEST_REDIS')) {
     }
 }
 
-$ownedShards = @($manifest.fastShards | Where-Object { @($_.excludedTestLanes) -contains 'real-postgres' })
-$ownedSelectorCount = @($ownedShards | ForEach-Object { Get-BackendTestShardExcludedSelectors -Shard $_ } | Sort-Object -Unique).Count
+$ownedShards = @($manifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('real-postgres')) })
+$ownedSelectorCount = @(Get-NervStringsSorted -Values @($ownedShards | ForEach-Object { Get-BackendTestShardExcludedSelectors -Shard $_ }) -Comparer ([StringComparer]::Ordinal) -Unique).Count
 if ($ownedSelectorCount -eq 0) {
     throw 'The real-postgres heavy lane has no excluded test selectors to execute.'
 }
@@ -69,7 +69,7 @@ foreach ($shard in $ownedShards) {
             'test', [string] $shard.solutionFilter, '--configuration', 'Release', '--filter', "FullyQualifiedName~$selector",
             '--logger', "trx;LogFilePrefix=$selectorSlug", '--results-directory', $selectorDirectory
         ) | Out-Null
-        $trx = Get-ChildItem -LiteralPath $selectorDirectory -Filter '*.trx' -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+        $trx = Get-NervItemsSorted -Items @(Get-ChildItem -LiteralPath $selectorDirectory -Filter '*.trx' -File) -Comparison { param($left, $right) if ($right.LastWriteTimeUtc -gt $left.LastWriteTimeUtc) { 1 } elseif ($right.LastWriteTimeUtc -lt $left.LastWriteTimeUtc) { -1 } else { 0 } } | Select-Object -First 1
         if ($null -eq $trx) {
             throw "Real PostgreSQL selector '$selector' executed without TRX evidence."
         }
