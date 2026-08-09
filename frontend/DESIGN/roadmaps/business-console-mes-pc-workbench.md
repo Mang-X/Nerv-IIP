@@ -1,65 +1,65 @@
-# Business Console MES PC Workbench
+# Business Console MES PC 工作台
 
-This roadmap is the design source for the Business Console PC interaction model. It complements `docs/superpowers/plans/2026-05-26-business-console-mes-pc-completion.md` by describing how pages should behave for production planners, shift leaders, inspectors and inventory operators.
+本路线图是 Business Console PC 交互模型的设计来源。它通过描述页面应当如何服务于生产计划员、班组长、检验员和库存操作员，补充 `docs/superpowers/plans/2026-05-26-business-console-mes-pc-completion.md`。
 
-## Design Conclusion
+## 设计结论
 
-The first implementation exposed useful API surfaces, but several pages behaved like interface test panels: filters, metrics, tables and large forms were stacked in one route. The PC workbench must be task-driven instead:
+首版实现已暴露有用的 API 能力面，但多个页面的表现却像接口测试面板：过滤器、指标、表格和大型表单被堆叠在同一路由中。PC 工作台必须改为任务驱动：
 
-1. Treat every visible string as product copy for a real business user. Do not write page descriptions as developer notes, demo labels, validation evidence, seed-data explanations or interface-contract commentary.
-2. Keep list/search/result surfaces on the main page.
-3. Move create, post, report, schedule and confirm actions into a sheet, dialog or object detail route.
-4. Use the current object context to prefill action forms.
-5. Hide or auto-generate technical fields such as idempotency keys and source service codes.
-6. Keep setup checks as supporting diagnostics, not as prominent primary operations.
+1. 将每个可见字符串都视为面向真实业务用户的产品文案。不得将页面说明写成开发者注释、演示标签、验证证据、种子数据说明或接口契约评注。
+2. 列表/搜索/结果界面保留在主页面。
+3. 将新建、过账、报工、排程和确认操作移入侧边操作面板、对话框或对象详情路由。
+4. 使用当前对象上下文预填操作表单。
+5. 隐藏或自动生成幂等键、来源服务编码等技术字段。
+6. 准备检查必须保持为辅助诊断，不得作为显著的主要操作。
 
-Pages may use realistic industry data, but they must not announce that data as `样例`, `内置`, `用于验证`, `联动测试`, `demo`, `mock` or `seed`. The UI should read as a live operating system. If reviewers need to know that data is synthetic, document it in PR notes, fixture docs or test setup, not in the product surface.
+页面可以使用逼真的行业数据，但不得将这些数据宣称为 `样例`、`内置`、`用于验证`、`联动测试`、`demo`、`mock` 或 `seed`。UI 应当呈现为正在运行的作业系统。如果审核者需要知道数据由人工合成，应将该信息记录在 PR 说明、测试夹具文档或测试配置中，而非产品界面上。
 
-## Operational Foundation Gate
+## 运行基础就绪门禁
 
-MES page delivery is gated by operational readiness, not by route existence. A page is not complete until the facts it depends on can be maintained or imported, resolved through backend contracts, selected through business controls, and verified in the shock absorber manufacturing scenario.
+MES 页面交付以运行基础就绪为门禁，而不以路由是否存在为准。只有当页面依赖的事实可维护或导入、可通过后端契约解析、可通过业务控件选择，并已在减振器制造场景中验证后，该页面才算完成。
 
-Required before further MES page completion:
+进一步完成 MES 页面前必须具备以下条件：
 
-1. Server-side numbering for durable business documents. Ordinary users must not enter or click-generate system IDs.
-2. Master data workflows for materials, customers, suppliers, plant, production lines, work centers, devices, shifts, calendars, teams, skills and resource capabilities.
-3. Product engineering workflows for EBOM, MBOM, routing, operation definitions and released production versions.
-4. Demand/MRP/procurement readiness so production plans come from sales, forecast, safety stock and planning suggestions instead of ad hoc work-order entry.
-5. Material, quality and equipment readiness from Inventory/WMS, Quality, Maintenance and IndustrialTelemetry before release, dispatch and start actions are shown.
-6. APS lite scheduling results from the backend before any Gantt or dispatch timeline is counted as delivered. The browser may preview and submit adjustment intent, but it must not calculate the official schedule.
-7. Row-context actions and linked selectors instead of free-text IDs. Work orders, operation tasks, material requests, reports and receipts should inherit context from the selected business object.
+1. 持久化业务单据必须由服务端编号。普通用户不得输入或点击生成系统 ID。
+2. 必须具备物料、客户、供应商、工厂、生产线、工作中心、设备、班次、日历、班组、技能和资源能力的主数据工作流。
+3. 必须具备 EBOM、MBOM、工艺路线、工序定义和已发布生产版本的产品工程工作流。
+4. 需求/MRP/采购必须就绪，使生产计划来自销售、预测、安全库存和计划建议，而非临时手工录入工单。
+5. 在显示下达、派工和开工操作前，Inventory/WMS、Quality、Maintenance 和 IndustrialTelemetry 必须提供已经就绪的物料、质量和设备事实。
+6. 在任何 Gantt 图或派工时间线被认定为已交付前，后端必须先产出 APS lite 排程结果。浏览器可以预览并提交调整意图，但不得计算正式排程。
+7. 必须使用行上下文操作和联动选择器，不得使用自由文本 ID。工单、工序任务、领料申请、报工和入库请求应当继承所选业务对象的上下文。
 
-`生产准备检查` remains a diagnostic support page. It must not become a substitute for the source workflows above, and it must not be used to maintain master data, engineering data, inventory, quality, barcode, maintenance or numbering rules.
+`生产准备检查` 仍是诊断支持页面。它不得取代上述源工作流，也不得用于维护主数据、工程数据、库存、质量、条码、维修或编号规则。
 
-## Reference Signals
+## 参考方向
 
-Mature MES and frontline systems organize around production execution, worklists and operator guidance rather than raw service methods. SAP Digital Manufacturing describes worklists, live operations, resource orchestration and shop-floor execution as core interaction surfaces. Tulip's Order Execution app centers on selecting a work order, executing operations, following instructions and logging production in one guided flow. These are directionally useful references, but Nerv-IIP should remain a dense industrial management UI, not a marketing dashboard.
+成熟的 MES 和一线系统围绕生产执行、作业清单和操作员指引组织，而非围绕原始服务方法。SAP Digital Manufacturing 将作业清单、实时操作、资源编排和车间现场执行描述为核心交互界面。Tulip's Order Execution 应用的核心是在同一引导流程中选择工单、执行工序、按指引操作并记录生产。这些参考对方向选择很有价值，但 Nerv-IIP 应当保持为高密度工业管理 UI，而非营销仪表板。
 
-References:
+参考资料：
 
 1. SAP Digital Manufacturing: https://www.sap.com/products/scm/execution-mes.html
 2. Tulip Order Execution: https://support.tulip.co/docs/order-execution
 
-## Navigation Model
+## 导航模型
 
-The canonical Console and Business Console navigation map now lives in
-`docs/architecture/frontend-navigation-map.md`. This section is scoped to the
-MES PC operational reset and describes role-oriented grouping around production
-execution; it does not override the global capability catalog, role-navigation
-rules or the route-ready upgrade rules in the architecture doc.
+规范的 Console 和 Business Console 导航图现位于
+`docs/architecture/frontend-navigation-map.md`。本节范围限于
+MES PC 运行基础重置，并描述围绕生产执行的角色导向分组；
+它不覆盖架构文档中的全局能力目录、角色导航
+规则或路由就绪升级规则。
 
-The long-term PC shell is a top-left navigation model: the selected top-level
-business domain controls the left-side menu. The MES grouping below is therefore
-the MES domain's side menu candidate, not a full Business Console sidebar.
+长期 PC 外壳采用顶部与左侧组合的导航模型：所选顶级
+业务域控制左侧菜单。因此，下方 MES 分组是
+MES 域的侧边菜单候选方案，而非完整的 Business Console 侧边栏。
 
-The initial MVP top-level domains were:
+初始 MVP 顶级业务域为：
 
 1. `主数据`
 2. `库存`
 3. `质量`
 4. `MES`
 
-For the operational foundation reset, Business Console navigation should expand around the work roles rather than around service names:
+在运行基础重置中，Business Console 导航应当围绕工作角色而非服务名称扩展：
 
 1. `主数据`
 2. `工程资料`
@@ -68,140 +68,140 @@ For the operational foundation reset, Business Console navigation should expand 
 5. `质量与库存`
 6. `设备与排程`
 
-MES menu order:
+MES 菜单顺序：
 
-| Menu         | Route                     | Role                                                                                                             |
+| 菜单         | 路由                      | 角色                                                                                                             |
 | ------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 生产驾驶舱   | `/mes`                    | Shift leader / dispatcher first screen.                                                                          |
-| 工单与派工   | `/mes/work-orders`        | Work order list, rush order entry, dispatch context.                                                             |
-| 工序执行     | `/mes/operation-tasks`    | Operation task worklist and execution entry.                                                                     |
-| 在制跟踪     | `/mes/wip`                | WIP status and blockers.                                                                                         |
-| 报工记录     | `/mes/production-reports` | Report history; create action comes from work order or operation context.                                        |
-| 完工入库     | `/mes/receipts`           | Receipt requests; create action comes from completion context.                                                   |
-| 异常与产能   | `/mes/capacity`           | Equipment/capacity impact and exception awareness.                                                               |
-| 规则排程     | `/mes/schedules`          | Temporary MES rule result and explicit schedule-run action; APS/Gantt moves to a dedicated scheduling workspace. |
-| 生产准备检查 | `/mes/foundation`         | Supporting readiness diagnostics for release/start/dispatch.                                                     |
+| 生产驾驶舱   | `/mes`                    | 班组长/调度员的首屏。                                                                                     |
+| 工单与派工   | `/mes/work-orders`        | 工单列表、急单入口和派工上下文。                                                                         |
+| 工序执行     | `/mes/operation-tasks`    | 工序任务作业清单和执行入口。                                                                           |
+| 在制跟踪     | `/mes/wip`                | WIP 状态和阻断项。                                                                                    |
+| 报工记录     | `/mes/production-reports` | 报工历史；新建操作来自工单或工序上下文。                                                                    |
+| 完工入库     | `/mes/receipts`           | 入库请求；新建操作来自完工上下文。                                                                      |
+| 异常与产能   | `/mes/capacity`           | 设备/产能影响和异常态势。                                                                                |
+| 规则排程     | `/mes/schedules`          | 临时 MES 规则结果和显式运行排程操作；APS/Gantt 移入专用排程工作区。                                        |
+| 生产准备检查 | `/mes/foundation`         | 面向下达/开工/派工的辅助就绪诊断。                                                                         |
 
-`基础就绪` must not be a primary operator label. Use `生产准备检查` and position it after execution pages.
+`基础就绪` 不得作为面向操作员的主要标签。应使用 `生产准备检查`，并将其置于执行页面之后。
 
-## Page Patterns
+## 页面模式
 
-### Product Copy
+### 产品文案
 
-Business Console copy must answer one of three user questions:
+Business Console 文案必须回答以下三个用户问题之一：
 
-1. What am I looking at?
-2. What needs attention?
-3. What can I do next?
+1. 我正在看什么？
+2. 什么需要关注？
+3. 我下一步能做什么？
 
-Do not use headings, summaries, table captions or empty states to explain implementation status. Examples that are forbidden in visible UI:
+不得使用标题、摘要、表格标题或空状态来解释实现状态。可见 UI 中禁止出现的示例：
 
 1. `汽车减振器制造场景下的...用于验证...`
 2. `当前页面内置汽车减振器制造样例数据，便于联动测试`
 3. `汽车减振器制造样例`
 4. `业务网关契约`, `接口`, `上下文`, `组织`, `环境`, `sourceSystem`, `operationId`
 
-Preferred replacements:
+推荐替换文案：
 
 1. `销售订单`, `采购跟进`, `成本归集`, `生产计划`, `工单与派工`.
 2. `待排产订单`, `待齐套工单`, `待检来料`, `本班待报工任务`.
 3. `暂无待派工工单，请先确认生产计划并下达到车间。`
 
-### List Workbench
+### 列表工作台
 
-Use for work orders, operation tasks, WIP, production reports, receipts, NCRs and inventory facts.
+用于工单、工序任务、WIP、生产报工、入库请求、NCR 和库存事实。
 
-Required structure:
+必备结构：
 
-1. Page header with one primary action and refresh as secondary action.
-2. Business context/filter bar.
-3. KPI strip with only action-driving numbers.
-4. Main table or queue.
-5. Action sheets or row actions declared once at page level.
+1. 页头包含一个主要操作，并将刷新作为次要操作。
+2. 业务上下文/过滤栏。
+3. KPI 指标条仅保留能够驱动操作的数字。
+4. 主表格或队列。
+5. 侧边操作面板或行操作只在页面层声明一次。
 
-Do not put multi-section forms below the table.
+不得将多分区表单放在表格下方。
 
-### Action Sheet
+### 侧边操作面板
 
-Use for bounded adjacent actions:
+用于范围明确的相邻操作：
 
-1. Rush order creation.
-2. Production report posting.
-3. Inventory movement posting.
-4. Count task creation and count adjustment confirmation.
-5. Inspection record creation.
-6. Finished goods receipt request creation.
-7. Schedule run.
+1. 创建急单。
+2. 提交生产报工。
+3. 库存移动过账。
+4. 创建盘点任务和确认盘点调整。
+5. 创建检验记录。
+6. 创建成品入库请求。
+7. 运行排程。
 
-The sheet preserves the list context and makes it clear that the user is performing a side action against a current queue.
+侧边操作面板保留列表上下文，并明确用户正在针对当前队列执行辅助操作。
 
-### Object Detail
+### 对象详情
 
-Use when an object has peer sections:
+当对象包含并列分区时使用：
 
-1. Work order detail: overview, operations, materials, quality, reports, receipts, blockers, history.
-2. NCR detail: evidence, disposition, closure, related inspection, audit trail.
-3. Count task detail: scope, counted quantity, variance, adjustment result.
+1. 工单详情：概览、工序、物料、质量、报工、入库请求、阻断项、历史。
+2. NCR 详情：证据、处置、关闭、关联检验、审计轨迹。
+3. 盘点任务详情：范围、盘点数量、差异、调整结果。
 
-Tabs belong inside detail pages only. They are not primary navigation.
+选项卡只属于详情页，不属于主导航。
 
-## Field Rules
+## 字段规则
 
-1. `organizationId`, `environmentId`, `context`, gateway names, API names and contract metadata are never user-facing labels.
-2. `site`, `line`, `work center` and `shift` should become compact business context controls with business labels: `工厂`, `产线`, `工作中心`, `班次`.
-3. `idempotencyKey` is optional and defaults to a generated value.
-4. `sourceService` is not a user-facing field; label source context as business source when it must be shown.
-5. Object IDs should be filled from selected rows whenever possible.
-6. Empty states must explain the next business action, not just say there is no data.
-7. Required fields must be visibly marked and should be minimized through auto-numbering, row-context prefill and Select controls.
+1. `organizationId`、`environmentId`、`context`、Gateway 名称、API 名称和契约元数据绝不作为面向用户的标签。
+2. `site`、`line`、`work center` 和 `shift` 应转化为紧凑的业务上下文控件，并使用业务标签：`工厂`、`产线`、`工作中心`、`班次`。
+3. `idempotencyKey` 是可选字段，默认使用生成值。
+4. `sourceService` 不是面向用户的字段；需要显示来源上下文时，应将其标记为业务来源。
+5. 应尽可能从所选行填入对象 ID。
+6. 空状态必须说明下一个业务操作，不得只说没有数据。
+7. 必填字段必须显著标记，并应通过自动编号、行上下文预填和 Select 控件尽量减少必填字段。
 
-## Status Rules
+## 状态规则
 
-Use consistent status semantics across MES, inventory and quality:
+在 MES、库存和质量范围内使用一致的状态语义：
 
-| Semantics          | Examples                                                        | Visual Direction    |
+| 语义               | 示例                                                            | 视觉方向       |
 | ------------------ | --------------------------------------------------------------- | ------------------- |
-| Normal / completed | `Ready`, `Completed`, `Closed`, `Passed`, `Available`, `Active` | Green status badge. |
-| In progress        | `Running`, `Started`, `InProgress`                              | Blue status badge.  |
-| Warning / pending  | `Pending`, `Warning`, `ConditionalRelease`                      | Amber status badge. |
-| Blocked / failed   | `Blocked`, `Failed`, `Rejected`, `Unavailable`                  | Red status badge.   |
-| Unknown / neutral  | Unknown code or missing value                                   | Slate status badge. |
+| 正常/已完成      | `Ready`, `Completed`, `Closed`, `Passed`, `Available`, `Active` | 绿色状态徽章。    |
+| 进行中            | `Running`, `Started`, `InProgress`                              | 蓝色状态徽章。    |
+| 警告/待处理      | `Pending`, `Warning`, `ConditionalRelease`                      | 琥珀色状态徽章。  |
+| 阻断/失败        | `Blocked`, `Failed`, `Rejected`, `Unavailable`                  | 红色状态徽章。    |
+| 未知/中性        | 未知编码或缺失值                                                  | 石板灰色状态徽章。  |
 
-## Current P0 Scope
+## 当前 P0 范围
 
-Implemented in this PR:
+本 PR 已实现：
 
-1. Reworded and reordered MES navigation into production-flow terminology.
-2. Changed the home page from a route directory to a workbench entry with business action groups.
-3. Added app-level action sheet, empty-state and status-badge helpers.
-4. Moved the largest direct forms into sheets for work orders, inventory movement, inventory counts, inspections, receipts and schedules.
-5. Renamed `基础就绪` to `生产准备检查`.
-6. Added a global business context store and shared context bar for organization, environment, site, line, work center and shift.
-7. Moved the canonical work-order detail route to `/mes/work-orders/:workOrderId`; the old route remains as a compatibility redirect.
-8. Replaced first-wave free-text status filters with Select controls on work orders, operation tasks, finished-goods receipts, inventory availability and NCRs.
-9. Added row action menus for work orders, operation tasks, finished-goods receipts, inventory availability rows and NCRs, using only existing backend-supported or route-based actions.
+1. 使用生产流转术语重写 MES 导航并重新排序。
+2. 将首页从路由目录改为带有业务操作分组的工作台入口。
+3. 新增应用级侧边操作面板、空状态和状态徽章辅助组件。
+4. 将工单、库存移动、库存盘点、检验、入库请求和排程页面中直接呈现的大型表单移入侧边操作面板。
+5. 将 `基础就绪` 重命名为 `生产准备检查`。
+6. 为组织、环境、工厂、产线、工作中心和班次新增全局业务上下文存储和共享上下文栏。
+7. 将规范工单详情路由移至 `/mes/work-orders/:workOrderId`；旧路由继续作为兼容性重定向保留。
+8. 在工单、工序任务、成品入库请求、库存可用性和 NCR 中，用 Select 控件替换第一批自由文本状态过滤器。
+9. 为工单、工序任务、成品入库请求、库存可用性行和 NCR 新增行操作菜单，且仅使用现有后端支持或基于路由的操作。
 
-## Next P0/P1 Scope
+## 后续 P0/P1 范围
 
-P0 after this PR:
+本 PR 之后的 P0：
 
-1. Add backend lifecycle APIs before exposing true start, pause, resume, complete, release or dispatch commands.
-2. Make operation task rows prefill downstream report, inspection and exception forms instead of only routing to those pages.
-3. Continue replacing remaining free-text enum/status fields with app-level dictionaries and Select controls.
-4. Add row action menus to the remaining business facts, especially production reports, WIP rows, capacity impacts and inspection records.
-5. Add route/query prefill contracts so work order, operation task and inventory rows can carry context into sheets without manual entry.
+1. 在暴露真实的开始、暂停、恢复、完成、下达或派工命令前，新增后端生命周期 API。
+2. 让工序任务行预填下游报工、检验和异常表单，而不是只路由到这些页面。
+3. 继续使用应用级字典和 Select 控件替换剩余的自由文本枚举/状态字段。
+4. 为其余业务事实新增行操作菜单，尤其是生产报工、WIP 行、产能影响和检验记录。
+5. 新增路由/查询参数预填契约，使工单、工序任务和库存行可将上下文带入侧边操作面板，无需手工输入。
 
 P1:
 
-1. Add saved views, column visibility, export and batch selection.
-2. Add proper count-task and NCR detail flows.
-3. Add richer success feedback with next-step links after rush order, report, receipt and schedule actions.
-4. Add stronger status dictionary mapping at the app level.
+1. 新增已保存视图、列可见性、导出和批量选择。
+2. 新增完整的盘点任务和 NCR 详情流程。
+3. 在急单、报工、入库请求和排程操作后，新增包含下一步链接的更丰富成功反馈。
+4. 在应用层新增更强的状态字典映射。
 
-## Non-Goals
+## 非目标
 
-1. Do not implement APS/Gantt inside the MES workbench pass. APS belongs to #206, equipment IIoT facts belong to #207, and Gantt visualization belongs to #78; MES pages consume schedule and readiness results.
-2. Do not fake release, dispatch, start, pause or close APIs before backend support exists.
-3. Do not make MES maintain master data, engineering, inventory, quality, barcode or numbering rules.
-4. Do not build mobile/PDA screens in this PC workbench scope.
-5. Do not bypass BusinessGateway or hand-edit generated API clients.
+1. 不得在本次 MES 工作台迭代中实现 APS/Gantt。APS 属于 #206，设备 IIoT 事实属于 #207，Gantt 可视化属于 #78；MES 页面消费排程和就绪结果。
+2. 在后端提供支持前，不得伪造下达、派工、开始、暂停或关闭 API。
+3. 不得让 MES 维护主数据、工程、库存、质量、条码或编号规则。
+4. 不得在本 PC 工作台范围内构建移动端/PDA 界面。
+5. 不得绕过 BusinessGateway 或手工编辑生成的 API 客户端。
