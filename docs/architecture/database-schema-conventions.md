@@ -99,9 +99,9 @@
 1. 调用 `base.OnModelCreating(modelBuilder)`。
 2. 调用 `modelBuilder.HasDefaultSchema("<service-schema>")`。
 3. 调用 `modelBuilder.ApplyConfigurationsFromAssembly(...)`。
-4. 配置 CAP/system tables。
+4. 配置 CAP/系统表。
 
-若框架升级或 provider 要求调整顺序，必须在服务架构文档或 migration hardening 记录中说明原因；同一服务内不要混用多套顺序。
+若框架升级或 provider 要求调整顺序，必须在服务架构文档或 migration 加固记录中说明原因；同一服务内不要混用多套顺序。
 
 ## Seed 与基础数据
 
@@ -109,9 +109,9 @@
 2. 系统权限码、初始角色、初始管理员、系统配置、Connector 凭据 seed 通过服务内命令或 migrator 步骤写入。
 3. Seed 不绕过领域校验，不直接访问其他服务 schema。
 4. Seed 结果需要可诊断：失败时输出 correlation id、服务名、seed 名称、seed 版本、数据范围、结果和日志位置。
-5. 默认管理员密码、client secret、connector credential 等敏感 seed 输入不得写入日志或 catalog。
+5. 默认管理员密码、客户端密钥、Connector 凭据等敏感 seed 输入不得写入日志或 catalog。
 
-## Database Profile 兼容
+## 数据库 Profile 兼容
 
 1. PostgreSQL 是当前默认并已落地 profile。
 2. GaussDB、DMDB 等候选 profile 必须覆盖 EF provider、CAP storage/outbox、migration、索引、时间、JSON 和事务验证。

@@ -21,7 +21,7 @@
 | 本地开发 | 对一次性本地数据库允许。 | `Persistence:AutoMigrate=true` 或手动 `dotnet-ef database update`。 |
 | 共享开发/团队环境 | 不建议使用；需要归属负责人明确批准。 | 服务自有 migrator 或发布脚本。 |
 | 使用客户数据的 PoC | 禁止。 | 带备份、迁移日志和健康检查的发布脚本。 |
-| 私有化部署/生产环境 | 禁止。 | 服务推出前执行 migration bundle 或专用 migrator 步骤。 |
+| 私有化部署/生产环境 | 禁止。 | 服务发布前执行 migration bundle 或专用 migrator 步骤。 |
 
 ## 发布前检查
 
@@ -39,7 +39,7 @@
 
 ## 第六阶段迁移历史表 schema 搬迁
 
-第五阶段 AppHub/Ops 的 `__EFMigrationsHistory` 使用 provider 默认 schema。第六阶段开始，AppHub/Ops 显式使用 service schema 中的 history table：`apphub.__EFMigrationsHistory` 与 `ops.__EFMigrationsHistory`。
+第五阶段 AppHub/Ops 的 `__EFMigrationsHistory` 使用 provider 默认 schema。第六阶段开始，AppHub/Ops 显式使用服务 schema 中的迁移历史表：`apphub.__EFMigrationsHistory` 与 `ops.__EFMigrationsHistory`。
 
 从已有第五阶段数据库升级时，必须在执行 `dotnet-ef database update`、migration bundle 或专用 migrator 之前，把旧历史记录复制到服务 schema。这个步骤只搬迁 EF 迁移历史，不修改业务表。
 
@@ -163,7 +163,7 @@ Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
 
 备份不是一句“请自行备份”。发布脚本必须能记录备份证据，并让操作者知道如何恢复。
 
-Docker/local PostgreSQL 示例：
+Docker/本地 PostgreSQL 示例：
 
 ```powershell
 New-Item -ItemType Directory -Force -Path .\artifacts\db-backups | Out-Null
@@ -203,7 +203,7 @@ Seed 必须是显式步骤，不混在普通 Web 启动里偷偷执行。
 4. `idempotencyKey` 或幂等规则。
 5. 输入来源：配置文件、环境变量、安全输入、安装参数或内置常量。
 6. 重复执行结果：created、updated、skipped 或 failed。
-7. 敏感信息处理：初始管理员密码、客户端密钥和 Connector credential 不写入日志。
+7. 敏感信息处理：初始管理员密码、客户端密钥和 Connector 凭据不写入日志。
 
 安装脚本必须输出：
 
