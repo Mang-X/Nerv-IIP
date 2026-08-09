@@ -1,36 +1,36 @@
-# Phase 8 IAM Admin Console And Design System Implementation Plan
+# Phase 8 IAM 管理控制台和设计系统实施计划
 
 > **状态：Phase 8 已完成。** 该计划保留原始 `- [ ]` 任务清单作为执行记录；最终交付状态、验证结果和环境阻塞项记录在 `docs/architecture/implementation-readiness.md`。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Deliver the Phase 8 blue Calm Control Plane design-system baseline and the Console IAM admin workflow for users, roles, permissions and sessions.
+**目标：**交付 Phase 8 蓝色 Calm Control Plane 设计系统基线，以及面向用户、角色、权限和会话的 Console IAM 管理工作流。
 
-**Architecture:** The Console continues to call PlatformGateway only. PlatformGateway exposes Console IAM Admin facade endpoints, checks IAM-backed permissions using the current principal organization/environment, forwards the original bearer token to IAM, and maps downstream failures consistently. IAM remains the source of identity, role, permission and session facts; the frontend consumes generated Gateway OpenAPI types through stable `@nerv-iip/api-client` exports and composes thin Vue route pages from focused feature components.
+**架构：**Console 继续只调用 PlatformGateway。PlatformGateway 暴露 Console IAM 管理门面端点，使用当前主体的组织/环境检查由 IAM 支持的权限，将原始 bearer 令牌转发给 IAM，并以一致方式映射下游失败。IAM 继续作为身份、角色、权限和会话事实的来源；前端通过稳定的 `@nerv-iip/api-client` 导出使用生成的 Gateway OpenAPI 类型，并由聚焦的功能组件组合成轻量 Vue 路由页面。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, NetCorePal/CleanDDD, Entity Framework Core, xUnit, ASP.NET Core `WebApplicationFactory`, PostgreSQL profile tests, Vue 3 `<script setup lang="ts">`, Vue Router file routes, Pinia, Pinia Colada, Vite, Vitest, Playwright, Tailwind CSS v4, shadcn-vue `reka-nova`, lucide-vue-next, Hey API OpenAPI TypeScript.
+**技术栈：**.NET 10、FastEndpoints、MediatR、NetCorePal/CleanDDD、Entity Framework Core、xUnit、ASP.NET Core `WebApplicationFactory`、PostgreSQL 配置档测试、Vue 3 `<script setup lang="ts">`、Vue Router 文件路由、Pinia、Pinia Colada、Vite、Vitest、Playwright、Tailwind CSS v4、shadcn-vue `reka-nova`、lucide-vue-next、Hey API OpenAPI TypeScript。
 
 ---
 
-## Approved Spec
+## 已批准规格
 
-Implementation source: `docs/superpowers/specs/2026-05-20-iam-admin-console-design-system-design.md`.
+实施来源：`docs/superpowers/specs/2026-05-20-iam-admin-console-design-system-design.md`。
 
-The spec selected approach A: **IAM Admin Console & Role Permission Completion**, preceded by a current-stage design-system baseline. Yesterday's 2026-05-19 commits already delivered persisted user CRUD, session listing/revoke, Gateway permission enforcement, Console auth and shadcn-vue bootstrap. Phase 8 must therefore focus on the remaining role/permission mutations, password reset, Console admin facade and frontend admin surfaces.
+该规格选择方案 A：**完成 IAM 管理控制台与角色权限**，并先建立当前阶段的设计系统基线。前一日 2026-05-19 的提交已交付持久化用户 CRUD、会话列表/撤销、Gateway 权限强制执行、Console 身份验证和 shadcn-vue 引导。因此，Phase 8 必须聚焦剩余的角色/权限变更、密码重置、Console 管理门面和前端管理界面。
 
-## Current Baseline
+## 当前基线
 
-1. Current branch is `codex/phase-8-iam-admin-design-system-spec`.
-2. `frontend/components.json` exists and uses `style: reka-nova`, `font: geist-sans`, Tailwind v4 CSS file `apps/console/src/assets/main.css`, `iconLibrary: lucide`, and aliases pointing at `packages/ui`.
-3. `pnpm dlx shadcn-vue@latest docs table dialog alert-dialog checkbox select pagination empty` currently fails from `frontend` with `Failed to load tsconfig.json` because the workspace has `tsconfig.base.json` and package-level configs, but no root `frontend/tsconfig.json`.
-4. Existing UI exports are Button, Card, Field, Input, Alert, Badge, Separator, Skeleton, DropdownMenu, Avatar, Toaster and Spinner.
-5. `frontend/apps/console/src/assets/main.css` still has neutral shadcn primary tokens and legacy compatibility tokens. New IAM pages must use semantic shadcn/Tailwind tokens rather than `--legacy-color-*`.
-6. `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Roles/IamRoleApplicationService.cs` returns a dummy in-memory role id and `501` for PostgreSQL role create/permission patch.
-7. IAM user create/update/disable and session list/revoke are present. User reset password is not present.
-8. PlatformGateway has Console auth endpoints and instance/operation endpoints, but no Console IAM Admin facade.
-9. `frontend/packages/api-client` already generates fetch SDK, TypeScript types and Pinia Colada options from `frontend/packages/api-client/openapi/platform-gateway.v1.json`.
+1. 当前分支为 `codex/phase-8-iam-admin-design-system-spec`。
+2. `frontend/components.json` 已存在，并使用 `style: reka-nova`、`font: geist-sans`、Tailwind v4 CSS 文件 `apps/console/src/assets/main.css`、`iconLibrary: lucide`，且别名指向 `packages/ui`。
+3. `pnpm dlx shadcn-vue@latest docs table dialog alert-dialog checkbox select pagination empty` 当前从 `frontend` 运行时会报 `Failed to load tsconfig.json` 并失败，因为工作区有 `tsconfig.base.json` 和包级配置，但没有根级 `frontend/tsconfig.json`。
+4. 现有 UI 导出包括 Button、Card、Field、Input、Alert、Badge、Separator、Skeleton、DropdownMenu、Avatar、Toaster 和 Spinner。
+5. `frontend/apps/console/src/assets/main.css` 仍包含中性的 shadcn 主令牌和旧版兼容令牌。新的 IAM 页面必须使用语义化 shadcn/Tailwind 令牌，而不是 `--legacy-color-*`。
+6. 对于 PostgreSQL 的角色创建/权限更新，`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Roles/IamRoleApplicationService.cs` 返回虚拟内存角色 ID 和 `501`。
+7. IAM 用户创建/更新/禁用和会话列表/撤销已存在。用户密码重置尚不存在。
+8. PlatformGateway 已有 Console 身份验证端点和实例/操作端点，但没有 Console IAM 管理门面。
+9. `frontend/packages/api-client` 已从 `frontend/packages/api-client/openapi/platform-gateway.v1.json` 生成 fetch SDK、TypeScript 类型和 Pinia Colada 选项。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Iam/src/Nerv.IIP.Iam.Domain/
@@ -134,36 +134,36 @@ docs/architecture/
 README.md
 ```
 
-## Implementation Rules
+## 实施规则
 
-1. Use TDD for production behavior: write the failing test, run it and confirm the expected failure, then implement the smallest passing code.
-2. For shadcn-vue work, run CLI commands from `frontend`, review generated files, and export new components through `@nerv-iip/ui` before app usage.
-3. Vue files use Composition API with `<script setup lang="ts">`; route pages stay thin and feature logic lives in `useIamAdmin.ts`.
-4. New IAM admin UI imports UI primitives only from `@nerv-iip/ui`; app code must not deep import from `frontend/packages/ui/src/components/ui/*`.
-5. New IAM admin UI uses semantic Tailwind/shadcn tokens such as `bg-background`, `text-muted-foreground`, `border-border`, `bg-primary`, `ring-ring` and component variants. It must not use `--legacy-color-*`.
-6. IAM application services pass `CancellationToken`, use `KnownException` for business failures, and do not call `SaveChanges` manually.
-7. Gateway admin endpoints must call IAM authorization before forwarding the admin request to IAM.
+1. 生产行为使用 TDD：编写会失败的测试，运行并确认出现预期失败，然后实施能够通过测试的最小代码。
+2. 处理 shadcn-vue 时，从 `frontend` 运行 CLI 命令，审核生成文件，并在应用使用前通过 `@nerv-iip/ui` 导出新组件。
+3. Vue 文件使用 Composition API 和 `<script setup lang="ts">`；路由页面保持轻量，功能逻辑放在 `useIamAdmin.ts` 中。
+4. 新的 IAM 管理 UI 只能从 `@nerv-iip/ui` 导入 UI 原语；应用代码不得从 `frontend/packages/ui/src/components/ui/*` 深度导入。
+5. 新的 IAM 管理 UI 使用 `bg-background`、`text-muted-foreground`、`border-border`、`bg-primary`、`ring-ring` 等语义化 Tailwind/shadcn 令牌和组件变体。不得使用 `--legacy-color-*`。
+6. IAM 应用服务传递 `CancellationToken`，业务失败使用 `KnownException`，且不手工调用 `SaveChanges`。
+7. Gateway 管理端点必须先调用 IAM 授权，再将管理请求转发给 IAM。
 
-## Task 1: Establish Blue Design System Baseline And shadcn Components
+## 任务 1：建立蓝色设计系统基线和 shadcn 组件
 
-**Files:**
+**文件：**
 
-- Create: `frontend/tsconfig.json`
-- Create: `frontend/packages/ui/src/design-system.contract.test.ts`
-- Modify: `frontend/apps/console/src/assets/main.css`
-- Modify: `frontend/packages/ui/src/index.ts`
-- Add through CLI: `frontend/packages/ui/src/components/ui/table/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/dialog/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/alert-dialog/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/checkbox/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/select/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/pagination/**`
-- Add through CLI: `frontend/packages/ui/src/components/ui/empty/**`
-- Modify: `docs/architecture/frontend-design-system-planning.md`
+- 创建：`frontend/tsconfig.json`
+- 创建：`frontend/packages/ui/src/design-system.contract.test.ts`
+- 修改：`frontend/apps/console/src/assets/main.css`
+- 修改：`frontend/packages/ui/src/index.ts`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/table/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/dialog/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/alert-dialog/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/checkbox/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/select/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/pagination/**`
+- 通过 CLI 添加：`frontend/packages/ui/src/components/ui/empty/**`
+- 修改：`docs/architecture/frontend-design-system-planning.md`
 
-- [ ] **Step 1: Write failing design-system contract test**
+- [ ] **步骤 1：编写会失败的设计系统契约测试**
 
-Create `frontend/packages/ui/src/design-system.contract.test.ts`:
+创建 `frontend/packages/ui/src/design-system.contract.test.ts`：
 
 ```ts
 import { readFileSync } from 'node:fs'
@@ -194,19 +194,19 @@ describe('Console design-system contract', () => {
 })
 ```
 
-- [ ] **Step 2: Run the design-system contract test and confirm RED**
+- [ ] **步骤 2：运行设计系统契约测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test packages/ui/src/design-system.contract.test.ts
 ```
 
-Expected: FAIL because `--primary`, `--ring`, `--accent`, `--sidebar-primary`, `--chart-1` and `--radius` still use neutral baseline values.
+预期：失败，因为 `--primary`、`--ring`、`--accent`、`--sidebar-primary`、`--chart-1` 和 `--radius` 仍使用中性基线值。
 
-- [ ] **Step 3: Add a root TypeScript config for shadcn-vue CLI**
+- [ ] **步骤 3：为 shadcn-vue CLI 添加根级 TypeScript 配置**
 
-Create `frontend/tsconfig.json`:
+创建 `frontend/tsconfig.json`：
 
 ```json
 {
@@ -220,30 +220,30 @@ Create `frontend/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 4: Verify shadcn-vue project context**
+- [ ] **步骤 4：验证 shadcn-vue 项目上下文**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend dlx shadcn-vue@latest info --json
 pnpm -C frontend dlx shadcn-vue@latest docs table dialog alert-dialog checkbox select pagination empty
 ```
 
-Expected: `info --json` reports `reka-nova`, Tailwind v4, `lucide`, and resolved UI paths under `packages/ui/src/components/ui`. The docs command prints component documentation URLs. If the docs command still fails, run the component add command in the next step and review every generated file before export.
+预期：`info --json` 报告 `reka-nova`、Tailwind v4、`lucide`，以及解析到 `packages/ui/src/components/ui` 下的 UI 路径。文档命令输出组件文档 URL。如果文档命令仍然失败，则运行下一步的组件添加命令，并在导出前审核每个生成文件。
 
-- [ ] **Step 5: Add required shadcn-vue components**
+- [ ] **步骤 5：添加必需的 shadcn-vue 组件**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend dlx shadcn-vue@latest add table dialog alert-dialog checkbox select pagination empty
 ```
 
-Expected: component source files are added under `frontend/packages/ui/src/components/ui`.
+预期：组件源文件添加到 `frontend/packages/ui/src/components/ui` 下。
 
-- [ ] **Step 6: Export the new UI primitives**
+- [ ] **步骤 6：导出新的 UI 原语**
 
-Modify `frontend/packages/ui/src/index.ts` by adding these exports after the existing component exports:
+修改 `frontend/packages/ui/src/index.ts`，在现有组件导出之后添加以下导出：
 
 ```ts
 export {
@@ -311,11 +311,11 @@ export {
 } from './components/ui/empty'
 ```
 
-If generated `index.ts` files expose a slightly different component name, use the exact generated export and keep the public barrel export complete for every generated subcomponent.
+如果生成的 `index.ts` 文件暴露了略有不同的组件名称，请使用生成的准确导出，并确保每个生成子组件的公开汇总导出完整。
 
-- [ ] **Step 7: Apply Phase 8 blue tokens**
+- [ ] **步骤 7：应用 Phase 8 蓝色令牌**
 
-In `frontend/apps/console/src/assets/main.css`, replace the current neutral shadcn token values in `:root` with:
+在 `frontend/apps/console/src/assets/main.css` 中，将 `:root` 里当前的中性 shadcn 令牌值替换为：
 
 ```css
   --primary: oklch(0.49 0.17 255);
@@ -346,22 +346,22 @@ In `frontend/apps/console/src/assets/main.css`, replace the current neutral shad
   --sidebar-ring: var(--ring);
 ```
 
-Keep the existing legacy token block at the top of `:root` so old instance pages keep rendering while Phase 8 pages move to semantic tokens.
+保留 `:root` 顶部现有的旧版令牌块，使旧实例页面在 Phase 8 页面迁移到语义化令牌的同时继续正常渲染。
 
-- [ ] **Step 8: Run contract test and UI package typecheck**
+- [ ] **步骤 8：运行契约测试和 UI 包类型检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test packages/ui/src/design-system.contract.test.ts
 pnpm -C frontend --filter @nerv-iip/ui typecheck
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Document the design-system baseline**
+- [ ] **步骤 9：记录设计系统基线**
 
-Update `docs/architecture/frontend-design-system-planning.md` with these concrete sections:
+使用以下具体章节更新 `docs/architecture/frontend-design-system-planning.md`：
 
 ```markdown
 ## Phase 8 Current Baseline
@@ -381,37 +381,37 @@ New shadcn-vue components are added with `pnpm -C frontend dlx shadcn-vue@latest
 IAM admin pages use unframed page headers, compact toolbars, shadcn Table for dense scanning, Dialog for forms, AlertDialog for destructive confirmation, FieldGroup and Field for forms, Checkbox for permission selection, Select for filters, Pagination for paged lists, Empty for empty states, Alert for failures and Badge for status.
 ```
 
-- [ ] **Step 10: Commit design-system baseline**
+- [ ] **步骤 10：提交设计系统基线**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/tsconfig.json frontend/apps/console/src/assets/main.css frontend/packages/ui docs/architecture/frontend-design-system-planning.md
 git commit -m "feat: establish phase 8 console design system"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 2: Complete IAM Role Mutation, Permission Catalog And Password Reset
+## 任务 2：完成 IAM 角色变更、权限目录和密码重置
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/IamFacts.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/InMemoryIamStore.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Roles/IamRoleApplicationService.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Users/IamUserApplicationService.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Commands/Users/ResetUserPasswordCommand.cs`
-- Create: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Permissions/IamPermissionCatalog.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamFoundationTests.cs`
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/IamFacts.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/InMemoryIamStore.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Roles/IamRoleApplicationService.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Users/IamUserApplicationService.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Commands/Users/ResetUserPasswordCommand.cs`
+- 创建：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Permissions/IamPermissionCatalog.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamFoundationTests.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs`
 
-- [ ] **Step 1: Write failing in-memory role and permission tests**
+- [ ] **步骤 1：编写会失败的内存角色和权限测试**
 
-In `IamFoundationTests.cs`, add:
+在 `IamFoundationTests.cs` 中添加：
 
 ```csharp
 [Fact]
@@ -466,9 +466,9 @@ private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogI
 private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);
 ```
 
-- [ ] **Step 2: Write failing reset-password test**
+- [ ] **步骤 2：编写会失败的密码重置测试**
 
-In `IamFoundationTests.cs`, add:
+在 `IamFoundationTests.cs` 中添加：
 
 ```csharp
 [Fact]
@@ -508,19 +508,19 @@ public async Task Admin_reset_password_changes_login_secret_and_revokes_sessions
 }
 ```
 
-- [ ] **Step 3: Run IAM tests and confirm RED**
+- [ ] **步骤 3：运行 IAM 测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter "In_memory_role_management_creates_role_updates_permissions_and_lists_catalog|In_memory_role_management_rejects_unknown_permissions_and_duplicate_names|Admin_reset_password_changes_login_secret_and_revokes_sessions"
 ```
 
-Expected: FAIL with missing `/api/iam/v1/permissions`, current dummy role response or missing `/reset-password`.
+预期：因缺少 `/api/iam/v1/permissions`、当前返回虚拟角色响应或缺少 `/reset-password` 而失败。
 
-- [ ] **Step 4: Add permission catalog model**
+- [ ] **步骤 4：添加权限目录模型**
 
-Create `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Permissions/IamPermissionCatalog.cs`:
+创建 `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Permissions/IamPermissionCatalog.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Domain;
@@ -593,9 +593,9 @@ public static class IamPermissionCatalog
 }
 ```
 
-- [ ] **Step 5: Extend in-memory store for roles and reset password**
+- [ ] **步骤 5：扩展内存存储以支持角色和密码重置**
 
-In `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/InMemoryIamStore.cs`, add these methods:
+在 `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/InMemoryIamStore.cs` 中添加以下方法：
 
 ```csharp
 public RoleFact CreateRole(string roleName, IEnumerable<string> permissionCodes)
@@ -656,16 +656,16 @@ private void EnsureRoleNameIsUnique(string? currentRoleId, string roleName)
 }
 ```
 
-- [ ] **Step 6: Extend role repository**
+- [ ] **步骤 6：扩展角色仓储**
 
-In `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs`, extend `IRoleRepository`:
+在 `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Repositories/IamRepositories.cs` 中扩展 `IRoleRepository`：
 
 ```csharp
 Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default);
 Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default);
 ```
 
-Add implementations to `RoleRepository`:
+在 `RoleRepository` 中添加实现：
 
 ```csharp
 public async Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default)
@@ -686,13 +686,13 @@ public async Task<Role?> GetByNameAsync(string roleName, CancellationToken cance
 }
 ```
 
-Extend `IUserSessionRepository`:
+扩展 `IUserSessionRepository`：
 
 ```csharp
 Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(UserId userId, DateTimeOffset now, CancellationToken cancellationToken = default);
 ```
 
-Add implementation:
+添加实现：
 
 ```csharp
 public async Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
@@ -707,9 +707,9 @@ public async Task<IReadOnlyList<UserSession>> ListActiveByUserIdAsync(
 }
 ```
 
-- [ ] **Step 7: Replace role mutation service contract**
+- [ ] **步骤 7：替换角色变更服务契约**
 
-In `IamRoleApplicationService.cs`, replace the mutation records and interface methods with:
+在 `IamRoleApplicationService.cs` 中，将变更 record 和接口方法替换为：
 
 ```csharp
 public sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
@@ -724,7 +724,7 @@ public interface IIamRoleApplicationService
 }
 ```
 
-In `InMemoryIamRoleApplicationService`, implement:
+在 `InMemoryIamRoleApplicationService` 中实施：
 
 ```csharp
 public Task<RoleResponse> CreateRoleAsync(string roleName, IReadOnlyList<string> permissionCodes, CancellationToken cancellationToken)
@@ -745,7 +745,7 @@ private static RoleResponse ToResponse(RoleFact role)
 }
 ```
 
-In `PostgreSqlIamRoleApplicationService`, implement:
+在 `PostgreSqlIamRoleApplicationService` 中实施：
 
 ```csharp
 public async Task<RoleResponse> CreateRoleAsync(
@@ -795,15 +795,15 @@ private static RoleResponse ToResponse(Role role)
 }
 ```
 
-- [ ] **Step 8: Add user reset password command and service method**
+- [ ] **步骤 8：添加用户密码重置命令和服务方法**
 
-Extend `IIamUserApplicationService` in `IamUserApplicationService.cs`:
+扩展 `IIamUserApplicationService`（位于 `IamUserApplicationService.cs`）：
 
 ```csharp
 Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
 ```
 
-Add to `InMemoryIamUserApplicationService`:
+在 `InMemoryIamUserApplicationService` 中添加：
 
 ```csharp
 public Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
@@ -813,7 +813,7 @@ public Task ResetPasswordAsync(string userId, string newPassword, CancellationTo
 }
 ```
 
-Change `PostgreSqlIamUserApplicationService` constructor to include `IUserSessionRepository sessionRepository`, then add:
+修改 `PostgreSqlIamUserApplicationService` 构造函数，使其包含 `IUserSessionRepository sessionRepository`，然后添加：
 
 ```csharp
 public async Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
@@ -838,7 +838,7 @@ public async Task ResetPasswordAsync(string userId, string newPassword, Cancella
 }
 ```
 
-Create `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Commands/Users/ResetUserPasswordCommand.cs`:
+创建 `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Commands/Users/ResetUserPasswordCommand.cs`：
 
 ```csharp
 using Nerv.IIP.Iam.Web.Application.Users;
@@ -858,9 +858,9 @@ public sealed class ResetUserPasswordCommandHandler(IIamUserApplicationService u
 }
 ```
 
-- [ ] **Step 9: Wire role, permission and reset-password endpoints**
+- [ ] **步骤 9：接入角色、权限和密码重置端点**
 
-In `RoleEndpoints.cs`, change create endpoint to read `CreateRoleRequest`, call `CreateRoleAsync(req.RoleName, req.PermissionCodes, ct)` and return `201` with `RoleResponse`.
+在 `RoleEndpoints.cs` 中，修改创建端点，使其读取 `CreateRoleRequest`，调用 `CreateRoleAsync(req.RoleName, req.PermissionCodes, ct)`，并返回 `201` 和 `RoleResponse`。
 
 ```csharp
 var req = await HttpContext.Request.ReadFromJsonAsync<CreateRoleRequest>(ct)
@@ -869,9 +869,9 @@ var response = await roles.CreateRoleAsync(req.RoleName, req.PermissionCodes, ct
 await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status201Created, response, ct);
 ```
 
-Change patch endpoint to read `PatchRolePermissionsRequest`, call `PatchRolePermissionsAsync(Route<string>("roleId")!, req.PermissionCodes, ct)` and return `200`.
+修改更新端点，使其读取 `PatchRolePermissionsRequest`，调用 `PatchRolePermissionsAsync(Route<string>("roleId")!, req.PermissionCodes, ct)`，并返回 `200`。
 
-Add permission catalog endpoint to `RoleEndpoints.cs`:
+在 `RoleEndpoints.cs` 中添加权限目录端点：
 
 ```csharp
 [HttpGet("/api/iam/v1/permissions")]
@@ -891,7 +891,7 @@ public sealed class ListPermissionsEndpoint(IIamPermissionAuthorizer authorizer)
 }
 ```
 
-In `UserEndpoints.cs`, add:
+在 `UserEndpoints.cs` 中添加：
 
 ```csharp
 public sealed record ResetUserPasswordRequest(string NewPassword);
@@ -916,28 +916,28 @@ public sealed class ResetUserPasswordEndpoint(IIamPermissionAuthorizer authorize
 }
 ```
 
-- [ ] **Step 10: Update anonymous authorization coverage**
+- [ ] **步骤 10：更新匿名授权覆盖**
 
-In `IamManagementEndpointAuthorizationTests.cs`, add these inline data rows:
+在 `IamManagementEndpointAuthorizationTests.cs` 中添加以下内联数据行：
 
 ```csharp
 [InlineData("POST", "/api/iam/v1/users/user-admin/reset-password")]
 [InlineData("GET", "/api/iam/v1/permissions")]
 ```
 
-- [ ] **Step 11: Run IAM in-memory tests and confirm GREEN**
+- [ ] **步骤 11：运行 IAM 内存测试并确认测试为绿**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter "In_memory_role_management_creates_role_updates_permissions_and_lists_catalog|In_memory_role_management_rejects_unknown_permissions_and_duplicate_names|Admin_reset_password_changes_login_secret_and_revokes_sessions|Postgres_management_endpoints_reject_anonymous_callers_before_touching_persistence"
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 12: Add PostgreSQL profile tests**
+- [ ] **步骤 12：添加 PostgreSQL 配置档测试**
 
-In `IamPostgresProfileTests.cs`, add a test named `Postgres_profile_persists_role_mutation_permission_catalog_and_password_reset` using the same environment setup pattern as `Postgres_profile_persists_user_create_update_and_disable_commands`. The test must:
+在 `IamPostgresProfileTests.cs` 中添加名为 `Postgres_profile_persists_role_mutation_permission_catalog_and_password_reset` 的测试，使用与 `Postgres_profile_persists_user_create_update_and_disable_commands` 相同的环境设置模式。该测试必须：
 
 ```csharp
 var catalog = await client.GetAsync("/api/iam/v1/permissions");
@@ -966,44 +966,44 @@ var reset = await client.PostAsJsonAsync(
 Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
 ```
 
-Then assert through `ApplicationDbContext` that the role has exactly `iam.users.read` and `ops.tasks.read`, and the reset user's password hash does not contain either cleartext password.
+然后通过 `ApplicationDbContext` 断言该角色恰好拥有 `iam.users.read` 和 `ops.tasks.read`，且重置后的用户密码哈希不包含任一明文密码。
 
-- [ ] **Step 13: Run PostgreSQL profile when test database is configured**
+- [ ] **步骤 13：配置测试数据库时运行 PostgreSQL 配置档**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --filter Postgres_profile_persists_role_mutation_permission_catalog_and_password_reset
 ```
 
-Expected: PASS when `NERV_IIP_TEST_POSTGRES` is set. If it is not set, the test exits without assertions by existing profile-test convention.
+预期：设置 `NERV_IIP_TEST_POSTGRES` 时通过。未设置时，测试按照现有配置档测试约定退出且不执行断言。
 
-- [ ] **Step 14: Commit IAM backend completion**
+- [ ] **步骤 14：提交 IAM 后端完成项**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Iam
 git commit -m "feat: complete iam admin mutations"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 3: Add PlatformGateway Console IAM Admin Facade
+## 任务 3：添加 PlatformGateway Console IAM 管理门面
 
-**Files:**
+**文件：**
 
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/GatewayAuthorization.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/IamAdmin/ConsoleIamAdminModels.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/IamAdmin/GatewayIamAdminClient.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/IamAdmin/ConsoleIamAdminEndpoints.cs`
-- Create: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayConsoleIamAdminTests.cs`
-- Modify: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/GatewayAuthorization.cs`
+- 创建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/IamAdmin/ConsoleIamAdminModels.cs`
+- 创建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/IamAdmin/GatewayIamAdminClient.cs`
+- 创建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/IamAdmin/ConsoleIamAdminEndpoints.cs`
+- 创建：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayConsoleIamAdminTests.cs`
+- 修改：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
 
-- [ ] **Step 1: Write failing Gateway facade tests**
+- [ ] **步骤 1：编写会失败的 Gateway 门面测试**
 
-Create `GatewayConsoleIamAdminTests.cs`:
+创建 `GatewayConsoleIamAdminTests.cs`：
 
 ```csharp
 using System.Net;
@@ -1085,7 +1085,7 @@ public sealed class GatewayConsoleIamAdminTests
 }
 ```
 
-Add fake classes in the same file:
+在同一文件中添加模拟类：
 
 ```csharp
 internal sealed class FakeGatewayIamAuthClient(ConsolePrincipalResponse principal) : IGatewayIamAuthClient
@@ -1128,19 +1128,19 @@ internal sealed class FakeGatewayIamAdminClient : IGatewayIamAdminClient
 }
 ```
 
-- [ ] **Step 2: Run Gateway tests and confirm RED**
+- [ ] **步骤 2：运行 Gateway 测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --filter GatewayConsoleIamAdminTests
 ```
 
-Expected: FAIL because `IGatewayIamAdminClient`, models and endpoints do not exist.
+预期：失败，因为 `IGatewayIamAdminClient`、模型和端点尚不存在。
 
-- [ ] **Step 3: Add Console IAM admin models**
+- [ ] **步骤 3：添加 Console IAM 管理模型**
 
-Create `Application/IamAdmin/ConsoleIamAdminModels.cs`:
+创建 `Application/IamAdmin/ConsoleIamAdminModels.cs`：
 
 ```csharp
 namespace Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
@@ -1177,9 +1177,9 @@ public sealed record ConsoleIamSessionResponse(
     int PermissionVersion);
 ```
 
-- [ ] **Step 4: Add Gateway IAM admin client**
+- [ ] **步骤 4：添加 Gateway IAM 管理客户端**
 
-Create `Application/IamAdmin/GatewayIamAdminClient.cs`:
+创建 `Application/IamAdmin/GatewayIamAdminClient.cs`：
 
 ```csharp
 using System.Net;
@@ -1335,9 +1335,9 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
 }
 ```
 
-- [ ] **Step 5: Add authorization helper for current Console principal**
+- [ ] **步骤 5：为当前 Console 主体添加授权辅助方法**
 
-In `GatewayAuthorization.cs`, add:
+在 `GatewayAuthorization.cs` 中添加：
 
 ```csharp
 public static async Task<(string BearerToken, ConsolePrincipalResponse Principal)?> RequireCurrentPrincipalPermissionAsync(
@@ -1381,9 +1381,9 @@ public static async Task<(string BearerToken, ConsolePrincipalResponse Principal
 }
 ```
 
-- [ ] **Step 6: Add facade endpoints**
+- [ ] **步骤 6：添加门面端点**
 
-Create `Endpoints/IamAdmin/ConsoleIamAdminEndpoints.cs` with one endpoint class per route. Use this pattern for each endpoint:
+创建 `Endpoints/IamAdmin/ConsoleIamAdminEndpoints.cs`，每条路由对应一个端点类。每个端点使用以下模式：
 
 ```csharp
 using FastEndpoints;
@@ -1422,7 +1422,7 @@ public sealed class ListConsoleIamUsersEndpoint(
 }
 ```
 
-Add the remaining endpoint classes with these permission mappings and response status rules:
+按照以下权限映射和响应状态规则添加其余端点类：
 
 ```text
 CreateConsoleIamUserEndpoint                 POST   /api/console/v1/iam/users                         iam.users.manage     201 data
@@ -1437,16 +1437,16 @@ ListConsoleIamSessionsEndpoint               GET    /api/console/v1/iam/sessions
 RevokeConsoleIamSessionEndpoint              POST   /api/console/v1/iam/sessions/{sessionId}/revoke   iam.sessions.revoke  204
 ```
 
-- [ ] **Step 7: Register Gateway IAM admin client**
+- [ ] **步骤 7：注册 Gateway IAM 管理客户端**
 
-In `Program.cs`, add:
+在 `Program.cs` 中添加：
 
 ```csharp
 using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Endpoints.IamAdmin;
 ```
 
-Register the HTTP client:
+注册 HTTP 客户端：
 
 ```csharp
 builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
@@ -1455,9 +1455,9 @@ builder.Services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient
 });
 ```
 
-- [ ] **Step 8: Add stable operation IDs**
+- [ ] **步骤 8：添加稳定的 operation ID**
 
-In `Program.cs`, extend the endpoint name generator switch:
+在 `Program.cs` 中扩展端点名称生成器 switch：
 
 ```csharp
 nameof(ListConsoleIamUsersEndpoint) => "listConsoleIamUsers",
@@ -1473,64 +1473,64 @@ nameof(ListConsoleIamSessionsEndpoint) => "listConsoleIamSessions",
 nameof(RevokeConsoleIamSessionEndpoint) => "revokeConsoleIamSession",
 ```
 
-- [ ] **Step 9: Update OpenAPI test**
+- [ ] **步骤 9：更新 OpenAPI 测试**
 
-In `GatewayOpenApiTests.cs`, add assertions that `/swagger/v1/swagger.json` contains each operation ID from Step 8.
+在 `GatewayOpenApiTests.cs` 中添加断言，确保 `/swagger/v1/swagger.json` 包含步骤 8 中的每个操作 ID。
 
-- [ ] **Step 10: Run Gateway tests and confirm GREEN**
+- [ ] **步骤 10：运行 Gateway 测试并确认测试为绿**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --filter "GatewayConsoleIamAdminTests|Gateway_exports_console_openapi_document_with_stable_operation_ids"
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 11: Commit Gateway facade**
+- [ ] **步骤 11：提交 Gateway 门面**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/PlatformGateway
 git commit -m "feat: add console iam admin facade"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 4: Export Gateway OpenAPI And Add Stable IAM api-client Exports
+## 任务 4：导出 Gateway OpenAPI 并添加稳定的 IAM api-client 导出
 
-**Files:**
+**文件：**
 
-- Modify generated: `frontend/packages/api-client/openapi/platform-gateway.v1.json`
-- Modify generated: `frontend/packages/api-client/src/generated/**`
-- Create: `frontend/packages/api-client/src/iam.ts`
-- Modify: `frontend/packages/api-client/src/index.ts`
-- Modify: `frontend/packages/api-client/src/generated-contract.test.ts`
+- 修改生成文件：`frontend/packages/api-client/openapi/platform-gateway.v1.json`
+- 修改生成文件：`frontend/packages/api-client/src/generated/**`
+- 创建：`frontend/packages/api-client/src/iam.ts`
+- 修改：`frontend/packages/api-client/src/index.ts`
+- 修改：`frontend/packages/api-client/src/generated-contract.test.ts`
 
-- [ ] **Step 1: Export Gateway OpenAPI**
+- [ ] **步骤 1：导出 Gateway OpenAPI**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/export-gateway-openapi.ps1
 ```
 
-Expected: `frontend/packages/api-client/openapi/platform-gateway.v1.json` contains the eleven `listConsoleIam...` and mutation operation IDs.
+预期：`frontend/packages/api-client/openapi/platform-gateway.v1.json` 包含十一个 `listConsoleIam...` 和变更操作 ID。
 
-- [ ] **Step 2: Regenerate api-client**
+- [ ] **步骤 2：重新生成 api-client**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend generate:api
 ```
 
-Expected: generated files under `frontend/packages/api-client/src/generated` include SDK functions and Pinia Colada options for Console IAM Admin operations.
+预期：`frontend/packages/api-client/src/generated` 下的生成文件包含 Console IAM 管理操作的 SDK 函数和 Pinia Colada 选项。
 
-- [ ] **Step 3: Add stable IAM exports**
+- [ ] **步骤 3：添加稳定的 IAM 导出**
 
-Create `frontend/packages/api-client/src/iam.ts`:
+创建 `frontend/packages/api-client/src/iam.ts`：
 
 ```ts
 export {
@@ -1621,11 +1621,11 @@ export type ConsoleIamPermissionsEnvelope =
   NetCorePalExtensionsDtoResponseDataOfConsoleIamPermissionCatalogResponse
 ```
 
-If a generated type name differs only by namespace flattening, replace the import with the generated name in `types.gen.ts` and keep the public alias name exactly as shown on the left side.
+如果生成类型名称仅因 namespace 扁平化而不同，则将导入替换为 `types.gen.ts` 中生成的名称，并保持公开别名与左侧所示名称完全一致。
 
-- [ ] **Step 4: Export IAM barrel from package root**
+- [ ] **步骤 4：从包根目录导出 IAM 汇总模块**
 
-Modify `frontend/packages/api-client/src/index.ts`:
+修改 `frontend/packages/api-client/src/index.ts`：
 
 ```ts
 export { configureApiClient } from './transport/client-config'
@@ -1635,9 +1635,9 @@ export * from './console'
 export * from './iam'
 ```
 
-- [ ] **Step 5: Add generated contract coverage**
+- [ ] **步骤 5：添加生成契约覆盖**
 
-In `frontend/packages/api-client/src/generated-contract.test.ts`, add:
+在 `frontend/packages/api-client/src/generated-contract.test.ts` 中添加：
 
 ```ts
 import {
@@ -1667,43 +1667,43 @@ it('exports Console IAM Admin generated operations through stable api-client ent
 })
 ```
 
-- [ ] **Step 6: Run api-client tests and typecheck**
+- [ ] **步骤 6：运行 api-client 测试和类型检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test
 pnpm -C frontend --filter @nerv-iip/api-client typecheck
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit generated contract**
+- [ ] **步骤 7：提交生成契约**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/packages/api-client
 git commit -m "feat: expose iam admin api client"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 5: Add IAM Navigation And Shared Admin Composable
+## 任务 5：添加 IAM 导航和共享管理组合式函数
 
-**Files:**
+**文件：**
 
-- Modify: `frontend/packages/app-shell/src/AppShell.vue`
-- Modify: `frontend/packages/app-shell/src/AppShell.test.ts`
-- Modify: `frontend/apps/console/src/layouts/DefaultLayout.vue`
-- Modify: `frontend/apps/console/src/layouts/DefaultLayout.test.ts`
-- Create: `frontend/apps/console/src/api/iam.ts`
-- Create: `frontend/apps/console/src/composables/useIamAdmin.ts`
-- Create: `frontend/apps/console/src/composables/useIamAdmin.test.ts`
+- 修改：`frontend/packages/app-shell/src/AppShell.vue`
+- 修改：`frontend/packages/app-shell/src/AppShell.test.ts`
+- 修改：`frontend/apps/console/src/layouts/DefaultLayout.vue`
+- 修改：`frontend/apps/console/src/layouts/DefaultLayout.test.ts`
+- 创建：`frontend/apps/console/src/api/iam.ts`
+- 创建：`frontend/apps/console/src/composables/useIamAdmin.ts`
+- 创建：`frontend/apps/console/src/composables/useIamAdmin.test.ts`
 
-- [ ] **Step 1: Write failing navigation tests**
+- [ ] **步骤 1：编写会失败的导航测试**
 
-In `AppShell.test.ts`, add:
+在 `AppShell.test.ts` 中添加：
 
 ```ts
 it('renders grouped navigation children', async () => {
@@ -1743,7 +1743,7 @@ it('renders grouped navigation children', async () => {
 })
 ```
 
-In `DefaultLayout.test.ts`, change expected nav to:
+在 `DefaultLayout.test.ts` 中，将预期导航改为：
 
 ```ts
 expect(wrapper.getComponent(AppShellStub).props('navItems')).toEqual([
@@ -1759,19 +1759,19 @@ expect(wrapper.getComponent(AppShellStub).props('navItems')).toEqual([
 ])
 ```
 
-- [ ] **Step 2: Run navigation tests and confirm RED**
+- [ ] **步骤 2：运行导航测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test packages/app-shell/src/AppShell.test.ts apps/console/src/layouts/DefaultLayout.test.ts
 ```
 
-Expected: FAIL because `NavItem` has no `children` support and DefaultLayout still exposes only Instances.
+预期：失败，因为 `NavItem` 不支持 `children`，且 DefaultLayout 仍只暴露 Instances。
 
-- [ ] **Step 3: Add grouped navigation support**
+- [ ] **步骤 3：添加分组导航支持**
 
-In `AppShell.vue`, update `NavItem`:
+在 `AppShell.vue` 中更新 `NavItem`：
 
 ```ts
 interface NavItem {
@@ -1781,7 +1781,7 @@ interface NavItem {
 }
 ```
 
-Replace the nav template with:
+将导航模板替换为：
 
 ```vue
 <nav class="app-shell__nav" aria-label="Primary navigation">
@@ -1804,7 +1804,7 @@ Replace the nav template with:
 </nav>
 ```
 
-Add CSS:
+添加 CSS：
 
 ```css
 .app-shell__nav-group {
@@ -1826,9 +1826,9 @@ Add CSS:
 }
 ```
 
-- [ ] **Step 4: Add IAM navigation in DefaultLayout**
+- [ ] **步骤 4：在 DefaultLayout 中添加 IAM 导航**
 
-Update `navItems` in `DefaultLayout.vue`:
+更新 `navItems`（位于 `DefaultLayout.vue`）：
 
 ```ts
 const navItems = [
@@ -1848,19 +1848,19 @@ const navItems = [
 }[]
 ```
 
-- [ ] **Step 5: Run navigation tests and confirm GREEN**
+- [ ] **步骤 5：运行导航测试并确认测试为绿**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test packages/app-shell/src/AppShell.test.ts apps/console/src/layouts/DefaultLayout.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Add IAM API error helper**
+- [ ] **步骤 6：添加 IAM API 错误辅助方法**
 
-Create `frontend/apps/console/src/api/iam.ts`:
+创建 `frontend/apps/console/src/api/iam.ts`：
 
 ```ts
 export class ConsoleIamError extends Error {
@@ -1885,9 +1885,9 @@ export function toConsoleIamError(error: unknown, fallback: string): ConsoleIamE
 }
 ```
 
-- [ ] **Step 7: Write failing composable test**
+- [ ] **步骤 7：编写会失败的组合式函数测试**
 
-Create `frontend/apps/console/src/composables/useIamAdmin.test.ts`:
+创建 `frontend/apps/console/src/composables/useIamAdmin.test.ts`：
 
 ```ts
 import { PiniaColada } from '@pinia/colada'
@@ -1950,19 +1950,19 @@ describe('useIamUsers', () => {
 })
 ```
 
-- [ ] **Step 8: Run composable test and confirm RED**
+- [ ] **步骤 8：运行组合式函数测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/composables/useIamAdmin.test.ts
 ```
 
-Expected: FAIL because `useIamAdmin.ts` does not exist.
+预期：失败，因为 `useIamAdmin.ts` 尚不存在。
 
-- [ ] **Step 9: Implement shared IAM composable**
+- [ ] **步骤 9：实施共享 IAM 组合式函数**
 
-Create `frontend/apps/console/src/composables/useIamAdmin.ts` with:
+创建 `frontend/apps/console/src/composables/useIamAdmin.ts`，其中包含：
 
 ```ts
 import {
@@ -2102,43 +2102,43 @@ export function useIamSessions() {
 }
 ```
 
-- [ ] **Step 10: Run composable and navigation tests**
+- [ ] **步骤 10：运行组合式函数和导航测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/composables/useIamAdmin.test.ts packages/app-shell/src/AppShell.test.ts apps/console/src/layouts/DefaultLayout.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 11: Commit navigation and composable foundation**
+- [ ] **步骤 11：提交导航和组合式函数基础**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/packages/app-shell frontend/apps/console/src/layouts frontend/apps/console/src/api/iam.ts frontend/apps/console/src/composables/useIamAdmin.ts frontend/apps/console/src/composables/useIamAdmin.test.ts
 git commit -m "feat: add iam admin navigation foundation"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 6: Build IAM Users Page
+## 任务 6：构建 IAM 用户页面
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/components/iam/IamPageHeader.vue`
-- Create: `frontend/apps/console/src/components/iam/IamListToolbar.vue`
-- Create: `frontend/apps/console/src/components/iam/UsersTable.vue`
-- Create: `frontend/apps/console/src/components/iam/UserCreateDialog.vue`
-- Create: `frontend/apps/console/src/components/iam/UserEditDialog.vue`
-- Create: `frontend/apps/console/src/components/iam/UserResetPasswordDialog.vue`
-- Create: `frontend/apps/console/src/pages/iam/users/index.vue`
-- Create: `frontend/apps/console/src/pages/iam/users/index.test.ts`
+- 创建：`frontend/apps/console/src/components/iam/IamPageHeader.vue`
+- 创建：`frontend/apps/console/src/components/iam/IamListToolbar.vue`
+- 创建：`frontend/apps/console/src/components/iam/UsersTable.vue`
+- 创建：`frontend/apps/console/src/components/iam/UserCreateDialog.vue`
+- 创建：`frontend/apps/console/src/components/iam/UserEditDialog.vue`
+- 创建：`frontend/apps/console/src/components/iam/UserResetPasswordDialog.vue`
+- 创建：`frontend/apps/console/src/pages/iam/users/index.vue`
+- 创建：`frontend/apps/console/src/pages/iam/users/index.test.ts`
 
-- [ ] **Step 1: Write failing users page test**
+- [ ] **步骤 1：编写会失败的用户页面测试**
 
-Create `pages/iam/users/index.test.ts` with a mocked `@/composables/useIamAdmin`:
+创建 `pages/iam/users/index.test.ts`，并模拟 `@/composables/useIamAdmin`：
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -2186,19 +2186,19 @@ describe('IAM users page', () => {
 })
 ```
 
-- [ ] **Step 2: Run users page test and confirm RED**
+- [ ] **步骤 2：运行用户页面测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/users/index.test.ts
 ```
 
-Expected: FAIL because the page and components do not exist.
+预期：失败，因为页面和组件尚不存在。
 
-- [ ] **Step 3: Add shared IAM page header**
+- [ ] **步骤 3：添加共享 IAM 页面标题栏**
 
-Create `components/iam/IamPageHeader.vue`:
+创建 `components/iam/IamPageHeader.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2216,9 +2216,9 @@ defineProps<{
 </template>
 ```
 
-- [ ] **Step 4: Add shared IAM list toolbar**
+- [ ] **步骤 4：添加共享 IAM 列表工具栏**
 
-Create `components/iam/IamListToolbar.vue`:
+创建 `components/iam/IamListToolbar.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2266,9 +2266,9 @@ const emit = defineEmits<{
 </template>
 ```
 
-- [ ] **Step 5: Add users table**
+- [ ] **步骤 5：添加用户表格**
 
-Create `components/iam/UsersTable.vue` with props and emits:
+创建带有 props（属性）和 emits（事件）的 `components/iam/UsersTable.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2358,9 +2358,9 @@ const emit = defineEmits<{
 </template>
 ```
 
-- [ ] **Step 6: Add user dialogs**
+- [ ] **步骤 6：添加用户对话框**
 
-Create `UserCreateDialog.vue`, `UserEditDialog.vue` and `UserResetPasswordDialog.vue` using shadcn `Dialog`, `FieldGroup`, `Field`, `FieldLabel`, `FieldError`, `Input`, and `Button`. Each dialog must:
+创建 `UserCreateDialog.vue`、`UserEditDialog.vue` 和 `UserResetPasswordDialog.vue`，使用 shadcn `Dialog`、`FieldGroup`、`Field`、`FieldLabel`、`FieldError`、`Input` 和 `Button`。每个对话框必须：
 
 ```ts
 const open = defineModel<boolean>('open', { default: false })
@@ -2369,7 +2369,7 @@ const emit = defineEmits<{
 }>()
 ```
 
-Use this validation pattern in each submit handler:
+在每个提交处理器中使用以下校验模式：
 
 ```ts
 const error = ref<string>()
@@ -2393,11 +2393,11 @@ function submit() {
 }
 ```
 
-For `UserResetPasswordDialog.vue`, submit only `{ newPassword: string }`, clear `newPassword` when `open` becomes false, and never render the submitted password after emit.
+对于 `UserResetPasswordDialog.vue`，只提交 `{ newPassword: string }`；清空 `newPassword` 的时机是 `open` 变为 false 时；触发事件后绝不渲染已提交的密码。
 
-- [ ] **Step 7: Add users route page**
+- [ ] **步骤 7：添加用户路由页面**
 
-Create `pages/iam/users/index.vue`:
+创建 `pages/iam/users/index.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2510,41 +2510,41 @@ async function disableUser(user: ConsoleIamUserResponse) {
 </template>
 ```
 
-- [ ] **Step 8: Run users page tests**
+- [ ] **步骤 8：运行用户页面测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/users/index.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Commit users page**
+- [ ] **步骤 9：提交用户页面**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console/src/components/iam frontend/apps/console/src/pages/iam/users
 git commit -m "feat: add iam users console page"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 7: Build IAM Roles Page And Permission Editor
+## 任务 7：构建 IAM 角色页面和权限编辑器
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/components/iam/PermissionCodeBadge.vue`
-- Create: `frontend/apps/console/src/components/iam/RolesTable.vue`
-- Create: `frontend/apps/console/src/components/iam/RoleCreateDialog.vue`
-- Create: `frontend/apps/console/src/components/iam/RolePermissionEditor.vue`
-- Create: `frontend/apps/console/src/pages/iam/roles/index.vue`
-- Create: `frontend/apps/console/src/pages/iam/roles/index.test.ts`
+- 创建：`frontend/apps/console/src/components/iam/PermissionCodeBadge.vue`
+- 创建：`frontend/apps/console/src/components/iam/RolesTable.vue`
+- 创建：`frontend/apps/console/src/components/iam/RoleCreateDialog.vue`
+- 创建：`frontend/apps/console/src/components/iam/RolePermissionEditor.vue`
+- 创建：`frontend/apps/console/src/pages/iam/roles/index.vue`
+- 创建：`frontend/apps/console/src/pages/iam/roles/index.test.ts`
 
-- [ ] **Step 1: Write failing roles page test**
+- [ ] **步骤 1：编写会失败的角色页面测试**
 
-Create `pages/iam/roles/index.test.ts`:
+创建 `pages/iam/roles/index.test.ts`：
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -2591,19 +2591,19 @@ describe('IAM roles page', () => {
 })
 ```
 
-- [ ] **Step 2: Run roles page test and confirm RED**
+- [ ] **步骤 2：运行角色页面测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/roles/index.test.ts
 ```
 
-Expected: FAIL because roles components and page do not exist.
+预期：失败，因为角色组件和页面尚不存在。
 
-- [ ] **Step 3: Add PermissionCodeBadge**
+- [ ] **步骤 3：添加 PermissionCodeBadge**
 
-Create `PermissionCodeBadge.vue`:
+创建 `PermissionCodeBadge.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2619,11 +2619,11 @@ defineProps<{
 </template>
 ```
 
-- [ ] **Step 4: Add roles table**
+- [ ] **步骤 4：添加角色表格**
 
-Create `RolesTable.vue` with columns: Role name, Role ID, Permission count, Key permissions, Actions. Use `Table`, `Badge`, `DropdownMenu`, `Button`, `MoreHorizontalIcon`, and emit `editPermissions`.
+创建 `RolesTable.vue`，包含以下列：角色名称、角色 ID、权限数量、关键权限、操作。使用 `Table`、`Badge`、`DropdownMenu`、`Button`、`MoreHorizontalIcon`，并触发 `editPermissions` 事件。
 
-The row action emit must be:
+行操作必须触发：
 
 ```ts
 const emit = defineEmits<{
@@ -2631,9 +2631,9 @@ const emit = defineEmits<{
 }>()
 ```
 
-- [ ] **Step 5: Add permission editor**
+- [ ] **步骤 5：添加权限编辑器**
 
-Create `RolePermissionEditor.vue`:
+创建 `RolePermissionEditor.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2702,9 +2702,9 @@ function toggle(code: string, checked: boolean | 'indeterminate') {
 </template>
 ```
 
-- [ ] **Step 6: Add role dialogs**
+- [ ] **步骤 6：添加角色对话框**
 
-Create `RoleCreateDialog.vue` using `Dialog`, `FieldGroup`, `Field`, `Input`, `RolePermissionEditor`, and `Button`. It emits:
+创建 `RoleCreateDialog.vue`，使用 `Dialog`、`FieldGroup`、`Field`、`Input`、`RolePermissionEditor` 和 `Button`。它会触发：
 
 ```ts
 const emit = defineEmits<{
@@ -2712,11 +2712,11 @@ const emit = defineEmits<{
 }>()
 ```
 
-For editing existing role permissions, the roles page can reuse `Dialog` directly with `RolePermissionEditor` and selected role state. Do not create a second file unless the template becomes longer than the route page can hold clearly.
+编辑现有角色权限时，角色页面可以将 `Dialog` 与 `RolePermissionEditor` 和所选角色状态直接复用。除非模板长度超出路由页面可清晰容纳的范围，否则不要创建第二个文件。
 
-- [ ] **Step 7: Add roles route page**
+- [ ] **步骤 7：添加角色路由页面**
 
-Create `pages/iam/roles/index.vue` using `IamPageHeader`, `IamListToolbar`, `RolesTable`, `RoleCreateDialog`, `RolePermissionEditor`, `Dialog`, `Alert`, and `toast`. The page must:
+创建 `pages/iam/roles/index.vue`，使用 `IamPageHeader`、`IamListToolbar`、`RolesTable`、`RoleCreateDialog`、`RolePermissionEditor`、`Dialog`、`Alert` 和 `toast`。该页面必须：
 
 ```ts
 definePage({
@@ -2727,7 +2727,7 @@ definePage({
 })
 ```
 
-Use these submit handlers:
+使用以下提交处理器：
 
 ```ts
 async function createRole(payload: { roleName: string; permissionCodes: string[] }) {
@@ -2749,7 +2749,7 @@ async function savePermissions() {
 }
 ```
 
-Render an Alert in the permission editor dialog when `selectedRole?.roleId === 'role-platform-admin'`:
+当 `selectedRole?.roleId === 'role-platform-admin'` 时，在权限编辑器对话框中渲染 Alert：
 
 ```vue
 <Alert>
@@ -2758,39 +2758,39 @@ Render an Alert in the permission editor dialog when `selectedRole?.roleId === '
 </Alert>
 ```
 
-- [ ] **Step 8: Run roles page test**
+- [ ] **步骤 8：运行角色页面测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/roles/index.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Commit roles page**
+- [ ] **步骤 9：提交角色页面**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console/src/components/iam frontend/apps/console/src/pages/iam/roles
 git commit -m "feat: add iam roles console page"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 8: Build IAM Sessions Page
+## 任务 8：构建 IAM 会话页面
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/components/iam/SessionsTable.vue`
-- Create: `frontend/apps/console/src/components/iam/RevokeSessionDialog.vue`
-- Create: `frontend/apps/console/src/pages/iam/sessions/index.vue`
-- Create: `frontend/apps/console/src/pages/iam/sessions/index.test.ts`
+- 创建：`frontend/apps/console/src/components/iam/SessionsTable.vue`
+- 创建：`frontend/apps/console/src/components/iam/RevokeSessionDialog.vue`
+- 创建：`frontend/apps/console/src/pages/iam/sessions/index.vue`
+- 创建：`frontend/apps/console/src/pages/iam/sessions/index.test.ts`
 
-- [ ] **Step 1: Write failing sessions page test**
+- [ ] **步骤 1：编写会失败的会话页面测试**
 
-Create `pages/iam/sessions/index.test.ts`:
+创建 `pages/iam/sessions/index.test.ts`：
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -2837,19 +2837,19 @@ describe('IAM sessions page', () => {
 })
 ```
 
-- [ ] **Step 2: Run sessions page test and confirm RED**
+- [ ] **步骤 2：运行会话页面测试并确认测试为红**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/sessions/index.test.ts
 ```
 
-Expected: FAIL because sessions components and page do not exist.
+预期：失败，因为会话组件和页面尚不存在。
 
-- [ ] **Step 3: Add sessions table**
+- [ ] **步骤 3：添加会话表格**
 
-Create `SessionsTable.vue` with shadcn `Table`, `Badge`, `Button`, and `Skeleton`. Columns:
+创建 `SessionsTable.vue`，使用 shadcn `Table`、`Badge`、`Button` 和 `Skeleton`。列如下：
 
 ```text
 Session ID
@@ -2861,7 +2861,7 @@ Permission version
 Actions
 ```
 
-Props and emit:
+Props（属性）和触发事件：
 
 ```ts
 defineProps<{
@@ -2875,7 +2875,7 @@ const emit = defineEmits<{
 }>()
 ```
 
-Badge variant:
+Badge 变体：
 
 ```ts
 function sessionState(session: ConsoleIamSessionResponse) {
@@ -2883,11 +2883,11 @@ function sessionState(session: ConsoleIamSessionResponse) {
 }
 ```
 
-Disable revoke button when `session.revokedAtUtc` is present.
+存在 `session.revokedAtUtc` 时禁用撤销按钮。
 
-- [ ] **Step 4: Add revoke dialog**
+- [ ] **步骤 4：添加撤销对话框**
 
-Create `RevokeSessionDialog.vue` using `AlertDialog`. It must show a warning when `session.sessionId === currentSessionId`:
+创建 `RevokeSessionDialog.vue`，使用 `AlertDialog`。当 `session.sessionId === currentSessionId` 时，它必须显示警告：
 
 ```vue
 <AlertDialogDescription>
@@ -2896,7 +2896,7 @@ Create `RevokeSessionDialog.vue` using `AlertDialog`. It must show a warning whe
 </AlertDialogDescription>
 ```
 
-Emit:
+触发事件：
 
 ```ts
 const emit = defineEmits<{
@@ -2904,9 +2904,9 @@ const emit = defineEmits<{
 }>()
 ```
 
-- [ ] **Step 5: Add sessions route page**
+- [ ] **步骤 5：添加会话路由页面**
 
-Create `pages/iam/sessions/index.vue` with:
+创建 `pages/iam/sessions/index.vue`，其中包含：
 
 ```ts
 definePage({
@@ -2917,9 +2917,9 @@ definePage({
 })
 ```
 
-Use `useAuthStore()` for current session id, `useIamSessions()` for data, `IamListToolbar` for search/filter, `SessionsTable` for list, `RevokeSessionDialog` for confirmation, and `toast.success('Session revoked')` after mutation.
+使用 `useAuthStore()` 获取当前会话 ID，使用 `useIamSessions()` 获取数据，使用 `IamListToolbar` 搜索/筛选，使用 `SessionsTable` 展示列表，使用 `RevokeSessionDialog` 确认，并在变更后调用 `toast.success('Session revoked')`。
 
-The revoke handler:
+撤销处理器：
 
 ```ts
 async function confirmRevoke(sessionId: string) {
@@ -2930,43 +2930,43 @@ async function confirmRevoke(sessionId: string) {
 }
 ```
 
-- [ ] **Step 6: Run sessions page test**
+- [ ] **步骤 6：运行会话页面测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend test apps/console/src/pages/iam/sessions/index.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit sessions page**
+- [ ] **步骤 7：提交会话页面**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console/src/components/iam frontend/apps/console/src/pages/iam/sessions
 git commit -m "feat: add iam sessions console page"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Task 9: Add E2E Coverage, Documentation And Final Verification
+## 任务 9：添加 E2E 覆盖、文档和最终验证
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/e2e/iam-admin.spec.ts`
-- Modify: `frontend/apps/console/e2e/console.spec.ts`
-- Modify: `docs/architecture/frontend-structure.md`
-- Modify: `docs/architecture/iam-authentication-baseline.md`
-- Modify: `docs/architecture/authorization-matrix.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md`
+- 创建：`frontend/apps/console/e2e/iam-admin.spec.ts`
+- 修改：`frontend/apps/console/e2e/console.spec.ts`
+- 修改：`docs/architecture/frontend-structure.md`
+- 修改：`docs/architecture/iam-authentication-baseline.md`
+- 修改：`docs/architecture/authorization-matrix.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`README.md`
 
-- [ ] **Step 1: Add IAM admin E2E route fixtures**
+- [ ] **步骤 1：添加 IAM 管理 E2E 路由夹具**
 
-Create `frontend/apps/console/e2e/iam-admin.spec.ts`:
+创建 `frontend/apps/console/e2e/iam-admin.spec.ts`：
 
 ```ts
 import { expect, test, type Route } from '@playwright/test'
@@ -3053,25 +3053,25 @@ async function fulfillJson(route: Route, body: unknown) {
 }
 ```
 
-- [ ] **Step 2: Run IAM E2E and confirm GREEN**
+- [ ] **步骤 2：运行 IAM E2E 并确认测试为绿**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console e2e -- iam-admin.spec.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 3: Browser verification**
+- [ ] **步骤 3：浏览器验证**
 
-Start the Console dev server:
+启动 Console 开发服务器：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console dev
 ```
 
-Open the served URL and verify:
+打开所提供的 URL 并验证：
 
 ```text
 /iam/users
@@ -3079,11 +3079,11 @@ Open the served URL and verify:
 /iam/sessions
 ```
 
-Expected: desktop and mobile widths render without text overlap; primary actions, focus rings and selected navigation use blue; state badges do not use blue for danger or success semantics; dialogs have accessible titles.
+预期：桌面端和移动端宽度下渲染均无文本重叠；主要操作、焦点环和所选导航使用蓝色；状态 badge 不使用蓝色表达危险或成功语义；对话框具有无障碍标题。
 
-- [ ] **Step 4: Update architecture docs**
+- [ ] **步骤 4：更新架构文档**
 
-Apply these concrete updates:
+应用以下具体更新：
 
 ```text
 docs/architecture/frontend-structure.md
@@ -3105,9 +3105,9 @@ README.md
   Update current progress to mention the blue design-system baseline and IAM admin workflow.
 ```
 
-- [ ] **Step 5: Run focused frontend and backend checks**
+- [ ] **步骤 5：运行聚焦的前后端检查**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj
@@ -3117,11 +3117,11 @@ pnpm -C frontend typecheck
 pnpm -C frontend build
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Run full verification gates**
+- [ ] **步骤 6：运行完整验证门禁**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln --no-restore
@@ -3136,37 +3136,37 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-Expected: PASS. If OpenAPI/api-client generation changes files during `verify-third-slice-console.ps1`, inspect the diff and stage the generated files only when the Gateway contract changed as part of Phase 8.
+预期：通过。如果运行 `verify-third-slice-console.ps1` 时 OpenAPI/api-client 生成流程更改了文件，请检查差异；只有 Gateway 契约作为 Phase 8 的一部分发生变更时，才暂存生成文件。
 
-- [ ] **Step 7: Commit final docs and E2E**
+- [ ] **步骤 7：提交最终文档和 E2E**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/console/e2e docs/architecture README.md
 git commit -m "docs: finalize phase 8 iam admin readiness"
 ```
 
-Expected: commit succeeds.
+预期：提交成功。
 
-## Spec Coverage Checklist
+## 规格覆盖清单
 
-1. Blue Calm Control Plane token baseline: Task 1.
-2. shadcn-vue component governance and `@nerv-iip/ui` exports: Task 1.
-3. No new IAM pages using legacy tokens: Tasks 6, 7 and 8 tests.
-4. PostgreSQL role creation and permission patch: Task 2.
-5. Permission catalog from seeded permissions only: Task 2.
-6. User create/edit/disable/reset password through Console: Tasks 2, 3, 4, 5 and 6.
-7. Role create/edit permissions through Console: Tasks 2, 3, 4, 5 and 7.
-8. Session view/revoke through Console: Tasks 2, 3, 4, 5 and 8.
-9. Gateway IAM permission checks before forwarding: Task 3.
-10. Stable OpenAPI operation IDs and api-client regeneration: Tasks 3 and 4.
-11. Unit, integration, frontend and E2E coverage: Tasks 2 through 9.
-12. Browser verification for desktop/mobile/dialog/focus/no overlap: Task 9.
+1. 蓝色 Calm Control Plane 令牌基线：任务 1。
+2. shadcn-vue 组件治理和 `@nerv-iip/ui` 导出：任务 1。
+3. 新的 IAM 页面均不使用旧版令牌：任务 6、7 和 8 的测试。
+4. PostgreSQL 角色创建和权限更新：任务 2。
+5. 权限目录只来自初始权限：任务 2。
+6. 通过 Console 创建/编辑/禁用用户和重置密码：任务 2、3、4、5 和 6。
+7. 通过 Console 创建角色/编辑权限：任务 2、3、4、5 和 7。
+8. 通过 Console 查看/撤销会话：任务 2、3、4、5 和 8。
+9. Gateway 在转发前检查 IAM 权限：任务 3。
+10. 稳定的 OpenAPI 操作 ID 和 api-client 重新生成：任务 3 和 4。
+11. 单元、集成、前端和 E2E 覆盖：任务 2 至 9。
+12. 桌面端/移动端/对话框/焦点/无重叠的浏览器验证：任务 9。
 
-## Final Verification Checklist
+## 最终验证清单
 
-Before opening a PR or merging this branch, verify:
+在创建 PR 或合并此分支前，验证：
 
 ```powershell
 git status --short
@@ -3183,12 +3183,12 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-Expected final state: all checks pass, generated OpenAPI/api-client files are consistent with Gateway operation IDs, and the only outstanding diffs belong to the Phase 8 implementation branch.
+预期最终状态：所有检查均通过，生成的 OpenAPI/api-client 文件与 Gateway 操作 ID 一致，且仅剩属于 Phase 8 实施分支的未处理差异。
 
-## Self Review
+## 自审
 
-Spec coverage: every in-scope backend, Gateway, api-client, design-system, frontend page, E2E, browser verification and documentation requirement maps to at least one task above.
+规格覆盖：范围内的每项后端、Gateway、api-client、设计系统、前端页面、E2E、浏览器验证和文档要求，都至少映射到上述一个任务。
 
-Red-flag scan: this plan avoids open-ended gaps and names exact files, commands, request shapes, response shapes, operation IDs and component boundaries.
+危险信号扫描：本计划避免开放式缺口，并明确列出准确文件、命令、请求形态、响应形态、操作 ID 和组件边界。
 
-Type consistency: Console IAM model names use the `ConsoleIam...` prefix across Gateway, generated api-client aliases, composables and Vue components. Backend IAM role/user/session response names remain service-local and Gateway does not reference IAM Domain or Infrastructure types.
+类型一致性：Console IAM 模型名称在 Gateway、生成的 api-client 别名、组合式函数和 Vue 组件中统一使用 `ConsoleIam...` 前缀。后端 IAM 角色/用户/会话响应名称继续限定在服务内部，Gateway 不引用 IAM Domain 或 Infrastructure 类型。

@@ -1,56 +1,56 @@
-# FileStorage Local Tus Endpoint Implementation Plan
+# FileStorage 本地 tus 端点实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Add a minimal FileStorage-owned tus upload endpoint and download content endpoint without introducing MinIO/S3 multipart.
+**目标：**新增由 FileStorage 负责的最小 tus 上传端点和下载内容端点，且不引入 MinIO/S3 分段上传。
 
-**Architecture:** FileStorage keeps upload-session creation and completion as the metadata authority. When `FileStorage:UploadProvider=tus` is selected, clients can use `HEAD` to read the current upload offset and `PATCH` to append bytes into a local filesystem store. Download grants serve completed bytes back through FileStorage using the same local store.
+**架构：**FileStorage 继续作为上传会话创建和完成的元数据权威来源。选择 `FileStorage:UploadProvider=tus` 时，客户端可以使用 `HEAD` 读取当前上传偏移量，并使用 `PATCH` 将字节追加到本地文件系统存储。下载授权通过 FileStorage 从同一本地存储返回已完成的字节内容。
 
-**Tech Stack:** .NET 10, FastEndpoints, xUnit, ASP.NET Core `WebApplicationFactory`, local filesystem storage.
+**技术栈：**.NET 10、FastEndpoints、xUnit、ASP.NET Core `WebApplicationFactory`、本地文件系统存储。
 
 ---
 
-## File Structure
+## 文件结构
 
-Create:
+创建：
 
-1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusFileStore.cs` - local temp/completed byte storage and offset operations.
-2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs` - `HEAD` and `PATCH` upload endpoints plus download content endpoint.
+1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusFileStore.cs`——本地临时/已完成字节存储和偏移量操作。
+2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs`——`HEAD` 和 `PATCH` 上传端点，以及下载内容端点。
 
-Modify:
+修改：
 
-1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs` - expose upload-session/file lookup for tus endpoint and register completed local content.
-2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs` - keep compile compatibility; local tus endpoint can depend on `IFileStorageService` plus a small tus-aware interface.
-3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs` - register local tus store singleton.
-4. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs` - add endpoint workflow tests.
-5. `docs/architecture/file-storage-baseline.md` and `docs/architecture/implementation-readiness.md` - document minimal tus endpoint behavior after code is verified.
+1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`——为 tus 端点暴露上传会话/文件查询，并登记已完成的本地内容。
+2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/PostgreSqlFileStorageService.cs`——保持编译兼容；本地 tus 端点可以依赖 `IFileStorageService` 和一个小型 tus 感知接口。
+3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`——注册本地 tus 存储单例。
+4. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`——新增端点工作流测试。
+5. `docs/architecture/file-storage-baseline.md` 和 `docs/architecture/implementation-readiness.md`——代码验证后记录最小 tus 端点行为。
 
-## Task 1: Minimal Tus Upload Endpoint
+## 任务 1：最小 tus 上传端点
 
-**Files:**
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusFileStore.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
-- Test: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
+**文件：**
+- 创建：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusFileStore.cs`
+- 创建：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
+- 测试：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
 
-- [ ] **Step 1: Write failing endpoint workflow test**
+- [ ] **步骤 1：编写会失败的端点工作流测试**
 
-Add a test that creates a tus upload session, calls `HEAD /api/files/v1/tus/{uploadSessionId}` and expects `Upload-Offset: 0`, calls `PATCH` with `Tus-Resumable: 1.0.0`, `Upload-Offset: 0`, `Content-Type: application/offset+octet-stream`, and expects `Upload-Offset` to advance by the byte count.
+新增一个测试：创建 tus 上传会话，调用 `HEAD /api/files/v1/tus/{uploadSessionId}` 并预期得到 `Upload-Offset: 0`；再调用 `PATCH`，携带 `Tus-Resumable: 1.0.0`、`Upload-Offset: 0`、`Content-Type: application/offset+octet-stream`，并预期 `Upload-Offset` 按字节数增加。
 
-- [ ] **Step 2: Verify red**
+- [ ] **步骤 2：验证测试为红**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore --filter TusUploadEndpoint_HeadAndPatch_TracksOffset
 ```
 
-Expected: FAIL with 404 or missing endpoint.
+预期：因 404 或缺少端点而失败。
 
-- [ ] **Step 3: Implement local tus store and endpoints**
+- [ ] **步骤 3：实施本地 tus 存储和端点**
 
-Implement `LocalTusFileStore` with:
+为 `LocalTusFileStore` 实施以下能力：
 
 ```csharp
 public sealed class LocalTusFileStore(IConfiguration configuration)
@@ -61,61 +61,61 @@ public sealed class LocalTusFileStore(IConfiguration configuration)
 }
 ```
 
-Implement endpoints:
+实施端点：
 
 ```text
 HEAD  /api/files/v1/tus/{uploadSessionId}
 PATCH /api/files/v1/tus/{uploadSessionId}
 ```
 
-Rules:
+规则：
 
-1. `HEAD` returns `Tus-Resumable: 1.0.0`, `Upload-Offset`, and `Cache-Control: no-store`.
-2. `PATCH` requires matching `Upload-Offset`; mismatch returns `409 Conflict` with current `Upload-Offset`.
-3. `PATCH` appends bytes and returns `204 NoContent` with new `Upload-Offset`.
-4. Endpoint is local store only; no MinIO/S3 multipart.
+1. `HEAD` 返回 `Tus-Resumable: 1.0.0`、`Upload-Offset` 和 `Cache-Control: no-store`。
+2. `PATCH` 要求 `Upload-Offset` 匹配；不匹配时返回 `409 Conflict`，并携带当前 `Upload-Offset`。
+3. `PATCH` 追加字节并返回 `204 NoContent`，同时携带新的 `Upload-Offset`。
+4. 端点只使用本地存储；不实施 MinIO/S3 分段上传。
 
-- [ ] **Step 4: Verify green**
+- [ ] **步骤 4：验证测试为绿**
 
-Run the focused test above, then:
+先运行上面的聚焦测试，然后运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 2: Download Content Endpoint
+## 任务 2：下载内容端点
 
-**Files:**
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs`
-- Test: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
+**文件：**
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/InMemoryFileStorageService.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/TusFileEndpoints.cs`
+- 测试：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageTusProviderTests.cs`
 
-- [ ] **Step 1: Write failing download workflow test**
+- [ ] **步骤 1：编写会失败的下载工作流测试**
 
-Add a test that uploads bytes through tus, completes the upload session, creates a download grant, calls `GET /api/files/v1/download-grants/{grantId}/content`, and expects the original bytes.
+新增一个测试：通过 tus 上传字节，完成上传会话，创建下载授权，调用 `GET /api/files/v1/download-grants/{grantId}/content`，并预期得到原始字节。
 
-- [ ] **Step 2: Verify red**
+- [ ] **步骤 2：验证测试为红**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore --filter TusUploadEndpoint_CompleteAndDownload_ReturnsUploadedBytes
 ```
 
-Expected: FAIL with 404 or missing content endpoint.
+预期：因 404 或缺少内容端点而失败。
 
-- [ ] **Step 3: Track grant-to-session mapping for local content**
+- [ ] **步骤 3：跟踪本地内容的授权到会话映射**
 
-Keep in-memory mappings inside the in-memory service for MVP:
+MVP 阶段在内存服务中保留以下内存映射：
 
 ```csharp
 fileId -> uploadSessionId
 downloadGrantId -> fileId
 ```
 
-Add a narrow internal interface used by endpoints:
+新增一个供端点使用的窄内部接口：
 
 ```csharp
 public interface ILocalFileContentIndex
@@ -124,46 +124,46 @@ public interface ILocalFileContentIndex
 }
 ```
 
-- [ ] **Step 4: Implement download endpoint**
+- [ ] **步骤 4：实施下载端点**
 
-Implement:
+实施：
 
 ```text
 GET /api/files/v1/download-grants/{downloadGrantId}/content
 ```
 
-It resolves the grant to the uploaded local file and streams `application/octet-stream`. Unknown grants return 404.
+该端点将授权解析到已上传的本地文件，并以 `application/octet-stream` 流式返回。未知授权返回 404。
 
-- [ ] **Step 5: Verify green**
+- [ ] **步骤 5：验证测试为绿**
 
-Run the focused test, then full FileStorage Web tests.
+运行聚焦测试，然后运行完整的 FileStorage Web 测试。
 
-## Task 3: Docs And Verification
+## 任务 3：文档和验证
 
-**Files:**
-- Modify: `docs/architecture/file-storage-baseline.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `README.md` if the status paragraph would otherwise be stale.
+**文件：**
+- 修改：`docs/architecture/file-storage-baseline.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：如果状态段落不修改就会过时，则修改 `README.md`。
 
-- [ ] **Step 1: Update docs from actual diff**
+- [ ] **步骤 1：根据实际差异更新文档**
 
-Document that MVP now supports local tus `HEAD/PATCH` upload offset tracking and platform download content for the in-memory/local profile. Keep PostgreSQL metadata and local byte store limitations explicit.
+记录 MVP 现在为内存/本地配置档支持本地 tus `HEAD/PATCH` 上传偏移量跟踪和平台下载内容。明确保留 PostgreSQL 元数据和本地字节存储的限制。
 
-- [ ] **Step 2: Final verification**
+- [ ] **步骤 2：最终验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Self-Review
+## 自审
 
-Spec coverage: The plan covers upload resume offset, append upload, download content, documentation, and verification.
+规格覆盖：本计划覆盖上传续传偏移量、追加上传、下载内容、文档和验证。
 
-Scope check: This stays within local filesystem tus MVP and does not implement MinIO/S3 multipart or a full tus creation protocol.
+范围检查：本计划限定在本地文件系统 tus MVP 范围内，不实施 MinIO/S3 分段上传或完整的 tus 创建协议。
 
-Placeholder scan: No placeholders remain.
+占位符扫描：没有遗留占位符。
