@@ -158,7 +158,7 @@ $allDescribe = [pscustomobject]@{
 $endpointManifest = [pscustomobject]@{ endpoints = [ordered]@{} }
 $savedManifest = @(Save-NervFullStackEndpoints -Manifest $endpointManifest -DescribeObject $allDescribe)
 Assert-True ($savedManifest.Count -eq 1) 'Endpoint discovery must return exactly one manifest object.'
-Assert-True ($savedManifest[0].endpoints.'business-console' -eq 'http://127.0.0.1/business-console') 'All public endpoints must be saved.'
+Assert-True ([string]::Equals([string]$savedManifest[0].endpoints.'business-console', 'http://127.0.0.1/business-console', [StringComparison]::Ordinal)) 'All public endpoints must be saved.'
 
 $missingPayloadFailed = $false
 try { Read-NervAspireJson -Text 'Aspire emitted no machine payload.' | Out-Null } catch { $missingPayloadFailed = $true }
@@ -249,23 +249,23 @@ finally {
 }
 
 $describeDefinition = (Get-Command Get-NervAspireDescribeObject -ErrorAction Stop).Definition
-Assert-True ($describeDefinition.Contains('-AllowPartialOutput')) 'Aspire describe must explicitly opt in before strict JSON/resources validation.'
-Assert-True ($describeDefinition.Contains('-RequireResources')) 'Aspire describe must require a complete resource collection after parsing.'
+Assert-True ($describeDefinition.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Aspire describe must explicitly opt in before strict JSON/resources validation.'
+Assert-True ($describeDefinition.Contains('-RequireResources', [StringComparison]::Ordinal)) 'Aspire describe must require a complete resource collection after parsing.'
 $waitDefinition = (Get-Command Wait-NervAspireResource -ErrorAction Stop).Definition
-Assert-True ($waitDefinition.Contains('-AllowPartialOutput')) 'Aspire wait may opt in because the native exit code is authoritative and output is discarded.'
+Assert-True ($waitDefinition.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Aspire wait may opt in because the native exit code is authoritative and output is discarded.'
 $diagnosticsDefinition = (Get-Command Collect-NervFullStackDiagnostics -ErrorAction Stop).Definition
-Assert-True (-not $diagnosticsDefinition.Contains('-AllowPartialOutput')) 'Parse-critical Aspire logs must reject partial redirected output.'
+Assert-True (-not $diagnosticsDefinition.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Parse-critical Aspire logs must reject partial redirected output.'
 $stopDefinition = (Get-Command Stop-NervFullStackSession -ErrorAction Stop).Definition
-Assert-True ($stopDefinition.Contains('-AllowPartialOutput')) 'Exact full-stack Aspire stop must allow partial discarded output when exit code is authoritative.'
+Assert-True ($stopDefinition.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Exact full-stack Aspire stop must allow partial discarded output when exit code is authoritative.'
 $startActionIndex = $fullStackSessionText.IndexOf('-StartAction {', [StringComparison]::Ordinal)
 $cleanupActionIndex = $fullStackSessionText.IndexOf('-CleanupAction {', $startActionIndex, [StringComparison]::Ordinal)
 $startParseIndex = $fullStackSessionText.IndexOf('$startObject = Read-NervAspireJson', $cleanupActionIndex, [StringComparison]::Ordinal)
 Assert-True ($startActionIndex -ge 0 -and $cleanupActionIndex -gt $startActionIndex -and $startParseIndex -gt $cleanupActionIndex) 'Full-stack Aspire start/retry boundaries must remain explicit.'
 $startActionText = $fullStackSessionText.Substring($startActionIndex, $cleanupActionIndex - $startActionIndex)
-Assert-True (-not $startActionText.Contains('-AllowPartialOutput')) 'Parse-critical Aspire start must reject partial redirected output.'
+Assert-True (-not $startActionText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Parse-critical Aspire start must reject partial redirected output.'
 $transientStopText = $fullStackSessionText.Substring($cleanupActionIndex, $startParseIndex - $cleanupActionIndex)
-Assert-True ($transientStopText.Contains("@('stop'")) 'Transient Aspire start cleanup must invoke stop.'
-Assert-True ($transientStopText.Contains('-AllowPartialOutput')) 'Transient Aspire start cleanup must allow partial discarded stop output.'
+Assert-True ($transientStopText.Contains("@('stop'", [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must invoke stop.'
+Assert-True ($transientStopText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must allow partial discarded stop output.'
 
 Assert-True `
     (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `
@@ -313,17 +313,17 @@ Assert-True `
     'Docker predefined networks must never be removed by a session cleanup.'
 
 $environment = Get-NervFullStackEnvironment -SessionId $sessionId
-Assert-True ($environment.NERV_IIP_EPHEMERAL -eq 'true') 'Ephemeral flag missing.'
+Assert-True ([string]::Equals([string]$environment.NERV_IIP_EPHEMERAL, 'true', [StringComparison]::Ordinal)) 'Ephemeral flag missing.'
 Assert-True ($environment.NERV_IIP_SESSION_ID -eq $sessionId) 'Session ID missing.'
-Assert-True ($environment.Messaging__Provider -ceq 'Redis') 'Managed full-stack sessions must explicitly select Redis messaging.'
-Assert-True ($environment.Persistence__Provider -ceq 'PostgreSQL') 'Managed full-stack sessions must explicitly select PostgreSQL persistence.'
+Assert-True ([string]::Equals([string]$environment.Messaging__Provider, 'Redis', [StringComparison]::Ordinal)) 'Managed full-stack sessions must explicitly select Redis messaging.'
+Assert-True ([string]::Equals([string]$environment.Persistence__Provider, 'PostgreSQL', [StringComparison]::Ordinal)) 'Managed full-stack sessions must explicitly select PostgreSQL persistence.'
 foreach ($expected in @(
     "nerv-iip-postgres-18-$sessionId",
     "nerv-iip-redis-$sessionId",
     "nerv-iip-minio-$sessionId",
     "nerv-iip-victoria-logs-$sessionId"
 )) {
-    Assert-True ($environment.Values -ccontains $expected) "Missing ephemeral volume '$expected'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($environment.Values), [StringComparer]::Ordinal).Contains($expected)) "Missing ephemeral volume '$expected'."
 }
 
 $invalidEnvironmentFailed = $false
@@ -342,7 +342,7 @@ try {
         -RequestAction { param($Url) [pscustomobject]@{ StatusCode = 404 } }
 }
 catch {
-    $notFoundEntrypointRejected = $_.Exception.Message.Contains('404')
+    $notFoundEntrypointRejected = $_.Exception.Message.Contains('404', [StringComparison]::Ordinal)
 }
 Assert-True $notFoundEntrypointRejected 'Leader-demo entrypoint checks must reject HTTP 404 instead of treating every 4xx response as healthy.'
 
@@ -352,7 +352,7 @@ $profileManifest = New-NervFullStackManifest `
     -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
     -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$sessionId") `
     -MessagingProvider $environment.Messaging__Provider
-Assert-True ($profileManifest.messagingProvider -ceq 'Redis') 'The non-secret messaging provider must be recorded in the session manifest.'
+Assert-True ([string]::Equals([string]$profileManifest.messagingProvider, 'Redis', [StringComparison]::Ordinal)) 'The non-secret messaging provider must be recorded in the session manifest.'
 
 $statusManifest = New-NervFullStackManifest `
     -SessionId 'nerv-abcd-5a7a50' `
@@ -371,7 +371,7 @@ Assert-True ($statusSummary.RecordedContainerCount -eq 2) 'Full-stack status may
 Assert-True ($statusSummary.UnresolvedCount -eq 0) 'A clean stopped session must have no unresolved Docker ownership.'
 
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
-Assert-True ($appHostText.Contains('NERV_IIP_LEADER_DEMO')) 'AppHost must require an explicit leader-demo profile flag.'
+Assert-True ($appHostText.Contains('NERV_IIP_LEADER_DEMO', [StringComparison]::Ordinal)) 'AppHost must require an explicit leader-demo profile flag.'
 Assert-True (
     ([regex]::Matches($appHostText, 'WithEnvironment\("LeaderDemo__Seed__Enabled", leaderDemoEnabled \? "true" : "false"\)')).Count -eq 7
 ) 'AppHost must explicitly pass the opt-in seed flag to all seven leader-demo prerequisite services.'
@@ -389,7 +389,7 @@ foreach ($resourceVariable in @(
     Assert-True (
         $resourceStart -ge 0 -and
         $resourceEnd -gt $resourceStart -and
-        $appHostText.Substring($resourceStart, $resourceEnd - $resourceStart).Contains('.WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")')
+        $appHostText.Substring($resourceStart, $resourceEnd - $resourceStart).Contains('.WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")', [StringComparison]::Ordinal)
     ) "AppHost must pass the leader-demo seed flag to '$resourceVariable'."
 }
 $businessMesStart = $appHostText.IndexOf('var businessMes =', [StringComparison]::Ordinal)
@@ -397,11 +397,11 @@ $businessMesEnd = $appHostText.IndexOf(';', $businessMesStart)
 Assert-True (
     $businessMesStart -ge 0 -and
     $businessMesEnd -gt $businessMesStart -and
-    $appHostText.Substring($businessMesStart, $businessMesEnd - $businessMesStart).Contains('.WithHttpHealthCheck("/swagger/v1/swagger.json")')
+    $appHostText.Substring($businessMesStart, $businessMesEnd - $businessMesStart).Contains('.WithHttpHealthCheck("/swagger/v1/swagger.json")', [StringComparison]::Ordinal)
 ) 'AppHost must not report BusinessMES healthy until its startup seed has completed and HTTP is accepting traffic.'
 $notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
 $notificationEnd = $appHostText.IndexOf(';', $notificationStart)
-Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled')) 'AppHost must not leak the business leader-demo seed flag to Notification.'
+Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled', [StringComparison]::Ordinal)) 'AppHost must not leak the business leader-demo seed flag to Notification.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
 foreach ($requiredName in @(
@@ -421,12 +421,12 @@ foreach ($requiredName in @(
     Assert-True (-not [string]::IsNullOrWhiteSpace($secretEnvironment.Environment[$requiredName])) "Session secret '$requiredName' is empty."
 }
 Assert-True `
-    ($secretEnvironment.AdminPassword -ceq $secretEnvironment.Environment['Parameters__iam-seed-admin-password']) `
+    ([string]::Equals([string]$secretEnvironment.AdminPassword, [string]$secretEnvironment.Environment['Parameters__iam-seed-admin-password'], [StringComparison]::Ordinal)) `
     'The browser password must match the AppHost seed password.'
 $jwks = $secretEnvironment.Environment['Parameters__iam-jwt-jwks-json'] | ConvertFrom-Json
 Assert-True ($jwks.keys.Count -eq 1) 'A session JWKS must contain one signing key.'
 Assert-True `
-    ($jwks.keys[0].kid -ceq $secretEnvironment.Environment['Parameters__iam-jwt-signing-key-id']) `
+    ([string]::Equals([string]$jwks.keys[0].kid, [string]$secretEnvironment.Environment['Parameters__iam-jwt-signing-key-id'], [StringComparison]::Ordinal)) `
     'The session JWKS key ID must match the private signing key ID.'
 $secretEnvironment.Environment.Clear()
 $secretEnvironment = $null
@@ -462,7 +462,8 @@ $scenarioResult = Invoke-NervFullStackSmokeScenario `
 Assert-True ($scenarioResult.ExitCode -eq 0) 'Healthy injected smoke must pass.'
 Assert-True ($script:checkedUrls.Count -eq 5) 'Smoke must HTTP-check all five manifest endpoints.'
 foreach ($name in @('gateway', 'business-gateway', 'console', 'business-console', 'screen')) {
-    Assert-True ($script:checkedUrls -ccontains "$name=$($scenarioManifest.endpoints.$name)") "Smoke did not use manifest endpoint '$name'."
+    $expectedCheckedUrl = "$name=$($scenarioManifest.endpoints.$name)"
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($script:checkedUrls), [StringComparer]::Ordinal).Contains($expectedCheckedUrl)) "Smoke did not use manifest endpoint '$name'."
 }
 $expectedBrowserEnvironment = @{
     NERV_IIP_GATEWAY_URL = $scenarioManifest.endpoints.gateway
@@ -472,7 +473,7 @@ $expectedBrowserEnvironment = @{
 }
 Assert-True ($script:browserEnvironment.Count -eq $expectedBrowserEnvironment.Count) 'Browser child environment contained unexpected keys.'
 foreach ($key in $expectedBrowserEnvironment.Keys) {
-    Assert-True ($script:browserEnvironment[$key] -ceq $expectedBrowserEnvironment[$key]) "Unexpected browser environment value for '$key'."
+    Assert-True ([string]::Equals([string]$script:browserEnvironment[$key], [string]$expectedBrowserEnvironment[$key], [StringComparison]::Ordinal)) "Unexpected browser environment value for '$key'."
 }
 $playwrightReportRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-playwright-$([guid]::NewGuid().ToString('N'))"
 try {
@@ -566,7 +567,7 @@ try {
             } | Out-Null
     }
     catch { $atomicWriteFailure = $_.Exception }
-    Assert-True ($null -ne $atomicWriteFailure -and $atomicWriteFailure.Message -ceq 'simulated interrupted evidence write') 'Interrupted evidence writes must preserve the original write error.'
+    Assert-True ($null -ne $atomicWriteFailure -and [string]::Equals([string]$atomicWriteFailure.Message, 'simulated interrupted evidence write', [StringComparison]::Ordinal)) 'Interrupted evidence writes must preserve the original write error.'
     Assert-True ([int] $atomicWriteFailure.Data['ExitCode'] -eq 23) 'Interrupted evidence writes must preserve structured exit semantics.'
     Assert-True (@(Get-ChildItem -LiteralPath $atomicFailureRoot -Filter evidence.json -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) 'Interrupted evidence writes must not publish a truncated authoritative file.'
     Assert-True (@(Get-ChildItem -LiteralPath $atomicFailureRoot -Filter '*.tmp' -File -Recurse -ErrorAction SilentlyContinue).Count -eq 0) 'Interrupted evidence writes must clean the same-directory temporary file.'
@@ -588,7 +589,7 @@ try {
         } `
         -PrincipalAction {
             param($GatewayUrl, $Headers)
-            Assert-True ($Headers.Authorization -ceq "Bearer $leaderSecretToken") 'Principal observation did not use the authenticated token.'
+            Assert-True ([string]::Equals([string]$Headers.Authorization, "Bearer $leaderSecretToken", [StringComparison]::Ordinal)) 'Principal observation did not use the authenticated token.'
             $script:leaderPrincipalCalls.Add("$GatewayUrl/api/console/v1/auth/me")
             [pscustomobject]@{
                 data = [pscustomobject]@{
@@ -604,36 +605,34 @@ try {
         } `
         -PublicFactQueryAction {
             param($FactName, $Url, $Headers)
-            Assert-True ($Headers.Authorization -ceq "Bearer $leaderSecretToken") "Fact '$FactName' did not use the authenticated public Gateway token."
+            Assert-True ([string]::Equals([string]$Headers.Authorization, "Bearer $leaderSecretToken", [StringComparison]::Ordinal)) "Fact '$FactName' did not use the authenticated public Gateway token."
             $script:leaderFactCalls.Add("$FactName=$Url")
-            switch ($FactName) {
-                'ACCOUNT-ROLES' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read') }) } }
-                }
-                'SO-DEMO-001' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } }
-                }
-                'WO-DEMO-Q01' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } }
-                }
-                'DEV-CNC-DEMO' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ resources = @([pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }) } }
-                }
-                'ALARM-DEMO-001' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } }
-                }
-                'MWO-DEMO-001' {
-                    [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } }
-                }
-                default { throw "Unexpected fact '$FactName'." }
+            if ([string]::Equals([string]$FactName, 'ACCOUNT-ROLES', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @('business.erp.sales-orders.read', 'business.mes.work-orders.read') }) } }
             }
+            if ([string]::Equals([string]$FactName, 'SO-DEMO-001', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } }
+            }
+            if ([string]::Equals([string]$FactName, 'WO-DEMO-Q01', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } }
+            }
+            if ([string]::Equals([string]$FactName, 'DEV-CNC-DEMO', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ resources = @([pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }) } }
+            }
+            if ([string]::Equals([string]$FactName, 'ALARM-DEMO-001', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } }
+            }
+            if ([string]::Equals([string]$FactName, 'MWO-DEMO-001', [StringComparison]::Ordinal)) {
+                return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } }
+            }
+            throw "Unexpected fact '$FactName'."
         }
 
     Assert-True ($leaderSuccess.ExitCode -eq 0) 'A healthy Redis leader-demo verification must pass.'
-    Assert-True ($script:leaderLoginPassword -ceq $leaderSecretPassword) 'The login action did not receive the process-scoped password.'
+    Assert-True ([string]::Equals([string]$script:leaderLoginPassword, [string]$leaderSecretPassword, [StringComparison]::Ordinal)) 'The login action did not receive the process-scoped password.'
     Assert-True ($script:leaderWaitCalls.Count -eq $requiredLeaderResources.Count) 'Every required leader-demo resource must use the bounded Aspire wait action.'
     foreach ($resourceName in $requiredLeaderResources) {
-        Assert-True ($script:leaderWaitCalls -ccontains $resourceName) "Leader-demo health did not wait for '$resourceName'."
+        Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($script:leaderWaitCalls), [StringComparer]::Ordinal).Contains($resourceName)) "Leader-demo health did not wait for '$resourceName'."
     }
     foreach ($entrypoint in @('business-gateway', 'console', 'business-console', 'screen')) {
         Assert-True (@($script:leaderHttpCalls | Where-Object { $_.StartsWith("$entrypoint=", [StringComparison]::Ordinal) }).Count -eq 1) "Leader-demo health did not HTTP-check '$entrypoint'."
@@ -648,16 +647,16 @@ try {
     Assert-True (Test-Path -LiteralPath $leaderSuccess.EvidencePath -PathType Leaf) 'Successful leader-demo verification did not write evidence.'
     $leaderEvidenceText = Get-Content -LiteralPath $leaderSuccess.EvidencePath -Raw
     $leaderEvidence = $leaderEvidenceText | ConvertFrom-Json -Depth 50
-    Assert-True ($leaderEvidence.commitSha -ceq '0123456789abcdef0123456789abcdef01234567') 'Evidence must record the current commit SHA.'
-    Assert-True ($leaderEvidence.recordedAtUtc -ceq '2026-07-20T12:34:56.0000000+00:00') 'Evidence must record the injected UTC time.'
-    Assert-True ($leaderEvidence.sessionId -ceq $sessionId -and $leaderEvidence.command -ceq 'health-check') 'Evidence must identify the exact session and command.'
-    Assert-True ($leaderEvidence.result -ceq 'passed' -and $leaderEvidence.messagingProvider -ceq 'Redis') 'Evidence must record the successful Redis result.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.commitSha, '0123456789abcdef0123456789abcdef01234567', [StringComparison]::Ordinal)) 'Evidence must record the current commit SHA.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.recordedAtUtc, '2026-07-20T12:34:56.0000000+00:00', [StringComparison]::Ordinal)) 'Evidence must record the injected UTC time.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.sessionId, [string]$sessionId, [StringComparison]::Ordinal) -and [string]::Equals([string]$leaderEvidence.command, 'health-check', [StringComparison]::Ordinal)) 'Evidence must identify the exact session and command.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.result, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$leaderEvidence.messagingProvider, 'Redis', [StringComparison]::Ordinal)) 'Evidence must record the successful Redis result.'
     Assert-True ($script:leaderPrincipalCalls.Count -eq 1 -and $script:leaderPrincipalCalls[0].EndsWith('/api/console/v1/auth/me', [StringComparison]::Ordinal)) 'Verification must observe the authenticated principal through public auth/me.'
     Assert-True ($leaderEvidence.access.roles.Count -eq 1) 'Evidence must record the authenticated membership role observed through public contracts.'
-    Assert-True ($leaderEvidence.access.roles[0].roleId -ceq 'role-platform-admin' -and $leaderEvidence.access.roles[0].roleName -ceq 'Platform Administrator') 'Evidence must map the exact membership role ID to its public role name.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.access.roles[0].roleId, 'role-platform-admin', [StringComparison]::Ordinal) -and [string]::Equals([string]$leaderEvidence.access.roles[0].roleName, 'Platform Administrator', [StringComparison]::Ordinal)) 'Evidence must map the exact membership role ID to its public role name.'
     Assert-True ($leaderEvidence.access.rolesObserved) 'Evidence must state that account roles were observed.'
-    Assert-True ($leaderEvidence.access.rolesObservation -ceq 'public-auth-me-and-role-catalog') 'Evidence must name the public role observation path.'
-    Assert-True ($leaderEvidence.access.principal.loginName -ceq 'leader') 'Evidence must record the observed non-secret principal identity.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.access.rolesObservation, 'public-auth-me-and-role-catalog', [StringComparison]::Ordinal)) 'Evidence must name the public role observation path.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.access.principal.loginName, 'leader', [StringComparison]::Ordinal)) 'Evidence must record the observed non-secret principal identity.'
     Assert-True ($leaderEvidence.access.principal.permissionCodes.Count -eq 2) 'Evidence must record observed permission codes without inferring roles.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.access.urls.gateway)")) 'Evidence must record non-secret access URLs.'
     Assert-True ($leaderEvidence.resources.Count -eq $requiredLeaderResources.Count) 'Evidence must contain one row per required resource.'
@@ -667,10 +666,10 @@ try {
     Assert-True (@($leaderEvidence.facts | Where-Object { $_.matchCount -ne 1 }).Count -eq 0) 'Every reserved fact must have exactly one public match so repeated resets cannot hide duplicates.'
     Assert-True (@($leaderEvidence.facts | Where-Object { [string]::IsNullOrWhiteSpace("$($_.event)") -or [string]::IsNullOrWhiteSpace("$($_.observedAtUtc)") }).Count -eq 0) 'Every fact evidence row needs a key event and observation time.'
     Assert-True (-not [string]::IsNullOrWhiteSpace("$($leaderEvidence.diagnostics.fullStackArtifactPath)")) 'Evidence must link the full-stack diagnostics.'
-    Assert-True ($leaderEvidence.cleanup.command -ceq '.\nerv.ps1 demo stop') 'Evidence must include the exact cleanup command.'
+    Assert-True ([string]::Equals([string]$leaderEvidence.cleanup.command, '.\nerv.ps1 demo stop', [StringComparison]::Ordinal)) 'Evidence must include the exact cleanup command.'
     Assert-True (@(Get-ChildItem -LiteralPath (Split-Path -Parent $leaderSuccess.EvidencePath) -Filter '*.tmp' -File).Count -eq 0) 'Successful evidence publication must leave only the valid authoritative JSON file.'
     foreach ($secretValue in @($leaderSecretPassword, $leaderSecretToken, "Bearer $leaderSecretToken")) {
-        Assert-True (-not $leaderEvidenceText.Contains($secretValue)) "Leader-demo success evidence leaked '$secretValue'."
+        Assert-True (-not $leaderEvidenceText.Contains($secretValue, [StringComparison]::Ordinal)) "Leader-demo success evidence leaked '$secretValue'."
     }
 
     $nonRedisFailure = $null
@@ -692,7 +691,7 @@ try {
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'facts must not run for a non-Redis manifest' } | Out-Null
     }
     catch { $nonRedisFailure = $_.Exception.Message }
-    Assert-True ($nonRedisFailure.Contains('Redis')) 'A non-Redis leader-demo manifest must fail explicitly.'
+    Assert-True ($nonRedisFailure.Contains('Redis', [StringComparison]::Ordinal)) 'A non-Redis leader-demo manifest must fail explicitly.'
     $nonRedisEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
         Where-Object { $_.Directory.Name.StartsWith('20260720T123556000Z-', [StringComparison]::Ordinal) } |
         Select-Object -First 1 -ExpandProperty FullName
@@ -717,11 +716,11 @@ try {
             -WaitAction {
                 param($Name, $Manifest, $TimeoutSeconds)
                 $script:failureWaitCalls.Add($Name)
-                if ($Name -ceq 'business-quality') { throw 'simulated quality outage password=failure-secret' }
+                if ([string]::Equals([string]$Name, 'business-quality', [StringComparison]::Ordinal)) { throw 'simulated quality outage password=failure-secret' }
             } `
             -AspireSnapshotAction {
                 param($Manifest)
-                [pscustomobject]@{ resources = @($healthyLeaderSnapshot.resources | Where-Object { $_.displayName -cne 'business-quality' }) }
+                [pscustomobject]@{ resources = @($healthyLeaderSnapshot.resources | Where-Object { -not [string]::Equals([string]$_.displayName, 'business-quality', [StringComparison]::Ordinal) }) }
             } `
             -HttpCheckAction { param($Name, $Url) } `
             -LoginAction { param($GatewayUrl, $Password) [pscustomobject]@{ data = [pscustomobject]@{ accessToken = $leaderSecretToken } } } `
@@ -729,17 +728,17 @@ try {
             -PublicFactQueryAction { param($FactName, $Url, $Headers) throw 'fact query should be skipped after an unhealthy resource gate' } | Out-Null
     }
     catch { $missingResourceFailure = $_.Exception.Message }
-    Assert-True ($missingResourceFailure.Contains('business-quality')) 'An unhealthy resource failure must name the resource.'
+    Assert-True ($missingResourceFailure.Contains('business-quality', [StringComparison]::Ordinal)) 'An unhealthy resource failure must name the resource.'
     Assert-True ($script:failureWaitCalls.Count -eq $requiredLeaderResources.Count) 'A failed resource must not prevent bounded checks from naming every other required resource.'
     $failedEvidencePath = Get-ChildItem -LiteralPath $leaderEvidenceRoot -Filter evidence.json -File -Recurse |
         Sort-Object LastWriteTimeUtc -Descending |
         Select-Object -First 1 -ExpandProperty FullName
     $failedEvidenceText = Get-Content -LiteralPath $failedEvidencePath -Raw
     $failedEvidence = $failedEvidenceText | ConvertFrom-Json -Depth 50
-    Assert-True ($failedEvidence.result -ceq 'failed') 'A failed leader-demo verification must still write failure evidence.'
-    $qualityEvidence = @($failedEvidence.resources | Where-Object { $_.name -ceq 'business-quality' })
+    Assert-True ([string]::Equals([string]$failedEvidence.result, 'failed', [StringComparison]::Ordinal)) 'A failed leader-demo verification must still write failure evidence.'
+    $qualityEvidence = @($failedEvidence.resources | Where-Object { [string]::Equals([string]$_.name, 'business-quality', [StringComparison]::Ordinal) })
     Assert-True ($qualityEvidence.Count -eq 1 -and -not [string]::IsNullOrWhiteSpace("$($qualityEvidence[0].hint)")) 'A failed resource needs one bounded remediation hint.'
-    Assert-True (-not $failedEvidenceText.Contains('failure-secret')) 'Leader-demo failure evidence must redact sensitive error values.'
+    Assert-True (-not $failedEvidenceText.Contains('failure-secret', [StringComparison]::Ordinal)) 'Leader-demo failure evidence must redact sensitive error values.'
 
     $exitCodeFailure = $null
     $script:nativeExitPwshPath = (Get-Process -Id $PID).Path
@@ -754,7 +753,7 @@ try {
             -CommitAction { '0123456789abcdef0123456789abcdef01234567' } `
             -WaitAction {
                 param($Name, $Manifest, $TimeoutSeconds)
-                if ($Name -ceq 'business-mes') {
+                if ([string]::Equals([string]$Name, 'business-mes', [StringComparison]::Ordinal)) {
                     Invoke-NativeCommandOutput `
                         -Command $script:nativeExitPwshPath `
                         -Arguments @('-NoProfile', '-NonInteractive', '-Command', "[Console]::Error.WriteLine('token=$nativeExitSecret'); exit 17") `
@@ -778,8 +777,8 @@ try {
         Select-Object -First 1 -ExpandProperty FullName
     Assert-True (Test-Path -LiteralPath $exitEvidencePath -PathType Leaf) 'Exit 17 verification must write evidence before propagating the code.'
     $exitEvidence = Get-Content -LiteralPath $exitEvidencePath -Raw | ConvertFrom-Json -Depth 50
-    Assert-True ($exitEvidence.result -ceq 'failed' -and $exitEvidence.exitCode -eq 17) 'Failure evidence must record the propagated exit code.'
-    Assert-True (-not (Get-Content -LiteralPath $exitEvidencePath -Raw).Contains($nativeExitSecret)) 'Native failure evidence must not expose sensitive process output.'
+    Assert-True ([string]::Equals([string]$exitEvidence.result, 'failed', [StringComparison]::Ordinal) -and $exitEvidence.exitCode -eq 17) 'Failure evidence must record the propagated exit code.'
+    Assert-True (-not (Get-Content -LiteralPath $exitEvidencePath -Raw).Contains($nativeExitSecret, [StringComparison]::Ordinal)) 'Native failure evidence must not expose sensitive process output.'
 
     $factFailure = $null
     try {
@@ -797,16 +796,26 @@ try {
             -PrincipalAction { param($GatewayUrl, $Headers) [pscustomobject]@{ data = [pscustomobject]@{ principalId = 'user-leader'; principalType = 'user'; loginName = 'leader'; organizationId = 'org-001'; environmentId = 'env-dev'; permissionCodes = @(); roleIds = @('role-platform-admin') } } } `
             -PublicFactQueryAction {
                 param($FactName, $Url, $Headers)
-                switch ($FactName) {
-                    'ACCOUNT-ROLES' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @() }) } } }
-                    'SO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } } }
-                    'WO-DEMO-Q01' { [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } } }
-                    'DEV-CNC-DEMO' { [pscustomobject]@{ data = [pscustomobject]@{ resources = @(
+                if ([string]::Equals([string]$FactName, 'ACCOUNT-ROLES', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ roleId = 'role-platform-admin'; roleName = 'Platform Administrator'; permissionCodes = @() }) } }
+                }
+                if ([string]::Equals([string]$FactName, 'SO-DEMO-001', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ salesOrderNo = 'SO-DEMO-001'; status = 'Released' }) } }
+                }
+                if ([string]::Equals([string]$FactName, 'WO-DEMO-Q01', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ workOrderId = 'WO-DEMO-Q01'; status = 'released' } }
+                }
+                if ([string]::Equals([string]$FactName, 'DEV-CNC-DEMO', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ resources = @(
                         [pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true },
                         [pscustomobject]@{ resourceType = 'device-asset'; code = 'DEV-CNC-DEMO'; active = $true }
-                    ) } } }
-                    'ALARM-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } } }
-                    'MWO-DEMO-001' { [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } } }
+                    ) } }
+                }
+                if ([string]::Equals([string]$FactName, 'ALARM-DEMO-001', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; ruleCode = 'ALARM-DEMO-001'; isEnabled = $true }) } }
+                }
+                if ([string]::Equals([string]$FactName, 'MWO-DEMO-001', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ data = [pscustomobject]@{ items = @([pscustomobject]@{ deviceAssetId = 'DEV-CNC-DEMO'; sourceAlarmId = 'ALARM-DEMO-001'; sourceReferenceId = 'MWO-DEMO-001'; status = 'Open' }) } }
                 }
             } | Out-Null
     }
@@ -816,11 +825,11 @@ try {
         Where-Object { $_.Directory.Name.StartsWith('20260720T123856000Z-', [StringComparison]::Ordinal) } |
         Select-Object -First 1 -ExpandProperty FullName
     $factFailureEvidence = Get-Content -LiteralPath $factEvidencePath -Raw | ConvertFrom-Json -Depth 50
-    $deviceFactFailure = @($factFailureEvidence.facts | Where-Object { $_.key -ceq 'DEV-CNC-DEMO' })
+    $deviceFactFailure = @($factFailureEvidence.facts | Where-Object { [string]::Equals([string]$_.key, 'DEV-CNC-DEMO', [StringComparison]::Ordinal) })
     Assert-True ($deviceFactFailure.Count -eq 1 -and -not $deviceFactFailure[0].found) 'Failed fact evidence must retain the exact duplicated key.'
     Assert-True ($deviceFactFailure[0].matchCount -eq 2) 'Failed fact evidence must expose the duplicate match count.'
     Assert-True ($deviceFactFailure[0].hint.Contains($leaderManifest.artifactPath)) 'Failed fact remediation must include the diagnostic artifact path.'
-    Assert-True ($deviceFactFailure[0].hint.Contains('.\nerv.ps1 demo reset')) 'Failed fact remediation must include a bounded recovery command.'
+    Assert-True ($deviceFactFailure[0].hint.Contains('.\nerv.ps1 demo reset', [StringComparison]::Ordinal)) 'Failed fact remediation must include a bounded recovery command.'
 }
 finally {
     Remove-Item -LiteralPath $leaderEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
@@ -908,12 +917,12 @@ $leaderDemoScenario = Invoke-NervLeaderDemoMainChainScenario `
     -BrowserAction { param($Environment, $Manifest) $script:leaderDemoEnvironment = $Environment }
 Assert-True ($leaderDemoScenario.ExitCode -eq 0) 'Healthy injected leader-demo scenario must pass.'
 foreach ($name in @('postgres', 'redis', 'business-erp', 'business-demand-planning', 'business-mes', 'business-scheduling', 'business-quality', 'business-inventory', 'business-wms')) {
-    Assert-True ($script:leaderDemoWaits -ccontains $name) "Leader-demo scenario did not wait for '$name'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($script:leaderDemoWaits), [StringComparer]::Ordinal).Contains($name)) "Leader-demo scenario did not wait for '$name'."
 }
-Assert-True ($script:leaderDemoEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'process-only-password') 'Leader-demo browser password must remain process-only.'
-Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE -ceq 'session-manifest') 'Leader-demo evidence profile must be sourced from the session manifest.'
-Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_TRANSPORT -ceq 'redis-cross-process') 'Leader-demo browser evidence must inherit the Redis transport fact.'
-Assert-True ($script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_PERSISTENCE -ceq 'postgresql') 'Leader-demo browser evidence must inherit the PostgreSQL persistence fact.'
+Assert-True ([string]::Equals([string]$script:leaderDemoEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD, 'process-only-password', [StringComparison]::Ordinal)) 'Leader-demo browser password must remain process-only.'
+Assert-True ([string]::Equals([string]$script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE, 'session-manifest', [StringComparison]::Ordinal)) 'Leader-demo evidence profile must be sourced from the session manifest.'
+Assert-True ([string]::Equals([string]$script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_TRANSPORT, 'redis-cross-process', [StringComparison]::Ordinal)) 'Leader-demo browser evidence must inherit the Redis transport fact.'
+Assert-True ([string]::Equals([string]$script:leaderDemoEnvironment.NERV_IIP_MAIN_CHAIN_PERSISTENCE, 'postgresql', [StringComparison]::Ordinal)) 'Leader-demo browser evidence must inherit the PostgreSQL persistence fact.'
 $unrelatedFinishedScenario = Invoke-NervLeaderDemoMainChainScenario `
     -Manifest $scenarioManifest `
     -SessionAdminPassword 'process-only-password' `
@@ -991,7 +1000,8 @@ try {
     $equipmentNodes = @(Get-NervLeaderDemoEquipmentBranchNodes)
     Assert-True ($qualityNodes.Count -eq 7) 'The quality branch must declare exactly seven evidence nodes.'
     Assert-True ($equipmentNodes.Count -eq 7) 'The equipment branch must declare exactly seven evidence nodes.'
-    Assert-True ($qualityNodes -ccontains 'ncr-disposition-approved-rework') 'The quality branch must claim the NCR disposition hop as a required node.'
+    $qualityRequiredNode = 'ncr-disposition-approved-rework'
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($qualityNodes), [StringComparer]::Ordinal).Contains($qualityRequiredNode)) 'The quality branch must claim the NCR disposition hop as a required node.'
 
     $qualityEvidencePath = Join-Path $branchEvidenceRoot 'quality.json'
     $qualityIdentities = [ordered]@{ workOrderNo = 'WO-20260725-000001'; ncrCode = 'NCR-org001-envdev-0123456789abcdef0123456789abcdef' }
@@ -999,11 +1009,11 @@ try {
     Write-NervBranchEvidenceFixture -Path $qualityEvidencePath -Entries $qualityEntries -Identities $qualityIdentities
     $validatedQuality = Assert-NervLeaderDemoQualityBranchEvidence -EvidencePath $qualityEvidencePath
     Assert-True (@($validatedQuality.entries).Count -eq $qualityNodes.Count) 'Quality-branch evidence must validate every required node.'
-    Assert-True (@($validatedQuality.entries | Where-Object { "$($_.node)" -ceq 'ncr-disposition-approved-rework' }).Count -eq 1) 'Quality-branch evidence must carry the NCR disposition node.'
+    Assert-True (@($validatedQuality.entries | Where-Object { [string]::Equals([string]$_.node, 'ncr-disposition-approved-rework', [StringComparison]::Ordinal) }).Count -eq 1) 'Quality-branch evidence must carry the NCR disposition node.'
 
     # The pre-#1102 six-node shape must now be red: a run that silently drops the disposition hop
     # is exactly the regression this gate exists to catch.
-    $qualityLegacyNodes = @($qualityNodes | Where-Object { $_ -cne 'ncr-disposition-approved-rework' })
+    $qualityLegacyNodes = @($qualityNodes | Where-Object { -not [string]::Equals([string]$_, 'ncr-disposition-approved-rework', [StringComparison]::Ordinal) })
     Write-NervBranchEvidenceFixture `
         -Path $qualityEvidencePath `
         -Entries (New-NervBranchEvidenceEntries -Nodes $qualityLegacyNodes -StableKey 'WO-20260725-000001') `
@@ -1211,12 +1221,12 @@ $qualityBranchScenario = Invoke-NervLeaderDemoQualityBranchScenario `
     -BrowserAction { param($Environment, $Manifest) $script:qualityBranchEnvironment = $Environment }
 Assert-True ($qualityBranchScenario.ExitCode -eq 0) 'Healthy injected quality-branch scenario must pass.'
 foreach ($name in @('postgres', 'redis', 'business-gateway', 'business-master-data', 'business-quality', 'business-mes', 'business-approval')) {
-    Assert-True ($script:qualityBranchWaits -ccontains $name) "Quality-branch scenario did not wait for '$name'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($script:qualityBranchWaits), [StringComparer]::Ordinal).Contains($name)) "Quality-branch scenario did not wait for '$name'."
 }
-Assert-True ($script:qualityBranchEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'process-only-password') 'Quality-branch browser password must remain process-only.'
-Assert-True ($script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_RUNTIME_PROFILE_SOURCE -ceq 'session-manifest') 'Quality-branch evidence profile must be sourced from the session manifest.'
-Assert-True ($script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_TRANSPORT -ceq 'redis-cross-process') 'Quality-branch browser evidence must inherit the Redis transport fact.'
-Assert-True ($script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_PERSISTENCE -ceq 'postgresql') 'Quality-branch browser evidence must inherit the PostgreSQL persistence fact.'
+Assert-True ([string]::Equals([string]$script:qualityBranchEnvironment.NERV_IIP_FULLSTACK_ADMIN_PASSWORD, 'process-only-password', [StringComparison]::Ordinal)) 'Quality-branch browser password must remain process-only.'
+Assert-True ([string]::Equals([string]$script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_RUNTIME_PROFILE_SOURCE, 'session-manifest', [StringComparison]::Ordinal)) 'Quality-branch evidence profile must be sourced from the session manifest.'
+Assert-True ([string]::Equals([string]$script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_TRANSPORT, 'redis-cross-process', [StringComparison]::Ordinal)) 'Quality-branch browser evidence must inherit the Redis transport fact.'
+Assert-True ([string]::Equals([string]$script:qualityBranchEnvironment.NERV_IIP_QUALITY_BRANCH_PERSISTENCE, 'postgresql', [StringComparison]::Ordinal)) 'Quality-branch browser evidence must inherit the PostgreSQL persistence fact.'
 $qualityBranchFinishedFailed = $false
 try {
     Invoke-NervLeaderDemoQualityBranchScenario `
@@ -1250,11 +1260,11 @@ $equipmentBranchScenario = Invoke-NervLeaderDemoEquipmentBranchScenario `
     -BrowserAction { param($Environment, $Manifest) $script:equipmentBranchEnvironment = $Environment }
 Assert-True ($equipmentBranchScenario.ExitCode -eq 0) 'Healthy injected equipment-branch scenario must pass.'
 foreach ($name in @('postgres', 'redis', 'business-gateway', 'business-master-data', 'business-industrial-telemetry', 'business-maintenance')) {
-    Assert-True ($script:equipmentBranchWaits -ccontains $name) "Equipment-branch scenario did not wait for '$name'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($script:equipmentBranchWaits), [StringComparer]::Ordinal).Contains($name)) "Equipment-branch scenario did not wait for '$name'."
 }
-Assert-True ($script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_RUNTIME_PROFILE_SOURCE -ceq 'session-manifest') 'Equipment-branch evidence profile must be sourced from the session manifest.'
-Assert-True ($script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_TRANSPORT -ceq 'redis-cross-process') 'Equipment-branch browser evidence must inherit the Redis transport fact.'
-Assert-True ($script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_PERSISTENCE -ceq 'postgresql') 'Equipment-branch browser evidence must inherit the PostgreSQL persistence fact.'
+Assert-True ([string]::Equals([string]$script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_RUNTIME_PROFILE_SOURCE, 'session-manifest', [StringComparison]::Ordinal)) 'Equipment-branch evidence profile must be sourced from the session manifest.'
+Assert-True ([string]::Equals([string]$script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_TRANSPORT, 'redis-cross-process', [StringComparison]::Ordinal)) 'Equipment-branch browser evidence must inherit the Redis transport fact.'
+Assert-True ([string]::Equals([string]$script:equipmentBranchEnvironment.NERV_IIP_EQUIPMENT_BRANCH_PERSISTENCE, 'postgresql', [StringComparison]::Ordinal)) 'Equipment-branch browser evidence must inherit the PostgreSQL persistence fact.'
 $equipmentBranchFinishedFailed = $false
 try {
     Invoke-NervLeaderDemoEquipmentBranchScenario `
@@ -1278,8 +1288,8 @@ $nervEntrypointScenarioNames = @(
         Select-Object -First 1 -ExpandProperty ValidValues
 )
 foreach ($scenarioName in @('leader-demo-quality-branch', 'leader-demo-equipment-branch')) {
-    Assert-True ($branchScenarioNames -ccontains $scenarioName) "fullstack-session.ps1 must accept -Scenario '$scenarioName'."
-    Assert-True ($nervEntrypointScenarioNames -ccontains $scenarioName) "nerv.ps1 must accept -Scenario '$scenarioName'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($branchScenarioNames), [StringComparer]::Ordinal).Contains($scenarioName)) "fullstack-session.ps1 must accept -Scenario '$scenarioName'."
+    Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($nervEntrypointScenarioNames), [StringComparer]::Ordinal).Contains($scenarioName)) "nerv.ps1 must accept -Scenario '$scenarioName'."
 }
 # A failing branch run must leave the log that explains it; the diagnostic sweep therefore has to
 # cover every service the branch scenarios wait on.
@@ -1347,7 +1357,7 @@ try {
         -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
 }
 catch { $managedScenarioFailure = $_.Exception.Message }
-Assert-True ($managedScenarioFailure -eq 'original scenario failure') 'Managed run must preserve the original scenario error.'
+Assert-True ([string]::Equals([string]$managedScenarioFailure, 'original scenario failure', [StringComparison]::Ordinal)) 'Managed run must preserve the original scenario error.'
 Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
 Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
 
@@ -1360,7 +1370,7 @@ try {
         -StopAction { param($Manifest) throw 'cleanup failure wins' } | Out-Null
 }
 catch { $managedCleanupFailure = $_.Exception.Message }
-Assert-True ($managedCleanupFailure -eq 'cleanup failure wins') 'Cleanup failure must take precedence after cleanup was attempted.'
+Assert-True ([string]::Equals([string]$managedCleanupFailure, 'cleanup failure wins', [StringComparison]::Ordinal)) 'Cleanup failure must take precedence after cleanup was attempted.'
 
 $script:dockerRetryCalls = 0
 $dockerRetryResult = Invoke-NervDockerCleanupWithRetry `
@@ -1385,7 +1395,7 @@ $aspireRetryResult = Invoke-NervAspireStartWithRetry `
     } `
     -CleanupAction { $script:aspireRetryCleanupCalls++ } `
     -DelayAction { param($Attempt) }
-Assert-True ($aspireRetryResult -eq 'started') 'Aspire startup retry must return the successful result.'
+Assert-True ([string]::Equals([string]$aspireRetryResult, 'started', [StringComparison]::Ordinal)) 'Aspire startup retry must return the successful result.'
 Assert-True ($script:aspireRetryCalls -eq 2) 'Aspire startup must retry one transient MSBuild resource failure.'
 Assert-True ($script:aspireRetryCleanupCalls -eq 1) 'Aspire startup retry must clean the failed attempt first.'
 
@@ -1422,7 +1432,7 @@ $guardianResult = Invoke-NervFullStackGuardian `
         if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
     } `
     -DelayAction { param($Seconds) }
-Assert-True ($guardianResult.State -eq 'Stopped') 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
+Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
 
@@ -1472,7 +1482,7 @@ try {
     Assert-True ($script:processStopCalls -eq 1) 'A stopped session must not stop recorded processes twice.'
     Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
     $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
-    Assert-True ($stoppedManifest.state -eq 'Stopped') 'A complete stop must persist Stopped.'
+    Assert-True ([string]::Equals([string]$stoppedManifest.state, 'Stopped', [StringComparison]::Ordinal)) 'A complete stop must persist Stopped.'
 
     $failedStopSessionId = 'nerv-dead-000004'
     $failedStopManifest = New-NervFullStackManifest `
@@ -1490,9 +1500,12 @@ try {
         -ProcessStopAction { param($Manifest) throw 'process stop failed' } `
         -DockerRemoveAction { param($Manifest) [pscustomobject]@{ Complete = $true; Remaining = @() } }
     Assert-True (-not $failedStop.Complete) 'Aspire or process cleanup errors must prevent a successful stop result.'
-    Assert-True ($failedStop.Manifest.state -eq 'CleanupFailed') 'Aspire or process cleanup errors must persist CleanupFailed.'
-    Assert-True ($failedStop.Remaining -ccontains 'aspire:stop-failed') 'Aspire cleanup failure must be explicit.'
-    Assert-True ($failedStop.Remaining -ccontains 'process:stop-failed') 'Process cleanup failure must be explicit.'
+    Assert-True ([string]::Equals([string]$failedStop.Manifest.state, 'CleanupFailed', [StringComparison]::Ordinal)) 'Aspire or process cleanup errors must persist CleanupFailed.'
+    $aspireStopFailure = 'aspire:stop-failed'
+    $processStopFailure = 'process:stop-failed'
+    $remainingFailures = [Collections.Generic.HashSet[string]]::new([string[]]@($failedStop.Remaining), [StringComparer]::Ordinal)
+    Assert-True ($remainingFailures.Contains($aspireStopFailure)) 'Aspire cleanup failure must be explicit.'
+    Assert-True ($remainingFailures.Contains($processStopFailure)) 'Process cleanup failure must be explicit.'
 }
 finally {
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
