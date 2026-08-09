@@ -2,7 +2,7 @@
 
 ## 背景
 
-#77 已把业务 P0 全链路验收收口到可继续推进业务系统的状态；#170 到 #175 已落地事件契约守门、CAP/outbox（发件箱）单服务真实基础设施验收、`client_credentials`（客户端凭据授权）、生产安全配置、部署产物和 opt-in（显式启用）性能基线骨架。当前缺口不再是“业务功能是否能开发”，而是“生产环境是否能可靠交付、审计、恢复和验收”。
+#77 已把业务 P0 全链路验收收口到可继续推进业务系统的状态；#170 到 #175 已落地事件契约守门、CAP/outbox（发件箱）单服务真实基础设施验收、client_credentials（客户端凭据授权）、生产安全配置、部署产物和 opt-in（显式启用）性能基线骨架。当前缺口不再是“业务功能是否能开发”，而是“生产环境是否能可靠交付、审计、恢复和验收”。
 
 P2 不作为业务建模和 Business Console 后续页面的前置阻塞。它作为生产准入线并行推进，按可靠性、交付验收、运维安全、企业身份四条线拆分成小 PR，避免一个超大 PR 同时改消息、IAM、Ops、部署和性能。
 
@@ -11,7 +11,7 @@ P2 不作为业务建模和 Business Console 后续页面的前置阻塞。它�
 1. 事件可靠性硬化：把现有 in-memory DLQ（内存死信队列）基线推进到 Notification、AppHub 和 MES 的 PostgreSQL 持久 DLQ/inbox（死信队列/收件箱），并补跨服务真实 CAP 多进程验收入口。
 2. 部署演练与性能阈值化：在现有生产部署产物和 opt-in 性能基线基础上增加阈值、失败门禁和部署演练脚本。
 3. Ops 高风险动作审批与通知联动：把 restart 等高风险动作从直接执行升级为申请、审批、执行、通知和审计闭环。
-4. IAM 企业身份深化：在现有 IAM 用户、角色、权限、session（会话）和 `client_credentials`（客户端凭据授权）基线上补 OIDC/SSO 入口、MFA 钩子和资源范围 ABAC 约束。
+4. IAM 企业身份深化：在现有 IAM 用户、角色、权限、session（会话）和 client_credentials（客户端凭据授权）基线上补 OIDC/SSO 入口、MFA 钩子和资源范围 ABAC 约束。
 
 ## 分阶段设计
 
@@ -41,11 +41,11 @@ BusinessApproval 可作为业务审批能力，不直接承载平台运维审批
 
 ### 4. IAM 企业身份深化
 
-IAM 已有 persistent users/roles/permissions/sessions（持久用户/角色/权限/会话）、JWT、refresh token（刷新令牌）、internal authorization check（内部授权检查）和 `client_credentials`（客户端凭据授权）。P2 不一次性实现完整 OAuth/OIDC 认证服务器。推荐顺序是：先做外部 OIDC provider login callback（提供方登录回调）和 claims mapping（声明映射），再做 SSO session binding（会话绑定），再做 MFA challenge hook（质询钩子），最后做 ABAC resource scope（资源范围）。
+IAM 已有 persistent users/roles/permissions/sessions（持久用户/角色/权限/会话）、JWT、refresh token（刷新令牌）、internal authorization check（内部授权检查）和 client_credentials（客户端凭据授权）。P2 不一次性实现完整 OAuth/OIDC 认证服务器。推荐顺序是：先做外部 OIDC provider login callback（提供方登录回调）和 claims mapping（声明映射），再做 SSO session binding（会话绑定），再做 MFA challenge hook（质询钩子），最后做 ABAC resource scope（资源范围）。
 
 ABAC 的第一版只覆盖组织、环境、资源类型和资源 ID 范围，不引入复杂策略语言。Gateway 继续作为终端用户 bearer token（持有者令牌）的 enforcement boundary（强制执行边界），业务服务只接受 internal service token（内部服务令牌）。
 
-2026-05-27 收口：IAM 已提供配置驱动的外部 OIDC callback（回调）入口 `/api/iam/v1/auth/oidc/callback`，按 provider callback secret（提供方回调密钥）、subject（主体）、email（电子邮箱）、`organizationId` 和 `environmentId` 映射既有 IAM 用户与 membership（成员关系）；`RequireMfa=true` 时先返回 MFA challenge（质询），再由 `/api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 换发 session（会话）。`user_sessions` 增加 authentication method（认证方式）、external provider（外部提供方）、external subject（外部主体）和 MFA verified time（验证时间），用于 SSO session binding（会话绑定）。`authorization_grants` 增加 resource type/resource ID（资源类型/资源 ID），ExternalClient internal authorization check（内部授权检查）会同时校验 permission（权限）、organization/environment（组织/环境）和资源范围；`*` 表示 wildcard（通配符）。本阶段仍不实现完整 OAuth/OIDC 授权码服务器、`id_token`/JWKS 校验、consent（同意授权）页面、动态客户端注册 UI、WebAuthn 或复杂策略语言。
+2026-05-27 收口：IAM 已提供配置驱动的外部 OIDC callback（回调）入口 `/api/iam/v1/auth/oidc/callback`，按 provider callback secret（提供方回调密钥）、subject（主体）、email（电子邮箱）、organizationId 和 environmentId 映射既有 IAM 用户与 membership（成员关系）；`RequireMfa=true` 时先返回 MFA challenge（质询），再由 `/api/iam/v1/auth/mfa/challenges/{challengeId}/verify` 换发 session（会话）。`user_sessions` 增加 authentication method（认证方式）、external provider（外部提供方）、external subject（外部主体）和 MFA verified time（验证时间），用于 SSO session binding（会话绑定）。`authorization_grants` 增加 resource type/resource ID（资源类型/资源 ID），ExternalClient internal authorization check（内部授权检查）会同时校验 permission（权限）、organization/environment（组织/环境）和资源范围；`*` 表示 wildcard（通配符）。本阶段仍不实现完整 OAuth/OIDC 授权码服务器、id_token/JWKS 校验、consent（同意授权）页面、动态客户端注册 UI、WebAuthn 或复杂策略语言。
 
 ## 验收口径
 
