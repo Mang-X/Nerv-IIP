@@ -59,7 +59,7 @@
 
 - **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/architecture/master-data-module-product-design.md`（基础数据）。新域开工先立此文档。
 - **导航总图**：`docs/architecture/frontend-navigation-map.md`——IA/导航变更必须同步。
-- **后端缺口**：发现 facade 缺端点，**整批审计后向 Codex 提交汇总 Issue**（不要遇到一个发一个），并在模块文档「后端缺口」回填 Issue 号。
+- **后端缺口**：发现门面缺端点，**整批审计后向 Codex 提交汇总 Issue**（不要遇到一个发一个），并在模块文档「后端缺口」回填 Issue 号。
 - 顺序铁律：**先有/先更文档方案 → 再重构**。
 
 ## 3. 东西在哪里（让代理快速定位修改点）
@@ -83,7 +83,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 - 复用 `@nerv-iip/ui` 区块组件（PageHeader/DataTable/Toolbar… 定义见 §3）；**禁止改 shadcn 原版组件**（要定制就复制重建为应用级组件）。
 - **区块是标准页的基线、不是上限**：常规列表/工作台用区块拼（快、一致）；当产品 / UX 需要区块给不了的呈现或交互时，按 §1 优先级**大胆新建组件 / 交互**（复制重建，绝不改原版），别为迁就现有件牺牲产品感。
 - 列表骨架 `PageHeader + Toolbar + DataTable + DataTablePagination`（**SectionCards 可选、非默认**，见 §1.5-B 第 8 条）；分页用 `usePagedList`。页内 Tabs 属布局、**不进菜单树**。
-- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示 facade 返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 `frontend/DESIGN/patterns/pages/list-workbench.md` 与 `blocks/app-shell.md`（含**每个导航项必须带图标**）。
+- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示门面返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 `frontend/DESIGN/patterns/pages/list-workbench.md` 与 `blocks/app-shell.md`（含**每个导航项必须带图标**）。
 - **不做假分页、不在 UI 伪造能力 / 不假装闭环**：后端无分页/无端点就如实处理（整列表渲染 或 入口禁用+说明）；别编 `WO-PLAN-xxx` 之类冒充下游单据假装跨域闭环（曾踩坑：planning"接受建议"后端并不建 MES 工单）；发 Issue，不糊弄。
 - **但要 seed / mock 真实感数据看效果**：页面做完必须拉起来看真实数据——后端有接口就脚本 seed（如 `tmp_seed_*.py`），缺接口就前端 mock（E2E `page.route` / 本地桩）跑通视觉；"看不到实际效果就不算完"。**seed/mock 的数据要像真实业务**（真实物料 / 工序 / 单号口径），**绝不写"测试 / test / 样例 / demo / foo / bar"或一眼假的文字**——"不做假数据"指不在 UI 伪造能力，不是不准为验证而造真实感数据。
 - **UI 不暴露工程语言**：operationId / sourceSystem / code / policy / resourceType / demo / seed / mock / GitHub Issue 号等不进业务界面（`goldStandardPages.contract.test.ts` 会拦 demo/seed/mock/样例等词并校验必备区块）。
