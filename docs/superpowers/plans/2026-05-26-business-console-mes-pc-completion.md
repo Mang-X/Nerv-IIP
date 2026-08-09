@@ -1,401 +1,401 @@
-# Business Console MES PC Completion Implementation Plan
+# Business Console MES PC 端完善实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-> **2026-05-27 Rebaseline:** This plan delivered a broad PC workbench surface, but it is no longer the canonical next-step plan for MES delivery. Future MES work must follow `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`, which requires server-side numbering, complete source data, released engineering versions, MRP/procurement readiness, APS lite scheduling contracts, equipment IIoT runtime facts and durable MES execution facts before further page completion work is counted as delivered.
+> **2026-05-27 重定基线：**本计划交付了广泛的 PC 工作台界面，但已不再是 MES 后续交付的规范计划。未来 MES 工作必须遵循 `docs/superpowers/plans/2026-05-27-mes-operational-foundation-reset.md`；只有具备服务端编号、完整源数据、已发布工程版本、MRP/采购就绪、轻量 APS 排程契约、设备 IIoT 运行时事实以及持久化 MES 执行事实后，后续页面完善工作才能计为已交付。
 
-**Goal:** Complete a PC-first, standard MES workbench so production planners, supervisors, shift leaders, material handlers, quality inspectors, and maintenance coordinators can run the real shop-floor loop from production plan readiness through work order release, material readiness, dispatching, operation execution, reporting, quality handling, finished-goods receipt, shift handover, and traceability before starting PDA/mobile work.
+**目标：**先完善符合标准的 PC 端 MES 工作台，使生产计划员、主管、班组长、物料员、质检员和维护协调员能在启动 PDA/移动端工作前，运行从生产计划就绪、工单下达、物料齐套、派工、工序执行、报工、质量处理、成品入库、班次交接到追溯的真实车间闭环。
 
-**Architecture:** BusinessGateway remains the Business Console BFF and the only frontend-facing API for `/api/business-console/v1/**`; it performs user bearer validation, IAM permission checks, organization/environment context propagation, and internal service-token calls. MES owns shop-floor execution facts: work orders, operation tasks, dispatching, WIP state, production reports, material consumption evidence, downtime events, finished-goods receipt requests, shift handover, and genealogy snapshots. ProductEngineering, DemandPlanning, MasterData, Quality, WMS/Inventory, Maintenance/IndustrialTelemetry, and ERP are integrated through narrow read/action facades where the MES workbench must see or trigger their facts; MES must not take over their source-of-truth responsibilities. The first release uses direct Chinese UI copy in Vue pages and defers a full i18n catalog workflow.
+**架构：**BusinessGateway 继续作为 Business Console 的 BFF，也是 `/api/business-console/v1/**` 唯一面向前端的 API；它负责用户 bearer 验证、IAM 权限检查、组织/环境上下文传递以及内部服务令牌调用。MES 拥有车间执行事实：工单、工序任务、派工、WIP 状态、生产报工、物料消耗证据、停机事件、成品入库请求、班次交接和谱系快照。当 MES 工作台必须查看或触发 ProductEngineering、DemandPlanning、MasterData、Quality、WMS/Inventory、Maintenance/IndustrialTelemetry 和 ERP 的事实时，通过窄粒度读取/动作 facade 集成；MES 不得接管这些服务的事实来源职责。首个版本在 Vue 页面中直接使用中文 UI 文案，并延后完整的 i18n 目录工作流。
 
-**Tech Stack:** .NET 10, FastEndpoints, CleanDDD service boundaries, BusinessGateway facade, Hey API generated `@nerv-iip/api-client`, Vue 3, Vite Plus, Pinia Colada, `@nerv-iip/ui`, Playwright.
+**技术栈：**.NET 10、FastEndpoints、CleanDDD 服务边界、BusinessGateway facade、由 Hey API 生成的 `@nerv-iip/api-client`、Vue 3、Vite Plus、Pinia Colada、`@nerv-iip/ui`、Playwright。
 
-## Implementation Closure — 2026-05-26
+## 实施收口 — 2026-05-26
 
-This plan is implemented in PR #185 for the PC-first Business Console MES workbench:
+本计划已在 PR #185 中为 PC 优先的 Business Console MES 工作台完成实施：
 
-- Backend MES now exposes the P0 workbench surface for production plans, readiness, work order release, material issue request, dispatch, operation task lifecycle, WIP, production reports, defects, downtime, receipt requests, shift handover, traceability, schedules, and capacity impacts.
-- BusinessGateway exposes the matching `/api/business-console/v1/mes/**` facade routes with narrow IAM permission codes and generated OpenAPI/client coverage.
-- Business Console now has Chinese PC routes for `生产驾驶舱`、`基础准备`、`生产计划`、`计划与工单`、`齐套与物料`、`派工看板`、`工序执行`、`报工与完工`、`质量与不良`、`完工入库`、`规则排程`、`设备与停机`、`班次交接`、`追溯查询` 和 `产能影响`。
-- `scripts/verify-business-console-mes-pc-workbench.ps1` is the focused verification gate. It covers MES tests, BusinessGateway tests, api-client generation/typecheck/test, and Business Console typecheck/test/build; e2e is opt-in through `-E2E`.
-- PDA/mobile remains deferred until these PC contracts stabilize.
+- 后端 MES 现已暴露生产计划、就绪检查、工单下达、领料请求、派工、工序任务生命周期、WIP、生产报工、不良、停机、入库请求、班次交接、追溯、排程和产能影响等 P0 工作台界面。
+- BusinessGateway 暴露匹配的 `/api/business-console/v1/mes/**` facade 路由，并配有窄粒度 IAM 权限码以及生成的 OpenAPI/客户端覆盖。
+- Business Console 现已具有中文 PC 路由：`生产驾驶舱`、`基础准备`、`生产计划`、`计划与工单`、`齐套与物料`、`派工看板`、`工序执行`、`报工与完工`、`质量与不良`、`完工入库`、`规则排程`、`设备与停机`、`班次交接`、`追溯查询` 和 `产能影响`。
+- `scripts/verify-business-console-mes-pc-workbench.ps1` 是聚焦验证门禁。它覆盖 MES 测试、BusinessGateway 测试、api-client 的生成/类型检查/测试，以及 Business Console 的类型检查/测试/构建；e2e 通过 `-E2E` 按需启用。
+- PDA/移动端继续延后，直至这些 PC 契约稳定。
 
 ---
 
-## Baseline Decision
+## 基线决策
 
-This plan replaces the mobile/PDA-first next-step assumption with a PC-first business implementation sequence:
+本计划以 PC 优先的业务实施顺序，取代下一步优先移动端/PDA 的假设：
 
-1. Finish Business Console desktop pages first, with MES as the first deep workbench.
-2. Design MES from the standard manufacturing execution flow, not from the current MVP endpoint list.
-3. Start from API/BFF contracts, because MES pages depend on data from MES plus several neighboring business contexts.
-4. Advance MES together with the minimum related business interfaces instead of trying to finish every surrounding system.
-5. Treat production planning and material staging as MES-visible execution capabilities, while keeping long-horizon planning, warehouse execution, and inventory accounting in their owning services.
-6. Defer PDA/mobile until the desktop workflow and generated Business Console contracts are stable.
-7. Use Chinese text directly in the first page implementation. The repository has i18n concepts, but the first MES workbench should not pay the cost of a complete translation catalog, locale routing, and copy governance workflow.
+1. 首先完成 Business Console 桌面页面，并以 MES 作为首个深度工作台。
+2. 从标准制造执行流程设计 MES，而不是围绕当前 MVP endpoint 清单设计。
+3. 从 API/BFF 契约开始，因为 MES 页面依赖 MES 及多个相邻业务上下文的数据。
+4. 在推进 MES 的同时只完善最少量相关业务接口，而不是试图完成每个周边系统。
+5. 将生产计划和物料备料视为 MES 可见的执行能力，同时让长期规划、仓库执行和库存核算继续归属各自服务。
+6. 延后 PDA/移动端，直至桌面工作流和生成的 Business Console 契约稳定。
+7. 首轮页面实施直接使用中文文本。仓库虽有 i18n 概念，但首个 MES 工作台不应承担完整翻译目录、语言区域路由和文案治理工作流的成本。
 
-## Standard MES Reference Model
+## 标准 MES 参考模型
 
-The first MES workbench should follow the common MES/MOM shape used by ISA-95 and mature systems rather than only exposing CRUD pages:
+首个 MES 工作台应遵循 ISA-95 和成熟系统采用的常见 MES/MOM 形态，而不是只暴露 CRUD 页面：
 
-| Reference | Relevant design signal |
+| 参考资料 | 相关设计启示 |
 | --- | --- |
-| [ISA-95 / IEC 62264](https://www.isa.org/standards-and-publications/isa-standards/isa-95-standard) | Level 3 Manufacturing Operations Management covers production operations and the interfaces between Level 3 manufacturing systems and Level 4 business systems. Use it to keep ERP planning/finance separate from shop-floor execution. |
-| [Siemens Opcenter Execution](https://www.siemens.com/en-gb/products/opcenter/execution/discrete/) | Mature MES emphasizes work orders, materials/components/process changes, production tracking, JIT/JIS material visibility, quality, and traceability. |
-| [Siemens Opcenter APS / Planning and Scheduling](https://www.siemens.com/en-us/products/opcenter/production-planning-scheduling-capabilities/) | Advanced planning and finite-capacity scheduling are separate planning/scheduling capabilities. MES should consume or perform short-horizon dispatching, not become full APS in the first release. |
-| [SAP Digital Manufacturing](https://www.sap.com/products/scm/digital-manufacturing.html) | Resource orchestration includes live operations planning using warehouse/inventory, quality, labor, and maintenance variables; execution tracks labor, work instructions, scrap, rework, and process controls. |
-| [SAP Digital Manufacturing + EWM staging](https://help.sap.com/docs/sap-digital-manufacturing/execution/614d9a19fb28417fbd200cd0c200b75c.html) | MES can trigger material staging requests based on order, dispatching, resource, work center, and production-supply-area context, while EWM/WMS executes warehouse tasks. |
-| [Rockwell Plex MES/MOM](https://plex.rockwellautomation.com/en-us/products/manufacturing-execution-system.html) | Mature MES is production management with real-time visibility, quality, inventory/material traceability, barcode scanning, and compliance evidence. |
+| [ISA-95 / IEC 62264](https://www.isa.org/standards-and-publications/isa-standards/isa-95-standard) | 第 3 层制造运营管理覆盖生产运营，以及第 3 层制造系统与第 4 层业务系统之间的接口。以此保持 ERP 计划/财务与车间执行分离。 |
+| [Siemens Opcenter Execution](https://www.siemens.com/en-gb/products/opcenter/execution/discrete/) | 成熟 MES 强调工单、物料/组件/工艺变更、生产跟踪、JIT/JIS 物料可见性、质量和追溯。 |
+| [Siemens Opcenter APS / Planning and Scheduling](https://www.siemens.com/en-us/products/opcenter/production-planning-scheduling-capabilities/) | 高级计划和有限产能排程是独立的计划/排程能力。MES 应消费或执行短周期派工，不应在首个版本中变成完整 APS。 |
+| [SAP Digital Manufacturing](https://www.sap.com/products/scm/digital-manufacturing.html) | 资源编排包含利用仓库/库存、质量、劳动力和维护变量进行实时运营计划；执行侧跟踪劳动力、作业指导、报废、返工和过程控制。 |
+| [SAP Digital Manufacturing + EWM staging](https://help.sap.com/docs/sap-digital-manufacturing/execution/614d9a19fb28417fbd200cd0c200b75c.html) | MES 可根据工单、派工、资源、工作中心和生产供应区上下文触发物料备料请求，而 EWM/WMS 执行仓库任务。 |
+| [Rockwell Plex MES/MOM](https://plex.rockwellautomation.com/en-us/products/manufacturing-execution-system.html) | 成熟 MES 是具备实时可见性、质量、库存/物料追溯、条码扫描和合规证据的生产管理系统。 |
 
-### P0 MES Core For This Plan
+### 本计划的 P0 MES 核心
 
-| Capability | MES owns the fact? | First-release expectation |
+| 能力 | MES 是否拥有该事实？ | 首个版本预期 |
 | --- | --- | --- |
-| Production plan readiness and order release | Partly | MES workbench evaluates whether DemandPlanning/ERP suggestions can become executable work orders. Long-horizon plan facts stay in DemandPlanning/ERP. |
-| Work order execution | Yes | Work order status, release snapshot, execution state, priority, rush/insert handling, and close/reopen controls. |
-| Operation dispatching | Yes | Assign operation tasks to line/work center/device/person/shift; prevent or warn on missing material, quality hold, or unavailable equipment. |
-| WIP tracking | Yes | Track current operation, waiting/running/paused/complete/held state, quantity movement between operations, and blocking reasons. |
-| Production reporting | Yes | Good, scrap, rework, labor time, machine time, start/end, operator, device, and operation status effects. |
-| Material consumption evidence | Yes for execution evidence | Record actual material batch/serial consumption against order/operation. Inventory balances and warehouse tasks stay outside MES. |
-| Material readiness and issue request | MES-visible trigger | MES calculates readiness from BOM/routing/work center context and inventory/WMS availability, then creates staging/issue requests for WMS/Inventory execution. |
-| Process quality and nonconformance | Partly | MES captures in-process defects and blocks execution; Quality owns inspection standards, NCR lifecycle, and formal disposition. |
-| Downtime and equipment impact | Yes for execution event | MES records production-impacting downtime and recovery confirmation; Maintenance owns maintenance work orders and asset lifecycle. |
-| Finished-goods receipt request | Yes for production request | MES creates the request after production/quality readiness; WMS/Inventory owns inbound receipt and stock posting. |
-| Shift handover | Yes | MES carries unresolved production, material, quality, equipment, and receipt issues across shifts. |
-| Genealogy/traceability | Yes as execution evidence | Trace work order, batch/serial, material, operation, person, device, quality, downtime, and receipt links. |
+| 生产计划就绪与工单下达 | 部分拥有 | MES 工作台评估 DemandPlanning/ERP 建议能否转化为可执行工单。长期计划事实仍归 DemandPlanning/ERP。 |
+| 工单执行 | 是 | 工单状态、下达快照、执行状态、优先级、急单/插单处理，以及关闭/重开控制。 |
+| 工序派工 | 是 | 将工序任务分配给产线/工作中心/设备/人员/班次；物料缺失、质量冻结或设备不可用时阻止或警告。 |
+| WIP 跟踪 | 是 | 跟踪当前工序、等待/运行/暂停/完成/冻结状态、工序间数量流转和阻塞原因。 |
+| 生产报工 | 是 | 合格、报废、返工、人工工时、机器工时、开始/结束、操作员、设备以及工序状态影响。 |
+| 物料消耗证据 | 对执行证据而言是 | 记录工单/工序实际消耗的物料批次/序列号。库存余额和仓库任务仍在 MES 之外。 |
+| 物料齐套与领料请求 | MES 可见的触发器 | MES 根据 BOM/工艺路线/工作中心上下文以及库存/WMS 可用性计算就绪状态，然后创建备料/领料请求，交由 WMS/Inventory 执行。 |
+| 过程质量与不合格 | 部分拥有 | MES 捕获过程不良并阻止执行；Quality 拥有检验标准、NCR 生命周期和正式处置。 |
+| 停机与设备影响 | 对执行事件而言是 | MES 记录影响生产的停机与恢复确认；Maintenance 拥有维护工单和资产生命周期。 |
+| 成品入库请求 | 对生产请求而言是 | MES 在生产/质量就绪后创建请求；WMS/Inventory 拥有入库收货和库存过账。 |
+| 班次交接 | 是 | MES 跨班次传递未解决的生产、物料、质量、设备和入库问题。 |
+| 谱系/追溯 | 作为执行证据是 | 追踪工单、批次/序列号、物料、工序、人员、设备、质量、停机和入库关联。 |
 
-### P1/P2 Not First-Release Core
+### 不属于首个版本核心的 P1/P2
 
-P1 follow-ups: richer finite-capacity dispatching, line-side inventory details, tooling/mold lifecycle, SPC/Cpk, electronic work instructions version enforcement, Andon escalation, OEE loss-tree analysis, and batch/recipe weighing for process industries.
+P1 后续项：更丰富的有限产能派工、线边库存明细、工装/模具生命周期、SPC/Cpk、电子作业指导书版本强制、Andon 升级、OEE 损失树分析，以及流程行业的批次/配方称量。
 
-P2 integrations: full APS optimization, full WMS/AGV/WCS automation, full QMS/LIMS, full CMMS/EAM, SCADA/PLC control, BI/data lake analytics, mobile/PDA scanning, and detailed cost accounting.
+P2 集成：完整 APS 优化、完整 WMS/AGV/WCS 自动化、完整 QMS/LIMS、完整 CMMS/EAM、SCADA/PLC 控制、BI/数据湖分析、移动端/PDA 扫描和详细成本核算。
 
-## Foundation Readiness Baseline
+## 生产基础就绪基线
 
-The MES workbench must not start from work order CRUD. It first needs a production foundation readiness layer that checks whether the core facts required to release and execute a work order exist, are active, and are usable for the selected organization/environment/site/line/date.
+MES 工作台不得从工单 CRUD 开始。它首先需要生产基础就绪层，检查下达和执行工单所需的核心事实是否存在、有效，并可用于选定的组织/环境/站点/产线/日期。
 
-### Foundation Ownership
+### 基础事实归属
 
-| Foundation area | Source of truth | MES first-release responsibility |
+| 基础领域 | 事实来源 | MES 首个版本职责 |
 | --- | --- | --- |
-| Organization, environment, user, permissions | IAM | Use IDs and permission checks; do not copy IAM roles or memberships into MES. |
-| Site, plant, area, line, work center, work station | BusinessMasterData | Resolve and validate the production hierarchy before plan release, dispatch, reporting, and handover. |
-| Work calendar, shift, team | BusinessMasterData | Validate that planned start/end, dispatch, report, and handover are inside an active calendar/shift/team context. |
-| Personnel business attributes and skills | IAM user ID + BusinessMasterData `PersonnelSkill` | Validate operator/team assignment and skill qualification; MES stores assignment snapshot only. |
-| Device asset and resource capability | BusinessMasterData static facts, Maintenance/Telemetry runtime facts | Validate static compatibility and current availability before dispatch; MES records actual device usage and downtime impact. |
-| SKU, UOM, UOM conversion, traceability policy | BusinessMasterData | Validate manufacturing-enabled SKU, UOM conversions, batch/serial policy, and default barcode rule before release/reporting. |
-| Production version, MBOM, routing, operation definitions | ProductEngineering | Resolve released production version and lock a release snapshot; MES does not edit engineering design facts. |
-| Warehouse, production supply area, line-side location, inventory status | WMS/Inventory plus MasterData labels | Validate material availability and staging route; MES creates request intent and records line-side receipt evidence. |
-| Inspection standards, inspection plans, quality holds | Quality plus MasterData characteristic definitions | Validate inspection requirements and blocking quality state; MES records execution defect context and links to Quality facts. |
-| Maintenance plans, downtime, asset restoration | Maintenance plus IndustrialTelemetry | Validate asset availability and production-impacting maintenance state; MES records shop-floor downtime and recovery confirmation. |
-| Barcode rules, labels, scan records | BarcodeLabel | Resolve barcode/label rule references for work order, material lot, product serial, flow card, container, pallet, and inspection labels. |
-| Business document numbering | Service-local numbering policy with shared governance; future Numbering service remains optional | Generate stable IDs for MES-owned documents, using a consistent rule contract and collision tests; do not hardcode UI-entered IDs as the long-term source. |
+| 组织、环境、用户、权限 | IAM | 使用 ID 和权限检查；不得将 IAM 角色或成员关系复制进 MES。 |
+| 站点、工厂、区域、产线、工作中心、工位 | BusinessMasterData | 在计划下达、派工、报工和交接前解析并验证生产层级。 |
+| 工作日历、班次、团队 | BusinessMasterData | 验证计划开始/结束、派工、报工和交接处于有效的日历/班次/团队上下文中。 |
+| 人员业务属性与技能 | IAM 用户 ID + BusinessMasterData `PersonnelSkill` | 验证操作员/团队分配和技能资质；MES 只存储分配快照。 |
+| 设备资产与资源能力 | BusinessMasterData 静态事实、Maintenance/Telemetry 运行时事实 | 派工前验证静态兼容性和当前可用性；MES 记录实际设备使用和停机影响。 |
+| SKU、UOM、UOM 换算、追溯策略 | BusinessMasterData | 下达/报工前验证启用制造的 SKU、UOM 换算、批次/序列号策略和默认条码规则。 |
+| 生产版本、MBOM、工艺路线、工序定义 | ProductEngineering | 解析已发布生产版本并锁定下达快照；MES 不编辑工程设计事实。 |
+| 仓库、生产供应区、线边库位、库存状态 | WMS/Inventory 及 MasterData 标签 | 验证物料可用性和备料路径；MES 创建请求意图并记录线边收货证据。 |
+| 检验标准、检验计划、质量冻结 | Quality 及 MasterData 特性定义 | 验证检验要求和阻塞性质量状态；MES 记录执行不良上下文并关联 Quality 事实。 |
+| 维护计划、停机、资产恢复 | Maintenance 及 IndustrialTelemetry | 验证资产可用性和影响生产的维护状态；MES 记录车间停机和恢复确认。 |
+| 条码规则、标签、扫描记录 | BarcodeLabel | 解析工单、物料批次、产品序列号、流转卡、容器、托盘和检验标签的条码/标签规则引用。 |
+| 业务单据编号 | 受共享治理的服务本地编号策略；未来 Numbering 服务仍为可选 | 使用一致的规则契约和冲突测试，为 MES 自有单据生成稳定 ID；不得将 UI 输入的硬编码 ID 作为长期来源。 |
 
-### Minimum Readiness Checks
+### 最低就绪检查
 
-Every plan-to-work-order or work-order-release path must compute a readiness result with `Ready`, `Warning`, or `Blocked` status and a machine-readable reason code. The first release must cover:
+每条计划转工单或工单下达路径都必须计算就绪结果，其状态为 `Ready`、`Warning` 或 `Blocked`，并带机器可读原因码。首个版本必须覆盖：
 
-| Readiness check | Blocking examples | Warning examples |
+| 就绪检查 | 阻塞示例 | 警告示例 |
 | --- | --- | --- |
-| MasterData hierarchy | Plant, line, work center, shift, team, SKU, UOM, or device is missing/disabled. | Work center is active but missing capacity metadata. |
-| Calendar and shift | Planned time has no active work calendar or shift. | Planned time crosses shift boundary and needs handover. |
-| Personnel and skill | Assigned user lacks required skill/qualification or inactive IAM user reference. | Skill expires soon or manual supervisor confirmation is required. |
-| Product engineering | No released production version, MBOM, routing, or operation sequence. | Production version is valid but close to expiry/effective-date change. |
-| Material and supply | Required material has no UOM conversion, traceability policy mismatch, no available inventory, or no staging route. | Material partially available, substitute available, or expected receipt date is known. |
-| Quality | SKU or operation requires inspection but no inspection plan exists, or source batch is quality-held. | Inspection plan exists but needs first-piece confirmation. |
-| Equipment and maintenance | Required device/work center is unavailable, under maintenance, or has active blocking alarm. | Device is available but has scheduled maintenance conflict. |
-| Barcode and label | Required barcode/label rule missing for traceable material, serial product, flow card, or receipt label. | Barcode rule exists but template has no printer mapping. |
-| Numbering | Required document number rule missing for work order, operation task, material request, report, defect, downtime, receipt request, handover, or traceability event. | Rule exists but prefix sequence is near configured threshold. |
+| MasterData 层级 | 工厂、产线、工作中心、班次、团队、SKU、UOM 或设备缺失/禁用。 | 工作中心有效，但缺少产能元数据。 |
+| 日历与班次 | 计划时间没有有效工作日历或班次。 | 计划时间跨越班次边界，需要交接。 |
+| 人员与技能 | 已分配用户缺少必要技能/资质，或引用了非活动 IAM 用户。 | 技能即将到期，或需要主管人工确认。 |
+| 产品工程 | 没有已发布生产版本、MBOM、工艺路线或工序序列。 | 生产版本有效，但接近到期/生效日期变更。 |
+| 物料与供应 | 所需物料没有 UOM 换算、追溯策略不匹配、没有可用库存或没有备料路径。 | 物料部分可用、有替代料，或已知预计到货日期。 |
+| 质量 | SKU 或工序需要检验，但不存在检验计划，或源批次处于质量冻结。 | 检验计划存在，但需要首件确认。 |
+| 设备与维护 | 所需设备/工作中心不可用、处于维护中，或有活动的阻塞告警。 | 设备可用，但与计划维护冲突。 |
+| 条码与标签 | 可追溯物料、序列化产品、流转卡或入库标签缺少必要条码/标签规则。 | 条码规则存在，但模板没有打印机映射。 |
+| 编号 | 工单、工序任务、物料请求、报工、不良、停机、入库请求、交接或追溯事件缺少必要单据编号规则。 | 规则存在，但前缀序列接近配置阈值。 |
 
-### Foundation Record Contract
+### 基础记录契约
 
-Every foundation resolver used by MES must return enough data for both execution decisions and user guidance. Do not return only `true`/`false`.
+MES 使用的每个基础解析器都必须返回足以支持执行决策和用户指引的数据，不得只返回 `true`/`false`。
 
-| Field | Requirement |
+| 字段 | 要求 |
 | --- | --- |
-| `sourceSystem` | One of `IAM`, `MasterData`, `ProductEngineering`, `WMS`, `Inventory`, `Quality`, `Maintenance`, `IndustrialTelemetry`, `BarcodeLabel`, or `MES`. |
-| `referenceType` | Stable type name such as `Plant`, `ProductionLine`, `WorkCenter`, `WorkCalendar`, `Shift`, `Team`, `PersonnelSkill`, `DeviceAsset`, `Sku`, `Uom`, `ProductionVersion`, `Mbom`, `Routing`, `InventoryLocation`, `InspectionPlan`, `BarcodeRule`, or `NumberingRule`. |
-| `referenceId` | Durable source-system ID; never use display text as the ID. |
-| `displayName` | Human-readable Chinese name when available; use source code as the fallback for records without a name. |
-| `status` | `Ready`, `Warning`, or `Blocked`; source-specific states must be normalized at the BusinessGateway/MES workbench boundary. |
-| `effectiveFromUtc` / `effectiveToUtc` | Required for production version, BOM/routing, calendar, shift, skill qualification, inspection plan, barcode rule, and numbering rule when the source has effectivity. |
-| `version` | Required for production version, MBOM, routing, barcode template, and inspection plan when the source has versions. |
-| `fixHint` | Short Chinese operator/planner guidance, for example `请先维护该产线的工作日历` or `请发布该物料的生产版本`。 |
+| `sourceSystem` | `IAM`、`MasterData`、`ProductEngineering`、`WMS`、`Inventory`、`Quality`、`Maintenance`、`IndustrialTelemetry`、`BarcodeLabel` 或 `MES` 之一。 |
+| `referenceType` | 稳定类型名，例如 `Plant`、`ProductionLine`、`WorkCenter`、`WorkCalendar`、`Shift`、`Team`、`PersonnelSkill`、`DeviceAsset`、`Sku`、`Uom`、`ProductionVersion`、`Mbom`、`Routing`、`InventoryLocation`、`InspectionPlan`、`BarcodeRule` 或 `NumberingRule`。 |
+| `referenceId` | 持久的源系统 ID；绝不使用显示文本作为 ID。 |
+| `displayName` | 有名称时使用人类可读的中文名称；无名称的记录以源代码作为后备。 |
+| `status` | `Ready`、`Warning` 或 `Blocked`；必须在 BusinessGateway/MES 工作台边界规范化源系统特有状态。 |
+| `effectiveFromUtc` / `effectiveToUtc` | 当源数据具有有效期时，生产版本、BOM/工艺路线、日历、班次、技能资质、检验计划、条码规则和编号规则必须提供。 |
+| `version` | 当源数据具有版本时，生产版本、MBOM、工艺路线、条码模板和检验计划必须提供。 |
+| `fixHint` | 简短的中文操作员/计划员指引，例如 `请先维护该产线的工作日历` 或 `请发布该物料的生产版本`。 |
 
-### Reason Code Baseline
+### 原因码基线
 
-Use stable reason codes so pages, tests, and later mobile/PDA flows can reuse the same semantics:
+使用稳定原因码，使页面、测试以及后续移动端/PDA 流程可复用相同语义：
 
-| Code | Severity | Meaning |
+| 代码 | 严重程度 | 含义 |
 | --- | --- | --- |
-| `MASTERDATA_HIERARCHY_MISSING` | Blocked | Site, plant, area, line, work center, or work station cannot be resolved. |
-| `MASTERDATA_REFERENCE_INACTIVE` | Blocked | A required MasterData record exists but is disabled or outside effectivity. |
-| `CALENDAR_SHIFT_MISSING` | Blocked | Planned execution time has no active work calendar or shift. |
-| `SHIFT_HANDOVER_REQUIRED` | Warning | Planned execution crosses a shift boundary and must create/consume handover context. |
-| `PERSONNEL_SKILL_MISSING` | Blocked | Assigned user/team lacks the required skill or qualification. |
-| `PERSONNEL_SKILL_EXPIRING` | Warning | Required skill is valid but expires within the configured warning window. |
-| `PRODUCTION_VERSION_MISSING` | Blocked | No released production version can be resolved for SKU, site/line, and planned date. |
-| `BOM_ROUTING_MISSING` | Blocked | Released production version has no usable MBOM, routing, or operation sequence. |
-| `MATERIAL_TRACEABILITY_MISMATCH` | Blocked | Required material traceability policy conflicts with SKU or barcode rules. |
-| `MATERIAL_NOT_AVAILABLE` | Blocked | Required material has no available inventory or staged supply route. |
-| `MATERIAL_PARTIAL_AVAILABLE` | Warning | Some required material can be issued but shortage remains. |
-| `QUALITY_PLAN_MISSING` | Blocked | Required inspection plan or quality standard cannot be resolved. |
-| `QUALITY_HOLD_ACTIVE` | Blocked | Related source batch, material, or product is under quality hold. |
-| `EQUIPMENT_UNAVAILABLE` | Blocked | Required work center/device is down, under maintenance, or blocked by active alarm. |
-| `EQUIPMENT_MAINTENANCE_CONFLICT` | Warning | Device is usable now but conflicts with scheduled maintenance. |
-| `BARCODE_RULE_MISSING` | Blocked | Required barcode or label rule cannot be resolved. |
-| `LABEL_TEMPLATE_PRINTER_MISSING` | Warning | Label rule exists but no printer/template mapping is configured. |
-| `NUMBERING_RULE_MISSING` | Blocked | MES cannot generate the required document number server-side. |
-| `NUMBERING_SEQUENCE_NEAR_LIMIT` | Warning | Number sequence is close to its configured limit. |
-| `SOURCE_SERVICE_UNAVAILABLE` | Blocked | BusinessGateway cannot reach a required source service, or the source service returns timeout, 5xx, or malformed readiness response. |
+| `MASTERDATA_HIERARCHY_MISSING` | Blocked | 无法解析站点、工厂、区域、产线、工作中心或工位。 |
+| `MASTERDATA_REFERENCE_INACTIVE` | Blocked | 必要 MasterData 记录存在，但已禁用或不在有效期内。 |
+| `CALENDAR_SHIFT_MISSING` | Blocked | 计划执行时间没有有效工作日历或班次。 |
+| `SHIFT_HANDOVER_REQUIRED` | Warning | 计划执行跨越班次边界，必须创建/使用交接上下文。 |
+| `PERSONNEL_SKILL_MISSING` | Blocked | 已分配用户/团队缺少必要技能或资质。 |
+| `PERSONNEL_SKILL_EXPIRING` | Warning | 必要技能当前有效，但将在配置的警告窗口内到期。 |
+| `PRODUCTION_VERSION_MISSING` | Blocked | 无法为 SKU、站点/产线和计划日期解析已发布生产版本。 |
+| `BOM_ROUTING_MISSING` | Blocked | 已发布生产版本没有可用的 MBOM、工艺路线或工序序列。 |
+| `MATERIAL_TRACEABILITY_MISMATCH` | Blocked | 必要物料追溯策略与 SKU 或条码规则冲突。 |
+| `MATERIAL_NOT_AVAILABLE` | Blocked | 必要物料没有可用库存或备料供应路径。 |
+| `MATERIAL_PARTIAL_AVAILABLE` | Warning | 部分必要物料可领用，但仍有短缺。 |
+| `QUALITY_PLAN_MISSING` | Blocked | 无法解析必要检验计划或质量标准。 |
+| `QUALITY_HOLD_ACTIVE` | Blocked | 相关源批次、物料或产品处于质量冻结。 |
+| `EQUIPMENT_UNAVAILABLE` | Blocked | 必要工作中心/设备停机、处于维护中，或被活动告警阻塞。 |
+| `EQUIPMENT_MAINTENANCE_CONFLICT` | Warning | 设备当前可用，但与计划维护冲突。 |
+| `BARCODE_RULE_MISSING` | Blocked | 无法解析必要条码或标签规则。 |
+| `LABEL_TEMPLATE_PRINTER_MISSING` | Warning | 标签规则存在，但未配置打印机/模板映射。 |
+| `NUMBERING_RULE_MISSING` | Blocked | MES 无法在服务端生成必要单据编号。 |
+| `NUMBERING_SEQUENCE_NEAR_LIMIT` | Warning | 编号序列接近其配置上限。 |
+| `SOURCE_SERVICE_UNAVAILABLE` | Blocked | BusinessGateway 无法连接必要源服务，或源服务返回超时、5xx 或格式错误的就绪响应。 |
 
-### Source Boundary Rule
+### 源系统边界规则
 
-The `/mes/foundation` page is a readiness and guidance surface, not a foundation-data maintenance module. It may show blocker cards and links to source pages when routes exist, but it must not create MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance, Telemetry, BarcodeLabel, or IAM records from inside MES. This keeps MES focused on execution and avoids duplicating master-data workflows.
+`/mes/foundation` 页面是就绪检查与指引界面，不是基础数据维护模块。路由存在时可显示阻塞卡片和源页面链接，但不得从 MES 内部创建 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance、Telemetry、BarcodeLabel 或 IAM 记录。这样可使 MES 聚焦执行，并避免复制主数据工作流。
 
-### Source Failure Rule
+### 源服务失败规则
 
-Foundation readiness is a decision surface, so source-service failures must be visible as production blockers instead of blank pages. For `GET /api/business-console/v1/mes/foundation-readiness`, BusinessGateway must return HTTP 200 with the affected area marked `Blocked` and a `SOURCE_SERVICE_UNAVAILABLE` issue when MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, or the MES numbering policy resolver times out, returns 5xx, returns invalid JSON, or omits required readiness fields. IAM authentication/authorization failures remain normal 401/403 responses and must not be converted into readiness issues.
+基础就绪是决策界面，因此源服务失败必须作为生产阻塞显式呈现，而不是显示空白页面。对于 `GET /api/business-console/v1/mes/foundation-readiness`，当 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel 或 MES 编号策略解析器超时、返回 5xx、返回无效 JSON 或遗漏必要就绪字段时，BusinessGateway 必须返回 HTTP 200，将受影响领域标为 `Blocked` 并附带 `SOURCE_SERVICE_UNAVAILABLE` 问题。IAM 身份验证/授权失败仍为正常的 401/403 响应，不得转换为就绪问题。
 
-### Snapshot Rule
+### 快照规则
 
-MES must store immutable execution snapshots when a work order is released or an operation task is dispatched:
+下达工单或派发工序任务时，MES 必须存储不可变执行快照：
 
-1. MasterData snapshot: site/plant/line/work center/work station, shift/team, SKU/UOM, device static identity, resource capability, and personnel skill reference.
-2. ProductEngineering snapshot: `productionVersionId`, MBOM ID/version, routing ID/version, operation sequence, required resource capability, standard duration, and material demand summary.
-3. Material snapshot: required material, UOM, traceability policy, planned quantity, substitute policy, requested/staged/received quantities, and WMS/Inventory references.
-4. Quality snapshot: inspection requirement, first-piece/in-process/final inspection trigger, quality hold state, and related inspection/NCR references.
-5. Numbering/barcode snapshot: generated document IDs and barcode/label rule references used for the released execution object.
+1. MasterData 快照：站点/工厂/产线/工作中心/工位、班次/团队、SKU/UOM、设备静态身份、资源能力和人员技能引用。
+2. ProductEngineering 快照：`productionVersionId`、MBOM ID/版本、工艺路线 ID/版本、工序序列、必要资源能力、标准时长和物料需求摘要。
+3. 物料快照：必要物料、UOM、追溯策略、计划数量、替代策略、请求/备料/收货数量以及 WMS/Inventory 引用。
+4. 质量快照：检验要求、首件/过程/终检触发器、质量冻结状态以及相关检验/NCR 引用。
+5. 编号/条码快照：为已下达执行对象生成的单据 ID，以及使用的条码/标签规则引用。
 
-Snapshots keep historical execution readable. They do not move source-of-truth ownership away from MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance, or BarcodeLabel.
+快照使历史执行保持可读，但不会将事实来源归属从 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance 或 BarcodeLabel 移出。
 
-## Verified Current Code Facts
+## 已验证的当前代码事实
 
-These facts were checked against the repository on 2026-05-26:
+以下事实已于 2026-05-26 对照仓库核实：
 
-| Area | Current fact | Implication |
+| 领域 | 当前事实 | 影响 |
 | --- | --- | --- |
-| Business Console app | `frontend/apps/business-console` exists as the independent Vite app on the BusinessGateway facade. | PC pages can continue without changing the main platform console. |
-| Current MES pages | `frontend/apps/business-console/src/pages/mes/work-orders.vue` and `frontend/apps/business-console/src/pages/mes/schedules.vue` exist. | The next work should enhance MES pages rather than create a new app shell. |
-| Current MES composable | `frontend/apps/business-console/src/composables/useBusinessMes.ts` consumes generated Business Console APIs. | New page data should be added here or split into MES-specific composables under the same app boundary. |
-| BusinessGateway MES facade | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` exposes `listBusinessConsoleMesWorkOrders`, `createBusinessConsoleMesRushWorkOrder`, `runBusinessConsoleMesSchedule`, and `recordBusinessConsoleMesProductionReport`. | Business Console currently has only the MVP MES surface. |
-| MES service surface | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` already contains service endpoints for work orders, production reports, finished-goods receipt requests, and capacity impacts. | The first API work can expand BusinessGateway facade coverage before introducing broader domain changes. |
-| DemandPlanning and ERP plan context | DemandPlanning exposes demand sources, MRP runs, MRP pegging, and planning suggestions under `/api/business/v1/planning/**`; ERP exposes sales orders and finance source-document drill-down, but there is no verified endpoint literally named `production-plans`. | BusinessGateway should build the MES production-plan facade from verified planning suggestions or ERP sales priority context. When a stable read endpoint is missing, show the MES/source raw ID and record the gap in the implementation PR instead of fabricating data. |
-| Existing page copy | Current MES Vue pages still contain English user-visible labels such as `Work orders`, `Create rush work order`, `Run schedule`, and `No work orders returned.` | PC completion must include a Chinese-copy pass. |
-| Mobile/PDA | No mobile Business Console client or generated mobile API boundary is present. | Mobile/PDA is not a blocker for PC MES and should start after PC contract stabilization. |
+| Business Console 应用 | `frontend/apps/business-console` 作为基于 BusinessGateway facade 的独立 Vite 应用存在。 | 可在不改变主平台控制台的情况下继续开发 PC 页面。 |
+| 当前 MES 页面 | `frontend/apps/business-console/src/pages/mes/work-orders.vue` 和 `frontend/apps/business-console/src/pages/mes/schedules.vue` 已存在。 | 后续工作应增强 MES 页面，而不是新建应用外壳。 |
+| 当前 MES 组合式函数 | `frontend/apps/business-console/src/composables/useBusinessMes.ts` 使用生成的 Business Console API。 | 新页面数据应在此添加，或拆分为同一应用边界下的 MES 专用组合式函数。 |
+| BusinessGateway MES facade | `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` 暴露 `listBusinessConsoleMesWorkOrders`、`createBusinessConsoleMesRushWorkOrder`、`runBusinessConsoleMesSchedule` 和 `recordBusinessConsoleMesProductionReport`。 | Business Console 当前只有 MVP MES 界面。 |
+| MES 服务界面 | `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` 已包含工单、生产报工、成品入库请求和产能影响的服务 endpoint。 | 首轮 API 工作可先扩展 BusinessGateway facade 覆盖，再引入更广泛的领域变更。 |
+| DemandPlanning 与 ERP 计划上下文 | DemandPlanning 在 `/api/business/v1/planning/**` 下暴露需求来源、MRP 运行、MRP 追溯和计划建议；ERP 暴露销售订单与财务源单据下钻，但没有经验证且字面命名为 `production-plans` 的 endpoint。 | BusinessGateway 应根据已验证的计划建议或 ERP 销售优先级上下文构建 MES 生产计划 facade。缺少稳定读取 endpoint 时，应显示 MES/源系统原始 ID，并在实施 PR 中记录缺口，不得编造数据。 |
+| 现有页面文案 | 当前 MES Vue 页面仍包含 `Work orders`、`Create rush work order`、`Run schedule` 和 `No work orders returned.` 等英文用户可见标签。 | PC 端完善必须包含中文文案处理。 |
+| 移动端/PDA | 当前不存在移动版 Business Console 客户端或生成的移动 API 边界。 | 移动端/PDA 不会阻塞 PC MES，应在 PC 契约稳定后启动。 |
 
-## Business Scope
+## 业务范围
 
-### In Scope
+### 范围内
 
-1. Production foundation readiness checks across MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, and numbering policy.
-2. Production cockpit for today's plan attainment, work order progress, material blockers, downtime, quality exceptions, and handover items.
-3. Production plan readiness, plan-to-work-order conversion, work order release, rush/insert handling, and release risk checks.
-4. Material readiness, shortage visibility, issue/staging request creation, line-side receipt confirmation, return/supplement request visibility, and material consumption evidence.
-5. Operation dispatching to shift, team, person, work center, and device; operation task start, pause, resume, complete, transfer, and hold.
-6. Production reporting with good quantity, scrap, rework, labor/machine time, material batch/serial evidence, and attachments.
-7. In-process quality and nonconformance entry points: first-piece/in-process/final inspection task visibility, defect registration, rework/scrap linkage, and Quality/NCR drill-down.
-8. Finished-goods receipt request creation and status visibility from production completion through WMS/Inventory receipt evidence.
-9. Downtime, equipment impact, maintenance request visibility, recovery confirmation, and dispatch blocking/warning on unavailable assets.
-10. Shift handover with unresolved production, material, quality, equipment, and receipt issues carried to the next shift.
-11. Work-order-level and batch/serial-level genealogy/traceability across plan, BOM/routing version, operation tasks, reports, material lots, quality, equipment, people, downtime, and receipt requests.
-12. BusinessGateway MES facade expansion for existing MES read/write service capabilities plus missing standard MES P0 contracts.
-13. Minimal cross-domain read/action facades where the MES page needs context:
-   - ProductEngineering: production version, MBOM, routing release context.
-   - DemandPlanning/ERP: production plan source, planned work order suggestion, sales/order priority context where already available.
-   - MasterData: SKU, work center, production line, device asset labels.
-   - Quality: inspection task, defect, NCR, rework/scrap disposition context related to work orders and operation reports.
-   - WMS/Inventory: stock availability, issue/staging execution status, line-side receipt, finished-goods inbound and stock movement visibility.
-   - Maintenance/IndustrialTelemetry: asset unavailable/restored, downtime, alarm, recovery, and capacity impact visibility.
-   - BarcodeLabel: barcode rule, label template, print batch, and scan record references needed for traceability.
-   - ERP Finance: source-document drill-down for production cost evidence where an existing service surface already supports it.
-14. Business Console generated client refresh and stable exports.
-15. Desktop UI pages with Chinese visible copy.
-16. Focused unit, API contract, frontend, and e2e verification.
+1. 跨 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel 和编号策略的生产基础就绪检查。
+2. 展示今日计划达成、工单进度、物料阻塞、停机、质量异常和交接事项的生产驾驶舱。
+3. 生产计划就绪、计划转工单、工单下达、急单/插单处理和下达风险检查。
+4. 物料齐套、短缺可见性、领料/备料请求创建、线边收货确认、退料/补料请求可见性和物料消耗证据。
+5. 向班次、团队、人员、工作中心和设备派工；工序任务开始、暂停、恢复、完成、转移和冻结。
+6. 生产报工，包括合格数量、报废、返工、人工/机器工时、物料批次/序列号证据和附件。
+7. 过程质量和不合格入口：首件/过程/终检任务可见性、不良登记、返工/报废关联，以及 Quality/NCR 下钻。
+8. 从生产完工到 WMS/Inventory 收货证据的成品入库请求创建与状态可见性。
+9. 停机、设备影响、维护请求可见性、恢复确认，以及资产不可用时的派工阻止/警告。
+10. 班次交接，将未解决的生产、物料、质量、设备和入库问题传递至下一班次。
+11. 工单级和批次/序列号级谱系/追溯，涵盖计划、BOM/工艺路线版本、工序任务、报工、物料批次、质量、设备、人员、停机和入库请求。
+12. 扩展 BusinessGateway MES facade，以覆盖现有 MES 读写服务能力和缺失的标准 MES P0 契约。
+13. MES 页面需要上下文时使用最小跨领域读取/动作 facade：
+   - ProductEngineering：生产版本、MBOM、工艺路线下达上下文。
+   - DemandPlanning/ERP：已有能力范围内的生产计划来源、计划工单建议、销售/订单优先级上下文。
+   - MasterData：SKU、工作中心、生产线、设备资产标签。
+   - Quality：与工单和工序报工相关的检验任务、不良、NCR、返工/报废处置上下文。
+   - WMS/Inventory：库存可用性、领料/备料执行状态、线边收货、成品入库和库存移动可见性。
+   - Maintenance/IndustrialTelemetry：资产不可用/已恢复、停机、告警、恢复和产能影响可见性。
+   - BarcodeLabel：追溯所需的条码规则、标签模板、打印批次和扫描记录引用。
+   - ERP Finance：现有服务界面已支持时，提供生产成本证据的源单据下钻。
+14. 刷新 Business Console 生成客户端及稳定导出。
+15. 具有中文可见文案的桌面 UI 页面。
+16. 聚焦的单元、API 契约、前端和 e2e 验证。
 
-### Out of Scope
+### 范围外
 
-1. PDA/mobile scanning flows.
-2. Full APS/Gantt optimization UI. Schedule remains dispatch-oriented list/timeline/table workbench unless #78 is explicitly revived.
-3. Full warehouse execution: bin strategy, wave picking, AGV/WCS routing, put-away, inventory counting, and warehouse-task optimization stay in WMS.
-4. Inventory accounting: stock ledger, global availability promise, valuation, and financial inventory remain in Inventory/ERP.
-5. Full QMS/LIMS: formal inspection-standard governance, lab sample lifecycle, CAPA, supplier quality, and audit programs stay in Quality/QMS.
-6. Full CMMS/EAM: asset lifecycle, maintenance plan ownership, spare-parts planning, and maintenance cost accounting stay in Maintenance/EAM.
-7. Direct frontend calls to business services.
-8. Moving domain rules into BusinessGateway.
-9. Full i18n translation catalog, locale switcher, or route-localized copy.
-10. Raw PLC/DCS/SCADA control or WCS implementation inside MES.
+1. PDA/移动端扫描流程。
+2. 完整 APS/Gantt 优化 UI。除非明确恢复 #78，否则排程仍是面向派工的列表/时间线/表格工作台。
+3. 完整仓库执行：库位策略、波次拣选、AGV/WCS 路由、上架、盘点和仓库任务优化仍归 WMS。
+4. 库存核算：库存台账、全局可用量承诺、估值和财务库存仍归 Inventory/ERP。
+5. 完整 QMS/LIMS：正式检验标准治理、实验室样本生命周期、CAPA、供应商质量和审计计划仍归 Quality/QMS。
+6. 完整 CMMS/EAM：资产生命周期、维护计划归属、备件计划和维护成本核算仍归 Maintenance/EAM。
+7. 前端直接调用业务服务。
+8. 将领域规则移入 BusinessGateway。
+9. 完整 i18n 翻译目录、语言区域切换器或路由本地化文案。
+10. 在 MES 内实现原始 PLC/DCS/SCADA 控制或 WCS。
 
-## Dependency Matrix
+## 依赖矩阵
 
-| PC MES need | Execution owner | External fact owner | BusinessGateway approach |
+| PC MES 需求 | 执行归属 | 外部事实归属 | BusinessGateway 方案 |
 | --- | --- | --- | --- |
-| Foundation readiness | MES workbench decision surface | MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM | Add a readiness endpoint that validates all required references and returns `Ready`/`Warning`/`Blocked` with reason codes. |
-| Production plan readiness | MES workbench decision surface | DemandPlanning/ERP source plans, ProductEngineering BOM/routing, Inventory availability, Maintenance capacity | Add aggregated readiness endpoint that returns risk reasons and allowed release actions without moving source facts into MES. |
-| Work order release and execution | MES | ProductEngineering, MasterData | Add work order detail/release endpoints with release snapshot of BOM/routing/version, work centers, and plan source. |
-| Material readiness and shortages | MES visible readiness result | ProductEngineering BOM, Inventory availability/reservation, WMS line-side status | Add material readiness endpoint keyed by plan/work order/operation; keep inventory quantities authoritative in Inventory/WMS. |
-| Material issue/staging request | MES triggers and tracks request intent | WMS/Inventory executes picking, staging, receipt, and stock movement | Add request creation/status endpoints; do not model warehouse tasks inside MES. |
-| Operation dispatch | MES | MasterData resources, Maintenance availability, Quality holds | Add dispatch task list and assignment endpoints with blocking/warning reasons. |
-| WIP and production reports | MES | Quality/Inventory downstream effects | Add operation state, report list, report create, and WIP summary endpoints. |
-| Nonconformance and rework/scrap | MES creates execution defect context | Quality owns NCR/disposition; Inventory owns scrap movement | Add defect entry and related-quality drill-down; formal disposition stays in Quality. |
-| Finished-goods receipt | MES request | WMS/Inventory inbound receipt and stock posting | Surface MES receipt requests plus downstream WMS/Inventory evidence. |
-| Downtime and equipment impact | MES execution impact | IndustrialTelemetry events and Maintenance work orders | Surface downtime list/create/recovery endpoints and downstream maintenance status. |
-| Shift handover | MES | Related contexts provide open issue status | Add handover summary/create/accept endpoints. |
-| Traceability | MES execution genealogy | ProductEngineering, Quality, WMS/Inventory, Maintenance provide linked facts | Add traceability query endpoints by work order, batch/serial, material lot, and defect ID. |
-| Barcode and labels | MES references rules and records scans | BarcodeLabel owns rule, template, print batch, scan record | Add rule resolution and label/scan references to material, report, receipt, and traceability DTOs. |
-| Numbering | MES owns MES document IDs | Shared numbering governance; service-local generator in first release | Add explicit number rule checks and generate IDs server-side for MES documents. |
-| Cost/source-document drill-down | ERP Finance | ERP Finance | Link to existing ERP Finance candidate/source-document surface only after route and permission are verified. |
+| 基础就绪 | MES 工作台决策界面 | MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel、IAM | 添加就绪 endpoint，验证全部必要引用，并返回带原因码的 `Ready`/`Warning`/`Blocked`。 |
+| 生产计划就绪 | MES 工作台决策界面 | DemandPlanning/ERP 源计划、ProductEngineering BOM/工艺路线、Inventory 可用性、Maintenance 产能 | 添加聚合就绪 endpoint，返回风险原因和允许的下达动作，且不将源事实移入 MES。 |
+| 工单下达与执行 | MES | ProductEngineering、MasterData | 添加工单详情/下达 endpoint，包含 BOM/工艺路线/版本、工作中心和计划来源的下达快照。 |
+| 物料齐套与短缺 | MES 可见的就绪结果 | ProductEngineering BOM、Inventory 可用性/预留、WMS 线边状态 | 添加以计划/工单/工序为键的物料就绪 endpoint；库存数量继续以 Inventory/WMS 为权威。 |
+| 领料/备料请求 | MES 触发并跟踪请求意图 | WMS/Inventory 执行拣选、备料、收货和库存移动 | 添加请求创建/状态 endpoint；不得在 MES 内建模仓库任务。 |
+| 工序派工 | MES | MasterData 资源、Maintenance 可用性、Quality 冻结 | 添加带阻塞/警告原因的派工任务列表和分配 endpoint。 |
+| WIP 与生产报工 | MES | Quality/Inventory 下游影响 | 添加工序状态、报工列表、报工创建和 WIP 摘要 endpoint。 |
+| 不合格与返工/报废 | MES 创建执行不良上下文 | Quality 拥有 NCR/处置；Inventory 拥有报废移动 | 添加不良录入和相关质量下钻；正式处置仍归 Quality。 |
+| 成品入库 | MES 请求 | WMS/Inventory 入库收货和库存过账 | 呈现 MES 入库请求及下游 WMS/Inventory 证据。 |
+| 停机与设备影响 | MES 执行影响 | IndustrialTelemetry 事件和 Maintenance 工单 | 呈现停机列表/创建/恢复 endpoint 和下游维护状态。 |
+| 班次交接 | MES | 相关上下文提供未结问题状态 | 添加交接摘要/创建/接受 endpoint。 |
+| 追溯 | MES 执行谱系 | ProductEngineering、Quality、WMS/Inventory、Maintenance 提供关联事实 | 添加按工单、批次/序列号、物料批次和不良 ID 查询的追溯 endpoint。 |
+| 条码与标签 | MES 引用规则并记录扫描 | BarcodeLabel 拥有规则、模板、打印批次、扫描记录 | 在物料、报工、入库和追溯 DTO 中添加规则解析以及标签/扫描引用。 |
+| 编号 | MES 拥有 MES 单据 ID | 共享编号治理；首个版本使用服务本地生成器 | 添加显式编号规则检查，并在服务端生成 MES 单据 ID。 |
+| 成本/源单据下钻 | ERP Finance | ERP Finance | 只有在路由和权限经验证后，才链接到现有 ERP Finance 候选/源单据界面。 |
 
-## File Structure
+## 文件结构
 
-Planned file responsibilities:
+计划的文件职责：
 
-| Path | Responsibility |
+| 路径 | 职责 |
 | --- | --- |
-| `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` | Add or verify batch resolve/readiness endpoints for site, line, work center, calendar, shift, team, personnel skill, device asset, resource capability, SKU, UOM, and reference data. |
-| `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` | Add or verify production-version resolve endpoints that return released MBOM, routing, operation sequence, material demand, and resource capability references. |
-| `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*` | Add or verify barcode rule and label template resolution for work order, operation task, material lot, product serial, receipt, and traceability labels. |
-| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` | Add missing MES read endpoints only when the MES service lacks the page-level query. |
-| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/...` | Query handlers for production readiness, work order detail, material readiness, dispatch task list, operation task list, WIP, production reports, downtime, handover, traceability, schedule result history, and any missing read model. |
-| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/...` | Commands for work order release, dispatch assignment, operation start/pause/resume/complete, material issue request intent, defect entry, downtime entry/recovery, finished-goods receipt request, and shift handover. |
-| `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/...` | MES service endpoint and query tests. |
-| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs` | Business Console DTOs for MES workbench responses. |
-| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs` | Internal HTTP clients for MES and minimal related business read endpoints. |
-| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs` | `BusinessGatewayPermissions` constants and Business Console authorization checks for the MES permission matrix. |
-| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` | BusinessGateway MES facade endpoints and stable operation IDs. |
-| `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs` | Stable route and operationId tests. |
-| `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs` | Bearer, permission, context, and downstream proxy tests. |
-| `frontend/packages/api-client/src/business-console.ts` | Stable business-console exports after generated client refresh. |
-| `frontend/apps/business-console/src/composables/useBusinessMes.ts` | Query/mutation composition entry point for MES PC pages, delegating grouped hooks to `src/composables/mes/*.ts`. |
-| `frontend/apps/business-console/src/pages/mes/foundation.vue` | Foundation readiness page for master data, product engineering, supply, quality, equipment, barcode, and numbering blockers. |
-| `frontend/apps/business-console/src/pages/mes/index.vue` | Production cockpit: plan attainment, blockers, exceptions, handover, and traceability entry points. |
-| `frontend/apps/business-console/src/pages/mes/plans.vue` | Production plan readiness, plan-to-work-order conversion, release risk checks, and rush/insert impact. |
-| `frontend/apps/business-console/src/pages/mes/work-orders.vue` | Work order list, release state, readiness summary, and quick actions. |
-| `frontend/apps/business-console/src/pages/mes/work-orders/[workOrderId].vue` | Work order detail page. |
-| `frontend/apps/business-console/src/pages/mes/materials.vue` | Material readiness, shortages, issue/staging request status, line-side receipt, return/supplement request visibility. |
-| `frontend/apps/business-console/src/pages/mes/dispatch.vue` | Dispatch board for assigning operation tasks to shift/team/person/work center/device. |
-| `frontend/apps/business-console/src/pages/mes/operation-tasks.vue` | Operation task queue and start/pause/resume/complete actions. |
-| `frontend/apps/business-console/src/pages/mes/reports.vue` | Production report list and creation entry points for good/scrap/rework/labor/machine time. |
-| `frontend/apps/business-console/src/pages/mes/quality.vue` | In-process quality tasks, defect entry, related NCR/rework/scrap context. |
-| `frontend/apps/business-console/src/pages/mes/receipts.vue` | Finished-goods receipt request visibility and WMS/Inventory evidence. |
-| `frontend/apps/business-console/src/pages/mes/schedules.vue` | Rule schedule run and dispatch-oriented result table/timeline. |
-| `frontend/apps/business-console/src/pages/mes/downtime.vue` | Downtime registration, equipment impact, maintenance status, and recovery confirmation. |
-| `frontend/apps/business-console/src/pages/mes/handovers.vue` | Shift handover summary, unresolved item carryover, and receiver confirmation. |
-| `frontend/apps/business-console/src/pages/mes/traceability.vue` | Work-order, batch/serial, material-lot, and defect traceability search. |
-| `frontend/apps/business-console/src/pages/mes/capacity.vue` | Capacity impact visibility from MES-maintenance integration, retained if separate from downtime. |
-| `frontend/apps/business-console/tests/e2e/business-console.spec.ts` | Desktop MES navigation and smoke coverage. |
-| `scripts/verify-business-console-mes-pc-workbench.ps1` | Governed focused verification script for this plan. |
-| `docs/architecture/frontend-structure.md` | Update only after routes are implemented, to keep the Business Console route table current. |
-| `docs/architecture/implementation-readiness.md` | Update only after implementation lands and verification evidence exists. |
+| `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` | 添加或验证站点、产线、工作中心、日历、班次、团队、人员技能、设备资产、资源能力、SKU、UOM 和参考数据的批量解析/就绪 endpoint。 |
+| `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` | 添加或验证生产版本解析 endpoint，返回已发布 MBOM、工艺路线、工序序列、物料需求和资源能力引用。 |
+| `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*` | 添加或验证工单、工序任务、物料批次、产品序列号、入库和追溯标签的条码规则与标签模板解析。 |
+| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs` | 仅在 MES 服务缺少页面级查询时添加缺失的 MES 读取 endpoint。 |
+| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/...` | 生产就绪、工单详情、物料齐套、派工任务列表、工序任务列表、WIP、生产报工、停机、交接、追溯、排程结果历史及任何缺失读模型的查询处理程序。 |
+| `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/...` | 工单下达、派工分配、工序开始/暂停/恢复/完成、领料请求意图、不良录入、停机录入/恢复、成品入库请求和班次交接命令。 |
+| `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/...` | MES 服务 endpoint 和查询测试。 |
+| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs` | MES 工作台响应的 Business Console DTO。 |
+| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs` | MES 及最少量相关业务读取 endpoint 的内部 HTTP 客户端。 |
+| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs` | MES 权限矩阵的 `BusinessGatewayPermissions` 常量和 Business Console 授权检查。 |
+| `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs` | BusinessGateway MES facade endpoint 和稳定 operation ID。 |
+| `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs` | 稳定路由和 operationId 测试。 |
+| `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs` | Bearer、权限、上下文和下游代理测试。 |
+| `frontend/packages/api-client/src/business-console.ts` | 生成客户端刷新后的稳定 business-console 导出。 |
+| `frontend/apps/business-console/src/composables/useBusinessMes.ts` | MES PC 页面的查询/变更组合入口，将分组 hook 委托给 `src/composables/mes/*.ts`。 |
+| `frontend/apps/business-console/src/pages/mes/foundation.vue` | 主数据、产品工程、供应、质量、设备、条码和编号阻塞项的基础就绪页面。 |
+| `frontend/apps/business-console/src/pages/mes/index.vue` | 生产驾驶舱：计划达成、阻塞、异常、交接和追溯入口。 |
+| `frontend/apps/business-console/src/pages/mes/plans.vue` | 生产计划就绪、计划转工单、下达风险检查和急单/插单影响。 |
+| `frontend/apps/business-console/src/pages/mes/work-orders.vue` | 工单列表、下达状态、就绪摘要和快捷动作。 |
+| `frontend/apps/business-console/src/pages/mes/work-orders/[workOrderId].vue` | 工单详情页。 |
+| `frontend/apps/business-console/src/pages/mes/materials.vue` | 物料齐套、短缺、领料/备料请求状态、线边收货、退料/补料请求可见性。 |
+| `frontend/apps/business-console/src/pages/mes/dispatch.vue` | 将工序任务分配给班次/团队/人员/工作中心/设备的派工看板。 |
+| `frontend/apps/business-console/src/pages/mes/operation-tasks.vue` | 工序任务队列及开始/暂停/恢复/完成动作。 |
+| `frontend/apps/business-console/src/pages/mes/reports.vue` | 合格/报废/返工/人工工时/机器工时的生产报工列表和创建入口。 |
+| `frontend/apps/business-console/src/pages/mes/quality.vue` | 过程质量任务、不良录入、相关 NCR/返工/报废上下文。 |
+| `frontend/apps/business-console/src/pages/mes/receipts.vue` | 成品入库请求可见性和 WMS/Inventory 证据。 |
+| `frontend/apps/business-console/src/pages/mes/schedules.vue` | 规则排程运行以及面向派工的结果表格/时间线。 |
+| `frontend/apps/business-console/src/pages/mes/downtime.vue` | 停机登记、设备影响、维护状态和恢复确认。 |
+| `frontend/apps/business-console/src/pages/mes/handovers.vue` | 班次交接摘要、未解决事项结转和接班人确认。 |
+| `frontend/apps/business-console/src/pages/mes/traceability.vue` | 工单、批次/序列号、物料批次和不良追溯搜索。 |
+| `frontend/apps/business-console/src/pages/mes/capacity.vue` | MES-维护集成的产能影响可见性；若与停机分离则保留。 |
+| `frontend/apps/business-console/tests/e2e/business-console.spec.ts` | 桌面 MES 导航和冒烟覆盖。 |
+| `scripts/verify-business-console-mes-pc-workbench.ps1` | 本计划受治理的聚焦验证脚本。 |
+| `docs/architecture/frontend-structure.md` | 仅在路由实施后更新，以保持 Business Console 路由表为最新。 |
+| `docs/architecture/implementation-readiness.md` | 仅在实施落地并具有验证证据后更新。 |
 
-## Contract Targets
+## 契约目标
 
-Target BusinessGateway operation IDs:
+目标 BusinessGateway operation ID：
 
-| Method | Route | Operation ID | Downstream owner |
+| 方法 | 路由 | Operation ID | 下游归属 |
 | --- | --- | --- | --- |
-| GET | `/api/business-console/v1/mes/foundation-readiness` | `getBusinessConsoleMesFoundationReadiness` | BusinessGateway aggregation over MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM |
-| GET | `/api/business-console/v1/mes/foundation-readiness/master-data` | `getBusinessConsoleMesMasterDataReadiness` | MasterData resolve/validate facade |
-| GET | `/api/business-console/v1/mes/foundation-readiness/product-engineering` | `getBusinessConsoleMesProductEngineeringReadiness` | ProductEngineering production-version resolve facade |
-| GET | `/api/business-console/v1/mes/foundation-readiness/supply` | `getBusinessConsoleMesSupplyReadiness` | WMS/Inventory availability and staging route facade |
-| GET | `/api/business-console/v1/mes/foundation-readiness/quality` | `getBusinessConsoleMesQualityReadiness` | Quality inspection/hold facade |
-| GET | `/api/business-console/v1/mes/foundation-readiness/equipment` | `getBusinessConsoleMesEquipmentReadiness` | MasterData, Maintenance, IndustrialTelemetry facade |
-| GET | `/api/business-console/v1/mes/foundation-readiness/barcode-numbering` | `getBusinessConsoleMesBarcodeNumberingReadiness` | BarcodeLabel plus MES numbering policy facade |
-| GET | `/api/business-console/v1/mes/overview` | `getBusinessConsoleMesOverview` | BusinessGateway aggregation over MES queries |
-| GET | `/api/business-console/v1/mes/production-plans` | `listBusinessConsoleMesProductionPlans` | DemandPlanning/ERP source plan via MES workbench facade |
-| GET | `/api/business-console/v1/mes/production-plans/{productionPlanId}/readiness` | `getBusinessConsoleMesProductionPlanReadiness` | MES aggregation over ProductEngineering, Inventory/WMS, Quality, Maintenance |
-| POST | `/api/business-console/v1/mes/production-plans/{productionPlanId}/work-orders` | `convertBusinessConsoleMesPlanToWorkOrder` | MES command with DemandPlanning/ERP source reference |
-| GET | `/api/business-console/v1/mes/work-orders` | `listBusinessConsoleMesWorkOrders` | Existing MES service list |
-| GET | `/api/business-console/v1/mes/work-orders/{workOrderId}` | `getBusinessConsoleMesWorkOrderDetail` | MES service detail query |
-| POST | `/api/business-console/v1/mes/work-orders/{workOrderId}/release` | `releaseBusinessConsoleMesWorkOrder` | MES command |
-| POST | `/api/business-console/v1/mes/work-orders/rush` | `createBusinessConsoleMesRushWorkOrder` | Existing MES service command |
-| GET | `/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness` | `getBusinessConsoleMesMaterialReadiness` | MES aggregation over ProductEngineering, Inventory/WMS |
-| POST | `/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests` | `createBusinessConsoleMesMaterialIssueRequest` | MES request intent, WMS/Inventory execution |
-| GET | `/api/business-console/v1/mes/material-issue-requests` | `listBusinessConsoleMesMaterialIssueRequests` | MES/WMS status aggregation |
-| POST | `/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts` | `confirmBusinessConsoleMesLineSideMaterialReceipt` | MES receipt confirmation plus WMS/Inventory evidence |
-| GET | `/api/business-console/v1/mes/dispatch-tasks` | `listBusinessConsoleMesDispatchTasks` | MES dispatch query |
-| POST | `/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign` | `assignBusinessConsoleMesDispatchTask` | MES dispatch command |
-| GET | `/api/business-console/v1/mes/operation-tasks` | `listBusinessConsoleMesOperationTasks` | MES service query |
-| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start` | `startBusinessConsoleMesOperationTask` | MES command |
-| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause` | `pauseBusinessConsoleMesOperationTask` | MES command |
-| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume` | `resumeBusinessConsoleMesOperationTask` | MES command |
-| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete` | `completeBusinessConsoleMesOperationTask` | MES command |
-| GET | `/api/business-console/v1/mes/wip` | `getBusinessConsoleMesWipSummary` | MES query |
-| GET | `/api/business-console/v1/mes/production-reports` | `listBusinessConsoleMesProductionReports` | Existing MES service list |
-| POST | `/api/business-console/v1/mes/production-reports` | `recordBusinessConsoleMesProductionReport` | Existing MES service command |
-| POST | `/api/business-console/v1/mes/defects` | `recordBusinessConsoleMesDefect` | MES defect context, Quality downstream |
-| GET | `/api/business-console/v1/mes/related-quality-items` | `listBusinessConsoleMesRelatedQualityItems` | Quality read facade |
-| GET | `/api/business-console/v1/mes/finished-goods-receipt-requests` | `listBusinessConsoleMesFinishedGoodsReceiptRequests` | Existing MES service list |
-| POST | `/api/business-console/v1/mes/finished-goods-receipt-requests` | `createBusinessConsoleMesFinishedGoodsReceiptRequest` | Existing MES service command |
-| GET | `/api/business-console/v1/mes/downtime-events` | `listBusinessConsoleMesDowntimeEvents` | MES/Maintenance/Telemetry aggregation |
-| POST | `/api/business-console/v1/mes/downtime-events` | `recordBusinessConsoleMesDowntimeEvent` | MES command |
-| POST | `/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover` | `confirmBusinessConsoleMesDowntimeRecovery` | MES recovery command plus Maintenance context |
-| GET | `/api/business-console/v1/mes/shift-handovers` | `listBusinessConsoleMesShiftHandovers` | MES query |
-| POST | `/api/business-console/v1/mes/shift-handovers` | `createBusinessConsoleMesShiftHandover` | MES command |
-| POST | `/api/business-console/v1/mes/shift-handovers/{handoverId}/accept` | `acceptBusinessConsoleMesShiftHandover` | MES command |
-| GET | `/api/business-console/v1/mes/traceability/work-orders/{workOrderId}` | `getBusinessConsoleMesWorkOrderTraceability` | MES genealogy query |
-| GET | `/api/business-console/v1/mes/traceability/batches/{batchOrSerial}` | `getBusinessConsoleMesBatchTraceability` | MES genealogy query |
-| GET | `/api/business-console/v1/mes/traceability/material-lots/{materialLotId}` | `getBusinessConsoleMesMaterialLotTraceability` | MES genealogy query |
-| GET | `/api/business-console/v1/mes/capacity-impacts` | `listBusinessConsoleMesCapacityImpacts` | Existing MES service list |
+| GET | `/api/business-console/v1/mes/foundation-readiness` | `getBusinessConsoleMesFoundationReadiness` | BusinessGateway 聚合 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel、IAM |
+| GET | `/api/business-console/v1/mes/foundation-readiness/master-data` | `getBusinessConsoleMesMasterDataReadiness` | MasterData 解析/验证 facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/product-engineering` | `getBusinessConsoleMesProductEngineeringReadiness` | ProductEngineering 生产版本解析 facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/supply` | `getBusinessConsoleMesSupplyReadiness` | WMS/Inventory 可用性与备料路径 facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/quality` | `getBusinessConsoleMesQualityReadiness` | Quality 检验/冻结 facade |
+| GET | `/api/business-console/v1/mes/foundation-readiness/equipment` | `getBusinessConsoleMesEquipmentReadiness` | MasterData、Maintenance、IndustrialTelemetry 门面 |
+| GET | `/api/business-console/v1/mes/foundation-readiness/barcode-numbering` | `getBusinessConsoleMesBarcodeNumberingReadiness` | BarcodeLabel 及 MES 编号策略 facade |
+| GET | `/api/business-console/v1/mes/overview` | `getBusinessConsoleMesOverview` | BusinessGateway 聚合 MES 查询 |
+| GET | `/api/business-console/v1/mes/production-plans` | `listBusinessConsoleMesProductionPlans` | 通过 MES 工作台 facade 获取 DemandPlanning/ERP 源计划 |
+| GET | `/api/business-console/v1/mes/production-plans/{productionPlanId}/readiness` | `getBusinessConsoleMesProductionPlanReadiness` | MES 聚合 ProductEngineering、Inventory/WMS、Quality、Maintenance |
+| POST | `/api/business-console/v1/mes/production-plans/{productionPlanId}/work-orders` | `convertBusinessConsoleMesPlanToWorkOrder` | 带 DemandPlanning/ERP 源引用的 MES 命令 |
+| GET | `/api/business-console/v1/mes/work-orders` | `listBusinessConsoleMesWorkOrders` | 现有 MES 服务列表 |
+| GET | `/api/business-console/v1/mes/work-orders/{workOrderId}` | `getBusinessConsoleMesWorkOrderDetail` | MES 服务详情查询 |
+| POST | `/api/business-console/v1/mes/work-orders/{workOrderId}/release` | `releaseBusinessConsoleMesWorkOrder` | MES 命令 |
+| POST | `/api/business-console/v1/mes/work-orders/rush` | `createBusinessConsoleMesRushWorkOrder` | 现有 MES 服务命令 |
+| GET | `/api/business-console/v1/mes/work-orders/{workOrderId}/material-readiness` | `getBusinessConsoleMesMaterialReadiness` | MES 聚合 ProductEngineering、Inventory/WMS |
+| POST | `/api/business-console/v1/mes/work-orders/{workOrderId}/material-issue-requests` | `createBusinessConsoleMesMaterialIssueRequest` | MES 请求意图，由 WMS/Inventory 执行 |
+| GET | `/api/business-console/v1/mes/material-issue-requests` | `listBusinessConsoleMesMaterialIssueRequests` | MES/WMS 状态聚合 |
+| POST | `/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts` | `confirmBusinessConsoleMesLineSideMaterialReceipt` | MES 收货确认及 WMS/Inventory 证据 |
+| GET | `/api/business-console/v1/mes/dispatch-tasks` | `listBusinessConsoleMesDispatchTasks` | MES 派工查询 |
+| POST | `/api/business-console/v1/mes/dispatch-tasks/{operationTaskId}/assign` | `assignBusinessConsoleMesDispatchTask` | MES 派工命令 |
+| GET | `/api/business-console/v1/mes/operation-tasks` | `listBusinessConsoleMesOperationTasks` | MES 服务查询 |
+| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/start` | `startBusinessConsoleMesOperationTask` | MES 命令 |
+| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/pause` | `pauseBusinessConsoleMesOperationTask` | MES 命令 |
+| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/resume` | `resumeBusinessConsoleMesOperationTask` | MES 命令 |
+| POST | `/api/business-console/v1/mes/operation-tasks/{operationTaskId}/complete` | `completeBusinessConsoleMesOperationTask` | MES 命令 |
+| GET | `/api/business-console/v1/mes/wip` | `getBusinessConsoleMesWipSummary` | MES 查询 |
+| GET | `/api/business-console/v1/mes/production-reports` | `listBusinessConsoleMesProductionReports` | 现有 MES 服务列表 |
+| POST | `/api/business-console/v1/mes/production-reports` | `recordBusinessConsoleMesProductionReport` | 现有 MES 服务命令 |
+| POST | `/api/business-console/v1/mes/defects` | `recordBusinessConsoleMesDefect` | MES 不良上下文，下游为 Quality |
+| GET | `/api/business-console/v1/mes/related-quality-items` | `listBusinessConsoleMesRelatedQualityItems` | Quality 读取 facade |
+| GET | `/api/business-console/v1/mes/finished-goods-receipt-requests` | `listBusinessConsoleMesFinishedGoodsReceiptRequests` | 现有 MES 服务列表 |
+| POST | `/api/business-console/v1/mes/finished-goods-receipt-requests` | `createBusinessConsoleMesFinishedGoodsReceiptRequest` | 现有 MES 服务命令 |
+| GET | `/api/business-console/v1/mes/downtime-events` | `listBusinessConsoleMesDowntimeEvents` | MES/Maintenance/Telemetry 聚合 |
+| POST | `/api/business-console/v1/mes/downtime-events` | `recordBusinessConsoleMesDowntimeEvent` | MES 命令 |
+| POST | `/api/business-console/v1/mes/downtime-events/{downtimeEventId}/recover` | `confirmBusinessConsoleMesDowntimeRecovery` | MES 恢复命令及 Maintenance 上下文 |
+| GET | `/api/business-console/v1/mes/shift-handovers` | `listBusinessConsoleMesShiftHandovers` | MES 查询 |
+| POST | `/api/business-console/v1/mes/shift-handovers` | `createBusinessConsoleMesShiftHandover` | MES 命令 |
+| POST | `/api/business-console/v1/mes/shift-handovers/{handoverId}/accept` | `acceptBusinessConsoleMesShiftHandover` | MES 命令 |
+| GET | `/api/business-console/v1/mes/traceability/work-orders/{workOrderId}` | `getBusinessConsoleMesWorkOrderTraceability` | MES 谱系查询 |
+| GET | `/api/business-console/v1/mes/traceability/batches/{batchOrSerial}` | `getBusinessConsoleMesBatchTraceability` | MES 谱系查询 |
+| GET | `/api/business-console/v1/mes/traceability/material-lots/{materialLotId}` | `getBusinessConsoleMesMaterialLotTraceability` | MES 谱系查询 |
+| GET | `/api/business-console/v1/mes/capacity-impacts` | `listBusinessConsoleMesCapacityImpacts` | 现有 MES 服务列表 |
 
-## Permission Targets
+## 权限目标
 
-Define Business Console permissions explicitly in `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`, where `BusinessGatewayPermissions` currently lives. Add matching IAM seed/catalog and `docs/architecture/authorization-matrix.md` entries in the implementation PR. Do not let unrelated read pages fall through `business.mes.work-orders.manage`. Routes in this table omit the shared `/api/business-console/v1` prefix.
+在 `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs` 中显式定义 Business Console 权限；`BusinessGatewayPermissions` 当前位于此处。在实施 PR 中添加匹配的 IAM seed/catalog 和 `docs/architecture/authorization-matrix.md` 条目。不得让无关读取页面回落到 `business.mes.work-orders.manage`。下表路由省略共享前缀 `/api/business-console/v1`。
 
-| Permission constant | Permission code | Routes |
+| 权限常量 | 权限码 | 路由 |
 | --- | --- | --- |
-| `MesFoundationRead` | `business.mes.foundation.read` | All `/mes/foundation-readiness*` routes. |
+| `MesFoundationRead` | `business.mes.foundation.read` | 所有 `/mes/foundation-readiness*` 路由。 |
 | `MesOverviewRead` | `business.mes.overview.read` | `/mes/overview`. |
-| `MesPlansRead` | `business.mes.plans.read` | `GET /mes/production-plans`, `GET /mes/production-plans/{productionPlanId}/readiness`. |
-| `MesWorkOrdersRead` | `business.mes.work-orders.read` | `GET /mes/work-orders`, `GET /mes/work-orders/{workOrderId}`. |
-| `MesWorkOrdersManage` | `business.mes.work-orders.manage` | Work order release, rush work order creation, and plan-to-work-order conversion. |
-| `MesMaterialsRead` | `business.mes.materials.read` | Material readiness and material issue request list. |
-| `MesMaterialsManage` | `business.mes.materials.manage` | Material issue request creation and line-side receipt confirmation. |
-| `MesDispatchRead` | `business.mes.dispatch.read` | Dispatch task list. |
-| `MesDispatchManage` | `business.mes.dispatch.manage` | Dispatch assignment. |
-| `MesOperationsRead` | `business.mes.operations.read` | Operation task list and WIP summary. |
-| `MesOperationsManage` | `business.mes.operations.manage` | Operation start, pause, resume, complete, transfer, and hold commands. |
-| `MesReportingRead` | `business.mes.reporting.read` | Production report list. |
-| `MesReportingWrite` | `business.mes.reporting.write` | Production report creation. |
-| `MesQualityRead` | `business.mes.quality.read` | Related quality items and defect context drill-down. |
-| `MesQualityWrite` | `business.mes.quality.write` | MES execution defect creation. |
-| `MesReceiptsRead` | `business.mes.receipts.read` | Finished-goods receipt request list. |
-| `MesReceiptsManage` | `business.mes.receipts.manage` | Finished-goods receipt request creation. |
-| `MesDowntimeRead` | `business.mes.downtime.read` | Downtime event list. |
-| `MesDowntimeManage` | `business.mes.downtime.manage` | Downtime event creation and recovery confirmation. |
-| `MesHandoversRead` | `business.mes.handovers.read` | Shift handover list. |
-| `MesHandoversManage` | `business.mes.handovers.manage` | Shift handover creation and acceptance. |
-| `MesTraceabilityRead` | `business.mes.traceability.read` | Work order, batch/serial, and material-lot traceability queries. |
-| `MesSchedulesRead` | `business.mes.schedules.read` | Schedule result/status history. |
-| `MesSchedulesManage` | `business.mes.schedules.manage` | Rule schedule run. |
-| `MesCapacityRead` | `business.mes.capacity.read` | Capacity impact list. |
+| `MesPlansRead` | `business.mes.plans.read` | `GET /mes/production-plans`、`GET /mes/production-plans/{productionPlanId}/readiness`。 |
+| `MesWorkOrdersRead` | `business.mes.work-orders.read` | `GET /mes/work-orders`、`GET /mes/work-orders/{workOrderId}`。 |
+| `MesWorkOrdersManage` | `business.mes.work-orders.manage` | 工单下达、急单创建和计划转工单。 |
+| `MesMaterialsRead` | `business.mes.materials.read` | 物料就绪和领料请求列表。 |
+| `MesMaterialsManage` | `business.mes.materials.manage` | 领料请求创建和线边收货确认。 |
+| `MesDispatchRead` | `business.mes.dispatch.read` | 派工任务列表。 |
+| `MesDispatchManage` | `business.mes.dispatch.manage` | 派工分配。 |
+| `MesOperationsRead` | `business.mes.operations.read` | 工序任务列表和 WIP 摘要。 |
+| `MesOperationsManage` | `business.mes.operations.manage` | 工序开始、暂停、恢复、完成、转移和冻结命令。 |
+| `MesReportingRead` | `business.mes.reporting.read` | 生产报工列表。 |
+| `MesReportingWrite` | `business.mes.reporting.write` | 生产报工创建。 |
+| `MesQualityRead` | `business.mes.quality.read` | 相关质量事项和不良上下文下钻。 |
+| `MesQualityWrite` | `business.mes.quality.write` | MES 执行不良创建。 |
+| `MesReceiptsRead` | `business.mes.receipts.read` | 成品入库请求列表。 |
+| `MesReceiptsManage` | `business.mes.receipts.manage` | 成品入库请求创建。 |
+| `MesDowntimeRead` | `business.mes.downtime.read` | 停机事件列表。 |
+| `MesDowntimeManage` | `business.mes.downtime.manage` | 停机事件创建和恢复确认。 |
+| `MesHandoversRead` | `business.mes.handovers.read` | 班次交接列表。 |
+| `MesHandoversManage` | `business.mes.handovers.manage` | 班次交接创建和接受。 |
+| `MesTraceabilityRead` | `business.mes.traceability.read` | 工单、批次/序列号和物料批次追溯查询。 |
+| `MesSchedulesRead` | `business.mes.schedules.read` | 排程结果/状态历史。 |
+| `MesSchedulesManage` | `business.mes.schedules.manage` | 规则排程运行。 |
+| `MesCapacityRead` | `business.mes.capacity.read` | 产能影响列表。 |
 
-The MES service `MesPermissionCodes` should mirror MES-owned endpoint intent at the same granularity for contract metadata. Source services keep their own permission catalogs; BusinessGateway still performs the end-user authorization check before forwarding internal bearer calls.
+MES 服务的 `MesPermissionCodes` 应以相同粒度映射 MES 自有 endpoint 意图，供契约元数据使用。源服务保留自己的权限目录；BusinessGateway 在转发内部 bearer 调用前仍执行终端用户授权检查。
 
-All target routes must keep the existing BusinessGateway pattern:
+所有目标路由必须保持现有 BusinessGateway 模式：
 
-1. Gateway endpoint uses `AuthorizedBusinessProxyEndpoint`.
-2. Gateway endpoint permission comes from `BusinessGatewayPermissions`.
-3. Gateway forwards `tokenProvider.BearerToken` to business services.
-4. Business services stay protected by `InternalServiceAuthorizationPolicy`.
-5. Frontend consumes only `@nerv-iip/api-client` stable business-console exports.
+1. Gateway endpoint 使用 `AuthorizedBusinessProxyEndpoint`。
+2. Gateway endpoint 权限来自 `BusinessGatewayPermissions`。
+3. Gateway 将 `tokenProvider.BearerToken` 转发给业务服务。
+4. 业务服务继续受 `InternalServiceAuthorizationPolicy` 保护。
+5. 前端只使用 `@nerv-iip/api-client` 稳定的 business-console 导出。
 
-## Task 0: Production Foundation Readiness
+## Task 0：生产基础就绪
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
-- Review and modify when the endpoint is missing: `backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*` for production foundation readiness.
-- Review and modify when the endpoint is missing: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*` for production-version readiness.
-- Review and modify when the endpoint is missing: `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*` for barcode and label rule readiness.
-- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
-- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
+- endpoint 缺失时审核并修改：`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Endpoints/*`，用于生产基础就绪。
+- endpoint 缺失时审核并修改：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Endpoints/*`，用于生产版本就绪。
+- endpoint 缺失时审核并修改：`backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Endpoints/*`，用于条码和标签规则就绪。
+- 测试：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+- 测试：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
 
-- [ ] **Step 1: Define readiness DTOs**
+- [ ] **步骤 1：定义就绪 DTO**
 
-Add Business Console DTOs with stable names and reason codes:
+添加名称和原因码稳定的 Business Console DTO：
 
 ```csharp
 public sealed record BusinessConsoleMesFoundationReadinessRequest(
@@ -434,83 +434,83 @@ public sealed record BusinessConsoleMesReadinessIssue(
     string? FixHint);
 ```
 
-Use these area codes in the first release: `master-data`, `product-engineering`, `supply`, `quality`, `equipment`, `barcode-numbering`, and `iam-context`.
-Use these status values only: `Ready`, `Warning`, and `Blocked`.
-Use the reason codes from the Reason Code Baseline table; add a new code only with a gateway contract test and a page rendering assertion.
+首个版本使用这些领域代码：`master-data`、`product-engineering`、`supply`、`quality`、`equipment`、`barcode-numbering` 和 `iam-context`。
+仅使用这些状态值：`Ready`、`Warning` 和 `Blocked`。
+使用“原因码基线”表中的原因码；只有同时添加 gateway 契约测试和页面渲染断言时，才可新增代码。
 
-- [ ] **Step 2: Write gateway tests for foundation readiness**
+- [ ] **步骤 2：编写基础就绪 gateway 测试**
 
-Add tests proving `GET /api/business-console/v1/mes/foundation-readiness`:
+添加测试，证明 `GET /api/business-console/v1/mes/foundation-readiness`：
 
-1. Requires authenticated Business Console user bearer.
-2. Calls IAM authorization with `BusinessGatewayPermissions.MesFoundationRead`.
-3. Calls downstream read clients with internal service bearer token.
-4. Returns `Blocked` when any P0 area returns a blocking issue.
-5. Returns `Warning` when no blocker exists but at least one warning exists.
-6. Returns `Ready` when all areas are ready.
-7. Preserves source-system and reference IDs so users know which foundation record to fix.
-8. Converts source-service timeout, 5xx, invalid JSON, and missing required readiness fields into a `Blocked` area with `SOURCE_SERVICE_UNAVAILABLE`, while preserving normal 401/403 responses for IAM authentication and authorization failures.
+1. 需要已通过身份验证的 Business Console 用户 bearer。
+2. 使用 `BusinessGatewayPermissions.MesFoundationRead` 调用 IAM 授权。
+3. 使用内部服务 bearer 令牌调用下游读取客户端。
+4. 任一 P0 领域返回阻塞问题时返回 `Blocked`。
+5. 不存在阻塞但至少有一个警告时返回 `Warning`。
+6. 所有领域均就绪时返回 `Ready`。
+7. 保留源系统和引用 ID，使用户知道需要修复哪条基础记录。
+8. 将源服务超时、5xx、无效 JSON 和缺少必要就绪字段转换为 `Blocked` 领域并附带 `SOURCE_SERVICE_UNAVAILABLE`，同时为 IAM 身份验证和授权失败保留正常 401/403 响应。
 
-- [ ] **Step 3: Verify source-service resolver coverage**
+- [ ] **步骤 3：验证源服务解析器覆盖**
 
-Check these source services before adding new endpoints:
+添加新 endpoint 前检查这些源服务：
 
 ```powershell
 rg -n "Resolve|Validate|ProductionVersion|Barcode|Rule|WorkCalendar|Shift|PersonnelSkill|DeviceAsset|WorkCenter" backend/services/Business
 ```
 
-Use existing resolver endpoints when they already return the Foundation Record Contract fields. When coverage is missing, add only these narrow read endpoints:
+现有解析器 endpoint 已返回“基础记录契约”字段时应直接复用。覆盖缺失时，只添加以下窄粒度读取 endpoint：
 
-| Service | Endpoint shape | Must answer |
+| 服务 | Endpoint 形态 | 必须回答 |
 | --- | --- | --- |
-| MasterData | `POST /api/business/master-data/v1/readiness/production-foundation` | Hierarchy, work calendar, shift, team, personnel skill, SKU/UOM, work center, device asset, and resource capability readiness. |
-| ProductEngineering | `POST /api/business/product-engineering/v1/readiness/production-version` | Released production version, MBOM, routing, operation sequence, material demand, standard duration, and required resource capability readiness. |
-| BarcodeLabel | `POST /api/business/barcode-label/v1/readiness/rules` | Barcode rule, label template, printer mapping, and scan rule readiness for MES document/material/product/receipt/traceability use cases. |
+| MasterData | `POST /api/business/master-data/v1/readiness/production-foundation` | 层级、工作日历、班次、团队、人员技能、SKU/UOM、工作中心、设备资产和资源能力就绪状态。 |
+| ProductEngineering | `POST /api/business/product-engineering/v1/readiness/production-version` | 已发布生产版本、MBOM、工艺路线、工序序列、物料需求、标准时长和必要资源能力就绪状态。 |
+| BarcodeLabel | `POST /api/business/barcode-label/v1/readiness/rules` | MES 单据/物料/产品/入库/追溯用例的条码规则、标签模板、打印机映射和扫描规则就绪状态。 |
 
-Do not add broad foundation-data maintenance screens or CRUD endpoints inside MES.
+不得在 MES 内添加宽泛的基础数据维护界面或 CRUD endpoint。
 
-- [ ] **Step 4: Add numbering readiness contract**
+- [ ] **步骤 4：添加编号就绪契约**
 
-For MES-owned documents, add server-side number rule checks before commands create records:
+对于 MES 自有单据，在命令创建记录前添加服务端编号规则检查：
 
-| Document | Required prefix example | Rule owner |
+| 单据 | 必要前缀示例 | 规则归属 |
 | --- | --- | --- |
-| Work order | `MO` | MES service-local policy |
-| Operation task | `OP` | MES service-local policy |
-| Material issue request | `MI` | MES service-local policy |
-| Production report | `PR` | MES service-local policy |
-| Defect record | `DF` | MES service-local policy |
-| Downtime event | `DT` | MES service-local policy |
-| Finished-goods receipt request | `FG` | MES service-local policy |
-| Shift handover | `SH` | MES service-local policy |
+| 工单 | `MO` | MES 服务本地策略 |
+| 工序任务 | `OP` | MES 服务本地策略 |
+| 领料请求 | `MI` | MES 服务本地策略 |
+| 生产报工 | `PR` | MES 服务本地策略 |
+| 不良记录 | `DF` | MES 服务本地策略 |
+| 停机事件 | `DT` | MES 服务本地策略 |
+| 成品入库请求 | `FG` | MES 服务本地策略 |
+| 班次交接 | `SH` | MES 服务本地策略 |
 
-The first implementation may keep the generator inside MES, but the rule shape must be explicit enough to move to a shared Numbering service later without changing Business Console contracts.
+首轮实施可以将生成器保留在 MES 内，但规则形态必须足够明确，以便未来在不改变 Business Console 契约的情况下迁移到共享 Numbering 服务。
 
-- [ ] **Step 5: Run gateway focused tests**
+- [ ] **步骤 5：运行 gateway 聚焦测试**
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 6: Commit foundation readiness**
+- [ ] **步骤 6：提交基础就绪变更**
 
 ```powershell
 git add backend/gateway/BusinessGateway backend/services/Business/MasterData backend/services/Business/ProductEngineering backend/services/Business/BarcodeLabel docs/architecture/authorization-matrix.md
 git commit -m "feat: add mes foundation readiness contracts"
 ```
 
-## Task 1: Contract Gap Map And First Failing Tests
+## Task 1：契约缺口图与首批失败测试
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
-- Modify: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
-- Modify: `docs/architecture/api-contract-and-codegen.md` if the current document lacks BusinessGateway export expectations for the added routes.
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+- 修改：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+- 若当前文档缺少新增路由的 BusinessGateway 导出预期，则修改：`docs/architecture/api-contract-and-codegen.md`。
 
-- [ ] **Step 1: Write OpenAPI operationId assertions**
+- [ ] **步骤 1：编写 OpenAPI operationId 断言**
 
-Add assertions for every route in the Contract Targets table. Keep the existing assertion style in `BusinessGatewayOpenApiTests.cs`, for example:
+为“契约目标”表中的每条路由添加断言。保持 `BusinessGatewayOpenApiTests.cs` 中现有断言风格，例如：
 
 ```csharp
 AssertOperationId(paths, "/api/business-console/v1/mes/production-reports", "get", "listBusinessConsoleMesProductionReports");
@@ -518,66 +518,66 @@ AssertOperationId(paths, "/api/business-console/v1/mes/finished-goods-receipt-re
 AssertOperationId(paths, "/api/business-console/v1/mes/capacity-impacts", "get", "listBusinessConsoleMesCapacityImpacts");
 ```
 
-- [ ] **Step 2: Write proxy tests before implementation**
+- [ ] **步骤 2：实施前编写代理测试**
 
-Add tests proving each new facade:
+添加测试，证明每个新 facade：
 
-1. Rejects unauthenticated requests.
-2. Calls IAM authorization with the expected permission code.
-3. Forwards `organizationId`, `environmentId`, IDs, filters, and `take`.
-4. Sends the internal service bearer token downstream.
-5. Does not call the downstream service when IAM denies access.
+1. 拒绝未通过身份验证的请求。
+2. 使用预期权限码调用 IAM 授权。
+3. 转发 `organizationId`、`environmentId`、ID、筛选条件和 `take`。
+4. 向下游发送内部服务 bearer 令牌。
+5. IAM 拒绝访问时不调用下游服务。
 
-- [ ] **Step 3: Run failing gateway tests**
+- [ ] **步骤 3：运行预期失败的 gateway 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore
 ```
 
-Expected at this point: FAIL because the new routes, clients, models, and permissions do not exist yet.
+此时预期：失败，因为新路由、客户端、模型和权限尚不存在。
 
-- [ ] **Step 4: Commit tests only**
+- [ ] **步骤 4：仅提交测试**
 
 ```powershell
 git add backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs docs/architecture/api-contract-and-codegen.md
 git commit -m "test: define mes pc workbench business gateway contracts"
 ```
 
-## Task 2: MES Service Read Surface
+## Task 2：MES 服务读取界面
 
-**Files:**
-- Modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
-- Create or modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/*`
-- Create or modify: `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/*`
-- Test: `backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/*`
+**文件：**
+- 修改：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs`
+- 创建或修改：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/*`
+- 创建或修改：`backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/*`
+- 测试：`backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/*`
 
-- [ ] **Step 1: Add missing MES service tests**
+- [ ] **步骤 1：添加缺失的 MES 服务测试**
 
-Write service-level tests for:
+编写以下服务级测试：
 
-1. `GET /api/business/v1/mes/work-orders/{workOrderId}` returns one work order with operation tasks, release snapshot, material readiness summary, quality status, equipment status, and receipt status.
-2. `GET /api/business/v1/mes/operation-tasks` filters by organization, environment, status, work center, device, shift, team, and work order.
-3. `POST /api/business/v1/mes/work-orders/{workOrderId}/release` refuses release when production version, route, key material, quality hold, or equipment availability blocks execution, and allows release with warnings when policy permits manual confirmation.
-4. `GET /api/business/v1/mes/work-orders/{workOrderId}/material-readiness` returns demand quantity, available quantity, requested quantity, staged quantity, received quantity, shortage quantity, substitute availability, and blocking reason.
-5. `POST /api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests` creates a MES material request intent without creating warehouse tasks directly.
-6. `POST /api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign` records person/device/shift assignment and blocks unavailable device or quality hold according to rule.
-7. `POST /api/business/v1/mes/operation-tasks/{operationTaskId}/start|pause|resume|complete` changes operation task state and preserves audit-friendly timestamps and actor IDs.
-8. Existing `GET /api/business/v1/mes/production-reports` remains available and report creation can include good, scrap, rework, labor time, machine time, material batch/serial evidence, and attachments.
-9. `POST /api/business/v1/mes/defects` records an execution defect context and links to Quality/NCR downstream identifiers when available.
-10. Existing `GET /api/business/v1/mes/finished-goods-receipt-requests` remains available.
-11. Existing `GET /api/business/v1/mes/capacity-impacts` remains available.
-12. `POST /api/business/v1/mes/downtime-events` and recovery confirmation record production-impacting downtime.
-13. `POST /api/business/v1/mes/shift-handovers` carries unresolved production/material/quality/equipment/receipt issues to the next shift.
-14. `GET /api/business/v1/mes/wip` returns WIP counts by work order, operation, work center, status, blocker reason, shift, team, and planned/actual quantity.
-15. Traceability queries return at least work order, production version, operation tasks, reports, material lots, defects, downtime, receipt request, person, and device links.
+1. `GET /api/business/v1/mes/work-orders/{workOrderId}` 返回一个工单，包含工序任务、下达快照、物料就绪摘要、质量状态、设备状态和入库状态。
+2. `GET /api/business/v1/mes/operation-tasks` 可按组织、环境、状态、工作中心、设备、班次、团队和工单筛选。
+3. `POST /api/business/v1/mes/work-orders/{workOrderId}/release` 在生产版本、工艺路线、关键物料、质量冻结或设备可用性阻塞执行时拒绝下达；策略允许人工确认时，允许带警告下达。
+4. `GET /api/business/v1/mes/work-orders/{workOrderId}/material-readiness` 返回需求数量、可用数量、请求数量、备料数量、收货数量、短缺数量、替代料可用性和阻塞原因。
+5. `POST /api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests` 创建 MES 物料请求意图，不直接创建仓库任务。
+6. `POST /api/business/v1/mes/dispatch-tasks/{operationTaskId}/assign` 记录人员/设备/班次分配，并按规则阻止使用不可用设备或处于质量冻结的对象。
+7. `POST /api/business/v1/mes/operation-tasks/{operationTaskId}/start|pause|resume|complete` 改变工序任务状态，并保留便于审计的时间戳和操作者 ID。
+8. 现有 `GET /api/business/v1/mes/production-reports` 继续可用，报工创建可包含合格、报废、返工、人工工时、机器工时、物料批次/序列号证据和附件。
+9. `POST /api/business/v1/mes/defects` 记录执行不良上下文，并在可用时关联 Quality/NCR 下游标识符。
+10. 现有 `GET /api/business/v1/mes/finished-goods-receipt-requests` 继续可用。
+11. 现有 `GET /api/business/v1/mes/capacity-impacts` 继续可用。
+12. `POST /api/business/v1/mes/downtime-events` 和恢复确认记录影响生产的停机。
+13. `POST /api/business/v1/mes/shift-handovers` 将未解决的生产/物料/质量/设备/入库问题传递到下一班次。
+14. `GET /api/business/v1/mes/wip` 按工单、工序、工作中心、状态、阻塞原因、班次、团队和计划/实际数量返回 WIP 计数。
+15. 追溯查询至少返回工单、生产版本、工序任务、报工、物料批次、不良、停机、入库请求、人员和设备关联。
 
-- [ ] **Step 2: Implement missing read queries**
+- [ ] **步骤 2：实施缺失的读取查询**
 
-Only add MES service queries and commands that do not already exist. Use async EF Core calls with `CancellationToken`, and keep query/endpoint DTOs in the Web/Application layer rather than Domain.
+只添加尚不存在的 MES 服务查询和命令。使用带 `CancellationToken` 的异步 EF Core 调用，并将查询/endpoint DTO 保留在 Web/Application 层，而不是 Domain 层。
 
-Expected endpoint contract additions:
+预期新增的 endpoint 契约：
 
 ```csharp
 new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
@@ -590,58 +590,58 @@ new(typeof(CreateShiftHandoverEndpoint), "POST", "/api/business/v1/mes/shift-han
 new(typeof(GetWorkOrderTraceabilityEndpoint), "GET", "/api/business/v1/mes/traceability/work-orders/{workOrderId}", MesPermissionCodes.TraceabilityRead, "getBusinessMesWorkOrderTraceability"),
 ```
 
-Add every new MES service permission constant to `MesPermissionCodes.All` and its endpoint contract test. Keep the service endpoint protected by `InternalServiceAuthorizationPolicy`; the permission code remains contract/catalog metadata and is not a terminal-user bearer authorization decision.
+将每个新 MES 服务权限常量添加到 `MesPermissionCodes.All` 及其 endpoint 契约测试中。服务 endpoint 继续受 `InternalServiceAuthorizationPolicy` 保护；权限码仍是契约/目录元数据，不是终端用户 bearer 授权决策。
 
-- [ ] **Step 3: Run MES focused tests**
+- [ ] **步骤 3：运行 MES 聚焦测试**
 
 ```powershell
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj --no-restore
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 4: Commit MES service surface**
+- [ ] **步骤 4：提交 MES 服务界面**
 
 ```powershell
 git add backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests
 git commit -m "feat: expose mes pc workbench read surface"
 ```
 
-## Task 3: BusinessGateway MES Facade Expansion
+## Task 3：扩展 BusinessGateway MES Facade
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
-- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
-- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
+- 测试：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+- 测试：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
 
-- [ ] **Step 1: Add Business Console MES DTOs**
+- [ ] **步骤 1：添加 Business Console MES DTO**
 
-Add compact DTOs for:
+为以下内容添加紧凑 DTO：
 
-1. MES cockpit counts, blocker summaries, and role-specific pending work.
-2. Production plan readiness rows and release-risk details.
-3. Work order detail and release snapshot.
-4. Material readiness, shortage, issue/staging request, line-side receipt, and material consumption evidence rows.
-5. Dispatch task rows and assignment request/response.
-6. Operation task rows and start/pause/resume/complete responses.
-7. WIP summary rows.
-8. Production report rows.
-9. Defect/nonconformance execution context rows.
-10. Finished-goods receipt request rows.
-11. Downtime and equipment impact rows.
-12. Shift handover rows.
-13. Traceability graph/list rows.
-14. Capacity impact rows.
-15. Related quality item rows.
+1. MES 驾驶舱计数、阻塞摘要和特定角色待办工作。
+2. 生产计划就绪行和下达风险详情。
+3. 工单详情和下达快照。
+4. 物料就绪、短缺、领料/备料请求、线边收货和物料消耗证据行。
+5. 派工任务行以及分配请求/响应。
+6. 工序任务行以及开始/暂停/恢复/完成响应。
+7. WIP 摘要行。
+8. 生产报工行。
+9. 不良/不合格执行上下文行。
+10. 成品入库请求行。
+11. 停机和设备影响行。
+12. 班次交接行。
+13. 追溯图/列表行。
+14. 产能影响行。
+15. 相关质量事项行。
 
-Keep DTO property names stable and frontend-oriented, for example `productionPlanId`, `workOrderId`, `operationTaskId`, `materialId`, `materialLotId`, `batchOrSerial`, `status`, `readinessStatus`, `blockingReasons`, `workCenterId`, `deviceAssetId`, `shiftId`, `assignedUserId`, `plannedStartUtc`, `startedAtUtc`, `reportedAtUtc`, `qualityStatus`, `receiptStatus`, and `handoverStatus`.
+保持 DTO 属性名稳定且面向前端，例如 `productionPlanId`、`workOrderId`、`operationTaskId`、`materialId`、`materialLotId`、`batchOrSerial`、`status`、`readinessStatus`、`blockingReasons`、`workCenterId`、`deviceAssetId`、`shiftId`、`assignedUserId`、`plannedStartUtc`、`startedAtUtc`、`reportedAtUtc`、`qualityStatus`、`receiptStatus` 和 `handoverStatus`。
 
-- [ ] **Step 2: Add internal client methods**
+- [ ] **步骤 2：添加内部客户端方法**
 
-Extend `IBusinessMesClient` and `HttpBusinessMesClient` for the MES routes in the Contract Targets table. Add separate client interfaces only when a non-MES fact owner is needed by a page:
+为“契约目标”表中的 MES 路由扩展 `IBusinessMesClient` 和 `HttpBusinessMesClient`。只有页面需要非 MES 事实归属方时，才添加独立客户端接口：
 
 ```csharp
 Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
@@ -672,89 +672,89 @@ Task<BusinessConsoleMesTraceabilityResponse> GetWorkOrderTraceabilityAsync(
     CancellationToken cancellationToken);
 ```
 
-- [ ] **Step 3: Add facade endpoints**
+- [ ] **步骤 3：添加 facade endpoint**
 
-Add one FastEndpoints class per route to `BusinessConsoleMesEndpoints.cs`, following the existing endpoint style. Do not place route mappings in startup files.
+按照现有 endpoint 风格，在 `BusinessConsoleMesEndpoints.cs` 中为每条路由添加一个 FastEndpoints 类。不得在 startup 文件中放置路由映射。
 
-- [ ] **Step 4: Use narrow permissions**
+- [ ] **步骤 4：使用窄粒度权限**
 
-Implement the Permission Targets table exactly:
+严格实施“权限目标”表：
 
-1. Add missing constants to `BusinessGatewayPermissions` in `BusinessGatewayAuthorization.cs`.
-2. Map every BusinessGateway endpoint to the listed permission; do not reuse `MesWorkOrdersManage` for foundation, material, dispatch, operation, quality, receipt, downtime, handover, traceability, schedule-read, or capacity-read pages.
-3. Add IAM seed/catalog and `docs/architecture/authorization-matrix.md` rows for every new permission code.
-4. Add gateway tests proving at least one read route and one write route use different permission codes in each MES area.
+1. 将缺失常量添加到 `BusinessGatewayPermissions`；该对象位于 `BusinessGatewayAuthorization.cs`。
+2. 将每个 BusinessGateway endpoint 映射到表中权限；不得为基础、物料、派工、工序、质量、入库、停机、交接、追溯、排程读取或产能读取页面复用 `MesWorkOrdersManage`。
+3. 为每个新权限码添加 IAM seed/catalog 和 `docs/architecture/authorization-matrix.md` 行。
+4. 添加 gateway 测试，证明每个 MES 领域中至少一条读取路由与一条写入路由使用不同权限码。
 
-- [ ] **Step 5: Run gateway tests**
+- [ ] **步骤 5：运行 gateway 测试**
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 6: Commit gateway facade**
+- [ ] **步骤 6：提交 gateway facade**
 
 ```powershell
 git add backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests docs/architecture/authorization-matrix.md
 git commit -m "feat: expand mes business console facade"
 ```
 
-## Task 4: OpenAPI Snapshot And Generated Client
+## Task 4：OpenAPI 快照与生成客户端
 
-**Files:**
-- Modify generated snapshot: `frontend/packages/api-client/openapi/business-gateway-console.v1.json`
-- Modify generated client files under: `frontend/packages/api-client/src/generated/business-console/`
-- Modify stable exports: `frontend/packages/api-client/src/business-console.ts`
-- Test: `frontend/packages/api-client/src/generated-contract.test.ts`
+**文件：**
+- 修改生成的快照：`frontend/packages/api-client/openapi/business-gateway-console.v1.json`
+- 修改以下目录中的生成客户端文件：`frontend/packages/api-client/src/generated/business-console/`
+- 修改稳定导出：`frontend/packages/api-client/src/business-console.ts`
+- 测试：`frontend/packages/api-client/src/generated-contract.test.ts`
 
-- [ ] **Step 1: Export BusinessGateway OpenAPI**
+- [ ] **步骤 1：导出 BusinessGateway OpenAPI**
 
-Use the repository's existing governed OpenAPI export path. Do not hand-edit OpenAPI JSON.
+使用仓库现有受治理的 OpenAPI 导出路径。不得手工编辑 OpenAPI JSON。
 
-- [ ] **Step 2: Regenerate frontend API client**
+- [ ] **步骤 2：重新生成前端 API 客户端**
 
 ```powershell
 pnpm -C frontend generate:api
 ```
 
-Expected: generated business-console client contains the new operation functions and Pinia Colada query/mutation options.
+预期：生成的 business-console 客户端包含新 operation 函数和 Pinia Colada 查询/变更选项。
 
-- [ ] **Step 3: Add stable exports**
+- [ ] **步骤 3：添加稳定导出**
 
-Export only the required MES workbench functions and type aliases from `frontend/packages/api-client/src/business-console.ts`. Do not deep-import generated files in app code.
+只从 `frontend/packages/api-client/src/business-console.ts` 导出必要的 MES 工作台函数和类型别名。应用代码不得深层导入生成文件。
 
-- [ ] **Step 4: Update generated contract test**
+- [ ] **步骤 4：更新生成契约测试**
 
-Add `expect(...).toBeTypeOf('function')` assertions for the new query/mutation options and stable exports.
+为新查询/变更选项和稳定导出添加 `expect(...).toBeTypeOf('function')` 断言。
 
-- [ ] **Step 5: Run api-client tests**
+- [ ] **步骤 5：运行 api-client 测试**
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test
 pnpm -C frontend --filter @nerv-iip/api-client typecheck
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 6: Commit contract artifacts**
+- [ ] **步骤 6：提交契约产物**
 
 ```powershell
 git add frontend/packages/api-client
 git commit -m "feat: generate mes pc business console client"
 ```
 
-## Task 5: PC MES Composables
+## Task 5：PC MES 组合式函数
 
-**Files:**
-- Modify: `frontend/apps/business-console/src/composables/useBusinessMes.ts`
-- Create: `frontend/apps/business-console/src/composables/mes/useMesWorkbench.ts`
-- Create: `frontend/apps/business-console/src/composables/mes/useMesReferenceLabels.ts`
-- Test: existing or new Vitest files under `frontend/apps/business-console/src/**/__tests__` or `frontend/apps/business-console/tests`
+**文件：**
+- 修改：`frontend/apps/business-console/src/composables/useBusinessMes.ts`
+- 创建：`frontend/apps/business-console/src/composables/mes/useMesWorkbench.ts`
+- 创建：`frontend/apps/business-console/src/composables/mes/useMesReferenceLabels.ts`
+- 测试：`frontend/apps/business-console/src/**/__tests__` 或 `frontend/apps/business-console/tests` 下现有或新增 Vitest 文件
 
-- [ ] **Step 1: Add query wrappers**
+- [ ] **步骤 1：添加查询封装**
 
-Expose composable functions for:
+暴露以下 composable 函数：
 
 1. `useMesOverview()`
 2. `useMesFoundationReadiness()`
@@ -776,56 +776,56 @@ Expose composable functions for:
 18. `useMesCapacityImpacts()`
 19. `useMesSchedules()`
 
-- [ ] **Step 2: Replace hardcoded context source**
+- [ ] **步骤 2：替换硬编码上下文来源**
 
-Keep the existing `org-001` and `env-dev` development defaults only behind one explicit app-local helper, so pages can later move to a real context selector without editing every form.
+只在一个显式的应用本地 helper 后保留现有 `org-001` 和 `env-dev` 开发默认值，使页面未来可迁移到真实上下文选择器，而无需编辑每个表单。
 
-- [ ] **Step 3: Add invalidation rules**
+- [ ] **步骤 3：添加失效规则**
 
-After plan conversion, work order release, material issue request creation, line-side material receipt, dispatch assignment, operation state change, production report creation, defect entry, finished-goods receipt request creation, downtime recovery, shift handover acceptance, or schedule run, invalidate affected MES queries by operation ID. Reuse the existing `isBusinessQuery` pattern.
+计划转换、工单下达、领料请求创建、线边物料收货、派工分配、工序状态变更、生产报工创建、不良录入、成品入库请求创建、停机恢复、班次交接接受或排程运行后，按 operation ID 使受影响的 MES 查询失效。复用现有 `isBusinessQuery` 模式。
 
-- [ ] **Step 4: Run Business Console typecheck**
+- [ ] **步骤 4：运行 Business Console 类型检查**
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 5: Commit composables**
+- [ ] **步骤 5：提交 composable**
 
 ```powershell
 git add frontend/apps/business-console/src/composables
 git commit -m "feat: add mes pc workbench composables"
 ```
 
-## Task 6: PC MES Pages With Chinese Copy
+## Task 6：采用中文文案的 PC MES 页面
 
-**Files:**
-- Create: `frontend/apps/business-console/src/pages/mes/index.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/foundation.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/plans.vue`
-- Modify: `frontend/apps/business-console/src/pages/mes/work-orders.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/work-orders/[workOrderId].vue`
-- Create: `frontend/apps/business-console/src/pages/mes/materials.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/dispatch.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/operation-tasks.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/reports.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/quality.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/receipts.vue`
-- Modify: `frontend/apps/business-console/src/pages/mes/schedules.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/downtime.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/handovers.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/traceability.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/capacity.vue`
-- Modify: `frontend/apps/business-console/src/layouts/BusinessLayout.vue`
-- Test: `frontend/apps/business-console/tests/e2e/business-console.spec.ts`
+**文件：**
+- 创建：`frontend/apps/business-console/src/pages/mes/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/foundation.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/plans.vue`
+- 修改：`frontend/apps/business-console/src/pages/mes/work-orders.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/work-orders/[workOrderId].vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/materials.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/dispatch.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/operation-tasks.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/reports.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/quality.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/receipts.vue`
+- 修改：`frontend/apps/business-console/src/pages/mes/schedules.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/downtime.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/handovers.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/traceability.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/capacity.vue`
+- 修改：`frontend/apps/business-console/src/layouts/BusinessLayout.vue`
+- 测试：`frontend/apps/business-console/tests/e2e/business-console.spec.ts`
 
-- [ ] **Step 1: Build the desktop MES navigation**
+- [ ] **步骤 1：构建桌面 MES 导航**
 
-Add the MES pages to the Business Console navigation with Chinese labels:
+使用中文标签将 MES 页面添加到 Business Console 导航：
 
-| Route | Label |
+| 路由 | 标签 |
 | --- | --- |
 | `/mes` | `生产驾驶舱` |
 | `/mes/foundation` | `基础准备` |
@@ -843,11 +843,11 @@ Add the MES pages to the Business Console navigation with Chinese labels:
 | `/mes/traceability` | `追溯查询` |
 | `/mes/capacity` | `产能影响` |
 
-- [ ] **Step 2: Replace visible English MES copy**
+- [ ] **步骤 2：替换可见的英文 MES 文案**
 
-All visible MES page text must be Chinese literals for this phase. Examples:
+本阶段所有可见 MES 页面文本必须是中文文字。示例：
 
-| Current English | Required Chinese |
+| 当前英文 | 必要中文 |
 | --- | --- |
 | `Work orders` | `生产工单` |
 | `Create rush work order` | `创建急单` |
@@ -864,23 +864,23 @@ All visible MES page text must be Chinese literals for this phase. Examples:
 | `Status` | `状态` |
 | `Take` | `数量上限` |
 
-Do not introduce a new translation catalog or locale switcher in this task.
+本任务不得引入新翻译目录或语言区域切换器。
 
-For the existing `frontend/apps/business-console/src/pages/mes/schedules.vue`, replace all visible English copy, consume `useMesSchedules()`, keep the page as a rule-schedule result/status workbench, and do not add full APS/Gantt behavior in this task.
+对于现有 `frontend/apps/business-console/src/pages/mes/schedules.vue`，替换所有可见英文文案，使用 `useMesSchedules()`，将页面保持为规则排程结果/状态工作台，并且本任务不得添加完整 APS/Gantt 行为。
 
-- [ ] **Step 3: Implement page states**
+- [ ] **步骤 3：实施页面状态**
 
-Each page must cover loading, empty, error, success, and disabled-submit states. Use `Spinner`, `TableEmpty`, `Badge`, `Button`, `Field`, and related `@nerv-iip/ui` exports only.
+每个页面必须覆盖加载、空、错误、成功和禁用提交状态。只使用 `Spinner`、`TableEmpty`、`Badge`、`Button`、`Field` 及相关 `@nerv-iip/ui` 导出。
 
-- [ ] **Step 4: Keep pages operational rather than marketing-style**
+- [ ] **步骤 4：保持页面面向运营而非营销风格**
 
-Use dense tables, filters, concise metrics, and direct action panels. Do not add a landing-page hero or decorative card layout.
+使用高密度表格、筛选器、简洁指标和直接操作面板。不得添加落地页主视觉区或装饰性卡片布局。
 
-- [ ] **Step 5: Add route-level smoke coverage**
+- [ ] **步骤 5：添加路由级冒烟覆盖**
 
-Extend Playwright smoke tests to open each MES route and assert at least one Chinese heading or table label appears.
+扩展 Playwright 冒烟测试，打开每条 MES 路由，并断言至少出现一个中文标题或表格标签。
 
-- [ ] **Step 6: Run frontend focused checks**
+- [ ] **步骤 6：运行前端聚焦检查**
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
@@ -889,69 +889,69 @@ pnpm -C frontend --filter @nerv-iip/business-console build
 pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
 ```
 
-Expected after implementation: PASS. If local Playwright managed browser is missing, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to the installed Chromium/Chrome path and rerun once.
+实施后预期：通过。若缺少本地 Playwright 托管浏览器，将 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 设为已安装的 Chromium/Chrome 路径并重新运行一次。
 
-- [ ] **Step 7: Commit PC MES pages**
+- [ ] **步骤 7：提交 PC MES 页面**
 
 ```powershell
 git add frontend/apps/business-console/src frontend/apps/business-console/tests
 git commit -m "feat: complete mes pc business console pages"
 ```
 
-## Task 7: Minimal Cross-Domain MES Context
+## Task 7：最小跨领域 MES 上下文
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
-- Modify or create endpoint files under: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/`
-- Test: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
-- Modify frontend pages only where the added context is displayed.
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
+- 修改或创建以下目录中的 endpoint 文件：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/`
+- 测试：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+- 仅在显示新增上下文的位置修改前端页面。
 
-- [ ] **Step 1: Add only context needed by MES pages**
+- [ ] **步骤 1：只添加 MES 页面所需上下文**
 
-Implement the cross-domain reads in this order:
+按以下顺序实施跨领域读取：
 
-1. DemandPlanning/ERP source plan and priority context for production plan readiness.
-2. MasterData labels for SKU, work center, production line, shift, team, device asset, and production-supply area.
-3. ProductEngineering production-version, MBOM, routing, work instruction, and effective-version summary on work order detail.
-4. Inventory/WMS availability, reservation, issue/staging status, line-side receipt, return/supplement, and downstream finished-goods receipt evidence.
-5. Quality inspection task, hold, defect, NCR, rework, scrap, and disposition rows related to work orders and operation tasks.
-6. Maintenance/IndustrialTelemetry asset state, alarm, downtime, recovery, and capacity-impact labels if the MES query returns only IDs.
-7. ERP Finance source-document links only when the existing ERP surface is verified.
+1. 用于生产计划就绪的 DemandPlanning/ERP 源计划和优先级上下文。
+2. SKU、工作中心、生产线、班次、团队、设备资产和生产供应区的 MasterData 标签。
+3. 工单详情上的 ProductEngineering 生产版本、MBOM、工艺路线、作业指导书和有效版本摘要。
+4. Inventory/WMS 可用性、预留、领料/备料状态、线边收货、退料/补料，以及下游成品入库证据。
+5. 与工单和工序任务相关的 Quality 检验任务、冻结、不良、NCR、返工、报废和处置行。
+6. 若 MES 查询只返回 ID，则添加 Maintenance/IndustrialTelemetry 资产状态、告警、停机、恢复和产能影响标签。
+7. 只有在现有 ERP 界面经验证时，才添加 ERP Finance 源单据链接。
 
-- [ ] **Step 2: Keep fallbacks ID-based**
+- [ ] **步骤 2：保持基于 ID 的后备方案**
 
-If a related service does not have a stable read endpoint yet, show the raw ID from MES and do not block the MES page. Record the missing read endpoint in the implementation PR description rather than fabricating data.
+若相关服务尚无稳定读取 endpoint，显示 MES 原始 ID，且不得阻塞 MES 页面。在实施 PR 描述中记录缺失的读取 endpoint，不得编造数据。
 
-- [ ] **Step 3: Run gateway and frontend checks**
+- [ ] **步骤 3：运行 gateway 和前端检查**
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --no-restore
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 4: Commit cross-domain context**
+- [ ] **步骤 4：提交跨领域上下文**
 
 ```powershell
 git add backend/gateway/BusinessGateway frontend/apps/business-console/src
 git commit -m "feat: add mes related business context"
 ```
 
-## Task 8: Focused Verification Script
+## Task 8：聚焦验证脚本
 
-**Files:**
-- Create: `scripts/verify-business-console-mes-pc-workbench.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/frontend-structure.md`
-- Modify if route/contract docs changed: `docs/architecture/api-contract-and-codegen.md`
+**文件：**
+- 创建：`scripts/verify-business-console-mes-pc-workbench.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/frontend-structure.md`
+- 若路由/契约文档发生变化则修改：`docs/architecture/api-contract-and-codegen.md`
 
-- [ ] **Step 1: Create governed script**
+- [ ] **步骤 1：创建受治理脚本**
 
-The script must dot-source `scripts/lib/ScriptAutomation.ps1` and use helper functions such as `Invoke-DotNet` and `Invoke-Pnpm`. It must not call `dotnet`, `pnpm`, or `pwsh` directly.
+脚本必须 dot-source `scripts/lib/ScriptAutomation.ps1`，并使用 `Invoke-DotNet`、`Invoke-Pnpm` 等 helper 函数。不得直接调用 `dotnet`、`pnpm` 或 `pwsh`。
 
-The script should run:
+脚本应运行：
 
 ```powershell
 dotnet test backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/Nerv.IIP.Business.Mes.Web.Tests.csproj --no-restore
@@ -964,56 +964,56 @@ pnpm -C frontend --filter @nerv-iip/business-console test
 pnpm -C frontend --filter @nerv-iip/business-console build
 ```
 
-- [ ] **Step 2: Add optional e2e mode**
+- [ ] **步骤 2：添加可选 e2e 模式**
 
-Support an opt-in switch for:
+支持按需启用以下命令的开关：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
 ```
 
-Document that a local Chrome/Chromium executable may be required.
+说明可能需要本地 Chrome/Chromium 可执行文件。
 
-- [ ] **Step 3: Run script governance**
+- [ ] **步骤 3：运行脚本治理**
 
 ```powershell
 scripts/check-script-governance.ps1
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 4: Run the focused verification script**
+- [ ] **步骤 4：运行聚焦验证脚本**
 
 ```powershell
 scripts/verify-business-console-mes-pc-workbench.ps1
 ```
 
-Expected after implementation: PASS.
+实施后预期：通过。
 
-- [ ] **Step 5: Update architecture docs with verified facts**
+- [ ] **步骤 5：以已验证事实更新架构文档**
 
-Only after the script passes, update:
+只有脚本通过后，才更新：
 
-1. `docs/architecture/frontend-structure.md` route table for the new MES pages.
-2. `docs/architecture/implementation-readiness.md` current-code-fact entry for Business Console PC MES completion.
-3. `docs/architecture/api-contract-and-codegen.md` if BusinessGateway export/codegen commands or snapshots changed.
+1. `docs/architecture/frontend-structure.md` 中新 MES 页面的路由表。
+2. `docs/architecture/implementation-readiness.md` 中 Business Console PC MES 完善的当前代码事实条目。
+3. 若 BusinessGateway 导出/代码生成命令或快照发生变化，则更新 `docs/architecture/api-contract-and-codegen.md`。
 
-- [ ] **Step 6: Commit verification and docs**
+- [ ] **步骤 6：提交验证与文档**
 
 ```powershell
 git add scripts/verify-business-console-mes-pc-workbench.ps1 docs/architecture/implementation-readiness.md docs/architecture/frontend-structure.md docs/architecture/api-contract-and-codegen.md
 git commit -m "docs: record mes pc workbench verification"
 ```
 
-## Final Verification
+## 最终验证
 
-Run the focused gate:
+运行聚焦门禁：
 
 ```powershell
 scripts/verify-business-console-mes-pc-workbench.ps1
 ```
 
-Then run the broader frontend and backend checks that match the changed surface:
+然后运行与变更界面匹配的更广泛前端和后端检查：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln --no-restore
@@ -1022,37 +1022,37 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-If Docker-dependent gates are not run, state the Docker blocker explicitly in the PR.
+若未运行依赖 Docker 的门禁，须在 PR 中明确说明 Docker 阻塞。
 
-## Rollout Order
+## 推进顺序
 
-1. Merge Task 0 foundation readiness contracts first: MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, source-service failure handling, permissions, and numbering checks.
-2. Merge Task 1 API/BFF contract work before page expansion.
-3. Implement Task 2 standard P0 MES service surface in this order: plan readiness and work order release, material readiness/request, dispatch and operation state, WIP, report/quality/downtime, receipt/handover/traceability.
-4. Merge generated client and composables immediately after contracts.
-5. Merge PC MES pages with Chinese copy and role-oriented navigation.
-6. Add minimal cross-domain context as a follow-up if it increases review size too much, but do not drop foundation readiness, material readiness, dispatch, downtime, handover, or traceability from the target model.
-7. Start WMS workbench, DemandPlanning/MRP, ERP drill-down, Quality deeper workflow, and Maintenance/Telemetry PC pages after MES desktop flow is usable.
-8. Start PDA/mobile only after MES PC contracts and primary flows stop changing.
+1. 首先合并 Task 0 基础就绪契约：MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel、IAM、源服务失败处理、权限和编号检查。
+2. 在扩展页面前合并 Task 1 API/BFF 契约工作。
+3. 按以下顺序实施 Task 2 标准 P0 MES 服务界面：计划就绪与工单下达、物料就绪/请求、派工与工序状态、WIP、报工/质量/停机、入库/交接/追溯。
+4. 契约之后立即合并生成客户端和组合式函数。
+5. 合并具有中文文案和面向角色导航的 PC MES 页面。
+6. 若最小跨领域上下文使审核规模过大，可作为后续工作添加，但不得从目标模型中删除基础就绪、物料就绪、派工、停机、交接或追溯。
+7. MES 桌面流程可用后，启动 WMS 工作台、DemandPlanning/MRP、ERP 下钻、Quality 深度工作流和 Maintenance/Telemetry PC 页面。
+8. 只有 MES PC 契约和主要流程停止变化后，才启动 PDA/移动端。
 
-## Acceptance Checklist
+## 验收清单
 
-- [ ] BusinessGateway exposes the MES PC workbench routes in the Contract Targets table.
-- [ ] BusinessGateway and IAM expose the Permission Targets matrix, and read/write routes do not collapse into one broad manage permission.
-- [ ] BusinessGateway tests cover auth, permission, context propagation, internal bearer forwarding, and downstream denial behavior.
-- [ ] Foundation readiness returns `Ready`, `Warning`, or `Blocked` across MasterData, ProductEngineering, WMS/Inventory, Quality, Maintenance/Telemetry, BarcodeLabel, IAM, and numbering areas.
-- [ ] Foundation readiness converts source-service timeout, 5xx, invalid JSON, or malformed readiness payload into a `Blocked` area with `SOURCE_SERVICE_UNAVAILABLE`.
-- [ ] Work order release stores snapshots for master data, production version, material readiness, quality requirement, equipment/person assignment, barcode rule, and generated document IDs.
-- [ ] MES service endpoints exist for P0 execution facts: plan readiness, work order release, material readiness/request intent, dispatch, operation state, WIP, report, defect context, downtime, receipt request, shift handover, and traceability.
-- [ ] Generated business-console client exports stable MES workbench functions and types.
-- [ ] PC MES routes exist under `frontend/apps/business-console/src/pages/mes` with foundation readiness, production cockpit, production plan, material readiness, dispatch, operation execution, report, quality, receipt, downtime, handover, and traceability pages.
-- [ ] User-visible MES page copy is Chinese in the first implementation.
-- [ ] No page directly calls business service URLs or generated deep imports.
-- [ ] MES can see and trigger material issue/staging flow, but WMS/Inventory remain the source of warehouse execution and inventory balances.
-- [ ] MES can see quality, downtime, and maintenance context, but Quality and Maintenance remain their own source-of-truth services.
-- [ ] MES can consume barcode and label rules, but BarcodeLabel remains the source of templates, print batches, and scan records.
-- [ ] MES document IDs are generated server-side using explicit numbering rules; users are not required to manually invent durable IDs.
-- [ ] Traceability can start from work order, batch/serial, material lot, or defect and return the linked execution evidence.
-- [ ] `scripts/verify-business-console-mes-pc-workbench.ps1` passes.
-- [ ] `docs/architecture/frontend-structure.md` and `docs/architecture/implementation-readiness.md` are updated after implementation evidence exists.
-- [ ] PDA/mobile remains explicitly deferred until PC MES contracts stabilize.
+- [ ] BusinessGateway 暴露“契约目标”表中的 MES PC 工作台路由。
+- [ ] BusinessGateway 和 IAM 暴露“权限目标”矩阵，读写路由没有合并到一个宽泛管理权限中。
+- [ ] BusinessGateway 测试覆盖身份验证、权限、上下文传递、内部 bearer 转发和下游拒绝行为。
+- [ ] 基础就绪在 MasterData、ProductEngineering、WMS/Inventory、Quality、Maintenance/Telemetry、BarcodeLabel、IAM 和编号领域返回 `Ready`、`Warning` 或 `Blocked`。
+- [ ] 基础就绪将源服务超时、5xx、无效 JSON 或格式错误的就绪载荷转换为 `Blocked` 领域并附带 `SOURCE_SERVICE_UNAVAILABLE`。
+- [ ] 工单下达存储主数据、生产版本、物料就绪、质量要求、设备/人员分配、条码规则和生成单据 ID 的快照。
+- [ ] P0 执行事实具有 MES 服务 endpoint：计划就绪、工单下达、物料就绪/请求意图、派工、工序状态、WIP、报工、不良上下文、停机、入库请求、班次交接和追溯。
+- [ ] 生成的 business-console 客户端导出稳定的 MES 工作台函数和类型。
+- [ ] `frontend/apps/business-console/src/pages/mes` 下存在 PC MES 路由，包含基础就绪、生产驾驶舱、生产计划、物料就绪、派工、工序执行、报工、质量、入库、停机、交接和追溯页面。
+- [ ] 首轮实施中用户可见的 MES 页面文案为中文。
+- [ ] 任何页面均未直接调用业务服务 URL 或生成文件的深层导入。
+- [ ] MES 可查看并触发领料/备料流程，但 WMS/Inventory 仍是仓库执行和库存余额的事实来源。
+- [ ] MES 可查看质量、停机和维护上下文，但 Quality 和 Maintenance 仍各自是其事实来源服务。
+- [ ] MES 可使用条码和标签规则，但 BarcodeLabel 仍是模板、打印批次和扫描记录的事实来源。
+- [ ] MES 单据 ID 使用显式编号规则在服务端生成；无需用户手工编造持久 ID。
+- [ ] 追溯可从工单、批次/序列号、物料批次或不良开始，并返回关联执行证据。
+- [ ] `scripts/verify-business-console-mes-pc-workbench.ps1` 通过。
+- [ ] 实施证据存在后，已更新 `docs/architecture/frontend-structure.md` 和 `docs/architecture/implementation-readiness.md`。
+- [ ] PDA/移动端明确延后，直至 PC MES 契约稳定。
