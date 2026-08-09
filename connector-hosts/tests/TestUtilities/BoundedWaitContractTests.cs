@@ -34,7 +34,8 @@ public sealed class BoundedWaitContractTests
             $"Collection '{CollectionName}' must exist and set DisableParallelization=true so xUnit v2 honours Timeout.");
 
         var violations = FindViolatingAsyncTests(
-                assemblyTypes.Where(type => type != typeof(AsyncVoidRegressionFixture)))
+                assemblyTypes.Where(type => type != typeof(AsyncVoidRegressionFixture)
+                    && type != typeof(StaticAsyncRegressionFixture)))
             .Select(method => $"{method.DeclaringType!.FullName}.{method.Name}")
             .OrderBy(violation => violation, StringComparer.Ordinal)
             .ToArray();
@@ -60,9 +61,22 @@ public sealed class BoundedWaitContractTests
             violations);
     }
 
+    [Fact]
+    public void Unbounded_static_async_fact_and_theory_are_reported()
+    {
+        var violations = FindViolatingAsyncTests([typeof(StaticAsyncRegressionFixture)])
+            .Select(method => method.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(
+            ["Static_async_task_fact_without_timeout", "Static_async_void_theory_without_timeout"],
+            violations);
+    }
+
     private static MethodInfo[] FindViolatingAsyncTests(IEnumerable<Type> types) =>
         types
-            .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+            .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly))
             .Select(method => new
             {
                 Method = method,
@@ -99,6 +113,16 @@ public sealed class BoundedWaitContractTests
         [Theory]
         [InlineData(0)]
         public async void Async_void_theory_without_timeout(int _) => await Task.CompletedTask;
+    }
+
+    private sealed class StaticAsyncRegressionFixture
+    {
+        [Fact]
+        public static async Task Static_async_task_fact_without_timeout() => await Task.CompletedTask;
+
+        [Theory]
+        [InlineData(0)]
+        public static async void Static_async_void_theory_without_timeout(int _) => await Task.CompletedTask;
     }
 #pragma warning restore xUnit1000, xUnit1048
 }
