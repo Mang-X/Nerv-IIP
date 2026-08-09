@@ -1,24 +1,24 @@
 # Date Picker (NvDatePicker / NvDateRangePicker / NvTimePicker)
 
-Date/time controls for desktop product UI, exported from `@nerv-iip/ui`:
+桌面产品 UI 的日期/时间控件，从 `@nerv-iip/ui` 导出：
 
-- `NvDatePicker` — single date. `v-model` is a `YYYY-MM-DD` string or `null`;
-  props `placeholder`, `disabled`.
-- `NvDateRangePicker` — range. `v-model` is `DateRange`
-  (`{ start: string | null, end: string | null }`) or `null`.
-- `NvTimePicker` — time selection for schedule/window inputs.
+- `NvDatePicker` — 单个日期。`v-model` 为 `YYYY-MM-DD` 字符串或 `null`；
+  props 为 `placeholder`、`disabled`。
+- `NvDateRangePicker` — 日期范围。`v-model` 为 `DateRange`
+  (`{ start: string | null, end: string | null }`) 或 `null`。
+- `NvTimePicker` — 用于排程/时间窗口输入的时间选择。
 
-The un-prefixed `DatePicker` / `DateRangePicker` (and their `DateRangeValue`
-type) plus `Calendar` / `RangeCalendar` are 原版 / low-level exports —
-library-internal only; do not use them in app code.
+无前缀的 `DatePicker` / `DateRangePicker`（及其 `DateRangeValue` 类型）以及
+`Calendar` / `RangeCalendar` 是原版 / 底层导出，仅限组件库内部使用；
+不得在应用代码中使用。
 
-## Contract
+## 契约
 
-1. Values stay DateOnly-compatible strings; consumers convert to endpoint DTOs at the app boundary.
-2. Disabled and clearable states are handled by props; pages should not reimplement clear buttons.
-3. Triggers are compact and suitable for toolbar filters and form fields.
+1. 值保持为兼容 DateOnly 的字符串；消费者在应用边界将其转换为 endpoint DTO。
+2. 禁用和可清除状态由 props 处理；页面不得重新实现清除按钮。
+3. 触发器保持紧凑，适用于工具栏筛选器和表单字段。
 
-## Usage
+## 用法
 
 ```vue
 <script setup lang="ts">
@@ -35,7 +35,7 @@ const plannedWindow = ref<DateRange | null>(null)
 </template>
 ```
 
-## Rules
+## 规则
 
-- Do not import calendar or popover internals from deep paths in app code — use the `@nerv-iip/ui` barrel export.
-- Do not compose Popover + native date inputs by hand — that pre-NvUI pattern is superseded by `NvDatePicker` / `NvDateRangePicker`.
+- 不得在应用代码中从深层路径（deep path）导入日历或 Popover 内部实现；应使用 `@nerv-iip/ui` 的桶导出（barrel export）。
+- 不得手动组合 Popover + 原生日期输入；该前 NvUI 模式已由 `NvDatePicker` / `NvDateRangePicker` 取代。

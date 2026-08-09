@@ -1,10 +1,10 @@
 # Field (NvField)
 
-Form field wrapper with label, description, and error messaging. App code uses
-the `NvField*` family from `@nerv-iip/ui`; the un-prefixed `Field*` parts are
-the shadcn 原版 primitives — library-internal only.
+包含标签、说明和错误消息的表单字段包装器。应用代码使用 `NvField*` 系列，
+它们来自 `@nerv-iip/ui`；无前缀的 `Field*` 部件是 shadcn 原版
+primitives，仅限组件库内部使用。
 
-## Anatomy
+## 结构
 
 ```
 NvField (or NvFieldSet for groups)
@@ -15,7 +15,7 @@ NvField (or NvFieldSet for groups)
   NvFieldError (conditional: validation error)
 ```
 
-## Usage
+## 用法
 
 ```vue
 <!-- Simple field -->
@@ -47,15 +47,15 @@ NvField (or NvFieldSet for groups)
 </NvFieldSet>
 ```
 
-## Stack Layout
+## 堆叠布局
 
-Form fields should stack with `gap-4` in an `NvFieldGroup` or
-`<form class="grid gap-4">`. `NvField` supports
-`orientation="vertical | horizontal | responsive"` (vertical is the default).
+表单字段应以 `gap-4` 的间距堆叠在 `NvFieldGroup` 或
+`<form class="grid gap-4">` 中。`NvField` 支持 `orientation="vertical | horizontal | responsive"`
+（vertical 为默认值）。
 
-## Do NOT
+## 禁止
 
-- Do not use raw `<label>` elements — always use `NvFieldLabel`.
-- Do not use raw `<p>` for error text — always use `NvFieldError`.
-- Do not place `NvFieldError` outside an `NvField` context.
-- Do not skip `for` / `id` pairing between `NvFieldLabel` and the input.
+- 不得使用原始 `<label>` 元素；必须始终使用 `NvFieldLabel`。
+- 不得使用原始 `<p>` 展示错误文本；必须始终使用 `NvFieldError`。
+- 不得将 `NvFieldError` 放在 `NvField` 上下文之外。
+- 不得省略 `for` / `id` 与 `NvFieldLabel` 及输入控件之间的配对。

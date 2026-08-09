@@ -1,14 +1,14 @@
 # FileUpload
 
-`FileUpload` is the Calm Control Plane upload primitive for FileStorage-backed business attachments, quality evidence, maintenance photos and engineering documents.
+`FileUpload` 是 Calm Control Plane 的上传 primitive，用于 FileStorage 支持的业务附件、
+质量证据、维护照片和工程文档。
 
-> NvUI status: `FileUpload` keeps its un-prefixed name — it is a Nerv-IIP
-> custom primitive (not a shadcn 原版 pass-through) and the current canonical
-> app-facing export from `@nerv-iip/ui`; ADR 0020 Appendix A assigned it no
-> `Nv*` rename. File-preview helpers live in the `@nerv-iip/ui/file-preview`
-> sub-entry (the only allowed sub-entry).
+> NvUI 状态：`FileUpload` 保持无前缀名称；它是 Nerv-IIP 自定义 primitive
+> （不是 shadcn 原版透传），也是当前从 `@nerv-iip/ui` 导出的规范
+> 应用侧名称；ADR 0020 Appendix A 未为其分配 `Nv*` 重命名。文件预览辅助项位于
+> `@nerv-iip/ui/file-preview` 子入口（唯一允许的子入口）。
 
-## Exports
+## 导出
 
 - `FileUpload`
 - `fileUploadMotion`
@@ -26,22 +26,22 @@
 - `FileUploadCompletedFile`
 - `FileUploadRejectedFile`
 
-## Contract
+## 契约
 
-1. Props include `purpose`, `ownerService`, `ownerType`, `ownerId`, `organizationId`, `environmentId`, accepted content types, max file size, max file count, `autoUpload`, `virtualizeThreshold`, `virtualRowHeight` and `virtualListHeight`.
-2. The component emits completed `fileId` values only; it never exposes bucket names, object keys or long-lived object-storage URLs.
-3. The default native transport supports FileStorage `tus` `HEAD`/`PATCH` and `server-proxy` binary `PUT` instructions.
-4. Rows show status, semantic status badges, progress, retryable failure errors, pause/resume controls while uploading, readable file-family labels for Word, Excel, PowerPoint, PDF, image, audio and video files, and human-readable size labels through GB.
-5. `autoUpload` defaults to `true`; when set to `false`, selected or dropped files remain queued until `uploadQueued()` is called through the exposed component API.
-6. Exposed imperative methods are limited to upload workflow control: `browse`, `addFiles`, `uploadQueued`, `pauseAll`, `resumeAll`, `retryFailed` and `clear`.
-7. Drag-and-drop and browse entry points share the same validation and FileStorage session flow.
-8. Row entry/removal and drag-over feedback use Vue transition classes and Tailwind semantic tokens; no `motion-vue` dependency is required for the current primitive.
-9. A future Uppy adapter may replace the transport for richer retry policy, source-provider workflows or broader tus protocol coverage without changing the visual contract.
-10. Rejected size/type, expired session, checksum mismatch and interrupted upload errors are surfaced as row-level status; retrying an expired failed session creates a fresh upload session before transport starts.
-11. Rejected and failed rows remain visible for feedback or retry, but they do not consume available upload slots.
-12. Large queues switch from animated full rendering to a fixed-height virtualized scroll container after `virtualizeThreshold` rows; small queues keep row entry/removal transitions.
+1. 属性包括 `purpose`、`ownerService`、`ownerType`、`ownerId`、`organizationId`、`environmentId`、接受的内容类型、最大文件大小、最大文件数量、`autoUpload`、`virtualizeThreshold`、`virtualRowHeight` 和 `virtualListHeight`。
+2. 组件仅发出已完成的 `fileId` 值；绝不暴露 bucket 名称、对象键或长期有效的对象存储 URL。
+3. 默认原生传输支持 FileStorage `tus` `HEAD`/`PATCH` 和 `server-proxy` 二进制 `PUT` 指令。
+4. 行展示状态、语义化状态徽标、进度、可重试的失败错误、上传期间的暂停/恢复控件、Word、Excel、PowerPoint、PDF、图像、音频和视频文件的可读文件类别标签，以及最大到 GB 的人类可读大小标签。
+5. `autoUpload` 默认为 `true`；设为 `false` 时，选中或拖放的文件保持排队，直到通过暴露的组件 API 调用 `uploadQueued()`。
+6. 暴露的命令式方法仅限上传工作流控制：`browse`、`addFiles`、`uploadQueued`、`pauseAll`、`resumeAll`、`retryFailed` 和 `clear`。
+7. 拖放和浏览入口共用相同的验证和 FileStorage 会话流程。
+8. 行进入/移除和拖放悬停反馈使用 Vue 过渡类和 Tailwind 语义化 tokens；当前 primitive 不需要 `motion-vue` 依赖。
+9. 未来可用 Uppy 适配器替换传输，以支持更丰富的重试策略、来源提供方工作流或更广泛的 tus 协议覆盖范围，且不改变视觉契约。
+10. 拒绝的大小/类型、过期会话、校验和不匹配和中断上传错误均作为行级状态呈现；重试已过期的失败会话时，会在传输启动前创建新的上传会话。
+11. 被拒绝和失败的行保持可见，以便反馈或重试，但不占用可用上传槽位。
+12. 大型队列在超过 `virtualizeThreshold` 行后，从带动画的完整渲染切换为固定高度的虚拟化滚动容器；小型队列保留行进入/移除过渡。
 
-## Usage
+## 用法
 
 ```vue
 <FileUpload
@@ -58,7 +58,7 @@
 />
 ```
 
-Manual queue mode for form submission flows:
+表单提交流程的手动队列模式：
 
 ```vue
 <script setup lang="ts">
