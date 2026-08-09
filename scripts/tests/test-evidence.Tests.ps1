@@ -251,11 +251,40 @@ function Test-NervProductionCompositeKeyCallsites {
     }
 }
 
+function Test-NervProductionCompositeKeyByteEvidenceFixture {
+    $fixtureScript = Join-Path $fixtures 'composite-key-production-fixture.ps1'
+    $productionLibrary = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+    $byteEvidenceRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-byte-fixture-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        foreach ($mode in @('safe', 'discriminating')) {
+            $outputDirectory = Join-Path $byteEvidenceRoot $mode
+            Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $byteEvidenceRoot -WorkingDirectory $repoRoot -Name "composite-production-byte-evidence-$mode" -Arguments @(
+                '-TestEvidenceLibraryPath', $productionLibrary,
+                '-Fixture', 'byte-evidence',
+                '-ByteEvidenceMode', $mode,
+                '-OutputDirectory', $outputDirectory
+            ) | Out-Null
+            Assert-True (Test-Path -LiteralPath (Join-Path $outputDirectory 'summary.json') -PathType Leaf) "Byte-evidence fixture '$mode' must retain summary.json at its caller-owned output path."
+        }
+
+        $safeSummary = Get-Content -LiteralPath (Join-Path $byteEvidenceRoot 'safe/summary.json') -Raw | ConvertFrom-Json
+        Assert-True ([int]$safeSummary.total -eq 2 -and @($safeSummary.assemblies).Count -eq 2) 'Safe byte-evidence fixture input must retain two ordinary assemblies.'
+
+        $discriminatingSummary = Get-Content -LiteralPath (Join-Path $byteEvidenceRoot 'discriminating/summary.json') -Raw | ConvertFrom-Json
+        Assert-True ([int]$discriminatingSummary.total -eq 2 -and @($discriminatingSummary.assemblies).Count -eq 2) 'Discriminating byte-evidence fixture input must not merge delimiter-colliding identities.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath (Join-Path $byteEvidenceRoot 'discriminating/trx') -Filter '*.trx' -File).Count 'Discriminating byte-evidence fixture input must retain two normalized TRX artifacts.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $byteEvidenceRoot) { Remove-Item -LiteralPath $byteEvidenceRoot -Recurse -Force }
+    }
+}
+
 Assert-True (-not $collectorSource.Contains('TestOnly')) 'Production collector must expose no test-only authority replacement parameter.'
 Assert-True (-not $baselineGeneratorSource.Contains('TestOnly')) 'Production baseline generator must expose no test-only authority replacement parameter.'
 Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling')) 'Collector governance Writes must declare its owned failure sibling output.'
 Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
 Test-NervProductionCompositeKeyCallsites
+Test-NervProductionCompositeKeyByteEvidenceFixture
 
 Assert-True (Test-NervTestEvidenceLaneName 'backend') 'backend must be valid.'
 Assert-True (Test-NervTestEvidenceLaneName 'backend-shard-1') 'backend-shard-1 must use schema v1.'

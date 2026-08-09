@@ -241,8 +241,9 @@ function Test-NervCiWorkflowConditionRunsAfterFailure {
     $statusNeutralFunctions = @(
         'success', 'contains', 'startswith', 'endswith', 'format', 'join', 'tojson', 'fromjson', 'hashfiles'
     )
-    foreach ($call in [regex]::Matches($expression, '(?i)(?<name>[A-Za-z_][A-Za-z0-9_-]*)\s*\(')) {
-        if ($statusNeutralFunctions -notcontains $call.Groups['name'].Value.ToLowerInvariant()) {
+    $statusNeutralFunctionSet = Get-NervStringSet -Values $statusNeutralFunctions -Comparer ([StringComparer]::Ordinal)
+    foreach ($call in [regex]::Matches($expression, '(?i)(?<name>[A-Za-z_][^\s(]*)\s*\(')) {
+        if (-not $statusNeutralFunctionSet.Contains([string]$call.Groups['name'].Value.ToLowerInvariant())) {
             return $true
         }
     }

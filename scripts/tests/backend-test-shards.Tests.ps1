@@ -38,6 +38,7 @@ $temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativeP
 $runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
+$ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 
 function Assert-Contract {
     param(
@@ -136,6 +137,14 @@ Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics m
 Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
 . $diagnosticsPath
 . $selectorAssertionsPath
+. $ciWorkflowBudgetsPath
+
+# An unrecognized status function must stay in the fail-closed evidence tier. PowerShell's
+# `-notcontains` folds U+00AD, so `success<U+00AD>()` used to be treated as `success()` and the
+# budget gate silently classified it as status-neutral.
+$statusFunctionSoftHyphen = [string][char]0x00AD
+Assert-Contract (Test-NervCiWorkflowConditionRunsAfterFailure -Condition "success$statusFunctionSoftHyphen()") `
+    'A U+00AD-mutated status function must be treated as unknown and therefore evidence-publishing.'
 
 $runnerBypassText = ''
 try {
@@ -579,6 +588,16 @@ try {
     $workflowValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-workflow-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
     Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.')) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
+
+    # The aggregate needs list is an exact job-identity set. U+00AD must not be folded into the
+    # real platform job name by a culture-aware joined-string comparison.
+    $platformNeed = '      - backend-tests-platform'
+    $workflowWithMutatedPlatformNeed = $workflowContent.Replace($platformNeed, "${platformNeed}$statusFunctionSoftHyphen")
+    Assert-Contract (-not [string]::Equals($workflowWithMutatedPlatformNeed, $workflowContent, [StringComparison]::Ordinal)) 'The aggregate-needs U+00AD mutation must target the canonical platform job line.'
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value $workflowWithMutatedPlatformNeed -NoNewline
+    $mutatedNeedValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-aggregate-needs-ordinal-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $mutatedNeedValidation.Passed) 'A U+00AD-mutated aggregate need must fail exact shard governance.'
+    Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.')) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
     $noOpValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-noop-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)

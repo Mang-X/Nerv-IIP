@@ -12,8 +12,11 @@
 param(
     [Parameter(Mandatory)] [string] $TestEvidenceLibraryPath,
     [Parameter(Mandatory)]
-    [ValidateSet('artifact-record-sort', 'normalized-trx-group', 'normalized-trx-record-sort', 'baseline-aggregate', 'derived-instance-id')]
-    [string] $Fixture
+    [ValidateSet('artifact-record-sort', 'normalized-trx-group', 'normalized-trx-record-sort', 'baseline-aggregate', 'derived-instance-id', 'byte-evidence')]
+    [string] $Fixture,
+    [ValidateSet('safe', 'discriminating')]
+    [string] $ByteEvidenceMode,
+    [string] $OutputDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -83,9 +86,45 @@ function New-ProductionFixtureSummary([object[]] $Records) {
     return New-NervTestEvidenceSummary -Records $Records -RunMetadata $metadata -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
 }
 
+function New-ProductionByteEvidenceRecords {
+    param([Parameter(Mandatory)] [ValidateSet('safe', 'discriminating')] [string] $Mode)
+
+    if ([string]::Equals($Mode, 'safe', [StringComparison]::Ordinal)) {
+        return @(
+            New-ProductionFixtureRecord -Sequence 1 -Lane 'backend-shard-1' -Assembly 'Alpha.Tests.dll' -TestName 'ByteEvidence.Alpha'
+            New-ProductionFixtureRecord -Sequence 2 -Lane 'backend-shard-1' -Assembly 'Beta.Tests.dll' -TestName 'ByteEvidence.Beta'
+        )
+    }
+
+    # The legacy selector serializes both identities as `a|b|c`; the production encoder must keep
+    # the two records in distinct summary and normalized-TRX groups.
+    return @(
+        New-ProductionFixtureRecord -Sequence 1 -Lane 'a|b' -Assembly 'c' -TestName 'ByteEvidence.DelimiterLeft'
+        New-ProductionFixtureRecord -Sequence 2 -Lane 'a' -Assembly 'b|c' -TestName 'ByteEvidence.DelimiterRight'
+    )
+}
+
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-composite-key-production-$Fixture-$([Guid]::NewGuid().ToString('N'))"
 $fixtureRootRepeat = "$fixtureRoot-repeat"
 try {
+    if ([string]::Equals($Fixture, 'byte-evidence', [StringComparison]::Ordinal)) {
+        if ([string]::IsNullOrWhiteSpace($ByteEvidenceMode)) {
+            throw 'composite-key-fixture:byte-evidence: ByteEvidenceMode must be safe or discriminating.'
+        }
+        if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+            throw 'composite-key-fixture:byte-evidence: OutputDirectory is required and remains caller-owned for byte comparison.'
+        }
+        if (Test-Path -LiteralPath $OutputDirectory) {
+            throw "composite-key-fixture:byte-evidence: OutputDirectory already exists: '$OutputDirectory'."
+        }
+
+        $records = @(New-ProductionByteEvidenceRecords -Mode $ByteEvidenceMode)
+        $summary = New-ProductionFixtureSummary -Records $records
+        Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -OutputDirectory $OutputDirectory
+        Write-Host "Composite-key byte-evidence fixture '$ByteEvidenceMode' wrote '$OutputDirectory'."
+        exit 0
+    }
+
     if ([string]::Equals($Fixture, 'derived-instance-id', [StringComparison]::Ordinal)) {
         $targetOnlyPath = Join-Path $fixtureRoot 'target-only.trx'
         $withUnrelatedPath = Join-Path $fixtureRoot 'with-unrelated.trx'

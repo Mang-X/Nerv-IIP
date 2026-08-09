@@ -425,7 +425,7 @@ foreach ($shard in $fastShards) {
     # path, or `backend/nerv.iip.sln` — lands in this branch instead of the "invalid JSON" report.
     $normalizedFilter = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $shard.solutionFilter)
     $normalizedSolution = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $manifest.solution)
-    if ($normalizedFilter -eq $normalizedSolution) {
+    if ([string]::Equals($normalizedFilter, $normalizedSolution, [StringComparison]::OrdinalIgnoreCase)) {
         $errors.Add("Fast shard '$($shard.id)' must build its own solution filter, not the whole backend solution.")
         continue
     }
@@ -483,7 +483,7 @@ else {
 
                 $lane = [string] $shard.evidenceLane
                 $shardJobName = [string] $shard.jobName
-                if ((Get-WorkflowStringValue -Object $job -PropertyName 'name') -ne $shardJobName) {
+                if (-not [string]::Equals((Get-WorkflowStringValue -Object $job -PropertyName 'name'), $shardJobName, [StringComparison]::OrdinalIgnoreCase)) {
                     $errors.Add("Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job.")
                 }
 
@@ -589,7 +589,11 @@ else {
             else {
                 $expectedNeeds = @('backend-test-shard-governance') + $fastJobIds
                 $actualNeeds = @($aggregate.needs | ForEach-Object { [string] $_ })
-                if ((@(Get-NervStringsSorted -Values @($actualNeeds) -Comparer ([StringComparer]::Ordinal)) -join '|') -ne (@(Get-NervStringsSorted -Values @($expectedNeeds) -Comparer ([StringComparer]::Ordinal)) -join '|')) {
+                $expectedNeedSet = Get-NervStringSet -Values $expectedNeeds -Comparer ([StringComparer]::Ordinal)
+                $actualNeedSet = Get-NervStringSet -Values $actualNeeds -Comparer ([StringComparer]::Ordinal)
+                $missingNeeds = @($expectedNeeds | Where-Object { -not $actualNeedSet.Contains([string] $_) })
+                $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
+                if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0) {
                     $errors.Add("Backend Tests aggregate must need exactly the governance and four fast shard jobs.")
                 }
                 if ((-not [string]::Equals([string]([string] $aggregate.name), [string]('Backend Tests'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]([string] $aggregate.if), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
