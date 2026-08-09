@@ -33,7 +33,7 @@ function Test-PathBelow([string] $Path, [string] $Parent) {
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
     $resolvedParent = [System.IO.Path]::GetFullPath($Parent).TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
     $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
-    return $resolvedPath.StartsWith($resolvedParent, $comparison, [StringComparison]::Ordinal)
+    return $resolvedPath.StartsWith($resolvedParent, $comparison)
 }
 
 function Stop-AcceptanceStartProcess([object] $Record) {

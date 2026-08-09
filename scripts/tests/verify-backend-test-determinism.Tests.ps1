@@ -64,6 +64,9 @@ function Assert-Equal {
     }
 }
 
+$earlySettingsIndex = [Array]::IndexOf([object[]] @('--no-build', '--settings', 'early.runsettings'), '--settings')
+Assert-Equal -Expected 1 -Actual $earlySettingsIndex -Message 'Array.IndexOf must find --settings before index 4.'
+
 function Write-Utf8NoBom {
     param(
         [Parameter(Mandatory)]
@@ -275,7 +278,7 @@ function Assert-SixRoundContract {
         $settingsPaths = @(
             Get-NervStringsSorted -Values @($roundRecords |
                 ForEach-Object {
-                    $settingsIndex = [Array]::IndexOf([object[]] $_.arguments, '--settings', [StringComparison]::Ordinal)
+                    $settingsIndex = [Array]::IndexOf([object[]] $_.arguments, '--settings')
                     Assert-True -Condition ($settingsIndex -ge 0) -Message "Round $roundNumber invocation omitted --settings."
                     [string] $_.arguments[$settingsIndex + 1]
                 }) -Comparer ([StringComparer]::Ordinal) -Unique
