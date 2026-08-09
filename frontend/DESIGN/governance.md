@@ -9,7 +9,7 @@
 ## 原版零改动（硬性规则）
 
 基础 shadcn-vue primitive 从官方 `reka-nova` 注册表（registry）**逐字节**拉取，必须保持
-字节零改动，以便随时重新拉取或覆盖。**不得通过编辑 primitive 实现定制。**任何定制
+字节零改动，以便随时重新拉取或覆盖。**不得通过编辑 primitive 实现定制**。任何定制
 都必须是名称不同的_复制重建_组件（FE-2“区块组件库”），构建在未改动的 primitive 和
 token 之上。
 
@@ -25,7 +25,7 @@ token 之上。
   CI / 离线环境下不可靠的依赖安装）。
 - **固定版本：**`shadcn-vue@2.7.3`、`reka-ui@^2.9.7`、`tailwindcss@^4.3.0`、
   `@lucide/vue@1.0.0`。Table 的数据表 helper 另加 `@tanstack/vue-table@^8.21.3`。
-- **重新拉取（纯原版）：**button、card、table、input、select、dropdown-menu、dialog、
+- **重新拉取（纯原版）**：button、card、table、input、select、dropdown-menu、dialog、
   另包括 sheet、tabs、breadcrumb、sidebar、pagination、tooltip、popover、skeleton、empty。
 - **有意不重新拉取：**`badge` 带有项目定制（`success` / `warning` variant，包括
   `BusinessStatusBadge` 在内的多处代码正在使用）。它**等待在 FE-2 中由复制重建的

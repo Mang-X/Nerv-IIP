@@ -23,7 +23,7 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
    （链接、焦点、图表、选中状态）以及**页面级主 CTA**
    （`NvButton variant="brand"`，每个页面/工具栏一个——所有者裁决 2026-07-16）。
 3. 亮色和暗色模式均随产品交付（`theme.css` 中的 `.dark` 覆盖）。
-4. **绝不得编辑 shadcn-vue 原版组件。**这些组件从官方 `reka-nova` 注册表（registry）
+4. **绝不得编辑 shadcn-vue 原版组件**。这些组件从官方 `reka-nova` 注册表（registry）
    按原文重新拉取，再次拉取时可能被覆盖。任何定制都必须使用复制重建组件（FE-2），
    绝不能修改基础原语（primitive）。
 
