@@ -15,12 +15,12 @@
 
 | 能力 | MasterData 职责 | 说明 |
 | --- | --- | --- |
-| Material attributes | 存储物料形态、牌号、存储条件、危险类别、过敏原标签、监管标签、保质期策略、默认质量必需标志等稳定属性 | 实际检验值保留在 Quality 或 MES |
-| Unit system | 所有 UOM、单位组、换算、精度和舍入 | 配方特定的换算仍归 ProductEngineering |
-| Plant/resource hierarchy | 所有 Site/Plant/Area/Line/WorkCenter/DeviceAsset 层级 | IAM organization/environment 仍归 IAM |
-| Equipment capability | 所有静态容量、容量 UOM、物料兼容性、洁净类别、温度/压力设计范围和公用工程需求引用 | 实际运行值保留在 Telemetry 和 MES |
-| Reference definitions | 所有物料形态、存储条件、危险类别、质量特性定义和工艺参数定义等跨领域代码集 | 领域特定的工作流状态保留在各领域 |
-| Partner compliance | 所有合作伙伴身份、合作伙伴角色和稳定的合规标签或证书引用 | 供应商审核工作流和放行决策保留在 Quality/SRM |
+| 物料属性 | 存储物料形态、牌号、存储条件、危险类别、过敏原标签、监管标签、保质期策略、默认质量必需标志等稳定属性 | 实际检验值保留在 Quality 或 MES |
+| 单位体系 | 负责维护 UOM、单位组、换算、精度和舍入 | 配方特定的换算仍归 ProductEngineering |
+| 工厂/资源层级 | 负责维护 Site/Plant/Area/Line/WorkCenter/DeviceAsset 层级 | IAM organization/environment 仍归 IAM |
+| 设备能力 | 负责维护静态容量、容量 UOM、物料兼容性、洁净类别、温度/压力设计范围和公用工程需求引用 | 实际运行值保留在 Telemetry 和 MES |
+| 参考定义 | 负责维护物料形态、存储条件、危险类别、质量特性定义和工艺参数定义等跨领域代码集 | 领域特定的工作流状态保留在各领域 |
+| 合作伙伴合规 | 负责维护合作伙伴身份、合作伙伴角色和稳定的合规标签或证书引用 | 供应商审核工作流和放行决策保留在 Quality/SRM |
 
 ## ProductEngineering 边界
 
@@ -28,28 +28,28 @@ ProductEngineering 不得将流程制造视为简单的 MBOM 变体。它拥有�
 
 | 对象 | ProductEngineering 职责 |
 | --- | --- |
-| Recipe / Formula | 版本化配方身份、产品/物料产出、批量基准、生效日期、放行状态 |
-| Formula line | 投入物料、数量或比例、UOM、收率贡献、损耗系数、替代物料、返工/复用规则 |
-| Co-product / by-product | 预期产出物料、收率、成本相关性和可追溯性要求 |
-| Process step / phase | 有序阶段、所需资源能力、工作中心、预期时长和准备/清洁依赖 |
-| Process parameter target | 与已放行配方/工艺路线版本绑定的温度、压力、流量、pH、速度或其他目标值及公差 |
-| Change control | 用于配方、公式、工艺路线和参数版本的 ECO/ECN 或等效放行流程 |
+| 配方（Recipe / Formula） | 版本化配方身份、产品/物料产出、批量基准、生效日期、放行状态 |
+| 配方行（Formula line） | 投入物料、数量或比例、UOM、收率贡献、损耗系数、替代物料、返工/复用规则 |
+| 联产品/副产品（Co-product / by-product） | 预期产出物料、收率、成本相关性和可追溯性要求 |
+| 工艺步骤/阶段（Process step / phase） | 有序阶段、所需资源能力、工作中心、预期时长和准备/清洁依赖 |
+| 工艺参数目标（Process parameter target） | 与已放行配方/工艺路线版本绑定的温度、压力、流量、pH、速度或其他目标值及公差 |
+| 变更控制（Change control） | 用于配方、公式、工艺路线和参数版本的 ECO/ECN 或等效放行流程 |
 
-MasterData 拥有可复用定义和静态资源事实。ProductEngineering 拥有版本化的产品特定配方、公式和工艺路线内容。
+MasterData 负责维护可复用定义和静态资源事实。ProductEngineering 负责维护版本化的产品特定配方、公式和工艺路线内容。
 
 ## 领域边界
 
 | 事实 | 所有者 |
 | --- | --- |
-| SKU material identity and default attributes | BusinessMasterData |
-| UOM and conversion | BusinessMasterData |
-| Recipe/formula version and process parameters for a product | ProductEngineering |
-| Actual batch, lot, heat, serial or date-code instance | Inventory |
-| Stock balance, FEFO execution and inventory status | Inventory |
-| Inspection standard, sampling rule, result, COA and release decision | Quality |
-| Batch production order, actual input/output, deviation, cleaning execution and genealogy | MES |
-| Runtime temperature, pressure, flow, alarm and state snapshot | IndustrialTelemetry |
-| Maintenance order, inspection, downtime and asset restoration | Maintenance |
+| SKU 物料身份及默认属性 | BusinessMasterData |
+| UOM 与换算 | BusinessMasterData |
+| 产品的配方/公式版本及工艺参数 | ProductEngineering |
+| 实际生产批次、批号、炉次、序列号或日期码实例 | Inventory |
+| 库存余额、FEFO 执行及库存状态 | Inventory |
+| 检验标准、抽样规则、结果、COA 及放行决策 | Quality |
+| 批次生产工单、实际投入/产出、偏差、清洁执行及谱系 | MES |
+| 运行时温度、压力、流量、报警及状态快照 | IndustrialTelemetry |
+| 维护工单、点检、停机及资产恢复 | Maintenance |
 
 ## 验收场景
 

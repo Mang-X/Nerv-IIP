@@ -786,7 +786,7 @@ MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 
 4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260521061426_InitialFileStorageSchema.cs`
 5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260608105829_AddStoredFilesTenantListIndex.cs`
 6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260705065020_AddFileStorageSecurityHardening.cs`
-7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/FileStoragePersistenceStartup.cs`
+7. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs:17`
 8. `scripts/install/migrate-file-storage.ps1`
 
 | 表                   | 类别     | 用途                                                                                  | 关键关系与索引                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

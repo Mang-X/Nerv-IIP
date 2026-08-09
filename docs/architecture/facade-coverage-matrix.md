@@ -63,7 +63,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
   `gatewayOperationIds`，删除 `followUp`。
 - **新增业务服务** → 将其 `.Web` project reference 与 assembly name 加入门禁项目
   （`Nerv.IIP.FacadeCoverage.Tests`），使其 endpoints 被覆盖。
-- 此处按数量汇总 `exposed` 行；含逐 endpoint facade operation id 的完整 412 行登记表位于 JSON 中。
+- 此处按数量汇总 `exposed` 行；含逐 endpoint facade operation id 的完整 415 行登记表位于 JSON 中。
 
 ## 汇总
 
