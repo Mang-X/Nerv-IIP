@@ -1,4 +1,4 @@
-# Card (NvCard)
+# 卡片（NvCard）
 
 内容分组容器。用于设置分区、详情面板、统计摘要和登录表单。应用代码应使用
 `NvCard*` 组件族，它从 `@nerv-iip/ui` 导入；无前缀的 `Card*` 部件是 shadcn 原版基础组件（primitive），

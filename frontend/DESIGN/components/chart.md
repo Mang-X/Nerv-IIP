@@ -1,4 +1,4 @@
-# Chart (NvAreaChart / NvLineChart / NvBarChart / NvDonutChart)
+# 图表（NvAreaChart / NvLineChart / NvBarChart / NvDonutChart）
 
 应用页面使用从 `@nerv-iip/ui` 导入的品牌图表组件：
 

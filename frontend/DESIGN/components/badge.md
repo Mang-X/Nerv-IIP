@@ -1,4 +1,4 @@
-# Badge (NvBadge / NvStatusBadge)
+# 徽章（NvBadge / NvStatusBadge）
 
 标签胶囊。两个品牌组件分担旧版 Badge 的职责：
 

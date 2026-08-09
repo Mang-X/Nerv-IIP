@@ -1,4 +1,4 @@
-# Button (NvButton)
+# 按钮（NvButton）
 
 触发操作或事件。应用代码应使用 `NvButton`，它由 `@nerv-iip/ui` 导入（无前缀的
 `Button` 是 shadcn 原版基础组件（primitive）；依 ADR 0020，仅限组件库内部使用）。
