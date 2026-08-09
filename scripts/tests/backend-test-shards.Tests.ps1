@@ -456,7 +456,7 @@ function Get-BackendSolutionTestProjects {
 
     return @(
         $SolutionLines | ForEach-Object {
-            if ($_ -match '"(?<path>[^"]*\.Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
+            if ($_ -match '"(?<path>[^"]*Tests\.csproj)"') { 'backend/' + ($Matches.path -replace '\\', '/') }
         }
     )
 }
@@ -465,6 +465,14 @@ function Get-BackendSolutionTestProjects {
 # `[^" ]*` spelling this line yields nothing and the project silently drops out of the expected set.
 $spacedSolutionLine = 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nerv.IIP.Spaced.Tests", "tests\Nerv IIP Spaced.Tests\Nerv.IIP.Spaced.Tests.csproj", "{00000000-0000-0000-0000-000000000009}"'
 Assert-Contract ([string]::Equals(((Get-BackendSolutionTestProjects -SolutionLines @($spacedSolutionLine)) -join '|'), 'backend/tests/Nerv IIP Spaced.Tests/Nerv.IIP.Spaced.Tests.csproj', [StringComparison]::Ordinal)) 'A backend test project whose solution path contains a space must still be derived from the solution; the path is delimited by quotes, not by whitespace.'
+
+# …and the suffix is `Tests.csproj`, not `.Tests.csproj` (#1509 round 6). The narrower spelling missed
+# `*.IntegrationTests.csproj`-style names entirely, and the miss was one-sided in the dangerous
+# direction: `$notInSolution` still catches a manifest row naming a project the solution does not
+# have, but `$missingFromManifest` cannot catch an unclassified project it never derived. Today the
+# solution contains no such name, so this only widens what a future one is measured against.
+$integrationSolutionLine = 'Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nerv.IIP.Probe.IntegrationTests", "tests\Nerv.IIP.Probe.IntegrationTests\Nerv.IIP.Probe.IntegrationTests.csproj", "{00000000-0000-0000-0000-00000000000A}"'
+Assert-Contract ([string]::Equals(((Get-BackendSolutionTestProjects -SolutionLines @($integrationSolutionLine)) -join '|'), 'backend/tests/Nerv.IIP.Probe.IntegrationTests/Nerv.IIP.Probe.IntegrationTests.csproj', [StringComparison]::Ordinal)) 'A backend test project named *IntegrationTests.csproj must be derived from the solution; deriving only *.Tests.csproj drops it out of the expected set with nothing else catching it.'
 
 $solutionTestProjects = Get-BackendTestShardUniqueSorted -Values @(
     Get-BackendSolutionTestProjects -SolutionLines @(Get-Content -LiteralPath (Join-Path $repoRoot 'backend/Nerv.IIP.sln'))

@@ -438,6 +438,58 @@ function Invoke-FixtureNewVariableShadow {
     & $fixtureAction build
 }
 '@
+        # …and the positional spelling of the same binding, which is where "the first element that is
+        # not a parameter is the name" fell over (#1509 round 6). A named parameter that takes a value
+        # consumes the element after it, so the first *unconsumed* element is the name; all four of
+        # these were measured exiting 0 with the external command really running in a live process.
+        'set-variable-positional-name-after-valued-parameter' = @'
+function Invoke-FixtureSetVariableScopeFirst {
+    Set-Variable -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-positional-name-after-value-parameter' = @'
+function Invoke-FixtureSetVariableValueFirst {
+    Set-Variable -Value 'dotnet' fixtureAction
+    & $fixtureAction build
+}
+'@
+        'new-variable-positional-name-after-valued-parameter' = @'
+function Invoke-FixtureNewVariableScopeFirst {
+    New-Variable -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-alias-positional-name-after-valued-parameter' = @'
+function Invoke-FixtureSetVariableAliasScopeFirst {
+    sv -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # The control that keeps the fix honest in the other direction: a *switch* consumes nothing,
+        # so the element after `-Force` is the positional name. This case reports correctly today and
+        # a blunt "skip the element after every parameter" rule turns it green — which is why the
+        # pairing is read from the cmdlet's parameter metadata instead of being hand-listed.
+        'set-variable-positional-name-after-switch-parameter' = @'
+function Invoke-FixtureSetVariableForceFirst {
+    Set-Variable -Force fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # Prefixes bind too (`-Sc Local zz 'y'` measured really binding `zz`), so the resolver
+        # resolves them rather than treating an abbreviation as an unknown parameter.
+        'set-variable-abbreviated-valued-parameter' = @'
+function Invoke-FixtureSetVariableAbbreviatedScope {
+    Set-Variable -Sc Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-abbreviated-name-parameter' = @'
+function Invoke-FixtureSetVariableAbbreviatedName {
+    Set-Variable -Na fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
         'data-statement-shadows-seam' = @'
 function Invoke-FixtureDataShadow {
     data fixtureAction { 'dotnet' }
@@ -609,6 +661,15 @@ function Invoke-FixtureComputedBindingName {
     & $fixtureAction build
 }
 '@
+        # A splatted binder carries its -Name inside a hashtable the AST cannot resolve, so it is the
+        # same residual as a computed name, reached by a different spelling (#1509 round 6).
+        'residual-set-variable-splatted-parameters' = @'
+function Invoke-FixtureSplattedBinder {
+    $binderSplat = @{ Name = 'fixtureAction'; Value = 'dotnet' }
+    Set-Variable @binderSplat
+    & $fixtureAction build
+}
+'@
         'residual-psvariable-set' = @'
 function Invoke-FixtureSessionStateBinding {
     $ExecutionContext.SessionState.PSVariable.Set('fixtureAction', 'dotnet')
@@ -662,6 +723,42 @@ function Invoke-FixtureCrossScopeAction {
     }
     foreach ($spelling in $residualSpellings.Keys) {
         Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 0 -Body ($shadowSeamHeader + $residualSpellings[$spelling])
+    }
+
+    # The premise the two binder-pairing controls rest on, asserted rather than assumed: `-Force` is a
+    # switch (consumes nothing, so the next element is the positional name) and `-Scope` is not
+    # (consumes the next element, so it is not). If PowerShell ever changed either, the fixtures above
+    # would still pass while asserting something other than what they say.
+    $setVariableParameters = (Get-Command Set-Variable -CommandType Cmdlet).Parameters
+    if ($setVariableParameters['Force'].ParameterType -ne [switch]) {
+        throw 'Set-Variable -Force is no longer a switch; the "positional name after a switch" control asserts nothing.'
+    }
+    if ($setVariableParameters['Scope'].ParameterType -eq [switch]) {
+        throw 'Set-Variable -Scope no longer takes a value; the "positional name after a valued parameter" cases assert nothing.'
+    }
+
+    # Binder calls that bind nothing — and, unlike the residuals above, bind nothing *at run time
+    # either*, so exiting 0 is the exact answer rather than a gap. Measured on 7.6.4:
+    # `Set-Variable -Bogus x 'y'` → NamedParameterNotFound and `Set-Variable -V x 'y'` →
+    # AmbiguousParameter, i.e. the call throws before assigning anything. Pinned so that a later
+    # "just keep scanning past a parameter we could not resolve" turns them red instead of quietly
+    # inventing a binding.
+    $binderCallsBindingNothing = [ordered]@{
+        'set-variable-unknown-parameter-binds-nothing' = @'
+function Invoke-FixtureUnknownBinderParameter {
+    Set-Variable -Bogus fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-ambiguous-parameter-binds-nothing' = @'
+function Invoke-FixtureAmbiguousBinderParameter {
+    Set-Variable -V fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+    }
+    foreach ($spelling in $binderCallsBindingNothing.Keys) {
+        Invoke-LibraryScopeCase -Name $spelling -ExpectedExitCode 0 -Body ($shadowSeamHeader + $binderCallsBindingNothing[$spelling])
     }
 
     # A nested script block inside the same function is still the same seam: the proof travels down

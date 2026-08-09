@@ -212,6 +212,16 @@ function Get-NearestScriptBlockScope {
 # the governance document ticked it off alongside the five real ones.
 $seamScopeQualifiers = @('local', 'script', 'global', 'private', 'variable')
 
+# The cmdlets that bind a variable by name, mapped to the cmdlet whose parameter metadata decides
+# how their command elements pair up. Ordinal, on an already-lowercased command name.
+$seamBinderCommands = [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal)
+$seamBinderCommands['set-variable'] = 'Set-Variable'
+$seamBinderCommands['sv'] = 'Set-Variable'
+$seamBinderCommands['new-variable'] = 'New-Variable'
+$seamBinderCommands['nv'] = 'New-Variable'
+# One Get-Command per canonical cmdlet, not per call site.
+$seamBinderParameterCache = [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal)
+
 function Get-SeamBindingName {
     <#
         A binding's name with any scope qualifier removed, or $null when the path is not a variable.
@@ -339,6 +349,127 @@ function Get-SeamAssignmentTargets {
     return $targets
 }
 
+function Get-SeamBinderParameters {
+    <#
+        The binder cmdlet's own parameter table: every parameter name and alias mapped to the
+        canonical parameter and to whether it consumes the *following* command element.
+
+        Read from the cmdlet rather than hand-listed (#1509 round 6). Which spellings take a value is
+        a fact about Set-Variable/New-Variable, and the two directions of getting it wrong are both
+        fail-open: skip an element after a switch (`-Force action 'dotnet'`) and the positional name
+        is lost, skip nothing after `-Scope` and the *value* `Local` is read as the name. Both were
+        measured; `Get-SeamBinderParameters` is what makes the pairing agree with the binder instead
+        of with whichever spelling a review happened to name.
+
+        A missing cmdlet is a hard failure rather than a shrug: the alternative is silently reading
+        every binder call as "binds nothing", which is exactly the hole this function closes.
+    #>
+    param([Parameter(Mandatory)] [string] $CanonicalName)
+
+    if ($seamBinderParameterCache.ContainsKey($CanonicalName)) { return $seamBinderParameterCache[$CanonicalName] }
+
+    $command = Get-Command -Name $CanonicalName -CommandType Cmdlet -ErrorAction SilentlyContinue
+    if ($null -eq $command) {
+        throw "Script governance cannot resolve the '$CanonicalName' cmdlet, so it cannot tell which of its parameters consume the next command element. Refusing to guess."
+    }
+
+    # PowerShell matches parameter names case-insensitively, so the table is too; the comparison
+    # itself stays ordinal so no ignorable character folds into a parameter name.
+    $parameters = [System.Collections.Hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($parameter in $command.Parameters.Values) {
+        $entry = [pscustomobject]@{
+            Name = [string] $parameter.Name
+            TakesValue = ($parameter.ParameterType -ne [switch])
+        }
+        $parameters[[string] $parameter.Name] = $entry
+        foreach ($alias in @($parameter.Aliases)) {
+            if ([string]::IsNullOrWhiteSpace([string] $alias)) { continue }
+            $parameters[[string] $alias] = $entry
+        }
+    }
+
+    $seamBinderParameterCache[$CanonicalName] = $parameters
+    return $parameters
+}
+
+function Resolve-SeamBinderParameter {
+    <#
+        The parameter a written `-Foo` binds to, by PowerShell's own rules: an exact name or alias,
+        otherwise a prefix that resolves to exactly one parameter.
+
+        $null when nothing matches or a prefix is ambiguous. Both make the *command* fail at run time
+        — measured on 7.6.4: `Set-Variable -Bogus x 'y'` → NamedParameterNotFound,
+        `Set-Variable -V x 'y'` → AmbiguousParameter — so such a call binds no name at all and
+        recording nothing for it is exact rather than permissive. (`-Sc Local zz 'y'` resolves and
+        really binds `zz`, which is why prefixes are resolved instead of rejected.)
+    #>
+    param(
+        [Parameter(Mandatory)] [hashtable] $Parameters,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Written
+    )
+
+    if ([string]::IsNullOrEmpty($Written)) { return $null }
+    if ($Parameters.ContainsKey($Written)) { return $Parameters[$Written] }
+
+    $prefixMatches = @($Parameters.Keys | Where-Object { ([string] $_).StartsWith($Written, [System.StringComparison]::OrdinalIgnoreCase) })
+    if ($prefixMatches.Count -eq 0) { return $null }
+    $resolvedNames = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]] @($prefixMatches | ForEach-Object { [string] $Parameters[$_].Name }),
+        [System.StringComparer]::OrdinalIgnoreCase)
+    if ($resolvedNames.Count -ne 1) { return $null }
+    return $Parameters[$prefixMatches[0]]
+}
+
+function Get-SeamBinderNameArgument {
+    <#
+        The AST node a `Set-Variable`/`New-Variable` call passes as its -Name, or $null when the call
+        binds no name this checker can resolve.
+
+        The walk is the parameter binder's own pairing, not "the first element that is not a
+        parameter" (#1509 round 6 measured that reading exiting 0 on `Set-Variable -Scope Local
+        action '/bin/echo'`, `Set-Variable -Value 'dotnet' action` and the `sv` alias — with the
+        external command really running in a live process): a named parameter that takes a value
+        swallows the element after it, so the first *unconsumed* element is the positional name.
+        A switch swallows nothing, which is why `-Force action 'dotnet'` still resolves to `action`.
+    #>
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Binder)
+
+    # GetCommandName() is $null whenever the command name is an expression (`& $action build`), which
+    # is most of what this walk sees.
+    $binderName = [string] $Binder.GetCommandName()
+    if ([string]::IsNullOrEmpty($binderName)) { return $null }
+    $canonicalName = $seamBinderCommands[$binderName.ToLowerInvariant()]
+    if ([string]::IsNullOrEmpty([string] $canonicalName)) { return $null }
+
+    $parameters = Get-SeamBinderParameters -CanonicalName $canonicalName
+    $elements = @($Binder.CommandElements)
+    $nameArgument = $null
+    $index = 1
+    while ($index -lt $elements.Count) {
+        $element = $elements[$index]
+        if ($element -isnot [System.Management.Automation.Language.CommandParameterAst]) {
+            # Splatting (`Set-Variable @splat`) lands here as a variable, not a literal, so it falls
+            # out as "no resolvable name" — the registered residual, not a silent pass.
+            if ($null -eq $nameArgument) { $nameArgument = $element }
+            $index++
+            continue
+        }
+
+        $resolved = Resolve-SeamBinderParameter -Parameters $parameters -Written ([string] $element.ParameterName)
+        # Unresolvable or ambiguous: the call throws before binding anything, so neither the
+        # positional candidate collected so far nor anything after it is a binding.
+        if ($null -eq $resolved) { return $null }
+        if ([string]::Equals([string] $resolved.Name, 'Name', [System.StringComparison]::OrdinalIgnoreCase)) {
+            if ($null -ne $element.Argument) { return $element.Argument }
+            if (($index + 1) -lt $elements.Count) { return $elements[$index + 1] }
+            return $null
+        }
+        $index += if ($resolved.TakesValue -and $null -eq $element.Argument) { 2 } else { 1 }
+    }
+
+    return $nameArgument
+}
+
 function Get-ScopedSeamBindings {
     <#
         The variables one scope binds, split into "bound at all" and "proven to hold a script block".
@@ -439,34 +570,16 @@ function Get-ScopedSeamBindings {
         [void] $bindings.Bound.Add([string] $dataStatement.Variable)
     }
 
-    # Set-Variable / New-Variable bind through a cmdlet. Only a literal name is resolvable here; a
-    # computed one is the documented residual.
+    # Set-Variable / New-Variable bind through a cmdlet. Which element carries the name is decided by
+    # the cmdlet's own parameter binder (Get-SeamBinderNameArgument); only a *literal* name is
+    # resolvable statically, and a computed one is the documented residual.
     foreach ($binder in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $binder) -ne $Scope) { continue }
-        $binderName = [string] $binder.GetCommandName()
-        # `.Count -gt 0`, the same membership idiom every other decision in this file uses. The
-        # `Where-Object … | Select-Object -First 1` spelling this replaces was equivalent but
-        # divergent, and a reader had to check whether the difference carried meaning (#1509 round 4).
-        if (@(@('set-variable', 'new-variable', 'sv', 'nv') |
-                Where-Object { [string]::Equals($_, $binderName.ToLowerInvariant(), [System.StringComparison]::Ordinal) }).Count -gt 0) {
-            $elements = @($binder.CommandElements)
-            $nameArgument = $null
-            for ($index = 1; $index -lt $elements.Count; $index++) {
-                $element = $elements[$index]
-                if ($element -is [System.Management.Automation.Language.CommandParameterAst] -and
-                    [string]::Equals([string] $element.ParameterName, 'Name', [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $nameArgument = if ($null -ne $element.Argument) { $element.Argument } elseif (($index + 1) -lt $elements.Count) { $elements[$index + 1] } else { $null }
-                    break
-                }
-                if ($null -eq $nameArgument -and $element -isnot [System.Management.Automation.Language.CommandParameterAst]) {
-                    $nameArgument = $element
-                }
-            }
-            if ($nameArgument -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-                $literalName = [string] $nameArgument.Value
-                if (-not [string]::IsNullOrWhiteSpace($literalName)) {
-                    [void] $bindings.Bound.Add($literalName.TrimStart('$'))
-                }
+        $nameArgument = Get-SeamBinderNameArgument -Binder $binder
+        if ($nameArgument -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+            $literalName = [string] $nameArgument.Value
+            if (-not [string]::IsNullOrWhiteSpace($literalName)) {
+                [void] $bindings.Bound.Add($literalName.TrimStart('$'))
             }
         }
     }

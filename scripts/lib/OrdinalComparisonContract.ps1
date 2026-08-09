@@ -44,14 +44,40 @@
 # this repository and work. The narrow claim is what is defended: a plain function call resolves the
 # same way from every caller, which removes the variable this file was bitten by without asserting
 # anything about the others.
-function Get-NervOrdinalContractBannedOperators { return @('Ceq', 'Cne', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin') }
-function Get-NervOrdinalContractCultureOperators { return @('Ieq', 'Ine', 'Icontains', 'Inotcontains', 'Iin', 'Inotin') }
+#
+# The three operator sets below are a *partition* of PowerShell's case-sensitivity-paired comparison
+# operators, not a list of the spellings a review has named so far (#1509 round 6). The family is
+# enumerable from the parser's own type system — a TokenKind `I…` whose `C…` sibling also exists —
+# and the callers assert that banned ∪ culture ∪ pattern is exactly that family, so a PowerShell
+# release adding a comparison operator forces a ruling instead of landing in the silent tail. The
+# relational operators (`-lt`/`-le`/`-gt`/`-ge`) were the ones missing: they compare strings by
+# culture collation, the same defect as `Sort-Object`, and only the equality/membership half of the
+# family had been enumerated.
+function Get-NervOrdinalContractBannedOperators { return @('Ceq', 'Cne', 'Cge', 'Cgt', 'Clt', 'Cle', 'Ccontains', 'Cnotcontains', 'Cin', 'Cnotin') }
+function Get-NervOrdinalContractCultureOperators { return @('Ieq', 'Ine', 'Ige', 'Igt', 'Ilt', 'Ile', 'Icontains', 'Inotcontains', 'Iin', 'Inotin') }
+# Ruled out by the #1507 boundary rather than covered: `-like`/`-match` are pattern matching against
+# human-facing text, and `-replace`/`-split` produce strings instead of deciding an identity. They
+# are still culture-aware, which is why they are named here and carried in the blind-spot list rather
+# than left unmentioned.
+function Get-NervOrdinalContractPatternOperators {
+    return @(
+        'Ilike', 'Inotlike', 'Imatch', 'Inotmatch', 'Ireplace', 'Isplit',
+        'Clike', 'Cnotlike', 'Cmatch', 'Cnotmatch', 'Creplace', 'Csplit'
+    )
+}
 function Get-NervOrdinalContractWhereSwitches {
     return @('eq', 'ne', 'ceq', 'cne', 'contains', 'notcontains', 'ccontains', 'cnotcontains', 'in', 'notin', 'cin', 'cnotin')
 }
 # String methods that are unambiguously string methods: no collection type in this tree exposes them,
 # so a missing [StringComparison] argument is always a culture-aware comparison.
 function Get-NervOrdinalContractStringMethods { return @('StartsWith', 'EndsWith', 'IndexOf', 'LastIndexOf') }
+# Ordering comparisons spelled as methods. `[string]::Compare($a, $b)` and `$a.CompareTo($b)` are
+# culture collation exactly like `-lt` and `Sort-Object`, and neither was in the string-method set
+# (#1509 round 6). `CompareTo` also exists on numbers and dates, where the finding would be a false
+# positive; that direction is deliberate — a spurious finding is answered by writing the comparison
+# out, a missed one is a silent locale dependency in a retained artifact. An ordinal
+# [StringComparison] argument or an ordinal [StringComparer] receiver clears it.
+function Get-NervOrdinalContractComparisonMethods { return @('Compare', 'CompareTo') }
 # …unlike Contains/Equals, which HashSet[string] and Hashtable also expose. Only the spelling that
 # cannot be a set lookup in practice is flagged: a single *string-literal* argument.
 function Get-NervOrdinalContractAmbiguousMethods { return @('Contains', 'Equals') }
@@ -71,8 +97,11 @@ function Get-NervOrdinalContractCoveredAxes {
         'where-object-comparison-switch',
         'switch-statement-string-clause',
         'string-method-without-ordinal-comparison',
+        'comparison-method-without-ordinal-comparison',
+        'parameterless-sort-method',
         'ambiguous-method-with-string-literal',
-        'non-ordinal-stringcomparison'
+        'non-ordinal-stringcomparison',
+        'non-ordinal-stringcomparer'
     )
 }
 
@@ -145,6 +174,23 @@ function Test-NervOrdinalContractOrdinalArgument {
     }
 
     return $false
+}
+
+function Test-NervOrdinalContractOrdinalComparerReceiver {
+    <#
+        True when the call is made *on* an ordinal comparer — `[StringComparer]::Ordinal.Compare(…)`.
+        Without this the comparison-method axis would report the one spelling that is already right.
+    #>
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.InvokeMemberExpressionAst] $Node)
+
+    $receiver = $Node.Expression
+    if ($receiver -isnot [System.Management.Automation.Language.MemberExpressionAst]) { return $false }
+    if ($receiver -is [System.Management.Automation.Language.InvokeMemberExpressionAst]) { return $false }
+    if ($receiver.Expression -isnot [System.Management.Automation.Language.TypeExpressionAst]) { return $false }
+    if (-not ([string] $receiver.Expression.TypeName.FullName).EndsWith('StringComparer', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $receiverMember = [string] $receiver.Member.Value
+    return [string]::Equals($receiverMember, 'Ordinal', [StringComparison]::Ordinal) -or
+        [string]::Equals($receiverMember, 'OrdinalIgnoreCase', [StringComparison]::Ordinal)
 }
 
 function Test-NervOrdinalContractHasParameter {
@@ -324,6 +370,22 @@ function Get-NervOrdinalComparisonFindings {
             Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'string-method-without-ordinal-comparison' -Message "calls .$member() without an explicit ordinal [StringComparison]."
             continue
         }
+        if (@((Get-NervOrdinalContractComparisonMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            if (Test-NervOrdinalContractOrdinalArgument -Arguments $arguments) { continue }
+            if (Test-NervOrdinalContractOrdinalComparerReceiver -Node $invocation) { continue }
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'comparison-method-without-ordinal-comparison' -Message "orders with .$member() without an explicit ordinal comparer, which is culture collation."
+            continue
+        }
+        # `$list.Sort()` uses Comparer<string>.Default, which is culture-aware — the reason
+        # Get-NervOrdinalSorted passes [StringComparer]::Ordinal explicitly. Only the no-argument
+        # spelling is flagged: any argument is either a comparer or a comparison, both of which the
+        # reader can see.
+        # `$invocation.Arguments` is $null — not an empty collection — for a no-argument call, and
+        # `@($null)` counts as one element, so the emptiness test cannot go through $arguments.
+        if ([string]::Equals($member, 'Sort', [StringComparison]::OrdinalIgnoreCase) -and $null -eq $invocation.Arguments) {
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $invocation -Axis 'parameterless-sort-method' -Message 'sorts with .Sort() and no comparer, which is Comparer<string>.Default and therefore culture collation.'
+            continue
+        }
         if (@((Get-NervOrdinalContractAmbiguousMethods) | Where-Object { [string]::Equals($_, $member, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) { continue }
         if ($arguments.Count -ne 1) { continue }
         # A *literal* argument only. `[string]$x` would be a string operand for the binary-operator
@@ -344,13 +406,25 @@ function Get-NervOrdinalComparisonFindings {
         $node.Expression -is [System.Management.Automation.Language.TypeExpressionAst]
     }, $true)) {
         $typeName = [string] $memberExpression.Expression.TypeName.FullName
-        if (-not $typeName.EndsWith('StringComparison', [StringComparison]::OrdinalIgnoreCase)) { continue }
+        # Two type names, not one. The `non-ordinal-stringcomparison` axis matched on a name ending in
+        # "StringComparison", and [StringComparer] does not end in that — so `[StringComparer]::
+        # InvariantCulture` scanned clean while being exactly the same mistake (#1509 round 6). The
+        # irony that mattered: every ordinal fix in this library and its two subjects is spelled by
+        # *passing* [StringComparer]::Ordinal, so the one construct the whole contract is built on was
+        # the one construct nothing checked.
+        $isComparison = $typeName.EndsWith('StringComparison', [StringComparison]::OrdinalIgnoreCase)
+        $isComparer = $typeName.EndsWith('StringComparer', [StringComparison]::OrdinalIgnoreCase)
+        if (-not ($isComparison -or $isComparer)) { continue }
         $member = [string] $memberExpression.Member.Value
         if ([string]::Equals($member, 'Ordinal', [StringComparison]::Ordinal) -or
             [string]::Equals($member, 'OrdinalIgnoreCase', [StringComparison]::Ordinal)) {
             continue
         }
-        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $memberExpression -Axis 'non-ordinal-stringcomparison' -Message "names [StringComparison]::$member, which is culture-aware even though it is written out explicitly."
+        if ($isComparison) {
+            Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $memberExpression -Axis 'non-ordinal-stringcomparison' -Message "names [StringComparison]::$member, which is culture-aware even though it is written out explicitly."
+            continue
+        }
+        Add-NervOrdinalContractFinding -Findings $findings -ExceptionHits $exceptionHits -Label $label -Node $memberExpression -Axis 'non-ordinal-stringcomparer' -Message "names [StringComparer]::$member, which is a culture-aware comparer even though it is written out explicitly."
     }
 
     return [pscustomobject]@{

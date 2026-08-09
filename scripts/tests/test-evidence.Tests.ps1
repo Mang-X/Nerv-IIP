@@ -1660,8 +1660,11 @@ try {
         'where-object-comparison-switch' = '$result = @($items | Where-Object outcome -eq ''passed'')'
         'switch-statement-string-clause' = 'switch ($outcome) { ''passed'' { 1 } default { 0 } }'
         'string-method-without-ordinal-comparison' = '$result = $text.StartsWith(''^'')'
+        'comparison-method-without-ordinal-comparison' = '$result = [string]::Compare($left, $right)'
+        'parameterless-sort-method' = '$items.Sort()'
         'ambiguous-method-with-string-literal' = '$result = $text.Contains(''SKIP'')'
         'non-ordinal-stringcomparison' = '$result = [string]::Equals($left, $right, [StringComparison]::CurrentCulture)'
+        'non-ordinal-stringcomparer' = '$result = [StringComparer]::InvariantCulture'
     }
     $declaredAxes = @(Get-NervOrdinalContractCoveredAxes)
     Assert-True ([string]::Equals((@($coveredProbes.Keys) -join '|'), ($declaredAxes -join '|'), [StringComparison]::Ordinal)) `
@@ -1670,6 +1673,68 @@ try {
         $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source $coveredProbes[$axis])
         Assert-True (@($probeFindings | Where-Object { $_.StartsWith("[$axis]", [StringComparison]::Ordinal) }).Count -ge 1) `
             "The ordinal sweep must report axis '$axis' for: $($coveredProbes[$axis])"
+    }
+
+    # ---------------------------------------------------------------------------------------------
+    # The comparison-operator family, enumerated from the parser instead of from review findings
+    # (#1509 round 6). Rounds 3–5 grew the operator lists one named spelling at a time, and round 6
+    # measured the consequence: `-lt`/`-le`/`-gt`/`-ge` compare strings by culture collation — the
+    # same defect as Sort-Object — and were in neither the covered axes nor the blind-spot list, so
+    # the governance document's "constructs outside the blind-spot table are covered" was false.
+    #
+    # PowerShell's comparison operators occur in TokenKind as `I…`/`C…` pairs, so the family is
+    # derivable: every `I…` whose `C…` sibling exists, plus that sibling. The three sets in the
+    # library must partition exactly that family — banned (`-c*` equality/ordering/membership),
+    # culture-aware (their default-case counterparts) and pattern (like/match/replace/split, ruled
+    # out by the #1507 boundary). A new comparison operator in a future PowerShell lands in none of
+    # the three and turns this red.
+    $tokenKindNames = @([Enum]::GetNames([System.Management.Automation.Language.TokenKind]))
+    $pairedOperators = @(
+        [System.Collections.Generic.SortedSet[string]]::new(
+            [string[]] @(
+                $tokenKindNames | ForEach-Object {
+                    $candidate = [string] $_
+                    if (-not $candidate.StartsWith('I', [StringComparison]::Ordinal)) { return }
+                    $sibling = 'C' + $candidate.Substring(1)
+                    if (@($tokenKindNames | Where-Object { [string]::Equals([string] $_, $sibling, [StringComparison]::Ordinal) }).Count -eq 0) { return }
+                    $candidate
+                    $sibling
+                }
+            ),
+            [StringComparer]::Ordinal)
+    )
+    $classifiedOperators = @((Get-NervOrdinalContractBannedOperators) + (Get-NervOrdinalContractCultureOperators) + (Get-NervOrdinalContractPatternOperators))
+    $classifiedOperatorSet = @(
+        [System.Collections.Generic.SortedSet[string]]::new([string[]] $classifiedOperators, [StringComparer]::Ordinal)
+    )
+    Assert-True ($classifiedOperatorSet.Count -eq $classifiedOperators.Count) `
+        "The banned/culture/pattern operator sets must be disjoint; $($classifiedOperators.Count) entries collapsed to $($classifiedOperatorSet.Count)."
+    Assert-True ([string]::Equals(($classifiedOperatorSet -join '|'), ($pairedOperators -join '|'), [StringComparison]::Ordinal)) `
+        "The ordinal contract must rule on every case-sensitivity-paired comparison operator. Parser: [$($pairedOperators -join ', ')]; ruled on: [$($classifiedOperatorSet -join ', ')]."
+
+    # …and each operator is probed, not merely classified. Banned ones report with no exception path;
+    # culture ones report when either operand is a string literal; pattern ones must stay silent,
+    # which is what keeps `like-and-match-operators` an honest blind spot rather than an oversight.
+    foreach ($bannedOperator in @(Get-NervOrdinalContractBannedOperators)) {
+        $spelling = '-' + ([string] $bannedOperator).ToLowerInvariant()
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source "`$result = `$left $spelling 'passed'")
+        Assert-True (@($probeFindings | Where-Object { $_.StartsWith('[banned-c-operator]', [StringComparison]::Ordinal) }).Count -ge 1) `
+            "The ordinal sweep must ban $spelling; findings: $(@($probeFindings) -join '; ')"
+    }
+    foreach ($cultureOperator in @(Get-NervOrdinalContractCultureOperators)) {
+        $spelling = '-' + ([string] $cultureOperator).Substring(1).ToLowerInvariant()
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source "`$result = `$left $spelling 'passed'")
+        Assert-True (@($probeFindings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -ge 1) `
+            "The ordinal sweep must report $spelling against a string literal; findings: $(@($probeFindings) -join '; ')"
+    }
+    foreach ($patternOperator in @(Get-NervOrdinalContractPatternOperators)) {
+        $spelling = if (([string] $patternOperator).StartsWith('C', [StringComparison]::Ordinal)) {
+            '-' + ([string] $patternOperator).ToLowerInvariant()
+        }
+        else { '-' + ([string] $patternOperator).Substring(1).ToLowerInvariant() }
+        $probeFindings = @(Invoke-NervSweepProbe -ProbePath $sweepProbePath -Source "`$result = `$left $spelling 'passed'")
+        Assert-True ($probeFindings.Count -eq 0) `
+            "$spelling is ruled out by the #1507 boundary and must stay silent; findings: $(@($probeFindings) -join '; ')"
     }
 
     # The blind spots, asserted as blind spots. Each of these is a real culture-aware comparison the
@@ -1745,6 +1810,29 @@ function Get-NervSomethingElse {
     $misplacedProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $ordinalSweepExceptions -DisplayName 'probe.ps1'
     Assert-True ($misplacedProbe.Findings.Count -eq 1) `
         'An exception is bound to its site; the same expression in another function must still be reported.'
+
+    # …and the exception lookup is *ordinal*, which until now nothing measured (#1509 round 6).
+    # The table is built with [StringComparer]::Ordinal because a bare `@{}` is a Hashtable with
+    # PowerShell's OrdinalIgnoreCase comparer; the round-4 fix that changed it had no failing
+    # counterpart — reverting it to `@{}` left this file and backend-test-shards.Tests.ps1 entirely
+    # green. A case-variant declaration is the discriminator: under Ordinal it matches nothing, so the
+    # exception is dead (hit count 0) *and* the real expression is still reported; under a bare `@{}`
+    # it swallows the exempt expression and both halves flip.
+    $caseVariantExceptions = @($ordinalSweepExceptions | ForEach-Object {
+        @{
+            Site = ([string] $_.Site).ToUpperInvariant()
+            Text = [string] $_.Text
+            Reason = [string] $_.Reason
+        }
+    })
+    [System.IO.File]::WriteAllText($sweepProbePath, $exemptionProbeSource, [System.Text.UTF8Encoding]::new($false))
+    $caseVariantProbe = Get-NervOrdinalComparisonFindings -ScriptPath $sweepProbePath -Exceptions $caseVariantExceptions -DisplayName 'probe.ps1'
+    Assert-True ($caseVariantProbe.Findings.Count -eq 2) `
+        "An exception whose site differs only by case must not match, so both Group-Object calls stay reported; findings: $(@($caseVariantProbe.Findings) -join '; ')"
+    foreach ($caseVariantKey in @($caseVariantProbe.ExceptionHits.Keys)) {
+        Assert-True ([int] $caseVariantProbe.ExceptionHits[$caseVariantKey] -eq 0) `
+            "Exception key '$caseVariantKey' differs from the source only by case and must be dead; it matched $($caseVariantProbe.ExceptionHits[$caseVariantKey]) call sites, so the lookup table is not ordinal."
+    }
 }
 finally {
     if (Test-Path -LiteralPath $sweepProbeRoot) {
