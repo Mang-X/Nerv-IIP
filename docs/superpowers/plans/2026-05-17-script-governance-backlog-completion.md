@@ -2,7 +2,7 @@
 
 > **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**目标：** 在开始下一功能阶段之前关闭剩余的脚本自动化治理待办：完成当前 IAM 授权审核交接，迁移优先级较高的遗留 verify 脚本，移除其治理豁免，并采集非 Windows 兼容性证据。
+**目标：** 在开始下一功能阶段之前关闭剩余的脚本自动化治理待办：完成当前 IAM 授权审核交接，迁移优先级较高的遗留验证脚本，移除其治理豁免，并采集非 Windows 兼容性证据。
 
 **架构：** 以 ADR 0010 和 `docs/architecture/script-automation-governance.md` 作为决策边界。将 `scripts/lib/ScriptAutomation.ps1` 作为长时间运行的原生命令、Docker Compose、嵌套 PowerShell 脚本、作用域环境变量和进程诊断的唯一包装器。添加可在 WSL、macOS 或 Linux 中运行的小型兼容性门禁脚本，记录精确的命令/版本证据，而不是仅凭意图声称支持。
 
@@ -18,20 +18,20 @@
 
 1. 本计划开始前 `skills-lock.json` 已处于脏状态。除非用户明确要求，否则不得暂存、编辑或还原该文件。
 2. 合并后的 IAM 审核已产生本地变更，在访问持久化之前保护 PostgreSQL IAM 用户/角色管理 endpoint。保持这些变更与脚本治理提交分离。
-3. 脚本治理计划 `docs/superpowers/plans/2026-05-17-script-automation-governance.md` 仍有两个开放待办：迁移优先级较高的第四/第五阶段 verify 脚本，以及运行 macOS/Linux 兼容性门禁。
+3. 脚本治理计划 `docs/superpowers/plans/2026-05-17-script-automation-governance.md` 仍有两个开放待办：迁移优先级较高的第四/第五阶段验证脚本，以及运行 macOS/Linux 兼容性门禁。
 
 ## 执行记录
 
 1. 创建分支 `codex/script-governance-backlog-completion`，起点为 `8c6bcde`。
 2. 将 IAM 审核交接单独提交为 `99970a6 fix: guard iam management endpoints`。
 3. 以 `70aabd1 test: cover priority script governance backlog` 添加优先脚本无豁免治理覆盖。
-4. 以 `d9dd810 chore: migrate fifth verify script governance` 迁移第五阶段 verify 脚本。
-5. 以 `71e073e chore: migrate fourth verify script governance` 迁移第四阶段 verify 脚本。
+4. 以 `d9dd810 chore: migrate fifth verify script governance` 迁移第五阶段验证脚本。
+5. 以 `71e073e chore: migrate fourth verify script governance` 迁移第四阶段验证脚本。
 6. 以 `3691f49 chore: remove priority script exemptions` 移除第四/第五阶段优先脚本豁免。
 7. 以 `396f281 chore: add script compatibility gate` 添加兼容性门禁。
-8. 运行完整 Ubuntu WSL 兼容性门禁，证据位于 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`：Ubuntu 22.04.3 LTS、PowerShell 7.6.1、.NET SDK 10.0.300、Docker Compose 5.1.3、`fastOnly: false`，IAM 持久化认证 verify 通过。
+8. 运行完整 Ubuntu WSL 兼容性门禁，证据位于 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`：Ubuntu 22.04.3 LTS、PowerShell 7.6.1、.NET SDK 10.0.300、Docker Compose 5.1.3、`fastOnly: false`，IAM 持久化认证验证通过。
 9. 使兼容性脚本与文档记录的 `compat-fast` 回退方案一致，因此 `-FastOnly` 不再探测 Docker Compose，完整模式分类为 `verify`。
-10. 重新运行最终 Windows 门禁：脚本治理测试、脚本治理门禁、Windows 快速兼容性 smoke、第五阶段 verify 脚本、第四阶段 verify 脚本、后端解决方案测试和 `git diff --check`。
+10. 重新运行最终 Windows 门禁：脚本治理测试、脚本治理门禁、Windows 快速兼容性冒烟测试、第五阶段验证脚本、第四阶段验证脚本、后端解决方案测试和 `git diff --check`。
 11. 未将预先存在的 `skills-lock.json` 和生成的 `artifacts/script-logs/**` 证据纳入 git。
 
 ## 边界
@@ -164,7 +164,7 @@ function Invoke-GovernanceScriptCase {
 
 - [x] **步骤 2：添加优先脚本断言**
 
-在现有夹具场景之后、辅助 smoke 块之前添加这些调用：
+在现有夹具场景之后、辅助冒烟测试块之前添加这些调用：
 
 ```powershell
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
@@ -179,9 +179,9 @@ Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infr
 pwsh scripts/tests/check-script-governance.Tests.ps1
 ```
 
-预期结果：失败，因为第五和第四阶段 verify 脚本仍依赖基线豁免来允许缺失治理头、缺失辅助库用法和直接原生命令。
+预期结果：失败，因为第五和第四阶段验证脚本仍依赖基线豁免来允许缺失治理头、缺失辅助库用法和直接原生命令。
 
-## 任务 2：迁移第五阶段 Verify 脚本
+## 任务 2：迁移第五阶段验证脚本
 
 **文件：**
 
@@ -298,7 +298,7 @@ finally {
 
 预期结果：通过。
 
-## 任务 3：迁移第四阶段 Verify 脚本
+## 任务 3：迁移第四阶段验证脚本
 
 **文件：**
 
@@ -685,7 +685,7 @@ finally {
 Write-Host "Script compatibility gate verified."
 ```
 
-- [x] **步骤 2：运行 Windows smoke 验证但不声称兼容性**
+- [x] **步骤 2：运行 Windows 冒烟验证，但不声称兼容性**
 
 运行：
 
@@ -693,7 +693,7 @@ Write-Host "Script compatibility gate verified."
 pwsh scripts/check-script-compatibility.ps1 -AllowWindows -FastOnly
 ```
 
-预期结果：通过，并在 `artifacts/script-logs/script-compatibility/**/evidence.json` 下写入 evidence JSON。这只是 smoke 验证，不是 macOS/Linux 兼容性证据。
+预期结果：通过，并在 `artifacts/script-logs/script-compatibility/**/evidence.json` 下写入证据 JSON。这只是冒烟验证，不是 macOS/Linux 兼容性证据。
 
 - [x] **步骤 3：添加新脚本后运行脚本治理门禁**
 
@@ -729,7 +729,7 @@ wsl -l -q
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Users/Mang/.codex/worktrees/bcca/Nerv-IIP && pwsh scripts/check-script-compatibility.ps1'
 ```
 
-预期结果：通过，最终输出为 `Script compatibility gate verified.`。evidence JSON 必须显示 `isLinux: true`、`isWindows: false`，并包含脚本治理、治理测试、`git diff --check`、Docker Compose 版本和 IAM 持久化认证验证的成功记录。
+预期结果：通过，最终输出为 `Script compatibility gate verified.`。证据 JSON 必须显示 `isLinux: true`、`isWindows: false`，并包含脚本治理、治理测试、`git diff --check`、Docker Compose 版本和 IAM 持久化认证验证的成功记录。
 
 - [x] **步骤 3：确认无需回退方案**
 
@@ -812,7 +812,7 @@ pwsh scripts/check-script-governance.ps1
 
 预期结果：两者都以 `0` 退出。
 
-- [x] **步骤 2：在 Windows 上运行已迁移的优先 verify 脚本**
+- [x] **步骤 2：在 Windows 上运行已迁移的优先验证脚本**
 
 运行：
 
@@ -837,7 +837,7 @@ pwsh scripts/check-script-compatibility.ps1 -AllowWindows -FastOnly
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Users/Mang/.codex/worktrees/bcca/Nerv-IIP && pwsh scripts/check-script-compatibility.ps1'
 ```
 
-预期结果：Windows smoke 和 Ubuntu 完整门禁均以 `0` 退出。如果 Ubuntu 完整门禁因 Docker Compose 不可用而失败，运行任务 6 中的 Ubuntu `-FastOnly` 命令，并且不要将完整兼容性待办标记为已关闭。
+预期结果：Windows 冒烟验证和 Ubuntu 完整门禁均以 `0` 退出。如果 Ubuntu 完整门禁因 Docker Compose 不可用而失败，运行任务 6 中的 Ubuntu `-FastOnly` 命令，并且不要将完整兼容性待办标记为已关闭。
 
 - [x] **步骤 4：运行仓库卫生检查**
 
@@ -885,7 +885,7 @@ git commit -m "chore: close script governance backlog"
 
 规范覆盖：
 
-1. 任务 2、3 和 4 覆盖优先遗留 verify 迁移。
+1. 任务 2、3 和 4 覆盖优先遗留验证脚本迁移。
 2. 任务 1 和任务 8 覆盖脚本治理测试。
 3. 任务 5 和任务 6 覆盖 macOS/Linux 兼容性门禁及证据。
 4. 任务 7 覆盖文档和先前计划待办的关闭。

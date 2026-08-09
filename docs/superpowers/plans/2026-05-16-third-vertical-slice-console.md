@@ -157,7 +157,7 @@ docs/architecture/implementation-readiness.md
 1. 控制台页面必须从 `@nerv-iip/api-client` 导入 API 调用；不得手写 `/api/...` URL。
 2. `frontend/packages/api-client/src/generated` 仅包含生成内容，不得手工编辑。
 3. `api-client` 可以配置传输、base URL 和稳定导出，但不得包含视图逻辑。
-4. Pinia store 仅用于客户端状态。服务端状态通过 Pinia Colada 管理。
+4. Pinia 存储仅用于客户端状态。服务端状态通过 Pinia Colada 管理。
 5. 路由级 Vue 页面保持轻薄；功能标记和交互位于组件和 composable 中。
 6. `PlatformGateway.Web` 仍是本阶段唯一面向前端的 API 边界。
 7. Gateway 仍不引用 AppHub 或 Ops Domain/Infrastructure 项目。

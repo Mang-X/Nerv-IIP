@@ -2,11 +2,11 @@
 
 > **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**目标：** 将现有 IAM 内存态骨架转化为持久化后端认证基础，包括 PostgreSQL 迁移、种子行为、JWT 访问 token、refresh-token 轮换、schema 约定测试和文档。
+**目标：** 将现有 IAM 内存态骨架转化为持久化后端认证基础，包括 PostgreSQL 迁移、种子行为、JWT 访问令牌、刷新令牌轮换、schema 约定测试和文档。
 
 **架构：** IAM 保持为 CleanDDD 风格的三项目服务。为较早的验证脚本保留当前 InMemory profile，并添加 PostgreSQL profile，其中包含 `iam` schema 所有权、服务 schema 的 EF 迁移历史、实体配置、迁移运行器，以及用于登录、刷新、吊销、`/me` 和 Connector Host 凭证验证的聚焦 Web/Application 服务。
 
-**技术栈：** .NET 10、FastEndpoints、MediatR、EF Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、netcorepal repository/unit-of-work 原语、ASP.NET Core `PasswordHasher<T>`、JWT Bearer 原语、xUnit、PowerShell。
+**技术栈：** .NET 10、FastEndpoints、MediatR、EF Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、netcorepal 仓库/工作单元原语、ASP.NET Core `PasswordHasher<T>`、JWT Bearer 原语、xUnit、PowerShell。
 
 ---
 
@@ -21,7 +21,7 @@
 ## 边界
 
 1. 不得实施 Gateway 全局 bearer 授权或权限策略。
-2. 不得添加控制台登录 UI、路由、导航、样式、设计 token 或组件库变更。
+2. 不得添加控制台登录 UI、路由、导航、样式、设计令牌或组件库变更。
 3. 不得实施 OAuth/OIDC、SSO、MFA、WebAuthn、ABAC、委托或第三方授权流程。
 4. 不得创建客户发布迁移包、安装程序、备份脚本或恢复演练。
 5. 不得验证 GaussDB、DMDB 或其他 provider profile。
@@ -1044,7 +1044,7 @@ dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.T
 
 预期结果：测试可编译。它可能因具体的注释缺失、最大长度缺失或迁移历史 schema 缺失而失败。修复实体配置，直到测试无需运行中数据库即可通过。
 
-## 任务 5：添加 IAM 认证、Token 和种子服务
+## 任务 5：添加 IAM 认证、令牌和种子服务
 
 **文件：**
 
@@ -1083,7 +1083,7 @@ public sealed record CurrentPrincipalResponse(string UserId, string LoginName, s
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 ```
 
-- [ ] **步骤 3：添加密码和 token 服务**
+- [ ] **步骤 3：添加密码和令牌服务**
 
 创建 `IamPasswordService.cs`：
 
@@ -1171,8 +1171,8 @@ public Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(string 
 
 实施要求：
 
-1. `LoginAsync` 按登录名查找已启用用户、验证密码、记录成功/失败、创建 `UserSession` 并返回 token 对。
-2. `RefreshAsync` 对提交的 refresh token 求哈希，查找活动会话，验证用户已启用，以原因 `refresh-rotated` 吊销旧会话，创建新会话并返回 token 对。
+1. `LoginAsync` 按登录名查找已启用用户、验证密码、记录成功/失败、创建 `UserSession` 并返回令牌对。
+2. `RefreshAsync` 对提交的刷新令牌求哈希，查找活动会话，验证用户已启用，以原因 `refresh-rotated` 吊销旧会话，创建新会话并返回令牌对。
 3. `RevokeSessionAsync` 是幂等的。
 4. `GetCurrentPrincipalAsync` 验证 JWT，然后验证持久化会话、用户启用状态、security stamp 和权限版本。
 5. `ValidateConnectorCredentialAsync` 对提交的 secret 求哈希，并检查凭证有效时间窗。
@@ -1259,7 +1259,7 @@ public sealed class LoginEndpoint(IamAuthService auth) : Endpoint<LoginRequest>
 
 `GET /api/iam/v1/me` 必须调用 `IamAuthService.GetCurrentPrincipalAsync(HttpContext, ct)`。如果返回 null，调用 `Send.UnauthorizedAsync(ct)`；否则返回 `CurrentPrincipalResponse`。
 
-- [ ] **步骤 3：更新 users/roles/sessions 读取 endpoint**
+- [ ] **步骤 3：更新用户/角色/会话读取端点**
 
 在 PostgreSQL 模式下，从 `ApplicationDbContext` 读取，使用 `AsNoTracking()` 并返回最小 DTO：
 
@@ -1339,7 +1339,7 @@ Remove-Item Env:\ConnectionStrings__IamDb -ErrorAction SilentlyContinue
 2. 所有业务表都有注释；
 3. 所有业务列都有注释；
 4. 字符串 ID 长度有界；
-5. 密码、refresh token 或 Connector secret 均不以明文出现；
+5. 密码、刷新令牌或 Connector 密钥均不以明文出现；
 6. 迁移中未嵌入包含 secret 的数据种子。
 
 - [ ] **步骤 4：添加验证脚本**

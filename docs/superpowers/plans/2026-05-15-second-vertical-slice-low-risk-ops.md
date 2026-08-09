@@ -2,11 +2,11 @@
 
 > **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**目标：** 建立第二条纵切：Gateway 创建低风险 restart 运维任务，Ops 记录任务、尝试与审计，Connector Host 领取并执行动作，Ops 接收结果，AppHub 继续只通过 state snapshot 表达实例最终状态。
+**目标：** 建立第二条纵切：Gateway 创建低风险重启运维任务，Ops 记录任务、尝试与审计，Connector Host 领取并执行动作，Ops 接收结果，AppHub 继续只通过状态快照表达实例最终状态。
 
-**架构：** 本阶段采用 HTTP pull 作为本地纵切传输机制：Connector Host 通过 `Sdk.Ops` 轮询 Ops 的 pending task endpoint，执行 `lifecycle.restart` 后回传 `OperationResult`。Ops 是动作生命周期与审计事实源；Gateway 只提供控制台入口；AppHub 不接收动作结果，也不被 Ops 直接改写实例状态。
+**架构：** 本阶段采用 HTTP 拉取作为本地纵切传输机制：Connector Host 通过 `Sdk.Ops` 轮询 Ops 的待处理任务端点，执行 `lifecycle.restart` 后回传 `OperationResult`。Ops 是动作生命周期与审计事实源；Gateway 只提供控制台入口；AppHub 不接收动作结果，也不被 Ops 直接改写实例状态。
 
-**技术栈：** .NET 10、ASP.NET Core、FastEndpoints、xUnit、Microsoft.AspNetCore.Mvc.Testing、Platform SDK Core/Auth/ConnectorProtocol/Ops、本地 in-memory stores、PowerShell verification scripts。
+**技术栈：** .NET 10、ASP.NET Core、FastEndpoints、xUnit、Microsoft.AspNetCore.Mvc.Testing、Platform SDK Core/Auth/ConnectorProtocol/Ops、本地内存存储、PowerShell 验证脚本。
 
 ---
 
@@ -525,7 +525,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter Operation_task_can_be_created_dispatched_and_completed
 ```
 
-预期结果：失败，返回 `404` 或报告 endpoint/store 类型缺失。
+预期结果：失败，返回 `404` 或报告端点/存储类型缺失。
 
 - [ ] **步骤 3：添加 Ops 事实**
 

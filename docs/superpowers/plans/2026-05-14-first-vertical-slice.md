@@ -4,9 +4,9 @@
 
 **目标：** 建立 Nerv-IIP 第一迭代纵切：Connector Host 发现一个 Docker 运行目标，上报注册、心跳和状态快照，AppHub 沉淀应用与实例事实，PlatformGateway 能查询到最新状态。
 
-**执行状态（2026-05-15）：** 第一迭代纵切骨架已经落地，并通过 `pwsh scripts/verify-first-slice.ps1` 验证。当前实现满足本计划的本地纵切验收口径：backend 与 connector-hosts 可 restore/build/test，Connector Host 可通过 Platform SDK 上报 registration、heartbeat、state snapshot，AppHub 可接收并沉淀内存态实例事实，PlatformGateway 可查询实例列表与详情。本文档保留为原始执行计划和后续补齐真实持久化、完整 IAM、FileStorage、Ops 等能力的任务来源。
+**执行状态（2026-05-15）：** 第一迭代纵切骨架已经落地，并通过 `pwsh scripts/verify-first-slice.ps1` 验证。当前实现满足本计划的本地纵切验收口径：后端与 Connector Host 解决方案可还原/构建/测试，Connector Host 可通过 Platform SDK 上报注册、心跳和状态快照，AppHub 可接收并沉淀内存态实例事实，PlatformGateway 可查询实例列表与详情。本文档保留为原始执行计划和后续补齐真实持久化、完整 IAM、FileStorage、Ops 等能力的任务来源。
 
-**架构：** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/query contract 聚合数据；Connector Host 独立于 backend solution，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
+**架构：** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/查询契约聚合数据；Connector Host 独立于后端解决方案，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
 
 **技术栈：** .NET 10、ASP.NET Core、netcorepal-cloud-framework、FastEndpoints、PostgreSQL、RabbitMQ、Redis、FusionCache、MinIO、OpenTelemetry、Docker、xUnit 或模板默认测试框架。
 
@@ -16,15 +16,15 @@
 
 ### 本计划范围内
 
-1. `backend` 与 `connector-hosts` 两套 solution 骨架。
+1. `backend` 与 `connector-hosts` 两套解决方案骨架。
 2. `backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol` 共享协议。
 3. `backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries` 作为 Gateway 到 AppHub 的第一迭代查询契约。
 4. `backend/common/Sdk/Nerv.IIP.Sdk.Core`、`Nerv.IIP.Sdk.Auth`、`Nerv.IIP.Sdk.ConnectorProtocol`、`Nerv.IIP.Sdk.FileStorage` 的最小 SDK 边界。
 5. `backend/common/Caching/Nerv.IIP.Caching` 的 FusionCache 统一注册边界。
 6. `backend/common/Observability/Nerv.IIP.Observability` 的日志、trace、metrics、correlation 基线。
-7. IAM 最小后台管理底座：用户、角色、权限、会话、Connector Host 凭证、初始管理员 seed。
+7. IAM 最小后台管理底座：用户、角色、权限、会话、Connector Host 凭证和初始管理员数据。
 8. FileStorage 最小服务骨架：文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配边界。
-9. AppHub 的 registration、heartbeat、state snapshot 写入和内部查询接口。
+9. AppHub 的注册、心跳、状态快照写入和内部查询接口。
 10. PlatformGateway 的实例列表与实例详情查询接口。
 11. Connector Host、Sdk.ConnectorProtocol 客户端、Docker Connector 的最小发现与上报链路。
 
@@ -37,7 +37,7 @@
 5. FileStorage 的完整文件管理后台、文件预览、转码、复杂保留策略和跨服务附件工作流。
 6. Sdk.Ops、Sdk.Notification、Sdk.Observability 的完整实现和 SDK 多语言发布流水线。
 7. Notification 服务骨架、站内通知、待办、通知偏好、去重合并、投递状态和外部通道 provider。
-8. Knowledge、AI Integration、复杂 autonomous workflow。
+8. Knowledge、AI Integration 和复杂自主工作流。
 
 ## 文件结构图
 
@@ -107,10 +107,10 @@ connector-hosts/
 ## 边界规则
 
 1. PlatformGateway 不引用 `Nerv.IIP.AppHub.Domain` 或 `Nerv.IIP.AppHub.Infrastructure`。
-2. Connector Host 不引用任何 backend 服务实现项目。
+2. Connector Host 不引用任何后端服务实现项目。
 3. Connector Host 与平台共享的业务载荷只放在 `Nerv.IIP.Contracts.ConnectorProtocol`。
 4. Gateway 到 AppHub 的第一迭代查询 DTO 放在 `Nerv.IIP.Contracts.AppHubQueries`，避免 Gateway 复制 AppHub 返回模型。
-5. refresh token、session revoke list、OperationTask、AuditRecord、ApplicationInstance reported state 不使用缓存作为事实来源。
+5. 刷新令牌、会话吊销列表、OperationTask、AuditRecord 和 ApplicationInstance 上报状态不使用缓存作为事实来源。
 6. `--UseAdmin false` 固定传入 netcorepal 模板；IAM 使用 Nerv-IIP 自有领域模型。
 7. 计划中的项目引用只服务首批单仓开发便利；发布和升级边界必须按 Platform SDK、版本化 Connector Protocol、公开 HTTP API 和 IAM 授权处理。
 8. Connector Host、Connector 和示例应用的主版本必须与主平台主版本对齐；同一主版本内小版本可以低于主平台小版本。
@@ -665,11 +665,11 @@ git commit -m "chore: scaffold platform services"
 | 聚合 | 拥有内容 |
 | --- | --- |
 | `Organization` | organization id、名称、状态 |
-| `Environment` | environment id、organization id、名称、状态 |
+| `Environment` | 环境 ID、组织 ID、名称、状态 |
 | `User` | 登录名、邮箱、密码哈希、启用标志、security stamp |
 | `Role` | 角色名称、权限代码 |
 | `Membership` | 用户、组织、环境、角色分配 |
-| `UserSession` | refresh token 哈希、签发/到期/吊销时间戳、权限版本 |
+| `UserSession` | 刷新令牌哈希、签发/到期/吊销时间戳、权限版本 |
 | `ConnectorHostCredential` | Connector Host 身份、组织、环境、能力范围、secret 哈希、有效范围 |
 
 - [ ] **步骤 2：添加首批 IAM endpoint**
@@ -692,13 +692,13 @@ GET  /api/iam/v1/sessions
 POST /api/iam/v1/sessions/{sessionId}/revoke
 ```
 
-通过轻薄 adapter 使用 ASP.NET Core `PasswordHasher<TUser>`。refresh token 和 Connector Host secret 仅以哈希形式存储。
+通过轻薄适配器使用 ASP.NET Core `PasswordHasher<TUser>`。刷新令牌和 Connector Host 密钥仅以哈希形式存储。
 
-认证使用短期 JWT Bearer access token 加 refresh token 轮换。不得添加独立的会话认证代码。对于受保护操作，必须根据 IAM 服务端事实验证 `sessionId`、`securityStamp` 和 `permissionVersion` claim。
+认证使用短期 JWT Bearer 访问令牌加刷新令牌轮换。不得添加独立的会话认证代码。对于受保护操作，必须根据 IAM 服务端事实验证 `sessionId`、`securityStamp` 和 `permissionVersion` 声明。
 
 - [ ] **步骤 3：添加初始种子**
 
-播种：
+写入以下初始数据：
 
 1. 一个组织。
 2. 一个环境。
@@ -706,7 +706,7 @@ POST /api/iam/v1/sessions/{sessionId}/revoke
 4. 一个平台管理员角色。
 5. 为首个本地 Connector Host 创建一个 Connector Host 凭证。
 
-至少播种以下首批权限代码：
+至少写入以下首批权限数据：
 
 ```text
 iam.users.read
@@ -735,8 +735,8 @@ ops.audit.read
 
 覆盖以下场景：
 
-1. 超级管理员可以登录，并收到 access token 和 refresh token。
-2. 刷新会轮换 refresh token 并使旧 refresh token 失效。
+1. 超级管理员可以登录，并收到访问令牌和刷新令牌。
+2. 刷新会轮换刷新令牌，并使旧刷新令牌失效。
 3. 登出会吊销活动会话。
 4. 已禁用用户无法刷新，也无法访问受保护 endpoint。
 5. Connector Host 凭证可以验证为 `principalType = connector-host`，并带组织和环境范围。
@@ -953,7 +953,7 @@ Gateway instance detail
 IAM permission snapshot
 ```
 
-每个辅助函数必须要求 service、organization id、environment id、resource、stable id 或规范化查询哈希，以及 schema 版本。
+每个辅助函数必须要求服务、组织 ID、环境 ID、资源、稳定 ID 或规范化查询哈希，以及 schema 版本。
 
 - [ ] **步骤 3：添加可观测性注册边界**
 
@@ -1069,7 +1069,7 @@ ConnectorStateSnapshot
 Docker Connector 将一个发现的容器映射为：
 
 1. `nodeKey`：稳定的本地 Docker 节点 key。
-2. `applicationKey`：由镜像/repository 派生的 key。
+2. `applicationKey`：由镜像/仓库派生的键。
 3. `version`：由镜像 tag 或 digest 派生的版本。
 4. `instanceKey`：基于容器 id 的稳定 key。
 5. capabilities：至少包括 `runtime`、`log` 和 `lifecycle.restart`。
@@ -1192,7 +1192,7 @@ git commit -m "test: verify first vertical slice"
 1. 一名执行者实施任务 5 的 IAM。
 2. 契约就绪后，一名执行者实施任务 6 的 AppHub。
 3. SDK 项目和契约就绪后，一名执行者实施任务 9 的 Connector Host。
-4. Gateway 等待 AppHub 查询契约；在 AppHub 运行前，可以使用虚假的 AppHub HTTP handler 继续工作。
+4. Gateway 等待 AppHub 查询契约；在 AppHub 运行前，可以使用模拟的 AppHub HTTP 处理器继续工作。
 
 ## 第一次迭代完成定义
 
@@ -1200,13 +1200,13 @@ git commit -m "test: verify first vertical slice"
 
 1. 后端解决方案的 `dotnet restore`、`dotnet build` 和 `dotnet test` 通过。
 2. connector-hosts 解决方案的 `dotnet restore`、`dotnet build` 和 `dotnet test` 通过。
-3. IAM 可以播种一个管理员和一个 Connector Host 凭证。
+3. IAM 可以创建初始管理员和初始 Connector Host 凭证。
 4. Platform SDK Core/Auth/ConnectorProtocol/FileStorage 项目存在，且不引用后端服务 Web、Domain、Infrastructure 或数据库模型；`Sdk.Notification` 仍在第一次迭代范围外。
-5. FileStorage 服务以 health/build-info 骨架存在，其代码结构记录文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储 adapter 边界。
+5. FileStorage 服务以 health/build-info 骨架存在，其代码结构记录文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配器边界。
 6. Connector Host 可以作为 `principalType = connector-host` 向 AppHub 认证。
 7. Connector Host 可以通过 `Nerv.IIP.Sdk.ConnectorProtocol` 发送注册、心跳和状态快照。
 8. AppHub 持久化应用、版本、节点、实例、能力、存活性和状态历史事实。
-9. PlatformGateway 可以通过 AppHub HTTP/query 契约返回实例列表和详情。
+9. PlatformGateway 可以通过 AppHub HTTP/查询契约返回实例列表和详情。
 10. Gateway 不引用 AppHub Domain 或 Infrastructure 项目。
 11. Connector Host、AppHub 和 Gateway 之间的日志和 trace 可以关联。
 12. Ops 服务在此次迭代中仅以 health/build-info 骨架存在。

@@ -4,9 +4,9 @@
 
 **目标：** 将第一、第二、第三阶段已经跑通的 AppHub、Ops、Gateway、Connector Host 和 Console 链路迁移到可验证的 netcorepal-first 真实基础设施底座，优先完成 PostgreSQL profile、结构化日志与 OpenTelemetry 输出、平台级 Aspire AppHost、框架代码分析入口和 database profile 边界。
 
-**架构：** 本阶段不扩展业务范围，先把 AppHub 和 Ops 当前内存态事实迁移到符合 netcorepal/CleanDDD 的 Domain aggregate、Application command/query、Infrastructure repository/ApplicationDbContext 形态；PostgreSQL 作为首个 database profile，provider 选择只存在于 Infrastructure DI extension、配置、测试和部署脚本中。验证脚本用本地 `infra/docker-compose.dev.yml` 拉起依赖并证明数据跨 DbContext 生命周期存在。Aspire AppHost 作为统一拓扑入口落到 `infra/aspire/Nerv.IIP.AppHost`，但不替代既有验证脚本；日志采用 Console/OTLP 优先，本地滚动 JSONL 文件是第四阶段必须实现的持久化兜底；内置长期持久化目标是 Log Archive Worker 将关闭后的日志压缩成 File Storage chunk，并在 PostgreSQL 独立 `observability` schema 或 database 中记录可查询元数据索引；可选 .NET Aspire Dashboard 作为短期观测 UI；观测 profile 必须同时覆盖 Aspire AppHost、Docker Compose 和安装包/脚本三类部署入口；控制台日志查看通过 PlatformGateway 后续受控 API 接入，不让前端直连 Aspire Dashboard 或第三方观测后端；Gateway、Connector Host、Contracts/SDK、frontend api-client 和 console 保持轻量契约边界，不强行采用完整 netcorepal 三项目模型。
+**架构：** 本阶段不扩展业务范围，先把 AppHub 和 Ops 当前内存态事实迁移到符合 netcorepal/CleanDDD 的 Domain 聚合、Application 命令/查询、Infrastructure 仓库/ApplicationDbContext 形态；PostgreSQL 作为首个数据库配置档（profile），数据库提供程序选择只存在于 Infrastructure DI 扩展、配置、测试和部署脚本中。验证脚本用本地 `infra/docker-compose.dev.yml` 拉起依赖并证明数据跨 DbContext 生命周期存在。Aspire AppHost 作为统一拓扑入口落到 `infra/aspire/Nerv.IIP.AppHost`，但不替代既有验证脚本；日志采用 Console/OTLP 优先，本地滚动 JSONL 文件是第四阶段必须实现的持久化兜底；内置长期持久化目标是 Log Archive Worker 将关闭后的日志压缩成 File Storage 分块，并在 PostgreSQL 独立 `observability` schema 或数据库中记录可查询元数据索引；可选 .NET Aspire Dashboard 作为短期观测 UI；观测配置档必须同时覆盖 Aspire AppHost、Docker Compose 和安装包/脚本三类部署入口；控制台日志查看通过 PlatformGateway 后续受控 API 接入，不让前端直连 Aspire Dashboard 或第三方观测后端；Gateway、Connector Host、Contracts/SDK、前端 API 客户端和控制台保持轻量契约边界，不强行采用完整 netcorepal 三项目模型。
 
-**技术栈：** .NET 10、netcorepal-cloud-framework/NetCorePal 3.3.0、FastEndpoints、MediatR、Entity Framework Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、NetCorePal CAP PostgreSQL storage 3.3.0、Serilog.AspNetCore、Serilog.Sinks.OpenTelemetry、Serilog.Sinks.File、OpenTelemetry Collector、可选的短期可观测性 UI .NET Aspire Dashboard、PostgreSQL 17 主 profile、Redis 7、RabbitMQ 4、PowerShell、Docker Compose、Aspire.Hosting 13.3.3、pnpm 10.13.1、Vue 3、Hey API。GaussDB/DMDB 记录为模板支持的未来 profile，本阶段不实施。
+**技术栈：** .NET 10、netcorepal-cloud-framework/NetCorePal 3.3.0、FastEndpoints、MediatR、Entity Framework Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、NetCorePal CAP PostgreSQL storage 3.3.0、Serilog.AspNetCore、Serilog.Sinks.OpenTelemetry、Serilog.Sinks.File、OpenTelemetry Collector、可选的短期可观测性 UI .NET Aspire Dashboard、PostgreSQL 17 主配置档、Redis 7、RabbitMQ 4、PowerShell、Docker Compose、Aspire.Hosting 13.3.3、pnpm 10.13.1、Vue 3、Hey API。GaussDB/DMDB 记录为模板支持的未来配置档，本阶段不实施。
 
 ---
 
@@ -30,11 +30,11 @@ Fourth vertical slice real infrastructure verified.
 
 2026-05-17 当前执行进度：
 
-1. Tasks 1-5 已完成并通过本地 restore/build/test、AppHub/Ops in-memory regression、PostgreSQL profile smoke（未设置真实 PostgreSQL 时早返回）、code-analysis smoke 和 reviewer 复核。
-2. Task 6 脚本已落地并通过：`scripts/verify-second-slice-ops.ps1` 与 `scripts/verify-third-slice-console.ps1` 支持 `-UsePostgres`，`scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ、重建 verify database 并运行真实基础设施门禁，`.codex/environments/environment.toml` 已增加第四阶段 action。
-3. Task 7 平台级 AppHost 已落地到 `infra/aspire/Nerv.IIP.AppHost`，AppHub/Ops 使用独立 PostgreSQL database resource，并已通过 `dotnet restore infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` 与 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`。
-4. `/code-analysis` 已从 `Program.cs` 的 Minimal API 写法收敛到 FastEndpoints endpoint，`dotnet test backend/tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj --no-build`、AppHub/Ops CodeAnalysis smoke tests 和 `pwsh scripts/verify-second-slice-ops.ps1` 均已通过。
-5. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已完整通过：AppHub/Ops PostgreSQL profile tests、backend/connector-hosts 串行 solution tests、Gateway OpenAPI 导出、frontend api-client 生成、typecheck/test/build 和真实 AppHub/Ops/Gateway/Connector Host 联调均通过。
+1. 任务 1-5 已完成并通过本地还原/构建/测试、AppHub/Ops 内存模式回归、PostgreSQL profile 冒烟测试（未设置真实 PostgreSQL 时早返回）、code-analysis 冒烟测试和审核者复核。
+2. 任务 6 脚本已落地并通过：`scripts/verify-second-slice-ops.ps1` 与 `scripts/verify-third-slice-console.ps1` 支持 `-UsePostgres`，`scripts/verify-fourth-slice-real-infra.ps1` 会拉起 PostgreSQL、Redis、RabbitMQ、重建验证数据库并运行真实基础设施门禁，`.codex/environments/environment.toml` 已增加第四阶段操作。
+3. 任务 7 平台级 AppHost 已落地到 `infra/aspire/Nerv.IIP.AppHost`，AppHub/Ops 使用独立 PostgreSQL 数据库资源，并已通过 `dotnet restore infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` 与 `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore`。
+4. `/code-analysis` 已从 `Program.cs` 的 Minimal API 写法收敛到 FastEndpoints endpoint，`dotnet test backend/tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj --no-build`、AppHub/Ops CodeAnalysis 冒烟测试和 `pwsh scripts/verify-second-slice-ops.ps1` 均已通过。
+5. `pwsh scripts/verify-fourth-slice-real-infra.ps1` 已完整通过：AppHub/Ops PostgreSQL profile 测试、后端/Connector Host 解决方案串行测试、Gateway OpenAPI 导出、前端 API 客户端生成、类型检查/测试/构建和真实 AppHub/Ops/Gateway/Connector Host 联调均通过。
 
 ## 当前门禁
 
@@ -56,9 +56,9 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 ### 本计划范围内
 
 1. 引入 NetCorePal、EF Core、Npgsql、CAP RabbitMQ/CAP PostgreSQL storage、Serilog/OpenTelemetry sink 包版本，并保持 Central Package Management；provider 包只作为 PostgreSQL profile 的实现依赖。
-2. 将 AppHub 当前事实迁移为 netcorepal/CleanDDD 形态：Domain aggregate、Infrastructure repository/ApplicationDbContext、Web Application command/query、Endpoint 通过 mediator 调用。
-3. 将 Ops 当前事实迁移为 netcorepal/CleanDDD 形态：Domain aggregate、Infrastructure repository/ApplicationDbContext、Web Application command/query、Endpoint 通过 mediator 调用。
-4. 保留现有内存验证链路作为回归门禁，但新 PostgreSQL 路径必须基于 `ApplicationDbContext : AppDbContextBase`、`AddUnitOfWork<ApplicationDbContext>()`、NetCorePal repository 和 CAP storage。
+2. 将 AppHub 当前事实迁移为 netcorepal/CleanDDD 形态：Domain 聚合、Infrastructure 仓库/ApplicationDbContext、Web Application 命令/查询，Endpoint 通过 mediator 调用。
+3. 将 Ops 当前事实迁移为 netcorepal/CleanDDD 形态：Domain 聚合、Infrastructure 仓库/ApplicationDbContext、Web Application 命令/查询，Endpoint 通过 mediator 调用。
+4. 保留现有内存验证链路作为回归门禁，但新 PostgreSQL 路径必须基于 `ApplicationDbContext : AppDbContextBase`、`AddUnitOfWork<ApplicationDbContext>()`、NetCorePal 仓库和 CAP 存储。
 5. 增加 PostgreSQL profile 集成测试，验证事实跨 DbContext 生命周期存在，并证明命令处理器不手写 `SaveChanges`。
 6. 为 AppHub/Ops 增加 netcorepal code-analysis endpoint，用于生成命令、聚合、事件、处理器流向图。
 7. 固化后端日志口径：业务代码使用 `ILogger<T>`，宿主层使用 Serilog provider，日志通过 Console 与 OpenTelemetry/OTLP 输出到 Collector；无生产观测后端时使用滚动 JSONL 文件兜底，需要本地观测 UI 时使用可选 .NET Aspire Dashboard profile；日志不写业务 PostgreSQL。
@@ -66,8 +66,8 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 9. 创建平台级 Aspire AppHost，覆盖 PostgreSQL、Redis、RabbitMQ、AppHub、Ops、Gateway 和 Connector Host；OpenTelemetry Collector 作为后续观测 profile 资源继续由部署基线承接。
 10. 在文档和代码注册层固化 `Persistence:Provider` 边界，默认值为 `InMemory`，第四阶段脚本显式切到 `PostgreSQL`。
 11. 固化日志查看的后续契约边界：控制台只消费 PlatformGateway `/api/console/**`，Gateway 代理日志后端并负责鉴权、租户隔离、限流、脱敏、分页和时间窗口限制。
-12. 固化内置日志持久化目标：滚动 JSONL 热日志、Log Archive Worker、File Storage `.jsonl.gz` chunk、PostgreSQL 独立 `observability` 索引元数据和 Gateway 查询代理；第四阶段只要求落地滚动 JSONL，归档 worker 和查询页作为后续实现。
-13. 固化观测部署入口：Aspire AppHost 使用 AppHost/Dashboard，Docker Compose 通过 `collector-only`、`aspire-dashboard` 与 `log-archive` profile/overlay，安装包和脚本通过 OTLP endpoint、滚动日志目录、File Storage 归档目标和可选 standalone Dashboard 配置实现。
+12. 固化内置日志持久化目标：滚动 JSONL 热日志、Log Archive Worker、File Storage `.jsonl.gz` 分块、PostgreSQL 独立 `observability` 索引元数据和 Gateway 查询代理；第四阶段只要求落地滚动 JSONL，归档工作程序和查询页作为后续实现。
+13. 固化观测部署入口：Aspire AppHost 使用 AppHost/Dashboard，Docker Compose 通过 `collector-only`、`aspire-dashboard` 与 `log-archive` 配置档/叠加层，安装包和脚本通过 OTLP 端点、滚动日志目录、File Storage 归档目标和可选独立 Dashboard 配置实现。
 14. 更新 README、实施状态、部署基线、API 契约规范和 `.codex/environments/environment.toml` 的第四阶段入口。
 
 ### 本计划范围外
@@ -164,22 +164,22 @@ docs/architecture/implementation-readiness.md
 
 ## 边界规则
 
-1. AppHub 和 Ops Web endpoint 依赖 MediatR command/query，而不是具体内存存储或 DbContext。
+1. AppHub 和 Ops Web 端点依赖 MediatR 命令/查询，而不是具体内存存储或 DbContext。
 2. Domain 项目拥有聚合根、实体、值对象、强类型 ID 和领域事件；不得引用 EF provider 包、CAP 包或基础设施存储。
-3. Infrastructure 项目拥有 `ApplicationDbContext`、实体配置、repository 接口/实现和 database profile 注册。
-4. Web 项目拥有 Endpoint、Application Command、Query、DomainEventHandler、IntegrationEvent 和框架注册。
+3. Infrastructure 项目拥有 `ApplicationDbContext`、实体配置、仓库接口/实现和数据库配置档注册。
+4. Web 项目拥有 Endpoint、Application 命令、查询、DomainEventHandler、IntegrationEvent 和框架注册。
 5. Gateway 继续通过 HTTP 客户端调用 AppHub 和 Ops；不得引用 AppHub/Ops Domain 或 Infrastructure。
 6. Connector Host 继续使用 Platform SDK 客户端；不得引用后端服务实现项目。
 7. Database provider 选择隔离在 Infrastructure DI 扩展、profile 测试、脚本和部署配置中；Domain/Application/Endpoint/SDK 代码不得引用 provider 特定包、SQL 方言或 PostgreSQL 专有类型。
 8. PostgreSQL schema 归服务所有：AppHub 使用 schema `apphub`，Ops 使用 schema `ops`；服务不得读写彼此的 schema。
-9. 本阶段将 Redis 和 RabbitMQ 引入 AppHost 拓扑，并通过 netcorepal 接入 CAP 存储；除非框架 smoke 测试需要，实际跨服务消息行为仍属于后续范围。
+9. 本阶段将 Redis 和 RabbitMQ 引入 AppHost 拓扑，并通过 netcorepal 接入 CAP 存储；除非框架冒烟测试需要，实际跨服务消息行为仍属于后续范围。
 10. 业务代码仅使用 `ILogger<T>`；Serilog、Console sink、OpenTelemetry sink 和部署日志后端选择保留在 Host/Observability/部署配置中。
 11. 运行时日志、Ops 审计事实和业务事务数据使用独立的存储与保留策略；日志不写入服务 PostgreSQL schema。
 12. 本地日志回退有界：滚动 JSONL 文件用于最低诊断，OpenTelemetry Collector `file_storage` 队列用于短期导出韧性，可选 .NET Aspire Dashboard 仅用于短期本地遥测查看。
-13. 内置持久化日志使用 Log Archive Worker、File Storage 压缩 chunk 和独立 PostgreSQL `observability` 元数据索引；原始日志正文不进入业务 schema。
+13. 内置持久化日志使用 Log Archive Worker、File Storage 压缩分块和独立 PostgreSQL `observability` 元数据索引；原始日志正文不进入业务 schema。
 14. 可观测性 profile 必须支持 Aspire AppHost、Docker Compose 和包/脚本安装。Docker 可以将 Dashboard 和 Log Archive Worker 作为可选服务运行；直接安装不得要求容器运行时。
 15. 控制台日志查看属于 Gateway 职责：前端代码必须使用生成的 `/api/console/**` 客户端，Gateway 必须通过 IAM 授权、组织/环境过滤、有界时间窗口、分页、限流和脱敏代理任何 Aspire Dashboard、滚动文件、内置归档、生产后端或客户平台查询。
-16. 日志查询 DTO 必须保持后端中立；LogQL、后端 URL、凭证、租户 header、File Storage 对象 key 或存储特定字段均不得泄漏到前端契约。
+16. 日志查询 DTO 必须保持后端中立；LogQL、后端 URL、凭证、租户标头、File Storage 对象键或存储特定字段均不得泄漏到前端契约。
 17. 验证必须保持现有内存态脚本可用。PostgreSQL 模式通过第四阶段脚本和显式环境变量选择启用。
 
 ## 架构输入
@@ -202,14 +202,14 @@ docs/architecture/implementation-readiness.md
 | --- | --- | --- |
 | AppHub | 采用完整 netcorepal/CleanDDD 形态 | 已经拥有注册、心跳、状态查询和幂等事实，适合作为第一个真实持久化和 code-analysis 试点。 |
 | Ops | 采用完整 netcorepal/CleanDDD 形态 | 已经拥有任务、尝试、审计和幂等事实，和 AppHub 一起验证命令、查询、仓储、事务、测试和 database profile。 |
-| Iam | 本计划保留当前纵切；稍后迁移 | IAM 认证、JWT、refresh token、权限 guard 风险面更大，第四阶段只记录为后续迁移对象。 |
+| Iam | 本计划保留当前纵切；稍后迁移 | IAM 认证、JWT、刷新令牌、权限防护的风险面更大，第四阶段只记录为后续迁移对象。 |
 | FileStorage | 本计划保留当前纵切；稍后迁移 | 需要同时处理 MinIO/provider、对象元数据和下载授权，放到真实文件闭环阶段。 |
 | PlatformGateway | 不强制完整 netcorepal 三项目结构 | Gateway 是 BFF/路由聚合层，默认只使用 ASP.NET/FastEndpoints、观测和契约消费约定；只有拥有自身持久化模型时再补 Infrastructure。 |
 | Connector Host | 不采用完整 netcorepal 服务模型 | Connector Host 是可独立安装升级的 worker，通过 Platform SDK/HTTP 与平台交互，不拥有平台领域数据库。 |
 | Contracts/SDK | 保持轻量 | 这些项目是跨进程契约和客户端封装，不能反向依赖服务端框架。 |
 | Frontend console/api-client | 不适用 | Vue、Hey API 和 pnpm 侧只消费 OpenAPI，不引入 .NET server framework。 |
 
-执行本计划时，如果后续任务中的旧 store 代码片段与本节冲突，以本节为准：最终态应是 Endpoint -> MediatR command/query -> repository/query handler -> `ApplicationDbContext`，而不是 Endpoint 直接注入 concrete store。内存 store 只允许作为回归测试基线或临时 adapter 存在，不能成为新功能扩展方向。
+执行本计划时，如果后续任务中的旧存储代码片段与本节冲突，以本节为准：最终态应是端点 -> MediatR 命令/查询 -> 仓库/查询处理器 -> `ApplicationDbContext`，而不是端点直接注入具体存储。内存存储只允许作为回归测试基线或临时适配器存在，不能成为新功能扩展方向。
 
 ---
 
@@ -377,7 +377,7 @@ git commit -m "chore: add netcorepal persistence package baseline"
 
 ## 任务 2：在 CleanDDD 迁移前映射现有 AppHub 行为
 
-> 修订后的 netcorepal 执行说明：此任务不再是最终的“Endpoint -> store”重构。使用现有 `InMemoryAppHubStateStore` API 作为注册、心跳、状态快照、实例列表和实例详情的行为映射。任务 3 完成的实现最终必须是“Endpoint -> MediatR command/query -> repository/query handler -> `ApplicationDbContext`”；此处引入的任何 `IAppHubStateStore` 都只是迁移期间保留测试的临时 adapter。
+> 修订后的 netcorepal 执行说明：此任务不再是最终的“端点 -> 存储”重构。使用现有 `InMemoryAppHubStateStore` API 作为注册、心跳、状态快照、实例列表和实例详情的行为映射。任务 3 完成的实现最终必须是“端点 -> MediatR 命令/查询 -> 仓库/查询处理器 -> `ApplicationDbContext`”；此处引入的任何 `IAppHubStateStore` 都只是迁移期间保留测试的临时适配器。
 
 **文件：**
 
@@ -1124,7 +1124,7 @@ public sealed class OpsIdempotencyRow
 下面的遗留映射参考展示旧的存储形态算法。最终版本通过 repository 和 handler 实施：
 
 1. `CreateOperationTaskCommandHandler` 处理幂等任务创建和审计记录创建。
-2. `DispatchPendingOperationsCommandHandler` 将待处理工作租给 Connector Host，并创建尝试事实。
+2. `DispatchPendingOperationsCommandHandler` 以租约方式把待处理工作分派给 Connector Host，并创建尝试事实。
 3. `RecordOperationResultCommandHandler` 更新任务/尝试状态和审计事实。
 4. `GetOperationTaskQueryHandler` 返回现有契约响应类型。
 
@@ -1457,7 +1457,7 @@ app.MapGet("/code-analysis", () =>
 
 添加 `using NetCorePal.Extensions.CodeAnalysis;`，并将聚合类型名称调整为任务 4 创建的精确文件。
 
-- [ ] **步骤 3：添加 smoke 测试**
+- [ ] **步骤 3：添加冒烟测试**
 
 为每个服务添加一个 Web 测试，启动 Web 应用并检查 `/code-analysis` 返回 `text/html`，且非空正文至少包含一个 command 或聚合类型名称。
 
@@ -1723,7 +1723,7 @@ dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 
 预期结果：两条命令都以 `0` 退出。
 
-- [ ] **步骤 4：Smoke 运行 AppHost**
+- [ ] **步骤 4：冒烟运行 AppHost**
 
 ```powershell
 dotnet run --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
@@ -1793,7 +1793,7 @@ git commit -m "feat: add platform aspire apphost"
 4. Aspire Dashboard 必须记录为短期且内存态；它不是生产日志持久化后端。
 5. Docker Compose 必须同时支持 `collector-only` 和可选 `aspire-dashboard` profile/overlay。
 6. 包/脚本安装不得要求容器；它们至少必须配置滚动 JSONL 文件，并且在可用时可以配置 OTLP endpoint 或独立 Aspire Dashboard。
-7. 内置日志持久化使用滚动 JSONL 热文件、Log Archive Worker、File Storage `.jsonl.gz` chunk 和独立 `observability` 元数据索引。
+7. 内置日志持久化使用滚动 JSONL 热文件、Log Archive Worker、File Storage `.jsonl.gz` 分块和独立 `observability` 元数据索引。
 8. 产品控制台日志查看通过 PlatformGateway；前端不得直接查询 Aspire Dashboard、归档存储或任何可观测性后端。
 9. Gateway 在返回日志条目前必须强制执行 IAM、组织/环境范围、时间窗口限制、分页、限流和脱敏。
 10. 默认索引数据库为 PostgreSQL `observability` schema 或 database；SQLite 仅用于诊断，外部搜索引擎作为 adapter。
@@ -1824,7 +1824,7 @@ git commit -m "docs: document fourth real infrastructure slice"
 2. 必须在任务 3 之前运行任务 2，因为它冻结当前隐藏在内存态存储中的 AppHub 行为。
 3. 任务 1 完成后，任务 3 和任务 4 可以并行运行；它们涉及不同服务文件夹，并遵循相同的 netcorepal/CleanDDD 目标形态。
 4. 任务 5 依赖任务 3 和任务 4，因为 code-analysis 必须包含迁移后的 command/query/aggregate/repository 流程。
-5. 任务 6 依赖任务 3、4 和 5，因为真实基础设施脚本必须验证 PostgreSQL 模式和 code-analysis smoke 测试。
+5. 任务 6 依赖任务 3、4 和 5，因为真实基础设施脚本必须验证 PostgreSQL 模式和 code-analysis 冒烟测试。
 6. 任务 7 可在任务 3 和任务 4 后运行，因为 AppHost 应以 PostgreSQL 模式启动服务。
 7. 任务 8 最后运行，因为它记录已经验证的行为。
 
@@ -1838,8 +1838,8 @@ git commit -m "docs: document fourth real infrastructure slice"
 
 满足以下全部条件时，第四次迭代才算完成：
 
-1. AppHub Web endpoint 调用 MediatR command/query，而不是具体 store 或 DbContext。
-2. Ops Web endpoint 调用 MediatR command/query，而不是具体 store 或 DbContext。
+1. AppHub Web 端点调用 MediatR 命令/查询，而不是具体存储或 DbContext。
+2. Ops Web 端点调用 MediatR 命令/查询，而不是具体存储或 DbContext。
 3. AppHub 和 Ops Domain 项目包含 netcorepal 聚合根、强类型 ID 和领域事件，且不含 provider 特定代码。
 4. AppHub 和 Ops Infrastructure 项目包含 `ApplicationDbContext : AppDbContextBase`、实体配置和基于 netcorepal repository 模式的 repository。
 5. 内存态 AppHub 和 Ops 行为测试仍作为回归基线通过。
@@ -1849,7 +1849,7 @@ git commit -m "docs: document fourth real infrastructure slice"
 9. 后端服务在应用代码中使用 `ILogger<T>`，在 Host/Observability 注册中使用 Serilog，并使用 OpenTelemetry/OTLP 导出日志。
 10. 本地日志回退实施为有界滚动 JSONL 文件；可选 .NET Aspire Dashboard profile 记录为短期本地遥测查看工具。
 11. 不向 AppHub/Ops/IAM/FileStorage PostgreSQL schema 添加运行时日志表；Ops `AuditRecord` 仍仅用于审计，不是通用日志存储。
-12. 部署文档定义内置日志持久化目标：Log Archive Worker、File Storage 压缩 chunk 和独立 PostgreSQL `observability` 元数据索引。
+12. 部署文档定义内置日志持久化目标：Log Archive Worker、File Storage 压缩分块和独立 PostgreSQL `observability` 元数据索引。
 13. 部署文档定义跨 Aspire AppHost、Docker Compose 和包/脚本安装的可观测性资源 profile。
 14. 部署文档定义默认 `collector-only`、可选 `aspire-dashboard` 短期 UI、可选 `log-archive` 持久化 profile，且默认不依赖 Grafana/Loki/Elastic/Seq/ClickHouse。
 15. API 契约文档将控制台日志查询定义为未来 Gateway OpenAPI 能力，并禁止前端直接访问可观测性后端。

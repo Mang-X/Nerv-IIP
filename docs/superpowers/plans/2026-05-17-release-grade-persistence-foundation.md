@@ -50,7 +50,7 @@ Fourth vertical slice real infrastructure verified.
 ## 边界
 
 1. 本计划不得实施 IAM、FileStorage、Notification、CAP 业务 outbox、审批 UI 或控制台页面。
-2. 不得添加前端视觉组件、样式 token 或重新设计应用外壳。设计系统需要后续规范。
+2. 不得添加前端视觉组件、样式令牌或重新设计应用外壳。设计系统需要后续规范。
 3. 本计划完成后，不得在 PostgreSQL 验证或 Web 启动中使用 `EnsureCreated()`。
 4. 不得将迁移移动到 Web 项目中。服务的 Infrastructure 项目拥有其 schema。
 5. 不得在类似生产环境的服务启动中静默自动迁移。仅对本地/开发验证入口使用 `Persistence:AutoMigrate=true`。
