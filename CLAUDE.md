@@ -1,8 +1,5 @@
-# Claude Instructions
+# Claude 指令
 
 @AGENTS.md
 
-[AGENTS.md](./AGENTS.md) (imported above) is the canonical instruction file for
-all agents in this repo — commands, principles, constraints, NvUI boundary,
-common mistakes, and the "Done" definition all live there. If the import was not
-expanded by your runtime, read that file before doing anything else.
+[AGENTS.md](./AGENTS.md)（已在上方导入）是本仓库所有代理的规范指令文件；命令、原则、约束、NvUI 边界、常见错误和“完成”定义均以该文件为准。如果运行时未展开导入内容，执行任何其他操作前必须先读取该文件。
