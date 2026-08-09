@@ -1,38 +1,38 @@
-# Patterns Index
+# 交互模式索引
 
-Quick lookup: scenario → which pattern to apply.
+快速查找：场景 → 应用哪种交互模式。
 
-## Cross-cutting standards (横切规范)
+## 横切规范
 
-| Scenario                                                                                          | Pattern                  | File                            |
+| 场景                                                                                              | 交互模式                 | 文件                            |
 | ------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------- |
-| 表单承载 / 行操作 / 列表-详情 / 操作后引导与失效 / 空态·批量·筛选 / PDA 条款 — W2/W3 交互验收依据 | Interaction Patterns v1  | `interaction-patterns.md`       |
-| 操作反馈：toast vs 内联校验（单一规则）                                                           | Feedback & Notifications | `feedback-and-notifications.md` |
+| 表单承载 / 行操作 / 列表-详情 / 操作后引导与失效 / 空态·批量·筛选 / PDA 条款 — W2/W3 交互验收依据 | 交互模式 v1              | `interaction-patterns.md`       |
+| 操作反馈：toast 与内联校验（单一规则）                                                            | 反馈与通知               | `feedback-and-notifications.md` |
 
-## Pages (full page templates)
+## 页面（完整页面模板）
 
-| Scenario                                           | Pattern               | File                             |
+| 场景                                               | 交互模式              | 文件                             |
 | -------------------------------------------------- | --------------------- | -------------------------------- |
-| Authentication / sign in                           | Login Page            | `pages/login-page.md`            |
-| CRUD entity list (IAM admin, any list)             | List Page             | `pages/list-page.md`             |
-| Business Console 列表工作台（stage-B 基线）        | List Workbench        | `pages/list-workbench.md`        |
-| 主数据六类页型（树-详情/列表/月历/矩阵/表单/主从） | Master Data Templates | `pages/master-data-templates.md` |
+| 身份验证 / 登录                                    | 登录页                | `pages/login-page.md`            |
+| CRUD 实体列表（IAM 管理、任意列表）                | 列表页                | `pages/list-page.md`             |
+| Business Console 列表工作台（stage-B 基线）        | 列表工作台            | `pages/list-workbench.md`        |
+| 主数据六类页型（树-详情/列表/月历/矩阵/表单/主从） | 主数据模板            | `pages/master-data-templates.md` |
 
-## Flows (multi-step interactions)
+## 流程（多步骤交互）
 
-| Scenario                                         | Pattern               | File                             |
+| 场景                                             | 交互模式              | 文件                             |
 | ------------------------------------------------ | --------------------- | -------------------------------- |
-| Create a new entity                              | Create Dialog         | `flows/create-dialog.md`         |
-| Record work against an already-selected row      | Carried-Context Entry | `flows/carried-context-entry.md` |
-| Confirm an irreversible action (delete, disable) | Confirm Destroy       | `flows/confirm-destroy.md`       |
+| 新建实体                                         | 新建对话框            | `flows/create-dialog.md`         |
+| 针对已选中行记录作业                             | 携带上下文录入        | `flows/carried-context-entry.md` |
+| 确认不可逆操作（删除、禁用）                    | 破坏性操作确认        | `flows/confirm-destroy.md`       |
 
-## Blocks (functional page sections)
+## 区块（功能页面分区）
 
-| Scenario                                       | Pattern          | File                         |
+| 场景                                           | 交互模式         | 文件                         |
 | ---------------------------------------------- | ---------------- | ---------------------------- |
-| FE-2 区块库总览（Nv\* 区块清单 + 取代关系）    | Block Library v2 | `blocks/block-library-v2.md` |
-| App chrome: top domains + side nav (AppShellT) | App Shell        | `blocks/app-shell.md`        |
-| Breadcrumb-as-title page header (NvPageHeader) | Page Header      | `blocks/page-header.md`      |
-| Search + filter + action bar (NvToolbar)       | Toolbar          | `blocks/toolbar.md`          |
-| Entity list table (NvDataTable)                | Data Table       | `blocks/data-table.md`       |
-| Record count + page navigation                 | Pagination Bar   | `blocks/pagination-bar.md`   |
+| FE-2 区块库总览（Nv\* 区块清单 + 取代关系）    | 区块库 v2        | `blocks/block-library-v2.md` |
+| 应用框架：顶部领域 + 侧边导航（AppShellT）     | 应用外壳         | `blocks/app-shell.md`        |
+| 以面包屑（breadcrumb）为标题的页头（NvPageHeader） | 页头          | `blocks/page-header.md`      |
+| 搜索 + 筛选 + 操作栏（NvToolbar）              | 工具栏           | `blocks/toolbar.md`          |
+| 实体列表表格（NvDataTable）                    | 数据表           | `blocks/data-table.md`       |
+| 记录数 + 页面导航                              | 分页栏           | `blocks/pagination-bar.md`   |

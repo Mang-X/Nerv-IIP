@@ -1,11 +1,11 @@
 ---
-# Design Tokens — Nerv-IIP Console
-# Three layers: Primitive → Semantic → Component
+# 设计 token — Nerv-IIP Console
+# 三层结构：原始值 → 语义值 → 组件值
 ---
 
-## Scene Namespaces (ADR 0020)
+## 场景命名空间（ADR 0020）
 
-Token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) §3，
+token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) §3，
 已落地 MAN-436 / #790，`--sb-*` → `--nv-scr-*` 全表映射见 ADR 附录 B）：
 
 | 命名空间               | 场景            | 说明                                                                                                                                   |
@@ -18,7 +18,7 @@ Token 名称按场景命名空间隔离（[ADR 0020](../../docs/adr/0020-nvui-na
 
 规则：primitive 值全库共享；**允许跨场景取值相同，但名称必须隔离**——同值用 var 引用
 链表达（`--nv-scr-ease: var(--nv-ease-out-quart)`），禁止复制字面量；场景组件只允许
-引用本场景前缀 + 契约层 token（contract test 拦截跨场景直引）。动效统一 motion-v 封装：
+引用本场景前缀 + 契约层 token（契约测试拦截跨场景直引）。动效统一由 motion-v 封装：
 JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同表，引用名分场景。
 
 **一个迁移周期内**旧名（`--brand`/`--success`/`--sb-*`/…）仍以 var 链别名保留（
@@ -27,7 +27,7 @@ JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同�
 别名仍在）。运行时动态强调色由主题选择器写 `--nv-brand`（见 useTheme），
 `--brand` 别名随之同步。
 
-## Style Isolation — CSS Cascade Layers (ADR 0020 §4)
+## 样式隔离——CSS 层叠层（ADR 0020 §4）
 
 全局层序（每个产品 app `main.css` 首条语句，逐字一致）：
 
@@ -45,14 +45,14 @@ JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同�
 
 **VitePress 文档站**（ADR 0020 §4.2）：`postcssIsolateStyles({ includeFiles: [base.css, vp-doc.css] })`
 
-- demo 容器根 `vp-raw`（`<Demo>`/`<ScreenDemo>`/`<MobileDoc>`），使 VitePress 的 base/vp-doc
-  重置不再渗入组件 demo；`overrides.css` 在站内 unlayered 导入以特异性取胜；不复用 `revert-layer`。
+- 演示容器根 `vp-raw`（`<Demo>`/`<ScreenDemo>`/`<MobileDoc>`），使 VitePress 的 base/vp-doc
+  重置不再渗入组件演示；`overrides.css` 在站内以未分层方式导入以取得更高特异性；不复用 `revert-layer`。
 
-## Layer 1: Primitives
+## 第 1 层：原始值
 
-Raw OKLCH values defined ONCE in the shared `@nerv-iip/ui` theme file —
-`packages/ui/src/styles/theme.css` (imported by both apps' `main.css`).
-**Never referenced directly in component templates.**
+原始 OKLCH 值只在共享的 `@nerv-iip/ui` 主题文件
+`packages/ui/src/styles/theme.css` 中定义一次（由两个 app 的 `main.css` 导入）。
+**绝不得在组件模板中直接引用。**
 
 ```css
 /* Surfaces — background ≠ card gives the inset floating-panel elevation */
@@ -96,89 +96,92 @@ Raw OKLCH values defined ONCE in the shared `@nerv-iip/ui` theme file —
 --chart-5: oklch(0.56 0.12 292);
 ```
 
-A full `.dark { … }` override follows in the same file (dashboard-01 dark baseline:
-`--background: oklch(0.145 0 0)`, `--card: oklch(0.205 0 0)`, `--primary: oklch(0.922 0 0)`, …).
+同一文件后续提供完整的 `.dark { … }` 覆盖（dashboard-01 暗色基线：
+`--background: oklch(0.145 0 0)`、`--card: oklch(0.205 0 0)`、`--primary: oklch(0.922 0 0)` 等）。
 
-The contract test `packages/ui/src/design-system.contract.test.ts` guards the
-brand-critical values: near-black `--primary`, the dynamic `--nv-brand` (+ `--color-brand`,
-`--chart-1`), `--nv-success`/`--nv-warning`, the `--background`≠`--card` elevation +
-`--nv-shadow-*`, the scene-namespace + cascade-layer contract (ADR 0020 §3/§4), and
-presence of the `.dark` override. Do not change those without updating the test.
+契约测试 `packages/ui/src/design-system.contract.test.ts` 守护品牌关键值：近黑色
+`--primary`、动态 `--nv-brand`（+ `--color-brand`、`--chart-1`）、
+`--nv-success`/`--nv-warning`、`--background`≠`--card` 高程 + `--nv-shadow-*`、
+场景命名空间 + CSS 层叠层契约（ADR 0020 §3/§4），以及 `.dark` 覆盖的存在性。
+不得在未更新测试的情况下更改这些值。
 
 ---
 
-## Layer 2: Semantic Utilities (Tailwind v4 via `@theme inline`)
+## 第 2 层：语义工具类（通过 `@theme inline` 接入 Tailwind v4）
 
-These are the values you use in templates. The `@theme inline` block in `main.css` maps each CSS custom property to a Tailwind color utility.
+这些是在模板中使用的值。`main.css` 中的 `@theme inline` 区块将每个 CSS 自定义属性
+映射为 Tailwind 颜色工具类。
 
-| Tailwind utility        | CSS var              | When to use                                   |
+| Tailwind 工具类         | CSS 变量             | 使用时机                                      |
 | ----------------------- | -------------------- | --------------------------------------------- |
-| `bg-background`         | `--background`       | Page body                                     |
-| `bg-card`               | `--card`             | Card, panel surfaces                          |
-| `bg-muted`              | `--muted`            | Hover rows, chip backgrounds                  |
-| `bg-primary`            | `--primary`          | CTA buttons, active nav                       |
-| `bg-accent`             | `--accent`           | Selected row, tag chip bg                     |
-| `bg-destructive`        | `--destructive`      | Danger zones (DO NOT use for success/warning) |
-| `text-foreground`       | `--foreground`       | Primary body text                             |
-| `text-muted-foreground` | `--muted-foreground` | Secondary text, captions                      |
-| `text-primary`          | `--primary`          | Link-style emphasis                           |
-| `text-destructive`      | `--destructive`      | Inline error messages                         |
-| `border-border`         | `--border`           | All dividers and input borders                |
-| `ring-ring`             | `--ring`             | Focus rings (handled by shadcn)               |
+| `bg-background`         | `--background`       | 页面主体                                      |
+| `bg-card`               | `--card`             | 卡片、面板表面                                |
+| `bg-muted`              | `--muted`            | 悬停行、chip 背景                             |
+| `bg-primary`            | `--primary`          | CTA 按钮、激活导航                            |
+| `bg-accent`             | `--accent`           | 选中行、标签 chip 背景                        |
+| `bg-destructive`        | `--destructive`      | 危险区域（不得用于 success / warning）        |
+| `text-foreground`       | `--foreground`       | 主要正文文本                                  |
+| `text-muted-foreground` | `--muted-foreground` | 次要文本、说明文字                            |
+| `text-primary`          | `--primary`          | 链接式强调                                    |
+| `text-destructive`      | `--destructive`      | 行内错误消息                                  |
+| `border-border`         | `--border`           | 所有分隔线和输入框边框                        |
+| `ring-ring`             | `--ring`             | 焦点环（由 shadcn 处理）                      |
 
 ---
 
-## Layer 3: Component Tokens
+## 第 3 层：组件 token
 
-These are handled internally by shadcn-vue components via CVA. Do not override these with arbitrary classes unless documented here.
+这些 token 由 shadcn-vue 组件通过 CVA 在内部处理。除非本文件明确记录，否则不得使用任意
+CSS 类覆盖它们。
 
-### Badge variants (extended)
+### Badge 变体（扩展）
 
-| Variant       | When to use                      |
+| 变体          | 使用时机                         |
 | ------------- | -------------------------------- |
-| `default`     | Primary label, system info       |
-| `secondary`   | Disabled / inactive state        |
-| `outline`     | Neutral categories, tags         |
-| `destructive` | Error state, deletion-related    |
-| `success`     | Active / enabled / healthy state |
-| `warning`     | Degraded / at-risk state         |
-| `ghost`       | De-emphasized label              |
+| `default`     | 主要标签、系统信息               |
+| `secondary`   | 禁用 / 非活跃状态                |
+| `outline`     | 中性类别、标签                   |
+| `destructive` | 错误状态、删除相关               |
+| `success`     | 活跃 / 启用 / 健康状态           |
+| `warning`     | 降级 / 风险状态                  |
+| `ghost`       | 弱化标签                         |
 
-### Button variants
+### Button 变体
 
-| Variant       | When to use                                                  |
+| 变体          | 使用时机                                                     |
 | ------------- | ------------------------------------------------------------ |
-| `default`     | Primary call-to-action (one per toolbar/form)                |
-| `outline`     | Secondary actions                                            |
-| `ghost`       | Icon-only controls, table row actions                        |
-| `destructive` | Irreversible destructive action (preceded by confirm dialog) |
-| `link`        | Inline navigation                                            |
+| `default`     | 主 CTA（每个工具栏 / 表单一个）                              |
+| `outline`     | 次要操作                                                     |
+| `ghost`       | 纯图标控件、表格行操作                                       |
+| `destructive` | 不可逆的破坏性操作（前置确认对话框）                         |
+| `link`        | 行内导航                                                     |
 
 ---
 
-## Legacy Tokens (DO NOT USE IN NEW CODE)
+## 旧 token（新代码中不得使用）
 
-`--legacy-color-*` tokens exist for backward compatibility with two pre-Phase-8 components:
+`--legacy-color-*` token 仅为向后兼容两个阶段 8 之前的组件而存在：
 
 - `frontend/apps/console/src/components/console/InstanceTable.vue`
 - `frontend/apps/console/src/components/console/InstanceDetailPanel.vue`
 
-These are migration targets. When those components are rewritten, remove both the `<style scoped>` block and all `--legacy-color-*` definitions from `main.css`.
+它们是迁移目标。重写这些组件时，必须同时删除 `<style scoped>` 区块和 `main.css` 中
+所有 `--legacy-color-*` 定义。
 
 ---
 
-## Adding New Tokens
+## 新增 token
 
-All token edits happen in the shared `packages/ui/src/styles/theme.css` or the owning
-scene sheet (screen: `components/screen/tokens.css`) — never in an app `main.css`
-(those only `@import` the shared files).
+所有 token 编辑都发生在共享的 `packages/ui/src/styles/theme.css` 或所属场景表
+（screen：`components/screen/tokens.css`）中，绝不得在 app `main.css` 中编辑
+（这些文件只通过 `@import` 导入共享文件）。
 
-1. 先按 Scene Namespaces 表定前缀（契约层冻结 / `--nv-*` / `--nv-scr-*` / `--nv-m-*` /
+1. 先按场景命名空间表定前缀（契约层冻结 / `--nv-*` / `--nv-scr-*` / `--nv-m-*` /
    `--nv-t-*`）；跨场景同值用 var 引用链，不复制字面量。
-2. Define the CSS custom property in the `:root` block of the owning sheet.
-3. Add the dark-mode override in the `.dark {}` block（场景表如无亮色态则不适用）.
-4. Add a Tailwind mapping in `@theme inline {}` (e.g. `--color-foo: var(--nv-foo)` —
-   桥接名保持 utility 契约，右值指向命名空间新名).
-5. Update this file.
-6. If the token is design-critical (primary, brand, success/warning, elevation),
-   add a contract assertion in `packages/ui/src/design-system.contract.test.ts`.
+2. 在所属 token 表的 `:root` 区块中定义 CSS 自定义属性。
+3. 在 `.dark {}` 区块中添加暗色模式覆盖（场景表如无亮色态则不适用）。
+4. 在 `@theme inline {}` 中添加 Tailwind 映射（例如 `--color-foo: var(--nv-foo)`；
+   桥接名保持 utility 契约，右值指向命名空间新名）。
+5. 更新本文件。
+6. 如果 token 对设计至关重要（primary、brand、success/warning、高程），就在
+   `packages/ui/src/design-system.contract.test.ts` 中添加契约断言。
