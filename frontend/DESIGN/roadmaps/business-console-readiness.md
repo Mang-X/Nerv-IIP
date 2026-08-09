@@ -8,15 +8,15 @@
 
 ## 即刻组件集
 
-| 能力 | 设计系统方向 | #143 状态 |
-| --- | --- | --- |
-| 标签页（Tabs） | shadcn-vue `tabs` 样式与公共组成部分。 | 已在 `@nerv-iip/ui` 中交付；用于订单、工单、设备和 SKU 等密集详情页。 |
-| 侧滑面板（Sheet） | shadcn-vue `sheet` 样式与公共组成部分。 | 已在 `@nerv-iip/ui` 中交付；用于从列表页滑入的检查、详情或编辑面板。 |
-| 日期和日期范围选择器 | 基于 Popover 的紧凑型 DateOnly 控件。 | 已在 `@nerv-iip/ui` 中交付；当前界面使用原生日期输入，在加入样式化日历网格部件前，`Calendar`/`RangeCalendar` 仅作为底层 Reka 根组件导出。 |
-| 图表 | 带语义 token 桥接的 shadcn 风格图表壳层。 | 已在 `@nerv-iip/ui` 中交付；页面级图表引擎仍是适配器，而非第二套设计系统。 |
-| 文件上传 | 采用 shadcn 结构和 FileStorage 语义的 Nerv-IIP FileUpload 包装器。 | 已在 `@nerv-iip/ui` 中交付；界面通过 FileStorage 上传会话和 tus/server-proxy 传输，不得直接访问 MinIO。 |
-| 进度 | shadcn-vue `progress` 样式。 | 已在 `@nerv-iip/ui` 中交付；供 FileUpload 和执行进度指示器使用。 |
-| 滚动区域 | shadcn-vue `scroll-area` 样式。 | 已在 `@nerv-iip/ui` 中交付；避免页面局部滚动条样式。 |
+| 能力                 | 设计系统方向                                                       | #143 状态                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 标签页（Tabs）       | shadcn-vue `tabs` 样式与公共组成部分。                             | 已在 `@nerv-iip/ui` 中交付；用于订单、工单、设备和 SKU 等密集详情页。                                                                     |
+| 侧滑面板（Sheet）    | shadcn-vue `sheet` 样式与公共组成部分。                            | 已在 `@nerv-iip/ui` 中交付；用于从列表页滑入的检查、详情或编辑面板。                                                                      |
+| 日期和日期范围选择器 | 基于 Popover 的紧凑型 DateOnly 控件。                              | 已在 `@nerv-iip/ui` 中交付；当前界面使用原生日期输入，在加入样式化日历网格部件前，`Calendar`/`RangeCalendar` 仅作为底层 Reka 根组件导出。 |
+| 图表                 | 带语义 token 桥接的 shadcn 风格图表壳层。                          | 已在 `@nerv-iip/ui` 中交付；页面级图表引擎仍是适配器，而非第二套设计系统。                                                                |
+| 文件上传             | 采用 shadcn 结构和 FileStorage 语义的 Nerv-IIP FileUpload 包装器。 | 已在 `@nerv-iip/ui` 中交付；界面通过 FileStorage 上传会话和 tus/server-proxy 传输，不得直接访问 MinIO。                                   |
+| 进度                 | shadcn-vue `progress` 样式。                                       | 已在 `@nerv-iip/ui` 中交付；供 FileUpload 和执行进度指示器使用。                                                                          |
+| 滚动区域             | shadcn-vue `scroll-area` 样式。                                    | 已在 `@nerv-iip/ui` 中交付；避免页面局部滚动条样式。                                                                                      |
 
 ## 文件上传（FileUpload）方向
 

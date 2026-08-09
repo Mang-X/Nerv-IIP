@@ -45,13 +45,13 @@
 
 ## 列约定
 
-| 列类型              | 约定                                                   |
-| ------------------- | ------------------------------------------------------ |
-| 主标识符            | `cellClass: 'font-medium'`                             |
-| UUID / 技术 ID      | `cellClass: 'font-mono text-xs text-muted-foreground'` |
-| 状态                | `#cell-<key>` slot 中仅包含 `<NvStatusBadge>`           |
-| 操作                | 最后一列，`align: 'end'`，窄 `width`                   |
-| 时间戳              | `cellClass: 'text-muted-foreground'`                   |
+| 列类型         | 约定                                                   |
+| -------------- | ------------------------------------------------------ |
+| 主标识符       | `cellClass: 'font-medium'`                             |
+| UUID / 技术 ID | `cellClass: 'font-mono text-xs text-muted-foreground'` |
+| 状态           | `#cell-<key>` slot 中仅包含 `<NvStatusBadge>`          |
+| 操作           | 最后一列，`align: 'end'`，窄 `width`                   |
+| 时间戳         | `cellClass: 'text-muted-foreground'`                   |
 
 ## 禁止事项
 

@@ -112,20 +112,20 @@ JS 预设唯一来源 `packages/ui/src/lib/motion.ts`，数值与 CSS token 同�
 这些是在模板中使用的值。`main.css` 中的 `@theme inline` 区块将每个 CSS 自定义属性
 映射为 Tailwind 颜色工具类。
 
-| Tailwind 工具类         | CSS 变量             | 使用时机                                      |
-| ----------------------- | -------------------- | --------------------------------------------- |
-| `bg-background`         | `--background`       | 页面主体                                      |
-| `bg-card`               | `--card`             | 卡片、面板表面                                |
-| `bg-muted`              | `--muted`            | 悬停行、chip 背景                             |
-| `bg-primary`            | `--primary`          | CTA 按钮、激活导航                            |
-| `bg-accent`             | `--accent`           | 选中行、标签 chip 背景                        |
-| `bg-destructive`        | `--destructive`      | 危险区域（不得用于 success / warning）        |
-| `text-foreground`       | `--foreground`       | 主要正文文本                                  |
-| `text-muted-foreground` | `--muted-foreground` | 次要文本、说明文字                            |
-| `text-primary`          | `--primary`          | 链接式强调                                    |
-| `text-destructive`      | `--destructive`      | 行内错误消息                                  |
-| `border-border`         | `--border`           | 所有分隔线和输入框边框                        |
-| `ring-ring`             | `--ring`             | 焦点环（由 shadcn 处理）                      |
+| Tailwind 工具类         | CSS 变量             | 使用时机                               |
+| ----------------------- | -------------------- | -------------------------------------- |
+| `bg-background`         | `--background`       | 页面主体                               |
+| `bg-card`               | `--card`             | 卡片、面板表面                         |
+| `bg-muted`              | `--muted`            | 悬停行、chip 背景                      |
+| `bg-primary`            | `--primary`          | CTA 按钮、激活导航                     |
+| `bg-accent`             | `--accent`           | 选中行、标签 chip 背景                 |
+| `bg-destructive`        | `--destructive`      | 危险区域（不得用于 success / warning） |
+| `text-foreground`       | `--foreground`       | 主要正文文本                           |
+| `text-muted-foreground` | `--muted-foreground` | 次要文本、说明文字                     |
+| `text-primary`          | `--primary`          | 链接式强调                             |
+| `text-destructive`      | `--destructive`      | 行内错误消息                           |
+| `border-border`         | `--border`           | 所有分隔线和输入框边框                 |
+| `ring-ring`             | `--ring`             | 焦点环（由 shadcn 处理）               |
 
 ---
 
@@ -136,25 +136,25 @@ CSS 类覆盖它们。
 
 ### Badge 变体（扩展）
 
-| 变体          | 使用时机                         |
-| ------------- | -------------------------------- |
-| `default`     | 主要标签、系统信息               |
-| `secondary`   | 禁用 / 非活跃状态                |
-| `outline`     | 中性类别、标签                   |
-| `destructive` | 错误状态、删除相关               |
-| `success`     | 活跃 / 启用 / 健康状态           |
-| `warning`     | 降级 / 风险状态                  |
-| `ghost`       | 弱化标签                         |
+| 变体          | 使用时机               |
+| ------------- | ---------------------- |
+| `default`     | 主要标签、系统信息     |
+| `secondary`   | 禁用 / 非活跃状态      |
+| `outline`     | 中性类别、标签         |
+| `destructive` | 错误状态、删除相关     |
+| `success`     | 活跃 / 启用 / 健康状态 |
+| `warning`     | 降级 / 风险状态        |
+| `ghost`       | 弱化标签               |
 
 ### Button 变体
 
-| 变体          | 使用时机                                                     |
-| ------------- | ------------------------------------------------------------ |
-| `default`     | 主 CTA（每个工具栏 / 表单一个）                              |
-| `outline`     | 次要操作                                                     |
-| `ghost`       | 纯图标控件、表格行操作                                       |
-| `destructive` | 不可逆的破坏性操作（前置确认对话框）                         |
-| `link`        | 行内导航                                                     |
+| 变体          | 使用时机                             |
+| ------------- | ------------------------------------ |
+| `default`     | 主 CTA（每个工具栏 / 表单一个）      |
+| `outline`     | 次要操作                             |
+| `ghost`       | 纯图标控件、表格行操作               |
+| `destructive` | 不可逆的破坏性操作（前置确认对话框） |
+| `link`        | 行内导航                             |
 
 ---
 

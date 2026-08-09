@@ -33,24 +33,24 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 
 ### 语义 token（所有代码都必须使用；绝不得使用原始十六进制值或 Tailwind 调色板名称）
 
-| Token                  | 亮色值                      | 暗色值                      | 用途                                               |
-| ---------------------- | --------------------------- | --------------------------- | -------------------------------------------------- |
-| `--background`         | `oklch(0.985 0 0)`          | `oklch(0.145 0 0)`          | 页面画布（位于卡片下层）                           |
-| `--foreground`         | `oklch(0.145 0 0)`          | `oklch(0.985 0 0)`          | 正文文本                                           |
-| `--card`               | `oklch(1 0 0)`              | `oklch(0.205 0 0)`          | 卡片 / 内嵌面板表面                                |
-| `--muted`              | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 弱化表面（表格条纹、悬停）                         |
-| `--muted-foreground`   | `oklch(0.556 0 0)`          | `oklch(0.708 0 0)`          | 次要文本、占位文本                                 |
-| `--border`             | `oklch(0.922 0 0)`          | `oklch(1 0 0 / 10%)`        | 所有边框                                           |
-| `--primary`            | `oklch(0.205 0 0)`          | `oklch(0.922 0 0)`          | 主操作、激活导航（近黑色）                         |
-| `--primary-foreground` | `oklch(0.985 0 0)`          | `oklch(0.205 0 0)`          | 主色表面上的文本                                   |
-| `--secondary`          | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 次级 / 幽灵式表面                                  |
-| `--accent`             | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 中性悬停表面（选中行、chip 背景）                  |
-| `--nv-brand`           | `oklch(0.55 0.18 255)`      | `oklch(0.62 0.17 255)`      | **动态**强调色（链接、图表、焦点）                 |
-| `--destructive`        | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` | 危险操作、错误状态                                 |
-| `--nv-success`         | `oklch(0.62 0.17 149)`      | `oklch(0.7 0.16 150)`       | 健康 / 启用状态                                    |
-| `--nv-warning`         | `oklch(0.75 0.15 75)`       | `oklch(0.8 0.15 80)`        | 降级 / 风险状态                                    |
-| `--ring`               | `oklch(0.708 0 0)`          | `oklch(0.556 0 0)`          | 焦点环                                             |
-| `--sidebar`            | `oklch(0.985 0 0)`          | `oklch(0.205 0 0)`          | 侧边栏背景                                         |
+| Token                  | 亮色值                      | 暗色值                      | 用途                               |
+| ---------------------- | --------------------------- | --------------------------- | ---------------------------------- |
+| `--background`         | `oklch(0.985 0 0)`          | `oklch(0.145 0 0)`          | 页面画布（位于卡片下层）           |
+| `--foreground`         | `oklch(0.145 0 0)`          | `oklch(0.985 0 0)`          | 正文文本                           |
+| `--card`               | `oklch(1 0 0)`              | `oklch(0.205 0 0)`          | 卡片 / 内嵌面板表面                |
+| `--muted`              | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 弱化表面（表格条纹、悬停）         |
+| `--muted-foreground`   | `oklch(0.556 0 0)`          | `oklch(0.708 0 0)`          | 次要文本、占位文本                 |
+| `--border`             | `oklch(0.922 0 0)`          | `oklch(1 0 0 / 10%)`        | 所有边框                           |
+| `--primary`            | `oklch(0.205 0 0)`          | `oklch(0.922 0 0)`          | 主操作、激活导航（近黑色）         |
+| `--primary-foreground` | `oklch(0.985 0 0)`          | `oklch(0.205 0 0)`          | 主色表面上的文本                   |
+| `--secondary`          | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 次级 / 幽灵式表面                  |
+| `--accent`             | `oklch(0.97 0 0)`           | `oklch(0.269 0 0)`          | 中性悬停表面（选中行、chip 背景）  |
+| `--nv-brand`           | `oklch(0.55 0.18 255)`      | `oklch(0.62 0.17 255)`      | **动态**强调色（链接、图表、焦点） |
+| `--destructive`        | `oklch(0.577 0.245 27.325)` | `oklch(0.704 0.191 22.216)` | 危险操作、错误状态                 |
+| `--nv-success`         | `oklch(0.62 0.17 149)`      | `oklch(0.7 0.16 150)`       | 健康 / 启用状态                    |
+| `--nv-warning`         | `oklch(0.75 0.15 75)`       | `oklch(0.8 0.15 80)`        | 降级 / 风险状态                    |
+| `--ring`               | `oklch(0.708 0 0)`          | `oklch(0.556 0 0)`          | 焦点环                             |
+| `--sidebar`            | `oklch(0.985 0 0)`          | `oklch(0.205 0 0)`          | 侧边栏背景                         |
 
 使用匹配的 Tailwind 工具类：`bg-brand`、`text-brand`、`bg-success`、
 `text-warning` 等（通过 `@theme inline` 映射）。高程工具类 `shadow-xs`、
@@ -69,13 +69,13 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 状态呈现统一走 `NvStatusBadge`（胶囊，自带 `NvStatusDot`）或 `NvStatusDot`（行内点），
 `tone` 五档；传后端状态字符串给 `value` 可自动解析 tone 与中文标签。
 
-| 意图                          | `tone`    | 不得使用                                            |
-| ----------------------------- | --------- | --------------------------------------------------- |
-| 活跃 / 健康 / 启用            | `success` | `border-emerald-200 bg-emerald-50 …`                |
-| 警告 / 降级                   | `warning` | `text-amber-*`, `text-yellow-*`                     |
-| 错误 / 危险 / 报警            | `danger`  | `text-red-*`, `destructive`（不是本组件的 tone 名） |
-| 信息 / 进行中                 | `info`    | `text-blue-*`                                       |
-| 非活跃 / 禁用 / 未知          | `neutral` | 手写灰色类                                         |
+| 意图                 | `tone`    | 不得使用                                            |
+| -------------------- | --------- | --------------------------------------------------- |
+| 活跃 / 健康 / 启用   | `success` | `border-emerald-200 bg-emerald-50 …`                |
+| 警告 / 降级          | `warning` | `text-amber-*`, `text-yellow-*`                     |
+| 错误 / 危险 / 报警   | `danger`  | `text-red-*`, `destructive`（不是本组件的 tone 名） |
+| 信息 / 进行中        | `info`    | `text-blue-*`                                       |
+| 非活跃 / 禁用 / 未知 | `neutral` | 手写灰色类                                          |
 
 ### 应做与禁止事项
 
@@ -105,14 +105,14 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 > Inter 位于首位，因此拉丁字母和数字由 Inter 渲染；中文则回退到 MiSans。
 > 升级 `misans` 后重新生成 `styles/misans.css`；参见 `DESIGN/governance.md` › 字体。
 
-| 层级            | Tailwind 类                               | 用途                                      |
-| --------------- | ----------------------------------------- | ----------------------------------------- |
-| 页面标题        | `text-2xl font-semibold tracking-tight`   | `<h1>` 层级、页头                         |
-| 小节标题        | `text-lg font-semibold`                   | 卡片标题、对话框标题                      |
-| 正文            | `text-sm`                                 | 默认表格 / 表单内容                       |
-| 说明 / 弱化文本 | `text-sm text-muted-foreground`           | ID、时间戳、提示                          |
-| 等宽文本        | `font-mono text-xs text-muted-foreground` | UUID、权限码、技术值                      |
-| 标签            | `text-sm font-medium`                     | 表单标签、列标题                          |
+| 层级            | Tailwind 类                               | 用途                 |
+| --------------- | ----------------------------------------- | -------------------- |
+| 页面标题        | `text-2xl font-semibold tracking-tight`   | `<h1>` 层级、页头    |
+| 小节标题        | `text-lg font-semibold`                   | 卡片标题、对话框标题 |
+| 正文            | `text-sm`                                 | 默认表格 / 表单内容  |
+| 说明 / 弱化文本 | `text-sm text-muted-foreground`           | ID、时间戳、提示     |
+| 等宽文本        | `font-mono text-xs text-muted-foreground` | UUID、权限码、技术值 |
+| 标签            | `text-sm font-medium`                     | 表单标签、列标题     |
 
 - **不得**在作用域 CSS 中编写自定义 `font-size`；应使用上表尺度。
 - **不得**使用 `text-base`（16px 对高密度数据表过大）。
@@ -145,16 +145,16 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 
 制造业控制台里数字是主角，以下口径全端统一（现网既有约定的成文化）：
 
-| 规则        | 写法                                                                                                      |
-| ----------- | --------------------------------------------------------------------------------------------------------- |
-| 数值列      | 表格内**右对齐** + `tabular-nums`（`NvDataTable` 列用 `align: 'right'`）                                  |
-| 数量精度    | 最多 3 位小数：`value.toLocaleString(undefined, { maximumFractionDigits: 3 })`                            |
-| 数量 + 单位 | 数值后接**空格 + UOM 码**：`128.5 kg`；单位不并入数字色/粗细                                              |
-| KPI 大数    | `tabular-nums tracking-tight`（`NvMetricCard`/`NvStatTile` 已内置）                                       |
-| 空值        | 统一 `—`（长破折号）；不用 `0`、空串、`N/A` 混用——`0` 是数据，`—` 是没有数据                               |
-| 编号/技术值 | `font-mono text-xs text-muted-foreground`（单号、批次、UUID、权限码）                                     |
+| 规则        | 写法                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------- |
+| 数值列      | 表格内**右对齐** + `tabular-nums`（`NvDataTable` 列用 `align: 'right'`）                                    |
+| 数量精度    | 最多 3 位小数：`value.toLocaleString(undefined, { maximumFractionDigits: 3 })`                              |
+| 数量 + 单位 | 数值后接**空格 + UOM 码**：`128.5 kg`；单位不并入数字色/粗细                                                |
+| KPI 大数    | `tabular-nums tracking-tight`（`NvMetricCard`/`NvStatTile` 已内置）                                         |
+| 空值        | 统一 `—`（长破折号）；不用 `0`、空串、`N/A` 混用——`0` 是数据，`—` 是没有数据                                |
+| 编号/技术值 | `font-mono text-xs text-muted-foreground`（单号、批次、UUID、权限码）                                       |
 | 时间        | 表格/详情用**绝对时间**（本地时区、到分钟）；相对时间（"3 分钟前"）只用于事件/通知流，且 tooltip 提供绝对值 |
-| 超长文本    | `truncate` + `NvTooltip` 全文；不许撑破列宽                                                               |
+| 超长文本    | `truncate` + `NvTooltip` 全文；不许撑破列宽                                                                 |
 
 ---
 
@@ -162,12 +162,12 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 
 图标库：**@lucide/vue**（已是对等依赖）。
 
-| 场景                     | 尺寸 | Tailwind 类    |
-| ------------------------ | ---- | -------------- |
-| 与文本同行               | 16px | `size-4`       |
-| 按钮图标                 | 16px | `size-4`       |
-| 空状态插图               | 48px | `size-12`      |
-| 导航项                   | 20px | `size-5`       |
+| 场景       | 尺寸 | Tailwind 类 |
+| ---------- | ---- | ----------- |
+| 与文本同行 | 16px | `size-4`    |
+| 按钮图标   | 16px | `size-4`    |
+| 空状态插图 | 48px | `size-12`   |
+| 导航项     | 20px | `size-5`    |
 
 - 每个文件只导入实际使用的图标：`import { SearchIcon } from '@lucide/vue'`。
 - 装饰性图标必须始终添加 `aria-hidden="true"`。
@@ -177,11 +177,11 @@ token 的单一事实来源是 `@nerv-iip/ui` 中的
 
 ## 圆角
 
-| Token                      | 值         | 用途                           |
-| -------------------------- | ---------- | ------------------------------ |
-| `--radius-sm`              | `0.25rem`  | 输入框、badge                  |
-| `--radius-md`              | `0.375rem` | 按钮                           |
-| `--radius-lg` / `--radius` | `0.5rem`   | 卡片、对话框、表格、面板       |
-| `--radius-xl`              | `0.625rem` | 大型模态覆盖层                 |
+| Token                      | 值         | 用途                     |
+| -------------------------- | ---------- | ------------------------ |
+| `--radius-sm`              | `0.25rem`  | 输入框、badge            |
+| `--radius-md`              | `0.375rem` | 按钮                     |
+| `--radius-lg` / `--radius` | `0.5rem`   | 卡片、对话框、表格、面板 |
+| `--radius-xl`              | `0.625rem` | 大型模态覆盖层           |
 
 卡片 / 面板使用 `rounded-lg`，按钮使用 `rounded-md`，badge 使用 `rounded-4xl`（由组件自身处理）。

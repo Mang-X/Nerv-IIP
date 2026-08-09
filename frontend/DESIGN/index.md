@@ -57,37 +57,37 @@ badge、表格摘要、表单帮助、toast 或菜单中放置开发、验证或
 
 ## 组件速查（PC；名称即 `@nerv-iip/ui` 导出真名）
 
-| 组件                                                          | 使用时机                                                                           | 禁用场景                                                             |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `NvButton`                                                    | 任何可点击操作（内建 `loading`；页面主 CTA 用 `variant="brand"`）                 | 导航到其他路由（使用 `RouterLink`）                                  |
-| `NvBadge`                                                     | 类别 chip、计数                                                                    | 状态语义（使用 `NvStatusBadge`）                                     |
-| `NvStatusBadge` / `NvStatusDot`                               | 业务状态呈现（`tone`: success/warning/danger/info/neutral，`value` 自动解析）      | 非状态的普通标签                                                     |
-| `NvCard` + 各部分                                             | 分组内容区、表单卡片                                                               | 包裹数据表                                                           |
-| `NvDataTable`                                                 | 表格式实体列表（内建加载 / 空状态 / 分页 / `#cell-*` 插槽）                       | 单项详情视图（使用 `NvDescriptions`）                                |
-| `NvDescriptions`                                              | 详情字段的键值对呈现                                                               | 可编辑表单（使用 `NvField`）                                         |
-| `NvPageHeader`                                                | 页头（标题 + 描述 + 操作）                                                         | 卡片内小节标题                                                       |
-| `NvToolbar` / `NvFilterBar`                                   | 搜索 + 筛选 + 主操作栏                                                            | 表单内部布局                                                         |
-| `NvDialog` + 各部分                                           | ≤3 字段的轻量新建/编辑（见 interaction-patterns §1）                               | 破坏性确认（使用 `NvAlertDialog`）；4+ 字段（使用 `NvSheet`）        |
-| `NvSheet` + 各部分                                            | 保持列表上下文的详情/编辑侧滑                                                      | 全页面工作流                                                         |
-| `NvAlertDialog` + 各部分                                      | 确认不可逆操作                                                                     | 信息提示                                                             |
-| `NvPopconfirm`                                                | 行内轻量二次确认（低风险）                                                         | 不可逆/高风险动作（使用 `NvAlertDialog`）                            |
-| `NvField` + 各部分                                            | 带标签和校验的表单字段                                                             | 简单行内输入                                                         |
-| `NvFormSection`                                               | 表单分节（标题 + 描述 + 字段组）                                                   | 单字段表单                                                           |
-| `NvInput`                                                     | 文本输入                                                                           | 固定选项选择（使用 `NvSelect`）                                      |
-| `NvSelect` + 各部分                                           | 固定选项选择（选项 ≲15）                                                           | 大数据集搜索（使用 `NvSearchSelect`/`NvCombobox`）                   |
-| `NvSearchSelect` / `NvCombobox`                               | 可搜索选择（设备/技师/SKU 等主数据）                                               | 固定短列表（使用 `NvSelect`）                                        |
-| `NvCheckbox` / `NvRadioGroup` / `NvSwitch`                    | 多选 / 互斥单选 / 即时生效开关                                                     | 需提交才生效的开关（用表单 + 保存）                                  |
-| `NvTabs` + 各部分                                             | 详情对象内的同级区段                                                               | 应用主导航                                                           |
-| `NvDatePicker` / `NvDateRangePicker` / `NvTimePicker`         | 业务日期/区间/时间选择                                                             | 特定时区（timezone）的时间戳                                         |
-| `NvAreaChart` / `NvLineChart` / `NvBarChart` / `NvDonutChart` | 业务仪表板（语义图表令牌）                                                         | 一次性装饰性可视化                                                   |
-| `NvMetricCard` / `NvStatTile` / `NvSectionCard`               | 语义 KPI（见 list-workbench：只放帮助行动的指标）                                  | 机械计数（本页 X 行）                                                |
-| `NvDropdownMenu` + 各部分 / `NvRowActions`                    | 上下文行操作（高频动作行内直达，其余收菜单，见 interaction-patterns §2）           | 主导航                                                               |
-| `NvPagination`                                                | 独立分页（`NvDataTable` 已内建）                                                   | 客户端筛选列表                                                       |
-| `NvTimeline`                                                  | 审计/生命周期时间线                                                                | 平铺列表                                                             |
-| `NvKanban`                                                    | 看板式任务分列                                                                     | 普通列表页                                                           |
-| `NvLoader`                                                    | 加载四形态（页面/区块/行内/按钮内建）                                              | —                                                                    |
-| `NvTooltip` + 各部分                                          | 纯图标按钮标签、状态说明                                                           | 长篇帮助文本（使用 `Popover`）                                       |
-| `NvNavigationMenu` / `NvAppHeader` / `NvPage*`                | 应用外壳与页面骨架                                                                 | —                                                                    |
+| 组件                                                          | 使用时机                                                                      | 禁用场景                                                      |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `NvButton`                                                    | 任何可点击操作（内建 `loading`；页面主 CTA 用 `variant="brand"`）             | 导航到其他路由（使用 `RouterLink`）                           |
+| `NvBadge`                                                     | 类别 chip、计数                                                               | 状态语义（使用 `NvStatusBadge`）                              |
+| `NvStatusBadge` / `NvStatusDot`                               | 业务状态呈现（`tone`: success/warning/danger/info/neutral，`value` 自动解析） | 非状态的普通标签                                              |
+| `NvCard` + 各部分                                             | 分组内容区、表单卡片                                                          | 包裹数据表                                                    |
+| `NvDataTable`                                                 | 表格式实体列表（内建加载 / 空状态 / 分页 / `#cell-*` 插槽）                   | 单项详情视图（使用 `NvDescriptions`）                         |
+| `NvDescriptions`                                              | 详情字段的键值对呈现                                                          | 可编辑表单（使用 `NvField`）                                  |
+| `NvPageHeader`                                                | 页头（标题 + 描述 + 操作）                                                    | 卡片内小节标题                                                |
+| `NvToolbar` / `NvFilterBar`                                   | 搜索 + 筛选 + 主操作栏                                                        | 表单内部布局                                                  |
+| `NvDialog` + 各部分                                           | ≤3 字段的轻量新建/编辑（见 interaction-patterns §1）                          | 破坏性确认（使用 `NvAlertDialog`）；4+ 字段（使用 `NvSheet`） |
+| `NvSheet` + 各部分                                            | 保持列表上下文的详情/编辑侧滑                                                 | 全页面工作流                                                  |
+| `NvAlertDialog` + 各部分                                      | 确认不可逆操作                                                                | 信息提示                                                      |
+| `NvPopconfirm`                                                | 行内轻量二次确认（低风险）                                                    | 不可逆/高风险动作（使用 `NvAlertDialog`）                     |
+| `NvField` + 各部分                                            | 带标签和校验的表单字段                                                        | 简单行内输入                                                  |
+| `NvFormSection`                                               | 表单分节（标题 + 描述 + 字段组）                                              | 单字段表单                                                    |
+| `NvInput`                                                     | 文本输入                                                                      | 固定选项选择（使用 `NvSelect`）                               |
+| `NvSelect` + 各部分                                           | 固定选项选择（选项 ≲15）                                                      | 大数据集搜索（使用 `NvSearchSelect`/`NvCombobox`）            |
+| `NvSearchSelect` / `NvCombobox`                               | 可搜索选择（设备/技师/SKU 等主数据）                                          | 固定短列表（使用 `NvSelect`）                                 |
+| `NvCheckbox` / `NvRadioGroup` / `NvSwitch`                    | 多选 / 互斥单选 / 即时生效开关                                                | 需提交才生效的开关（用表单 + 保存）                           |
+| `NvTabs` + 各部分                                             | 详情对象内的同级区段                                                          | 应用主导航                                                    |
+| `NvDatePicker` / `NvDateRangePicker` / `NvTimePicker`         | 业务日期/区间/时间选择                                                        | 特定时区（timezone）的时间戳                                  |
+| `NvAreaChart` / `NvLineChart` / `NvBarChart` / `NvDonutChart` | 业务仪表板（语义图表令牌）                                                    | 一次性装饰性可视化                                            |
+| `NvMetricCard` / `NvStatTile` / `NvSectionCard`               | 语义 KPI（见 list-workbench：只放帮助行动的指标）                             | 机械计数（本页 X 行）                                         |
+| `NvDropdownMenu` + 各部分 / `NvRowActions`                    | 上下文行操作（高频动作行内直达，其余收菜单，见 interaction-patterns §2）      | 主导航                                                        |
+| `NvPagination`                                                | 独立分页（`NvDataTable` 已内建）                                              | 客户端筛选列表                                                |
+| `NvTimeline`                                                  | 审计/生命周期时间线                                                           | 平铺列表                                                      |
+| `NvKanban`                                                    | 看板式任务分列                                                                | 普通列表页                                                    |
+| `NvLoader`                                                    | 加载四形态（页面/区块/行内/按钮内建）                                         | —                                                             |
+| `NvTooltip` + 各部分                                          | 纯图标按钮标签、状态说明                                                      | 长篇帮助文本（使用 `Popover`）                                |
+| `NvNavigationMenu` / `NvAppHeader` / `NvPage*`                | 应用外壳与页面骨架                                                            | —                                                             |
 
 **无 `Nv` 版的现役原版件**（Appendix A 未列品牌版，直接从 `@nerv-iip/ui` 用原名，
 合法且过门禁）：`Alert` `Avatar` `Empty` `Skeleton` `Spinner` `Progress` `ScrollArea`
@@ -111,10 +111,10 @@ badge、表格摘要、表单帮助、toast 或菜单中放置开发、验证或
 | 带搜索 / 筛选的 CRUD 列表页                                                     | 列表页                              | `patterns/pages/list-page.md`                                          |
 | 行内创建实体                                                                    | 新建对话框                          | `patterns/flows/create-dialog.md`                                      |
 | 确认破坏性操作                                                                  | 破坏性操作确认                      | `patterns/flows/confirm-destroy.md`                                    |
-| 应用框架（侧边栏 + 顶栏）                                                      | 应用外壳                            | `patterns/blocks/app-shell.md`                                         |
+| 应用框架（侧边栏 + 顶栏）                                                       | 应用外壳                            | `patterns/blocks/app-shell.md`                                         |
 | 带标题和描述的页头                                                              | 页头                                | `patterns/blocks/page-header.md`                                       |
 | 搜索 + 筛选 + 主操作栏                                                          | 工具栏                              | `patterns/blocks/toolbar.md`                                           |
-| 带加载 / 空状态的数据表                                                        | 数据表                              | `patterns/blocks/data-table.md`                                        |
+| 带加载 / 空状态的数据表                                                         | 数据表                              | `patterns/blocks/data-table.md`                                        |
 | 分页表格页脚                                                                    | 分页栏                              | `patterns/blocks/pagination-bar.md`                                    |
 | 工单 / 资源排程可视化                                                           | GanttChart / ResourceSchedulerBoard | `components/gantt-chart.md` / `components/resource-scheduler-board.md` |
 

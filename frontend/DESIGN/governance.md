@@ -10,7 +10,7 @@
 
 基础 shadcn-vue primitive 从官方 `reka-nova` 注册表（registry）**逐字节**拉取，必须保持
 字节零改动，以便随时重新拉取或覆盖。**不得通过编辑 primitive 实现定制**。任何定制
-都必须是名称不同的_复制重建_组件（FE-2“区块组件库”），构建在未改动的 primitive 和
+都必须是名称不同的*复制重建*组件（FE-2“区块组件库”），构建在未改动的 primitive 和
 token 之上。
 
 ### 全新拉取基线（FE-1 #276）
@@ -138,10 +138,10 @@ token 只能位于 `packages/ui/src/styles/theme.css`（PC/共享）或对应场
 两套 UI 字体均为**自行托管**（由 Vite 打包；绝不使用 `fonts.googleapis.com` 或运行时
 CDN），并在 `packages/ui/src/styles/theme.css` 顶部统一导入一次：
 
-| 角色           | 字体族           | 包                           | 许可证                      |
-| -------------- | ---------------- | ---------------------------- | --------------------------- |
-| 拉丁字母 / 数字 | `Inter Variable` | `@fontsource-variable/inter` | OFL                         |
-| 简体中文       | `MiSans`         | `misans`（Xiaomi）           | Apache-2.0，可免费商用      |
+| 角色            | 字体族           | 包                           | 许可证                 |
+| --------------- | ---------------- | ---------------------------- | ---------------------- |
+| 拉丁字母 / 数字 | `Inter Variable` | `@fontsource-variable/inter` | OFL                    |
+| 简体中文        | `MiSans`         | `misans`（Xiaomi）           | Apache-2.0，可免费商用 |
 
 `--font-sans` 为 `'Inter Variable', 'MiSans', …`，因此拉丁字母由 Inter 渲染，中文回退到
 MiSans。**不得**添加 `misans-webfont`（标记为仅限学习交流 / 非商用）。
@@ -192,11 +192,11 @@ ADR 0020 落地批（MAN-433）将把守护面扩展到：八层层序声明、�
 
 两个旧组件仍使用 `--legacy-color-*` token 和 `<style scoped>`：
 
-| 文件                                                          | 处理方式                                               |
-| ------------------------------------------------------------- | ------------------------------------------------------ |
-| `apps/console/src/components/console/InstanceTable.vue`       | 使用 `Table` + shadcn-vue primitive 重写               |
-| `apps/console/src/components/console/InstanceDetailPanel.vue` | 使用 `Card` + shadcn-vue primitive 重写                |
-| `apps/console/src/pages/index.vue`                            | 删除 `<style scoped>`，转换为 Tailwind 工具类           |
+| 文件                                                          | 处理方式                                      |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| `apps/console/src/components/console/InstanceTable.vue`       | 使用 `Table` + shadcn-vue primitive 重写      |
+| `apps/console/src/components/console/InstanceDetailPanel.vue` | 使用 `Card` + shadcn-vue primitive 重写       |
+| `apps/console/src/pages/index.vue`                            | 删除 `<style scoped>`，转换为 Tailwind 工具类 |
 
 迁移完成后，从 `main.css` 删除所有 `--legacy-color-*` 定义。
 

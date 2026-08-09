@@ -1,12 +1,12 @@
 # 测试证据治理
 
-MAN-661 为后端与 Connector Host 的 VSTest 运行提供仓库自有证据链路。责任方是 **Nerv-IIP 平台 CI/测试治理**。本文档是操作契约；已批准的架构仍以 MAN-661 设计为准。
+MAN-661 为后端与 Connector Host 的 VSTest 运行提供仓库自有证据链路。责任方是 **Nerv-IIP 平台 CI/测试治理**（Nerv-IIP Platform CI/Test Governance）。本文档是操作契约；已批准的架构仍以 MAN-661 设计为准。
 
 ## 运行时与保留产物
 
 CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `continue-on-error`、shell 管道或状态恢复包装器，因此其自然退出码仍是权威结果。采集与上传使用 `if: always()`，使失败运行在存在规范化证据时仍能发布诊断。
 
-自 MAN-669 起，后端快速门禁改为四个分片作业，不再由单个作业运行。每个分片作业运行 `scripts/run-backend-test-shard.ps1`，将 `trx;LogFilePrefix=<job id>` 输出到自身作业本地原始目录，随后针对自己拥有的唯一执行通道调用同一个单通道采集器：
+自 MAN-669 起，后端快速门禁改为四个分片作业，不再由单个作业运行。每个分片作业运行 `scripts/run-backend-test-shard.ps1`，将 `trx;LogFilePrefix=<job id>` 输出到自身作业本地原始目录，随后针对自己拥有的唯一执行通道调用同一个单通道采集器（single-lane collector）：
 
 | 执行通道 | CI 作业 | 分片 |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。
 
-失败或超时的分片会在**脱敏后**将缓冲的 stdout/stderr 输出到 Actions 作业日志；这些缓冲内容绝不会写入上传文件。
+失败或超时的分片会在**脱敏后**将缓冲的 stdout/stderr 输出到 Actions 作业日志（Actions job log）；这些缓冲内容绝不会写入上传文件。
 
 `run-backend-test-shard.ps1` 使用 `FullyQualifiedName!~` 排除真实依赖选择器，因此这些测试不会出现在分片 TRX 中，而不是以已登记跳过项出现。以下门禁确保该排除诚实可信，不会变成私自绕过门禁的入口：
 
@@ -26,7 +26,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 - **选择器锚定。**VSTest `!~` 是子串匹配，因此类选择器输出时带尾随点（`FullyQualifiedName!~Ns.XTests.`），不会误吞仅共享前缀的兄弟类。方法选择器保持无锚定，以便参数化用例继续匹配；治理通过扫描已登记的 MAN-661 源文件，并拒绝名称是该文件其他成员前缀的方法选择器来补偿这一点。
 - **逐项目执行。**分片运行后，它分类的每个项目都必须在该分片自身 TRX 中出现，且至少有一个已执行结果；分片也不得执行未由其分类的程序集。该检查读取与采集器相同的 `UnitTest/@storage` 属性。它有意**不**扫描 dotnet 控制台文本：该文本会本地化，在任何非英文运行器上使用短语匹配都会失败后放行，而这正是该边界要阻止的静默放行。
 
-作业运行期间，原始文件只存在于 `artifacts/test-evidence-raw/<run>/attempt-<n>/<lane>/`。原始 TRX、stdout、stderr、附件、采集器载荷、请求/响应正文和任意结果文件绝不上传。保留产物经脱敏后写入：
+作业运行期间，原始文件只存在于 `artifacts/test-evidence-raw/<run>/attempt-<n>/<lane>/`。原始 TRX（raw TRX）、stdout、stderr、附件、采集器载荷、请求/响应正文和任意结果文件绝不上传。保留产物经脱敏后写入：
 
 ```text
 artifacts/test-evidence/<run>/attempt-<n>/<lane>/
@@ -112,9 +112,9 @@ MAN-669 PR-A 重新配平分片内容时，同一规则第二次适用。旧的�
 
 采集器是单执行通道采集器：一次调用拥有一个物理 `-Lane`。`-SelectedLanes` 可以指定该物理分片或其逻辑基础执行通道；不得使用同级分片选择器声称该调用分别认证了每个同级分片。zero-execution 仅按逻辑基础执行通道对多个选中同级选择器分组，以避免重复/虚假的同级分片失败；它能识别基础选择器对应的当前分片执行，并且在选中当前分片确实没有 passed/failed 结果时仍然失败。MAN-669 新增了执行通道名称与调用，但没有改变该采集器契约。当前 CI 接入 `backend-shard-1` … `backend-shard-4` 和 `connector-host`，且全部为 `realDependency: false`；PostgreSQL、FullChain、性能和 Connector 真实依赖作业的接线仍属后续工作。已接入 CI 的契约测试套件证明 zero-execution 函数，但这不是某个真实依赖作业已经运行的证据。
 
-耗时、趋势、跳过总数、基线差值和 `recovered-after-rerun` 都只用于报告。恢复标签要求通过已认证的 GitHub Actions 查询取得精确的前一次尝试和执行通道允许清单中的作业名称，并匹配工作流运行、当前尝试和分支头 SHA；同时必须存在失败的前一作业，以及当前成功的原生测试步骤，且当前步骤执行数非零、失败测试为零、政策违规为零。`Get-NervTestEvidenceLaneJobs` 是恢复标签与基线权威共用的唯一允许清单。它恰好有五项——四个后端分片执行通道和 `connector-host`——且每项只绑定一个作业名称，因此分片绝不能认证同级分片。未分片的 `backend` 执行通道被有意**省略**：自 MAN-669 起没有作业产出它；若仍将其映射到 `Backend Tests`，不运行测试的聚合作业就能认证一个从未运行的执行通道。`backend` 仍是 `-SelectedLanes` 和政策 `allowedLanes` 的有效逻辑基础执行通道，只是不再可认证。因此，重跑分类按分片进行：一个分片重跑后恢复不会重新标记其他分片。生产采集器不公开由调用方提供或仅测试使用的权威替换参数；测试直接调用纯响应验证器。查询不可用时，摘要写入 `prior-attempt-unavailable`；仅凭尝试次数绝不能证明恢复。
+耗时、趋势、跳过总数、基线差值和 `recovered-after-rerun` 都只用于报告（`report-only`）。恢复标签要求通过已认证的 GitHub Actions 查询取得精确的前一次尝试和执行通道允许清单中的作业名称，并匹配工作流运行、当前尝试和分支头 SHA；同时必须存在失败的前一作业，以及当前成功的原生测试步骤，且当前步骤执行数非零、失败测试为零、政策违规为零。`Get-NervTestEvidenceLaneJobs` 是恢复标签与基线权威共用的唯一允许清单。它恰好有五项——四个后端分片执行通道和 `connector-host`——且每项只绑定一个作业名称，因此分片绝不能认证同级分片。未分片的 `backend` 执行通道被有意**省略**：自 MAN-669 起没有作业产出它；若仍将其映射到 `Backend Tests`，不运行测试的聚合作业就能认证一个从未运行的执行通道。`backend` 仍是 `-SelectedLanes` 和政策 `allowedLanes` 的有效逻辑基础执行通道，只是不再可认证。因此，重跑分类按分片进行：一个分片重跑后恢复不会重新标记其他分片。生产采集器不公开由调用方提供或仅测试使用的权威替换参数；测试直接调用纯响应验证器。查询不可用时，摘要写入 `prior-attempt-unavailable`；仅凭尝试次数绝不能证明恢复。
 
-## 耗时数据是缓存，不是受治理资产
+## 耗时数据是缓存，不是受治理资产（Timing data is a cache, not a governed asset）
 
 MAN-661 最初在一个受治理文件中保存两类不同事物：一类是**政策**清单——哪些跳过已登记、哪些隔离合法、欠有哪些确定性债务；另一类是**测量值**——各程序集耗时多久。只有前者是资产。政策由人写下并由门禁约束执行；测量值来自观测，没有人决定测试套件应该多快。
 
@@ -182,7 +182,7 @@ pwsh scripts/generate-test-evidence-baseline.ps1 -Repository Mang-X/Nerv-IIP -Gi
 pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json
 ```
 
-**现已不存在任何强制刷新触发器。**本段过去承载的规则——“MAN-663 修改共享宿主 profile 后，以及 MAN-669 修改执行通道/分片拓扑后，必须刷新”——正是 #1507 删除的仪式：两个纯粹改变“如何运行测试”的变更因此欠下一次测量值重生成，而重新分片还能使任何测试都未触及的键失效。已提交文件现在是供离线和无 token 场景使用的**兜底快照**，与自动缓存一样按程序集键读取。重新生成只属可选维护——有人希望获得更新的离线默认值时值得执行，但拓扑变更绝不因此欠下刷新，也绝不作为门禁。主要耗时来源是上文所述自动缓存。
+**现已不存在任何强制刷新触发器（There are no longer any mandatory refresh triggers）。**本段过去承载的规则——“MAN-663 修改共享宿主 profile 后，以及 MAN-669 修改执行通道/分片拓扑后，必须刷新”——正是 #1507 删除的仪式：两个纯粹改变“如何运行测试”的变更因此欠下一次测量值重生成，而重新分片还能使任何测试都未触及的键失效。已提交文件现在是供离线和无 token 场景使用的**兜底快照**，与自动缓存一样按程序集键读取。重新生成只属可选维护——有人希望获得更新的离线默认值时值得执行，但拓扑变更绝不因此欠下刷新，也绝不作为门禁。主要耗时来源是上文所述自动缓存。
 
 2026-08-05 的刷新采用运行 `30999368607`（main push、合并提交 `92d7f1ddc`、第 1 次尝试、成功）——这是合并后首个携带完整 `backend-shard-1`..`backend-shard-4` 加 `connector-host` 产物集合的合格运行——并以 `granularity: test` / `durationMetric: trx-elapsed` 的 71 个执行通道+程序集行替换 64 个 `lane: backend` project-wall-clock 行。比较重新变为 `available`；使用该运行自身的分片 1 证据重跑采集器验证为 `unavailableReason: null`、自比较差值 0.0%。
 
