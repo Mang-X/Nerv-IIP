@@ -108,7 +108,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 
 以下权限码用于冻结后续服务和业务扩展的命名口径。已实现服务的权限必须进入 `NervIipSeedPermissions.All` 与端点授权检查；尚未实现的服务在落地时必须按本节命名进入 IAM 初始数据、OpenAPI 测试和权限测试。
 
-### Notification
+### Notification（通知服务）
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -117,7 +117,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `notifications.templates.manage` | `user` / `internal-service` | organization + resource | 管理通知模板、模板版本和多语言文本。 |
 | `notifications.deliveries.manage` | `user` / `internal-service` | organization / environment + resource | 管理投递尝试、重试、失败诊断和外部通道投递状态。 |
 
-### Knowledge
+### Knowledge（知识服务）
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -125,7 +125,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `knowledge.sources.manage` | `user` / `external-client` | environment + resource | 创建、配置、暂停、归档知识源和同步策略。 |
 | `knowledge.indexes.rebuild` | `user` / `internal-service` | environment + resource | 触发索引重建、权限同步后重建或策略变更后的重建。 |
 
-### AI Integration
+### AI Integration（AI 集成服务）
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -135,7 +135,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `ai.approvals.manage` | `user` / `internal-service` | environment + resource | 管理工具执行审批、人机确认和高风险动作批准。 |
 | `ai.prompts.manage` | `user` / `internal-service` | organization / environment + resource | 管理提示词模板、版本、启停和适用范围。 |
 
-### Observability
+### Observability（可观测性）
 
 | 权限码 | 建议 principalType | 建议 scope | 说明 |
 | --- | --- | --- | --- |
@@ -162,7 +162,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.masterdata.products.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停 SKU 和产品基础属性。 |
 | `business.masterdata.partners.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看客户、供应商、承运商。 |
 | `business.masterdata.partners.manage` | `user` / `external-client` | organization / environment + resource | 创建、修改、启停业务伙伴。 |
-| `business.masterdata.resources.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看工作中心、工作日历、设备资产、人员业务属性，以及 BusinessGateway 工人选择器所需的 IAM worker directory 最小读面。 |
+| `business.masterdata.resources.read` | `user` / `external-client` / `internal-service` | organization / environment + resource | 查看工作中心、工作日历、设备资产、人员业务属性，以及 BusinessGateway 工人选择器所需的 IAM 工人目录最小读面。 |
 | `business.masterdata.resources.manage` | `user` / `external-client` | organization / environment + resource | 管理工作中心、工作日历、设备资产和人员业务属性。 |
 | `business.engineering.documents.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 CAD、图纸、工艺文件等工程文件引用和版本。 |
 | `business.engineering.documents.manage` | `user` / `external-client` | environment + resource | 注册、归档和关联工程文件；文件本体仍归 File Storage。 |
@@ -180,7 +180,7 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.engineering.changes.manage` | `user` / `external-client` | environment + resource | 发起、审批后发布工程变更。 |
 | `business.planning.demands.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看销售订单、预测、安全库存等需求来源。 |
 | `business.planning.demands.manage` | `user` / `external-client` | environment + resource | 创建和调整计划需求来源。 |
-| `business.planning.mrp.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MPS/MRP run、净需求和 pegging。 |
+| `business.planning.mrp.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MPS/MRP 运行、净需求和需求追溯（pegging）。 |
 | `business.planning.mrp.run` | `user` / `internal-service` | environment + resource | 运行 MPS/MRP，生成计划采购建议和计划工单建议。 |
 | `business.planning.suggestions.manage` | `user` / `internal-service` | environment + resource | 接受、拒绝或关闭计划建议；不直接创建正式单据。 |
 | `business.inventory.locations.manage` | `user` / `external-client` | environment + resource | 管理仓库、库区、库位和容量限制。 |
@@ -211,11 +211,11 @@ PlatformGateway 的控制台可观测性门面在查询 VictoriaLogs 前，会�
 | `business.wms.shipments.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看出库单、拣货任务和复核包装。 |
 | `business.wms.shipments.manage` | `user` / `external-client` | environment + resource | 创建和完成出库、拣货、复核包装作业。 |
 | `business.wms.counts.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看盘点工作范围、作业候选和盘点执行列表；不授权创建、派工或完成盘点。 |
-| `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS adapter 任务并处理外部自动化设备回执。 |
+| `business.wms.automation.manage` | `user` / `external-client` / `connector-host` | environment + resource + capability | 调度 WCS 适配器任务并处理外部自动化设备回执。 |
 | `business.mes.foundation.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 基础就绪、生产版本、物料、质量、设备、条码和编号阻塞项。 |
 | `business.mes.overview.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看 MES 生产驾驶舱和待办摘要。 |
 | `business.mes.plans.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看生产计划候选、计划就绪和转工单前检查。 |
-| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工单详情和释放快照。BusinessGateway 工单列表以实时 permission-aware grants 校验 Self/Team/WorkCenter/Workshop/Organization 选择，并把归属范围与状态、关键字、工作中心等业务筛选取交集后再计数分页。工单详情包含**质量保留生命周期摘要**（是否活跃、范围、施加/释放的时间·操作人·理由·释放方式），供生产协调判断工单为何被保留；**逐事件保留时间线属 `business.mes.quality.read`**，**来源检验记录下钻属 `business.quality.inspection-records.read`**（MAN-445/#799，见质量域说明）。 |
+| `business.mes.work-orders.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看工单、工单详情和释放快照。BusinessGateway 工单列表以实时权限感知授权范围校验 Self/Team/WorkCenter/Workshop/Organization（本人/班组/工作中心/车间/组织）选择，并把归属范围与状态、关键字、工作中心等业务筛选取交集后再计数分页。工单详情包含**质量保留生命周期摘要**（是否活跃、范围、施加/释放的时间·操作人·理由·释放方式），供生产协调判断工单为何被保留；**逐事件保留时间线属 `business.mes.quality.read`**，**来源检验记录下钻属 `business.quality.inspection-records.read`**（MAN-445/#799，见质量域说明）。 |
 | `business.mes.work-orders.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建急单、计划转工单、释放和关闭工单。 |
 | `business.mes.materials.read` | `user` / `external-client` / `internal-service` | environment + resource | 查看齐套检查、领料申请和线边收料状态。 |
 | `business.mes.materials.manage` | `user` / `external-client` / `internal-service` | environment + resource | 创建领料/备料申请并确认线边收料。 |
