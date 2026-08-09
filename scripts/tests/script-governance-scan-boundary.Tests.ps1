@@ -543,6 +543,121 @@ function Invoke-FixtureSetVariableAbbreviatedName {
     & $fixtureAction build
 }
 '@
+        # ---------------------------------------------------------------------------------------
+        # …and the axis rounds 6 and 7 still had not asked about: the *collectiveness of the
+        # parameter's declared type* (#1509 round 8). `Set-Variable -Name` is `[string[]]`, so one
+        # argument spells several bindings — and reading only a StringConstantExpressionAst dropped
+        # the whole call. Measured exit 0 with `& $fixtureAction` really executing `/bin/echo`
+        # (`/bin/echo` prints nothing, the seam returns 'seam' — the empty output is the proof).
+        # Both spellings, because the named argument and the positional element reach the extraction
+        # by different paths in Get-SeamBinderNameArgument and fixing one alone leaves the other.
+        'set-variable-multiple-literal-names-positional' = @'
+function Invoke-FixtureMultipleNamesPositional {
+    Set-Variable fixtureAction,zz 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-multiple-literal-names-named' = @'
+function Invoke-FixtureMultipleNamesNamed {
+    Set-Variable -Name fixtureAction,zz -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # A list whose elements are not all literal still binds the literal ones — measured: after
+        # `Set-Variable -Name a,$computed`, both `$a` and the computed name hold the value. Recording
+        # nothing for the whole call would be fail-open on a name written right there; the non-literal
+        # element stays the registered computed-name residual. Rule this "record nothing when the list
+        # is mixed" instead and this case alone turns green.
+        'set-variable-mixed-literal-and-computed-names' = @'
+function Invoke-FixtureMixedNames {
+    $computed = 'zz'
+    Set-Variable -Name fixtureAction,$computed -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # The grouping spellings of the same argument. `(…)`, `@(…)` and `$(…)` carry a value through
+        # without computing one, so each of these really binds — including the *single*-name ones,
+        # which are not about plurality at all and were equally invisible before round 8.
+        'set-variable-parenthesized-name-list' = @'
+function Invoke-FixtureParenthesizedNameList {
+    Set-Variable ('fixtureAction','zz') 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-array-expression-name-list' = @'
+function Invoke-FixtureArrayExpressionNameList {
+    Set-Variable @('fixtureAction','zz') 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-parenthesized-single-name' = @'
+function Invoke-FixtureParenthesizedSingleName {
+    Set-Variable ('fixtureAction') 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-subexpression-single-name' = @'
+function Invoke-FixtureSubExpressionSingleName {
+    Set-Variable $('fixtureAction') 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # `-Name:x` attaches the argument to the CommandParameterAst instead of leaving it as the
+        # next command element, so it reaches the extraction by a *third* path — and it had no
+        # fixture at all until the round-8 mutation matrix went looking (mutating that return turned
+        # nothing red). Both spellings are pinned, because the leaf and the array shape travel the
+        # same path and one case cannot tell which of the two a regression broke. Measured: the
+        # multi-name colon spelling really binds both names and runs the external command.
+        'set-variable-colon-argument-single-name' = @'
+function Invoke-FixtureColonArgumentSingleName {
+    Set-Variable -Name:fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-colon-argument-multiple-names' = @'
+function Invoke-FixtureColonArgumentMultipleNames {
+    Set-Variable -Name:fixtureAction,zz -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # A trailing comma turns the next token into a second name — measured: this really binds both
+        # `fixtureAction` and a variable literally called `-Value`, and the checker now records both
+        # because it reads the array literal the parser actually built rather than the one the author
+        # meant.
+        'set-variable-trailing-comma-name-list' = @'
+function Invoke-FixtureTrailingCommaNameList {
+    Set-Variable -Name fixtureAction, -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # The multi-name argument reached through the alias and the module-qualified spelling: the
+        # name half (round 7) and the argument half (round 8) have to compose, and each fixture goes
+        # green if either half is reverted.
+        'set-variable-alias-multiple-literal-names' = @'
+function Invoke-FixtureAliasMultipleNames {
+    sv fixtureAction,zz 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-module-qualified-multiple-literal-names' = @'
+function Invoke-FixtureModuleQualifiedMultipleNames {
+    Microsoft.PowerShell.Utility\Set-Variable -Scope Local fixtureAction,zz 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # `New-Variable -Name` is a scalar `[string]`, so a multi-name argument binds nothing there —
+        # it throws (`CannotConvertArgument` named, "positional parameter cannot be found"
+        # positional; both measured). The checker expands it anyway, which *over*-reports: one rule
+        # instead of two, in the fail-closed direction, exactly the trade already recorded for the
+        # module-qualified alias. Pinned so the over-report stays a decision rather than a surprise
+        # someone later "fixes" into a per-cmdlet branch — and so that a per-cmdlet branch, if anyone
+        # does want one, has to change this line rather than slip past.
+        'new-variable-multiple-literal-names-over-reported' = @'
+function Invoke-FixtureNewVariableMultipleNames {
+    New-Variable fixtureAction,zz 'dotnet'
+    & $fixtureAction build
+}
+'@
         'data-statement-shadows-seam' = @'
 function Invoke-FixtureDataShadow {
     data fixtureAction { 'dotnet' }
@@ -714,6 +829,23 @@ function Invoke-FixtureComputedBindingName {
     & $fixtureAction build
 }
 '@
+        # Round 8 drew the line at *literal*, not at *constant-foldable*: `(…)`, `@(…)` and `$(…)`
+        # are grouping, so they are read through, but a name produced by a cast or a concatenation is
+        # computed and this checker does not fold constants. Both spellings really bind at run time
+        # (measured), so this is a residual and not a non-binding — registered here so the line
+        # between "read through" and "not read" is executable rather than asserted in a comment.
+        'residual-set-variable-non-literal-name-expression' = @'
+function Invoke-FixtureCastNameExpression {
+    Set-Variable -Name ([string] 'fixtureAction') -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'residual-set-variable-concatenated-name-expression' = @'
+function Invoke-FixtureConcatenatedNameExpression {
+    Set-Variable -Name ('fixture' + 'Action') -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
         # A splatted binder carries its -Name inside a hashtable the AST cannot resolve, so it is the
         # same residual as a computed name, reached by a different spelling (#1509 round 6).
         'residual-set-variable-splatted-parameters' = @'
@@ -788,6 +920,111 @@ function Invoke-FixtureCrossScopeAction {
     }
     if ($setVariableParameters['Scope'].ParameterType -eq [switch]) {
         throw 'Set-Variable -Scope no longer takes a value; the "positional name after a valued parameter" cases assert nothing.'
+    }
+
+    # ---------------------------------------------------------------------------------------------
+    # The fifth axis: the *collectiveness of the declared parameter type* (#1509 round 8). Rounds 2–7
+    # each enumerated one axis of the binder walk from metadata — AST node type, operator, parameter
+    # pairing, command-name resolution — and round 8 found the one nobody had asked about:
+    # `Set-Variable -Name` is `[string[]]`, so a single argument spells several bindings.
+    #
+    # This guard is the axis itself, derived from `Get-Command` rather than hand-listed: every
+    # parameter of every binder cmdlet whose declared type is a collection must be accounted for. The
+    # checker reads a value out of exactly one parameter (`-Name`), and it is the one that must
+    # expand array shapes; `-Include`/`-Exclude` are collections too but the checker only ever needs
+    # to know that they consume the next element. One-sided on purpose: a PowerShell release adding a
+    # collection-typed parameter turns this red and forces a ruling, while a parameter disappearing
+    # cannot introduce a new unhandled shape.
+    $binderCollectionParameters = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
+    $binderNameParameterTypes = [ordered]@{}
+    foreach ($canonicalBinder in @('Set-Variable', 'New-Variable')) {
+        $binderCommand = Get-Command -Name $canonicalBinder -CommandType Cmdlet -ErrorAction SilentlyContinue
+        if ($null -eq $binderCommand) {
+            throw "Cannot resolve the '$canonicalBinder' cmdlet; the binder parameter-type contract asserts nothing."
+        }
+        foreach ($binderParameter in $binderCommand.Parameters.Values) {
+            $binderParameterType = $binderParameter.ParameterType
+            # "Collection" as the parameter binder means it: an array or a non-string IEnumerable.
+            # [string] is IEnumerable<char> and is emphatically not a list of names, which is exactly
+            # the difference between Set-Variable -Name and New-Variable -Name.
+            $isCollection = $binderParameterType.IsArray -or
+                ($binderParameterType -ne [string] -and [System.Collections.IEnumerable].IsAssignableFrom($binderParameterType))
+            if ($isCollection) {
+                [void] $binderCollectionParameters.Add("$canonicalBinder.$($binderParameter.Name)")
+            }
+            if ([string]::Equals([string] $binderParameter.Name, 'Name', [StringComparison]::Ordinal)) {
+                $binderNameParameterTypes[$canonicalBinder] = $binderParameterType
+            }
+        }
+    }
+    $expectedBinderCollectionParameters = @(
+        'Set-Variable.Exclude', 'Set-Variable.Include', 'Set-Variable.Name')
+    if (-not [string]::Equals((@($binderCollectionParameters) -join '|'), ($expectedBinderCollectionParameters -join '|'), [StringComparison]::Ordinal)) {
+        throw "Binder cmdlet collection-typed parameters on PowerShell $($PSVersionTable.PSVersion): [$(@($binderCollectionParameters) -join ', ')]; the round-8 ruling in docs/architecture/script-automation-governance.md enumerates [$($expectedBinderCollectionParameters -join ', ')]. Rule on the difference: any parameter the checker reads a value from must expand array shapes."
+    }
+    # The two halves of the ruling, stated as the measurement they rest on rather than as prose: the
+    # multi-name fixtures above are only reachable because Set-Variable's -Name is plural, and the
+    # `new-variable-multiple-literal-names-over-reported` case is only an over-report because
+    # New-Variable's is not.
+    if ($binderNameParameterTypes['Set-Variable'] -ne [string[]]) {
+        throw "Set-Variable -Name is $($binderNameParameterTypes['Set-Variable']), not [string[]]; the multi-name binder fixtures assert nothing."
+    }
+    if ($binderNameParameterTypes['New-Variable'] -ne [string]) {
+        throw "New-Variable -Name is $($binderNameParameterTypes['New-Variable']), not [string]; 'new-variable-multiple-literal-names-over-reported' is no longer an over-report and must be re-ruled."
+    }
+
+    # …and the shape half, structurally, in the same form as the `Left type set` contract above.
+    # Get-SeamBinderLiteralNames returns nothing for a shape it does not recognise — fail *open*, so
+    # a deleted branch silently stops shadowing and every fixture that does not spell that exact
+    # shape stays green. Requiring the dispatch set verbatim turns a deletion red on its own.
+    $binderLiteralNamesFunction = $checkerAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string] $node.Name, 'Get-SeamBinderLiteralNames', [StringComparison]::OrdinalIgnoreCase)
+    }, $true)
+    if (-not $binderLiteralNamesFunction) {
+        throw 'The script governance checker must keep its -Name argument walk in a function named Get-SeamBinderLiteralNames.'
+    }
+    # Ordinal dedup+sort, per the #1507 ruling, for the same reason as the Left dispatch set above.
+    $dispatchedNameArgumentTypes = @(
+        [System.Collections.Generic.SortedSet[string]]::new(
+            [string[]] @(
+                $binderLiteralNamesFunction.Body.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
+                    $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
+                    $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                    [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Argument', [StringComparison]::OrdinalIgnoreCase) -and
+                    $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
+                }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' }
+            ),
+            [StringComparer]::Ordinal)
+    )
+    $expectedDispatchedNameArgumentTypes = @(
+        'ArrayExpressionAst', 'ArrayLiteralAst', 'ParenExpressionAst', 'StringConstantExpressionAst', 'SubExpressionAst')
+    if (-not [string]::Equals(($dispatchedNameArgumentTypes -join '|'), ($expectedDispatchedNameArgumentTypes -join '|'), [StringComparison]::Ordinal)) {
+        throw "Get-SeamBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; the ruling in docs/architecture/script-automation-governance.md says [$($expectedDispatchedNameArgumentTypes -join ', ')]. Change both together."
+    }
+    # …and the shapes really are what the parser produces for those spellings, so the dispatch set is
+    # pinned to measured AST types rather than to remembered ones.
+    $nameArgumentCorpus = [ordered]@{
+        'StringConstantExpressionAst' = "Set-Variable fixtureAction 'x'"
+        'ArrayLiteralAst' = "Set-Variable fixtureAction,zz 'x'"
+        'ParenExpressionAst' = "Set-Variable ('fixtureAction','zz') 'x'"
+        'ArrayExpressionAst' = "Set-Variable @('fixtureAction','zz') 'x'"
+        'SubExpressionAst' = "Set-Variable `$('fixtureAction') 'x'"
+    }
+    foreach ($expectedShape in $nameArgumentCorpus.Keys) {
+        $corpusErrors = $null
+        $corpusAst = [System.Management.Automation.Language.Parser]::ParseInput($nameArgumentCorpus[$expectedShape], [ref] $null, [ref] $corpusErrors)
+        if ($corpusErrors -and $corpusErrors.Count -gt 0) {
+            throw "Binder -Name corpus entry for '$expectedShape' no longer parses ($($corpusErrors[0].ErrorId))."
+        }
+        $corpusCommand = $corpusAst.Find({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)
+        $observedShape = (@($corpusCommand.CommandElements)[1]).GetType().Name
+        if (-not [string]::Equals($observedShape, $expectedShape, [StringComparison]::Ordinal)) {
+            throw "PowerShell $($PSVersionTable.PSVersion) parses '$($nameArgumentCorpus[$expectedShape])' with a $observedShape -Name argument, not a $expectedShape; the round-8 dispatch set is pinned to the wrong types."
+        }
     }
 
     # ---------------------------------------------------------------------------------------------

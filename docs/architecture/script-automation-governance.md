@@ -117,7 +117,12 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    | `foreach ($x in …)` | `ForEachStatementAst.Variable` | ✅ | ❌ | `foreach-iteration-variable-shadows-seam` |
    | `$local:` / `$script:` / `$global:` / `$private:` / `$variable:` | 限定符归一化后比对 | ✅ | ❌ | `{local,script,global,private,variable}-qualifier-shadows-seam` 各一条 |
    | `data $x { … }` | `DataStatementAst.Variable` | ✅ | ❌ | `data-statement-shadows-seam` |
-   | `Set-Variable` / `New-Variable`（**字面量**名字，命名 `-Name` 或位置参数；别名从 PowerShell 的别名表枚举，当前解出 `set`/`sv`/`nv`；命令名大小写不敏感；参数前缀缩写；模块限定名剥掉限定符后同样命中） | `CommandAst`，命令名按别名表 + 限定符归一化，元素配对按 cmdlet 参数元数据 | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam`、`set-variable-positional-name-after-{valued,value,switch}-parameter`、`new-variable-positional-name-after-valued-parameter`、`set-variable-alias-positional-name-after-valued-parameter`、`set-variable-abbreviated-{valued,name}-parameter`、`set-variable-shipped-alias-{,uppercase-}shadows-seam`、`{set,new}-variable-module-qualified-shadows-seam`、`set-variable-module-qualified-mixed-case-shadows-seam`、`set-variable-module-qualified-alias-shadows-seam`、`binder-alias-removed-from-session` |
+   | `Set-Variable` / `New-Variable`（名字实参**逐个字面量**展开；命名 `-Name`、`-Name:x` 冒号实参或位置参数；别名从 PowerShell 的别名表枚举，当前解出 `set`/`sv`/`nv`；命令名大小写不敏感；参数前缀缩写；模块限定名剥掉限定符后同样命中） | `CommandAst`，命令名按别名表 + 限定符归一化，元素配对按 cmdlet 参数元数据，名字实参按 AST 类型递归展开（`Get-SeamBinderLiteralNames`） | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam`、`set-variable-positional-name-after-{valued,value,switch}-parameter`、`new-variable-positional-name-after-valued-parameter`、`set-variable-alias-positional-name-after-valued-parameter`、`set-variable-abbreviated-{valued,name}-parameter`、`set-variable-shipped-alias-{,uppercase-}shadows-seam`、`{set,new}-variable-module-qualified-shadows-seam`、`set-variable-module-qualified-mixed-case-shadows-seam`、`set-variable-module-qualified-alias-shadows-seam`、`set-variable-colon-argument-{single,multiple}-name{,s}`、`binder-alias-removed-from-session` |
+   | `Set-Variable a,b 'x'` / `-Name a,b`（多名字） | `ArrayLiteralAst`（逐元素递归）——`Set-Variable -Name` 的声明类型是 `[string[]]` | ✅ **每个字面量元素各算一个绑定** | ❌ | `set-variable-multiple-literal-names-{positional,named}`、`set-variable-colon-argument-multiple-names`、`set-variable-trailing-comma-name-list`、`set-variable-alias-multiple-literal-names`、`set-variable-module-qualified-multiple-literal-names` |
+   | `Set-Variable ('a','b')` / `@('a','b')` / `$('a')` | `ParenExpressionAst` / `ArrayExpressionAst` / `SubExpressionAst`（分组语法，穿透递归） | ✅ | ❌ | `set-variable-parenthesized-name-list`、`set-variable-array-expression-name-list`、`set-variable-parenthesized-single-name`、`set-variable-subexpression-single-name` |
+   | `Set-Variable -Name a,$computed` | 混合列表 | ✅ **只记字面量元素**（非字面量元素落入残余） | ❌ | `set-variable-mixed-literal-and-computed-names` |
+   | `New-Variable a,b 'x'` | `New-Variable -Name` 是标量 `[string]`，运行期直接抛错、什么都没绑 | ✅ **过报**（fail-closed 裁决，见下） | ❌ | `new-variable-multiple-literal-names-over-reported` |
+   | `Set-Variable -Name ([string] 'a')` / `-Name ('a' + 'b')` | 名字可静态算出但不是**字面量**；本 checker 不做常量折叠 | ❌ 残余 | — | `residual-set-variable-{non-literal,concatenated}-name-expression`（断言**当前放行**） |
    | `Set-Variable -Bogus x 'y'` / `Set-Variable -V x 'y'` | 参数名无法解析或前缀歧义 | ❌ **不构成绑定**（该调用运行期直接抛错，什么都没绑） | — | `set-variable-{unknown,ambiguous}-parameter-binds-nothing`（断言**当前放行**） |
    | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | — | `residual-set-variable-computed-name`（断言**当前放行**） |
    | `Set-Variable @splat` | 名字在 hashtable 里，AST 解不出 | ❌ 残余 | — | `residual-set-variable-splatted-parameters`（断言**当前放行**） |
@@ -141,6 +146,31 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    现在别名来自 `Get-Alias -Definition` 对 `$seamBinderCanonicalNames`（只声明 `Set-Variable`/`New-Variable` 两个 cmdlet）的枚举，模块限定名按最后一个 `\` 序数切分后取末段再比对。比较用 `OrdinalIgnoreCase`：**刻意的大小写不敏感**，因为 PowerShell 解析命令名本来就不分大小写（`SET`、`microsoft.powershell.utility\SET-VARIABLE` 实测都真的绑定），而 `OrdinalIgnoreCase` 只折叠大小写、不折叠任何可忽略字符，所以仍在本 PR 的序数口径内。
 
    `Get-Alias` 读的是**会话状态**，只会让 checker 变瞎（`set` 的 `Options` 是 `None`，profile 或先跑的任何东西都能删掉或改绑它，而被扫描的文件仍会在别处以完整别名表运行）。因此随附一份 `set`/`sv`/`nv` 的**下界**并入，它是「至少认这些」而不是识别清单——往里加名字只会把放行变成报告，绝不可能反过来。两半各有守卫：`binder-alias-removed-from-session` 在删掉 `Alias:set` 的会话里跑 checker、要求判定不变（钉下界），源码结构契约要求别名集合由**恰好一次** `Get-Alias -Definition $seamBinderCanonicalName` 派生（钉枚举本身——把清单手写全、行为用例全绿时它照样红）。
+
+   **名字实参的「集合性」这一轴**（#1509 八轮）。六轮把**参数配对**改成读 cmdlet 元数据，七轮把**命令名识别**改成从别名表枚举，两轮都没问过第五个轴：**参数声明类型本身是不是集合**。`Get-Command Set-Variable` 说 `-Name` 是 `[string[]]`——一个实参可以拼出好几个绑定，而实现只认单个 `StringConstantExpressionAst`，于是整条绑定被丢掉。实测 exit 0 且运行期真的执行了外部命令（用 `/bin/echo` 回显证实：seam 应返回 `'seam'`，实际输出为空）：
+
+   ```powershell
+   Set-Variable action,zz '/bin/echo'            # 位置参数，ArrayLiteralAst
+   Set-Variable -Name action,zz -Value '/bin/echo'
+   Set-Variable -Name:action,zz -Value '/bin/echo'   # 冒号实参，挂在 CommandParameterAst 上
+   Set-Variable ('action','zz') '/bin/echo'      # 分组语法
+   Set-Variable @('action','zz') '/bin/echo'
+   Set-Variable ('action') '/bin/echo'           # 连单个名字加了括号都看不见
+   Set-Variable $('action') '/bin/echo'
+   Set-Variable -Name action, -Value '/bin/echo' # 尾逗号：真的把 `-Value` 也绑成了变量名
+   ```
+
+   这**不是**残余表里的「名字只在运行期存在」：`action,zz` 是两个静态字面量，而文档那一行按字面读（「**字面量**名字，命名 `-Name` 或位置参数」）恰好覆盖这个拼写——又一次文档强度 > 实现强度。现在名字实参交给 `Get-SeamBinderLiteralNames` **按 AST 类型递归展开**，与 `Get-SeamAssignmentTargets` 对 `$a, $b = …` 的处理同构，两处用的是同一条判据而不是两套强度。
+
+   **裁决三条**：
+
+   1. **只记字面量元素，不是整条不记。** `-Name a,$computed` 运行期两个名字都绑（实测），把整条丢掉会在一个**就写在那里**的名字上 fail open；非字面量元素仍然落进既有的 computed-name 残余。`set-variable-mixed-literal-and-computed-names` 钉住这条——改成「整条不记」，只有它红。
+   2. **字面量 ≠ 可常量折叠。** `(…)`、`@(…)`、`$(…)` 是分组/数组构造，不计算值，所以穿透；`([string] 'a')`、`('a' + 'b')` 是计算，本 checker 不做常量折叠，它们是**登记残余**（两条用例断言当前放行，实测运行期真的绑上并执行了外部命令）。加一条读穿 `AttributedExpressionAst` 的折叠分支，这两条就红——这条线是可执行的，不是注释里的声明。
+   3. **`New-Variable` 的 `-Name` 是标量 `[string]`**，多名字实参运行期直接抛错（命名式 `CannotConvertArgument`、位置式「positional parameter cannot be found」，均实测），什么都没绑；checker 照样展开，属**过报**。一条规则而不是两条，方向 fail-closed——与模块限定别名同一笔交易。`new-variable-multiple-literal-names-over-reported` 把它登记成明写裁决：真要加 per-cmdlet 分支，得先改这一行。
+
+   **这一轴被守成契约，不只是被修好**：`binder parameter collection types` 从 `Get-Command` 枚举两个 binder cmdlet 的**全部**参数，断言集合类型的恰好是 `Set-Variable` 的 `Name`/`Include`/`Exclude` 三个（单向：PowerShell 新增一个集合类型参数就红，逼人裁决；少一个不红），并分别断言 `Set-Variable -Name` 是 `[string[]]`、`New-Variable -Name` 是 `[string]`——上面两条裁决各自站在哪个测量结果上，是断言而不是记忆。`Get-SeamBinderLiteralNames dispatch set` 则按 `Left type set` 的同一形式断言源码里对 `$Argument` 的 `-is` 分派集合恰好是那五种类型，并用一份语料实测这五种拼写真的解析成那五种 AST——删掉任一分支即便行为用例没覆盖到也会红。
+
+   **变异矩阵里查出的第三处盲区**：`-Name:x` 把实参挂在 `CommandParameterAst.Argument` 上，走的是与「下一个元素」「第一个未被消费的元素」都不同的**第三条**路径，而在八轮之前**一条用例都没有**——把那条 return 改坏，全绿。现在 `set-variable-colon-argument-{single,multiple}-name{,s}` 各钉一条。
 
    模块限定的**别名**（`Microsoft.PowerShell.Utility\sv`）是唯一的过报：PowerShell 只限定导出命令，内置别名不属于任何模块，该调用运行期直接抛 `CommandNotFoundException`（实测）。剥限定符是一条规则而不是两条，且过报只会多花一次权限、不会多给一次，属**fail-closed** 方向，由 `set-variable-module-qualified-alias-shadows-seam` 登记成一条明写的裁决。
 
@@ -175,7 +205,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 - seam 调用放行 / `& 'dotnet'` / `& $exe`（字符串变量）/ 直呼 `dotnet` / `Process::Start` / 未声明 `library` 分类 / 目录外冒充 `library` / 跨函数同名变量不放行逐条对照 → 任何一条规则被削弱或过度收紧都红；
 - 参数两种拼写各一条（`cross-function-parameter-leak` 钉 `param()` 块、`inline-parameter-cross-function-leak` 钉内联参数表），外加 `inline-parameter-seam-allowed` 防止「靠丢掉内联参数」来假装收紧；
 - 遮蔽语义两条：`file-level-seam-visible-to-inner-scope`（外层 seam 对不重绑的内层仍可见，防止「干脆不向外走」的假收紧）与 `file-level-seam-shadowed-by-local`（内层重绑同名变量后外层 seam 失效）；
-- 上表每一行各有对照：算绑定的拼写各一条遮蔽用例（含复合赋值这个控制组），两种显式跳过的 Left 形状各一条「断言当前放行」的用例，两条残余拼写各一条「断言当前放行」的用例，三条自动变量 `$_` 各一条「断言当前拦截」的用例，限定符归一化的两半各一条，包壳不证明 seam 一条。共同的性质是：**行为一变就红**，无论变松还是变紧。
+- 上表每一行各有对照：算绑定的拼写各一条遮蔽用例（含复合赋值这个控制组），两种显式跳过的 Left 形状各一条「断言当前放行」的用例，每一条残余拼写各一条「断言当前放行」的用例，三条自动变量 `$_` 各一条「断言当前拦截」的用例，限定符归一化的两半各一条，包壳不证明 seam 一条；名字实参的三条路径（下一个元素 / 位置参数 / `-Name:x` 冒号实参）与四种字面量容器形状（`a,b`、`(…)`、`@(…)`、`$(…)`）各有用例，外加 `binder parameter collection types` 与 `Get-SeamBinderLiteralNames dispatch set` 两条结构性契约（前者从 `Get-Command` 单向枚举集合类型参数，后者钉住 `-is` 分派集合，删分支即便行为用例没覆盖也会红）。共同的性质是：**行为一变就红**，无论变松还是变紧。
 
 **守卫落在哪里**：该文件是 CI `Script Governance` job 的一步（`.github/workflows/ci.yml`），同时进入本节末尾的 `compat-fast` 清单与 `scripts/check-script-compatibility.ps1`。它从 `check-script-governance.Tests.ps1` 拆出来，是因为后者还要驱动 ScriptAutomation 的流排空与游离进程夹具，比一条边界契约重得多。
 
@@ -183,7 +213,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 ### 已知残余
 
-残余共八条，除第 1 条外每一条都有一条**断言当前放行**的用例；行为一变（不论收紧还是放松）用例就红，因此这份清单不会与实现悄悄脱节。这份清单与上表的残余行是同一份枚举，不是它的摘要——六轮之前这里写「残余共三条」而上表已经登记了七条，属于同一类「措辞强于实现」的失配，一并更正。
+残余共九条，除第 1 条外每一条都有一条**断言当前放行**的用例；行为一变（不论收紧还是放松）用例就红，因此这份清单不会与实现悄悄脱节。这份清单与上表的残余行是同一份枚举，不是它的摘要——六轮之前这里写「残余共三条」而上表已经登记了七条，属于同一类「措辞强于实现」的失配，一并更正。
 
 1. **同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否；方向是双向的（`??=` 那一半见上表下方那段）。这一条没有独立用例，因为「当前放行」正是本 checker 对同作用域赋值不排序的直接后果。
 2. **`Set-Variable` / `New-Variable` 的名字是算出来的**（`-Name $computed`）：绑定的名字只在运行期存在。用例 `residual-set-variable-computed-name`。
@@ -193,12 +223,13 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 6. **`-PipelineVariable x`**：绑定由管道处理器创建，文件里没有对应 AST 节点。用例 `residual-pipeline-variable`。
 7. **`-OutVariable x`**：同上，且管道结束后仍然存在。用例 `residual-out-variable`。
 8. **A 函数里 `$script:x = …`，B 函数里 `& $x`**：跨 `ScriptBlockAst` 作用域，读的一侧看不到这次绑定。用例 `residual-cross-scope-script-assignment`。
+9. **名字实参不是字面量**（`-Name ([string] 'x')`、`-Name ('a' + 'b')`）：名字可以静态算出，但本 checker 不做常量折叠——分组语法穿透、计算不穿透。用例 `residual-set-variable-{non-literal,concatenated}-name-expression`。
 
-这八条的共同边界是**同一个作用域**或**运行期才成立的名字/绑定**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable`（含位置参数、从别名表枚举出的别名 `set`/`sv`/`nv`、大小写变体与模块限定名）/ 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
+这九条的共同边界是**同一个作用域**、**运行期才成立的名字/绑定**，或**名字没有被写成字面量**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable`（含位置参数、冒号实参、多名字列表与分组语法、从别名表枚举出的别名 `set`/`sv`/`nv`、大小写变体与模块限定名）/ 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
 
 索引赋值 `$h['k'] = …` 与成员赋值 `$o.P = …` 也不是残余，它们是**判定为不构成变量绑定**（理由见上表下方那段），各有一条「断言当前放行」的用例；这与「看不见所以放过」是两件事。
 
-措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。这条规矩本 PR 自己已经违反过四次（二轮：参数拼写；三轮：八种绑定拼写；四轮：多重/类型化赋值、`$using:` 死条目），每一次都是文档先写了一个实现还没到的强度。四轮之后上表的每一行都对应实现里的一个分支或一次显式跳过，且每一行都有具名用例。
+措辞与实现在这一点上必须一致——文档承诺的强度就是实现的强度。这条规矩本 PR 自己已经违反过五次（二轮：参数拼写；三轮：八种绑定拼写；四轮：多重/类型化赋值、`$using:` 死条目；八轮：`-Name` 的多名字与分组语法——表格里「**字面量**名字」按字面读恰好覆盖了实现看不见的 `action,zz`），每一次都是文档先写了一个实现还没到的强度。八轮之后上表的每一行都对应实现里的一个分支或一次显式跳过，且每一行都有具名用例。
 
 ## 标识符比较的序数收口（#1509）
 

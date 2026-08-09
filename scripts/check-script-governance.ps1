@@ -539,6 +539,90 @@ function Get-SeamBinderNameArgument {
     return $nameArgument
 }
 
+function Get-SeamBinderLiteralNames {
+    <#
+        Every variable name a `-Name` argument spells literally — plural, because `-Name` is plural.
+
+        `Set-Variable`'s -Name is declared `[string[]]` (measured from `Get-Command`, and pinned by
+        the `binder parameter collection types` contract), so one argument can spell several
+        bindings. Reading only a `StringConstantExpressionAst` therefore dropped the whole binding
+        for every multi-name call — #1509 round 8 measured `Set-Variable action,zz '/bin/echo'` and
+        `Set-Variable -Name action,zz -Value '/bin/echo'` both exiting 0 while the invocation really
+        executed the external command. That is not the registered "computed name" residual: those
+        are names that only exist at run time, and `action,zz` is two static literals.
+
+        This is the same failure this file has now hit on five axes — AST node type, operator,
+        parameter pairing, command-name resolution, and now the *collectiveness of the parameter
+        type* — so the walk is again an enumeration over AST shapes rather than a list of reported
+        spellings. Measured on pwsh 7.6.4, each of these really binds every name shown:
+
+          action                  StringConstantExpressionAst  the leaf; bareword, '…' and "…" alike
+          action,zz               ArrayLiteralAst              each element, recursively
+          ('action','zz')         ParenExpressionAst           grouping; wraps an ArrayLiteralAst
+          @('action','zz')        ArrayExpressionAst           array construction over a statement block
+          $('action')             SubExpressionAst             the same shape with `$(`
+
+        The line is *literal*, not *constant-foldable*: this checker does not fold, so
+        `-Name ([string] 'action')` and `-Name ('act' + 'ion')` stay the registered residual
+        (`residual-set-variable-non-literal-name-expression`) alongside `-Name $computed`. A mixed
+        list (`-Name action,$computed`) yields its literal elements and drops the rest, which is
+        exact for the literal half and the existing residual for the other — recording nothing for
+        the whole call would be fail-open on a name that is written right there.
+
+        `New-Variable`'s -Name is a scalar `[string]`, so a multi-name argument does not bind
+        several names there — it throws (`CannotConvertArgument` named, "positional parameter cannot
+        be found" positional; both measured). Expanding it anyway therefore *over*-reports on
+        `New-Variable`, which is the fail-closed direction and the same trade already taken for the
+        module-qualified alias: one rule instead of two, and it can only ever cost a permission.
+        `new-variable-multiple-literal-names-over-reported` records that as a decision.
+    #>
+    param([Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Argument)
+
+    $names = [System.Collections.Generic.List[string]]::new()
+
+    if ($Argument -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        $names.Add([string] $Argument.Value)
+        return $names
+    }
+
+    if ($Argument -is [System.Management.Automation.Language.ArrayLiteralAst]) {
+        foreach ($element in @($Argument.Elements)) {
+            foreach ($elementName in @(Get-SeamBinderLiteralNames -Argument $element)) { $names.Add($elementName) }
+        }
+        return $names
+    }
+
+    # Grouping and array-construction syntax: `(…)`, `@(…)`, `$(…)`. These carry a value through
+    # without computing one, so they are transparent here; anything that computes is not.
+    $groupedStatements = $null
+    if ($Argument -is [System.Management.Automation.Language.ParenExpressionAst]) {
+        $groupedStatements = @($Argument.Pipeline)
+    }
+    elseif ($Argument -is [System.Management.Automation.Language.ArrayExpressionAst] -or
+        $Argument -is [System.Management.Automation.Language.SubExpressionAst]) {
+        $groupedStatements = @($Argument.SubExpression.Statements)
+    }
+
+    if ($null -ne $groupedStatements) {
+        foreach ($statement in $groupedStatements) {
+            if ($statement -isnot [System.Management.Automation.Language.PipelineAst]) { continue }
+            foreach ($pipelineElement in @($statement.PipelineElements)) {
+                if ($pipelineElement -isnot [System.Management.Automation.Language.CommandExpressionAst]) { continue }
+                foreach ($groupedName in @(Get-SeamBinderLiteralNames -Argument $pipelineElement.Expression)) {
+                    $names.Add($groupedName)
+                }
+            }
+        }
+        return $names
+    }
+
+    # Everything else is the registered residual: the name is not written as a literal, so this file
+    # cannot say what it is. Falling off the end here is fail-open by construction, which is why the
+    # dispatch set above is asserted structurally by `Get-SeamBinderLiteralNames dispatch set` in
+    # scripts/tests/script-governance-scan-boundary.Tests.ps1 rather than left to the case list.
+    return $names
+}
+
 function Get-ScopedSeamBindings {
     <#
         The variables one scope binds, split into "bound at all" and "proven to hold a script block".
@@ -561,7 +645,11 @@ function Get-ScopedSeamBindings {
           foreach ($x in …)               ForEachStatementAst.Variable
           $local:/$script:/$global:/…     normalized by Get-SeamBindingName above
           data $x { … }                   DataStatementAst.Variable
-          Set-Variable / New-Variable     with a literal -Name (or literal first positional)
+          Set-Variable / New-Variable     with a literal -Name (or literal first positional), and
+                                          *every* name it spells — `-Name` is `[string[]]`, so
+                                          `action,zz`, `('a','b')`, `@('a','b')` and `$('a')` each
+                                          bind more than the one literal an earlier version read
+                                          (round 8). See Get-SeamBinderLiteralNames.
 
         Not covered — the registered residuals. Each was measured on pwsh 7.6.4 exiting 0 here *and*
         really executing the external command, and each has an executable case in
@@ -569,6 +657,8 @@ function Get-ScopedSeamBindings {
         permitted, so the list and the behaviour cannot drift apart in either direction:
 
           Set-Variable/New-Variable -Name $computed  name exists only at run time
+          -Name ([string] 'a') / -Name ('a' + 'b')   statically computable but not *written* as a
+                                                     literal; this checker does not constant-fold
           $ExecutionContext.SessionState.PSVariable.Set(…)          ditto
           [ref] $a / Get-Variable a, then .Value = …  rebinding through the live PSVariable handle;
                                                      spelled as member assignment, which the Left
@@ -640,16 +730,17 @@ function Get-ScopedSeamBindings {
     }
 
     # Set-Variable / New-Variable bind through a cmdlet. Which element carries the name is decided by
-    # the cmdlet's own parameter binder (Get-SeamBinderNameArgument); only a *literal* name is
-    # resolvable statically, and a computed one is the documented residual.
+    # the cmdlet's own parameter binder (Get-SeamBinderNameArgument); how many names that element
+    # spells is decided by Get-SeamBinderLiteralNames, because `Set-Variable -Name` is `[string[]]`
+    # and one argument can be a literal list. Only *literal* names are resolvable statically; a
+    # computed one, and any element of a list that is computed, is the documented residual.
     foreach ($binder in $Scope.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true)) {
         if ((Get-NearestScriptBlockScope -Node $binder) -ne $Scope) { continue }
         $nameArgument = Get-SeamBinderNameArgument -Binder $binder
-        if ($nameArgument -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-            $literalName = [string] $nameArgument.Value
-            if (-not [string]::IsNullOrWhiteSpace($literalName)) {
-                [void] $bindings.Bound.Add($literalName.TrimStart('$'))
-            }
+        if ($null -eq $nameArgument) { continue }
+        foreach ($literalName in @(Get-SeamBinderLiteralNames -Argument $nameArgument)) {
+            if ([string]::IsNullOrWhiteSpace($literalName)) { continue }
+            [void] $bindings.Bound.Add($literalName.TrimStart('$'))
         }
     }
 
