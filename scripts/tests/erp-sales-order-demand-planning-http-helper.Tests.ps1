@@ -71,7 +71,7 @@ function Import-VerifyFunction {
     $definition = $Ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $node.Name -eq $Name
+        [string]::Equals([string]$node.Name, $Name, [StringComparison]::Ordinal)
     }, $true)
     if ($null -eq $definition) {
         throw "Verify script function '$Name' is missing."
@@ -152,10 +152,10 @@ try {
         -Headers @{} `
         -TimeoutSeconds 5 `
         -PollIntervalMilliseconds 25
-    Assert-Helper ($order.salesOrderNo -ceq 'SO-DEMO-001') 'ERP readiness must return the exact seeded sales order.'
-    Assert-Helper ($order.status -ceq 'released') 'ERP readiness must require the released lifecycle state.'
+    Assert-Helper ([string]::Equals([string]($order.salesOrderNo), [string]('SO-DEMO-001'), [StringComparison]::Ordinal)) 'ERP readiness must return the exact seeded sales order.'
+    Assert-Helper ([string]::Equals([string]($order.status), [string]('released'), [StringComparison]::Ordinal)) 'ERP readiness must require the released lifecycle state.'
     Assert-Helper ([decimal]$order.totalAmount -eq [decimal]200) 'ERP readiness must require the seeded total amount.'
-    Assert-Helper ((Get-Content -LiteralPath $counterFile -Raw).Trim() -eq '2') 'ERP readiness must poll after an initially empty successful response.'
+    Assert-Helper ([string]::Equals([string]((Get-Content -LiteralPath $counterFile -Raw).Trim()), [string]('2'), [StringComparison]::OrdinalIgnoreCase)) 'ERP readiness must poll after an initially empty successful response.'
 
     Assert-RequestFailure -Request {
         Invoke-Man517JsonRequest `

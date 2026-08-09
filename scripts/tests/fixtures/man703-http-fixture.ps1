@@ -58,7 +58,7 @@ try {
                 if ([string]::IsNullOrEmpty($line)) {
                     break
                 }
-                $separator = $line.IndexOf(':')
+                $separator = $line.IndexOf(':', [StringComparison]::Ordinal)
                 if ($separator -gt 0) {
                     $headers[$line.Substring(0, $separator).Trim()] = $line.Substring($separator + 1).Trim()
                 }

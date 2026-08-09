@@ -38,7 +38,7 @@ function Wait-Healthy {
 
     try {
       $result = Invoke-RestMethod -Method Get -Uri $Uri
-      if ($result -eq "Healthy") { return }
+      if ([string]::Equals([string]($result), [string]("Healthy"), [StringComparison]::OrdinalIgnoreCase)) { return }
     }
     catch {
       Start-Sleep -Milliseconds 500

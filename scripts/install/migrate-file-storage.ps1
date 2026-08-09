@@ -76,7 +76,7 @@ $migrationArguments = @(
     '--context', 'ApplicationDbContext',
     '--connection', $connectionString
 )
-$connectionArgumentIndex = $migrationArguments.IndexOf($connectionString)
+$connectionArgumentIndex = $migrationArguments.IndexOf($connectionString, [StringComparison]::Ordinal)
 if ($connectionArgumentIndex -lt 0) {
     throw 'FileStorage migration connection argument could not be marked as sensitive.'
 }
