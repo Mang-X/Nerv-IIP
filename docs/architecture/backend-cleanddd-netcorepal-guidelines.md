@@ -163,7 +163,7 @@ backend/services/AppHub/
 1. HTTP 端点使用 FastEndpoints。
 2. 端点只做请求绑定、鉴权声明、中介器调度和响应包装，不写领域规则。
 3. 本项目采用 CleanDDD 技能里的属性路由风格，常规端点优先使用 `[HttpGet]`、`[HttpPost]`、`[Tags]`、`[AllowAnonymous]` 等特性声明 HTTP 入口。
-4. FastEndpoints 的属性配置能力是受限集合；当端点需要只能通过流式 API 表达的高级配置时，可以改用 `Configure()`，但同一个端点不混用属性路由与 `Configure()`。
+4. FastEndpoints 的属性配置能力是受限集合；当端点需要只能通过链式 API（fluent API）表达的高级配置时，可以改用 `Configure()`，但同一个端点不混用属性路由与 `Configure()`。
 5. PlatformGateway 控制台接口的稳定 OpenAPI `operationId` 优先通过 Gateway 启动配置中的端点名称生成器集中维护，避免为了命名批量把属性路由端点改写成 `Configure()`。
 6. 只有当单个端点同时需要复杂元数据、特殊 Swagger 描述或其他高级 FastEndpoints 配置时，才把该端点完整切换到 `Configure()`；切换后路由、鉴权和元数据都放在同一个 `Configure()` 中。
 7. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
