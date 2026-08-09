@@ -83,7 +83,7 @@
 | `blocks/RowActions` | 内部基础层（base）`Button`/`DropdownMenu*` → `NvButton` + `NvDropdownMenu*`                              |
 | `blocks/Toolbar`    | 内部基础层（base）`Input` → `NvInput`（搜索图标改用 `#leading` 槽）                                      |
 
-文档：设计系统站的 PC 端新增 `dropdown-menu` / `field` / `alert-dialog` / `sheet` 四页，+
+文档：设计系统站的 PC 端新增 `dropdown-menu` / `field` / `alert-dialog` / `sheet` 四页，并在
 `date-picker` 页补充 DateRangePicker 段（已接入侧栏）。
 
 ## 仍缺口（按需后续）
