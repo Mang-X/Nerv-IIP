@@ -7,15 +7,17 @@ namespace Nerv.IIP.Testing;
 
 /// <summary>
 /// Raised when process-global test state remains owned by another scope for the full acquisition
-/// budget, usually because that earlier scope was not disposed.
+/// budget, either because that earlier scope was not disposed or because it legitimately held the
+/// state longer than the budget.
 /// </summary>
 public sealed class GlobalTestStateScopeAcquisitionTimeoutException : TimeoutException
 {
     public GlobalTestStateScopeAcquisitionTimeoutException(TimeSpan acquisitionTimeout)
         : base(
             $"Timed out after {acquisitionTimeout} waiting to capture process-global test state. "
-            + "An earlier GlobalTestStateScope was likely not disposed. Ensure every captured scope "
-            + "is disposed with await using or try/finally.")
+            + "An earlier GlobalTestStateScope was likely not disposed, or it legitimately held "
+            + "process-global test state longer than the acquisition budget. Ensure every captured "
+            + "scope is disposed with await using or try/finally and keep its lifetime bounded.")
     {
         AcquisitionTimeout = acquisitionTimeout;
     }
@@ -72,6 +74,17 @@ public sealed class GlobalTestStateScope : IAsyncDisposable
             StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// Captures process-global test state after acquiring the shared gate within the default
+    /// 60-second budget.
+    /// </summary>
+    /// <exception cref="GlobalTestStateScopeAcquisitionTimeoutException">
+    /// The gate remained owned for the full acquisition budget, either because an earlier scope was
+    /// not disposed or because it legitimately held process-global state longer than the budget.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">
+    /// The caller-provided <paramref name="cancellationToken"/> was cancelled before acquisition.
+    /// </exception>
     public static ValueTask<GlobalTestStateScope> CaptureAsync(
         IEnumerable<string>? environmentVariables = null,
         CancellationToken cancellationToken = default) =>

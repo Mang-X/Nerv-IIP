@@ -148,6 +148,10 @@ public sealed class GlobalTestStateScopeTests
                 "An earlier GlobalTestStateScope was likely not disposed",
                 exception.Message,
                 StringComparison.Ordinal);
+            Assert.Contains(
+                "or it legitimately held process-global test state longer than the acquisition budget",
+                exception.Message,
+                StringComparison.Ordinal);
             Assert.Contains("await using or try/finally", exception.Message, StringComparison.Ordinal);
         }
         finally
@@ -161,6 +165,7 @@ public sealed class GlobalTestStateScopeTests
     {
         var first = await GlobalTestStateScope.CaptureAsync();
         Task<GlobalTestStateScope>? nextCapture = null;
+        var completedWhileHeld = false;
 
         try
         {
@@ -177,7 +182,7 @@ public sealed class GlobalTestStateScopeTests
                 acquisitionTimeout: TimeSpan.FromSeconds(2),
                 cancellationToken: default).AsTask();
 
-            Assert.False(nextCapture.IsCompleted);
+            completedWhileHeld = nextCapture.IsCompleted;
         }
         finally
         {
@@ -188,6 +193,8 @@ public sealed class GlobalTestStateScopeTests
                 await (await nextCapture).DisposeAsync();
             }
         }
+
+        Assert.False(completedWhileHeld);
     }
 
     [Fact]
