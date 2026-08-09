@@ -52,7 +52,8 @@ foreach ($invalidComparerCase in @(
     [pscustomobject]@{ Name = 'culture'; Source = 'function Test-CultureComparer { $comparison = [StringComparison]::CurrentCulture; return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'unknown'; Source = 'function Test-UnknownComparer { param($comparison) return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'reassigned'; Source = 'function Test-ReassignedComparer { $comparison = [StringComparison]::Ordinal; $comparison = [StringComparison]::CurrentCulture; return $value.StartsWith($prefix, $comparison) }' },
-    [pscustomobject]@{ Name = 'non-ordinal-branch'; Source = 'function Test-NonOrdinalBranchComparer { $comparison = if ($IsWindows) { [StringComparison]::Ordinal } else { [StringComparison]::InvariantCulture }; return $value.StartsWith($prefix, $comparison) }' }
+    [pscustomobject]@{ Name = 'non-ordinal-branch'; Source = 'function Test-NonOrdinalBranchComparer { $comparison = if ($IsWindows) { [StringComparison]::Ordinal } else { [StringComparison]::InvariantCulture }; return $value.StartsWith($prefix, $comparison) }' },
+    [pscustomobject]@{ Name = 'conditional-assignment'; Source = 'function Test-ConditionalComparer { if ($condition) { $comparison = [StringComparison]::Ordinal }; return $value.StartsWith($prefix, $comparison) }' }
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidComparerCase.Source)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -64,6 +65,7 @@ Assert-Layer (@($identityFindings | Where-Object { $_.StartsWith('[culture-opera
     'Identity variables compared with -eq must be reported.'
 foreach ($nonStringIdentityCase in @(
     'function Test-Number { return [int]$leftId -eq $rightId }',
+    'function Test-TypedLocalNumber { [int]$leftId = 1; [int]$rightId = 2; return $leftId -eq $rightId }',
     'function Test-Date { return [datetime]$createdAt -eq $updatedAt }',
     'function Test-Collection { return [Collections.Generic.HashSet[string]]$leftId -eq $rightId }'
 )) {
@@ -86,7 +88,8 @@ foreach ($safeCharacterCase in @(
 foreach ($invalidCharacterCase in @(
     'function Test-UnknownCharacter { param($character) return $character -eq ''{'' }',
     'function Test-StringValue { param([string]$character) return $character -eq ''{'' }',
-    'function Test-ReassignedCharacter { param([string]$text) $character = $text[0]; $character = ''value''; return $character -eq ''{'' }'
+    'function Test-ReassignedCharacter { param([string]$text) $character = $text[0]; $character = ''value''; return $character -eq ''{'' }',
+    'function Test-ReassignedForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { $character = ''{''; if ($character -eq ''{'') { return $true } } }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidCharacterCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -104,7 +107,8 @@ foreach ($invalidOrdinalSetCase in @(
     'function Test-DefaultSet { $names = [Collections.Generic.HashSet[string]]::new(); return $names.Contains(''Name'') }',
     'function Test-CultureSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::CurrentCulture); return $names.Contains(''Name'') }',
     'function Test-UnknownSet { param($names) return $names.Contains(''Name'') }',
-    'function Test-ReassignedSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); $names = [Collections.Generic.HashSet[string]]::new(); return $names.Contains(''Name'') }'
+    'function Test-ReassignedSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); $names = [Collections.Generic.HashSet[string]]::new(); return $names.Contains(''Name'') }',
+    'function Test-ConditionalSet { if ($condition) { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal) }; return $names.Contains(''Name'') }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidOrdinalSetCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[ambiguous-method-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -125,8 +129,11 @@ foreach ($invalidIndexCase in @(
     'function Test-StringNeedleIndex { param([int]$start) return $value.IndexOf('';;'', $start) }',
     'function Test-UnknownReceiverIndex { param([int]$start) return $value.IndexOf('';'', $start) }',
     '$value = Get-Content -LiteralPath ''input.txt'' -Raw; $value = Get-Thing; $result = $value.IndexOf('';'', 0)',
+    'function Get-Content { ''one;two'' }; function Test-ShadowedGetContent { $value = Get-Content -LiteralPath ''input.txt'' -Raw; return $value.IndexOf('';'', 0) }',
     'function Test-UnknownStartIndex { param($start) return $value.IndexOf('';'', $start) }',
-    'function Test-OneArgumentIndex { return $value.IndexOf('';'') }'
+    'function Test-OneArgumentIndex { return $value.IndexOf('';'') }',
+    'function Test-ThreeArgumentIndex { param([string]$value, [int]$start, [StringComparison]$comparison) return $value.IndexOf(''i'', $start, $comparison) }',
+    'function Test-FourArgumentIndex { param([string]$value, [int]$start, [StringComparison]$comparison) return $value.IndexOf(''i'', $start, 1, $comparison) }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidIndexCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -138,7 +145,8 @@ Assert-Layer (@(Get-LayerProbeFindings -Source 'function Test-DateSort { Get-Chi
 foreach ($invalidSortCase in @(
     'function Test-NameSort { Get-ChildItem | Sort-Object Name }',
     'function Test-UnknownSort { param($property) Get-ChildItem | Sort-Object $property }',
-    'function Test-DateLikeSort { Get-Thing | Sort-Object LastWriteTimeUtc }'
+    'function Test-DateLikeSort { Get-Thing | Sort-Object LastWriteTimeUtc }',
+    'function Get-ChildItem { [pscustomobject]@{ LastWriteTimeUtc = ''apple'' } }; function Test-ShadowedDateSort { Get-ChildItem | Sort-Object LastWriteTimeUtc }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidSortCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[sort-object]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -172,7 +180,7 @@ function Get-NervOrdinalLayers([string] $Root) {
     $fixturesRoot = Join-Path $testsRoot 'fixtures'
     $fixturePrefix = [IO.Path]::GetFullPath($fixturesRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 
-    return [ordered]@{
+    $layers = [ordered]@{
         verify = @(Get-ChildItem $scriptsRoot -File -Filter 'verify-*.ps1')
         top = @(Get-ChildItem $scriptsRoot -File -Filter '*.ps1' | Where-Object Name -NotLike 'verify-*')
         tests = @(Get-ChildItem $testsRoot -Recurse -File -Filter '*.ps1' | Where-Object {
@@ -182,9 +190,17 @@ function Get-NervOrdinalLayers([string] $Root) {
         install_package_support = @(Get-ChildItem @(
             (Join-Path $scriptsRoot 'install'),
             (Join-Path $scriptsRoot 'package'),
-            (Join-Path $scriptsRoot 'support')) -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
-        lib = @(Get-ChildItem (Join-Path $scriptsRoot 'lib') -File -Filter '*.ps1')
+            (Join-Path $scriptsRoot 'support')) -Recurse -File -Filter '*.ps1' -ErrorAction SilentlyContinue)
+        lib = @(Get-ChildItem (Join-Path $scriptsRoot 'lib') -Recurse -File -Filter '*.ps1')
     }
+    $listedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($layer in $layers.Values) {
+        foreach ($file in $layer) { [void]$listedPaths.Add($file.FullName) }
+    }
+    $layers.other = @(Get-ChildItem $scriptsRoot -Recurse -File -Filter '*.ps1' | Where-Object {
+        -not $listedPaths.Contains($_.FullName)
+    })
+    return $layers
 }
 
 function Invoke-NervOrdinalLayerGate([string] $Root, [object[]] $NamedExceptions) {
@@ -193,14 +209,20 @@ function Invoke-NervOrdinalLayerGate([string] $Root, [object[]] $NamedExceptions
     $exceptionHits = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
     foreach ($exception in $NamedExceptions) { $exceptionHits["$($exception.Site)|$($exception.Text)"] = 0 }
     foreach ($layer in $layers.GetEnumerator()) {
-        Assert-Layer ($layer.Value.Count -gt 0) "Ordinal layer '$($layer.Key)' selected no files."
+        if (-not [string]::Equals([string] $layer.Key, 'other', [StringComparison]::Ordinal)) {
+            Assert-Layer ($layer.Value.Count -gt 0) "Ordinal layer '$($layer.Key)' selected no files."
+        }
         foreach ($file in $layer.Value) {
-            if (-not $seen.Add($file.FullName)) { continue }
+            Assert-Layer ($seen.Add($file.FullName)) "Script source '$($file.FullName)' appeared in more than one ordinal layer."
             $result = Get-NervOrdinalComparisonFindings -ScriptPath $file.FullName -Exceptions $NamedExceptions -DisplayName $file.Name
             Assert-Layer ($result.Findings.Count -eq 0) "$($layer.Key)/$($file.Name) has culture-aware identifier comparisons:`n  $(@($result.Findings) -join "`n  ")"
             foreach ($key in $result.ExceptionHits.Keys) { $exceptionHits[$key] += [int]$result.ExceptionHits[$key] }
         }
     }
+    $allScriptPaths = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(Get-ChildItem (Join-Path $Root 'scripts') -Recurse -File -Filter '*.ps1' | ForEach-Object FullName),
+        [StringComparer]::Ordinal)
+    Assert-Layer ($seen.SetEquals($allScriptPaths)) 'Ordinal layers must cover every governed scripts/**/*.ps1 source exactly once.'
     foreach ($key in $exceptionHits.Keys) { Assert-Layer ($exceptionHits[$key] -eq 1) "Named ordinal exception '$key' matched $($exceptionHits[$key]) sites; expected exactly one." }
 
     return $layers
@@ -219,16 +241,20 @@ $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ordinal-layers-$([gui
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts') -Destination $mutationRoot -Recurse
-    $mutationPaths = [ordered]@{
-        verify = 'scripts/verify-ordinal-layer-mutation.ps1'
-        top = 'scripts/ordinal-layer-mutation.ps1'
-        tests = 'scripts/tests/new-layer/culture.ps1'
-        test_fixtures = 'scripts/tests/fixtures/new-layer/culture.ps1'
-        install_package_support = 'scripts/install/ordinal-layer-mutation.ps1'
-        lib = 'scripts/lib/ordinal-layer-mutation.ps1'
-    }
-    foreach ($layerName in $mutationPaths.Keys) {
-        $relativeMutationPath = $mutationPaths[$layerName]
+    $mutationPaths = @(
+        [pscustomobject]@{ Layer = 'verify'; Path = 'scripts/verify-ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'top'; Path = 'scripts/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'tests'; Path = 'scripts/tests/new-layer/culture.ps1' },
+        [pscustomobject]@{ Layer = 'test_fixtures'; Path = 'scripts/tests/fixtures/new-layer/culture.ps1' },
+        [pscustomobject]@{ Layer = 'install_package_support'; Path = 'scripts/install/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'install_package_support'; Path = 'scripts/support/nested/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'lib'; Path = 'scripts/lib/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'lib'; Path = 'scripts/lib/nested/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'other'; Path = 'scripts/tools/new-path.ps1' }
+    )
+    foreach ($mutation in $mutationPaths) {
+        $layerName = [string]$mutation.Layer
+        $relativeMutationPath = [string]$mutation.Path
         $mutationPath = Join-Path $mutationRoot $relativeMutationPath
         [IO.Directory]::CreateDirectory((Split-Path -Parent $mutationPath)) | Out-Null
         [IO.File]::WriteAllText($mutationPath, "`$result = `$identifier -eq 'layer-$layerName'", [Text.UTF8Encoding]::new($false))
@@ -243,6 +269,10 @@ try {
         }
         finally { Remove-Item -LiteralPath $mutationPath -Force -ErrorAction SilentlyContinue }
     }
+
+    $nonScriptPath = Join-Path $mutationRoot 'scripts/tools/not-a-script.txt'
+    [IO.File]::WriteAllText($nonScriptPath, "`$result = `$identifier -eq 'not-a-script'", [Text.UTF8Encoding]::new($false))
+    Invoke-NervOrdinalLayerGate -Root $mutationRoot -NamedExceptions $exceptions | Out-Null
 }
 finally { Remove-Item -LiteralPath $mutationRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
