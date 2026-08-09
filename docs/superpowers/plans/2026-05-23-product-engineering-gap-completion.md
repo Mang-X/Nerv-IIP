@@ -1,6 +1,6 @@
 # 产品工程缺口补全实施计划
 
-> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **面向智能体执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**扩展现有 ProductEngineering 服务，使其能力从 ProductionVersion 延伸到工程文档、工程物料、EBOM、MBOM、工艺路线和 ECO/ECN 发布事实，从而完成 #127。
 

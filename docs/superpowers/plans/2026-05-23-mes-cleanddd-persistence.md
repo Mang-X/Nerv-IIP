@@ -1,6 +1,6 @@
 # MES CleanDDD 持久化实施计划
 
-> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **面向智能体执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**通过将 MES 从仅存在于 Web 层的内存排程状态迁移到 CleanDDD 领域层、基础设施层和 PostgreSQL 持久化来实施 #135，同时保留当前排程、紧急订单和重新排程行为。
 

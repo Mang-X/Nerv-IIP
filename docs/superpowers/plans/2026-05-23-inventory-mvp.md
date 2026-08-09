@@ -1,6 +1,6 @@
 # Inventory MVP 实施计划
 
-> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
+> **面向智能体执行者：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
 **目标：**通过创建 Inventory 服务来实施 #131，覆盖库存地点、库存台账、库存移动、可用量查询和盘点调整。
 
