@@ -30,7 +30,7 @@ jobs:
   #      设置 `timeout-minutes`；post step 在 Upload *之后*执行，因此会消耗预算却
   #      永不损失证据。在此新增 step 就意味着增加其预算*并且*提高 job 预算。
   #      以下每个分片 job 正是因此保留 6 分钟余量。
-  #      每个显式 step 均须具有预算，证据收集和上传也不例外。
+  #      预算。以下每个分片 job 正是因此保留 6 分钟余量。
   #
   #   B) 不存在失败后仍可运行 step 的 job——`Backend Tests` 聚合、
   #      backend-test-shard-governance、frontend、openapi-client-drift、script-governance：job
@@ -39,8 +39,8 @@ jobs:
   #      多个 step 时，后续 step 无法分别触达（`frontend` 在 20m job 内合计为 58m，因此其 15m
   #      build 预算无法独立触发），这一点被接受，而非作出相反声明。唯一强制的是在每种调度下
   #      都无法存活的情形——step 预算大于或等于整个 job 预算。
-  #      因此不为这些 job 将预算抬高到覆盖全部 step 之和。
-  #      job 预算按已观测运行时长确定。
+  #      唯一强制的是在每种调度下都无法存活的情形——step 预算大于或等于
+  #      整个 job 预算。
   #
   # 四个 backend 快速分片采用**同一**测试 step 预算，按四者整体的观测最大值约 2 倍确定
   # （而非按分片单独确定）。短时固定成本 step（checkout、SDK setup、cache restore、
@@ -51,8 +51,8 @@ jobs:
   # 该拓扑已不复存在，而跨拓扑变更继承的预算不代表任何含义。**每个分片拥有的 project 仅由
   # scripts/backend-test-shards.json 定义**——这些注释有意不重复该内容，因为下次重新平衡分片时，
   # 重述的列表就会漂移。
-  # 旧的四种预算已不再适用于当前拓扑。
-  # 跨拓扑变更继承预算不描述任何有效事实。
+  # 这些注释有意不重复它，因为下次重新平衡分片时，重述的列表会
+  # 漂移。
   #
   # 此次重平衡的一项权重输入并未保留。记录于此以确保下一次不会继承它：business-core-b
   # （backend-shard-4）被赋予最低 TRX 份额，是因为它在重平衡前 run 30999368607 中具有最差的
@@ -64,8 +64,8 @@ jobs:
   # critical path（249s / 252s / 234s）——该分片被过度减轻，而非被正确减轻。差距位于 runner 方差内，
   # 因此 PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据重平衡后的测量重新推导权重，且绝不
   # 得延续 1.38。
-  # 依赖闭包的 restore/build 成本随 project 移动，而不随 lane 标签移动。
-  # 当前差距仍处于 runner 方差范围内。
+  # PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据重平衡后的测量重新推导权重，且绝不
+  # 得延续 1.38。
   #
   # 根据本分支三次 run（31114441118、31115903098、31116998822）重新推导。每个分片的 test
   # step 依次为 3.5m / 3.0m / 4.2m / 2.4m，然后为 4.5m / 3.0m / 4.2m / 3.3m，然后为 4.7m / 3.1m /
@@ -73,7 +73,7 @@ jobs:
   # 139.6 / 130.2，然后为 177.4 / 133.6 / — / 129.1。可得出两点：相同 commit 上 hosted-runner
   # 方差为数十个百分点，并会改变哪个分片居首，因此逐分片预算只会编码噪声——四者采用同一预算。
   # 该界限按三次 run 中的最大值 4.7m 确定。因此，以下对全部四个分片完全相同：
-  # 每个分片均采用这一相同界限。
+  # 三次 run 的最大值为 4.7m。因此，以下对全部四个分片完全相同：
   #
   #     checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3
   #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
@@ -85,8 +85,8 @@ jobs:
   # 强制的 29m shared-convention 预算，因此层级 A 严格的 job > step-sum 要求使 45m 成为该不变量
   # 留下的结构下限，而非对任一分片运行时的声明。挂起 run 实际触发的是 10m test step 预算。
   # 若其接近 10m，必须同时提高两项预算，而非仅提高 step 预算，否则严格不等式将不再保护证据 step。
-  # 六个非 test step 已占用 29m 共享约定预算。
-  # 45m 是该不变量留下的结构下限，而非运行时承诺。
+  # 挂起 run 实际触发的是 10m test step 预算。若其接近 10m，必须同时提高两项预算，而非
+  # 仅提高 step 预算，否则严格不等式将不再保护证据 step。
   #
   # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
   # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
@@ -96,28 +96,28 @@ jobs:
   # 均不参与 Test-NervCiWorkflowBudgets 强制的算术。仅保留结论——全部测量、run id、样本限制和重新开启条件
   # 均集中在一处：docs/architecture/backend-ci-build-strategy.md。不得在此重述数字：MAN-664 将重新测量，
   # 而复制到四个文件中的数字会在其中三个中漂移。
-  # 此处不承载任何由 Test-NervCiWorkflowBudgets 强制的预算算术。
+  # 而复制到四个文件中的数字会在其中三个中漂移。
   #
   #   * 每个分片保持只 restore 和 build 自己的 .slnf。build-once（一个向分片提供预构建输出的串行 build job）
   #     已在四次 hosted-runner run（两次热、两次冷）中测量，且在两种核算口径下均更慢——单独的全 solution build
   #     已比任一单分片自身的 restore+build 更耗时，因此即使尚未在 job 间移动数 GB 输出，将它抬到 critical path
   #     也会更慢、得不偿失。将一个分片拆分为 restore / build --no-restore / test 也更慢。
-  #     whole-solution build 单独的成本已经超过任一分片自身的 restore+build。
+  #     即使尚未在 job 间移动数 GB 输出，也会更慢、得不偿失。将一个分片拆分为
   #   * 对三个专业 job（erp-sales-order-demand-acceptance、connector-host-tests、
   #     openapi-client-drift）就同一重复问题做过清点，且其 build 命令均未改变：它们均不 build 整个 solution，
   #     且三者均远低于 critical path，因此将其 build 时间降为零也不会缩短 CI wall clock。
-  #     专业 job 的 build 时间不位于 CI 的 critical path 上。
-  #     在 job 间移动数 GB 输出之前，串行 build 已经更慢。
+  #     命令均未改变：它们均不 build 整个 solution，且三者均远低于 critical
+  #     path，因此将其 build 时间降为零也不会缩短 CI wall clock。
   #
   # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢分片的 build 接近 whole-solution build、
   # runner 规格变化、artifact-transfer 提升一个数量级、总 test 时间再次大幅下降，或专业 job 到达 critical path）——
   # 并重新测量而非推理。否则引用该文档。
-  # 仅在这些条件出现时重新开启决定。
+  # 到达 critical path）——并重新测量而非推理。否则引用该文档。
   #
   # 一项无论如何均不得重新推导的定义：“critical path”指 run 中最大的 job，而不是最慢的分片。
   # 二者已不再相同——一个 frontend job 已超过最慢分片——因此按“最慢分片”估算任何内容都会低估
   # run 的 wall clock。
-  # frontend job 已超过最慢分片。
+  # run 的 wall clock。
   backend-tests:
     name: Backend Tests
     # 层级 B。纯聚合：针对 needs 结果进行五次 `test` 比较，观测约为 ~2s。
@@ -760,7 +760,7 @@ jobs:
     # 合计为 43m，且仅为逐 step 上限。MAN-669 PR-C 添加了两个 solution-configuration-membership step；
     # 两者在本地均于 5s 内运行（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算
     # 不变。
-    # 这些观测已包括 evidence contract-test step。
+    # 不变。
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
