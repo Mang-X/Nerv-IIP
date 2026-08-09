@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: library
 #   SideEffects:
 #     - Provides shared script automation helpers
 #   Writes:

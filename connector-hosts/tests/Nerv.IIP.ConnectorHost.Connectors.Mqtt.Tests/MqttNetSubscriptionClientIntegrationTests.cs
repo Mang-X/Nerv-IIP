@@ -2,12 +2,14 @@ using MQTTnet;
 using MQTTnet.Server;
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Mqtt;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class MqttNetSubscriptionClientIntegrationTests
 {
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Mqttnet_client_subscribes_local_broker_and_maps_published_payload()
     {
         await using var broker = await MqttBroker.StartAsync();
@@ -27,12 +29,15 @@ public sealed class MqttNetSubscriptionClientIntegrationTests
 
         await broker.PublishAsync("factory/line-1/temperature", """{"temperature":42.5}""");
 
-        var inbound = await received.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var inbound = await BoundedObservation.ObserveAsync(
+            received.Task,
+            "the local MQTT broker payload to reach the subscription client",
+            () => $"message received={received.Task.IsCompleted}");
         Assert.Equal("factory/line-1/temperature", inbound.Topic);
         Assert.Equal("""{"temperature":42.5}""", inbound.Payload);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Mqtt_connector_subscribes_local_broker_maps_payload_and_posts_bucketed_sample()
     {
         var now = DateTimeOffset.UtcNow;
@@ -63,7 +68,12 @@ public sealed class MqttNetSubscriptionClientIntegrationTests
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
         await broker.PublishAsync("factory/line-1/temperature", """{"temperature":42.5}""");
-        await WaitUntilAsync(() => connector.CurrentState.ReceivedSamples == 1);
+        await BoundedObservation.PollAsync(
+            () => connector.CurrentState.ReceivedSamples == 1,
+            "the MQTT connector to record one received sample",
+            () => $"received={connector.CurrentState.ReceivedSamples}, dropped={connector.CurrentState.DroppedSamples}",
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMilliseconds(25));
 
         now = DateTimeOffset.UtcNow.AddMinutes(2);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
@@ -73,15 +83,6 @@ public sealed class MqttNetSubscriptionClientIntegrationTests
         Assert.Equal("temperature", request.TagKey);
         Assert.Equal(42.5m, request.AverageValue);
         Assert.StartsWith("mqtt:mqtt-line-1:temperature:", request.SourceSequence, StringComparison.Ordinal);
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (!condition())
-        {
-            await Task.Delay(25, timeout.Token);
-        }
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient

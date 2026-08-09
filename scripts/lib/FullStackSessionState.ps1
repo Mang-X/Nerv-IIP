@@ -1,3 +1,15 @@
+# Script-Governance:
+#   Category: library
+#   SideEffects:
+#     - Reads and rewrites the full-stack session state tree its callers own
+#     - Inspects processes through caller-injected lookup actions
+#   Writes:
+#     - The session state root the caller supplies; no repository-tracked file
+#   Cleanup:
+#     - Owns no long-lived process; file locks are released before returning
+#   Requires:
+#     - PowerShell 7
+
 Set-StrictMode -Version Latest
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
