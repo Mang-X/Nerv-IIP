@@ -1,11 +1,13 @@
 using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Modbus;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Modbus.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class ModbusTelemetryCollectorTests
 {
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Successful_protocol_probe_marks_alive_without_changing_sample_counters()
     {
         var modbus = new ProbeSequenceModbusTcpClient([null]);
@@ -22,7 +24,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal(0, connector.CurrentState.PostedBuckets);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Protocol_error_after_tcp_connect_does_not_fabricate_alive_or_lost()
     {
         var modbus = new ProbeSequenceModbusTcpClient([new InvalidOperationException("invalid Modbus response")]);
@@ -36,7 +38,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal(1, modbus.ConnectCount);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Transport_timeout_marks_lost_and_recovery_starts_new_alive_interval()
     {
         var modbus = new ProbeSequenceModbusTcpClient([new TimeoutException("simulated timeout"), null]);
@@ -58,7 +60,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.True(recovered.ObservedAtUtc >= lost.ObservedAtUtc);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
     {
         var connector = CreateConnector(new FakeModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
@@ -69,7 +71,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("line-a-primary", target.CollectionHealth!.ConnectorId);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Missing_collection_connector_id_preserves_legacy_derived_identity()
     {
         var connector = CreateConnector(new FakeModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient());
@@ -79,7 +81,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("modbus-modbus-line-1", target.InstanceKey);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_polls_configured_registers_and_posts_bucketed_sample_with_stable_source_sequence()
     {
         var now = new DateTimeOffset(2026, 7, 5, 8, 1, 1, TimeSpan.Zero);
@@ -130,7 +132,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal(new DateTimeOffset(2026, 7, 5, 8, 0, 40, TimeSpan.Zero), health.LastSampleAtUtc);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_restores_bucket_after_downstream_failure_so_retry_keeps_same_source_sequence()
     {
         var modbus = new SequencedModbusTcpClient(
@@ -153,7 +155,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal(1, connector.CurrentState.ErrorCount);
     }
 
-    [Theory]
+    [Theory(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     [InlineData("timeout")]
     [InlineData("io")]
     public async Task Downstream_transport_shaped_failure_does_not_mark_modbus_connection_lost(string failureKind)
@@ -177,7 +179,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("alive", connection.Status);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Discover_reports_degraded_health_when_register_mapping_is_empty()
     {
         var connector = new ModbusConnector(
@@ -201,7 +203,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("0", target.Metadata["registerCount"]);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_with_no_enabled_mapping_keeps_connection_unknown_without_connecting()
     {
         var connector = new ModbusConnector(
@@ -229,7 +231,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("disabled", disabled.ActivationStatus);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_keeps_empty_register_read_unknown_without_fabricating_received_or_dropped()
     {
         var modbus = new SequencedModbusTcpClient([[]]);
@@ -245,7 +247,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("0", target.Metadata["reconnectCount"]);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Activation_failure_reports_sanitized_error_without_exception_details()
     {
         var connector = CreateConnector(new FailingConnectModbusTcpClient(), new RecordingIndustrialTelemetrySamplesClient());
@@ -259,7 +261,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.DoesNotContain("Connect must not run", entry.ActivationErrorMessage, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task One_mapping_failure_does_not_overwrite_an_already_active_mapping()
     {
         var connector = new ModbusConnector(
@@ -287,7 +289,7 @@ public sealed class ModbusTelemetryCollectorTests
         Assert.Equal("modbus.activation-failed", entries["pressure"].ActivationErrorCode);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Invalid_raw_register_sample_counts_received_once_and_dropped_once()
     {
         var connector = CreateConnector(

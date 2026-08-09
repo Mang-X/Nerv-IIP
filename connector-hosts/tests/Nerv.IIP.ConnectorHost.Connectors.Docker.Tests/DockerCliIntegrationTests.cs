@@ -1,9 +1,14 @@
 using System.Diagnostics;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class DockerCliIntegrationTests
 {
+    private static readonly TimeSpan DockerCommandBudget = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan DockerCleanupBudget = TimeSpan.FromSeconds(10);
+
     [DockerCliFact]
     public async Task Docker_connector_discovers_and_restarts_a_real_container()
     {
@@ -59,13 +64,62 @@ public sealed class DockerCliIntegrationTests
         }
 
         process.Start();
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        var exitTask = process.WaitForExitAsync();
+        var completionTask = Task.WhenAll(stdoutTask, stderrTask, exitTask);
+        var command = $"docker {string.Join(' ', arguments)}";
+        try
+        {
+            await BoundedObservation.ObserveAsync(
+                completionTask,
+                $"{command} to exit and drain redirected output",
+                () => $"process exited={HasExited(process)}, stdout={stdoutTask.Status}, stderr={stderrTask.Status}",
+                DockerCommandBudget);
+        }
+        catch (Xunit.Sdk.XunitException)
+        {
+            if (!HasExited(process))
+            {
+                process.Kill(entireProcessTree: true);
+            }
+
+            try
+            {
+                await BoundedObservation.ObserveAsync(
+                    completionTask,
+                    "the timed-out Docker CLI process tree to stop and drain redirected output",
+                    () => $"process exited={HasExited(process)}, stdout={stdoutTask.Status}, stderr={stderrTask.Status}",
+                    DockerCleanupBudget);
+            }
+            catch (Exception cleanupException) when (cleanupException is Xunit.Sdk.XunitException
+                or IOException
+                or InvalidOperationException)
+            {
+                // Preserve the primary command timeout, whose diagnostic includes command/output state.
+            }
+
+            throw;
+        }
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
 
         if (!allowFailure && process.ExitCode != 0)
         {
-            throw new InvalidOperationException($"docker {string.Join(' ', arguments)} failed with exit code {process.ExitCode}. stdout: {stdout} stderr: {stderr}");
+            throw new InvalidOperationException($"{command} failed with exit code {process.ExitCode}. stdout: {stdout} stderr: {stderr}");
+        }
+    }
+
+    private static bool HasExited(Process process)
+    {
+        try
+        {
+            return process.HasExited;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
         }
     }
 }
@@ -74,6 +128,8 @@ internal sealed class DockerCliFactAttribute : FactAttribute
 {
     public DockerCliFactAttribute()
     {
+        Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds;
+
         if (!string.Equals(Environment.GetEnvironmentVariable("NERV_IIP_DOCKER_INTEGRATION"), "1", StringComparison.Ordinal))
         {
             Skip = "Set NERV_IIP_DOCKER_INTEGRATION=1 to run real Docker integration tests.";
@@ -103,7 +159,14 @@ internal sealed class DockerCliFactAttribute : FactAttribute
                 return false;
             }
 
-            return process.WaitForExit(5000) && process.ExitCode == 0;
+            if (process.WaitForExit(5000))
+            {
+                return process.ExitCode == 0;
+            }
+
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5000);
+            return false;
         }
         catch
         {

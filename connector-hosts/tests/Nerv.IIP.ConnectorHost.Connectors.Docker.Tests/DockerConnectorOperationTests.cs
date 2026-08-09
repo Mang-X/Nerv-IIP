@@ -1,10 +1,12 @@
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class DockerConnectorOperationTests
 {
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_executes_real_restart_command_for_instance_container()
     {
         var docker = new RecordingDockerCli([
@@ -23,7 +25,7 @@ public sealed class DockerConnectorOperationTests
         Assert.Equal(["local-demo-001"], docker.RestartedContainers);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_returns_not_found_for_missing_container()
     {
         var connector = new DockerConnector(new RecordingDockerCli([
@@ -40,7 +42,7 @@ public sealed class DockerConnectorOperationTests
         Assert.Equal("docker-container-missing", result.Output["instanceKey"]);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_classifies_restart_timeout_with_diagnostics()
     {
         var docker = new RecordingDockerCli([
@@ -61,7 +63,7 @@ public sealed class DockerConnectorOperationTests
         Assert.Equal("restart exceeded test timeout", result.Output["stderr"]);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_classifies_daemon_unavailable_restart_failure()
     {
         var docker = new RecordingDockerCli([
@@ -81,7 +83,7 @@ public sealed class DockerConnectorOperationTests
         Assert.Equal("1", result.Output["exitCode"]);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_classifies_daemon_unavailable_during_restart_discovery()
     {
         var docker = new RecordingDockerCli([])

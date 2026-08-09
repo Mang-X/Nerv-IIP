@@ -41,6 +41,31 @@ internal static class BoundedObservation
     }
 
     /// <summary>
+    /// Awaits an edge-triggered completion signal that returns a value under the same diagnostic
+    /// contract as <see cref="ObserveAsync(Task,string,Func{string},TimeSpan?)"/>.
+    /// </summary>
+    public static async Task<T> ObserveAsync<T>(
+        Task<T> observation,
+        string condition,
+        Func<string> lastObservation,
+        TimeSpan? budget = null)
+    {
+        var effectiveBudget = budget ?? DefaultBudget;
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            return await observation.WaitAsync(effectiveBudget);
+        }
+        catch (TimeoutException)
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
+                + $"await on a completion signal); last observation: {lastObservation()}");
+        }
+    }
+
+    /// <summary>
     /// Polls <paramref name="condition"/> under a bound. Used only where no completion signal
     /// exists (an out-of-process Host reporting over HTTP), and it reports its real attempt count
     /// so the poll interval is never mistaken for a fixed sleep-before-assert.
