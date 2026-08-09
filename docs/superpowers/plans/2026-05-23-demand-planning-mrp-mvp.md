@@ -1,46 +1,46 @@
-# DemandPlanning MPS/MRP MVP Implementation Plan
+# DemandPlanning MPS/MRP MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Implement #128 by creating DemandPlanning as the fact source for demand sources, MPS, deterministic daily-bucket MRP runs, planned purchase/work-order suggestions and pegging.
+**目标：**通过创建 DemandPlanning 实现 #128，使其成为需求来源、MPS、按日分桶的确定性 MRP 运行、计划采购/工单建议和需求追溯的事实来源。
 
-**Architecture:** DemandPlanning is a CleanDDD business service under `backend/services/Business/DemandPlanning`. It consumes ProductEngineering and Inventory through public API/contract adapters and stores only planning snapshots. It does not create ERP purchase documents, MES work orders or Inventory movements.
+**架构：**DemandPlanning 是位于 `backend/services/Business/DemandPlanning` 下的 CleanDDD 业务服务。它通过公共 API/契约适配器消费 ProductEngineering 和 Inventory，并且只存储计划快照。它不创建 ERP 采购单据、MES 工单或 Inventory 库存移动。
 
-**Tech Stack:** .NET 10, NetCorePal CleanDDD template, FastEndpoints, EF Core PostgreSQL, xUnit, ADR 0011 integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、NetCorePal CleanDDD 模板、FastEndpoints、EF Core PostgreSQL、xUnit、ADR 0011 集成事件转换、`Nerv.IIP.Testing` schema 约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-demand-planning-mrp-mvp-design.md` as the domain contract for this plan.
+使用 `docs/superpowers/specs/2026-05-23-demand-planning-mrp-mvp-design.md` 作为本计划的领域契约。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/Nerv.IIP.Business.DemandPlanning.Domain.csproj`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/DemandSourceAggregate/DemandSource.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/MasterProductionScheduleAggregate/MasterProductionSchedule.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/MrpRunAggregate/MrpRun.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/PlanningSuggestionAggregate/PlanningSuggestion.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/DomainEvents/DemandPlanningDomainEvents.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/*.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Queries/*.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEvents/DemandPlanningIntegrationEvents.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEventConverters/DemandPlanningIntegrationEventConverters.cs`
-- Create: `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Endpoints/Planning/PlanningEndpoints.cs`
-- Create: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/DemandPlanningAggregateTests.cs`
-- Create: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpCalculatorTests.cs`
-- Create: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningEndpointContractTests.cs`
-- Create: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningIntegrationEventTests.cs`
-- Create: `backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningSchemaConventionTests.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/Nerv.IIP.Business.DemandPlanning.Domain.csproj`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/DemandSourceAggregate/DemandSource.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/MasterProductionScheduleAggregate/MasterProductionSchedule.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/MrpRunAggregate/MrpRun.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/AggregatesModel/PlanningSuggestionAggregate/PlanningSuggestion.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain/DomainEvents/DemandPlanningDomainEvents.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Auth/DemandPlanningPermissionCodes.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/*.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Queries/*.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEvents/DemandPlanningIntegrationEvents.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/IntegrationEventConverters/DemandPlanningIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Endpoints/Planning/PlanningEndpoints.cs`
+- 创建：`backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/DemandPlanningAggregateTests.cs`
+- 创建：`backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpCalculatorTests.cs`
+- 创建：`backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningEndpointContractTests.cs`
+- 创建：`backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningIntegrationEventTests.cs`
+- 创建：`backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningSchemaConventionTests.cs`
 
-Shared files requested from WAVE2-INTEG:
+请求 WAVE2-INTEG 处理的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `infra/aspire/Nerv.IIP.AppHost/Program.cs`
@@ -50,11 +50,11 @@ Shared files requested from WAVE2-INTEG:
 - `scripts/verify-business-demand-planning-mvp.ps1`
 - `scripts/verify-business-wave2-execution.ps1`
 
-## Task 1: Scaffold DemandPlanning Service Locally
+## 任务 1：在本地搭建 DemandPlanning 服务骨架
 
-- [ ] **Step 1: Create service projects**
+- [ ] **步骤 1：创建服务项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.DemandPlanning -o backend/services/Business/DemandPlanning --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -62,62 +62,62 @@ dotnet new xunit -n Nerv.IIP.Business.DemandPlanning.Domain.Tests -o backend/ser
 dotnet new xunit -n Nerv.IIP.Business.DemandPlanning.Web.Tests -o backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests --framework net10.0
 ```
 
-Expected: DemandPlanning Domain, Infrastructure, Web and test projects exist.
+预期：DemandPlanning Domain、Infrastructure、Web 和测试项目均已存在。
 
-- [ ] **Step 2: Remove template demo code**
+- [ ] **步骤 2：移除模板演示代码**
 
-Remove template demo endpoints, sample aggregates, sample migrations, demo SignalR hubs and demo tests. Verify no file contains `OrderAggregate`, `DeliverRecord`, `LoginEndpoint`, `ChatHub` or `LockEndpoint`.
+移除模板演示端点、示例聚合、示例迁移、演示用 SignalR hub 和演示测试。验证没有文件包含 `OrderAggregate`、`DeliverRecord`、`LoginEndpoint`、`ChatHub` 或 `LockEndpoint`。
 
-Run:
+运行：
 
 ```powershell
 rg -n "OrderAggregate|DeliverRecord|LoginEndpoint|ChatHub|LockEndpoint" backend/services/Business/DemandPlanning
 ```
 
-Expected: no matches.
+预期：没有匹配项。
 
-## Task 2: Implement Planning Domain And MRP Calculator
+## 任务 2：实现计划领域和 MRP 计算器
 
-- [ ] **Step 1: Write failing domain tests**
+- [ ] **步骤 1：编写失败的领域测试**
 
-Create `DemandPlanningAggregateTests.cs` covering:
+创建 `DemandPlanningAggregateTests.cs`，覆盖：
 
-1. Demand source creation requires organization, environment, SKU, quantity and due date.
-2. MRP run can move from created to running to completed with input snapshot metadata.
-3. Planning suggestion can be accepted once and cannot be accepted after rejected or closed.
-4. Pegging links preserve demand source and version references.
+1. 创建需求来源必须提供组织、环境、SKU、数量和到期日期。
+2. MRP 运行可以携带输入快照元数据，从已创建流转到运行中，再流转到已完成。
+3. 计划建议只能接受一次，且在已拒绝或已关闭后不能接受。
+4. 需求追溯链接保留需求来源和版本引用。
 
-- [ ] **Step 2: Write deterministic MRP calculator tests**
+- [ ] **步骤 2：编写确定性 MRP 计算器测试**
 
-Create `MrpCalculatorTests.cs` with the fixture from the spec:
+使用规格中的测试夹具创建 `MrpCalculatorTests.cs`：
 
-1. Demand `SKU-FG-1000` quantity `10`, due `2026-06-01`.
-2. Finished-good availability `2`.
-3. MBOM line `SKU-FG-1000 -> SKU-RM-1000` quantity `3`.
-4. Component availability `5`.
-5. Expected work order suggestion `8`.
-6. Expected purchase suggestion `19`.
+1. 需求 `SKU-FG-1000`，数量 `10`，到期日期 `2026-06-01`。
+2. 成品可用量 `2`。
+3. MBOM 行 `SKU-FG-1000 -> SKU-RM-1000`，数量 `3`。
+4. 组件可用量 `5`。
+5. 预期工单建议数量 `8`。
+6. 预期采购建议数量 `19`。
 
-- [ ] **Step 3: Implement aggregate roots and pure calculator**
+- [ ] **步骤 3：实现聚合根和纯计算器**
 
-Implement the aggregate files and `MrpCalculator`. Keep the calculator deterministic and free of database/service calls. Input adapters should prepare immutable records before invoking it.
+实现聚合文件和 `MrpCalculator`。保持计算器的确定性，且不包含数据库或服务调用。输入适配器应在调用计算器前准备不可变记录。
 
-- [ ] **Step 4: Run focused tests**
+- [ ] **步骤 4：运行聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore --filter FullyQualifiedName~MrpCalculatorTests
 ```
 
-Expected: domain and calculator tests pass.
+预期：领域测试和计算器测试通过。
 
-## Task 3: Add Persistence And Events
+## 任务 3：添加持久化和事件
 
-- [ ] **Step 1: Configure DbContext and schema**
+- [ ] **步骤 1：配置 DbContext 和 schema**
 
-Use schema `demand_planning` and tables:
+使用 schema `demand_planning` 和以下表：
 
 1. `demand_sources`
 2. `master_production_schedules`
@@ -125,11 +125,11 @@ Use schema `demand_planning` and tables:
 4. `planning_suggestions`
 5. `mrp_pegging_links`
 
-Configure migrations history as `demand_planning.__EFMigrationsHistory`.
+将迁移历史表配置为 `demand_planning.__EFMigrationsHistory`。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -137,55 +137,55 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add InitialDemandPlanningSchema --project backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj --startup-project backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj --output-dir Migrations
 ```
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Verify event names:
+验证事件名称：
 
 1. `demandPlanning.MrpRunCompleted`
 2. `demandPlanning.PlannedPurchaseSuggested`
 3. `demandPlanning.PlannedWorkOrderSuggested`
 4. `demandPlanning.PlanningSuggestionAccepted`
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore --filter FullyQualifiedName~DemandPlanningIntegrationEventTests
 ```
 
-Expected: event converter tests pass.
+预期：事件转换器测试通过。
 
-## Task 4: Add API Surface
+## 任务 4：添加 API 接口面
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Create `DemandPlanningEndpointContractTests.cs` covering:
+创建 `DemandPlanningEndpointContractTests.cs`，覆盖：
 
-1. All endpoints require the expected permission code.
-2. Route shape and operation IDs are stable.
-3. Demand source creation returns a demand source ID.
-4. MRP run creates suggestions from fixture-backed ProductEngineering/Inventory adapters.
-5. Pegging endpoint returns demand/source/version refs.
-6. Suggestion acceptance is idempotent for the same downstream reference and rejects conflicting repeats.
+1. 所有端点都要求预期的权限代码。
+2. 路由形状和操作 ID 保持稳定。
+3. 创建需求来源会返回需求来源 ID。
+4. MRP 运行通过测试夹具支持的 ProductEngineering/Inventory 适配器创建建议。
+5. 需求追溯端点返回需求、来源和版本引用。
+6. 对同一下游引用接受建议时具有幂等性，并拒绝相互冲突的重复请求。
 
-- [ ] **Step 2: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 2：实现命令、查询和 FastEndpoints**
 
-Implement endpoints from the spec. Keep ProductEngineering and Inventory access behind adapters that can be replaced by fixture implementations in tests.
+实现规格中的端点。对 ProductEngineering 和 Inventory 的访问应封装在适配器之后，以便在测试中替换为测试夹具实现。
 
-- [ ] **Step 3: Run Web tests**
+- [ ] **步骤 3：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore
 ```
 
-Expected: DemandPlanning Web tests pass.
+预期：DemandPlanning Web 测试通过。
 
-## Task 5: Handoff Shared Changes To WAVE2-INTEG
+## 任务 5：向 WAVE2-INTEG 交接共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -197,14 +197,13 @@ In the PR/session summary, include:
 - Add `scripts/verify-business-demand-planning-mvp.ps1`.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests/Nerv.IIP.Business.DemandPlanning.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
-
+预期：两条命令均通过。
