@@ -19,12 +19,19 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 
 $checker = Join-Path $repoRoot 'scripts/check-backend-test-determinism.ps1'
 $fixtureRoot = Join-Path $repoRoot 'scripts/tests/fixtures/backend-test-determinism'
-$validBaselinePath = Join-Path $fixtureRoot 'valid-baseline.json'
+$validBaselineTemplatePath = Join-Path $fixtureRoot 'valid-baseline.json'
 $runId = [Guid]::NewGuid().ToString('N')
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-backend-test-determinism-$runId"
+$validBaselinePath = Join-Path $tempRoot 'valid-baseline.json'
 $scriptLogName = "backend-test-determinism-fixture-$runId"
 $scriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName"
 $generatedFixtureRoot = Join-Path $repoRoot "artifacts/script-tests/backend-test-determinism-$runId"
+$todayUtc = [DateOnly]::FromDateTime([DateTime]::UtcNow)
+$registeredOnUtc = $todayUtc.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$maximumExpiryUtc = $todayUtc.AddDays(45).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$overlongExpiryUtc = $todayUtc.AddDays(46).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$yesterdayUtc = $todayUtc.AddDays(-1).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+$futureRegistrationUtc = $todayUtc.AddDays(2).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 
 function Assert-True {
     param(
@@ -64,17 +71,46 @@ function Invoke-CheckerCase {
         [string[]] $PermanentAllowlist
     )
 
+    $scriptPath = $checker
     $arguments = @('-SourceRoot', $SourceRoot, '-BaselinePath', $BaselinePath)
     if ($PSBoundParameters.ContainsKey('PermanentAllowlist')) {
-        $arguments += '-PermanentAllowlist'
-        $arguments += $PermanentAllowlist
+        if ($PermanentAllowlist.Count -le 1) {
+            $arguments += '-PermanentAllowlist'
+            $arguments += $PermanentAllowlist
+        }
+        else {
+            # `pwsh -File` cannot bind multiple native argv tokens to one array parameter. Keep the
+            # checker in a child process while using a generated wrapper to reconstruct the array,
+            # so duplicate-entry behavior is exercised by the real checker rather than a mock.
+            $scriptPath = Join-Path $tempRoot 'invoke-checker-with-array.ps1'
+            if (-not (Test-Path -LiteralPath $scriptPath)) {
+                $wrapper = @'
+param(
+    [Parameter(Mandatory)] [string] $CheckerPath,
+    [Parameter(Mandatory)] [string] $SourceRoot,
+    [Parameter(Mandatory)] [string] $BaselinePath,
+    [Parameter(Mandatory)] [string] $PermanentAllowlistJson
+)
+$allowlist = @($PermanentAllowlistJson | ConvertFrom-Json)
+& $CheckerPath -SourceRoot $SourceRoot -BaselinePath $BaselinePath -PermanentAllowlist $allowlist
+exit $LASTEXITCODE
+'@
+                [System.IO.File]::WriteAllText($scriptPath, "$wrapper`n", [System.Text.UTF8Encoding]::new($false))
+            }
+            $arguments = @(
+                '-CheckerPath', $checker,
+                '-SourceRoot', $SourceRoot,
+                '-BaselinePath', $BaselinePath,
+                '-PermanentAllowlistJson', ($PermanentAllowlist | ConvertTo-Json -Compress)
+            )
+        }
     }
 
     $exitCode = 0
     $logDirectory = $null
     try {
         $result = Invoke-PwshScript `
-            -ScriptPath $checker `
+            -ScriptPath $scriptPath `
             -Arguments $arguments `
             -WorkingDirectory $repoRoot `
             -TimeoutSeconds 60 `
@@ -131,7 +167,7 @@ function New-OccurrenceCase {
     $relativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
     $baselinePath = Join-Path $tempRoot "$Name.json"
     Write-JsonFile -Path $baselinePath -Value ([ordered]@{
-        schema = 2
+        schema = 3
         exceptions = @([ordered]@{
             path = $relativePath
             pattern = 'Task.Delay'
@@ -139,9 +175,11 @@ function New-OccurrenceCase {
             occurrenceCount = $ExpectedCount
             classification = 'expiring-debt'
             ownerIssue = 'MAN-662'
+            registeredByIssue = '#1487'
             reason = 'Fixture intentionally repeats one identical source line to verify occurrence accounting.'
             exitCondition = 'Delete when occurrence accounting no longer uses this fixture.'
-            expiresOn = '2999-12-31'
+            registeredOn = $registeredOnUtc
+            expiresOn = $maximumExpiryUtc
         })
     })
 
@@ -273,6 +311,53 @@ function New-OtherPatternSource {
     }
 }
 
+function New-PermanentCapacitySource {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $caseRoot = Join-Path $generatedFixtureRoot $Name
+    [System.IO.Directory]::CreateDirectory($caseRoot) | Out-Null
+    $sourcePath = Join-Path $caseRoot 'permanent-capacity.cs'
+    $sleepLines = @('Thread.Sleep(25);', 'Thread.Sleep(50);')
+    $sourceLines = @(
+        'using System.Threading;',
+        '',
+        'public static class PermanentCapacityFixture',
+        '{',
+        '    public static void PauseTwice()',
+        '    {',
+        "        $($sleepLines[0])",
+        "        $($sleepLines[1])",
+        '    }',
+        '}'
+    )
+    [System.IO.File]::WriteAllLines($sourcePath, $sourceLines, [System.Text.UTF8Encoding]::new($false))
+
+    $relativePath = [System.IO.Path]::GetRelativePath($repoRoot, $sourcePath) -replace '\\', '/'
+    $rows = @(
+        $sleepLines | ForEach-Object {
+            $hashBytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($_))
+            [ordered]@{
+                path = $relativePath
+                pattern = 'Thread.Sleep'
+                lineTextSha256 = [System.Convert]::ToHexString($hashBytes).ToLowerInvariant()
+                occurrenceCount = 1
+                classification = 'permanent'
+                reason = "Fixture keeps the distinct permanent source line '$($_)' under row-cap governance."
+                rationale = 'The sleep is the audited primitive exercised by this capacity fixture.'
+            }
+        }
+    )
+
+    return [pscustomobject]@{
+        SourcePath = $sourcePath
+        RelativePath = $relativePath
+        Rows = $rows
+    }
+}
+
 function New-PermanentClassificationRow {
     param(
         [Parameter(Mandatory)]
@@ -341,8 +426,15 @@ function Assert-CheckerCase {
 [System.IO.Directory]::CreateDirectory($tempRoot) | Out-Null
 
 try {
+    $validBaseline = Get-Content -LiteralPath $validBaselineTemplatePath -Raw | ConvertFrom-Json
+    foreach ($row in $validBaseline.exceptions) {
+        $row.registeredOn = $registeredOnUtc
+        $row.expiresOn = $maximumExpiryUtc
+    }
+    Write-JsonFile -Path $validBaselinePath -Value $validBaseline
+
     $emptyBaselinePath = Join-Path $tempRoot 'empty.json'
-    Write-JsonFile -Path $emptyBaselinePath -Value ([ordered]@{ schema = 2; exceptions = @() })
+    Write-JsonFile -Path $emptyBaselinePath -Value ([ordered]@{ schema = 3; exceptions = @() })
 
     Assert-CheckerCase `
         -Name 'clean source' `
@@ -463,6 +555,19 @@ try {
     $exactOccurrenceCase = New-OccurrenceCase -Name 'occurrence-exact' -ActualCount 2 -ExpectedCount 2
     Assert-CheckerCase -Name 'matching occurrence count' -SourceRoot $exactOccurrenceCase.SourcePath -BaselinePath $exactOccurrenceCase.BaselinePath -ExpectedExitCode 0
 
+    # Invariant-culture comparison ignores a soft hyphen, but baseline identities are byte-sensitive.
+    # A visually similar path must not admit findings from a different ordinal path.
+    $ordinalMismatchRow = (Get-Content -LiteralPath $exactOccurrenceCase.BaselinePath -Raw | ConvertFrom-Json).exceptions[0]
+    $ordinalMismatchRow.path = $ordinalMismatchRow.path.Replace('occurrences.cs', "occur`u{00AD}rences.cs")
+    $ordinalMismatchPath = Join-Path $tempRoot 'ordinal-path-mismatch.json'
+    Write-JsonFile -Path $ordinalMismatchPath -Value ([ordered]@{ schema = 3; exceptions = @($ordinalMismatchRow) })
+    Assert-CheckerCase `
+        -Name 'baseline path matching is ordinal' `
+        -SourceRoot $exactOccurrenceCase.SourcePath `
+        -BaselinePath $ordinalMismatchPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('does not match a current finding')
+
     $growthOccurrenceCase = New-OccurrenceCase -Name 'occurrence-growth' -ActualCount 3 -ExpectedCount 2
     Assert-CheckerCase -Name 'occurrence growth' -SourceRoot $growthOccurrenceCase.SourcePath -BaselinePath $growthOccurrenceCase.BaselinePath -ExpectedExitCode 1 -ExpectedOutput @('occurrence count changed', 'expected 2', 'actual 3', ':5 [Task.Delay]')
 
@@ -471,35 +576,37 @@ try {
 
     $validBaseline = Get-Content -LiteralPath $validBaselinePath -Raw | ConvertFrom-Json
     $matchingSource = Join-Path $repoRoot $validBaseline.exceptions[0].path
+    $validExpiringRow = (Get-Content -LiteralPath $exactOccurrenceCase.BaselinePath -Raw | ConvertFrom-Json).exceptions[0]
+    $matchingExpiringSource = $exactOccurrenceCase.SourcePath
 
     $missingFieldRow = $validBaseline.exceptions[0].PSObject.Copy()
     $missingFieldRow.PSObject.Properties.Remove('reason')
     $missingFieldPath = Join-Path $tempRoot 'missing-field.json'
-    Write-JsonFile -Path $missingFieldPath -Value ([ordered]@{ schema = 2; exceptions = @($missingFieldRow) })
+    Write-JsonFile -Path $missingFieldPath -Value ([ordered]@{ schema = 3; exceptions = @($missingFieldRow) })
     Assert-CheckerCase -Name 'missing baseline metadata' -SourceRoot $matchingSource -BaselinePath $missingFieldPath -ExpectedExitCode 1 -ExpectedOutput @('missing required field')
 
     $nonIntegerOccurrenceRow = $validBaseline.exceptions[0].PSObject.Copy()
     $nonIntegerOccurrenceRow.occurrenceCount = '1'
     $nonIntegerOccurrencePath = Join-Path $tempRoot 'non-integer-occurrence.json'
-    Write-JsonFile -Path $nonIntegerOccurrencePath -Value ([ordered]@{ schema = 2; exceptions = @($nonIntegerOccurrenceRow) })
+    Write-JsonFile -Path $nonIntegerOccurrencePath -Value ([ordered]@{ schema = 3; exceptions = @($nonIntegerOccurrenceRow) })
     Assert-CheckerCase -Name 'non-integer occurrence count' -SourceRoot $matchingSource -BaselinePath $nonIntegerOccurrencePath -ExpectedExitCode 1 -ExpectedOutput @('occurrenceCount must be a positive integer')
 
     $zeroOccurrenceRow = $validBaseline.exceptions[0].PSObject.Copy()
     $zeroOccurrenceRow.occurrenceCount = 0
     $zeroOccurrencePath = Join-Path $tempRoot 'zero-occurrence.json'
-    Write-JsonFile -Path $zeroOccurrencePath -Value ([ordered]@{ schema = 2; exceptions = @($zeroOccurrenceRow) })
+    Write-JsonFile -Path $zeroOccurrencePath -Value ([ordered]@{ schema = 3; exceptions = @($zeroOccurrenceRow) })
     Assert-CheckerCase -Name 'zero occurrence count' -SourceRoot $matchingSource -BaselinePath $zeroOccurrencePath -ExpectedExitCode 1 -ExpectedOutput @('occurrenceCount must be a positive integer')
 
     $numericReasonRow = $validBaseline.exceptions[0].PSObject.Copy()
     $numericReasonRow.reason = 123
     $numericReasonPath = Join-Path $tempRoot 'numeric-reason.json'
-    Write-JsonFile -Path $numericReasonPath -Value ([ordered]@{ schema = 2; exceptions = @($numericReasonRow) })
+    Write-JsonFile -Path $numericReasonPath -Value ([ordered]@{ schema = 3; exceptions = @($numericReasonRow) })
     Assert-CheckerCase -Name 'numeric string metadata' -SourceRoot $matchingSource -BaselinePath $numericReasonPath -ExpectedExitCode 1 -ExpectedOutput @('reason must be a non-empty string')
 
     $objectExitConditionRow = $validBaseline.exceptions[0].PSObject.Copy()
     $objectExitConditionRow.exitCondition = [ordered]@{ text = 'not a string' }
     $objectExitConditionPath = Join-Path $tempRoot 'object-exit-condition.json'
-    Write-JsonFile -Path $objectExitConditionPath -Value ([ordered]@{ schema = 2; exceptions = @($objectExitConditionRow) })
+    Write-JsonFile -Path $objectExitConditionPath -Value ([ordered]@{ schema = 3; exceptions = @($objectExitConditionRow) })
     Assert-CheckerCase -Name 'object string metadata' -SourceRoot $matchingSource -BaselinePath $objectExitConditionPath -ExpectedExitCode 1 -ExpectedOutput @('exitCondition must be a non-empty string')
 
     # A follow-up GitHub issue is as valid an owner as a Linear key; the repo baseline uses the former
@@ -512,57 +619,224 @@ try {
         }
     )
     $githubOwnerPath = Join-Path $tempRoot 'github-owner.json'
-    Write-JsonFile -Path $githubOwnerPath -Value ([ordered]@{ schema = 2; exceptions = $githubOwnerRows })
+    Write-JsonFile -Path $githubOwnerPath -Value ([ordered]@{ schema = 3; exceptions = $githubOwnerRows })
     Assert-CheckerCase -Name 'github issue owner' -SourceRoot $fixtureRoot -BaselinePath $githubOwnerPath -ExpectedExitCode 0 -ExpectedOutput @('check passed')
 
     $badOwnerRow = $validBaseline.exceptions[0].PSObject.Copy()
     $badOwnerRow.ownerIssue = 'someone@example.com'
     $badOwnerPath = Join-Path $tempRoot 'bad-owner.json'
-    Write-JsonFile -Path $badOwnerPath -Value ([ordered]@{ schema = 2; exceptions = @($badOwnerRow) })
+    Write-JsonFile -Path $badOwnerPath -Value ([ordered]@{ schema = 3; exceptions = @($badOwnerRow) })
     Assert-CheckerCase -Name 'unowned baseline row' -SourceRoot $matchingSource -BaselinePath $badOwnerPath -ExpectedExitCode 1 -ExpectedOutput @('ownerIssue must be')
 
+    $overlongDebtRow = $validExpiringRow.PSObject.Copy()
+    $overlongDebtRow.registeredByIssue = '#1487'
+    $overlongDebtRow.registeredOn = $registeredOnUtc
+    $overlongDebtRow.expiresOn = $overlongExpiryUtc
+    $overlongDebtPath = Join-Path $tempRoot 'overlong-debt.json'
+    Write-JsonFile -Path $overlongDebtPath -Value ([ordered]@{ schema = 3; exceptions = @($overlongDebtRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt registered for 46 days' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $overlongDebtPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('expiresOn must be no later than 45 days after registeredOn')
+
+    $selfGuaranteedRow = $validExpiringRow.PSObject.Copy()
+    $selfGuaranteedRow.registeredByIssue = 'MAN-662'
+    $selfGuaranteedRow.registeredOn = $registeredOnUtc
+    $selfGuaranteedRow.expiresOn = $maximumExpiryUtc
+    $selfGuaranteedPath = Join-Path $tempRoot 'self-guaranteed.json'
+    Write-JsonFile -Path $selfGuaranteedPath -Value ([ordered]@{ schema = 3; exceptions = @($selfGuaranteedRow) })
+    Assert-CheckerCase `
+        -Name 'self-guaranteed expiring debt' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $selfGuaranteedPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredByIssue must differ from ownerIssue')
+
+    $zeroPaddedSelfGuaranteedRow = $validExpiringRow.PSObject.Copy()
+    $zeroPaddedSelfGuaranteedRow.ownerIssue = '#1487'
+    $zeroPaddedSelfGuaranteedRow.registeredByIssue = '#01487'
+    $zeroPaddedSelfGuaranteedPath = Join-Path $tempRoot 'zero-padded-self-guaranteed.json'
+    Write-JsonFile -Path $zeroPaddedSelfGuaranteedPath -Value ([ordered]@{ schema = 3; exceptions = @($zeroPaddedSelfGuaranteedRow) })
+    Assert-CheckerCase `
+        -Name 'zero-padded self-guarantee uses the same issue identity' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $zeroPaddedSelfGuaranteedPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredByIssue must differ from ownerIssue')
+
+    $missingRegisteredByRow = $validExpiringRow.PSObject.Copy()
+    $missingRegisteredByRow.PSObject.Properties.Remove('registeredByIssue')
+    $missingRegisteredByRow.registeredOn = $registeredOnUtc
+    $missingRegisteredByRow.expiresOn = $maximumExpiryUtc
+    $missingRegisteredByPath = Join-Path $tempRoot 'missing-registered-by.json'
+    Write-JsonFile -Path $missingRegisteredByPath -Value ([ordered]@{ schema = 3; exceptions = @($missingRegisteredByRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt without registeredByIssue' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $missingRegisteredByPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("classification 'expiring-debt' is missing required field(s): registeredByIssue")
+
+    $malformedRegisteredByRow = $validExpiringRow.PSObject.Copy()
+    $malformedRegisteredByRow.registeredByIssue = 'issue-1487'
+    $malformedRegisteredByRow.registeredOn = $registeredOnUtc
+    $malformedRegisteredByRow.expiresOn = $maximumExpiryUtc
+    $malformedRegisteredByPath = Join-Path $tempRoot 'malformed-registered-by.json'
+    Write-JsonFile -Path $malformedRegisteredByPath -Value ([ordered]@{ schema = 3; exceptions = @($malformedRegisteredByRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt with malformed registeredByIssue' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $malformedRegisteredByPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredByIssue must be a MAN issue key or a #<number> GitHub issue')
+
+    $missingRegisteredOnRow = $validExpiringRow.PSObject.Copy()
+    $missingRegisteredOnRow.registeredByIssue = '#1487'
+    $missingRegisteredOnRow.PSObject.Properties.Remove('registeredOn')
+    $missingRegisteredOnRow.expiresOn = $maximumExpiryUtc
+    $missingRegisteredOnPath = Join-Path $tempRoot 'missing-registered-on.json'
+    Write-JsonFile -Path $missingRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($missingRegisteredOnRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt without registeredOn' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $missingRegisteredOnPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("classification 'expiring-debt' is missing required field(s): registeredOn")
+
+    $malformedRegisteredOnRow = $validExpiringRow.PSObject.Copy()
+    $malformedRegisteredOnRow.registeredByIssue = '#1487'
+    $malformedRegisteredOnRow.registeredOn = '2026/08/08'
+    $malformedRegisteredOnRow.expiresOn = $maximumExpiryUtc
+    $malformedRegisteredOnPath = Join-Path $tempRoot 'malformed-registered-on.json'
+    Write-JsonFile -Path $malformedRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($malformedRegisteredOnRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt with malformed registeredOn' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $malformedRegisteredOnPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredOn must use yyyy-MM-dd')
+
+    $futureRegisteredOnRow = $validExpiringRow.PSObject.Copy()
+    $futureRegisteredOnRow.registeredByIssue = '#1487'
+    $futureRegisteredOnRow.registeredOn = $futureRegistrationUtc
+    $futureRegisteredOnRow.expiresOn = $futureRegistrationUtc
+    $futureRegisteredOnPath = Join-Path $tempRoot 'future-registered-on.json'
+    Write-JsonFile -Path $futureRegisteredOnPath -Value ([ordered]@{ schema = 3; exceptions = @($futureRegisteredOnRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt registered in the future' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $futureRegisteredOnPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('registeredOn must not be in the future')
+
+    $expiryBeforeRegistrationRow = $validExpiringRow.PSObject.Copy()
+    $expiryBeforeRegistrationRow.registeredByIssue = '#1487'
+    $expiryBeforeRegistrationRow.registeredOn = $registeredOnUtc
+    $expiryBeforeRegistrationRow.expiresOn = $yesterdayUtc
+    $expiryBeforeRegistrationPath = Join-Path $tempRoot 'expiry-before-registration.json'
+    Write-JsonFile -Path $expiryBeforeRegistrationPath -Value ([ordered]@{ schema = 3; exceptions = @($expiryBeforeRegistrationRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt that expires before registration' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $expiryBeforeRegistrationPath `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('expiresOn must be on or after registeredOn')
+
+    $maximumLifetimeRow = $validExpiringRow.PSObject.Copy()
+    $maximumLifetimeRow.registeredByIssue = '#1487'
+    $maximumLifetimeRow.registeredOn = $registeredOnUtc
+    $maximumLifetimeRow.expiresOn = $maximumExpiryUtc
+    $maximumLifetimePath = Join-Path $tempRoot 'maximum-lifetime.json'
+    Write-JsonFile -Path $maximumLifetimePath -Value ([ordered]@{ schema = 3; exceptions = @($maximumLifetimeRow) })
+    Assert-CheckerCase `
+        -Name 'expiring debt registered for exactly 45 days' `
+        -SourceRoot $matchingExpiringSource `
+        -BaselinePath $maximumLifetimePath `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed')
+
     $expiredRow = $validBaseline.exceptions[0].PSObject.Copy()
-    $expiredRow.expiresOn = '2026-01-01'
+    $expiredRow.expiresOn = $yesterdayUtc
     $expiredPath = Join-Path $tempRoot 'expired.json'
-    Write-JsonFile -Path $expiredPath -Value ([ordered]@{ schema = 2; exceptions = @($expiredRow) })
+    Write-JsonFile -Path $expiredPath -Value ([ordered]@{ schema = 3; exceptions = @($expiredRow) })
     Assert-CheckerCase -Name 'expired baseline row' -SourceRoot $matchingSource -BaselinePath $expiredPath -ExpectedExitCode 1 -ExpectedOutput @('expired')
 
     $hashMismatchRow = $validBaseline.exceptions[0].PSObject.Copy()
     $hashMismatchRow.lineTextSha256 = ('0' * 64)
     $hashMismatchPath = Join-Path $tempRoot 'hash-mismatch.json'
-    Write-JsonFile -Path $hashMismatchPath -Value ([ordered]@{ schema = 2; exceptions = @($hashMismatchRow) })
+    Write-JsonFile -Path $hashMismatchPath -Value ([ordered]@{ schema = 3; exceptions = @($hashMismatchRow) })
     Assert-CheckerCase -Name 'hash mismatch' -SourceRoot $matchingSource -BaselinePath $hashMismatchPath -ExpectedExitCode 1 -ExpectedOutput @('hash no longer matches')
 
     $duplicatePath = Join-Path $tempRoot 'duplicate.json'
-    Write-JsonFile -Path $duplicatePath -Value ([ordered]@{ schema = 2; exceptions = @($validBaseline.exceptions[0], $validBaseline.exceptions[0]) })
+    Write-JsonFile -Path $duplicatePath -Value ([ordered]@{ schema = 3; exceptions = @($validBaseline.exceptions[0], $validBaseline.exceptions[0]) })
     Assert-CheckerCase -Name 'duplicate rows' -SourceRoot $matchingSource -BaselinePath $duplicatePath -ExpectedExitCode 1 -ExpectedOutput @('duplicate baseline row')
 
     $staleRow = $validBaseline.exceptions[0].PSObject.Copy()
     $staleRow.path = 'scripts/tests/fixtures/backend-test-determinism/clean.cs'
     $stalePath = Join-Path $tempRoot 'stale.json'
-    Write-JsonFile -Path $stalePath -Value ([ordered]@{ schema = 2; exceptions = @($staleRow) })
+    Write-JsonFile -Path $stalePath -Value ([ordered]@{ schema = 3; exceptions = @($staleRow) })
     Assert-CheckerCase -Name 'stale rows' -SourceRoot (Join-Path $fixtureRoot 'clean.cs') -BaselinePath $stalePath -ExpectedExitCode 1 -ExpectedOutput @('does not match a current finding')
 
     $wrongSchemaPath = Join-Path $tempRoot 'wrong-schema.json'
-    Write-JsonFile -Path $wrongSchemaPath -Value ([ordered]@{ schema = 3; exceptions = @() })
-    Assert-CheckerCase -Name 'unsupported schema' -SourceRoot (Join-Path $fixtureRoot 'clean.cs') -BaselinePath $wrongSchemaPath -ExpectedExitCode 1 -ExpectedOutput @('schema must equal 2')
+    Write-JsonFile -Path $wrongSchemaPath -Value ([ordered]@{ schema = 2; exceptions = @() })
+    Assert-CheckerCase -Name 'unsupported schema' -SourceRoot (Join-Path $fixtureRoot 'clean.cs') -BaselinePath $wrongSchemaPath -ExpectedExitCode 1 -ExpectedOutput @('schema must equal 3')
 
     $stringSchemaPath = Join-Path $tempRoot 'string-schema.json'
-    Write-JsonFile -Path $stringSchemaPath -Value ([ordered]@{ schema = '2'; exceptions = @() })
-    Assert-CheckerCase -Name 'non-numeric schema' -SourceRoot (Join-Path $fixtureRoot 'clean.cs') -BaselinePath $stringSchemaPath -ExpectedExitCode 1 -ExpectedOutput @('schema must equal 2 as a JSON number')
+    Write-JsonFile -Path $stringSchemaPath -Value ([ordered]@{ schema = '3'; exceptions = @() })
+    Assert-CheckerCase -Name 'non-numeric schema' -SourceRoot (Join-Path $fixtureRoot 'clean.cs') -BaselinePath $stringSchemaPath -ExpectedExitCode 1 -ExpectedOutput @('schema must equal 3 as a JSON number')
 
     # --- permanent classification -------------------------------------------------------------
     # A permanent row is not an exemption: it is only legal on a path the checker itself allow-lists,
     # and it must carry a rationale instead of (never alongside) an owner and an expiry date.
     $permanentSource = New-PermanentClassificationSource -Name 'permanent-classification'
 
+    # Capacity counts valid permanent baseline rows for the exact pair, not source occurrences and
+    # not occurrenceCount. Two distinct rows exceed one slot, while a cap of two admits them.
+    # The generated directory includes '=' so the passing control also proves parsing from the right.
+    $permanentCapacitySource = New-PermanentCapacitySource -Name 'permanent=capacity'
+    $permanentCapacityPath = Join-Path $tempRoot 'permanent-capacity.json'
+    Write-JsonFile -Path $permanentCapacityPath -Value ([ordered]@{ schema = 3; exceptions = $permanentCapacitySource.Rows })
+    Assert-CheckerCase `
+        -Name 'permanent row growth exceeds checker-owned capacity' `
+        -SourceRoot $permanentCapacitySource.SourcePath `
+        -BaselinePath $permanentCapacityPath `
+        -PermanentAllowlist @("$($permanentCapacitySource.RelativePath)=Thread.Sleep=1") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @($permanentCapacitySource.RelativePath, 'Thread.Sleep', 'valid permanent baseline rows=2', 'maximum=1')
+    Assert-CheckerCase `
+        -Name 'permanent row count equal to checker-owned capacity' `
+        -SourceRoot $permanentCapacitySource.SourcePath `
+        -BaselinePath $permanentCapacityPath `
+        -PermanentAllowlist @("$($permanentCapacitySource.RelativePath)=Thread.Sleep=2") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=2')
+
+    $permanentOccurrenceCase = New-OccurrenceCase -Name 'permanent-occurrence-capacity' -ActualCount 2 -ExpectedCount 2
+    $permanentOccurrenceRow = (Get-Content -LiteralPath $permanentOccurrenceCase.BaselinePath -Raw | ConvertFrom-Json).exceptions[0]
+    $permanentOccurrenceRow.classification = 'permanent'
+    foreach ($debtField in @('ownerIssue', 'registeredByIssue', 'exitCondition', 'registeredOn', 'expiresOn')) {
+        $permanentOccurrenceRow.PSObject.Properties.Remove($debtField)
+    }
+    $permanentOccurrenceRow | Add-Member -NotePropertyName 'rationale' -NotePropertyValue 'One baseline row covers two identical audited occurrences.'
+    Write-JsonFile -Path $permanentOccurrenceCase.BaselinePath -Value ([ordered]@{ schema = 3; exceptions = @($permanentOccurrenceRow) })
+    $permanentOccurrenceRelativePath = [System.IO.Path]::GetRelativePath($repoRoot, $permanentOccurrenceCase.SourcePath) -replace '\\', '/'
+    Assert-CheckerCase `
+        -Name 'permanent capacity counts a row rather than occurrenceCount' `
+        -SourceRoot $permanentOccurrenceCase.SourcePath `
+        -BaselinePath $permanentOccurrenceCase.BaselinePath `
+        -PermanentAllowlist @("$permanentOccurrenceRelativePath=Task.Delay=1") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=1')
+
     $permanentAllowedPath = Join-Path $tempRoot 'permanent-allowed.json'
-    Write-JsonFile -Path $permanentAllowedPath -Value ([ordered]@{ schema = 2; exceptions = @((New-PermanentClassificationRow -Source $permanentSource)) })
+    Write-JsonFile -Path $permanentAllowedPath -Value ([ordered]@{ schema = 3; exceptions = @((New-PermanentClassificationRow -Source $permanentSource)) })
     Assert-CheckerCase `
         -Name 'permanent row on an allow-listed path' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 0 `
         -ExpectedOutput @('check passed', 'permanentRows=1')
 
@@ -580,7 +854,16 @@ try {
         -Name 'permanent row against an allowlist for another file' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentAllowedPath `
-        -PermanentAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs=StaticSetter') `
+        -PermanentAllowlist @('backend/tests/Nerv.IIP.Testing.Tests/SomeOtherTests.cs=StaticSetter=1') `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('permanent classification is not allowed for path')
+
+    $caseChangedPermanentPath = $permanentSource.RelativePath.Substring(0, 1).ToUpperInvariant() + $permanentSource.RelativePath.Substring(1)
+    Assert-CheckerCase `
+        -Name 'permanent allowlist path matching is ordinal' `
+        -SourceRoot $permanentSource.SourcePath `
+        -BaselinePath $permanentAllowedPath `
+        -PermanentAllowlist @("$caseChangedPermanentPath=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for path')
 
@@ -598,12 +881,12 @@ try {
         rationale = 'Deliberately unjustified: the allowlist entry for this path covers StaticSetter only.'
     }
     $otherPatternPath = Join-Path $tempRoot 'permanent-other-pattern.json'
-    Write-JsonFile -Path $otherPatternPath -Value ([ordered]@{ schema = 2; exceptions = @($otherPatternRow) })
+    Write-JsonFile -Path $otherPatternPath -Value ([ordered]@{ schema = 3; exceptions = @($otherPatternRow) })
     Assert-CheckerCase `
         -Name 'permanent row for a pattern the allowlist does not cover' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for pattern')
 
@@ -613,68 +896,115 @@ try {
         -Name 'permanent row for a pattern the allowlist does cover' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep=1") `
         -ExpectedExitCode 0 `
         -ExpectedOutput @('check passed', 'permanentRows=1')
 
     Assert-CheckerCase `
-        -Name 'malformed allowlist entry' `
+        -Name 'permanent row count below checker-owned capacity' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @($otherPatternSource.RelativePath) `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep=2") `
+        -ExpectedExitCode 0 `
+        -ExpectedOutput @('check passed', 'permanentRows=1')
+
+    Assert-CheckerCase `
+        -Name 'legacy pair-only allowlist entry' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Thread.Sleep") `
         -ExpectedExitCode 1 `
-        -ExpectedOutput @("must use '<path>=<pattern>'")
+        -ExpectedOutput @("must use '<path>=<pattern>=<maxRows>'")
 
     Assert-CheckerCase `
         -Name 'allowlist entry naming an unsupported pattern' `
         -SourceRoot $otherPatternSource.SourcePath `
         -BaselinePath $otherPatternPath `
-        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Whatever") `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=Whatever=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("names unsupported pattern 'Whatever'")
 
+    Assert-CheckerCase `
+        -Name 'permanent allowlist pattern matching is ordinal' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @("$($otherPatternSource.RelativePath)=thread.sleep=1") `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @("names unsupported pattern 'thread.sleep'")
+
+    $invalidCapacityEntries = @(
+        [pscustomobject]@{ Name = 'zero permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=0"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'negative permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=-1"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'non-integer permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep=one"; Expected = 'maxRows must be a positive integer' },
+        [pscustomobject]@{ Name = 'empty permanent allowlist path'; Entry = '=Thread.Sleep=1'; Expected = 'path must be non-empty' },
+        [pscustomobject]@{ Name = 'empty permanent allowlist pattern'; Entry = "$($otherPatternSource.RelativePath)==1"; Expected = 'pattern must be non-empty' },
+        [pscustomobject]@{ Name = 'empty permanent row capacity'; Entry = "$($otherPatternSource.RelativePath)=Thread.Sleep="; Expected = 'maxRows must be a positive integer' }
+    )
+    foreach ($invalidCapacityEntry in $invalidCapacityEntries) {
+        Assert-CheckerCase `
+            -Name $invalidCapacityEntry.Name `
+            -SourceRoot $otherPatternSource.SourcePath `
+            -BaselinePath $otherPatternPath `
+            -PermanentAllowlist @($invalidCapacityEntry.Entry) `
+            -ExpectedExitCode 1 `
+            -ExpectedOutput @($invalidCapacityEntry.Expected)
+    }
+
+    Assert-CheckerCase `
+        -Name 'duplicate permanent allowlist pair' `
+        -SourceRoot $otherPatternSource.SourcePath `
+        -BaselinePath $otherPatternPath `
+        -PermanentAllowlist @(
+            "$($otherPatternSource.RelativePath)=Thread.Sleep=1",
+            "$($otherPatternSource.RelativePath)=Thread.Sleep=2"
+        ) `
+        -ExpectedExitCode 1 `
+        -ExpectedOutput @('duplicate permanent allowlist entry', $otherPatternSource.RelativePath, 'Thread.Sleep')
+
     $permanentWithExpiryRow = New-PermanentClassificationRow -Source $permanentSource
     $permanentWithExpiryRow['ownerIssue'] = 'MAN-662'
+    $permanentWithExpiryRow['registeredByIssue'] = '#1487'
     $permanentWithExpiryRow['exitCondition'] = 'Never.'
-    $permanentWithExpiryRow['expiresOn'] = '2999-12-31'
+    $permanentWithExpiryRow['registeredOn'] = $registeredOnUtc
+    $permanentWithExpiryRow['expiresOn'] = $maximumExpiryUtc
     $permanentWithExpiryPath = Join-Path $tempRoot 'permanent-with-expiry.json'
-    Write-JsonFile -Path $permanentWithExpiryPath -Value ([ordered]@{ schema = 2; exceptions = @($permanentWithExpiryRow) })
+    Write-JsonFile -Path $permanentWithExpiryPath -Value ([ordered]@{ schema = 3; exceptions = @($permanentWithExpiryRow) })
     Assert-CheckerCase `
         -Name 'permanent row carrying debt metadata' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithExpiryPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
-        -ExpectedOutput @("classification 'permanent' must not carry field(s)", 'expiresOn')
+        -ExpectedOutput @("classification 'permanent' must not carry field(s)", 'registeredByIssue', 'registeredOn', 'expiresOn')
 
     $permanentWithoutRationaleRow = New-PermanentClassificationRow -Source $permanentSource
     $permanentWithoutRationaleRow.Remove('rationale')
     $permanentWithoutRationalePath = Join-Path $tempRoot 'permanent-without-rationale.json'
-    Write-JsonFile -Path $permanentWithoutRationalePath -Value ([ordered]@{ schema = 2; exceptions = @($permanentWithoutRationaleRow) })
+    Write-JsonFile -Path $permanentWithoutRationalePath -Value ([ordered]@{ schema = 3; exceptions = @($permanentWithoutRationaleRow) })
     Assert-CheckerCase `
         -Name 'permanent row without a rationale' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $permanentWithoutRationalePath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @("classification 'permanent' is missing required field(s): rationale")
 
     $unknownClassificationRow = New-PermanentClassificationRow -Source $permanentSource
     $unknownClassificationRow['classification'] = 'grandfathered'
     $unknownClassificationPath = Join-Path $tempRoot 'unknown-classification.json'
-    Write-JsonFile -Path $unknownClassificationPath -Value ([ordered]@{ schema = 2; exceptions = @($unknownClassificationRow) })
+    Write-JsonFile -Path $unknownClassificationPath -Value ([ordered]@{ schema = 3; exceptions = @($unknownClassificationRow) })
     Assert-CheckerCase `
         -Name 'unknown classification' `
         -SourceRoot $permanentSource.SourcePath `
         -BaselinePath $unknownClassificationPath `
-        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter") `
+        -PermanentAllowlist @("$($permanentSource.RelativePath)=StaticSetter=1") `
         -ExpectedExitCode 1 `
         -ExpectedOutput @('classification must be one of')
 
     $missingClassificationRow = $validBaseline.exceptions[0].PSObject.Copy()
     $missingClassificationRow.PSObject.Properties.Remove('classification')
     $missingClassificationPath = Join-Path $tempRoot 'missing-classification.json'
-    Write-JsonFile -Path $missingClassificationPath -Value ([ordered]@{ schema = 2; exceptions = @($missingClassificationRow) })
+    Write-JsonFile -Path $missingClassificationPath -Value ([ordered]@{ schema = 3; exceptions = @($missingClassificationRow) })
     Assert-CheckerCase `
         -Name 'missing classification' `
         -SourceRoot $matchingSource `
@@ -685,7 +1015,7 @@ try {
     $debtWithRationaleRow = $validBaseline.exceptions[0].PSObject.Copy()
     $debtWithRationaleRow | Add-Member -NotePropertyName 'rationale' -NotePropertyValue 'Debt rows may not claim permanence.'
     $debtWithRationalePath = Join-Path $tempRoot 'debt-with-rationale.json'
-    Write-JsonFile -Path $debtWithRationalePath -Value ([ordered]@{ schema = 2; exceptions = @($debtWithRationaleRow) })
+    Write-JsonFile -Path $debtWithRationalePath -Value ([ordered]@{ schema = 3; exceptions = @($debtWithRationaleRow) })
     Assert-CheckerCase `
         -Name 'expiring debt row carrying a rationale' `
         -SourceRoot $matchingSource `
