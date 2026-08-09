@@ -280,7 +280,7 @@ function Start-NervFullStackGuardian {
         '-IntervalSeconds', "$(Get-NervFullStackGuardianIntervalSeconds)",
         '-StateRoot', (Get-NervFullStackStateRoot)
     )
-    if ($Mode -eq 'Automated') {
+    if ([string]::Equals([string]($Mode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
     }
     return (Start-DetachedManagedProcess `
@@ -475,7 +475,7 @@ function Start-NervFullStackSession {
             }
             $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
                 $latest = Read-NervFullStackManifest -SessionId $newSessionId
-                if ("$($latest.state)" -ne 'Running') {
+                if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase))) {
                     throw "Session '$newSessionId' is '$($latest.state)'; guardian registration requires Running."
                 }
                 $guardianIdentity = Start-NervFullStackGuardian `
@@ -489,7 +489,7 @@ function Start-NervFullStackSession {
                         processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
                         mode = $GuardianMode
                     }
-                    $latest.coordinator = if ($GuardianMode -eq 'Automated') {
+                    $latest.coordinator = if ([string]::Equals([string]($GuardianMode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
                         [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
                     }
                     else {
@@ -515,7 +515,7 @@ function Start-NervFullStackSession {
                 -ReturnUnchangedOnStateMismatch `
                 -UpdateAction {
                     param($latest)
-                    if ("$($latest.state)" -ne 'Failed') {
+                    if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Failed'), [StringComparison]::OrdinalIgnoreCase))) {
                         $latest = Move-NervFullStackSessionState -Manifest $latest -State Failed
                     }
                     $latest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
@@ -612,37 +612,35 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
                     } `
                     -ScenarioAction {
                         param($InputManifest)
-                        switch ($Scenario) {
-                            'smoke' {
+                        if ([string]::Equals([string]($Scenario), [string]('smoke'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervFullStackSmokeScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'man-528' {
+elseif ([string]::Equals([string]($Scenario), [string]('man-528'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervFullStackSmokeScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                                 Invoke-NervMan528MesInventoryAcceptance -Manifest $InputManifest
                             }
-                            'man-440' {
+elseif ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervMan440RuntimeHoursAcceptance -Manifest $InputManifest
                             }
-                            'leader-demo-main-chain' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-main-chain'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoMainChainScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'leader-demo-quality-branch' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-quality-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoQualityBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'leader-demo-equipment-branch' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoEquipmentBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                        }
                     } `
                     -ResolveFailedManifestAction {
                         Read-NervFullStackManifest -SessionId $SessionId

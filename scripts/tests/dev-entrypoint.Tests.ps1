@@ -84,6 +84,23 @@ $fullStackHelp = Invoke-Nerv -Arguments @('fullstack', 'help')
 if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
 }
+
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+foreach ($expected in @(
+    '[string]::Equals([string]($Mode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
+    'elseif ([string]::Equals([string]($Scenario), [string](''leader-demo-equipment-branch''), [StringComparison]::OrdinalIgnoreCase))'
+)) {
+    if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
+        throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
+    }
+}
+if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::OrdinalIgnoreCase) -or
+    -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'
+}
 foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
         throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
