@@ -1,3 +1,14 @@
+# Script-Governance:
+#   Category: library
+#   SideEffects:
+#     - Reads the failure records and TRX paths its callers hand it
+#   Writes:
+#     - None
+#   Cleanup:
+#     - No process or external resource ownership
+#   Requires:
+#     - PowerShell 7
+
 function Get-BackendTestShardFailureDiagnostics {
     param(
         [Parameter(Mandatory)] [System.Management.Automation.ErrorRecord] $ErrorRecord,

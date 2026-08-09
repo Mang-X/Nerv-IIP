@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check, generate
+#   Category: library, generate
 #   SideEffects:
 #     - Runs `gh` (via Invoke-NativeCommandOutput) to list and download main-run evidence artifacts
 #     - Expands downloaded artifact archives under a caller-supplied working directory
