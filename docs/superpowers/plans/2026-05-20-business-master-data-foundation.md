@@ -429,9 +429,9 @@ public static class BusinessPermissionCodes
 
 请求必须包含 `organizationId` 和 `environmentId`。列表查询必须支持 `keyword`、`status`、`page`、`pageSize`；伙伴列表和资源列表还支持 `partnerType` 或 `resourceType`。部门列表支持 `parentDepartmentCode`，班组列表支持 `departmentCode`，人员技能列表支持 `userId`、`skillCode` 和 `validOn`，工作日历列表支持 `keyword` 和 `status`。
 
-- [ ] **步骤 4：在 IAM 中播种权限**
+- [ ] **步骤 4：在 IAM 中初始化权限**
 
-将六项 MasterData 权限添加到 IAM 种子权限列表，并将其分配给已播种的管理员角色。权限字符串必须与授权矩阵完全相同。
+将六项 MasterData 权限添加到 IAM 种子权限列表，并将其分配给种子管理员角色。权限字符串必须与授权矩阵完全相同。
 
 - [ ] **步骤 5：运行 endpoint 和 OpenAPI 测试**
 
