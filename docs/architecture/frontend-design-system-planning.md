@@ -1,54 +1,54 @@
-# Frontend Design System Planning
+# 前端设计系统规划
 
-The fifth-stage backend foundation paused frontend feature work until the console visual system could be selected deliberately. Console Auth + shadcn-vue Baseline now records that selection for the first product slice.
+第五阶段的后端基础工作曾暂停前端功能开发，直至能审慎选定控制台视觉系统。“Console Auth + shadcn-vue Baseline”（控制台认证与 shadcn-vue 基线）现记录了首个产品切片的这一选型。
 
-## Selected Baseline
+## 已选基线
 
-Console Auth + shadcn-vue Baseline selects the official shadcn-vue registry, `reka-nova` style, Vite template, Reka base components, Tailwind CSS v4 and semantic token model. Component source lives in `frontend/packages/ui`, and console apps consume it only through stable `@nerv-iip/ui` exports.
+“Console Auth + shadcn-vue Baseline”选用 shadcn-vue 官方组件注册表、`reka-nova` 风格、Vite 模板、Reka 基础组件、Tailwind CSS v4 和语义 token 模型。组件源码位于 `frontend/packages/ui`，控制台应用只能通过稳定的 `@nerv-iip/ui` 导出使用它们。
 
-The previous local `UiButton`, `UiPanel` and `UiBadge` primitives were migrated to shadcn-vue components and deleted. They are no longer maintained as a parallel design system.
+此前本地的 `UiButton`、`UiPanel` 和 `UiBadge` 基础组件已迁移为 shadcn-vue 组件并删除，不再作为并行设计系统维护。
 
-## Current Decision
+## 当前决策
 
-1. New console UI work must use the selected shadcn-vue baseline, semantic tokens and `@nerv-iip/ui` export boundary.
-2. Do not introduce a second UI registry, competing token system, unrelated CSS framework or page-specific component skin without a new design-system spec.
-3. Do not add large product workflows as incidental backend work; create a focused frontend/product spec when the workflow changes information architecture, navigation, authorization, or visual density.
-4. API client generation and frontend quality gates remain allowed when backend OpenAPI changes require them.
-5. Business console component readiness is tracked in `frontend/DESIGN/roadmaps/business-console-readiness.md`; #143 must update DESIGN component contracts before adding new shadcn-vue primitives or FileUpload wrappers.
+1. 新的控制台 UI 工作必须使用已选定的 shadcn-vue 基线、语义 token 和 `@nerv-iip/ui` 导出边界。
+2. 未经新的设计系统规格，不得引入第二个 UI 组件注册表、竞争性 token 系统、无关 CSS 框架或页面专用组件皮肤。
+3. 不得将大型产品工作流作为附带后端工作加入；当工作流改变信息架构、导航、授权或视觉密度时，必须创建聚焦的前端/产品规格。
+4. 当后端 OpenAPI 变更需要时，仍可进行 API client 生成和前端质量门禁。
+5. Business Console 组件就绪度在 `frontend/DESIGN/roadmaps/business-console-readiness.md` 中跟踪；#143 在新增 shadcn-vue 基础组件或 FileUpload 封装组件前必须更新 DESIGN 组件契约。
 
-## Phase 8 Current Baseline
+## Phase 8 当前基线
 
-Phase 8 establishes the IAM admin console baseline as a blue Calm Control Plane: restrained surfaces, blue primary actions, quiet neutral structure and high-density operational affordances. The baseline remains Tailwind CSS v4, shadcn-vue `reka-nova`, Reka primitives, lucide icons and source-owned components in `frontend/packages/ui`.
+Phase 8 将 IAM 管理控制台基线确立为蓝色 Calm Control Plane：克制的界面表面、蓝色主要动作、安静的中性结构和高密度的运营辅助元素。基线仍使用 Tailwind CSS v4、shadcn-vue `reka-nova`、Reka 基础组件、lucide 图标以及 `frontend/packages/ui` 中由源码维护的组件。
 
-The shared UI package now owns the table, dialog, alert-dialog, checkbox, select, pagination and empty state primitives needed for IAM administration screens. Console app code should treat these as product infrastructure rather than page-local snippets.
+共享 UI 包现拥有 IAM 管理页面所需的 table、dialog、alert-dialog、checkbox、select、pagination 和 empty state 基础组件。控制台应用代码应将其视为产品基础设施，而非页面局部片段。
 
-## Token Contract
+## Token 契约
 
-The console CSS token contract lives in `frontend/apps/console/src/assets/main.css`. Phase 8 pins semantic shadcn tokens to blue control-plane values for `--primary`, `--ring`, `--accent`, sidebar active states and chart accents while preserving the legacy token block used by existing console screens.
+控制台 CSS token 契约位于 `frontend/apps/console/src/assets/main.css`。Phase 8 将语义 shadcn token 固定为蓝色控制平面值，覆盖 `--primary`、`--ring`、`--accent`、侧栏活动状态和图表强调色，同时保留现有控制台页面使用的 legacy token 块。
 
-Tailwind v4 `@theme inline` remains required so semantic utilities such as `bg-primary`, `text-muted-foreground`, `border-border` and `ring-ring` resolve from the same contract. Token changes should update the Vitest contract in `frontend/packages/ui/src/design-system.contract.test.ts` before changing the CSS.
+Tailwind v4 的 `@theme inline` 仍是必需项，使 `bg-primary`、`text-muted-foreground`、`border-border` 和 `ring-ring` 等语义工具类从同一契约解析。变更 CSS 前，应先更新 `frontend/packages/ui/src/design-system.contract.test.ts` 中的 Vitest 契约。
 
-## Component Governance
+## 组件治理
 
-shadcn-vue components are managed through the CLI and reviewed after generation. Generated files may be adjusted for this workspace's package-local import paths, but teams should not hand-roll parallel versions of registry components or fork visual variants inside console pages.
+shadcn-vue 组件通过 CLI 管理，并在生成后接受审核。可为适配本工作区的包内导入路径调整生成文件，但团队不得手写组件注册表中组件的并行版本，或在控制台页面内分叉视觉变体。
 
-The `@nerv-iip/ui` barrel is the public boundary for console applications. New shadcn primitives should be exported there before application code consumes them, keeping registry churn and import path changes inside the UI package.
+`@nerv-iip/ui` barrel（集中导出入口）是控制台应用的公开边界。应用代码使用新的 shadcn 基础组件前，应先在此处导出，以便将组件注册表变动和导入路径变更限制在 UI 包内。
 
-For FileUpload, the visual shell belongs to Nerv-IIP and should be composed from `@nerv-iip/ui`. Uppy core/headless with `@uppy/tus` is the preferred resumable upload engine when pause/resume, retry and tus compatibility are required; the Uppy Dashboard visual skin is not the design baseline. FileUpload must consume FileStorage upload-session and tus/download-grant contracts and must not expose MinIO object keys or direct object-storage URLs.
+对于 FileUpload，视觉外壳属于 Nerv-IIP，应由 `@nerv-iip/ui` 组合而成。需要暂停/恢复、重试和 tus 兼容性时，首选使用带 `@uppy/tus` 的 Uppy core/headless 作为可续传上传引擎；Uppy Dashboard 的视觉皮肤不是设计基线。FileUpload 必须消费 FileStorage 的 upload-session 和 tus/download-grant 契约，且不得暴露 MinIO 对象 key 或直接对象存储 URL。
 
-## IAM Admin Patterns
+## IAM 管理模式
 
-IAM administration screens should compose dense, task-focused views from the shared primitives: tables for users, roles and permissions; dialogs for create/edit flows; alert dialogs for destructive confirmations; selects and checkboxes for scoped choices; pagination for server-backed lists; and empty states for filtered or first-run conditions.
+IAM 管理页面应由共享基础组件组合成高密度、任务聚焦的视图：用户、角色和权限使用 table；创建/编辑流程使用 dialog；破坏性确认使用 alert dialog；范围选择使用 select 和 checkbox；服务端列表使用 pagination；筛选结果为空或首次运行时使用 empty state。
 
-Console app code must import these controls from `@nerv-iip/ui`, not from `frontend/packages/ui/src/components` or direct shadcn paths. Page-specific styling should use semantic tokens and layout classes only, leaving component color, typography, radius and focus behavior governed by the shared baseline.
+控制台应用代码必须从 `@nerv-iip/ui` 导入这些控件，而不得从 `frontend/packages/ui/src/components` 或直接 shadcn 路径导入。页面专用样式只能使用语义 token 和布局类，使组件的颜色、排版、圆角和焦点行为仍由共享基线治理。
 
-## Future Spec Triggers
+## 后续规格触发条件
 
-Create a separate Superpowers design spec before changing any of these decisions:
+变更下列任一决策前，必须另行创建 Superpowers 设计规格：
 
-1. Component library or registry strategy beyond shadcn-vue.
-2. Design token model for color, typography, spacing, elevation, radius or state.
-3. Layout density for operations-heavy console screens.
-4. Theme strategy, tenant branding, or dark-mode product commitment.
-5. Accessibility baseline beyond the current keyboard, focus, contrast and responsive checks.
-6. Visual regression testing strategy.
+1. 超出 shadcn-vue 的组件库或组件注册表策略。
+2. 色彩、排版、间距、层级、圆角或状态的设计 token 模型。
+3. 运营密集型控制台页面的布局密度。
+4. 主题策略、租户品牌，或对深色模式的产品承诺。
+5. 超出当前键盘、焦点、对比度和响应式检查范围的可访问性基线。
+6. 视觉回归测试策略。

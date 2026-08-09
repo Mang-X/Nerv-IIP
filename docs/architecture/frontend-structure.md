@@ -115,7 +115,7 @@ pnpm -C frontend build
 - src/pages：真实页面入口。
 - src/components：共享与局部视图组件。
 - src/composables：跨组件与跨页面复用逻辑。
-- src/stores：Pinia client state。
+- src/stores：Pinia 客户端状态。
 - src/api：应用侧 API 组装层。
 - src/plugins：应用级插件安装。
 - src/utils：纯函数工具。
@@ -239,7 +239,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 
 业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
 
-Business Console focused verification commands:
+Business Console 定向验证命令：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
@@ -259,7 +259,7 @@ scripts/verify-business-console-mes-pc-workbench.ps1 -E2E -ChromiumExecutablePat
 
 ADR 0014 后，APS/Gantt 不进入 `/mes/schedules` 页面内部。#206 负责后端 APS lite 排程契约和内核，#78 负责甘特/排产图展示；未来独立排程工作台应消费 APS 输出 DTO，并继续通过 BusinessGateway facade 访问业务数据。
 
-### Console IAM Admin
+### Console IAM 管理
 
 Phase 8 已交付 IAM Admin 控制台路由：
 
