@@ -213,14 +213,84 @@ function Get-NearestScriptBlockScope {
 $seamScopeQualifiers = @('local', 'script', 'global', 'private', 'variable')
 
 # The cmdlets that bind a variable by name, mapped to the cmdlet whose parameter metadata decides
-# how their command elements pair up. Ordinal, on an already-lowercased command name.
-$seamBinderCommands = [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal)
-$seamBinderCommands['set-variable'] = 'Set-Variable'
-$seamBinderCommands['sv'] = 'Set-Variable'
-$seamBinderCommands['new-variable'] = 'New-Variable'
-$seamBinderCommands['nv'] = 'New-Variable'
+# how their command elements pair up.
+#
+# Only the *canonical* names are written down; every other spelling is derived (#1509 round 7).
+# Round 6 took the parameter-pairing half of this walk from cmdlet metadata but left the
+# command-name half a hand-written list of `set-variable`/`sv`/`new-variable`/`nv`, and the review
+# then measured two whole classes walking straight through it — checker exit 0 with the external
+# command really running in a live process:
+#
+#   set -Scope Local action '/bin/echo'                        `set` is a shipped alias of Set-Variable
+#   SET -Name action -Value '/bin/echo'                        …and command names ignore case
+#   Microsoft.PowerShell.Utility\Set-Variable -Scope Local …   module-qualified spelling
+#
+# Half an enumeration is still a hand list: the same failure mode the Left-shape walk was rewritten
+# to escape. So the aliases come from PowerShell's own alias table and the qualifier is normalized
+# away in Resolve-SeamBinderCanonicalName below.
+$seamBinderCanonicalNames = @('Set-Variable', 'New-Variable')
+
+# Deliberately case-*insensitive*, and that is a ruling rather than an oversight: PowerShell resolves
+# command names without regard to case, so `SET -Name action -Value 'dotnet'` and
+# `microsoft.powershell.utility\SET-VARIABLE …` really do bind (both measured on pwsh 7.6.4) and the
+# lookup has to see them. The comparison is still *ordinal* — OrdinalIgnoreCase folds case and
+# nothing else — so no ignorable character can fold a foreign command name into one of these, per the
+# ordinal ruling this PR applies everywhere else.
+$seamBinderCommands = [System.Collections.Hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($seamBinderCanonicalName in $seamBinderCanonicalNames) {
+    $seamBinderCommands[$seamBinderCanonicalName] = $seamBinderCanonicalName
+    foreach ($seamBinderAlias in @(Get-Alias -Definition $seamBinderCanonicalName -ErrorAction SilentlyContinue)) {
+        $seamBinderCommands[[string] $seamBinderAlias.Name] = $seamBinderCanonicalName
+    }
+}
+
+# `Get-Alias` reads *session* state, and session state can only ever make this checker blinder: `set`
+# ships with `Options = None`, so a profile — or anything else that ran first — may remove or
+# reassign it, while the file being scanned still runs elsewhere with the alias intact. The shipped
+# aliases are therefore also declared as a floor and unioned in. This is a lower bound on
+# recognition, never the recognition list: adding a name here can only ever turn a pass into a
+# report, and the discovery above is what keeps the list from being the recognition rule again.
+# `binder-name-set-is-discovered` and `binder-alias-removed-from-session` in
+# scripts/tests/script-governance-scan-boundary.Tests.ps1 pin the two halves separately.
+foreach ($seamBinderFloorEntry in @(
+        @{ Alias = 'set'; Canonical = 'Set-Variable' },
+        @{ Alias = 'sv'; Canonical = 'Set-Variable' },
+        @{ Alias = 'nv'; Canonical = 'New-Variable' })) {
+    if (-not $seamBinderCommands.ContainsKey($seamBinderFloorEntry.Alias)) {
+        $seamBinderCommands[$seamBinderFloorEntry.Alias] = $seamBinderFloorEntry.Canonical
+    }
+}
+
 # One Get-Command per canonical cmdlet, not per call site.
 $seamBinderParameterCache = [System.Collections.Hashtable]::new([System.StringComparer]::Ordinal)
+
+function Resolve-SeamBinderCanonicalName {
+    <#
+        The binder cmdlet a written command name refers to, or $null when it names something else.
+
+        Module qualification is stripped at the last `\`. `Microsoft.PowerShell.Utility\Set-Variable
+        -Scope Local action '/bin/echo'` binds `action` and really runs (measured), and it is exactly
+        what a script writes when it wants to be explicit about which module it means — so the
+        qualified spelling has to reach the same table as the bare one.
+
+        A module-qualified *alias* (`Microsoft.PowerShell.Utility\sv`) is the one case where this
+        over-reports: PowerShell qualifies exported commands only, the shipped aliases belong to no
+        module, and the call throws CommandNotFoundException before binding anything (measured).
+        Treating it as a binder therefore reports a shadowing that run time would not produce — the
+        fail-closed direction, taken deliberately rather than paying for a second rule about which
+        halves of a qualified name pair up. The same is true of a relative path that happens to end
+        in one of these names; it can only ever cost a permission, never grant one.
+    #>
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $WrittenName)
+
+    if ([string]::IsNullOrEmpty($WrittenName)) { return $null }
+
+    $separator = $WrittenName.LastIndexOf('\', [System.StringComparison]::Ordinal)
+    $bareName = if ($separator -lt 0) { $WrittenName } else { $WrittenName.Substring($separator + 1) }
+    if (-not $seamBinderCommands.ContainsKey($bareName)) { return $null }
+
+    return [string] $seamBinderCommands[$bareName]
+}
 
 function Get-SeamBindingName {
     <#
@@ -437,8 +507,7 @@ function Get-SeamBinderNameArgument {
     # GetCommandName() is $null whenever the command name is an expression (`& $action build`), which
     # is most of what this walk sees.
     $binderName = [string] $Binder.GetCommandName()
-    if ([string]::IsNullOrEmpty($binderName)) { return $null }
-    $canonicalName = $seamBinderCommands[$binderName.ToLowerInvariant()]
+    $canonicalName = Resolve-SeamBinderCanonicalName -WrittenName $binderName
     if ([string]::IsNullOrEmpty([string] $canonicalName)) { return $null }
 
     $parameters = Get-SeamBinderParameters -CanonicalName $canonicalName

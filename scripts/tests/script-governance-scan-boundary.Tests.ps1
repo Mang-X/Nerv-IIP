@@ -466,6 +466,59 @@ function Invoke-FixtureSetVariableAliasScopeFirst {
     & $fixtureAction build
 }
 '@
+        # ---------------------------------------------------------------------------------------
+        # …and the spellings the *command-name* half of round 6 still missed (#1509 round 7). The
+        # pairing half was read from cmdlet metadata; the name half stayed a hand list of
+        # set-variable/sv/new-variable/nv, so `set` — the alias PowerShell actually ships for
+        # Set-Variable — and every module-qualified spelling exited 0 with the external command
+        # really running in a live process. Both classes are pinned here, and separately, so that
+        # fixing one does not look like fixing the other.
+        'set-variable-shipped-alias-shadows-seam' = @'
+function Invoke-FixtureSetAliasShadow {
+    set -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # Command names resolve case-insensitively, so the lookup must too — the one place in this
+        # PR where a comparison is deliberately not case-sensitive.
+        'set-variable-shipped-alias-uppercase-shadows-seam' = @'
+function Invoke-FixtureSetAliasUppercaseShadow {
+    SET -Name fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'set-variable-module-qualified-shadows-seam' = @'
+function Invoke-FixtureSetVariableModuleQualifiedShadow {
+    Microsoft.PowerShell.Utility\Set-Variable -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # The qualifier is stripped ordinally at the last `\` and the remainder is matched
+        # case-insensitively; this case is red unless *both* of those hold.
+        'set-variable-module-qualified-mixed-case-shadows-seam' = @'
+function Invoke-FixtureSetVariableModuleQualifiedMixedCaseShadow {
+    microsoft.powershell.utility\SET-VARIABLE -Name fixtureAction -Value 'dotnet'
+    & $fixtureAction build
+}
+'@
+        'new-variable-module-qualified-shadows-seam' = @'
+function Invoke-FixtureNewVariableModuleQualifiedShadow {
+    Microsoft.PowerShell.Utility\New-Variable -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+        # A module-qualified *alias* does not resolve at run time (PowerShell qualifies exported
+        # commands, and the shipped aliases belong to no module — measured:
+        # CommandNotFoundException). The checker reports it anyway, because stripping the qualifier
+        # before the lookup is one rule rather than two and the error is in the fail-closed
+        # direction. Asserted so that the over-report is a recorded decision instead of a surprise
+        # someone later "fixes" into a hole.
+        'set-variable-module-qualified-alias-shadows-seam' = @'
+function Invoke-FixtureSetVariableModuleQualifiedAliasShadow {
+    Microsoft.PowerShell.Utility\sv -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
         # The control that keeps the fix honest in the other direction: a *switch* consumes nothing,
         # so the element after `-Force` is the positional name. This case reports correctly today and
         # a blunt "skip the element after every parameter" rule turns it green — which is why the
@@ -735,6 +788,93 @@ function Invoke-FixtureCrossScopeAction {
     }
     if ($setVariableParameters['Scope'].ParameterType -eq [switch]) {
         throw 'Set-Variable -Scope no longer takes a value; the "positional name after a valued parameter" cases assert nothing.'
+    }
+
+    # ---------------------------------------------------------------------------------------------
+    # The command-name half of the binder walk (#1509 round 7). Three separate guards, because the
+    # three ways of getting this wrong are independent:
+    #
+    #   1. the premise — `set`/`sv`/`nv` really are the aliases the alias fixtures above rely on;
+    #   2. the *source* derives its name set from PowerShell's alias table rather than listing
+    #      spellings, so reverting to a hand list is red even where the list happens to be complete;
+    #   3. recognition survives a session that has lost an alias, which is the one thing discovery
+    #      alone cannot promise.
+    $shippedBinderAliases = [ordered]@{ 'set' = 'Set-Variable'; 'sv' = 'Set-Variable'; 'nv' = 'New-Variable' }
+    foreach ($aliasName in $shippedBinderAliases.Keys) {
+        $alias = Get-Alias -Name $aliasName -ErrorAction SilentlyContinue
+        if (-not $alias -or -not [string]::Equals([string] $alias.Definition, [string] $shippedBinderAliases[$aliasName], [StringComparison]::Ordinal)) {
+            throw "PowerShell no longer aliases '$aliasName' to $($shippedBinderAliases[$aliasName]); the binder-alias fixtures assert nothing."
+        }
+    }
+    # …and the qualified spelling really is a spelling of the same cmdlet, so the module-qualified
+    # fixtures are pinning a reachable hole rather than a typo.
+    if (-not (Get-Command 'Microsoft.PowerShell.Utility\Set-Variable' -ErrorAction SilentlyContinue)) {
+        throw 'Microsoft.PowerShell.Utility\Set-Variable no longer resolves; the module-qualified binder fixtures assert nothing.'
+    }
+
+    # Guard 2, structural. The behavioural cases above go green again the moment someone hand-lists
+    # `set` and the qualified spellings — which is precisely the failure mode this round exists to
+    # end (#1510: "按审核点名补特例每轮必复发"). So the source is required to *derive* the set: the
+    # canonical cmdlets are declared in one place and the aliases come from `Get-Alias -Definition`
+    # over exactly that declaration. Delete the discovery and this is red even though every fixture
+    # still passes.
+    $binderCanonicalAssignment = $checkerAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string] $node.Left.VariablePath.UserPath, 'seamBinderCanonicalNames', [StringComparison]::Ordinal)
+    }, $true)
+    if (-not $binderCanonicalAssignment) {
+        throw 'The script governance checker must declare its binder cmdlets in a named $seamBinderCanonicalNames list.'
+    }
+    $declaredBinderCanonicalNames = @(
+        $binderCanonicalAssignment.Right.FindAll({
+            param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
+        }, $true) | ForEach-Object { [string] $_.Value }
+    )
+    $expectedBinderCanonicalNames = @('Set-Variable', 'New-Variable')
+    if (-not [string]::Equals(($declaredBinderCanonicalNames -join '|'), ($expectedBinderCanonicalNames -join '|'), [StringComparison]::Ordinal)) {
+        throw "Binder cmdlet set changed: expected [$($expectedBinderCanonicalNames -join ', ')], found [$($declaredBinderCanonicalNames -join ', ')]. Update docs/architecture/script-automation-governance.md and this contract together."
+    }
+    $binderAliasDiscovery = @(
+        $checkerAst.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.CommandAst] -and
+            [string]::Equals([string] $node.GetCommandName(), 'Get-Alias', [StringComparison]::OrdinalIgnoreCase)
+        }, $true)
+    )
+    if ($binderAliasDiscovery.Count -ne 1) {
+        throw "The script governance checker must read its binder aliases from exactly one Get-Alias call; found $($binderAliasDiscovery.Count)."
+    }
+    $binderAliasDiscoveryText = [string] $binderAliasDiscovery[0].Extent.Text
+    if ($binderAliasDiscoveryText.IndexOf('-Definition', [StringComparison]::Ordinal) -lt 0 -or
+        $binderAliasDiscoveryText.IndexOf('$seamBinderCanonicalName', [StringComparison]::Ordinal) -lt 0) {
+        throw "Binder aliases must be discovered with Get-Alias -Definition over \$seamBinderCanonicalNames, not hand-listed; found: $binderAliasDiscoveryText"
+    }
+
+    # Guard 3, behavioural, against the one thing discovery cannot promise. `set` ships with
+    # `Options = None`, so anything that ran before the checker can remove or reassign it — and the
+    # file being scanned still runs elsewhere with the alias intact. Run the checker in a session
+    # that has lost the alias and the report must not move. `-Command` rather than `-File` because
+    # the degradation has to happen inside the checker's own session; that is the whole variable.
+    $aliasRemovalFixture = $shadowSeamHeader + @'
+function Invoke-FixtureSetAliasShadowDegraded {
+    set -Scope Local fixtureAction 'dotnet'
+    & $fixtureAction build
+}
+'@
+    [System.IO.File]::WriteAllText($libraryFixturePath, $aliasRemovalFixture, [System.Text.UTF8Encoding]::new($false))
+    try {
+        $degradedCommand = "Remove-Item Alias:set -Force; & '$mirrorChecker' -Path '$libraryFixturePath'"
+        $degradedOutput = (& pwsh -NoProfile -ExecutionPolicy Bypass -Command $degradedCommand 2>&1) -join "`n"
+        $degradedExitCode = $LASTEXITCODE
+        if ($degradedExitCode -eq 0 -or -not $degradedOutput.Contains('[DynamicInvocation]')) {
+            Write-Host $degradedOutput
+            throw "Library scope case 'binder-alias-removed-from-session' expected the binder to stay recognised after the alias was removed from the session (exit $degradedExitCode)."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $libraryFixturePath -Force -ErrorAction SilentlyContinue
     }
 
     # Binder calls that bind nothing — and, unlike the residuals above, bind nothing *at run time

@@ -117,7 +117,7 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    | `foreach ($x in …)` | `ForEachStatementAst.Variable` | ✅ | ❌ | `foreach-iteration-variable-shadows-seam` |
    | `$local:` / `$script:` / `$global:` / `$private:` / `$variable:` | 限定符归一化后比对 | ✅ | ❌ | `{local,script,global,private,variable}-qualifier-shadows-seam` 各一条 |
    | `data $x { … }` | `DataStatementAst.Variable` | ✅ | ❌ | `data-statement-shadows-seam` |
-   | `Set-Variable` / `New-Variable`（**字面量**名字，命名 `-Name` 或位置参数，含 `sv`/`nv` 别名与参数前缀缩写） | `CommandAst`，按 cmdlet 参数元数据配对 | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam`、`set-variable-positional-name-after-{valued,value,switch}-parameter`、`new-variable-positional-name-after-valued-parameter`、`set-variable-alias-positional-name-after-valued-parameter`、`set-variable-abbreviated-{valued,name}-parameter` |
+   | `Set-Variable` / `New-Variable`（**字面量**名字，命名 `-Name` 或位置参数；别名从 PowerShell 的别名表枚举，当前解出 `set`/`sv`/`nv`；命令名大小写不敏感；参数前缀缩写；模块限定名剥掉限定符后同样命中） | `CommandAst`，命令名按别名表 + 限定符归一化，元素配对按 cmdlet 参数元数据 | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam`、`set-variable-positional-name-after-{valued,value,switch}-parameter`、`new-variable-positional-name-after-valued-parameter`、`set-variable-alias-positional-name-after-valued-parameter`、`set-variable-abbreviated-{valued,name}-parameter`、`set-variable-shipped-alias-{,uppercase-}shadows-seam`、`{set,new}-variable-module-qualified-shadows-seam`、`set-variable-module-qualified-mixed-case-shadows-seam`、`set-variable-module-qualified-alias-shadows-seam`、`binder-alias-removed-from-session` |
    | `Set-Variable -Bogus x 'y'` / `Set-Variable -V x 'y'` | 参数名无法解析或前缀歧义 | ❌ **不构成绑定**（该调用运行期直接抛错，什么都没绑） | — | `set-variable-{unknown,ambiguous}-parameter-binds-nothing`（断言**当前放行**） |
    | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | — | `residual-set-variable-computed-name`（断言**当前放行**） |
    | `Set-Variable @splat` | 名字在 hashtable 里，AST 解不出 | ❌ 残余 | — | `residual-set-variable-splatted-parameters`（断言**当前放行**） |
@@ -129,6 +129,20 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    | 自动变量 `$_`（管道 / `switch` / `catch`） | 不是本规则要建模的绑定 | n/a：`& $_` 一律违规 | — | `foreach-object-automatic-variable`、`switch-automatic-variable`、`catch-automatic-variable` |
 
    **`Set-Variable` 的名字按 cmdlet 的参数绑定语义配对，不是「第一个非参数元素」**（#1509 六轮）。旧实现把第一个非 `CommandParameterAst` 的元素当位置化的 `-Name`，于是**任何带值的命名参数排在前面都能借名**：`Set-Variable -Scope Local action '/bin/echo'`、`Set-Variable -Value 'dotnet' action`、`sv -Scope Local action '/bin/echo'` 三种实测 exit 0，而运行期真的执行了外部命令。反向的粗暴修法（「遇到参数就跳过下一个元素」）会踩坏另一半：`-Force` 是 switch，它后面那个元素**就是**位置化的名字。所以配对读的是 cmdlet 自己的参数元数据（`Get-Command Set-Variable` 的 `ParameterType -eq [switch]`），带值参数吞掉后一个元素、switch 不吞；参数名按 PowerShell 自己的规则解析（精确名/别名，否则唯一前缀）。解析不出来或前缀有歧义时**不记任何绑定**，因为这种调用运行期直接抛错（实测 `NamedParameterNotFound` / `AmbiguousParameter`），压根没绑成——这不是放宽。表格里三类各有用例，`set-variable-positional-name-after-switch-parameter` 就是防粗暴修法的那条控制组。
+
+   **命令名这一半也从元数据枚举**（#1509 七轮）。六轮只把**参数配对**改成读 cmdlet 元数据，**命令名识别**仍是手写的四条清单（`set-variable`/`sv`/`new-variable`/`nv`），于是同一个缺陷类换个拼写照样放行——实测 exit 0 且运行期真的执行了外部命令（以 `/bin/echo` 回显证实）：
+
+   ```powershell
+   set -Scope Local action '/bin/echo'                          # set 是 Set-Variable 的内置别名
+   SET -Name action -Value '/bin/echo'                          # 命令名大小写不敏感
+   Microsoft.PowerShell.Utility\Set-Variable -Scope Local action '/bin/echo'   # 模块限定名
+   ```
+
+   现在别名来自 `Get-Alias -Definition` 对 `$seamBinderCanonicalNames`（只声明 `Set-Variable`/`New-Variable` 两个 cmdlet）的枚举，模块限定名按最后一个 `\` 序数切分后取末段再比对。比较用 `OrdinalIgnoreCase`：**刻意的大小写不敏感**，因为 PowerShell 解析命令名本来就不分大小写（`SET`、`microsoft.powershell.utility\SET-VARIABLE` 实测都真的绑定），而 `OrdinalIgnoreCase` 只折叠大小写、不折叠任何可忽略字符，所以仍在本 PR 的序数口径内。
+
+   `Get-Alias` 读的是**会话状态**，只会让 checker 变瞎（`set` 的 `Options` 是 `None`，profile 或先跑的任何东西都能删掉或改绑它，而被扫描的文件仍会在别处以完整别名表运行）。因此随附一份 `set`/`sv`/`nv` 的**下界**并入，它是「至少认这些」而不是识别清单——往里加名字只会把放行变成报告，绝不可能反过来。两半各有守卫：`binder-alias-removed-from-session` 在删掉 `Alias:set` 的会话里跑 checker、要求判定不变（钉下界），源码结构契约要求别名集合由**恰好一次** `Get-Alias -Definition $seamBinderCanonicalName` 派生（钉枚举本身——把清单手写全、行为用例全绿时它照样红）。
+
+   模块限定的**别名**（`Microsoft.PowerShell.Utility\sv`）是唯一的过报：PowerShell 只限定导出命令，内置别名不属于任何模块，该调用运行期直接抛 `CommandNotFoundException`（实测）。剥限定符是一条规则而不是两条，且过报只会多花一次权限、不会多给一次，属**fail-closed** 方向，由 `set-variable-module-qualified-alias-shadows-seam` 登记成一条明写的裁决。
 
    **索引与成员赋值为什么显式跳过**：`$h['k'] = …` 与 `$o.P = …` 在**语法层**不构成变量绑定——它们命名的是 `$h` / `$o` 所指对象的一个成员，文件里根本没有对名字 `h` / `o` 的绑定可记；算成绑定就会报一个背后什么都没有的违规。两条「断言当前放行」的用例把这个语法层判断钉住——把任一种改成绑定，用例就红。
 
@@ -180,7 +194,7 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 7. **`-OutVariable x`**：同上，且管道结束后仍然存在。用例 `residual-out-variable`。
 8. **A 函数里 `$script:x = …`，B 函数里 `& $x`**：跨 `ScriptBlockAst` 作用域，读的一侧看不到这次绑定。用例 `residual-cross-scope-script-assignment`。
 
-这八条的共同边界是**同一个作用域**或**运行期才成立的名字/绑定**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable`（含位置参数与别名）/ 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
+这八条的共同边界是**同一个作用域**或**运行期才成立的名字/绑定**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable`（含位置参数、从别名表枚举出的别名 `set`/`sv`/`nv`、大小写变体与模块限定名）/ 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
 
 索引赋值 `$h['k'] = …` 与成员赋值 `$o.P = …` 也不是残余，它们是**判定为不构成变量绑定**（理由见上表下方那段），各有一条「断言当前放行」的用例；这与「看不见所以放过」是两件事。
 
