@@ -117,14 +117,18 @@ PSScriptAnalyzer 可以作为后续增强层，但不是当前唯一门禁；当
    | `foreach ($x in …)` | `ForEachStatementAst.Variable` | ✅ | ❌ | `foreach-iteration-variable-shadows-seam` |
    | `$local:` / `$script:` / `$global:` / `$private:` / `$variable:` | 限定符归一化后比对 | ✅ | ❌ | `{local,script,global,private,variable}-qualifier-shadows-seam` 各一条 |
    | `data $x { … }` | `DataStatementAst.Variable` | ✅ | ❌ | `data-statement-shadows-seam` |
-   | `Set-Variable` / `New-Variable`（**字面量** `-Name`） | `CommandAst` | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam` |
+   | `Set-Variable` / `New-Variable`（**字面量**名字，命名 `-Name` 或位置参数，含 `sv`/`nv` 别名与参数前缀缩写） | `CommandAst`，按 cmdlet 参数元数据配对 | ✅ | ❌ | `set-variable-shadows-seam`、`new-variable-shadows-seam`、`set-variable-positional-name-after-{valued,value,switch}-parameter`、`new-variable-positional-name-after-valued-parameter`、`set-variable-alias-positional-name-after-valued-parameter`、`set-variable-abbreviated-{valued,name}-parameter` |
+   | `Set-Variable -Bogus x 'y'` / `Set-Variable -V x 'y'` | 参数名无法解析或前缀歧义 | ❌ **不构成绑定**（该调用运行期直接抛错，什么都没绑） | — | `set-variable-{unknown,ambiguous}-parameter-binds-nothing`（断言**当前放行**） |
    | `Set-Variable -Name $computed` | 名字只在运行期存在 | ❌ 残余 | — | `residual-set-variable-computed-name`（断言**当前放行**） |
+   | `Set-Variable @splat` | 名字在 hashtable 里，AST 解不出 | ❌ 残余 | — | `residual-set-variable-splatted-parameters`（断言**当前放行**） |
    | `$ExecutionContext.SessionState.PSVariable.Set(…)` | 同上 | ❌ 残余 | — | `residual-psvariable-set`（断言**当前放行**） |
    | `[ref] $x` / `Get-Variable x` 后写 `.Value` | 运行期替换绑定；写法上是成员赋值 | ❌ 残余 | — | `residual-ref-rebinding`（断言**当前放行**） |
    | `-PipelineVariable x`（下游元素消费） | 绑定由管道处理器创建，文件里没有对应 AST 节点 | ❌ 残余 | — | `residual-pipeline-variable`（断言**当前放行**） |
    | `-OutVariable x` | 同上，且管道结束后仍然存在 | ❌ 残余 | — | `residual-out-variable`（断言**当前放行**） |
    | A 函数里 `$script:x = …`，B 函数里 `& $x` | 跨 `ScriptBlockAst` 作用域，读的一侧看不到这次绑定 | ❌ 残余 | — | `residual-cross-scope-script-assignment`（断言**当前放行**） |
    | 自动变量 `$_`（管道 / `switch` / `catch`） | 不是本规则要建模的绑定 | n/a：`& $_` 一律违规 | — | `foreach-object-automatic-variable`、`switch-automatic-variable`、`catch-automatic-variable` |
+
+   **`Set-Variable` 的名字按 cmdlet 的参数绑定语义配对，不是「第一个非参数元素」**（#1509 六轮）。旧实现把第一个非 `CommandParameterAst` 的元素当位置化的 `-Name`，于是**任何带值的命名参数排在前面都能借名**：`Set-Variable -Scope Local action '/bin/echo'`、`Set-Variable -Value 'dotnet' action`、`sv -Scope Local action '/bin/echo'` 三种实测 exit 0，而运行期真的执行了外部命令。反向的粗暴修法（「遇到参数就跳过下一个元素」）会踩坏另一半：`-Force` 是 switch，它后面那个元素**就是**位置化的名字。所以配对读的是 cmdlet 自己的参数元数据（`Get-Command Set-Variable` 的 `ParameterType -eq [switch]`），带值参数吞掉后一个元素、switch 不吞；参数名按 PowerShell 自己的规则解析（精确名/别名，否则唯一前缀）。解析不出来或前缀有歧义时**不记任何绑定**，因为这种调用运行期直接抛错（实测 `NamedParameterNotFound` / `AmbiguousParameter`），压根没绑成——这不是放宽。表格里三类各有用例，`set-variable-positional-name-after-switch-parameter` 就是防粗暴修法的那条控制组。
 
    **索引与成员赋值为什么显式跳过**：`$h['k'] = …` 与 `$o.P = …` 在**语法层**不构成变量绑定——它们命名的是 `$h` / `$o` 所指对象的一个成员，文件里根本没有对名字 `h` / `o` 的绑定可记；算成绑定就会报一个背后什么都没有的违规。两条「断言当前放行」的用例把这个语法层判断钉住——把任一种改成绑定，用例就红。
 
@@ -165,13 +169,18 @@ library scope 是**声明出来的**，不只是从路径推断：`scripts/lib/`
 
 ### 已知残余
 
-残余共三条，每一条都有一条**断言当前放行**的用例；行为一变（不论收紧还是放松）用例就红，因此这份清单不会与实现悄悄脱节。
+残余共八条，除第 1 条外每一条都有一条**断言当前放行**的用例；行为一变（不论收紧还是放松）用例就红，因此这份清单不会与实现悄悄脱节。这份清单与上表的残余行是同一份枚举，不是它的摘要——六轮之前这里写「残余共三条」而上表已经登记了七条，属于同一类「措辞强于实现」的失配，一并更正。
 
-1. **同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否。
+1. **同一作用域内先后重新赋值**：`& $x` 与 `$x` 的真实内容仍受运行时决定，若有人在**同一个作用域**里写 `$x = { … }` 之后再改赋成字符串，AST 层面无法判否；方向是双向的（`??=` 那一半见上表下方那段）。这一条没有独立用例，因为「当前放行」正是本 checker 对同作用域赋值不排序的直接后果。
 2. **`Set-Variable` / `New-Variable` 的名字是算出来的**（`-Name $computed`）：绑定的名字只在运行期存在。用例 `residual-set-variable-computed-name`。
-3. **`$ExecutionContext.SessionState.PSVariable.Set(…)`**：同上。用例 `residual-psvariable-set`。
+3. **`Set-Variable @splat`**：名字在 hashtable 里，与第 2 条同类。用例 `residual-set-variable-splatted-parameters`。
+4. **`$ExecutionContext.SessionState.PSVariable.Set(…)`**：同上。用例 `residual-psvariable-set`。
+5. **`[ref] $x` / `Get-Variable x` 之后写 `.Value`**：运行期经活的 `PSVariable` 句柄改绑。用例 `residual-ref-rebinding`。
+6. **`-PipelineVariable x`**：绑定由管道处理器创建，文件里没有对应 AST 节点。用例 `residual-pipeline-variable`。
+7. **`-OutVariable x`**：同上，且管道结束后仍然存在。用例 `residual-out-variable`。
+8. **A 函数里 `$script:x = …`，B 函数里 `& $x`**：跨 `ScriptBlockAst` 作用域，读的一侧看不到这次绑定。用例 `residual-cross-scope-script-assignment`。
 
-这三条的共同边界是**同一个作用域**或**运行期才成立的名字**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable` / 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
+这八条的共同边界是**同一个作用域**或**运行期才成立的名字/绑定**，不是文件、也不是作用域链：跨函数借名（两种参数拼写都算）、「外层写 seam、内层改赋成字符串」，以及 `foreach` / 作用域限定符 / `data` / 字面量 `Set-Variable`（含位置参数与别名）/ 多重赋值 / 类型化赋值 / 带 attribute 的赋值 / 带括号的赋值这些拼写，**都不在残余里**——它们各有一条钉死的违规用例（见上表）。
 
 索引赋值 `$h['k'] = …` 与成员赋值 `$o.P = …` 也不是残余，它们是**判定为不构成变量绑定**（理由见上表下方那段），各有一条「断言当前放行」的用例；这与「看不见所以放过」是两件事。
 
@@ -193,7 +202,11 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 ### 扫描面覆盖的构造（`Get-NervOrdinalContractCoveredAxes`）
 
-`banned-c-operator`（`-ceq`/`-cne`/`-ccontains`/`-cnotcontains`/`-cin`/`-cnotin`，**无豁免通道**）、`culture-operator-with-string-literal`（`-eq`/`-ne`/`-contains`/`-in` 系列且至少一侧是字符串字面量或 `[string]` 转换）、`sort-object`（含**不带** `-Unique` 的排序）、`group-object`、`compare-object`、`select-object-unique`、`where-object-comparison-switch`、`switch-statement-string-clause`、`string-method-without-ordinal-comparison`（`.StartsWith`/`.EndsWith`/`.IndexOf`/`.LastIndexOf` 未显式传序数 `[StringComparison]`）、`ambiguous-method-with-string-literal`（`.Contains`/`.Equals` 单个**字面量**参数）、`non-ordinal-stringcomparison`（写出来的 `[StringComparison]::CurrentCulture` 之类）。
+`banned-c-operator`（`-ceq`/`-cne`/`-cge`/`-cgt`/`-clt`/`-cle`/`-ccontains`/`-cnotcontains`/`-cin`/`-cnotin`，**无豁免通道**）、`culture-operator-with-string-literal`（对应的默认拼写 `-eq`/`-ne`/`-ge`/`-gt`/`-lt`/`-le`/`-contains`/`-notcontains`/`-in`/`-notin`，且至少一侧是字符串字面量或 `[string]` 转换）、`sort-object`（含**不带** `-Unique` 的排序）、`group-object`、`compare-object`、`select-object-unique`、`where-object-comparison-switch`、`switch-statement-string-clause`、`string-method-without-ordinal-comparison`（`.StartsWith`/`.EndsWith`/`.IndexOf`/`.LastIndexOf` 未显式传序数 `[StringComparison]`）、`comparison-method-without-ordinal-comparison`（`[string]::Compare(…)` / `.CompareTo(…)` 未传序数 `[StringComparison]`、接收方也不是序数 `[StringComparer]`）、`parameterless-sort-method`（`.Sort()` 无参，用的是 culture-aware 的 `Comparer<string>.Default`）、`ambiguous-method-with-string-literal`（`.Contains`/`.Equals` 单个**字面量**参数）、`non-ordinal-stringcomparison`（写出来的 `[StringComparison]::CurrentCulture` 之类）、`non-ordinal-stringcomparer`（写出来的 `[StringComparer]::InvariantCulture` 之类）。
+
+**比较算子是从 parser 的类型系统穷举的，不是被点过名的拼写清单**（#1509 六轮）。PowerShell 的比较算子在 `TokenKind` 里成对出现（`I…` / `C…`），契约测试把这个成对家族整体枚举出来，断言它恰好等于三份名单的并集：banned（`-c*` 的相等/序关系/成员系）、culture（它们的默认拼写）、pattern（`-like`/`-notlike`/`-match`/`-notmatch`/`-replace`/`-split` 及其 `c` 变体，按 #1507 口径刻意不动，登记在盲区 `like-and-match-operators`）。三份名单互不相交、每个算子各有一条探针（banned 必报、culture 对字面量必报、pattern 必须沉默）。此前只枚举了相等/成员系的一半，序关系算子 `-lt`/`-le`/`-gt`/`-ge` 两边都没有——它们走 culture collation，与 `Sort-Object` 同一个毛病。
+
+**方法名与类型名这两类判据是名单，不是穷举**：`.StartsWith` 系、`.Compare`/`.CompareTo`、`.Sort()`、`.Contains`/`.Equals`、`[StringComparison]`/`[StringComparer]` 的判定都靠具名匹配，名单之外的拼写不在声明覆盖内（见下一节末尾对声明强度上界的表述）。`.CompareTo` 同时存在于数字与日期类型上，那里报出来是误报——这个方向是刻意的：误报靠把比较写清楚来消除，漏报是留存产物里的静默 locale 依赖。
 
 每一条都有一份合成源码的正向用例，断言**必须被报出来**；这也是「契约存在」不等于「零发现」的那道保险。
 
@@ -221,9 +234,14 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 | `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`（按人读文案**分组**；同一行的**排序**不在豁免内）。豁免按「函数名 + 表达式原文精确相等」匹配，不是子串，且必须恰好命中一处；「精确相等」是真序数（查表用 `[StringComparer]::Ordinal` 构造，裸 `@{}` 的默认比较器是 OrdinalIgnoreCase，#1509 四轮更正）。 | `scripts/tests/test-evidence.Tests.ps1` |
 | `scripts/lib/BackendTestShardSelectors.ps1` | 全文件按上述扫描面**零发现**，**零豁免**——这个库处理的每一个字符串都是标识符。 | `scripts/tests/backend-test-shards.Tests.ps1` |
 
-两份声明的强度都以上表的盲区为上界；盲区之外的构造，声明成立。
+**两份声明的强度上界怎么读**（#1509 六轮更正）。此前这里写的是「盲区之外的构造，声明成立」，那句话把「盲区表」当成了扫描面的补集——实测不成立：`-lt`/`-le`/`-gt`/`-ge`、`[string]::Compare`/`.CompareTo`、`[StringComparer]::InvariantCulture`、`.Sort()` 无参四类都是 culture-aware，既不在覆盖轴也不在盲区表。四类现已全部补进覆盖轴。准确的上界是分两半的：
 
-`scripts/lib/` 下其余五个库（`FullStackSessionRuntime.ps1`、`FullStackSessionState.ps1`、`LeaderDemoTelemetrySimulator.ps1`、`BackendTestShardTimings.ps1`、`ScriptAutomation.ps1`）**没有**这样的收口声明，issue #1509 里有逐行登记；那份登记的扫描轴只有 `-c*` 一条，因此比上面的扫描面窄，登记里已写明这个限定。
+- **比较算子**这一半是穷举的：`TokenKind` 的成对家族被整体枚举并与三份名单对账，因此「不在盲区表里的比较算子一律被覆盖」成立，将来 PowerShell 新增一个也会红。
+- **方法名 / 类型名**这一半是名单：`Get-NervOrdinalContract{StringMethods,ComparisonMethods,AmbiguousMethods}` 与 `[StringComparison]`/`[StringComparer]` 的后缀判据都靠具名匹配，名单之外的成员（例如某个第三方 comparer 类型、或另一个 culture-aware 的字符串方法）**既不在覆盖轴也不在盲区表**，声明对它们不作断言。
+
+盲区表登记的是「本可以被这两半判据看到、但刻意或无力区分」的构造；名单之外的拼写不进盲区表，也不算在声明强度里。
+
+`scripts/lib/` 下其余五个库（`FullStackSessionRuntime.ps1`、`FullStackSessionState.ps1`、`LeaderDemoTelemetrySimulator.ps1`、`BackendTestShardTimings.ps1`、`ScriptAutomation.ps1`）**没有**这样的收口声明。连同 `scripts/verify-*`、`scripts/*.ps1` 顶层、`scripts/tests/*` 这三层从未进过任何扫描面的存量，全部承接在 **issue #1512**（分层全量账、处理原则与验收都在那张票里）。owner 必须是一张在登记它的变更之外仍然存在的 issue——#1509 合并即关，不能当残余 owner，这正是 #1512 存在的理由。
 
 ## 端口、数据库与容器
 
