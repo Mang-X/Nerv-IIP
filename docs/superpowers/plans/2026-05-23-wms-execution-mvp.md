@@ -1,48 +1,48 @@
-# WMS Execution MVP Implementation Plan
+# WMS 执行 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Implement #136 by creating WMS for inbound, outbound, putaway, picking, count execution and WCS adapter task boundaries.
+**目标：**实施 #136，创建 WMS，覆盖入库、出库、上架、拣货、盘点执行和 WCS 适配器任务边界。
 
-**Architecture:** WMS is a CleanDDD business service under `backend/services/Business/Wms`. It owns warehouse execution state and inventory movement request metadata, but Inventory remains the only service that owns stock ledgers and movement facts. WMS integrates through public API/event boundaries.
+**架构：**WMS 是位于 `backend/services/Business/Wms` 下的 CleanDDD 业务服务。它拥有仓库执行状态和库存移动请求元数据，但 Inventory 仍是唯一拥有库存台账和移动事实的服务。WMS 通过公开 API/事件边界进行集成。
 
-**Tech Stack:** .NET 10, NetCorePal CleanDDD template, FastEndpoints, EF Core PostgreSQL, xUnit, ADR 0011 integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、NetCorePal CleanDDD 模板、FastEndpoints、EF Core PostgreSQL、xUnit、ADR 0011 集成事件转换、`Nerv.IIP.Testing` schema 约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-wms-execution-mvp-design.md` as the domain contract for this plan.
+使用 `docs/superpowers/specs/2026-05-23-wms-execution-mvp-design.md` 作为本计划的领域契约。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/Nerv.IIP.Business.Wms.Domain.csproj`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Nerv.IIP.Business.Wms.Infrastructure.csproj`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Nerv.IIP.Business.Wms.Web.csproj`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/InboundOrderAggregate/InboundOrder.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/OutboundOrderAggregate/OutboundOrder.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/WarehouseTaskAggregate/WarehouseTask.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/CountExecutionAggregate/CountExecution.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/WcsTaskAggregate/WcsTask.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/InventoryMovementRequestAggregate/InventoryMovementRequest.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/DomainEvents/WmsDomainEvents.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Inventory/IInventoryMovementClient.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/*.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/*.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEvents/WmsIntegrationEvents.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Endpoints/Wms/WmsEndpoints.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/WmsExecutionAggregateTests.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/WcsTaskAggregateTests.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsEndpointContractTests.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsInventoryBoundaryTests.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsIntegrationEventTests.cs`
-- Create: `backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsSchemaConventionTests.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/Nerv.IIP.Business.Wms.Domain.csproj`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Nerv.IIP.Business.Wms.Infrastructure.csproj`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Nerv.IIP.Business.Wms.Web.csproj`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/InboundOrderAggregate/InboundOrder.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/OutboundOrderAggregate/OutboundOrder.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/WarehouseTaskAggregate/WarehouseTask.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/CountExecutionAggregate/CountExecution.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/WcsTaskAggregate/WcsTask.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/AggregatesModel/InventoryMovementRequestAggregate/InventoryMovementRequest.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Domain/DomainEvents/WmsDomainEvents.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Auth/WmsPermissionCodes.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Inventory/IInventoryMovementClient.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/*.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/*.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEvents/WmsIntegrationEvents.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Endpoints/Wms/WmsEndpoints.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/WmsExecutionAggregateTests.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/WcsTaskAggregateTests.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsEndpointContractTests.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsInventoryBoundaryTests.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsIntegrationEventTests.cs`
+- 创建：`backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsSchemaConventionTests.cs`
 
-Shared files requested from WAVE2-INTEG:
+WAVE2-INTEG 请求的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `infra/aspire/Nerv.IIP.AppHost/Program.cs`
@@ -51,11 +51,11 @@ Shared files requested from WAVE2-INTEG:
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-wms-execution-mvp.ps1`
 
-## Task 1: Scaffold WMS Service Locally
+## Task 1：在本地搭建 WMS 服务脚手架
 
-- [ ] **Step 1: Create service projects**
+- [ ] **步骤 1：创建服务项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Wms -o backend/services/Business/Wms --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -63,78 +63,78 @@ dotnet new xunit -n Nerv.IIP.Business.Wms.Domain.Tests -o backend/services/Busin
 dotnet new xunit -n Nerv.IIP.Business.Wms.Web.Tests -o backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests --framework net10.0
 ```
 
-- [ ] **Step 2: Remove template demo code**
+- [ ] **步骤 2：移除模板演示代码**
 
-Run:
+运行：
 
 ```powershell
 rg -n "OrderAggregate|DeliverRecord|LoginEndpoint|ChatHub|LockEndpoint" backend/services/Business/Wms
 ```
 
-Expected: no matches.
+预期：没有匹配项。
 
-## Task 2: Implement Inbound And Outbound Execution
+## Task 2：实施入库与出库执行
 
-- [ ] **Step 1: Write failing execution tests**
+- [ ] **步骤 1：编写预期失败的执行测试**
 
-Cover:
+覆盖：
 
-1. Inbound order creation with source document reference and lines.
-2. Putaway task quantity cannot exceed inbound line quantity.
-3. Inbound completion requires idempotency key and creates movement request metadata.
-4. Outbound order creation with source document reference and lines.
-5. Pick quantity cannot exceed outbound line quantity.
-6. Pack review completion requires idempotency key and creates movement request metadata.
-7. Completed inbound/outbound orders are immutable.
+1. 使用来源单据引用和明细行创建入库单。
+2. 上架任务数量不能超过入库明细行数量。
+3. 完成入库需要幂等键，并创建移动请求元数据。
+4. 使用来源单据引用和明细行创建出库单。
+5. 拣货数量不能超过出库明细行数量。
+6. 完成装箱复核需要幂等键，并创建移动请求元数据。
+7. 已完成的入库单/出库单不可变。
 
-- [ ] **Step 2: Implement aggregate roots and domain events**
+- [ ] **步骤 2：实施聚合根和领域事件**
 
-Implement inbound, outbound, warehouse task, count execution and inventory movement request aggregates.
+实施入库单、出库单、仓库任务、盘点执行和库存移动请求聚合。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/Nerv.IIP.Business.Wms.Domain.Tests.csproj --no-restore
 ```
 
-Expected: WMS domain tests pass.
+预期：WMS 领域测试通过。
 
-## Task 3: Implement WCS Adapter Boundary
+## Task 3：实施 WCS 适配器边界
 
-- [ ] **Step 1: Write failing WCS tests**
+- [ ] **步骤 1：编写预期失败的 WCS 测试**
 
-Cover:
+覆盖：
 
-1. Dispatch is idempotent by warehouse task and adapter type.
-2. Completed task cannot later fail.
-3. Failed task stores diagnostic code and message.
-4. Retry increments attempt count without changing original warehouse task reference.
+1. 按仓库任务和适配器类型保证派发幂等。
+2. 已完成的任务此后不能转为失败。
+3. 失败任务保存诊断代码和消息。
+4. 重试增加尝试次数，但不改变原始仓库任务引用。
 
-- [ ] **Step 2: Implement WCS aggregate and events**
+- [ ] **步骤 2：实施 WCS 聚合和事件**
 
-Implement `WcsTask` and events for dispatched, completed and failed states.
+实施 `WcsTask` 及派发、完成和失败状态的事件。
 
-- [ ] **Step 3: Run WCS tests**
+- [ ] **步骤 3：运行 WCS 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/Nerv.IIP.Business.Wms.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~WcsTaskAggregateTests
 ```
 
-Expected: WCS tests pass.
+预期：WCS 测试通过。
 
-## Task 4: Add Persistence, API And Inventory Boundary
+## Task 4：添加持久化、API 和 Inventory 边界
 
-- [ ] **Step 1: Configure DbContext**
+- [ ] **步骤 1：配置 DbContext**
 
-Use schema `wms` and migrations history `wms.__EFMigrationsHistory`. No table may contain `on_hand_quantity`, `available_quantity` or `stock_balance`.
+使用 `wms` schema 和 migration 历史表 `wms.__EFMigrationsHistory`。任何表都不得包含 `on_hand_quantity`、`available_quantity` 或 `stock_balance`。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成 migration**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -142,29 +142,29 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add InitialWmsSchema --project backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Nerv.IIP.Business.Wms.Infrastructure.csproj --startup-project backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Nerv.IIP.Business.Wms.Web.csproj --output-dir Migrations
 ```
 
-- [ ] **Step 3: Add endpoint and inventory-boundary tests**
+- [ ] **步骤 3：添加 endpoint 和库存边界测试**
 
-Create tests covering route shape, permission codes, operation IDs, inventory movement request payloads and idempotency keys.
+创建测试，覆盖路由结构、权限代码、operation ID、库存移动请求载荷和幂等键。
 
-- [ ] **Step 4: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 4：实施 command、query 和 FastEndpoints**
 
-Implement endpoints from the spec under `Endpoints/Wms`. Keep Inventory posting behind `IInventoryMovementClient` so Web tests use a fake client.
+在 `Endpoints/Wms` 下实施规格中的 endpoint。将 Inventory 过账封装在 `IInventoryMovementClient` 后，使 Web 测试能够使用假客户端。
 
-- [ ] **Step 5: Run Web tests**
+- [ ] **步骤 5：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj --no-restore
 ```
 
-Expected: WMS Web tests pass.
+预期：WMS Web 测试通过。
 
-## Task 5: Add Events And Schema Guardrails
+## Task 5：添加事件和 Schema 防护
 
-- [ ] **Step 1: Add event converter tests**
+- [ ] **步骤 1：添加事件转换器测试**
 
-Verify event names:
+验证事件名：
 
 1. `wms.InboundOrderCompleted`
 2. `wms.OutboundOrderCompleted`
@@ -172,15 +172,15 @@ Verify event names:
 4. `wms.WcsTaskDispatched`
 5. `wms.WcsTaskFailed`
 
-- [ ] **Step 2: Add schema convention tests**
+- [ ] **步骤 2：添加 schema 约定测试**
 
-In addition to standard schema convention assertions, include a WMS-specific assertion that no mapped table/column name suggests stock balance ownership.
+除标准 schema 约定断言外，再加入一项 WMS 专用断言，确保任何已映射表名/列名都不会暗示 WMS 拥有库存余额。
 
-## Task 6: Handoff Shared Changes To WAVE2-INTEG
+## Task 6：向 WAVE2-INTEG 移交共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -193,14 +193,13 @@ In the PR/session summary, include:
 - Add Inventory base URL environment variable if the first WMS adapter calls Inventory over HTTP.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Domain.Tests/Nerv.IIP.Business.Wms.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
-
+预期：两条命令均通过。

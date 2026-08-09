@@ -1,22 +1,22 @@
-# Quality Inspection MVP Implementation Plan
+# 质量检验 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Implement #132 by extending the existing Quality service with inspection plans, inspection records and inspection result events while preserving current NCR behavior.
+**目标：**实施 #132，在保留现有 NCR 行为的同时，扩展既有 Quality 服务，加入检验计划、检验记录和检验结果事件。
 
-**Architecture:** This is a delta plan for an existing service. Quality keeps ownership of NCR and adds InspectionPlan and InspectionRecord aggregates in the same `quality` schema. Quality emits inspection result events and may open NCRs from failed records, but it never directly mutates Inventory, WMS, ERP or MES.
+**架构：**这是针对既有服务的增量计划。Quality 继续拥有 NCR，并在同一 `quality` schema 中增加 InspectionPlan 和 InspectionRecord 聚合。Quality 发布检验结果事件，也可以根据失败记录创建 NCR，但绝不直接修改 Inventory、WMS、ERP 或 MES。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, EF Core PostgreSQL, xUnit, CAP-style integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、EF Core PostgreSQL、xUnit、CAP 风格的集成事件转换、`Nerv.IIP.Testing` schema 约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md` as the domain contract for this plan.
+使用 `docs/superpowers/specs/2026-05-23-quality-inspection-mvp-design.md` 作为本计划的领域契约。
 
-## Current Code Facts
+## 当前代码事实
 
-Existing Quality files include:
+现有 Quality 文件包括：
 
 1. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs`
 2. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/ApplicationDbContext.cs`
@@ -24,43 +24,43 @@ Existing Quality files include:
 4. `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/NonconformanceReportAggregateTests.cs`
 5. `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
 
-Do not run `dotnet new` for Quality.
+不得为 Quality 运行 `dotnet new`。
 
-## Files
+## 文件
 
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/QualityFacts.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionPlanAggregate/InspectionPlan.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionRecordAggregate/InspectionRecord.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionPlanEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionRecordEntityTypeConfiguration.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/CreateInspectionPlanCommand.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/ActivateInspectionPlanCommand.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/OpenNcrFromInspectionCommand.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionPlans/ListInspectionPlansQuery.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionRecords/ListInspectionRecordsQuery.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/InspectionPlans/InspectionPlanEndpoints.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/InspectionRecords/InspectionRecordEndpoints.cs`
-- Create: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/InspectionAggregateTests.cs`
-- Create: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionEndpointContractTests.cs`
-- Create: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionIntegrationEventTests.cs`
-- Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/QualityFacts.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionPlanAggregate/InspectionPlan.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionRecordAggregate/InspectionRecord.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionPlanEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionRecordEntityTypeConfiguration.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Auth/BusinessPermissionCodes.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/CreateInspectionPlanCommand.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/ActivateInspectionPlanCommand.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/OpenNcrFromInspectionCommand.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionPlans/ListInspectionPlansQuery.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionRecords/ListInspectionRecordsQuery.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/InspectionPlans/InspectionPlanEndpoints.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/InspectionRecords/InspectionRecordEndpoints.cs`
+- 创建：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/InspectionAggregateTests.cs`
+- 创建：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionEndpointContractTests.cs`
+- 创建：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionIntegrationEventTests.cs`
+- 修改：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
 
-Shared files requested from #140:
+#140 请求的共享文件：
 
 - `docs/architecture/authorization-matrix.md`
 - `docs/architecture/database-schema-catalog.md`
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-quality-inspection-mvp.ps1`
 
-## Task 1: Baseline Current Quality
+## Task 1：建立当前 Quality 基线
 
-- [ ] **Step 1: Read current NCR behavior**
+- [ ] **步骤 1：阅读当前 NCR 行为**
 
-Read:
+阅读：
 
 ```powershell
 Get-Content backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs
@@ -68,67 +68,67 @@ Get-Content backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/
 Get-Content backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs
 ```
 
-Expected: existing NCR behavior is understood and preserved.
+预期：理解并保留现有 NCR 行为。
 
-- [ ] **Step 2: Run focused baseline tests**
+- [ ] **步骤 2：运行聚焦的基线测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj --no-restore
 ```
 
-Expected: tests pass before changes. If they fail, record failing tests in the PR.
+预期：测试在变更前通过。如果失败，在 PR 中记录失败的测试。
 
-## Task 2: Add Inspection Domain Model
+## Task 2：添加检验领域模型
 
-- [ ] **Step 1: Write aggregate tests**
+- [ ] **步骤 1：编写聚合测试**
 
-Create `InspectionAggregateTests.cs` for:
+创建 `InspectionAggregateTests.cs`，覆盖：
 
-1. Draft inspection plan can add characteristics.
-2. Activated inspection plan cannot change execution characteristics.
-3. New plan version supersedes previous plan.
-4. Inspection record passes when all required characteristics pass.
-5. Inspection record rejects when a required characteristic fails.
-6. Failed inspection can open an NCR linked to the inspection record.
+1. 草稿状态的检验计划可以添加特性。
+2. 已激活的检验计划不能修改执行特性。
+3. 新计划版本取代旧计划。
+4. 所有必需特性均通过时，检验记录判定为通过。
+5. 任一必需特性失败时，检验记录判定为拒收。
+6. 检验失败时，可以创建与检验记录关联的 NCR。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~InspectionAggregateTests
 ```
 
-Expected before implementation: compile failure because inspection aggregates do not exist.
+实施前预期：由于检验聚合尚不存在，编译失败。
 
-- [ ] **Step 2: Implement InspectionPlan and InspectionRecord**
+- [ ] **步骤 2：实施 InspectionPlan 和 InspectionRecord**
 
-Implement `InspectionPlan.cs` and `InspectionRecord.cs` with public references for source document, SKU, partner, work center and file attachment IDs. Use `Guid.CreateVersion7()` for entity IDs.
+实施 `InspectionPlan.cs` 和 `InspectionRecord.cs`，提供对来源单据、SKU、合作方、工作中心和文件附件 ID 的公开引用。实体 ID 使用 `Guid.CreateVersion7()`。
 
-- [ ] **Step 3: Add NCR link behavior**
+- [ ] **步骤 3：添加 NCR 关联行为**
 
-Extend `NonconformanceReport` only as needed to link an NCR to an inspection record ID and source reference. Do not change existing NCR state transitions unless a failing regression test proves a bug.
+仅按关联 NCR 与检验记录 ID、来源引用所需扩展 `NonconformanceReport`。除非失败的回归测试证明存在缺陷，否则不得更改现有 NCR 状态转换。
 
-- [ ] **Step 4: Run domain tests**
+- [ ] **步骤 4：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore
 ```
 
-Expected: all Quality domain tests pass.
+预期：所有 Quality 领域测试通过。
 
-## Task 3: Add Persistence And Events
+## Task 3：添加持久化与事件
 
-- [ ] **Step 1: Configure EF mappings**
+- [ ] **步骤 1：配置 EF 映射**
 
-Add DbSets and entity configurations for inspection plans and records in schema `quality`. Keep the existing `quality.__EFMigrationsHistory` configuration.
+在 `quality` schema 中为检验计划和记录添加 DbSet 与实体配置。保留现有 `quality.__EFMigrationsHistory` 配置。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成 migration**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -136,57 +136,57 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add AddQualityInspectionFacts --project backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Nerv.IIP.Business.Quality.Infrastructure.csproj --startup-project backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Nerv.IIP.Business.Quality.Web.csproj --output-dir Migrations
 ```
 
-Expected: migration adds inspection tables without deleting or recreating NCR tables.
+预期：migration 添加检验表，且不删除或重建 NCR 表。
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Create `QualityInspectionIntegrationEventTests.cs` and verify:
+创建 `QualityInspectionIntegrationEventTests.cs` 并验证：
 
 1. `quality.InspectionPassed`
 2. `quality.InspectionRejected`
-3. Existing NCR event names still pass.
+3. 现有 NCR 事件名仍通过测试。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj --no-restore --filter FullyQualifiedName~QualityInspectionIntegrationEventTests
 ```
 
-Expected: event converter tests pass.
+预期：事件转换器测试通过。
 
-## Task 4: Add API Surface
+## Task 4：添加 API 接口面
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加 endpoint 契约测试**
 
-Create `QualityInspectionEndpointContractTests.cs` for:
+创建 `QualityInspectionEndpointContractTests.cs`，覆盖：
 
-1. Inspection endpoints require internal service authorization.
-2. `POST /api/business/v1/quality/inspection-plans` creates a plan.
-3. `POST /api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` activates a plan.
-4. `POST /api/business/v1/quality/inspection-records` records pass and reject outcomes.
-5. `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr` opens an NCR.
-6. OpenAPI operation IDs are stable.
-7. Existing NCR endpoint tests still pass.
+1. 检验 endpoint 要求内部服务授权。
+2. `POST /api/business/v1/quality/inspection-plans` 创建计划。
+3. `POST /api/business/v1/quality/inspection-plans/{inspectionPlanId}/activate` 激活计划。
+4. `POST /api/business/v1/quality/inspection-records` 记录通过和拒收结果。
+5. `POST /api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr` 创建 NCR。
+6. OpenAPI operation ID 保持稳定。
+7. 现有 NCR endpoint 测试仍通过。
 
-- [ ] **Step 2: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 2：实施 command、query 和 FastEndpoints**
 
-Implement the command, query and endpoint files listed in the Files section. Use the permissions from the Quality inspection spec.
+实施“文件”章节列出的 command、query 和 endpoint 文件。使用 Quality 检验规格中定义的权限。
 
-- [ ] **Step 3: Run Web tests**
+- [ ] **步骤 3：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj --no-restore
 ```
 
-Expected: all Quality Web tests pass.
+预期：所有 Quality Web 测试通过。
 
-## Task 5: Handoff Shared Changes To #140
+## Task 5：向 #140 移交共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR body for this session, include:
+在本会话的 PR 正文中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -197,13 +197,13 @@ In the PR body for this session, include:
 - Update readiness to say Quality inspection is complete after focused tests pass.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/Nerv.IIP.Business.Quality.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两条命令均通过。
