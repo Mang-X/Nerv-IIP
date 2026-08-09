@@ -21,7 +21,7 @@
 - [ ] 添加领域测试，证明 BusinessPartner.Update 可变更主要角色并保留商务/税务/联系默认值。
 - [ ] 添加领域测试，证明 WorkCenter 会存储利用率、效率、产能数量、成本中心和瓶颈标志。
 - [ ] 添加领域测试，证明 UomConversion 支持 `EffectiveTo`、WorkCalendar 支持时区/生效范围/节假日日历，Shift 支持休息分钟数。
-- [ ] 运行 `dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj --filter MasterDataAggregateTests --no-restore`；预期首次运行因生产字段缺失而失败。
+- [ ] 运行 `dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Domain.Tests/Nerv.IIP.Business.MasterData.Domain.Tests.csproj --filter MasterDataAggregateTests --no-restore`；预期首次运行因正式实现中的字段缺失而失败。
 - [ ] 为新字段的创建/更新/详情投影添加 Web/API 测试。
 - [ ] 运行 `dotnet test backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj --filter MasterDataApiContractTests --no-restore`；预期首次运行因命令/DTO 缺失而失败。
 

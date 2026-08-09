@@ -33,7 +33,7 @@
 
 | 文件 | 冲突类型 | 职责 / 对账要点 |
 |---|---|---|
-| `frontend/packages/api-client/src/business-console.ts` | 上次自动合过；本次复核 | 精选 barrel；冲突时按并集合并保留两边导出 |
+| `frontend/packages/api-client/src/business-console.ts` | 上次自动合过；本次复核 | 整理后的 barrel 导出；冲突时按并集合并保留两边导出 |
 | `frontend/apps/business-console/src/pages/mes/reports.vue` | 修改/删除（我方删除、codex 修改） | 决策：我方已用 production-reports 取代 reports，**保留删除**（`git rm`）；除非 codex 版本包含 production-reports 没有的能力——执行时核对一次 |
 | `…/mes/work-orders/index.vue` | 内容冲突 | 工单列表 + 急单；冲突最大（rush 表单 + skuName accessor + 工单号链接） |
 | `…/mes/operation-tasks.vue` | 内容冲突 | 工序队列；已知冲突：import、KPI 计数、column（operationTaskNo/workCenterName）、状态筛选 |
