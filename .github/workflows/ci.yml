@@ -16,111 +16,111 @@ concurrency:
 
 jobs:
   # 超时策略（MAN-799，针对 MAN-669 分片拓扑重新推导）。每个 job 均声明
-  # `timeout-minutes`，每个显式 step 也均声明一项。除此以外分为两个层级，因为
-  # “保护证据”仅适用于存在可保护证据之处：
+  # `timeout-minutes`，每个显式 step 也声明一个。除此之外分为两个层级，因为
+  # “保护证据”仅适用于有证据可保护的地方：
   #
   #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
   #      erp-sales-order-demand-acceptance 和 connector-host-tests：
   #          sum(step timeout-minutes) < job timeout-minutes.
-  #      job 级超时会取消*整个* job，包括 `if: always()` step，并会一并中断
-  #      MAN-661 test-evidence 产物；step 级超时只会使该 step 失败，因此 job 会继续进入
-  #      `Collect …` / `Upload …`。严格不等式保证某个 step 预算先触发。仅当*每个*显式 step
-  #      都有预算（包括证据收集/上传）时，它才成立。剩余余量（job − sum）还必须
-  #      吸收 GitHub 隐式的 `Set up job` 和 post step；它们不在 `steps:` 中，且不能
-  #      设置 `timeout-minutes`；post step 在 Upload *之后*执行，因此会消耗预算却
-  #      永不损失证据。在此新增 step 就意味着增加其预算*并且*提高 job 预算。
-  #      以下每个分片 job 正是因此保留 6 分钟余量。
-  #      预算。以下每个分片 job 正是因此保留 6 分钟余量。
+  #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
+  #      连同 MAN-661 test-evidence 产物一起中断；step 级超时只会使该
+  #      step 失败，因此 job 会继续进入 `Collect …` / `Upload …`。严格不等式
+  #      保证某个 step 预算先触发。仅当*每个*显式 step 都有
+  #      预算（包括证据收集/上传）时，它才成立。剩余余量（job − sum）还必须
+  #      吸收 GitHub 隐式的 `Set up job` 和 post step；它们不在 `steps:` 中，也不能
+  #      设置 `timeout-minutes`；post step 在 Upload *之后*运行，因此会消耗预算，但
+  #      永远不会让证据丢失。在此新增 step 意味着增加该 step 的预算，*同时*提高 job
+  #      预算。以下每个分片 job 正是为此保留 6 分钟余量。
   #
-  #   B) 不存在失败后仍可运行 step 的 job——`Backend Tests` 聚合、
-  #      backend-test-shard-governance、frontend、openapi-client-drift、script-governance：job
-  #      预算触发时不会损失任何内容，因此不为覆盖 step 总和而抬高预算。此处 **job**
-  #      预算是按观测运行时长确定的快速失败界限。step 预算仅为逐 step 上限：一个 job 中有
-  #      多个 step 时，后续 step 无法分别触达（`frontend` 在 20m job 内合计为 58m，因此其 15m
-  #      build 预算无法独立触发），这一点被接受，而非作出相反声明。唯一强制的是在每种调度下
-  #      都无法存活的情形——step 预算大于或等于整个 job 预算。
-  #      唯一强制的是在每种调度下都无法存活的情形——step 预算大于或等于
+  #   B) 不含失败后仍可运行 step 的 job——`Backend Tests` 聚合、
+  #      backend-test-shard-governance、frontend、openapi-client-drift、script-governance：不会有任何内容
+  #      在 job 预算触发时丢失，因此预算*不会*为了超过 step 总和而抬高。
+  #      此处 **job** 预算是根据观测运行时长确定的快速失败界限。step 预算
+  #      仅为逐 step 上限：当一个 job 含多个 step 时，靠后的 step 无法
+  #      分别触达（`frontend` 在 20m job 内合计为 58m，因此其 15m build 预算
+  #      永远无法单独触发），对此明确接受，而非作出相反声明。唯一
+  #      强制的是在任何调度下都不可能生效的情形——step 预算大于或等于
   #      整个 job 预算。
   #
-  # 四个 backend 快速分片采用**同一**测试 step 预算，按四者整体的观测最大值约 2 倍确定
-  # （而非按分片单独确定）。短时固定成本 step（checkout、SDK setup、cache restore、
-  # evidence collect/upload）使用 3–8 分钟的下限，任何健康运行都不会接近它。
+  # 四个 backend 快速分片采用同一份共享测试 step 预算，按最大值的 ~2x 确定，该最大值
+  # 从全部四个分片整体观测得出（而非逐分片）。短时固定成本 step（checkout、SDK setup、cache
+  # restore、evidence collect/upload）设置 3–8 分钟下限，健康 run 远不会接近该值。
   #
-  # MAN-669 PR-A 重新归置了分片内容，因此四个分片不再有四种不同形态，也不再采用四种不同预算。
-  # 旧的差异（8m / 10m / 15m / 12m）来自重平衡前的拆分：一个分片的 TRX elapsed 为 357s，另一个为 23s；
-  # 该拓扑已不复存在，而跨拓扑变更继承的预算不代表任何含义。**每个分片拥有的 project 仅由
-  # scripts/backend-test-shards.json 定义**——这些注释有意不重复该内容，因为下次重新平衡分片时，
-  # 重述的列表就会漂移。
-  # 这些注释有意不重复它，因为下次重新平衡分片时，重述的列表会
-  # 漂移。
+  # MAN-669 PR-A 重新归置了分片内容，因此四个分片不再具有四种不同的
+  # 形态，也不再采用四种不同预算。旧的差异（8m / 10m / 15m / 12m）
+  # 按重平衡前的拆分确定：一个分片的 TRX elapsed 为 357s，另一个为 23s；
+  # 该拓扑已不存在，而跨拓扑变更继承的预算
+  # 不代表任何含义。**每个分片拥有的 project 仅由 scripts/backend-test-shards.json 定义**——
+  # 这些注释有意不复述该列表，因为下次
+  # 重新平衡分片时，复述的列表就会漂移。
   #
-  # 此次重平衡的一项权重输入并未保留。记录于此以确保下一次不会继承它：business-core-b
-  # （backend-shard-4）被赋予最低 TRX 份额，是因为它在重平衡前 run 30999368607 中具有最差的
-  # step-to-TRX 比率——265s step 对 191.7s TRX，比率为 1.38，而 business-core-a 为
-  # 372s/357.5s = 1.04。该比率描述的 project 集合已不存在：重平衡移出了该分片 9 个 project 中的 7 个，
-  # 且 step-minus-TRX 是依赖闭包的 restore/build 成本，它随 project 移动，而不随 lane 标签移动。
-  # 重平衡后，在两个分片均产生读数的三次 run（31114441118、31115903098、31118427925）中，
-  # business-core-b 是四者中*最快*的分片（144s / 196s / 142s test step），business-core-a 是
-  # critical path（249s / 252s / 234s）——该分片被过度减轻，而非被正确减轻。差距位于 runner 方差内，
-  # 因此 PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据重平衡后的测量重新推导权重，且绝不
-  # 得延续 1.38。
-  # PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据重平衡后的测量重新推导权重，且绝不
-  # 得延续 1.38。
+  # 此次重平衡的一项权重输入并未保留下来。记录于此，确保下次调整
+  # 不会继承它：business-core-b（backend-shard-4）被赋予最低 TRX 份额，因为它
+  # 在重平衡前的 run 30999368607 中拥有最差的 step-to-TRX 比率——265s step 对 191.7s TRX，
+  # 比率为 1.38，而 business-core-a 为 372s/357.5s = 1.04。该比率描述的 project 集合
+  # 已不存在：重平衡移出了该分片 9 个 project 中的 7 个，而 step-minus-TRX
+  # 是依赖闭包的 restore/build 成本，它随 project 移动，而不随
+  # lane 标签移动。重平衡后，在两个分片均产生读数的三次 run 中
+  # （31114441118、31115903098、31118427925），business-core-b 是四者中*最快*的分片
+  # （144s / 196s / 142s test step），而 business-core-a 是 critical path（249s / 252s / 234s）——
+  # 该分片被过度减轻，而非正确减轻。差距落在 runner 方差范围内，因此
+  # PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据
+  # 重平衡后的测量重新推导权重，且绝不能继续沿用 1.38。
   #
-  # 根据本分支三次 run（31114441118、31115903098、31116998822）重新推导。每个分片的 test
-  # step 依次为 3.5m / 3.0m / 4.2m / 2.4m，然后为 4.5m / 3.0m / 4.2m / 3.3m，然后为 4.7m / 3.1m /
+  # 根据本分支三次 run（31114441118、31115903098、31116998822）重新推导。每个分片的
+  # test step 依次为 3.5m / 3.0m / 4.2m / 2.4m，然后为 4.5m / 3.0m / 4.2m / 3.3m，然后为 4.7m / 3.1m /
   # (setup-failed) / 3.1m；TRX elapsed 为 129.8s / 150.6s / 164.5s / 112.9s，然后为 215.5 / 144.5 /
-  # 139.6 / 130.2，然后为 177.4 / 133.6 / — / 129.1。可得出两点：相同 commit 上 hosted-runner
-  # 方差为数十个百分点，并会改变哪个分片居首，因此逐分片预算只会编码噪声——四者采用同一预算。
-  # 该界限按三次 run 中的最大值 4.7m 确定。因此，以下对全部四个分片完全相同：
-  # 三次 run 的最大值为 4.7m。因此，以下对全部四个分片完全相同：
+  # 139.6 / 130.2，然后为 177.4 / 133.6 / — / 129.1。由此得出两点。Hosted-runner 在
+  # *同一 commit* 上的方差达到数十个百分点，并会改变哪个分片居首，因此逐分片预算
+  # 只会编码噪声——四者采用同一预算。该界限按观测范围内的最大值确定，而观测范围是
+  # 这三次 run，最大值为 4.7m。因此，对全部四个分片同样有：
   #
   #     checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3
   #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
   #
-  # 该算术是上述层级 A 的义务；变更任何一个数字都意味着必须重新检查它。
+  # 该算术是上述层级 A 的义务；变更任何一个数字都需要重新检查这项算术。
   #
-  # 注意共享预算*不*允许做什么。这对全部四个分片同样成立——它们的 step 向量均为
-  # 3 / 5 / 8 / 3 / 10 / 5 / 5——因此仅在此处声明，而不在任一 job 中重复：六个非 test step 已携带
-  # 强制的 29m shared-convention 预算，因此层级 A 严格的 job > step-sum 要求使 45m 成为该不变量
-  # 留下的结构下限，而非对任一分片运行时的声明。挂起 run 实际触发的是 10m test step 预算。
-  # 若其接近 10m，必须同时提高两项预算，而非仅提高 step 预算，否则严格不等式将不再保护证据 step。
-  # 挂起 run 实际触发的是 10m test step 预算。若其接近 10m，必须同时提高两项预算，而非
-  # 仅提高 step 预算，否则严格不等式将不再保护证据 step。
+  # 注意共享预算*不*允许你做什么。这对全部四个分片同样成立——
+  # 它们的 step 向量均为 3 / 5 / 8 / 3 / 10 / 5 / 5——所以只在此处声明，而
+  # 不在任一 job 中声明：六个非 test step 已带有强制的 29m shared-convention
+  # 预算，因此层级 A 的严格 job > step-sum 要求使 45m 成为
+  # 该不变量留下的结构下限，而非对任一分片运行时的声明。实际会触发的预算
+  # 在挂起的 run 上是 10m test step。若它接近 10m，应同时提高两项预算，而不是
+  # 只提高 step 预算，否则严格不等式将不再保护证据 step。
   #
   # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
   # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
   #
   # ---------------------------------------------------------------------------------------------
-  # 构建策略（MAN-669 PR-B / PR-C）。该主题与上述超时策略分离；两个 PR 均未改变预算，因此此处任何内容
-  # 均不参与 Test-NervCiWorkflowBudgets 强制的算术。仅保留结论——全部测量、run id、样本限制和重新开启条件
-  # 均集中在一处：docs/architecture/backend-ci-build-strategy.md。不得在此重述数字：MAN-664 将重新测量，
-  # 而复制到四个文件中的数字会在其中三个中漂移。
-  # 而复制到四个文件中的数字会在其中三个中漂移。
+  # 构建策略（MAN-669 PR-B / PR-C）。此主题与上述超时策略分开；两个 PR
+  # 都未变更预算，因此这里的任何内容都不参与 Test-NervCiWorkflowBudgets 强制的算术。
+  # 这里只保留结论——每项测量、run id、样本限制和重新开启条件仅位于唯一的
+  # 位置：docs/architecture/backend-ci-build-strategy.md。不得在此复述数字：MAN-664
+  # 将重新测量，而复制到四个文件中的数字会在其中三个文件中漂移。
   #
-  #   * 每个分片保持只 restore 和 build 自己的 .slnf。build-once（一个向分片提供预构建输出的串行 build job）
-  #     已在四次 hosted-runner run（两次热、两次冷）中测量，且在两种核算口径下均更慢——单独的全 solution build
-  #     已比任一单分片自身的 restore+build 更耗时，因此即使尚未在 job 间移动数 GB 输出，将它抬到 critical path
-  #     也会更慢、得不偿失。将一个分片拆分为 restore / build --no-restore / test 也更慢。
-  #     即使尚未在 job 间移动数 GB 输出，也会更慢、得不偿失。将一个分片拆分为
+  #   * 每个分片继续只 restore 和 build 自己的 .slnf。build-once（一个串行 build job，
+  #     向各分片提供预构建输出）已在四次 hosted-runner run 上测量，其中两次热缓存、
+  #     两次冷缓存；在两种核算口径下均更慢——仅 whole-solution build 本身
+  #     就比任何单个分片自身的 restore+build 成本更高，因此将它置于 critical path
+  #     即使尚未在 job 间传输数 GB 输出，也得不偿失。把一个分片拆分为
+  #     restore / build --no-restore / test 也更慢。
   #   * 对三个专业 job（erp-sales-order-demand-acceptance、connector-host-tests、
-  #     openapi-client-drift）就同一重复问题做过清点，且其 build 命令均未改变：它们均不 build 整个 solution，
-  #     且三者均远低于 critical path，因此将其 build 时间降为零也不会缩短 CI wall clock。
-  #     命令均未改变：它们均不 build 整个 solution，且三者均远低于 critical
-  #     path，因此将其 build 时间降为零也不会缩短 CI wall clock。
+  #     openapi-client-drift）也按相同的重复问题做了清点，其 build
+  #     命令均未改变：没有一个会 build 整个 solution，且三者都远低于 critical
+  #     path，因此即使将它们的 build 时间降为零，也不会缩短 CI wall clock。
   #
-  # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢分片的 build 接近 whole-solution build、
-  # runner 规格变化、artifact-transfer 提升一个数量级、总 test 时间再次大幅下降，或专业 job 到达 critical path）——
-  # 并重新测量而非推理。否则引用该文档。
-  # 到达 critical path）——并重新测量而非推理。否则引用该文档。
+  # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢
+  # 分片的 build 接近 whole-solution build、runner 规格变化、出现一个数量级的
+  # artifact-transfer 提升、总 test 时间再次大幅下降，或某个专业 job
+  # 到达 critical path）——并应重新测量，而非靠推理。否则引用该文档。
   #
-  # 一项无论如何均不得重新推导的定义：“critical path”指 run 中最大的 job，而不是最慢的分片。
-  # 二者已不再相同——一个 frontend job 已超过最慢分片——因此按“最慢分片”估算任何内容都会低估
-  # run 的 wall clock。
+  # 还有一项定义无论如何都不得重新推导：“critical path”指最大的 job，其判定范围是
+  # 该次 run，而不是最慢的分片。二者已不再相同——已有一个 frontend job
+  # 超过最慢的分片——因此依据“最慢分片”估算任何内容都会低估
   # run 的 wall clock。
   backend-tests:
     name: Backend Tests
-    # 层级 B。纯聚合：针对 needs 结果进行五次 `test` 比较，观测约为 ~2s。
+    # 层级 B。纯聚合：对 needs 结果进行五次 `test` 比较，观测值为 ~2s。
     timeout-minutes: 5
     runs-on: ubuntu-latest
     if: always()
@@ -142,9 +142,9 @@ jobs:
 
   backend-test-shard-governance:
     name: Backend Test Shard Governance
-    # 层级 B（失败后没有 step 继续运行）。只读 manifest + 结构化 `ci.yml` 验证，
-    # 观测最大值为 0.8m。15m job 预算是快速失败界限；step 预算合计为 18m，
-    # 且仅为逐 step 上限。
+    # 层级 B（失败后没有 step 运行）。只读 manifest + 结构化 `ci.yml` 验证，
+    # 观测最大值为 0.8m。15m job 预算是快速失败界限；step 预算合计为 18m，且
+    # 仅为逐 step 上限。
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
@@ -158,9 +158,9 @@ jobs:
         with:
           ruby-version: '3.4'
 
-      # 每个 step 一个 script，不在单个 `run:` 块中串联：两个 script 都将 findings 输出到 stdout
-      # 并以 1 退出；串联会让第二个 script 的 `$LASTEXITCODE` 覆盖第一个，从而将真实失败变绿
-      # （已测量）。原因：
+      # 每个 step 只运行一个 script，不在一个 `run:` 块中串联：两个 script 都会在 stdout 报告发现的问题
+      # 并以 1 退出；若串联，第二个 script 的 `$LASTEXITCODE` 会覆盖第一个的值，
+      # 使真实失败变绿（已测量）。原因：
       # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
       - name: Validate backend test shard classification
         timeout-minutes: 5
@@ -174,9 +174,9 @@ jobs:
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
-    # 层级 A；共享分片预算为 39m < 45m，仅在 `jobs:` 顶部的超时策略中推导一次。由于 MAN-661 在
-    # scripts/lib/TestEvidence.ps1 中将证据 lane backend-shard-1 映射到它，job 名称已冻结——该名称
-    # 标识 lane，而不标识分片内容；分片内容
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结，因为 MAN-661 将证据 lane backend-shard-1 映射到它，映射定义在
+    # scripts/lib/TestEvidence.ps1 中——该名称标识 lane，而非分片内容；这些内容
     # 仅存在于 scripts/backend-test-shards.json 中。
     timeout-minutes: 45
     runs-on: ubuntu-latest
@@ -264,8 +264,8 @@ jobs:
 
   backend-tests-platform:
     name: Backend Tests - Platform
-    # 层级 A；共享分片预算为 39m < 45m，仅在 `jobs:` 顶部的超时策略中推导一次。
-    # job 名称已冻结：MAN-661 将证据 lane backend-shard-2 映射到它。
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-2 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -352,8 +352,8 @@ jobs:
 
   backend-tests-business-core-a:
     name: Backend Tests - Business Core A
-    # 层级 A；共享分片预算为 39m < 45m，仅在 `jobs:` 顶部的超时策略中推导一次。
-    # job 名称已冻结：MAN-661 将证据 lane backend-shard-3 映射到它。
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-3 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -440,10 +440,10 @@ jobs:
 
   backend-tests-business-core-b:
     name: Backend Tests - Business Core B
-    # 层级 A；共享分片预算为 39m < 45m，仅在 `jobs:` 顶部的超时策略中推导一次。
-    # job 名称已冻结：MAN-661 将证据 lane backend-shard-4 映射到它。MAN-669 PR-A 为
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-4 映射到它。MAN-669 PR-A 为
     # 此分片赋予最低 TRX 份额；该权重依赖于重平衡前的 step-to-TRX 比率，
-    # 已被重平衡本身证伪——参见 `jobs:` 顶部的超时策略。
+    # 而重平衡本身已将该比率证伪——参见 `jobs:` 顶部的超时策略。
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -530,8 +530,8 @@ jobs:
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
-    # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image pull 预留额外余量。
-    # step 预算合计为 46m，为隐式 setup/post step 留下 9m 余量。
+    # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image
+    # 拉取预留额外余量。step 预算合计为 46m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 55
     runs-on: ubuntu-latest
     env:
@@ -582,8 +582,8 @@ jobs:
 
   connector-host-tests:
     name: Connector Host Tests
-    # 层级 A（证据 step）。观测最大值为 1.9m / 平均值为 1.6m。这是 MAN-799 中挂起 28m 的 job。
-    # step 预算合计为 41m，为隐式 setup/post step 留下 9m 余量。
+    # 层级 A（证据 step）。观测最大值为 1.9m / 平均值为 1.6m。这就是挂起 28m 的那个 job，
+    # 该事件发生在 MAN-799 中。step 预算合计为 41m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 50
     runs-on: ubuntu-latest
     steps:
@@ -669,7 +669,7 @@ jobs:
 
   frontend:
     name: Frontend Typecheck and Build
-    # 层级 B（失败后没有 step 继续运行）。观测最大值为 4.9m / 平均值为 4.4m；20m job 预算是
+    # 层级 B（失败后没有 step 运行）。观测最大值为 4.9m / 平均值为 4.4m；20m job 预算是
     # 快速失败界限。step 预算合计为 58m，且仅为逐 step 上限。
     timeout-minutes: 20
     runs-on: ubuntu-latest
@@ -710,7 +710,7 @@ jobs:
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
-    # 层级 B（失败后没有 step 继续运行）。观测最大值为 2.0m / 平均值为 1.8m；20m job 预算是
+    # 层级 B（失败后没有 step 运行）。观测最大值为 2.0m / 平均值为 1.8m；20m job 预算是
     # 快速失败界限。step 预算合计为 39m，且仅为逐 step 上限。
     timeout-minutes: 20
     runs-on: ubuntu-latest
@@ -755,12 +755,12 @@ jobs:
 
   script-governance:
     name: Script Governance
-    # 层级 B（失败后没有 step 继续运行）。已纳入证据 contract-test step 的 run 中，观测最大值为 1.9m /
-    # 平均值为 1.8m；本注释曾引用的 0.7m 平均值早于该 step。10m job 预算是快速失败界限；step 预算
-    # 合计为 43m，且仅为逐 step 上限。MAN-669 PR-C 添加了两个 solution-configuration-membership step；
-    # 两者在本地均于 5s 内运行（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算
-    # 不变。
-    # 不变。
+    # 层级 B（失败后没有 step 运行）。观测最大值为 1.9m / 平均值为 1.8m；对应的 run 已
+    # 包含证据 contract-test step；本注释曾引用的 0.7m 平均值早于
+    # 该 step。10m job 预算是快速失败界限；step 预算合计为 43m，且仅为逐 step
+    # 上限。MAN-669 PR-C 添加了两个 solution-configuration-membership step；两者
+    # 在本地均于 5s 内完成（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算
+    # 保持不变。
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
