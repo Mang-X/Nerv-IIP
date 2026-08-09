@@ -61,7 +61,7 @@ dotnet user-secrets set "Parameters:connector-ingestion-token-signing-key" "<loc
 
 每个会话都会获得已校验的 ID、动态分配的公共端口、会话专属的 PostgreSQL/Redis/MinIO/VictoriaLogs 卷、生成的仅 Development 使用的机密，以及容器归属标签。URL 应从会话清单中发现，而非使用规范端口矩阵。Aspire/DCP 提供逐会话代理；不存在需要在工作树之间协调的共享 Nginx 配置。默认准入上限为三个活跃会话，且没有最低可用内存规则。
 
-`fullstack run` 无论成功或失败都会尝试精确清理，同时保留 `artifacts/fullstack/<sessionId>/`。交互式 `fullstack start` 仅可用于诊断，且必须配对执行 `fullstack stop`；`fullstack gc` 会协调遗弃或过期的会话，而不会清理无关的 Docker 或 Aspire 资源。临时 PostgreSQL 为完整平台拓扑使用更高的连接上限，但持久化 `dev` 的镜像标签、卷名称和数据库设置保持不变。
+`fullstack run` 无论成功或失败都会尝试精确清理，同时保留 `artifacts/fullstack/<sessionId>/`。交互式 `fullstack start` 仅可用于诊断，且必须配对执行 `fullstack stop`；`fullstack gc` 会核对并回收遗弃或过期的会话，而不会清理无关的 Docker 或 Aspire 资源。临时 PostgreSQL 为完整平台拓扑使用更高的连接上限，但持久化 `dev` 的镜像标签、卷名称和数据库设置保持不变。
 
 ## 可重复的领导演示环境
 
@@ -177,7 +177,7 @@ $env:NERV_IIP_LEADER_DEMO_HISTORY_SCALE = "0.1"    # ~1/10 of the volume, for a 
 不存在跨 schema 外键。AppHost 向两个服务发送相同的 `LeaderDemo:History:AsOfDate`，因此跨越
 午夜的启动不会拆分这对数据。
 
-每个服务都会在完成 seed 前运行各自的**故障关闭**一致性验证器：从订单到回款及从工单到收货的
+每个服务都会在完成 seed 前运行各自的**失败时默认拒绝（fail-closed）**一致性验证器：从订单到回款及从工单到收货的
 数量和金额链、单调时间戳、第 7 节状态组合，以及输出到日志的 20 条抽样端到端链。任何不平衡链
 都会抛出错误并使服务启动失败。在本地 Docker PostgreSQL 上，全量 seed 在 ERP 中约需 11 秒、
 在 MES 中约需 28 秒，重复运行是幂等的（约 0.2 秒）。归档证据：
@@ -191,7 +191,7 @@ $env:NERV_IIP_LEADER_DEMO_HISTORY_SCALE = "0.1"    # ~1/10 of the volume, for a 
 仓储任务，全部终态）以及 **BarcodeLabel**；后者从零构建：4 个标签模板和条码规则、900 个打印批次、
 3373 个标签项、1346 个 EPCIS 事件以及 3000 条扫描记录，其时间戳与所属源单据一致。
 
-这四个服务也各自运行故障关闭验证器。全量 seed 在 Quality 中约需 7 秒、Inventory 中 20 秒、
+这四个服务也各自运行失败时默认拒绝（fail-closed）验证器。全量 seed 在 Quality 中约需 7 秒、Inventory 中 20 秒、
 WMS 中 12 秒、BarcodeLabel 中 3 秒，因此完整 L1 链——phase 1 和 phase 2 合计——约为 82 秒，
 远低于 5 分钟启动预算。`scripts/verify-world-history.ps1` 收集全部六个服务的证据，并额外输出
 一张包含 20 个订单的跨领域可追溯性表。
@@ -267,7 +267,7 @@ AppHost 固定持久化本地基础设施镜像标签，而不使用 provider �
 | PostgreSQL | `18` | 使用当前 PostgreSQL 18 主版本线，同时避免无界的 `latest` 标签。PostgreSQL Docker 镜像 18+ 在 `/var/lib/postgresql` 下使用特定于主版本的数据目录，因此 AppHost 使用新的本地开发卷 `nerv-iip-postgres-18`，而不复用旧的 17 时代 `nerv-iip-postgres` 卷。AppHost 和 Compose 有意为 PostgreSQL 18 挂载完整的 `/var/lib/postgresql` 父目录；这已在镜像升级后使用 Windows Docker Desktop 上的空本地开发卷验证，并可避免挂载旧 `/var/lib/postgresql/data` 路径导致的 PostgreSQL 18 初始化失败。 |
 | Redis | `8` | 使用当前 Redis 8 主版本线，同时避免无界的 `latest` 漂移。AppHost 保留持久化 `nerv-iip-redis` 卷并启用快照持久化，因为当 `Messaging:Provider=Redis` 时，Redis 还可能承载 CAP Redis Streams。仅作缓存的本地数据可以重建，但 Redis 消息 profile 必须将该卷视为消息总线持久性状态。 |
 
-不得将这些标签改为 `latest`。升级到下一个 PostgreSQL 或 Redis 主版本必须是有意创建的升级事项，
+不得将这些标签改为 `latest`。升级到下一个 PostgreSQL 或 Redis 主版本应当作为有意创建的升级事项，
 并包含空卷测试、适用时的保留卷迁移测试、AppHost 构建、Compose 发布验证和启动 smoke test。对于
 PostgreSQL，必须执行显式 `pg_upgrade`/导出恢复计划，或引入新的开发卷名称；不得让默认容器镜像
 决定该迁移。
@@ -296,7 +296,7 @@ dotnet dev-certs https --trust
 
 ## 启动故障排查
 
-当 Business Console 看似缓慢或卡住时，请先检查 Aspire Dashboard，再考虑反复重启：
+当 Business Console 看似缓慢或卡住时，不要反复重启，应先检查 Aspire Dashboard：
 
 ```powershell
 dotnet user-secrets list --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj
