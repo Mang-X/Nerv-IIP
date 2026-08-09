@@ -49,7 +49,7 @@ Business Console MVP 是第二个真实应用入口：`frontend/apps/business-co
 
 Console Auth + shadcn-vue Baseline 当前采用共享 `frontend/packages/auth` 方案：app 内 `src/stores/auth.ts` 只配置 storage key、Pinia store id、文案和注入后的 auth API；`src/api/auth.ts` 只包装 Gateway Auth facade 的稳定 `@nerv-iip/api-client` 导出；路由守卫、redirect sanitizer、unauthorized redirect、refresh orchestration 和 logout/session revoke 组合由 `@nerv-iip/auth` 提供。共享包不直接耦合某个页面或 app shell。
 
-第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
+第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的“已选基线”。
 
 ## 配置分层
 

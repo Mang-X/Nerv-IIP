@@ -222,7 +222,7 @@ PR body 固定声明格式：`走查层级：L2（真实栈仿真）｜证据：
 - **M1a（产品修复 + 契约）**：ScanBar 焦点契约修复（RAF 回调复查 `active`、watch `active`
   取消/重arm、S2 首字符竞态的产品级答案——document 级缓冲或 scanner mode 裁决）+
   组件契约测试 + gallery `:active` 失败样本修复 + 消费页 `active` 全扫。
-- **M1b（live harness 骨架）**：`playwright.live.config.ts` + `simulateScanGun`（Enter only）+
+- **M1b（live harness 骨架）**：`playwright.live.config.ts` + `simulateScanGun`（仅以 `Enter` 键结束）+
   真实登录 + quality 链路 1 条**只读** live spec + `pda-live-walkthrough.ps1` +
   更新 `mobile-pda-testing-and-smoke.md`（含 5 spec/25 用例基线纠偏）。
 - **M1c（写路径）**：1 条真实写路径 live spec：提交 + 幂等语义捕获（本链路无显式幂等键，
