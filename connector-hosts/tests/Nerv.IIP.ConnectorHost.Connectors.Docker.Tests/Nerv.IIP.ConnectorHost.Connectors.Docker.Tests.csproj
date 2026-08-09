@@ -19,6 +19,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\TestUtilities\BoundedObservation.cs" Link="TestUtilities\BoundedObservation.cs" />
+    <Compile Include="..\TestUtilities\BoundedWaitContractTests.cs" Link="TestUtilities\BoundedWaitContractTests.cs" />
+    <Compile Include="..\TestUtilities\ConnectorTimeoutCollection.cs" Link="TestUtilities\ConnectorTimeoutCollection.cs" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Docker\Nerv.IIP.ConnectorHost.Connectors.Docker.csproj" />
     <ProjectReference Include="..\..\..\backend\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />

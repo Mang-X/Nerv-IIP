@@ -1,10 +1,12 @@
 using Nerv.IIP.ConnectorHost.Connectors.Docker;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class DockerConnectorTests
 {
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Docker_connector_discovers_containers_from_docker_cli_json()
     {
         var docker = new RecordingDockerCli([

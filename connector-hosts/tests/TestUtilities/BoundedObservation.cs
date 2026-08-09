@@ -25,20 +25,81 @@ internal static class BoundedObservation
         Func<string> lastObservation,
         TimeSpan? budget = null)
     {
-        var effectiveBudget = budget ?? DefaultBudget;
+        var effectiveBudget = GetEffectiveBudget(budget);
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            await observation.WaitAsync(effectiveBudget);
-        }
-        catch (TimeoutException)
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
         {
             throw new Xunit.Sdk.XunitException(
                 $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
                 + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
                 + $"await on a completion signal); last observation: {lastObservation()}");
         }
+
+        await observation;
     }
+
+    /// <summary>
+    /// Awaits an edge-triggered completion signal that returns a value under the same diagnostic
+    /// contract as <see cref="ObserveAsync(Task,string,Func{string},TimeSpan?)"/>.
+    /// </summary>
+    public static async Task<T> ObserveAsync<T>(
+        Task<T> observation,
+        string condition,
+        Func<string> lastObservation,
+        TimeSpan? budget = null)
+    {
+        var effectiveBudget = GetEffectiveBudget(budget);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
+                + $"await on a completion signal); last observation: {lastObservation()}");
+        }
+
+        return await observation;
+    }
+
+    private static async Task<bool> CompletesWithinBudgetAsync(Task observation, TimeSpan budget)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var budgetTask = Task.Delay(budget, cancellation.Token);
+        var completedTask = await Task.WhenAny(observation, budgetTask);
+        if (!ReferenceEquals(completedTask, observation))
+        {
+            ConsumeLateFault(observation);
+            return false;
+        }
+
+        await cancellation.CancelAsync();
+        return true;
+    }
+
+    private static TimeSpan GetEffectiveBudget(TimeSpan? budget)
+    {
+        var effectiveBudget = budget ?? DefaultBudget;
+        if (effectiveBudget < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(budget),
+                budget,
+                "The observation budget must be non-negative.");
+        }
+
+        return effectiveBudget;
+    }
+
+    /// <summary>
+    /// The source is no longer awaited after the observation budget wins, so consume any eventual fault
+    /// where it occurs instead of surfacing it against an unrelated test during a later finalization pass.
+    /// </summary>
+    private static void ConsumeLateFault(Task abandoned) =>
+        _ = abandoned.ContinueWith(
+            static observed => _ = observed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
 
     /// <summary>
     /// Polls <paramref name="condition"/> under a bound. Used only where no completion signal

@@ -19,6 +19,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\TestUtilities\BoundedObservation.cs" Link="TestUtilities\BoundedObservation.cs" />
+    <Compile Include="..\TestUtilities\BoundedWaitContractTests.cs" Link="TestUtilities\BoundedWaitContractTests.cs" />
+    <Compile Include="..\TestUtilities\ConnectorTimeoutCollection.cs" Link="TestUtilities\ConnectorTimeoutCollection.cs" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.ConnectorHost.Connectors.Modbus\Nerv.IIP.ConnectorHost.Connectors.Modbus.csproj" />
   </ItemGroup>
