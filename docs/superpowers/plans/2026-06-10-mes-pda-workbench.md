@@ -1,12 +1,12 @@
-# PDA MES 一线作业（工序执行 / 报工 / 领料 / 完工入库）Implementation Plan（Plan 3）
+# PDA MES 一线作业（工序执行 / 报工 / 领料 / 完工入库）实施计划（Plan 3）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`).
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development；所有步骤均使用复选框（`- [ ]`）跟踪。
 
-**Goal:** 在 PDA 地基上交付 MES 一线四件套——**工序执行**、**报工**、**领料**、**完工入库**——点亮首页对应应用墙入口，跑通"先选工单/工序 → 扫码/操作 → 确认 → 结果"的一线闭环。MES facade 已全部就绪，无后端阻塞（不同于 WMS 待 #374）。
+**目标：**在 PDA 地基上交付 MES 一线四件套——**工序执行**、**报工**、**领料**、**完工入库**——点亮首页对应应用墙入口，跑通“先选工单/工序 → 扫码/操作 → 确认 → 结果”的一线闭环。MES 门面已全部就绪，无后端阻塞（不同于 WMS 待 #374）。
 
-**Architecture:** 消费 BusinessGateway 既有 MES facade（经 generated `@nerv-iip/api-client`）；数据封装进新建 PDA `useBusinessMes` composable（镜像 business-console `useBusinessMes.ts`，org/env 取登录主体）；多步流程用 `defineStepFlow`；所有 create/action 带幂等键防重；文案中文（PDA 无 i18n）。
+**架构：**消费 BusinessGateway 既有 MES 门面（经由 `@nerv-iip/api-client` 生成的客户端）；数据封装进新建 PDA `useBusinessMes` 可组合函数（镜像 business-console `useBusinessMes.ts`，org/env 取登录主体）；多步流程用 `defineStepFlow`；所有创建/操作都带幂等键防重；文案为中文（PDA 无 i18n）。
 
-**Tech Stack:** Vue 3 / `@pinia/colada` / generated api-client / `@nerv-iip/ui-mobile` / `@nerv-iip/business-core` / vitest + @vue/test-utils / Playwright。
+**技术栈：**Vue 3 / `@pinia/colada` / 生成的 api-client / `@nerv-iip/ui-mobile` / `@nerv-iip/business-core` / vitest + @vue/test-utils / Playwright。
 
 ---
 
@@ -52,12 +52,12 @@ frontend/apps/business-pda/e2e/mes.spec.ts                                      
 
 ---
 
-## Task 1: 文档 + 点亮 MES 字典 + MES StepFlow（business-core）
-**Files:** docs ×2；`business-core/src/tasks/pdaTaskKinds.{ts,test.ts}`；新建 `business-core/src/sop/mesFlows.ts`+test；`business-core/src/index.ts`
+## 任务 1：文档 + 点亮 MES 字典 + MES StepFlow（business-core）
+**文件：**文档 × 2；`business-core/src/tasks/pdaTaskKinds.{ts,test.ts}`；新建 `business-core/src/sop/mesFlows.ts` + 测试；`business-core/src/index.ts`
 
-- [ ] **Step 1 文档**：模块文档分期标注"MES 工序执行/报工/领料/完工入库 已建 (Plan 3)"；导航图 MES PDA 状态同步（更新校验日期）。
-- [ ] **Step 2 点亮字典（TDD）**：`pdaTaskKinds.test.ts` 加断言 `mes.report`/`mes.issue`/`mes.receipt`/`mes.operation` 的 `routeReady===true`；跑红→改 `pdaTaskKinds.ts` 仅这 4 个 `routeReady:true`→跑绿。
-- [ ] **Step 3 MES StepFlow（TDD）**：`mesFlows.ts`：
+- [ ] **步骤 1：文档**：模块文档分期标注“MES 工序执行/报工/领料/完工入库 已建（Plan 3）”；导航图 MES PDA 状态同步（更新校验日期）。
+- [ ] **步骤 2：点亮字典（TDD）**：`pdaTaskKinds.test.ts` 加断言 `mes.report`/`mes.issue`/`mes.receipt`/`mes.operation` 的 `routeReady===true`；运行先失败→仅将 `pdaTaskKinds.ts` 中这 4 个改为 `routeReady:true`→再运行通过。
+- [ ] **步骤 3：MES StepFlow（TDD）**：`mesFlows.ts`：
 ```typescript
 import { defineStepFlow } from './defineStepFlow'
 
@@ -83,65 +83,65 @@ export const finishedGoodsReceiptFlow = defineStepFlow<ReceiptCtx>({
   ],
 })
 ```
-  写对应 test（currentStep/isComplete/progress 各 1-2 例，仿 wmsFlows 风格），从 `business-core/src/index.ts` 导出。跑红→绿。
-- [ ] **Step 4 门禁+commit**：`pnpm -C frontend --filter @nerv-iip/business-core typecheck && ... test` 绿；commit `feat(business-core): mes step flows + light up PDA mes wall`。
+  编写对应测试（currentStep/isComplete/progress 各 1-2 例，仿 wmsFlows 风格），从 `business-core/src/index.ts` 导出。运行先失败再通过。
+- [ ] **步骤 4：门禁 + 提交**：`pnpm -C frontend --filter @nerv-iip/business-core typecheck && ... test` 通过；提交消息为 `feat(business-core): mes step flows + light up PDA mes wall`。
 
-## Task 2: PDA MES 数据封装（composable + 幂等键）
-**Files:** 新建 `business-pda/src/composables/makeIdempotencyKey.ts`、`useBusinessMes.ts`+`useBusinessMes.test.ts`
+## 任务 2：PDA MES 数据封装（可组合函数 + 幂等键）
+**文件：**新建 `business-pda/src/composables/makeIdempotencyKey.ts`、`useBusinessMes.ts` + `useBusinessMes.test.ts`
 
-- [ ] **Step 1 幂等键**：同 Plan 2 的 `makeIdempotencyKey()`（crypto.randomUUID fallback）。
-- [ ] **Step 2 composable 测试（先红，mock api-client + colada，仿 business-console useBusinessEquipment.test 风格）**：断言 (a) principal 无 org/env 时 list query `enabled:false`；(b) `recordReport(body)` 调 record mutation 且 body 含 `idempotencyKey`（未显式传时自动补）；(c) 工序 `startTask(id)` 调 start mutation body 含 `idempotencyKey`；(d) `createIssue/confirmLineSideReceipt/createReceipt` 同理带幂等键。
-- [ ] **Step 3 实现 composable**（镜像 business-console `useBusinessMes.ts`；org/env 取 `useAuthStore().principal`）。暴露：
+- [ ] **步骤 1：幂等键**：同 Plan 2 的 `makeIdempotencyKey()`（优先用 crypto.randomUUID，失败时回退）。
+- [ ] **步骤 2：可组合函数测试（先红，模拟 api-client + colada，仿 business-console useBusinessEquipment.test 风格）**：断言 (a) 主体无 org/env 时列表查询的 `enabled:false`；(b) `recordReport(body)` 调用记录变更且请求体含 `idempotencyKey`（未显式传时自动补）；(c) 工序 `startTask(id)` 调用开始变更，请求体含 `idempotencyKey`；(d) `createIssue/confirmLineSideReceipt/createReceipt` 同理带幂等键。
+- [ ] **步骤 3：实现可组合函数**（镜像 business-console `useBusinessMes.ts`；org/env 取 `useAuthStore().principal`）。暴露：
   - `useMesWorkOrders()` → `{ filters, workOrders, total, pending, error, refresh }`
   - `useMesOperationTasks()` → `{ filters, operationTasks, total, pending, error, refresh, startTask(id), pauseTask(id), resumeTask(id), completeTask(id), actionPending }`（动作 body 默认 `{ idempotencyKey }`，可选 `reasonCode`）
   - `useMesProductionReports()` → `{ filters, productionReports, total, refresh, recordReport(body) }`（body 自动补 `idempotencyKey`、`reportedAtUtc=当前ISO`，org/env 注入）
   - `useMesMaterialIssue()` → `{ filters, requests, total, refresh, createIssue(workOrderId, body), confirmLineSideReceipt(requestId, body) }`
   - `useMesReceipts()` → `{ filters, receipts, total, refresh, createReceipt(body) }`
   > 不假分页/假数据；list query `enabled` 绑 `Boolean(org && env)`；`reportedAtUtc`/`requestedAtUtc` 用 `new Date().toISOString()`（注意：脚本/测试环境如禁 `new Date()` 改由调用方传时间——此处是运行时页面代码，允许）。
-- [ ] **Step 4 跑绿+commit**：`feat(business-pda): MES data composable + idempotency key`。
+- [ ] **步骤 4：运行通过 + 提交**：提交消息为 `feat(business-pda): MES data composable + idempotency key`。
 
-## Task 3: 工序执行页 `/mes/operation`
-**Files:** `src/pages/mes/operation.vue`+`operation.test.ts`
-- [ ] **Step 1 测试（先红）**：mock `useBusinessMes`（返回 2 条工序任务）+ vue-router。断言：渲染 AppShellMobile+ScanBar（扫工单/工序过滤）+ 工序 ListRow（title=工序/工单号，subtitle=状态/工作中心）；点行打开 BottomSheet（动作面板：开始/暂停/恢复/完成，按当前状态显示可用动作）；点"完成"二次确认后调 `completeTask(id)`；成功 Result。
-- [ ] **Step 2 实现**：`definePage({meta:{requiresAuth:true,title:'工序执行'}})`。状态机非必需（动作型）；危险动作（完成）走 AlertDialog 二次确认；幂等键自动。BottomSheet 打开时 ScanBar `active=false`。
-- [ ] **Step 3 跑绿+commit**：`feat(business-pda): MES operation execution page`。
+## 任务 3：工序执行页 `/mes/operation`
+**文件：**`src/pages/mes/operation.vue` + `operation.test.ts`
+- [ ] **步骤 1：测试（先红）**：模拟 `useBusinessMes`（返回 2 条工序任务）+ vue-router。断言：渲染 AppShellMobile + ScanBar（扫工单/工序过滤）+ 工序 ListRow（标题=工序/工单号，副标题=状态/工作中心）；点行打开 BottomSheet（动作面板：开始/暂停/恢复/完成，按当前状态显示可用动作）；点“完成”二次确认后调用 `completeTask(id)`；成功后显示 Result。
+- [ ] **步骤 2：实现**：`definePage({meta:{requiresAuth:true,title:'工序执行'}})`。状态机非必需（动作型）；危险动作（完成）走 AlertDialog 二次确认；幂等键自动。BottomSheet 打开时 ScanBar `active=false`。
+- [ ] **步骤 3：运行通过 + 提交**：提交消息为 `feat(business-pda): MES operation execution page`。
 
-## Task 4: 报工页 `/mes/report`
-**Files:** `src/pages/mes/report.vue`+`report.test.ts`
-- [ ] **Step 1 测试（先红）**：流程 `productionReportFlow` 驱动：扫/选工单→选工序→录入良品/次品数→提交。断言：缺工单时停在选工单步；提交调 `recordReport`，body 含 `workOrderId/operationTaskId/goodQuantity/scrapQuantity/completesOperation`；成功 Result（"继续报工"/"返回"）。
-- [ ] **Step 2 实现**：`title:'报工'`。先 `useMesWorkOrders` 选工单（ScanBar 扫工单号过滤 + ListRow 选），再 `useMesOperationTasks`（按 workOrderId 过滤）选工序，再 BottomSheet 内 Stepper/数字输入良品/次品 + `completesOperation` 开关 → 提交。数量校验（非负、good+scrap>0）。
-- [ ] **Step 3 跑绿+commit**：`feat(business-pda): MES production reporting page (work order → operation → qty)`。
+## 任务 4：报工页 `/mes/report`
+**文件：**`src/pages/mes/report.vue` + `report.test.ts`
+- [ ] **步骤 1：测试（先红）**：流程 `productionReportFlow` 驱动：扫/选工单→选工序→录入良品/次品数→提交。断言：缺工单时停在选工单步；提交调用 `recordReport`，请求体含 `workOrderId/operationTaskId/goodQuantity/scrapQuantity/completesOperation`；成功后显示 Result（“继续报工”/“返回”）。
+- [ ] **步骤 2：实现**：`title:'报工'`。先 `useMesWorkOrders` 选工单（ScanBar 扫工单号过滤 + ListRow 选），再 `useMesOperationTasks`（按 workOrderId 过滤）选工序，再在 BottomSheet 内通过 Stepper/数字输入良品/次品数 + `completesOperation` 开关 → 提交。数量校验（非负、good+scrap>0）。
+- [ ] **步骤 3：运行通过 + 提交**：提交消息为 `feat(business-pda): MES production reporting page (work order → operation → qty)`。
 
-## Task 5: 领料页 `/mes/issue`
-**Files:** `src/pages/mes/issue.vue`+`issue.test.ts`
-- [ ] **Step 1 测试（先红）**：渲染领料申请 ListRow（按工单/状态过滤）；新建领料（选工单→物料→数量→`createIssue(workOrderId, body)`）；行内"线边接收"→`confirmLineSideReceipt(requestId, {receivedQuantity, idempotencyKey})`；成功 Result。
-- [ ] **Step 2 实现**：`title:'领料'`。新建走 BottomSheet 表单；接收走行动作 + 确认。幂等键自动。
-- [ ] **Step 3 跑绿+commit**：`feat(business-pda): MES material issue + line-side receipt page`。
+## 任务 5：领料页 `/mes/issue`
+**文件：**`src/pages/mes/issue.vue` + `issue.test.ts`
+- [ ] **步骤 1：测试（先红）**：渲染领料申请 ListRow（按工单/状态过滤）；新建领料（选工单→物料→数量→`createIssue(workOrderId, body)`）；行内“线边接收”→`confirmLineSideReceipt(requestId, {receivedQuantity, idempotencyKey})`；成功后显示 Result。
+- [ ] **步骤 2：实现**：`title:'领料'`。新建走 BottomSheet 表单；接收走行动作 + 确认。幂等键自动。
+- [ ] **步骤 3：运行通过 + 提交**：提交消息为 `feat(business-pda): MES material issue + line-side receipt page`。
 
-## Task 6: 完工入库页 `/mes/receipt`
-**Files:** `src/pages/mes/receipt.vue`+`receipt.test.ts`
-- [ ] **Step 1 测试（先红）**：`finishedGoodsReceiptFlow` 驱动：选工单→录 SKU/数量/单位→提交 `createReceipt(body)`（body 含 `workOrderId/skuId/quantity/uomCode/requestedAtUtc/idempotencyKey`）；成功 Result。
-- [ ] **Step 2 实现**：`title:'完工入库'`。列表 + 新建 BottomSheet 表单（选工单、SKU、数量、单位）。
-- [ ] **Step 3 跑绿+commit**：`feat(business-pda): MES finished-goods receipt page`。
+## 任务 6：完工入库页 `/mes/receipt`
+**文件：**`src/pages/mes/receipt.vue` + `receipt.test.ts`
+- [ ] **步骤 1：测试（先红）**：`finishedGoodsReceiptFlow` 驱动：选工单→录 SKU/数量/单位→提交 `createReceipt(body)`（请求体含 `workOrderId/skuId/quantity/uomCode/requestedAtUtc/idempotencyKey`）；成功后显示 Result。
+- [ ] **步骤 2：实现**：`title:'完工入库'`。列表 + 新建 BottomSheet 表单（选工单、SKU、数量、单位）。
+- [ ] **步骤 3：运行通过 + 提交**：提交消息为 `feat(business-pda): MES finished-goods receipt page`。
 
-## Task 7: 首页点亮 4 个 MES 入口
-**Files:** `src/pages/index.vue`+`index.test.ts`
-- [ ] **Step 1 测试（先红）**：断言 `报工`/`领料`/`完工入库`/`工序执行` 应用墙按钮不再 disabled，点击分别 `router.push('/mes/report'|'/mes/issue'|'/mes/receipt'|'/mes/operation')`；WMS 等其余仍 disabled。
-- [ ] **Step 2 实现**：现有 `openTask(route, routeReady)` 已按 `routeReady` 控制——字典点亮后自动可跳；补/确认测试。
-- [ ] **Step 3 跑绿+commit**：`test(business-pda): home wall lights up MES entries`。
+## 任务 7：首页点亮 4 个 MES 入口
+**文件：**`src/pages/index.vue` + `index.test.ts`
+- [ ] **步骤 1：测试（先红）**：断言 `报工`/`领料`/`完工入库`/`工序执行` 应用墙按钮不再禁用，点击分别推入 `router.push('/mes/report'|'/mes/issue'|'/mes/receipt'|'/mes/operation')`；WMS 等其余仍禁用。
+- [ ] **步骤 2：实现**：现有 `openTask(route, routeReady)` 已按 `routeReady` 控制——字典点亮后自动可跳；补/确认测试。
+- [ ] **步骤 3：运行通过 + 提交**：提交消息为 `test(business-pda): home wall lights up MES entries`。
 
-## Task 8: e2e（核心流程，网关 Mock）
-**Files:** `e2e/mes.spec.ts`
-- [ ] **Step 1**：扩展 `e2e/fixtures.ts` mock MES list/action/create 端点（envelope）。spec 覆盖：工序执行（列表→完成→Result）、报工（选工单→选工序→录数→Result）、从首页点"工序执行"→URL `/mes/operation`。seedStoredSession（principal 含 org/env）。
-- [ ] **Step 2**：真机 Chromium 跑 e2e + commit `test(business-pda): e2e for MES operation + report flows`。
+## 任务 8：e2e（核心流程，网关模拟）
+**文件：**`e2e/mes.spec.ts`
+- [ ] **步骤 1**：扩展 `e2e/fixtures.ts`，模拟 MES 列表/操作/创建端点（封装响应）。规格覆盖：工序执行（列表→完成→Result）、报工（选工单→选工序→录数→Result）、从首页点“工序执行”→URL `/mes/operation`。seedStoredSession 中的主体含 org/env。
+- [ ] **步骤 2**：在真实 Chromium 上运行 e2e，提交消息为 `test(business-pda): e2e for MES operation + report flows`。
 
-## Task 9: 验收 + PR
-- [ ] **Step 1 门禁全绿**：`business-core` typecheck/test；`business-pda` typecheck/test/build；`... exec playwright test --list` + 真机 e2e；`pnpm -C frontend typecheck`（工作区无回归）。
-- [ ] **Step 2 push + 开 PR**（base main，标题 `feat(pda): MES 一线作业（工序执行/报工/领料/完工入库）`；body 列范围、门禁、组件复用、无后端阻塞）。
+## 任务 9：验收 + PR
+- [ ] **步骤 1：门禁全部通过**：`business-core` 类型检查/测试；`business-pda` 类型检查/测试/构建；`... exec playwright test --list` + 真实浏览器 e2e；`pnpm -C frontend typecheck`（工作区无回归）。
+- [ ] **步骤 2：推送 + 创建 PR**（基分支为 main，标题 `feat(pda): MES 一线作业（工序执行/报工/领料/完工入库）`；正文列出范围、门禁、组件复用、无后端阻塞）。
 
 ---
 
-## Self-Review
+## 自我检查
 - **无后端阻塞**：MES facade（工单/工序/报工/领料/完工入库）list+action+create 全部已存在并经审计确认；与 WMS（待 #374）不同，MES 可完整交付。
 - **同源**：报工/完工入库 StepFlow 落 business-core；幂等键防重；org/env 取登录主体、空 scope 不发请求；composable 镜像 business-console `useBusinessMes`。
 - **组件真实复用**：ScanBar/ListRow/BottomSheet/Result/AppShellMobile + defineStepFlow 全用上。
@@ -149,4 +149,3 @@ export const finishedGoodsReceiptFlow = defineStepFlow<ReceiptCtx>({
 - **门禁**：每包/页 typecheck/test/build + e2e + 工作区回归防护；UI 无工程语言/无假数据；危险动作二次确认。
 - **范围适中**：4 页 + 共享 composable + StepFlow，9 个任务；任务边界清晰、各自可测可提交。
 ```
-
