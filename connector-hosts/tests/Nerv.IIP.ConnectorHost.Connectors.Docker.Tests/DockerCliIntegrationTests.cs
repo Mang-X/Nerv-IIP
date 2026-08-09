@@ -7,9 +7,6 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
 [Collection(ConnectorTimeoutCollection.Name)]
 public sealed class DockerCliIntegrationTests
 {
-    private static readonly TimeSpan DockerCommandBudget = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan DockerCleanupBudget = TimeSpan.FromSeconds(10);
-
     [DockerCliFact]
     public async Task Docker_connector_discovers_and_restarts_a_real_container()
     {
@@ -34,7 +31,7 @@ public sealed class DockerCliIntegrationTests
 
     private static async Task RunDockerAsync(params string[] arguments)
     {
-        await RunDockerCommandAsync(arguments, allowFailure: false, DockerCommandBudget);
+        await RunDockerCommandAsync(arguments, allowFailure: false, DockerCliIntegrationBudget.CommandBudget);
     }
 
     private static async Task<DockerCommandResult> RunDockerCommandAsync(
@@ -42,6 +39,14 @@ public sealed class DockerCliIntegrationTests
         bool allowFailure,
         TimeSpan budget)
     {
+        if (budget <= DockerCliIntegrationBudget.ProcessDrainBudget)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(budget),
+                budget,
+                $"Docker command budget must exceed the {DockerCliIntegrationBudget.ProcessDrainBudget} process-drain reserve.");
+        }
+
         using var process = new Process
         {
             StartInfo =
@@ -70,13 +75,22 @@ public sealed class DockerCliIntegrationTests
                 completionTask,
                 $"{command} to exit and drain redirected output",
                 () => $"process exited={HasExited(process)}, stdout={stdoutTask.Status}, stderr={stderrTask.Status}",
-                budget);
+                budget - DockerCliIntegrationBudget.ProcessDrainBudget);
         }
         catch (Xunit.Sdk.XunitException)
         {
-            if (!HasExited(process))
+            try
             {
-                process.Kill(entireProcessTree: true);
+                if (!HasExited(process))
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception killException) when (killException is InvalidOperationException
+                or System.ComponentModel.Win32Exception
+                or NotSupportedException)
+            {
+                // The command timeout remains primary; the bounded drain below still gets a chance.
             }
 
             try
@@ -85,7 +99,7 @@ public sealed class DockerCliIntegrationTests
                     completionTask,
                     "the timed-out Docker CLI process tree to stop and drain redirected output",
                     () => $"process exited={HasExited(process)}, stdout={stdoutTask.Status}, stderr={stderrTask.Status}",
-                    DockerCleanupBudget);
+                    DockerCliIntegrationBudget.ProcessDrainBudget);
             }
             catch (Exception cleanupException) when (cleanupException is Xunit.Sdk.XunitException
                 or IOException
@@ -123,6 +137,28 @@ public sealed class DockerCliIntegrationTests
 
 internal readonly record struct DockerCommandResult(int ExitCode, string StandardOutput);
 
+internal static class DockerCliIntegrationBudget
+{
+    public const int TestTimeoutMilliseconds = 480_000;
+    public const int CleanupSweepCount = 5;
+    public static readonly TimeSpan CommandBudget = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan ProcessDrainBudget = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan ConnectorBodyBudget = TimeSpan.FromSeconds(66);
+    public static readonly TimeSpan CleanupCommandBudget = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan CleanupSweepInterval = TimeSpan.FromSeconds(2);
+    public static readonly TimeSpan MaximumSetupBudget = CommandBudget + CommandBudget;
+    public static readonly TimeSpan MaximumCleanupBudget = TimeSpan.FromTicks(
+        CleanupCommandBudget.Ticks * 2 * CleanupSweepCount
+        + CleanupSweepInterval.Ticks * (CleanupSweepCount - 1));
+
+    public static readonly TimeSpan MaximumInternalBudget =
+        // pull + create/start + connector discovery/restart + exact-name stable cleanup
+        CommandBudget
+        + MaximumSetupBudget
+        + ConnectorBodyBudget
+        + MaximumCleanupBudget;
+}
+
 internal delegate Task<DockerCommandResult> DockerCommandRunner(
     IReadOnlyList<string> arguments,
     bool allowFailure,
@@ -130,18 +166,18 @@ internal delegate Task<DockerCommandResult> DockerCommandRunner(
 
 internal static class DockerContainerLifecycle
 {
-    private static readonly TimeSpan DockerCommandBudget = TimeSpan.FromSeconds(60);
-    private static readonly TimeSpan CleanupCommandBudget = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan CleanupSweepInterval = TimeSpan.FromMilliseconds(250);
+    private const int DefaultCleanupSweepCount = DockerCliIntegrationBudget.CleanupSweepCount;
+    private const int RequiredStableAbsenceObservations = 3;
+    private static readonly TimeSpan DockerCommandBudget = DockerCliIntegrationBudget.CommandBudget;
+    private static readonly TimeSpan CleanupCommandBudget = DockerCliIntegrationBudget.CleanupCommandBudget;
+    private static readonly TimeSpan CleanupSweepInterval = DockerCliIntegrationBudget.CleanupSweepInterval;
 
     public static async Task RunAsync(
         string containerName,
         DockerCommandRunner runDockerAsync,
         Func<Task> body,
-        int cleanupSweepCount = 5,
         Func<TimeSpan, Task>? delayAsync = null)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cleanupSweepCount);
         delayAsync ??= delay => Task.Delay(delay);
 
         Exception? scenarioException = null;
@@ -168,7 +204,6 @@ internal static class DockerContainerLifecycle
             await EnsureAbsentAsync(
                 containerName,
                 runDockerAsync,
-                cleanupSweepCount,
                 delayAsync);
         }
         catch (Exception exception)
@@ -178,10 +213,8 @@ internal static class DockerContainerLifecycle
 
         if (scenarioException is not null && cleanupException is not null)
         {
-            throw new AggregateException(
-                "The Docker container scenario failed and its exact-name cleanup could not be confirmed.",
-                scenarioException,
-                cleanupException);
+            scenarioException.Data["DockerCleanupException"] = cleanupException;
+            ExceptionDispatchInfo.Capture(scenarioException).Throw();
         }
 
         if (scenarioException is not null)
@@ -198,39 +231,68 @@ internal static class DockerContainerLifecycle
     private static async Task EnsureAbsentAsync(
         string containerName,
         DockerCommandRunner runDockerAsync,
-        int cleanupSweepCount,
         Func<TimeSpan, Task> delayAsync)
     {
-        for (var attempt = 1; attempt <= cleanupSweepCount; attempt++)
+        var consecutiveAbsentObservations = 0;
+        Exception? lastCleanupException = null;
+        for (var attempt = 1; attempt <= DefaultCleanupSweepCount; attempt++)
         {
+            var removedExactResource = false;
             try
             {
-                await runDockerAsync(
+                var removal = await runDockerAsync(
                     ["container", "rm", "--force", containerName],
                     allowFailure: true,
                     CleanupCommandBudget);
+                removedExactResource = !string.IsNullOrWhiteSpace(removal.StandardOutput);
             }
-            catch (Exception) when (attempt < cleanupSweepCount)
+            catch (Exception exception)
             {
-                // A later sweep can still remove a daemon-side create that outlived its CLI process.
+                lastCleanupException = exception;
+                consecutiveAbsentObservations = 0;
             }
 
-            if (attempt < cleanupSweepCount)
+            try
+            {
+                var remaining = await runDockerAsync(
+                    ["container", "ls", "--all", "--quiet", "--filter", $"name=^/{containerName}$"],
+                    allowFailure: false,
+                    CleanupCommandBudget);
+                if (string.IsNullOrWhiteSpace(remaining.StandardOutput))
+                {
+                    consecutiveAbsentObservations = removedExactResource
+                        ? 1
+                        : consecutiveAbsentObservations + 1;
+                    if (consecutiveAbsentObservations >= RequiredStableAbsenceObservations)
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    consecutiveAbsentObservations = 0;
+                }
+            }
+            catch (Exception exception)
+            {
+                lastCleanupException = exception;
+                consecutiveAbsentObservations = 0;
+            }
+
+            if (attempt < DefaultCleanupSweepCount)
             {
                 await delayAsync(CleanupSweepInterval);
             }
         }
 
-        var remaining = await runDockerAsync(
-            ["container", "ls", "--all", "--quiet", "--filter", $"name=^/{containerName}$"],
-            allowFailure: false,
-            CleanupCommandBudget);
-        if (!string.IsNullOrWhiteSpace(remaining.StandardOutput))
+        if (lastCleanupException is not null)
         {
-            throw new Xunit.Sdk.XunitException(
-                $"Docker cleanup did not remove the exact container '{containerName}' after "
-                + $"{cleanupSweepCount} bounded sweeps.");
+            ExceptionDispatchInfo.Capture(lastCleanupException).Throw();
         }
+
+        throw new Xunit.Sdk.XunitException(
+            $"Docker cleanup could not confirm {RequiredStableAbsenceObservations} stable exact-name "
+            + $"absence observations for '{containerName}' within {DefaultCleanupSweepCount} bounded sweeps.");
     }
 }
 
@@ -238,7 +300,7 @@ internal sealed class DockerCliFactAttribute : FactAttribute
 {
     public DockerCliFactAttribute()
     {
-        Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds;
+        Timeout = DockerCliIntegrationBudget.TestTimeoutMilliseconds;
 
         if (!string.Equals(Environment.GetEnvironmentVariable("NERV_IIP_DOCKER_INTEGRATION"), "1", StringComparison.Ordinal))
         {

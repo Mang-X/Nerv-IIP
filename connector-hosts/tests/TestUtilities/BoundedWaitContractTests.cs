@@ -43,7 +43,7 @@ public sealed class BoundedWaitContractTests
         if (violations.Length > 0)
         {
             throw new XunitException(
-                $"Async tests must use collection '{CollectionName}' and Timeout={TestTimeoutMilliseconds}: "
+                $"Async tests must use collection '{CollectionName}' and Timeout>={TestTimeoutMilliseconds}: "
                 + string.Join(", ", violations));
         }
     }
@@ -91,7 +91,7 @@ public sealed class BoundedWaitContractTests
                 var collectionName = collection?.ConstructorArguments.SingleOrDefault().Value as string;
                 var fact = test.Fact!;
                 return collectionName == CollectionName
-                    && fact.Timeout == TestTimeoutMilliseconds
+                    && fact.Timeout >= TestTimeoutMilliseconds
                     ? null
                     : test.Method;
             })

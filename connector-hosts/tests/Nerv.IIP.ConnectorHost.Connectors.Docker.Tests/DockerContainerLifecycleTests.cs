@@ -6,6 +6,35 @@ namespace Nerv.IIP.ConnectorHost.Connectors.Docker.Tests;
 public sealed class DockerContainerLifecycleTests
 {
     [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Integration_timeout_covers_full_internal_budget_after_create_failure_still_cleans_up()
+    {
+        const string containerName = "nerv-iip-budgeted-create-failure";
+        var docker = new FakeDockerCommands(
+            containerName,
+            materializeBeforeCreateFailure: true,
+            consumeCommandBudgets: true,
+            elapsedBeforeLifecycle: TimeSpan.FromSeconds(60));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DockerContainerLifecycle.RunAsync(
+                containerName,
+                docker.RunAsync,
+                () => Task.CompletedTask,
+                delayAsync: docker.DelayAsync));
+
+        Assert.Same(docker.CreateFailure, exception);
+        Assert.True(docker.CleanupRan);
+        Assert.False(docker.TargetExists);
+        Assert.True(docker.Elapsed > TimeSpan.FromMilliseconds(ConnectorTimeoutCollection.TestTimeoutMilliseconds));
+
+        var integrationTimeout = TimeSpan.FromMilliseconds(DockerCliIntegrationBudget.TestTimeoutMilliseconds);
+        Assert.Equal(TimeSpan.FromSeconds(404), DockerCliIntegrationBudget.MaximumInternalBudget);
+        Assert.True(
+            integrationTimeout > DockerCliIntegrationBudget.MaximumInternalBudget,
+            $"Docker integration timeout {integrationTimeout} must strictly exceed the 404s internal worst-case budget.");
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Create_failure_after_daemon_materializes_container_still_removes_exact_resource()
     {
         const string containerName = "nerv-iip-create-failure";
@@ -48,27 +77,78 @@ public sealed class DockerContainerLifecycleTests
         Assert.True(docker.UnrelatedContainerExists);
     }
 
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Cleanup_confirms_stable_absence_when_container_materializes_after_empty_observation()
+    {
+        const string containerName = "nerv-iip-after-empty-create";
+        var docker = new FakeDockerCommands(containerName, materializeAfterFirstEmptyObservation: true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DockerContainerLifecycle.RunAsync(
+                containerName,
+                docker.RunAsync,
+                () => Task.CompletedTask,
+                delayAsync: docker.DelayAsync));
+
+        Assert.Same(docker.CreateFailure, exception);
+        Assert.True(docker.DelayedContainerMaterialized);
+        Assert.False(docker.TargetExists);
+        Assert.True(docker.UnrelatedContainerExists);
+    }
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
+    public async Task Cleanup_failure_does_not_replace_the_original_scenario_exception()
+    {
+        const string containerName = "nerv-iip-primary-failure";
+        var docker = new FakeDockerCommands(containerName, failCleanupCommands: true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DockerContainerLifecycle.RunAsync(
+                containerName,
+                docker.RunAsync,
+                () => Task.CompletedTask,
+                delayAsync: docker.DelayAsync));
+
+        Assert.Same(docker.CreateFailure, exception);
+        Assert.Same(docker.CleanupFailure, exception.Data["DockerCleanupException"]);
+    }
+
     private sealed class FakeDockerCommands
     {
         private const string UnrelatedContainerName = "unrelated-container";
         private readonly string _targetContainerName;
         private readonly bool _materializeBeforeCreateFailure;
         private readonly bool _materializeAfterFirstCleanupSweep;
+        private readonly bool _materializeAfterFirstEmptyObservation;
+        private readonly bool _consumeCommandBudgets;
+        private readonly bool _failCleanupCommands;
         private readonly HashSet<string> _containers = [UnrelatedContainerName];
         private int _delayCount;
+        private bool _materializeOnNextDelay;
 
         public FakeDockerCommands(
             string targetContainerName,
             bool materializeBeforeCreateFailure = false,
-            bool materializeAfterFirstCleanupSweep = false)
+            bool materializeAfterFirstCleanupSweep = false,
+            bool materializeAfterFirstEmptyObservation = false,
+            bool consumeCommandBudgets = false,
+            bool failCleanupCommands = false,
+            TimeSpan elapsedBeforeLifecycle = default)
         {
             _targetContainerName = targetContainerName;
             _materializeBeforeCreateFailure = materializeBeforeCreateFailure;
             _materializeAfterFirstCleanupSweep = materializeAfterFirstCleanupSweep;
+            _materializeAfterFirstEmptyObservation = materializeAfterFirstEmptyObservation;
+            _consumeCommandBudgets = consumeCommandBudgets;
+            _failCleanupCommands = failCleanupCommands;
+            Elapsed = elapsedBeforeLifecycle;
         }
 
         public InvalidOperationException CreateFailure { get; } = new("docker create transport failed");
+        public InvalidOperationException CleanupFailure { get; } = new("docker cleanup transport failed");
         public bool DelayedContainerMaterialized { get; private set; }
+        public bool CleanupRan { get; private set; }
+        public TimeSpan Elapsed { get; private set; }
         public bool TargetExists => _containers.Contains(_targetContainerName);
         public bool UnrelatedContainerExists => _containers.Contains(UnrelatedContainerName);
 
@@ -78,6 +158,10 @@ public sealed class DockerContainerLifecycleTests
             TimeSpan budget)
         {
             Assert.True(budget > TimeSpan.Zero);
+            if (_consumeCommandBudgets)
+            {
+                Elapsed += budget;
+            }
 
             if (arguments is ["container", "create", "--name", var createName, ..])
             {
@@ -92,16 +176,34 @@ public sealed class DockerContainerLifecycleTests
             if (arguments is ["container", "rm", "--force", var removeName])
             {
                 Assert.True(allowFailure);
-                _containers.Remove(removeName);
-                return Task.FromResult(new DockerCommandResult(0, string.Empty));
+                CleanupRan = true;
+                if (_failCleanupCommands)
+                {
+                    throw CleanupFailure;
+                }
+
+                var removed = _containers.Remove(removeName);
+                return Task.FromResult(new DockerCommandResult(0, removed ? removeName : string.Empty));
             }
 
             if (arguments is ["container", "ls", "--all", "--quiet", "--filter", var filter])
             {
                 Assert.False(allowFailure);
+                if (_failCleanupCommands)
+                {
+                    throw CleanupFailure;
+                }
+
                 var expectedFilter = $"name=^/{_targetContainerName}$";
                 Assert.Equal(expectedFilter, filter);
                 var output = TargetExists ? "target-container-id\n" : string.Empty;
+                if (_materializeAfterFirstEmptyObservation
+                    && string.IsNullOrEmpty(output)
+                    && !DelayedContainerMaterialized)
+                {
+                    _materializeOnNextDelay = true;
+                }
+
                 return Task.FromResult(new DockerCommandResult(0, output));
             }
 
@@ -112,10 +214,22 @@ public sealed class DockerContainerLifecycleTests
         {
             Assert.True(delay > TimeSpan.Zero);
             _delayCount++;
+            if (_consumeCommandBudgets)
+            {
+                Elapsed += delay;
+            }
+
             if (_materializeAfterFirstCleanupSweep && _delayCount == 1)
             {
                 _containers.Add(_targetContainerName);
                 DelayedContainerMaterialized = true;
+            }
+
+            if (_materializeOnNextDelay)
+            {
+                _containers.Add(_targetContainerName);
+                DelayedContainerMaterialized = true;
+                _materializeOnNextDelay = false;
             }
 
             return Task.CompletedTask;
