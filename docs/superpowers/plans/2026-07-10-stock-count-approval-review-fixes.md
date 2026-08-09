@@ -1,110 +1,110 @@
-# Stock Count Approval Review Fixes Implementation Plan
+# 库存盘点审批审核修复实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Make the Inventory approval-completion consumer persist approved and rejected stock-count adjustments through the established command unit-of-work path.
+**目标：**让 Inventory 审批完成消费者通过既有命令工作单元路径，持久化已批准和已拒绝的库存盘点调整。
 
-**Architecture:** The CAP consumer remains responsible for validating the approval envelope and routing only Inventory `inventory-count-variance` documents. It sends a new internal command that loads the pending adjustment, task, and ledger in the application layer; the existing command pipeline persists state and dispatches the resulting domain event. Duplicate delivery becomes a no-op after the adjustment leaves `pending-approval`.
+**架构：**CAP 消费者继续负责校验审批信封，并且只路由 Inventory 的 `inventory-count-variance` 文档。它发送一个新的内部命令，在应用层加载待处理调整、任务和台账；既有命令管线负责持久化状态并分发由此产生的领域事件。调整离开 `pending-approval` 状态后，重复投递成为无操作。
 
-**Tech Stack:** .NET 10, CleanDDD command handlers, MediatR `ISender`, EF Core, CAP, xUnit.
+**技术栈：**.NET 10、CleanDDD 命令处理器、MediatR `ISender`、EF Core、CAP、xUnit。
 
-## Global Constraints
+## 全局约束
 
-- Keep the change inside Inventory and retain actual-ledger invariants.
-- Do not add or change HTTP endpoints, schemas, OpenAPI snapshots, or generated clients.
-- Use async EF Core APIs and let the command unit-of-work own persistence and domain-event dispatch.
-- Preserve the existing `IntegrationEventConsumerGuard` source/type/version validation and dead-letter behavior.
+- 将变更限制在 Inventory 内，并保留实际台账不变量。
+- 不得新增或变更 HTTP endpoint、schema、OpenAPI snapshot 或生成的客户端。
+- 使用异步 EF Core API，并由命令工作单元负责持久化和领域事件分发。
+- 保留既有 `IntegrationEventConsumerGuard` 的来源/类型/版本校验和死信行为。
 
 ---
 
-### Task 1: Capture the real CAP consumer path
+### 任务 1：覆盖真实 CAP 消费者路径
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/StockCountApprovalTests.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CompleteStockCountAdjustmentApprovalCommand.cs`
+**文件：**
+- 修改：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/StockCountApprovalTests.cs`
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment.cs`
+- 创建：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CompleteStockCountAdjustmentApprovalCommand.cs`
 
-**Interfaces:**
-- Consumes: `ApprovalCompletedIntegrationEvent`, `ISender`, `ApplicationDbContext`.
-- Produces: `CompleteStockCountAdjustmentApprovalCommand` with organization ID, environment ID, count-task code, approval-chain ID, and completion result.
+**接口：**
+- 消费：`ApprovalCompletedIntegrationEvent`、`ISender`、`ApplicationDbContext`。
+- 产出：带组织 ID、环境 ID、盘点任务代码、审批链 ID 和完成结果的 `CompleteStockCountAdjustmentApprovalCommand`。
 
-- [ ] **Step 1: Write failing consumer tests**
+- [ ] **步骤 1：编写失败的消费者测试**
 
-Replace direct `DbContext` persistence in the approval-completion tests with a command-executing sender. Assert approved delivery changes the persisted adjustment to `posted`, creates one movement, unfreezes the ledger, and changes the task to `confirmed`; assert rejected/returned delivery voids the adjustment, leaves on-hand unchanged, unfreezes the ledger, and changes the task to `recount-required`.
+在审批完成测试中，以执行命令的 sender 替换直接 `DbContext` 持久化。断言已批准的投递会将持久化调整改为 `posted`、创建一条变动、解除台账冻结并将任务改为 `confirmed`；断言已拒绝/退回的投递会作废调整、保持现有量不变、解除台账冻结并将任务改为 `recount-required`。
 
-- [ ] **Step 2: Run the targeted test to verify it fails**
+- [ ] **步骤 2：运行目标测试确认失败**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~StockCountApprovalTests`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~StockCountApprovalTests`
 
-Expected: FAIL because the existing consumer has no `ISender` dependency and does not issue a command that owns persistence.
+预期：失败，因为既有消费者没有 `ISender` 依赖，也没有发出负责持久化的命令。
 
-- [ ] **Step 3: Add the completion command and route the consumer through it**
+- [ ] **步骤 3：添加完成命令，并让消费者通过该命令路由**
 
-Define `CompleteStockCountAdjustmentApprovalCommand : ICommand<CompleteStockCountAdjustmentApprovalResult>`. Its handler selects the adjustment by organization, environment, count-task code, and chain ID; returns a no-op result unless it is `pending-approval`; loads the exact ledger dimensions; approves by calling `ConfirmApprovedAdjustment`, adding the movement, and calling `MarkPosted`; rejects/returns by calling `RequireRecountAfterApprovalRejection` and `VoidAfterApprovalRejection`. The CAP handler validates source/document and invokes `sender.Send(...)`.
+定义 `CompleteStockCountAdjustmentApprovalCommand : ICommand<CompleteStockCountAdjustmentApprovalResult>`。其处理器按组织、环境、盘点任务代码和审批链 ID 选择调整；除非调整处于 `pending-approval`，否则返回无操作结果；加载精确的台账维度；批准时调用 `ConfirmApprovedAdjustment`、添加变动并调用 `MarkPosted`；拒绝/退回时调用 `RequireRecountAfterApprovalRejection` 和 `VoidAfterApprovalRejection`。CAP 处理器校验来源/文档，并调用 `sender.Send(...)`。
 
-- [ ] **Step 4: Run the targeted test to verify it passes**
+- [ ] **步骤 4：运行目标测试确认通过**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~StockCountApprovalTests`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~StockCountApprovalTests`
 
-Expected: PASS with persisted approved and rejected outcomes through the command-executing sender.
+预期：通过，由执行命令的 sender 持久化批准和拒绝结果。
 
-### Task 2: Eliminate the approval-client silent fallback
+### 任务 2：消除审批客户端的静默回退
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Approval/StockCountApprovalClient.cs`
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
+**文件：**
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Approval/StockCountApprovalClient.cs`
+- 修改：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
 
-**Interfaces:**
-- Consumes: required `IStockCountApprovalClient` DI registration from `Program.cs`.
-- Produces: fail-fast construction when a caller tries to create an above-threshold handler without an approval client.
+**接口：**
+- 消费：必需的 `IStockCountApprovalClient` DI 注册，来自 `Program.cs`。
+- 产出：调用方尝试在没有审批客户端时创建超阈值处理器，构造过程立即失败。
 
-- [ ] **Step 1: Write a failing constructor/above-threshold test**
+- [ ] **步骤 1：编写失败的构造函数/超阈值测试**
 
-Add or adjust a test so a handler configured to require approval must receive an `IStockCountApprovalClient`; the test must not accept a fabricated approval-chain ID.
+新增或调整测试，使配置为需要审批的处理器必须接收 `IStockCountApprovalClient`；测试不得接受伪造的审批链 ID。
 
-- [ ] **Step 2: Run the target test to verify it fails**
+- [ ] **步骤 2：运行目标测试确认失败**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~InventoryEndpointContractTests`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter FullyQualifiedName~InventoryEndpointContractTests`
 
-Expected: FAIL while `GeneratedStockCountApprovalClient` still fabricates a chain ID.
+预期：失败，因为 `GeneratedStockCountApprovalClient` 仍在伪造审批链 ID。
 
-- [ ] **Step 3: Make the client dependency required and delete the stub**
+- [ ] **步骤 3：将客户端依赖设为必需并删除桩实现**
 
-Require `IStockCountApprovalClient` in `ConfirmStockCountAdjustmentCommandHandler`; retain the optional options parameter only where test construction needs it. Delete `GeneratedStockCountApprovalClient` and update direct test construction to inject a real test double.
+要求将 `IStockCountApprovalClient` 注入 `ConfirmStockCountAdjustmentCommandHandler`；只在测试构造需要时保留可选的 options 参数。删除 `GeneratedStockCountApprovalClient`，并更新直接构造的测试以注入真正的测试替身。
 
-- [ ] **Step 4: Run focused command tests**
+- [ ] **步骤 4：运行聚焦的命令测试**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter "FullyQualifiedName~StockCountApprovalTests|FullyQualifiedName~InventoryEndpointContractTests"`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --filter "FullyQualifiedName~StockCountApprovalTests|FullyQualifiedName~InventoryEndpointContractTests"`
 
-Expected: PASS without a production fallback path.
+预期：通过，且不存在生产回退路径。
 
-### Task 3: Restore the existing count-adjustment fact invariant and verify
+### 任务 3：恢复既有盘点调整事实不变量并验证
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountAdjustmentAggregate/StockCountAdjustment.cs`
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs` only if the invariant test needs correction.
+**文件：**
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountAdjustmentAggregate/StockCountAdjustment.cs`
+- 仅当不变量测试需要修正时，修改：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs`。
 
-**Interfaces:**
-- Consumes: `StockCountAdjustment.Record(StockCountTask, StockMovement, string)`.
-- Produces: posted adjustment facts reject a movement without an assigned identifier; pending approval facts remain the only null-movement state.
+**接口：**
+- 消费：`StockCountAdjustment.Record(StockCountTask, StockMovement, string)`。
+- 产出：已入账调整事实拒绝没有已分配标识符的变动；待审批事实仍是唯一允许变动为空的状态。
 
-- [ ] **Step 1: Run the failing CI-domain test locally**
+- [ ] **步骤 1：在本地运行失败的 CI 领域测试**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --filter FullyQualifiedName~Count_adjustment_fact_requires_assigned_movement_id`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --filter FullyQualifiedName~Count_adjustment_fact_requires_assigned_movement_id`
 
-Expected: FAIL because the branch currently permits `Record` to accept a movement whose ID has not been assigned.
+预期：失败，因为当前分支允许 `Record` 接受尚未分配 ID 的变动。
 
-- [ ] **Step 2: Restore the minimal invariant**
+- [ ] **步骤 2：恢复最小不变量**
 
-Make `StockCountAdjustment.Record` reject `movement.Id is null` before constructing a posted fact. Do not alter the pending-approval factory, which intentionally has no movement.
+让 `StockCountAdjustment.Record` 在构造已入账事实前拒绝 `movement.Id is null`。不得修改待审批工厂方法，该工厂方法有意不含变动。
 
-- [ ] **Step 3: Run focused and required regression gates**
+- [ ] **步骤 3：运行聚焦测试和必需回归门禁**
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --filter FullyQualifiedName~Count_adjustment_fact_requires_assigned_movement_id`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --filter FullyQualifiedName~Count_adjustment_fact_requires_assigned_movement_id`
 
-Run: `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj`
+运行：`dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj`
 
-Run: `dotnet test backend/tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj`
+运行：`dotnet test backend/tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj`
 
-Expected: all tests pass; no OpenAPI, schema, or frontend regeneration is required because this follow-up changes no public endpoint or schema.
+预期：所有测试通过；由于此后续修复不变更公开 endpoint 或 schema，因此无需重新生成 OpenAPI、schema 或前端产物。
