@@ -1,37 +1,36 @@
 # Button (NvButton)
 
-Triggers an action or event. App code uses `NvButton` from `@nerv-iip/ui` (the
-un-prefixed `Button` is the shadcn 原版 primitive — library-internal only, per
-ADR 0020).
+触发操作或事件。应用代码应使用 `NvButton`，它由 `@nerv-iip/ui` 导入（无前缀的
+`Button` 是 shadcn 原版基础组件（primitive）；依 ADR 0020，仅限组件库内部使用）。
 
-## Variants
+## 变体
 
-| Variant       | Use case                                                                                  |
-| ------------- | ----------------------------------------------------------------------------------------- |
+| 变体          | 使用场景                                                                            |
+| ------------- | ----------------------------------------------------------------------------------- |
 | `default`     | 容器内主操作（对话框/抽屉确认、卡片内动作，近黑）                                         |
-| `brand`       | **页面主 CTA 常规使用**（工具栏新建、表单提交；每页/每工具栏唯一，owner 裁决 2026-07-16） |
-| `outline`     | Secondary actions (the most common non-primary variant)                                   |
-| `ghost`       | Icon-only row actions, low-emphasis inline actions                                        |
-| `destructive` | Irreversible destructive action (must be inside an NvAlertDialog confirm)                 |
-| `secondary`   | Low-emphasis secondary action                                                             |
-| `link`        | Inline text action styled as a link                                                       |
+| `brand`       | **页面主 CTA 常规使用**（工具栏新建、表单提交；每页/每工具栏唯一，负责人裁决 2026-07-16） |
+| `outline`     | 次级操作（最常用的非主操作变体）                                                     |
+| `ghost`       | 仅图标的行操作、低强调的行内操作                                                     |
+| `destructive` | 不可逆的破坏性操作（必须置于 NvAlertDialog 确认中）                                   |
+| `secondary`   | 低强调的次级操作                                                                     |
+| `link`        | 呈现为链接样式的行内文本操作                                                         |
 
-## Sizes
+## 尺寸
 
-| Size      | Use case                                            |
-| --------- | --------------------------------------------------- |
-| `default` | Standard buttons in toolbars and forms              |
-| `sm`      | Compact contexts, dense toolbars                    |
-| `lg`      | Rarely used; prominent hero actions only            |
-| `icon`    | Square icon-only button (always add `aria-label`)   |
-| `icon-sm` | Compact square icon-only button (table row actions) |
+| 尺寸      | 使用场景                                      |
+| --------- | --------------------------------------------- |
+| `default` | 工具栏和表单中的标准按钮                      |
+| `sm`      | 紧凑场景、密集工具栏                          |
+| `lg`      | 很少使用；仅用于突出的主视觉操作              |
+| `icon`    | 方形仅图标按钮（始终添加 `aria-label`）       |
+| `icon-sm` | 紧凑方形仅图标按钮（表格行操作）              |
 
-## Loading
+## 加载中状态
 
-`NvButton` has a built-in `loading` prop (renders an `NvLoader` ring and sets
-`aria-busy`) — do not hand-compose a `Spinner` inside the button.
+`NvButton` 内置 `loading` prop（渲染 `NvLoader` 圆环并设置 `aria-busy`）；
+不得在按钮内部手动组合 `Spinner`。
 
-## Usage
+## 用法
 
 ```vue
 <!-- Page-level primary CTA (toolbar) — brand, one per page/toolbar -->
@@ -54,10 +53,10 @@ ADR 0020).
 </NvAlertDialogAction>
 ```
 
-## Do NOT
+## 禁止
 
-- Do not use `variant="default"` and `variant="destructive"` side-by-side without an NvAlertDialog wrapping the destructive action.
-- Do not use `type="button"` inside a `<form>` submit handler — use `type="submit"`.
-- Do not create icon-only buttons without `aria-label`.
-- Do not use `variant="link"` for navigation to another route — use `<RouterLink>`.
-- Do not import the un-prefixed `Button` in app code — that is the 原版 primitive.
+- 未使用 NvAlertDialog 包裹破坏性操作时，不得并列使用 `variant="default"` 和 `variant="destructive"`。
+- 不得将 `type="button"` 用于 `<form>` 提交处理程序；应使用 `type="submit"`。
+- 不得创建没有 `aria-label` 的仅图标按钮。
+- 不得将 `variant="link"` 用于跳转至其他路由；应使用 `<RouterLink>`。
+- 不得在应用代码中导入无前缀的 `Button`；它是原版基础组件（primitive）。

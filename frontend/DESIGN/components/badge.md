@@ -1,37 +1,36 @@
 # Badge (NvBadge / NvStatusBadge)
 
-Label pills. Two brand components split the old Badge's jobs:
+标签胶囊。两个品牌组件分担旧版 Badge 的职责：
 
-- **`NvBadge`** — category / type / count labels.
-- **`NvStatusBadge`** — entity status (dot + tinted pill, shared status map,
-  optional live `pulse`). Always prefer it for status columns.
+- **`NvBadge`** — 类别、类型或数量标签。
+- **`NvStatusBadge`** — 实体状态（圆点加浅色胶囊、共享状态映射，
+  可选实时 `pulse`）。状态列始终优先使用它。
 
-Both come from `@nerv-iip/ui`. The un-prefixed `Badge` is the shadcn 原版
-primitive — library-internal only.
+两者均从 `@nerv-iip/ui` 导出。无前缀的 `Badge` 是 shadcn 原版
+基础组件（primitive），仅限组件库内部使用。
 
-## NvBadge Variants
+## NvBadge 变体
 
-| Variant             | Use case                                     |
-| ------------------- | -------------------------------------------- |
-| `neutral` (default) | Neutral category, type tag                   |
-| `solid`             | Primary system label needing strong emphasis |
-| `brand`             | Brand-tinted highlight label                 |
-| `success`           | Positive label (non-status contexts)         |
-| `warning`           | At-risk / attention label                    |
-| `danger`            | Error / deletion-related label               |
+| 变体              | 使用场景                       |
+| ----------------- | ------------------------------ |
+| `neutral`（默认） | 中性类别、类型标签             |
+| `solid`           | 需要强强调的主系统标签         |
+| `brand`           | 品牌色高亮标签                 |
+| `success`         | 正向标签（非状态场景）         |
+| `warning`         | 有风险或需要关注的标签         |
+| `danger`          | 错误或与删除相关的标签         |
 
-> Note: the old 原版 variant names `secondary` / `outline` / `destructive` /
-> `ghost` do not exist on `NvBadge` — use `neutral` for quiet tags and `danger`
-> for error tones.
+> 注意：旧版原版的变体名称 `secondary` / `outline` / `destructive` /
+> `ghost` 不存在于 `NvBadge`；低强调标签请使用 `neutral`，错误色调请使用
+> `danger`。
 
 ## NvStatusBadge
 
-Props: `value` (raw status string, resolved to label + tone via the shared
-`resolveStatus` map), `label` (override), `tone`
-(`success | warning | danger | info | neutral`), `pulse` (live dot for active
-states).
+属性：`value`（原始状态字符串，通过共享的 `resolveStatus` 映射解析为标签与色调）、
+`label`（覆盖值）、`tone`（`success | warning | danger | info | neutral`）、
+`pulse`（用于活跃状态的实时圆点）。
 
-## Usage
+## 用法
 
 ```vue
 <!-- Entity status — always NvStatusBadge with a semantic tone, never handcraft colors -->
@@ -45,9 +44,9 @@ states).
 <NvBadge variant="brand">New</NvBadge>
 ```
 
-## Do NOT
+## 禁止
 
-- Do not pass raw Tailwind classes like `class="border-emerald-200 bg-emerald-50 text-emerald-700"` — use a semantic variant/tone.
-- Do not use `variant="destructive"` — the danger tone is named `danger` on both components.
-- Do not use `NvBadge` for entity status columns — use `NvStatusBadge` so labels/tones stay consistent with the shared status map.
-- Do not use a badge for text longer than 3 words.
+- 不得传入 `class="border-emerald-200 bg-emerald-50 text-emerald-700"` 等原始 Tailwind 类；应使用语义化变体或色调。
+- 不得使用 `variant="destructive"`；两个组件中的危险色调均命名为 `danger`。
+- 不得在实体状态列使用 `NvBadge`；应使用 `NvStatusBadge`，使标签和色调与共享状态映射保持一致。
+- 不得将标签用于超过 3 个词的文本。
