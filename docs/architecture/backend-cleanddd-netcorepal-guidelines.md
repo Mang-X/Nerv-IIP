@@ -1,17 +1,17 @@
 # 后端 CleanDDD 与 netcorepal 落地规范
 
-本文档定义 Nerv-IIP 后端平台服务在 CleanDDD 与 netcorepal-cloud-framework 上的落地约定。它承接 ADR 0001 的 solution 边界、ADR 0003 的基础设施基线，以及首批纵切中的 AppHub、PlatformGateway、Ops、Connector Protocol 实现要求。
+本文档定义 Nerv-IIP 后端平台服务在 CleanDDD 与 netcorepal-cloud-framework 上的落地约定。它承接 ADR 0001 的解决方案边界、ADR 0003 的基础设施基线，以及首批纵切中的 AppHub、PlatformGateway、Ops、Connector Protocol 实现要求。
 
 参考来源：
 
 - netcorepal-cloud-framework 官方文档：https://netcorepal.github.io/netcorepal-cloud-framework/en/
-- Project Structure：https://netcorepal.github.io/netcorepal-cloud-framework/en/getting-started/project-structure/
-- Development Process：https://netcorepal.github.io/netcorepal-cloud-framework/en/getting-started/development-process/
-- Transactions：https://netcorepal.github.io/netcorepal-cloud-framework/en/transactions/transactions/
-- OpenTelemetry Diagnostics：https://netcorepal.github.io/netcorepal-cloud-framework/en/observability/opentelemetry-diagnostics/
+- 项目结构（Project Structure）：https://netcorepal.github.io/netcorepal-cloud-framework/en/getting-started/project-structure/
+- 开发流程（Development Process）：https://netcorepal.github.io/netcorepal-cloud-framework/en/getting-started/development-process/
+- 事务（Transactions）：https://netcorepal.github.io/netcorepal-cloud-framework/en/transactions/transactions/
+- OpenTelemetry 诊断（OpenTelemetry Diagnostics）：https://netcorepal.github.io/netcorepal-cloud-framework/en/observability/opentelemetry-diagnostics/
 - NetCorePal.Template 当前公开参数说明：https://www.nuget.org/packages/NetCorePal.Template
 - NetCorePal.Template template.json：https://github.com/netcorepal/netcorepal-cloud-template/blob/main/template/.template.config/template.json
-- NetCorePal.Template CI matrix：https://github.com/netcorepal/netcorepal-cloud-template/blob/main/.github/workflows/template-test.yml
+- NetCorePal.Template CI 矩阵：https://github.com/netcorepal/netcorepal-cloud-template/blob/main/.github/workflows/template-test.yml
 - 本地 CleanDDD 技能：cleanddd-modeling、cleanddd-dotnet-coding、cleanddd-dotnet-init。
 
 ## 适用范围
@@ -52,30 +52,30 @@ dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework ne
 
 1. 创建前先运行 `dotnet new netcorepal-web --help`，确认本机模板支持的参数名。
 2. 当前项目目标框架固定显式传 `net10.0`，除非 ADR 更新。
-3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列；运行时仍必须通过 `Messaging:Provider` 决定 InMemory、RabbitMQ 或 Redis，不把模板消息队列参数理解为默认 broker 硬依赖。
-4. `--UseAdmin false` 必须显式传入，避免把模板内置 Admin、RBAC 或前端后台与 Nerv-IIP 自有 IAM、console 规划混在一起。
+3. `--Database PostgreSQL` 与 `--MessageQueue RabbitMQ` 必须显式传入，避免落到模板默认 MySQL 或其他消息队列；运行时仍必须通过 `Messaging:Provider` 决定 InMemory、RabbitMQ 或 Redis，不把模板消息队列参数理解为默认消息代理硬依赖。
+4. `--UseAdmin false` 必须显式传入，避免把模板内置管理后台、RBAC 或前端后台与 Nerv-IIP 自有 IAM、控制台规划混在一起。
 5. `--IncludeCopilotInstructions false` 保持协作指引由仓库根统一维护，不让每个服务生成一份局部指令。
 6. `--UseAspire false` 是每个平台领域服务的默认值，含义是不让每个服务各自生成局部 AppHost；平台统一 Aspire AppHost 由 ADR 0008 冻结，后续落点在 `infra/aspire`。
 
 ## 数据库可替换性与信创口径
 
-2026-05-17 调研结论：netcorepal-cloud-framework 本身围绕 ASP.NET Core、EF Core、UnitOfWork、Repository 和 CAP outbox 组织能力；数据库能力主要由 NetCorePal.Template 生成的 EF Core provider、CAP storage、迁移和测试基础设施承担。当前公开的 NetCorePal.Template 3.2.0 `--Database` 参数包含 `MySql`、`SqlServer`、`PostgreSQL`、`Sqlite`、`GaussDB`、`DMDB`、`MongoDB`，模板源码也为 GaussDB 与 DMDB 提供了 provider 包、NetCorePal CAP storage 包、迁移目录、Aspire/Testcontainers 测试包和 CI 矩阵。
+2026-05-17 调研结论：netcorepal-cloud-framework 本身围绕 ASP.NET Core、EF Core、UnitOfWork、Repository 和 CAP 发件箱组织能力；数据库能力主要由 NetCorePal.Template 生成的 EF Core 提供程序、CAP 存储、迁移和测试基础设施承担。当前公开的 NetCorePal.Template 3.2.0 `--Database` 参数包含 `MySql`、`SqlServer`、`PostgreSQL`、`Sqlite`、`GaussDB`、`DMDB`、`MongoDB`，模板源码也为 GaussDB 与 DMDB 提供了提供程序包、NetCorePal CAP 存储包、迁移目录、Aspire/Testcontainers 测试包和 CI 矩阵。
 
 Nerv-IIP 的正式口径：
 
-1. 主推并默认落地 PostgreSQL；所有 scaffold 命令仍显式传入 `--Database PostgreSQL`。
-2. 信创替换应按 database profile 实施。当前优先候选为模板已覆盖的 `GaussDB` 与 `DMDB`；Kingbase、OceanBase 等未进入模板公开参数的数据库，先作为评估项处理。
-3. database profile 必须至少明确 EF Core provider、CAP storage/outbox、连接串格式、迁移策略、日期时间与 JSON 映射、行版本/并发策略、健康检查和自动化测试入口。
-4. 目标是低替换成本，不承诺完全无感。即使业务代码不改，迁移脚本、索引、SQL 方言、事务隔离、CAP outbox 表和测试容器仍需要按 profile 验证。
-5. Domain、Application、Endpoint、SDK 和公开契约不得引用 provider 专有 API，不写 provider 专有 SQL，不依赖 PostgreSQL `jsonb`、array、函数或 schema 语义作为跨层契约。
-6. Provider 选择只允许出现在 Infrastructure、`Program.cs`/DI extension、部署配置、迁移和 profile 测试中；跨服务仍遵守“服务拥有自己的 schema/数据库边界，不共享表”的原则。
-7. 第四阶段先实现 PostgreSQL profile，并在代码形态上保留 `Persistence:Provider` 扩展点；GaussDB/DMDB 的生产支持作为后续信创验证任务，不混入当前真实基础设施纵切。
+1. 主推并默认落地 PostgreSQL；所有脚手架命令仍显式传入 `--Database PostgreSQL`。
+2. 信创替换应按数据库配置实施。当前优先候选为模板已覆盖的 `GaussDB` 与 `DMDB`；Kingbase、OceanBase 等未进入模板公开参数的数据库，先作为评估项处理。
+3. 数据库配置必须至少明确 EF Core 提供程序、CAP 存储/发件箱、连接串格式、迁移策略、日期时间与 JSON 映射、行版本/并发策略、健康检查和自动化测试入口。
+4. 目标是低替换成本，不承诺完全无感。即使业务代码不改，迁移脚本、索引、SQL 方言、事务隔离、CAP 发件箱表和测试容器仍需要按配置验证。
+5. Domain、Application、Endpoint、SDK 和公开契约不得引用提供程序专有 API，不写提供程序专有 SQL，不依赖 PostgreSQL `jsonb`、array、函数或 schema 语义作为跨层契约。
+6. 提供程序选择只允许出现在 Infrastructure、`Program.cs`/DI 扩展、部署配置、迁移和配置测试中；跨服务仍遵守“服务拥有自己的 schema/数据库边界，不共享表”的原则。
+7. 第四阶段先实现 PostgreSQL 配置，并在代码形态上保留 `Persistence:Provider` 扩展点；GaussDB/DMDB 的生产支持作为后续信创验证任务，不混入当前真实基础设施纵切。
 
 ## .NET 版本策略
 
 1. 当前后端目标框架采用 .NET 10，对应模板参数固定为 `--Framework net10.0`。
-2. 不再以 .NET 9 作为首批 scaffold 基线。
-3. .NET 11 作为下一次目标升级方向；只有在 netcorepal-cloud-framework、NetCorePal.Template、EF Core provider、CAP 存储和测试基础设施明确适配后，才统一升级。
+2. 不再以 .NET 9 作为首批脚手架基线。
+3. .NET 11 作为下一次目标升级方向；只有在 netcorepal-cloud-framework、NetCorePal.Template、EF Core 提供程序、CAP 存储和测试基础设施明确适配后，才统一升级。
 4. 升级到 .NET 11 时必须集中修改 Directory.Build.props、模板创建命令、CI/本地 SDK 前置、Docker/测试镜像和本文档，不允许服务间分批漂移目标框架。
 
 ## 服务内结构
@@ -141,7 +141,7 @@ backend/services/AppHub/
 3. 同一聚合的领域事件可以合并在 `{Aggregate}DomainEvents.cs`。
 4. 领域事件只表达已经发生的领域事实，不放外部 IO 逻辑。
 
-## 命令、查询与 Endpoint
+## 命令、查询与端点
 
 命令：
 
@@ -158,17 +158,17 @@ backend/services/AppHub/
 3. 查询无副作用，不通过仓储修改聚合。
 4. 列表查询必须有明确分页、排序和过滤口径。
 
-Endpoint：
+端点：
 
-1. HTTP Endpoint 使用 FastEndpoints。
-2. Endpoint 只做请求绑定、鉴权声明、mediator 调度和响应包装，不写领域规则。
-3. 本项目采用 CleanDDD 技能里的属性路由风格，常规 Endpoint 优先使用 `[HttpGet]`、`[HttpPost]`、`[Tags]`、`[AllowAnonymous]` 等特性声明 HTTP 入口。
-4. FastEndpoints 的属性配置能力是受限集合；当 Endpoint 需要只能通过 fluent API 表达的高级配置时，可以改用 `Configure()`，但同一个 Endpoint 不混用属性路由与 `Configure()`。
-5. PlatformGateway 控制台接口的稳定 OpenAPI `operationId` 优先通过 Gateway 启动配置中的 Endpoint name generator 集中维护，避免为了命名批量把属性路由 Endpoint 改写成 `Configure()`。
-6. 只有当单个 Endpoint 同时需要复杂 metadata、特殊 Swagger 描述或其它高级 FastEndpoints 配置时，才把该 Endpoint 完整切换到 `Configure()`；切换后路由、鉴权和 metadata 都放在同一个 `Configure()` 中。
+1. HTTP 端点使用 FastEndpoints。
+2. 端点只做请求绑定、鉴权声明、中介器调度和响应包装，不写领域规则。
+3. 本项目采用 CleanDDD 技能里的属性路由风格，常规端点优先使用 `[HttpGet]`、`[HttpPost]`、`[Tags]`、`[AllowAnonymous]` 等特性声明 HTTP 入口。
+4. FastEndpoints 的属性配置能力是受限集合；当端点需要只能通过流式 API 表达的高级配置时，可以改用 `Configure()`，但同一个端点不混用属性路由与 `Configure()`。
+5. PlatformGateway 控制台接口的稳定 OpenAPI `operationId` 优先通过 Gateway 启动配置中的端点名称生成器集中维护，避免为了命名批量把属性路由端点改写成 `Configure()`。
+6. 只有当单个端点同时需要复杂元数据、特殊 Swagger 描述或其他高级 FastEndpoints 配置时，才把该端点完整切换到 `Configure()`；切换后路由、鉴权和元数据都放在同一个 `Configure()` 中。
 7. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
 8. 请求/响应类型可以直接使用强类型 ID，不解包 `.Value`。
-9. 新增或修改业务服务对外 HTTP Endpoint 时，必须在 issue/PR 声明该端点的 facade 消费面三选一（`exposed`/`deferred`/`internal`）并登记 `docs/architecture/facade-coverage-matrix.json`；详见 AGENTS.md「Facade Coverage Governance」与 `docs/architecture/facade-coverage-matrix.md`。
+9. 新增或修改业务服务对外 HTTP 端点时，必须在 Issue/PR 声明该端点的门面消费方式三选一（`exposed`/`deferred`/`internal`）并登记 `docs/architecture/facade-coverage-matrix.json`；详见 AGENTS.md“Facade 覆盖治理”与 `docs/architecture/facade-coverage-matrix.md`。
 
 ## 事务、领域事件与集成事件
 
@@ -181,16 +181,16 @@ Endpoint：
 领域事件处理器：
 
 1. 领域事件处理器实现 `IDomainEventHandler<TDomainEvent>`。
-2. 处理器可以通过 mediator 发送命令，不直接跨聚合改库。
+2. 处理器可以通过中介器发送命令，不直接跨聚合改库。
 3. 处理器内避免不可回滚的外部副作用；需要跨服务传播时转为集成事件。
 
 集成事件：
 
-1. 跨服务传播使用 IntegrationEvent，不直接把 DomainEvent 当作外部契约。
+1. 跨服务传播使用 IntegrationEvent，不直接把 DomainEvent 作为外部契约。
 2. 集成事件使用 `record`，不携带聚合对象引用，不暴露敏感字段。
 3. 领域事件到集成事件通过 `IIntegrationEventConverter<TDomainEvent, TIntegrationEvent>` 转换。
-4. netcorepal 会通过生成器为 converter 生成发布处理器；新代码不要默认手写 `IIntegrationEventPublisher` 发布逻辑。
-5. IntegrationEvent 与命令数据修改通过 CAP outbox 保存在同一事务中；事务提交后由 CAP 按 `Messaging:Provider` 发布到 InMemory 进程内队列、RabbitMQ broker 或 Redis Streams。
+4. netcorepal 会通过生成器为转换器生成发布处理器；新代码不要默认手写 `IIntegrationEventPublisher` 发布逻辑。
+5. IntegrationEvent 与命令数据修改通过 CAP 发件箱保存在同一事务中；事务提交后由 CAP 按 `Messaging:Provider` 发布到 InMemory 进程内队列、RabbitMQ 消息代理或 Redis Streams。
 6. IntegrationEventHandler 与触发它的原命令不在同一事务中，必须按最终一致性和可重试语义设计。
 7. 集成事件处理器应具备幂等性，至少能处理 CAP 重试或重复投递。
 8. 不是每个 DomainEvent 都需要转换成 IntegrationEvent；只有跨服务传播、跨进程审计或异步投影需要外发时才转换。
@@ -207,7 +207,7 @@ Endpoint：
 
 ## 仓储、DbContext 与 EF 配置
 
-数据库 schema、建表注释、迁移、catalog 和 profile 兼容的完整规范见 `docs/architecture/database-schema-conventions.md`。本节只保留 CleanDDD/netcorepal 落地时每个服务必须遵守的最低代码结构要求。
+数据库 schema、建表注释、迁移、目录册（catalog）和配置兼容的完整规范见 `docs/architecture/database-schema-conventions.md`。本节只保留 CleanDDD/netcorepal 落地时每个服务必须遵守的最低代码结构要求。
 
 仓储：
 
@@ -217,7 +217,7 @@ Endpoint：
 4. 仓储接口与实现同文件，放在 Infrastructure 的 `Repositories` 目录。
 5. 仓储只服务命令侧聚合持久化，不作为复杂查询层。
 
-DbContext：
+数据库上下文（DbContext）：
 
 1. 每个领域服务拥有自己的 `ApplicationDbContext`。
 2. `ApplicationDbContext` 继承 netcorepal 的 `AppDbContextBase`。
@@ -228,40 +228,40 @@ DbContext：
 
 1. 每个持久实体提供 `{Entity}EntityTypeConfiguration`。
 2. 必须配置表名、表注释、主键、必填、长度、索引、外键/删除行为和字段注释。
-3. 序列化 JSON/text 字段必须说明格式、生产方、消费方和兼容策略，不允许只写“metadata”一类模糊注释。
+3. 序列化 JSON/text 字段必须说明格式、生产方、消费方和兼容策略，不允许只写“元数据（metadata）”一类模糊注释。
 4. 每个索引都要能对应唯一约束、列表查询、调度扫描、幂等检查或状态追踪中的一个明确意图。
 5. `IGuidStronglyTypedId` 使用 Guid v7 值生成器。
 6. `IInt64StronglyTypedId` 使用 Snowflake 值生成器。
 7. `IStringStronglyTypedId` 只在业务或协议需要可读 ID 时使用，必须 `ValueGeneratedNever()`、设置长度，并说明生成权威。
 8. `RowVersion` 采用框架约定，不自行实现第二套并发字段。
-9. PostgreSQL profile 必须显式配置服务 schema 内的 `__EFMigrationsHistory`。
+9. PostgreSQL 配置必须显式设置服务 schema 内的 `__EFMigrationsHistory`。
 10. 新增、删除或改变业务表时，同步更新 `docs/architecture/database-schema-catalog.md`。
 
-## Program 与基础注册
+## Program 与基础设施注册
 
 每个领域服务的 `Program.cs` 至少需要确认以下注册存在：
 
-1. DbContext 默认使用 PostgreSQL profile；provider 选择收敛在 Infrastructure DI extension 中，不向 Domain/Application/Endpoint 泄漏。
+1. DbContext 默认使用 PostgreSQL 配置；提供程序选择收敛在 Infrastructure DI 扩展中，不向 Domain/Application/Endpoint 泄漏。
 2. Repositories 通过 `AddRepositories(...)` 注册。
 3. UnitOfWork 通过 `AddUnitOfWork<ApplicationDbContext>()` 注册。
 4. MediatR 注册命令、查询、验证、命令锁和 UnitOfWork 行为。
-5. CAP 使用 netcorepal storage 绑定当前 `ApplicationDbContext`，并通过 `backend/common/Messaging/Nerv.IIP.Messaging.CAP` 按 `Messaging:Provider` 选择默认 InMemory message queue、显式 RabbitMQ 或 Redis Streams。
+5. CAP 使用 netcorepal 存储绑定当前 `ApplicationDbContext`，并通过 `backend/common/Messaging/Nerv.IIP.Messaging.CAP` 按 `Messaging:Provider` 选择默认 InMemory 消息队列、显式 RabbitMQ 或 Redis Streams。
 6. FastEndpoints、KnownException 处理中间件、ResponseData、OpenAPI 生成正常启用。
-7. OpenTelemetry 接入 ASP.NET Core、HTTP、CAP 和 netcorepal instrumentation。
-8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` 和 `UseNervIipCorrelation` 接入统一 Serilog provider、OpenTelemetry sink、Console sink 和 correlation scope。
+7. OpenTelemetry 接入 ASP.NET Core、HTTP、CAP 和 netcorepal 插桩。
+8. `ILogger<T>` 作为业务代码唯一日志入口；Program/Host 层通过 `Nerv.IIP.Observability` 的 `AddNervIipObservability` 和 `UseNervIipCorrelation` 接入统一 Serilog 提供程序、OpenTelemetry 输出接收器（sink）、控制台输出接收器和关联作用域。
 
 这些注册原则先由模板生成，后续只做与 Nerv-IIP 基线一致的裁剪，避免手写一套与框架管线平行的基础设施。
 
 ## 日志规则
 
-1. 业务代码只注入 `ILogger<T>`，不直接依赖 Serilog 静态 API、sink API 或具体日志后端 SDK。
+1. 业务代码只注入 `ILogger<T>`，不直接依赖 Serilog 静态 API、输出接收器 API 或具体日志后端 SDK。
 2. 服务宿主不直接引用 `Serilog.AspNetCore`、`Serilog.Enrichers.ClientInfo` 或 `Serilog.Sinks.OpenTelemetry`；这些包和日志后端接线由 `backend/common/Observability/Nerv.IIP.Observability` 集中维护。
-3. 宿主层默认经共享 Observability 库接入 Serilog，输出结构化 JSON 日志到 Console，并通过 OpenTelemetry/OTLP 交给 Collector 或 VictoriaLogs；本地开发允许仅 Console 输出。
-4. 所有跨服务请求、Connector Host 心跳、状态同步、任务创建、任务领取、任务结果回传必须带 `correlationId`，并让日志 scope、Activity tag 和响应头保持一致。
+3. 宿主层默认经共享 Observability 库接入 Serilog，向控制台输出结构化 JSON 日志，并通过 OpenTelemetry/OTLP 交给采集器或 VictoriaLogs；本地开发允许仅向控制台输出。
+4. 所有跨服务请求、Connector Host 心跳、状态同步、任务创建、任务领取、任务结果回传必须带 `correlationId`，并让日志作用域、Activity 标签和响应头保持一致。
 5. 日志字段使用稳定命名：`service.name`、`environment`、`traceId`、`spanId`、`correlationId`、`organizationId`、`environmentId`、`actor`、`operationTaskId`、`instanceKey`。没有上下文时不伪造字段。
-6. 不记录 access token、refresh token、密码、密钥、完整连接串、个人敏感信息、文件内容或大体积 payload；异常日志记录异常类型、错误码、业务 id 和 correlationId。
+6. 不记录访问令牌、刷新令牌、密码、密钥、完整连接串、个人敏感信息、文件内容或大体积载荷；异常日志记录异常类型、错误码、业务 ID 和 correlationId。
 7. 日志不是审计。用户动作、运维动作、审批、工具调用和文件授权等可追溯事实必须写入对应领域模型或 Ops `AuditRecord`，日志只用于诊断。
-8. 日志不写业务 PostgreSQL schema；持久化由 OpenTelemetry Collector 转发到部署 profile 的观测后端，日志包和诊断包通过 File Storage/MinIO 作为附件归档。
+8. 日志不写业务 PostgreSQL schema；持久化由 OpenTelemetry 采集器转发到部署配置的观测后端，日志包和诊断包通过 File Storage/MinIO 作为附件归档。
 
 ## 测试与验收
 
@@ -274,9 +274,9 @@ DbContext：
 Web 集成测试：
 
 1. 使用模板生成的 `MyWebApplicationFactory` 或等价测试工厂。
-2. 使用 Testcontainers 或本地开发编排启动当前 profile 所需依赖；默认 Development profile 为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，显式 `Messaging:Provider=Redis` 时要求 Redis 持久化，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
-3. Endpoint 测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
-4. 当前测试宿主使用 `WebApplicationFactoryCollection` 阻止 xUnit 并行测试执行以避免 FastEndpoints 静态配置竞态：FastEndpoints 8.1.0 在全局静态状态中存储 `Config` 和 `Serializer.Options`；并发测试宿主启动可能同时变更和拷贝共享的 converter 列表，导致 `System.ArgumentException: Destination array was not long enough`。每个使用 `WebApplicationFactory<Program>` 的测试类必须标记 `[Collection(WebApplicationFactoryCollection.Name)]`，并在测试项目中定义对应的 `[CollectionDefinition(Name, DisableParallelization = true)]` collection。只有当 FastEndpoints 支持 per-host 配置或宿主启动不再触碰共享状态时，才可以移除此 collection。
+2. 使用 Testcontainers 或本地开发编排启动当前配置所需依赖；默认开发配置为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，显式 `Messaging:Provider=Redis` 时要求 Redis 持久化，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
+3. 端点测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
+4. 当前测试宿主使用 `WebApplicationFactoryCollection` 阻止 xUnit 并行测试执行，以避免 FastEndpoints 静态配置竞态：FastEndpoints 8.1.0 在全局静态状态中存储 `Config` 和 `Serializer.Options`；并发测试宿主启动可能同时变更和复制共享的转换器列表，导致 `System.ArgumentException: Destination array was not long enough`。每个使用 `WebApplicationFactory<Program>` 的测试类必须标记 `[Collection(WebApplicationFactoryCollection.Name)]`，并在测试项目中定义对应的 `[CollectionDefinition(Name, DisableParallelization = true)]` 集合。只有当 FastEndpoints 支持逐宿主配置或宿主启动不再触碰共享状态时，才可以移除此集合。
 
 事件测试：
 
@@ -284,11 +284,11 @@ Web 集成测试：
 2. IntegrationEventConverter 应只输出外部契约需要的字段。
 3. IntegrationEventHandler 按重复投递测试幂等性。
 
-Facade 消费面验收（强制三选一，无缺省）：
+门面消费方式验收（强制三选一，无缺省）：
 
-1. 凡新增/修改业务服务对外 HTTP 端点，验收必须为每个端点声明其一：`exposed`（本 PR 同步交付 Gateway facade + OpenAPI 导出 + codegen + stable barrel）、`deferred`（显式后置，在 `docs/architecture/facade-coverage-matrix.json` 登记 `followUp` 待办与预期前端 issue/菜单分期）、`internal`（永不暴露，如 #688 运行小时先例，登记 `rationale`）。
-2. `backend/tests/Nerv.IIP.FacadeCoverage.Tests`（随 `dotnet test backend/Nerv.IIP.sln` 执行）反射各服务 `*EndpointContracts.All` 与矩阵比对：新增端点未登记即失败；`exposed` 但快照缺对应 facade 即失败；`deferred`/`internal` 被悄悄暴露即失败。
-3. 声明 `exposed` 的 focused verify 脚本应通过 `Assert-FacadeTypesGenExport`（`scripts/lib/ScriptAutomation.ps1`）断言对应类型已进入 `types.gen.ts` 且从 stable barrel 导出。
+1. 凡新增/修改业务服务对外 HTTP 端点，验收必须为每个端点声明其一：`exposed`（本 PR 同步交付 Gateway 门面 + OpenAPI 导出 + 代码生成 + 稳定导出入口）、`deferred`（显式后置，在 `docs/architecture/facade-coverage-matrix.json` 登记 `followUp` 待办与预期前端 Issue/菜单分期）、`internal`（永不暴露，如 #688 运行小时先例，登记 `rationale`）。
+2. `backend/tests/Nerv.IIP.FacadeCoverage.Tests`（随 `dotnet test backend/Nerv.IIP.sln` 执行）反射各服务 `*EndpointContracts.All` 与矩阵比对：新增端点未登记即失败；`exposed` 但快照缺对应门面即失败；`deferred`/`internal` 被悄悄暴露即失败。
+3. 声明 `exposed` 的专项验证脚本应通过 `Assert-FacadeTypesGenExport`（`scripts/lib/ScriptAutomation.ps1`）断言对应类型已进入 `types.gen.ts` 且从稳定导出入口导出。
 
 首批提交前至少运行：
 
@@ -301,14 +301,14 @@ dotnet test backend/Nerv.IIP.sln
 ## 反模式
 
 1. 让 CommandHandler 显式 `SaveChanges` 或手动控制普通事务。
-2. 在 Endpoint 中直接访问 DbContext 或写领域规则。
+2. 在端点中直接访问 DbContext 或写领域规则。
 3. 在 QueryHandler 中修改聚合或发布事件。
 4. 让 Domain 引用 Infrastructure、Web 或其他服务项目。
 5. 把 DomainEvent 直接作为跨服务消息。
-6. 手写 `IIntegrationEventPublisher` 替代 converter + 生成器默认链路。
+6. 手写 `IIntegrationEventPublisher` 替代转换器 + 生成器默认链路。
 7. 让集成事件携带聚合实例、数据库实体或敏感字段。
 8. 在 common 中创建 SharedKernel、Utils、Helpers 一类无边界聚合库。
 9. PlatformGateway 直接引用服务 Domain 或 Infrastructure。
 10. Connector Host 引用平台服务实现项目。
-11. 在 Domain、Application、Endpoint 或 SDK 中写 provider 专有 SQL、引用 provider 专有类型，或把 PostgreSQL `jsonb`、array、schema 等能力当成跨层契约。
+11. 在 Domain、Application、Endpoint 或 SDK 中写提供程序专有 SQL、引用提供程序专有类型，或把 PostgreSQL `jsonb`、array、schema 等能力当成跨层契约。
 12. 将“模板支持多个数据库”理解成“任何信创数据库都能无验证无感替换”。

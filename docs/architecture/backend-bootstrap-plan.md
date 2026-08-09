@@ -6,7 +6,7 @@
 
 本文档是后端启动期的阶段索引，不是当前唯一任务清单。第一、第二迭代已经把工程底座、服务骨架、Connector Host 注册链路和低风险 restart 动作闭环跑通；这些已落地内容仍保留在对应步骤中，用来说明为什么当前仓库是这样分层和布置的。后续执行入口以 `docs/architecture/implementation-readiness.md` 和 `docs/superpowers/plans/` 下的阶段计划为准。
 
-阅读时可以把 Step 1 到 Step 4 视为已验证的基线，把 Step 5 之后视为部署编排、持久化、授权、通知和交付形态继续推进的方向。这样既保留早期决策脉络，也避免把启动计划误读成仍未开始的待办列表。
+阅读时可以把步骤 1 到步骤 4 视为已验证的基线，把步骤 5 之后视为部署编排、持久化、授权、通知和交付形态继续推进的方向。这样既保留早期决策脉络，也避免把启动计划误读成仍未开始的待办列表。
 
 ## 实施策略
 
@@ -17,9 +17,9 @@
 
 ## 实施顺序
 
-### Step 1. 建后端工程底座
+### 步骤 1：建立后端工程底座
 
-- 创建 backend 根 solution。
+- 创建 backend 根解决方案。
 - 创建 Directory.Build.props 与 Directory.Packages.props。
 - 建立 services、gateway、common、tests 的基础目录与命名规则。
 - 每个平台 HTTP 服务目录内部默认采用 src 与 tests，并在 src 下采用 .Web、.Domain、.Infrastructure 三项目主线。
@@ -38,7 +38,7 @@
 - dotnet restore backend/Nerv.IIP.sln 通过
 - dotnet build backend/Nerv.IIP.sln 通过
 
-### Step 2. 起平台核心服务骨架
+### 步骤 2：建立平台核心服务骨架
 
 - 先起 PlatformGateway、Iam、FileStorage、AppHub、Ops 五个最小 Web 服务。
 - 每个服务只放健康检查、基础配置、OpenTelemetry 接线、最小 HTTP 入口。
@@ -72,16 +72,16 @@
 验收：
 
 - 五个 Web 服务都能启动
-- 至少暴露 health 与 build info 端点
-- 输出统一 traces、metrics 和 structured logs
+- 至少暴露健康检查与构建信息端点
+- 输出统一追踪、指标和结构化日志
 
-### Step 3. 定应用接入协议最小闭环
+### 步骤 3：确定应用接入协议最小闭环
 
 - 定义注册、心跳、能力声明、实例状态同步、低风险运维任务和动作结果契约。
 - 固化版本号、幂等键与错误结果模型。
-- Connector Protocol 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol；首批单仓实施可由 backend 与 connector-hosts 两套 solution 共同引用，发布边界必须按版本化公开契约处理。
+- Connector Protocol 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol；首批单仓实施可由 backend 与 connector-hosts 两套解决方案共同引用，发布边界必须按版本化公开契约处理。
 - Connector Host 调用平台的客户端能力优先落到 backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol，并依赖 Sdk.Core 与 Sdk.Auth，不在 Connector Host 内部重复拼接平台 API。
-- Ops 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.Ops；Connector Host 通过 backend/common/Sdk/Nerv.IIP.Sdk.Ops 拉取 pending task 并回传 result。
+- Ops 源码事实来源固定放在 backend/common/Contracts/Nerv.IIP.Contracts.Ops；Connector Host 通过 backend/common/Sdk/Nerv.IIP.Sdk.Ops 拉取待处理任务并回传结果。
 
 推荐首批契约对象：
 
@@ -98,9 +98,9 @@
 - 平台与 Connector Host 使用同一份版本化契约定义
 - 至少完成一轮端到端序列化与反序列化测试
 
-### Step 4. 起 Connector Host 独立工程与首个 Connector
+### 步骤 4：建立 Connector Host 独立工程与首个 Connector
 
-- 在 connector-hosts 根目录下建立独立 solution。
+- 在 connector-hosts 根目录下建立独立解决方案。
 - 实现 Connector Host 最小宿主。
 - 首个 Connector 优先做 Docker Connector。
 - Connector Host 属于独立后台宿主，不适用平台 HTTP 服务的 .Web、.Domain、.Infrastructure 命名约束。
@@ -120,7 +120,7 @@
 - Docker Connector 能发现本地测试容器
 - 能向平台发送注册、心跳、状态同步
 
-### Step 5. 落统一部署与基础设施开发编排
+### 步骤 5：落地统一部署与基础设施开发编排
 
 - 提供 PostgreSQL、Redis、MinIO、Qdrant、OpenTelemetry 的本地开发编排；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选编排资源。
 - 让 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 在同一本地开发编排中联调；Notification 可在通知纵切进入时加入同一编排，但不阻塞首条注册纵切。
@@ -134,7 +134,7 @@
 - 平台服务与 Connector Host 可共同运行并互通
 - 平台级部署模型不与服务级模板编排入口重复
 
-### Step 6. 打第一条纵切链路
+### 步骤 6：打通第一条纵切链路
 
 详细验收口径见 docs/architecture/first-vertical-slice.md 与 docs/architecture/second-vertical-slice-ops.md。
 
@@ -149,20 +149,20 @@
 第一迭代验收：
 
 - 控制台或 Gateway 可查询最新实例事实
-- Connector Host、AppHub、Gateway 的日志和追踪能通过 correlationId 串联
+- Connector Host、AppHub、Gateway 的日志和追踪能通过 correlationId 关联
 
 第二迭代验收：
 
-- Gateway 可创建 restart OperationTask 并查询任务详情
-- Connector Host 可领取 pending task、调用 Docker Connector 执行 `lifecycle.restart` 并回传结果
+- Gateway 可创建重启 OperationTask 并查询任务详情
+- Connector Host 可领取待处理任务、调用 Docker Connector 执行 `lifecycle.restart` 并回传结果
 - Ops 记录 OperationTask、OperationAttempt 和 AuditRecord，且不直接修改 AppHub 实例状态
 
 ## 并行关系
 
-1. Step 1 与 Step 2 顺序执行。
-2. Step 3 与 Step 4 可在 Step 2 后并行推进。
-3. Step 5 可在 Step 2 后并行推进。
-4. Step 6 依赖 Step 3、Step 4、Step 5。
+1. 步骤 1 与步骤 2 顺序执行。
+2. 步骤 3 与步骤 4 可在步骤 2 后并行推进。
+3. 步骤 5 可在步骤 2 后并行推进。
+4. 步骤 6 依赖步骤 3、步骤 4、步骤 5。
 
 ## 命名与结构约束
 
@@ -175,7 +175,7 @@
 
 ## 建议命令
 
-模板创建命令以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 为准。后端 solution 创建后，基础验证命令为：
+模板创建命令以 docs/architecture/backend-cleanddd-netcorepal-guidelines.md 为准。后端解决方案创建后，基础验证命令为：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
@@ -190,6 +190,6 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 2. 不先做 Notification 完整外部通道，通知能力先冻结边界，后续以站内通知和待办作为最小纵切。
 3. 不先做复杂 AI 自主流程，先做 AI Integration 的治理边界。
 4. 不先做多 Connector，先用 Docker Connector 跑通协议。
-5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；第二迭代只做低风险 restart 闭环。
+5. 不先做所有运维动作，第一迭代只做注册、心跳、状态同步和 Gateway 可见；第二迭代只做低风险重启闭环。
 6. 不先细抠全部领域模型，先用最短纵切验证服务边界是否合理。
 7. 不把手写 Docker Compose 作为最终唯一部署方式；Aspire、Docker Compose、安装包和整合安装脚本按 ADR 0008 统一演进。
