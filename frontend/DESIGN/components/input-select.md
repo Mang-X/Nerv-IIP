@@ -1,11 +1,10 @@
-# Input / Select (NvInput / NvSelect)
+# 输入 / 选择器 (NvInput / NvSelect)
 
-Text input and fixed-option selector. Always used inside an `NvField` context
-in forms. App code uses `NvInput` and the `NvSelect*` family from
-`@nerv-iip/ui`; the un-prefixed `Input` / `Select*` are shadcn 原版 primitives
-— library-internal only.
+文本输入和固定选项选择器。在表单中必须置于 `NvField` 上下文内使用。应用代码使用
+`NvInput` 和 `NvSelect*` 家族，均来自 `@nerv-iip/ui`；无前缀的 `Input` / `Select*` 是
+shadcn 原版 primitive，仅限库内部使用。
 
-## Input
+## 输入框
 
 ```vue
 <!-- Plain text -->
@@ -28,7 +27,7 @@ in forms. App code uses `NvInput` and the `NvSelect*` family from
 <NvInput v-model="form.password" type="password" autocomplete="current-password" />
 ```
 
-## Select
+## 选择器
 
 ```vue
 <NvField>
@@ -57,24 +56,23 @@ in forms. App code uses `NvInput` and the `NvSelect*` family from
 </NvSelect>
 ```
 
-Use `NvSelect` for desktop product UI. Consumers may pass layout-only classes
-such as width or compact height, but should not restyle trigger/content/item
-colors; those states belong to the component contract. Reka runtime constraint:
-`NvSelectItem` must not have an empty-string `value`.
+桌面端产品 UI 使用 `NvSelect`。使用方可以传入宽度、紧凑高度等仅影响布局的 class（样式类），
+但不得重设触发器、内容和选项的颜色；这些状态属于组件契约。Reka 运行时约束：
+`NvSelectItem` 的 `value` 不得为空字符串。
 
-## Input Types
+## 输入类型
 
-| Type       | Use case                                                |
+| 类型       | 使用场景                                                |
 | ---------- | ------------------------------------------------------- |
-| `text`     | Default                                                 |
-| `email`    | Email address (enables browser validation)              |
-| `password` | Credentials (always add `autocomplete`)                 |
-| `search`   | Search inputs (renders a clear button in most browsers) |
-| `number`   | Integer quantities                                      |
+| `text`     | 默认类型                                                |
+| `email`    | 电子邮箱地址（启用浏览器校验）                          |
+| `password` | 凭据（始终添加 `autocomplete`）                         |
+| `search`   | 搜索输入（多数浏览器会渲染清除按钮）                    |
+| `number`   | 整数数量                                                |
 
-## Do NOT
+## 禁止事项
 
-- Do not use `<input>` directly — always use `<NvInput>` from `@nerv-iip/ui`.
-- Do not use `NvInput` for selecting from a fixed list — use `NvSelect`.
-- Do not use `NvSelect` for searching large datasets — use `NvSearchSelect` (searchable popup single-select) or `NvCombobox` (type-to-filter with free input), both in `@nerv-iip/ui`.
-- Do not omit `for`/`id` pairing when inside an `NvField`.
+- 不得直接使用 `<input>`，必须使用 `<NvInput>`，后者来自 `@nerv-iip/ui`。
+- 不得用 `NvInput` 从固定列表中选择，应使用 `NvSelect`。
+- 不得用 `NvSelect` 搜索大型数据集，应使用 `NvSearchSelect`（可搜索的弹窗单选）或 `NvCombobox`（输入筛选并允许自由输入），两者均来自 `@nerv-iip/ui`。
+- 不得省略 `for`/`id` 配对（位于 `NvField` 内时）。
