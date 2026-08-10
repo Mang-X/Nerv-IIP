@@ -89,16 +89,71 @@ function Test-CommandHasParameter {
     return $false
 }
 
-function Get-CommandParameterValueText {
+function Get-CommandParameterValueAst {
     param([System.Management.Automation.Language.CommandAst]$Call, [string]$Name)
     $elements = @($Call.CommandElements)
     for ($index = 0; $index -lt $elements.Count; $index++) {
         $element = $elements[$index]
         if ($element -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
         if (-not [string]::Equals($element.ParameterName, $Name, [StringComparison]::OrdinalIgnoreCase)) { continue }
-        if ($null -ne $element.Argument) { return $element.Argument.Extent.Text }
-        if ($index + 1 -lt $elements.Count) { return $elements[$index + 1].Extent.Text }
-        return ''
+        if ($null -ne $element.Argument) { return $element.Argument }
+        if ($index + 1 -lt $elements.Count) { return $elements[$index + 1] }
+        return $null
+    }
+    return $null
+}
+
+function Get-CommandParameterValueText {
+    param([System.Management.Automation.Language.CommandAst]$Call, [string]$Name)
+    $valueAst = Get-CommandParameterValueAst -Call $Call -Name $Name
+    if ($null -eq $valueAst) { return $null }
+    return $valueAst.Extent.Text
+}
+
+# 「哪些元素是位置参数」必须从 AST 枚举，而不是靠逐条列举已知的绕行写法。
+# 前提是被调函数没有 switch 参数（下面单独断言）：那样「紧跟在具名参数后的元素」
+# 一定是该参数的值，剩下的每个元素就都是位置参数或 splat。
+function Get-UnnamedArgumentAsts {
+    param([System.Management.Automation.Language.CommandAst]$Call)
+    $unnamed = [System.Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
+    $elements = @($Call.CommandElements)
+    for ($index = 1; $index -lt $elements.Count; $index++) {
+        $element = $elements[$index]
+        if ($element -is [System.Management.Automation.Language.CommandParameterAst]) { continue }
+        $previous = $elements[$index - 1]
+        if ($previous -is [System.Management.Automation.Language.CommandParameterAst] -and $null -eq $previous.Argument) {
+            continue
+        }
+        $unnamed.Add($element)
+    }
+    return $unnamed.ToArray()
+}
+
+function Test-CommandUsesSplatting {
+    param([System.Management.Automation.Language.CommandAst]$Call)
+    foreach ($element in $Call.CommandElements) {
+        if ($element -is [System.Management.Automation.Language.VariableExpressionAst] -and $element.Splatted) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# 「会不会被执行多次」不能靠列举 for/foreach/while/ForEach-Object/% 这些名字：
+# 只要调用点落在任何嵌套 scriptblock 里，静态上就无法断定它只跑一次
+# （管道 ForEach-Object、.ForEach() 方法、& $block、自建重试助手都是同一类）。
+# 因此契约按 AST 类型划线：状态变更只能出现在验收主流程的语句位置上。
+function Get-RepeatableAncestorKind {
+    param([System.Management.Automation.Language.Ast]$Node)
+    $current = $Node.Parent
+    while ($null -ne $current) {
+        if ($current -is [System.Management.Automation.Language.LoopStatementAst]) {
+            return 'loop'
+        }
+        if ($current -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+            return 'script block'
+        }
+        $current = $current.Parent
     }
     return $null
 }
@@ -109,18 +164,6 @@ function Get-ParameterAst {
     return $Function.Body.ParamBlock.Parameters |
         Where-Object { [string]::Equals($_.Name.VariablePath.UserPath, $Name, [StringComparison]::OrdinalIgnoreCase) } |
         Select-Object -First 1
-}
-
-function Test-AstIsInsideLoop {
-    param([System.Management.Automation.Language.Ast]$Node)
-    $current = $Node.Parent
-    while ($null -ne $current) {
-        if ($current -is [System.Management.Automation.Language.LoopStatementAst]) {
-            return $true
-        }
-        $current = $current.Parent
-    }
-    return $false
 }
 
 Assert-Contract ($parseErrors.Count -eq 0) 'Verify script must parse before source contracts are evaluated.'
@@ -194,13 +237,42 @@ Assert-Contract (
     @($mutationFunctionAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.LoopStatementAst] }, $true)).Count -eq 0
 ) 'The mutation helper must contain no loop; retrying a state change after an uncertain commit is a duplicate write.'
 foreach ($mutationCall in (Get-CommandCallAsts -Name 'Invoke-JsonPost')) {
-    Assert-Contract (-not (Test-AstIsInsideLoop -Node $mutationCall)) 'No sales-order mutation may be wrapped in a retry loop; convergence is proven by polling the query side instead.'
+    $repeatableAncestor = Get-RepeatableAncestorKind -Node $mutationCall
+    Assert-Contract (
+        $null -eq $repeatableAncestor
+    ) "No sales-order mutation may sit inside a $repeatableAncestor; anything a $repeatableAncestor can run twice is a duplicate write. Convergence is proven by polling the query side instead."
+}
+
+# 上面两个调用点契约都读「具名参数」。要让「读具名参数」等于「读全部实参」，
+# 被调函数就不能有 switch 参数（否则紧跟其后的元素可能是位置参数而不是它的值），
+# 且调用点不得使用位置参数或 splatting。这三条一起才让下面的路由/预算判定是穷举的。
+foreach ($contractedFunction in @($requestFunctionAst, $mutationFunctionAst)) {
+    $switchParameters = @($contractedFunction.Body.ParamBlock.Parameters | Where-Object {
+        $_.Attributes | Where-Object { [string]::Equals($_.TypeName.Name, 'switch', [StringComparison]::OrdinalIgnoreCase) }
+    })
+    Assert-Contract (
+        $switchParameters.Count -eq 0
+    ) "$($contractedFunction.Name) must declare no switch parameter, otherwise an element following a named parameter can no longer be read as that parameter's value."
+}
+foreach ($contractedCallName in @('Invoke-Man517JsonRequest', 'Invoke-JsonPost')) {
+    foreach ($contractedCall in (Get-CommandCallAsts -Name $contractedCallName)) {
+        Assert-Contract (
+            -not (Test-CommandUsesSplatting -Call $contractedCall)
+        ) "$contractedCallName must not be called with splatting; a splatted hashtable hides the stage, the budget and the HTTP method from every contract below."
+        $unnamedArguments = @(Get-UnnamedArgumentAsts -Call $contractedCall)
+        Assert-Contract (
+            $unnamedArguments.Count -eq 0
+        ) "$contractedCallName must bind every argument by name; positional argument '$(if ($unnamedArguments.Count -gt 0) { $unnamedArguments[0].Extent.Text })' bypasses the stage, budget and routing contracts."
+    }
 }
 
 # 状态变更只能走 Invoke-JsonPost 这一条路，否则「不重试 + 有界预算」的保证会被绕过。
 foreach ($requestCall in (Get-CommandCallAsts -Name 'Invoke-Man517JsonRequest')) {
-    $methodValue = Get-CommandParameterValueText -Call $requestCall -Name 'Method'
-    if ($null -eq $methodValue -or -not [string]::Equals($methodValue.Trim("'", '"'), 'Post', [StringComparison]::OrdinalIgnoreCase)) {
+    $methodValueAst = Get-CommandParameterValueAst -Call $requestCall -Name 'Method'
+    Assert-Contract (
+        $null -ne $methodValueAst -and $methodValueAst -is [System.Management.Automation.Language.StringConstantExpressionAst]
+    ) 'Every request must name its HTTP method as a literal; a computed method makes the POST routing contract unreadable.'
+    if (-not [string]::Equals($methodValueAst.Value, 'Post', [StringComparison]::OrdinalIgnoreCase)) {
         continue
     }
     $insideMutationHelper = $requestCall.Extent.StartOffset -ge $mutationFunctionAst.Extent.StartOffset -and
