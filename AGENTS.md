@@ -84,6 +84,15 @@ scripts/verify-*.ps1                  # 验证脚本
 
 PDA 变更还须运行 `pnpm -C frontend --filter @nerv-iip/business-pda` 的 `typecheck`/`test`/`build`；影响原生 Capacitor 产物时运行 `cap:sync`。
 
+## Scope Gate：任务定级门（建票时与实施前强制）
+
+完整规则见 `skills/scope-gate/SKILL.md`（判级触发器、合理化对照、红旗清单以该文件为准；安装：`npx skills add ./skills/scope-gate --copy`）。最低要求：
+
+1. 每张 issue 建票时定级并打 `scope:S/M/L/XL/spike` 标签，票面首段写一行定级理由；一张票只装一个问题，多发现清单按域拆成多张票。
+2. 任一升级触发器命中即 L（跨业务域、DB+契约+UI 连动或两跳链、架构决策、兼容/迁移、验收不清、须先读大量代码、测试策略不明、账本/清单型任务、触及 workflows/门禁/共享测试基建）——判级不看代码量。
+3. **L 级不得直接进入实施**：先在票面写拆解清单（每个子项 ≤M、各自独立 PR 可审可绿），母票只跟踪；XL 先出 Spec/ADR 独立评审再拆票；`?` 开 timebox 的 Spike 票，只产出报告与重新定级的新票，不合并生产代码。
+4. 实施会话开工的第一个动作是复述级别与交付形态（几个 PR、顺序、各自验收），与票面不符先改票面；实施或审核中改动滚出票面范围，立即停下把膨胀部分开新票，本 PR 守住原范围。
+
 ## 已知基线注意事项
 
 - GitHub CI 为前端运行 `check` + `typecheck` + `build`；变更决策表中的完整本地门禁仍包含 `test`。

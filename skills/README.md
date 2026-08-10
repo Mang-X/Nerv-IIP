@@ -19,6 +19,7 @@ npx skills add ./skills/new-component --copy
 | 技能 | 用途 |
 |---|---|
 | `new-component` | 在 NvUI 组件库新建/上提品牌组件的完整流程（判层、R1–R5 定名、实现约束、六件套 DoD） |
+| `scope-gate` | 任务定级门：issue 建票与实施前的 S/M/L/XL/? 五级分流、升级触发器与三道关卡（L 级禁止直接实施） |
 
 ## 新增技能的规矩
 
