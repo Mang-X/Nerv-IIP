@@ -605,11 +605,43 @@ Redis 三处的预算由多路复用器自己的连接/同步超时加上 `Bound
   实测护栏：在第一趟与计时器构造之间临时插 1.5 s 延时放大注册窗口，去掉屏障复现同一条 `EventuallyTimeoutException`
   （`openQuantity=1`），加回屏障即绿。
 
+## NERV-733 Ops 测试宿主的 CAP 后台生命周期隔离
+
+- **失败形态。** Ops 的 Production 认证用例在断言早已通过之后、于
+  `WebApplicationFactory.DisposeAsync()` 路径抛
+  `ObjectDisposedException: The CancellationTokenSource has been disposed`，栈为
+  `ConsumerRegister.Pulse()` → `ConsumerRegister.Dispose()` → 宿主 dispose。同 SHA 重跑即绿，因此是 teardown
+  竞态而非业务 diff 的问题；它在两个互不相关的 PR（#1321、#1333）上各红一次，污染的是**别人的**判读。
+- **成因位置。** 只有 `Persistence:Provider=PostgreSQL` 的宿主才注册 CAP，而 CAP 的后台宿主服务
+  （`Bootstrapper`）在 `host.Start()` 时串起 storage initializer（连 PostgreSQL）与 consumer register
+  （连 broker）。测试里这两个端点都不可达，consumer register 因此进入「连接失败 → 重启」循环，在重启路径上
+  换掉自己的 `CancellationTokenSource`；宿主 dispose 时 `ConsumerRegister.Dispose()` 又去 `Pulse()` 那口 CTS。
+  被测面（endpoint、认证、EF 查询）没有任何一条依赖 CAP 后台处理，**这段生命周期在测试里本就不该跑**。
+- **收敛方式（测试侧，生产零改动）。** `OpsTestHostIsolation.WithoutCapBackgroundProcessing()` 在测试宿主的
+  `ConfigureServices` 中摘掉 CAP 自己注册的那一条 `IHostedService`。判定必须**窄**到「服务类型是
+  `IHostedService` 且实现来自 CAP 程序集」：`GenericWebHostService`（Web 服务器本身）与 Ops 的 lease reaper
+  同样是 `IHostedService`，一并删掉就没有测试宿主可言。CAP 10 用**工厂**而非实现类型注册 `Bootstrapper`
+  （`ImplementationType` 为 `null`），所以工厂那一支回退到 lambda 的声明程序集。
+- **保障不是注释而是断言。** `OpsTestHostIsolationTests` 同时钉住上下界：PostgreSQL 档宿主里 CAP 恰好注册
+  **一条**后台宿主服务（CAP 升级改成两条时只断言「摘干净了」不会红，另一条会继续跑）、隔离恰好摘掉那一条、
+  摘后 `IHostedService` 总数只少 1 且 `GenericWebHostService` 仍在。实测变异矩阵：判定放宽成「全部
+  `IHostedService`」→ `Assert.Single` 命中 5 条而红；判定收成恒 `false`（隔离成空操作）→ 同一断言零命中而红。
+- **Production 认证断言回到宿主层。** MAN-662 把该用例降到 validator 单测以躲开这条竞态，代价是
+  「Production 宿主对 Development 假凭据返回 401」这一层没有用例了。现在改为起真实 Production 宿主
+  （环境、持久化档位与认证语义全部保持真实）并显式配上那把 Development 假凭据——不配的话 Production 分支拿不到
+  可比对的 secret，用例会退化成「没有凭据当然 401」。IAM 侧换成进程内脚本化 handler 而不是「`Iam:BaseUrl`
+  指向不可达端口」：后者拿到的是 `iam-unavailable` 而非 `iam-rejected`，两者都 fail closed 成 401，断言分不清
+  「IAM 拒绝」与「连不上 IAM」，且 refused 在 macOS/BSD 上会被静默丢成超时。用例另断言 IAM 恰好被调用一次，
+  堵住「内部服务令牌不对 / 连接器请求头缺失」这类同样返回 401 的提前短路。实测变异：把宿主环境从
+  `Production` 改成 `Testing` 即红。
+- **验收证据。** Release 模式单独重复该用例 20 次：20/20 通过、0 skipped；`Nerv.IIP.Ops.Web.Tests` 全项目
+  84/84 通过、0 skipped。
+
 ## MAN-650 迁移状态
 
 | MAN-650 项 | 状态 |
 | --- | --- |
 | Maintenance Redis 续期 | 已由 MAN-662 迁移 |
 | Inventory 过期指标 | 已由 MAN-662 迁移 |
-| Ops Production 替身凭据 | 已由 MAN-662 迁移 |
+| Ops Production 替身凭据 | 已由 MAN-662 迁移；宿主层断言由 NERV-733 在依赖隔离后补回 |
 | IndustrialTelemetry 越界/顺序敏感宿主界面 | 已在此处隔离，结构拆分由 MAN-664 跟踪 |
