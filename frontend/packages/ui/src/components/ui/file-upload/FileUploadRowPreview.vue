@@ -42,7 +42,12 @@ function revokePreviewUrl() {
   <div
     data-slot="file-upload-preview"
     :data-image="previewUrl ? 'true' : 'false'"
-    :class="cn('bg-muted text-muted-foreground flex shrink-0 items-center justify-center overflow-hidden rounded-md', props.class)"
+    :class="
+      cn(
+        'bg-muted text-muted-foreground flex shrink-0 items-center justify-center overflow-hidden rounded-md',
+        props.class,
+      )
+    "
   >
     <img
       v-if="previewUrl"
@@ -51,12 +56,7 @@ function revokePreviewUrl() {
       :alt="row.fileName"
       class="size-full object-cover"
       draggable="false"
-    >
-    <component
-      :is="kind.icon"
-      v-else
-      class="size-4"
-      aria-hidden="true"
     />
+    <component :is="kind.icon" v-else class="size-4" aria-hidden="true" />
   </div>
 </template>
