@@ -33,8 +33,9 @@ describe('DateRangePicker', () => {
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
-    const clearButton = Array.from(document.body.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('清除'))
+    const clearButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('清除'),
+    )
     expect(clearButton).toBeDefined()
 
     clearButton!.click()

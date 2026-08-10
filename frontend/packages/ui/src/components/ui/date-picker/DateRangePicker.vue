@@ -10,15 +10,18 @@ import { Button } from '../button'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover'
 import { RangeCalendar } from '../range-calendar'
 
-const props = withDefaults(defineProps<{
-  modelValue?: DateRangeValue | null
-  placeholder?: string
-  disabled?: boolean
-  class?: HTMLAttributes['class']
-}>(), {
-  modelValue: null,
-  placeholder: '选择日期范围',
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: DateRangeValue | null
+    placeholder?: string
+    disabled?: boolean
+    class?: HTMLAttributes['class']
+  }>(),
+  {
+    modelValue: null,
+    placeholder: '选择日期范围',
+  },
+)
 
 const emits = defineEmits<{
   'update:modelValue': [value: DateRangeValue | null]
@@ -31,12 +34,10 @@ const open = shallowRef(false)
 const formatter = new DateFormatter('zh-CN', { dateStyle: 'medium' })
 
 function toDateValue(value: string | null | undefined) {
-  if (!value)
-    return undefined
+  if (!value) return undefined
   try {
     return parseDate(value)
-  }
-  catch {
+  } catch {
     return undefined
   }
 }
@@ -63,8 +64,7 @@ const label = computed(() => {
   const end = toDateValue(props.modelValue?.to)
   if (start && end)
     return `${formatter.format(start.toDate('UTC'))} - ${formatter.format(end.toDate('UTC'))}`
-  if (start)
-    return `${formatter.format(start.toDate('UTC'))} - ...`
+  if (start) return `${formatter.format(start.toDate('UTC'))} - ...`
   return props.placeholder
 })
 
@@ -82,7 +82,13 @@ function clear() {
         type="button"
         variant="outline"
         :disabled="disabled"
-        :class="cn('w-64 justify-start text-left font-normal', !modelValue && 'text-muted-foreground', props.class)"
+        :class="
+          cn(
+            'w-64 justify-start text-left font-normal',
+            !modelValue && 'text-muted-foreground',
+            props.class,
+          )
+        "
       >
         <CalendarRangeIcon data-icon="inline-start" />
         <span class="truncate">{{ label }}</span>
