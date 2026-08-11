@@ -70,10 +70,10 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ($null -ne $manualThreshold -and [string]::Equals([string](Get-WorkflowProperty -Object $manualThreshold -Name 'type'), 'string', [StringComparison]::Ordinal) -and [string]::Equals([string](Get-WorkflowProperty -Object $manualThreshold -Name 'default'), '0', [StringComparison]::Ordinal)) 'workflow_dispatch must expose max_elapsed_milliseconds as string default 0.'
 
     $permissions = Get-WorkflowProperty -Object $workflow -Name 'permissions'
-    Assert-WorkflowContract ($null -ne $permissions -and $permissions.PSObject.Properties.Count -eq 1 -and [string]::Equals([string](Get-WorkflowProperty -Object $permissions -Name 'contents'), 'read', [StringComparison]::Ordinal)) 'Nightly business performance workflow permissions must be contents: read only.'
+    Assert-WorkflowContract ($null -ne $permissions -and @($permissions.PSObject.Properties).Count -eq 1 -and [string]::Equals([string](Get-WorkflowProperty -Object $permissions -Name 'contents'), 'read', [StringComparison]::Ordinal)) 'Nightly business performance workflow permissions must be contents: read only.'
 
     $jobs = Get-WorkflowProperty -Object $workflow -Name 'jobs'
-    Assert-WorkflowContract ($null -ne $jobs -and $jobs.PSObject.Properties.Count -eq 1 -and $null -ne $jobs.PSObject.Properties['business-performance']) 'Nightly business performance workflow must contain only the business-performance job.'
+    Assert-WorkflowContract ($null -ne $jobs -and @($jobs.PSObject.Properties).Count -eq 1 -and $null -ne $jobs.PSObject.Properties['business-performance']) 'Nightly business performance workflow must contain only the business-performance job.'
     $job = $jobs.PSObject.Properties['business-performance'].Value
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $job -Name 'timeout-minutes') -eq 45) 'business-performance job timeout-minutes must be 45.'
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $job -Name 'runs-on'), 'ubuntu-latest', [StringComparison]::Ordinal)) 'business-performance job must run on ubuntu-latest.'
@@ -106,11 +106,32 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     $performance = @($steps | Where-Object { [string](Get-WorkflowProperty -Object $_ -Name 'run') -match 'verify-business-performance-baseline\.ps1' })
     Assert-WorkflowContract ($performance.Count -eq 1 -and [int](Get-WorkflowProperty -Object $performance[0] -Name 'timeout-minutes') -eq 20) 'Nightly business performance workflow must have one 20-minute governed performance step.'
     $performanceRun = [string](Get-WorkflowProperty -Object $performance[0] -Name 'run')
-    foreach ($required in @('-Scenario all', '-Profile nightly', '-Rows 25', '-MetricsOutputPath artifacts/business-performance/nightly/metrics.jsonl', '-SummaryOutputPath artifacts/business-performance/nightly/summary.json', 'MANUAL_MAX_ELAPSED_MILLISECONDS', '-MaxElapsedMilliseconds', '-InventoryMaxElapsedMilliseconds 600000', '-MesMaxElapsedMilliseconds 600000', '-ErpMaxElapsedMilliseconds 600000')) {
-        Assert-WorkflowContract ($performanceRun.Contains($required, [StringComparison]::Ordinal)) "Governed performance step must contain '$required'."
-    }
-    Assert-WorkflowContract ($performanceRun -match 'MANUAL_MAX_ELAPSED_MILLISECONDS.*-gt\s+0') 'Governed performance step must use the positive manual threshold branch.'
-    Assert-WorkflowContract ($performanceRun -notmatch '(^|\s)(dotnet|docker)(\s|$)' -and $performanceRun -notmatch '\|\|\s*true') 'Governed performance step must not bypass the governed script or swallow failure.'
+    $performanceCode = @($performanceRun -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -notmatch '^\s*(#|$)' }) -join "`n"
+    $expectedPerformanceCode = @'
+$commonArguments = @(
+    '-Scenario', 'all',
+    '-Profile', 'nightly',
+    '-Rows', 25,
+    '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
+    '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
+)
+if ([int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS -gt 0) {
+    $thresholdArguments = @(
+        '-MaxElapsedMilliseconds',
+        [int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS
+    )
+}
+else {
+    $thresholdArguments = @(
+        '-InventoryMaxElapsedMilliseconds', 600000,
+        '-MesMaxElapsedMilliseconds', 600000,
+        '-ErpMaxElapsedMilliseconds', 600000
+    )
+}
+& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+'@.Trim()
+    Assert-WorkflowContract ([string]::Equals($performanceCode.Trim(), $expectedPerformanceCode, [StringComparison]::Ordinal)) 'Governed performance step must use the canonical comment-free PowerShell threshold split: manual runs pass only -MaxElapsedMilliseconds; scheduled runs pass only the three nonzero per-scenario thresholds.'
+    Assert-WorkflowContract ($performanceCode -notmatch '(^|\s)(dotnet|docker)(\s|$)' -and $performanceCode -notmatch '\|\|\s*true') 'Governed performance step must not bypass the governed script or swallow failure.'
 
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifact[0] -Name 'if'), 'always()', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must use if: always().'
     $artifactWith = Get-WorkflowProperty -Object $artifact[0] -Name 'with'
@@ -125,6 +146,101 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ($serializedWorkflow -notmatch '\|\|\s*true') 'Nightly business performance workflow must not use || true.'
 }
 
+function Test-NightlyBusinessPerformanceManualThresholdExclusivity {
+    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-fixture-$([Guid]::NewGuid().ToString('N')).yml"
+    $fixture = @'
+name: Nightly Business Performance
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      max_elapsed_milliseconds:
+        type: string
+        default: '0'
+permissions:
+  contents: read
+jobs:
+  business-performance:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      NERV_IIP_PERF_POSTGRES: Host=127.0.0.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: nerv
+          POSTGRES_PASSWORD: nerv
+          POSTGRES_DB: nerv_iip_performance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nerv -d nerv_iip_performance"
+    steps:
+      - uses: actions/checkout@v4
+        timeout-minutes: 3
+      - uses: actions/setup-dotnet@v4
+        timeout-minutes: 5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/cache@v4
+        timeout-minutes: 8
+      - name: Run performance baseline
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          $commonArguments = @(
+              '-Scenario', 'all',
+              '-Profile', 'nightly',
+              '-Rows', 25,
+              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
+              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
+          )
+          if ([int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS -gt 0) {
+              $thresholdArguments = @(
+                  '-MaxElapsedMilliseconds',
+                  [int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS
+              )
+          }
+          else {
+              $thresholdArguments = @(
+                  '-InventoryMaxElapsedMilliseconds', 600000,
+                  '-MesMaxElapsedMilliseconds', 600000,
+                  '-ErpMaxElapsedMilliseconds', 600000
+              )
+          }
+          & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+      - uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        if: always()
+        with:
+          name: business-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/business-performance/nightly/metrics.jsonl
+            artifacts/business-performance/nightly/summary.json
+          if-no-files-found: error
+          retention-days: 30
+'@
+    try {
+        [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
+        Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
+        $manualOnly = "                  '-MaxElapsedMilliseconds',`n                  [int]`$env:MANUAL_MAX_ELAPSED_MILLISECONDS"
+        $manualWithScheduledThreshold = "                  '-MaxElapsedMilliseconds',`n                  [int]`$env:MANUAL_MAX_ELAPSED_MILLISECONDS,`n                  '-InventoryMaxElapsedMilliseconds', 600000"
+        Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
+        [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
+        $failure = $null
+        try { Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath }
+        catch { $failure = $_ }
+        Assert-WorkflowContract ($null -ne $failure -and $failure.Exception.Message.Contains('manual runs pass only -MaxElapsedMilliseconds', [StringComparison]::Ordinal)) 'A manual threshold branch that also passes a scheduled threshold must fail the canonical branch contract.'
+        Write-Host 'Manual threshold exclusivity synthetic fixture mutation passed.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
+    }
+}
+
+Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
