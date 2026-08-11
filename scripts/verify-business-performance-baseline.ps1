@@ -47,6 +47,7 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
+. (Join-Path $root "scripts/lib/BusinessPerformanceMetrics.ps1")
 
 function Resolve-PerformanceOutputPath {
     param(
@@ -160,25 +161,28 @@ if (-not (Test-Path $effectiveMetricsOutputPath)) {
 }
 
 $metricLines = @(Get-Content -Path $effectiveMetricsOutputPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-if ($metricLines.Count -eq 0) {
-    throw "Performance baseline metrics file is empty: $effectiveMetricsOutputPath."
-}
-
 $metrics = @(
     foreach ($line in $metricLines) {
         $line | ConvertFrom-Json
     }
 )
 
-$violations = New-Object System.Collections.Generic.List[object]
-foreach ($metric in $metrics) {
-    $threshold = Get-PerformanceMetricThreshold -Metric $metric
-    if ($threshold -gt 0 -and ([long] $metric.elapsedMilliseconds) -gt $threshold) {
-        $violations.Add([pscustomobject]@{
-            scenario = $metric.scenario
-            elapsedMilliseconds = [long] $metric.elapsedMilliseconds
-            maxElapsedMilliseconds = $threshold
-        })
+$completenessViolations = @(Get-NervBusinessPerformanceMetricCompletenessViolations -SelectedScenario $Scenario -Metrics $metrics)
+$violations = [Collections.Generic.List[object]]::new()
+foreach ($completenessViolation in $completenessViolations) {
+    $violations.Add($completenessViolation)
+}
+
+if ($completenessViolations.Count -eq 0) {
+    foreach ($metric in $metrics) {
+        $threshold = Get-PerformanceMetricThreshold -Metric $metric
+        if ($threshold -gt 0 -and ([long] $metric.elapsedMilliseconds) -gt $threshold) {
+            $violations.Add([pscustomobject]@{
+                scenario = $metric.scenario
+                elapsedMilliseconds = [long] $metric.elapsedMilliseconds
+                maxElapsedMilliseconds = $threshold
+            })
+        }
     }
 }
 
@@ -203,9 +207,16 @@ Set-Content -Path $effectiveSummaryOutputPath -Value $summaryJson -Encoding utf8
 Write-Host $summaryJson
 
 if ($violations.Count -gt 0) {
+    if ($completenessViolations.Count -gt 0) {
+        $violationText = ($completenessViolations | ForEach-Object {
+                "$($_.code) metric=$($_.metricScenario) expectedCount=$($_.expectedCount) actualCount=$($_.actualCount)"
+            }) -join "; "
+        throw "Performance metrics completeness validation failed: $violationText. Summary: $effectiveSummaryOutputPath"
+    }
+
     $violationText = ($violations | ForEach-Object {
-            "$($_.scenario) elapsedMs=$($_.elapsedMilliseconds) maxMs=$($_.maxElapsedMilliseconds)"
-        }) -join "; "
+                "$($_.scenario) elapsedMs=$($_.elapsedMilliseconds) maxMs=$($_.maxElapsedMilliseconds)"
+            }) -join "; "
     throw "Performance threshold exceeded: $violationText. Summary: $effectiveSummaryOutputPath"
 }
 

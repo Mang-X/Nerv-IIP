@@ -792,6 +792,11 @@ jobs:
         shell: pwsh
         run: ./scripts/tests/nightly-business-performance-workflow.Tests.ps1
 
+      - name: Test business performance metric completeness
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/business-performance-metrics-completeness.Tests.ps1
+
       - name: Test ordinal string primitives
         timeout-minutes: 5
         shell: pwsh

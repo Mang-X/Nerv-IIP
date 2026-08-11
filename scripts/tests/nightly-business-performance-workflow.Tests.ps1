@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $workflowPath = Join-Path $repoRoot '.github/workflows/nightly-business-performance.yml'
+$ciWorkflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 function Assert-WorkflowContract {
@@ -44,7 +45,39 @@ function Get-NightlyBusinessPerformanceWorkflow {
         throw "Required nightly workflow '.github/workflows/nightly-business-performance.yml' does not exist."
     }
 
-    $rubyProgram = "require 'yaml'; require 'json'; puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0))))"
+    $rubyProgram = @'
+path = ARGV.fetch(0)
+source = File.read(path)
+stream = Psych.parse_stream(source, path)
+raise 'Workflow YAML must contain exactly one document.' unless stream.children.length == 1
+root = stream.children.fetch(0).root
+raise 'Workflow YAML root must be a mapping.' unless root.is_a?(Psych::Nodes::Mapping)
+
+def validate_mapping_keys(node, path)
+  case node
+  when Psych::Nodes::Mapping
+    seen = {}
+    node.children.each_slice(2) do |key, value|
+      raise "Workflow YAML mapping key at #{path} must be a scalar." unless key.is_a?(Psych::Nodes::Scalar)
+      identity = key.value.to_s
+      raise "Duplicate mapping key '#{identity}' at #{path}." if seen.key?(identity)
+      seen[identity] = true
+      validate_mapping_keys(value, "#{path}.#{identity}")
+    end
+  when Psych::Nodes::Sequence
+    node.children.each_with_index { |child, index| validate_mapping_keys(child, "#{path}[#{index}]") }
+  end
+end
+
+validate_mapping_keys(root, '$')
+root_keys = root.children.each_slice(2).map { |key, _| key.value.to_s }
+raise "Workflow YAML root mapping key literal 'on' must appear exactly once." unless root_keys.count('on') == 1
+raise "Workflow YAML root mapping key literal 'true' cannot substitute for 'on'." if root_keys.include?('true')
+
+workflow = YAML.safe_load(source, aliases: false)
+workflow['on'] = workflow.delete(true)
+puts JSON.generate(workflow)
+'@
     $parsed = Invoke-NativeCommandOutput `
         -Command 'ruby' `
         -Arguments @('-ryaml', '-rjson', '-e', $rubyProgram, $Path) `
@@ -58,7 +91,6 @@ function Assert-NightlyBusinessPerformanceWorkflow {
 
     $workflow = Get-NightlyBusinessPerformanceWorkflow -Path $Path
     $triggers = Get-WorkflowProperty -Object $workflow -Name 'on'
-    if ($null -eq $triggers) { $triggers = Get-WorkflowProperty -Object $workflow -Name 'true' }
     Assert-WorkflowContract ($null -ne $triggers) 'Nightly business performance workflow must declare triggers.'
     $triggerNames = @($triggers.PSObject.Properties.Name)
     Assert-WorkflowContract ($triggerNames.Count -eq 2 -and $triggerNames.Contains('schedule') -and $triggerNames.Contains('workflow_dispatch')) 'Nightly business performance workflow must have only schedule and workflow_dispatch triggers.'
@@ -77,8 +109,11 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     $job = $jobs.PSObject.Properties['business-performance'].Value
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $job -Name 'timeout-minutes') -eq 45) 'business-performance job timeout-minutes must be 45.'
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $job -Name 'runs-on'), 'ubuntu-latest', [StringComparison]::Ordinal)) 'business-performance job must run on ubuntu-latest.'
-    $connectionString = Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $job -Name 'env') -Name 'NERV_IIP_PERF_POSTGRES'
+    $jobEnvironment = Get-WorkflowProperty -Object $job -Name 'env'
+    $connectionString = Get-WorkflowProperty -Object $jobEnvironment -Name 'NERV_IIP_PERF_POSTGRES'
     Assert-WorkflowContract ($null -ne $connectionString -and [string]$connectionString -match '^Host=127\.0\.0\.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv$') 'business-performance job must inject NERV_IIP_PERF_POSTGRES for the PostgreSQL service.'
+    $manualThresholdBinding = [string](Get-WorkflowProperty -Object $jobEnvironment -Name 'MANUAL_MAX_ELAPSED_MILLISECONDS')
+    Assert-WorkflowContract ([string]::Equals($manualThresholdBinding, '${{ github.event.inputs.max_elapsed_milliseconds || ''0'' }}', [StringComparison]::Ordinal)) 'business-performance job must bind MANUAL_MAX_ELAPSED_MILLISECONDS exactly to github.event.inputs.max_elapsed_milliseconds with fallback 0.'
 
     $postgres = Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $job -Name 'services') -Name 'postgres'
     Assert-WorkflowContract ($null -ne $postgres -and [string]::Equals([string](Get-WorkflowProperty -Object $postgres -Name 'image'), 'postgres:18', [StringComparison]::Ordinal)) 'business-performance job must use postgres:18 service.'
@@ -166,6 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NERV_IIP_PERF_POSTGRES: Host=127.0.0.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv
+      MANUAL_MAX_ELAPSED_MILLISECONDS: ${{ github.event.inputs.max_elapsed_milliseconds || '0' }}
     services:
       postgres:
         image: postgres:18
@@ -244,11 +280,18 @@ Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
+$workflowNewline = if ($workflowText.Contains("`r`n", [StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
     foreach ($mutation in @(
+            @{ Name = 'trigger-true-substitute'; Original = "on:$workflowNewline  schedule:"; Replacement = "true:$workflowNewline  schedule:"; ExpectedMessage = "root mapping key literal 'on' must appear exactly once" },
+            @{ Name = 'duplicate-root-trigger'; Original = "on:$workflowNewline  schedule:"; Replacement = "on: {}$workflowNewline$workflowNewline" + "on:$workflowNewline  schedule:"; ExpectedMessage = "Duplicate mapping key 'on' at `$" },
+            @{ Name = 'duplicate-job-timeout'; Original = "    timeout-minutes: 45$workflowNewline    runs-on:"; Replacement = "    timeout-minutes: 45$workflowNewline    timeout-minutes: 45$workflowNewline    runs-on:"; ExpectedMessage = "Duplicate mapping key 'timeout-minutes' at `$.jobs.business-performance" },
             @{ Name = 'connection-string'; Original = 'NERV_IIP_PERF_POSTGRES:'; Replacement = 'NERV_IIP_PERF_POSTGRES_REMOVED:' },
+            @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
+            @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
+            @{ Name = 'manual-threshold-binding-wrong-input'; Original = 'github.event.inputs.max_elapsed_milliseconds'; Replacement = 'github.event.inputs.wrong_max_elapsed_milliseconds' },
             @{ Name = 'scheduled-threshold'; Original = "'-InventoryMaxElapsedMilliseconds', 600000"; Replacement = "'-InventoryMaxElapsedMilliseconds', 0" },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
@@ -262,10 +305,17 @@ try {
         try { Assert-NightlyBusinessPerformanceWorkflow -Path $mutatedPath }
         catch { $failure = $_ }
         Assert-WorkflowContract ($null -ne $failure) "Mutation '$($mutation.Name)' must fail the nightly business performance workflow contract."
+        if ($mutation.ContainsKey('ExpectedMessage')) {
+            Assert-WorkflowContract ($failure.Exception.Message.Contains([string]$mutation.ExpectedMessage, [StringComparison]::Ordinal)) "Mutation '$($mutation.Name)' must produce deterministic diagnostic '$($mutation.ExpectedMessage)'. Actual: $($failure.Exception.Message)"
+        }
     }
 }
 finally {
     if (Test-Path -LiteralPath $mutationRoot) { Remove-Item -LiteralPath $mutationRoot -Recurse -Force }
 }
+
+$ciWorkflowText = [IO.File]::ReadAllText($ciWorkflowPath)
+$completenessTestInvocation = 'run: ./scripts/tests/business-performance-metrics-completeness.Tests.ps1'
+Assert-WorkflowContract ([regex]::Matches($ciWorkflowText, [regex]::Escape($completenessTestInvocation)).Count -eq 1) 'Script Governance CI must execute the business performance metric completeness contract exactly once.'
 
 Write-Host 'Nightly business performance workflow contract tests passed.'
