@@ -24,39 +24,42 @@ import { fileUploadMotion } from './motion'
 import { uploadWithNativeFileStorageTransport } from './nativeTransport'
 import { formatFileSize, isSlotOccupyingRow, useFileUpload } from './useFileUpload'
 
-const props = withDefaults(defineProps<{
-  purpose: string
-  ownerService: string
-  ownerType: string
-  ownerId: string
-  organizationId: string
-  environmentId: string
-  acceptedContentTypes?: string[]
-  maxFileSizeBytes?: number
-  maxFiles?: number
-  autoUpload?: boolean
-  variant?: FileUploadVariant
-  virtualizeThreshold?: number
-  virtualRowHeight?: number
-  virtualListHeight?: number
-  disabled?: boolean
-  class?: HTMLAttributes['class']
-  createUploadSession: (request: FileUploadCreateSessionRequest) => Promise<FileUploadSession>
-  completeUploadSession: (
-    uploadSessionId: string,
-    request: FileUploadCompleteSessionRequest,
-  ) => Promise<{ fileId: string }>
-  transport?: FileUploadTransport
-}>(), {
-  acceptedContentTypes: () => [],
-  maxFiles: 5,
-  autoUpload: true,
-  variant: 'default',
-  virtualizeThreshold: 40,
-  virtualRowHeight: 92,
-  virtualListHeight: 384,
-  transport: uploadWithNativeFileStorageTransport,
-})
+const props = withDefaults(
+  defineProps<{
+    purpose: string
+    ownerService: string
+    ownerType: string
+    ownerId: string
+    organizationId: string
+    environmentId: string
+    acceptedContentTypes?: string[]
+    maxFileSizeBytes?: number
+    maxFiles?: number
+    autoUpload?: boolean
+    variant?: FileUploadVariant
+    virtualizeThreshold?: number
+    virtualRowHeight?: number
+    virtualListHeight?: number
+    disabled?: boolean
+    class?: HTMLAttributes['class']
+    createUploadSession: (request: FileUploadCreateSessionRequest) => Promise<FileUploadSession>
+    completeUploadSession: (
+      uploadSessionId: string,
+      request: FileUploadCompleteSessionRequest,
+    ) => Promise<{ fileId: string }>
+    transport?: FileUploadTransport
+  }>(),
+  {
+    acceptedContentTypes: () => [],
+    maxFiles: 5,
+    autoUpload: true,
+    variant: 'default',
+    virtualizeThreshold: 40,
+    virtualRowHeight: 92,
+    virtualListHeight: 384,
+    transport: uploadWithNativeFileStorageTransport,
+  },
+)
 
 const emits = defineEmits<{
   completed: [files: FileUploadCompletedFile[]]
@@ -95,12 +98,13 @@ const {
   maxFileSizeBytes: () => props.maxFileSizeBytes,
   maxFiles: () => props.maxFiles,
   autoUpload: () => props.autoUpload,
-  createUploadSession: request => props.createUploadSession(request),
-  completeUploadSession: (uploadSessionId, request) => props.completeUploadSession(uploadSessionId, request),
-  transport: context => props.transport(context),
-  onCompleted: files => emits('completed', files),
-  onRejected: files => emits('rejected', files),
-  onFailed: row => emits('failed', row),
+  createUploadSession: (request) => props.createUploadSession(request),
+  completeUploadSession: (uploadSessionId, request) =>
+    props.completeUploadSession(uploadSessionId, request),
+  transport: (context) => props.transport(context),
+  onCompleted: (files) => emits('completed', files),
+  onRejected: (files) => emits('rejected', files),
+  onFailed: (row) => emits('failed', row),
 })
 
 const accept = computed(() => props.acceptedContentTypes.join(','))
@@ -113,16 +117,29 @@ const totalSizeLabel = computed(() => formatFileSize(totalSizeBytes.value))
 const primaryRow = computed(() => rows.find(isSlotOccupyingRow) ?? rows[rows.length - 1] ?? null)
 const isGridVariant = computed(() => props.variant === 'gallery' || props.variant === 'image')
 const isDropzoneVariant = computed(() => props.variant !== 'default')
-const canBrowse = computed(() => !props.disabled && (availableSlotCount.value > 0 || props.variant === 'avatar'))
-const showQueueSummary = computed(() => rows.length > 0 && (props.variant === 'queue' || props.variant === 'gallery' || props.variant === 'table'))
+const canBrowse = computed(
+  () => !props.disabled && (availableSlotCount.value > 0 || props.variant === 'avatar'),
+)
+const showQueueSummary = computed(
+  () =>
+    rows.length > 0 &&
+    (props.variant === 'queue' || props.variant === 'gallery' || props.variant === 'table'),
+)
 const showCompactRows = computed(() => rows.length > 0 && props.variant === 'compact')
 const renderRowsBeforeDropzone = computed(() => props.variant === 'image' && rows.length > 0)
-const renderRowsAfterDropzone = computed(() => rows.length > 0 && props.variant !== 'avatar' && props.variant !== 'image' && props.variant !== 'compact')
-const shouldVirtualizeRows = computed(() =>
-  rows.length > props.virtualizeThreshold
-  && !isGridVariant.value
-  && props.variant !== 'avatar'
-  && props.variant !== 'compact',
+const renderRowsAfterDropzone = computed(
+  () =>
+    rows.length > 0 &&
+    props.variant !== 'avatar' &&
+    props.variant !== 'image' &&
+    props.variant !== 'compact',
+)
+const shouldVirtualizeRows = computed(
+  () =>
+    rows.length > props.virtualizeThreshold &&
+    !isGridVariant.value &&
+    props.variant !== 'avatar' &&
+    props.variant !== 'compact',
 )
 const virtualItemHeight = computed(() => props.virtualRowHeight + virtualRowGap)
 const virtualContainerStyle = computed(() => ({
@@ -135,29 +152,27 @@ const virtualMotionRowStyle = computed(() => ({
   height: `${virtualItemHeight.value}px`,
   paddingBottom: `${virtualRowGap}px`,
 }))
-const dropzoneAnimate = computed(() => isDragging.value
-  ? { y: -2, scale: 1.01 }
-  : { y: 0, scale: 1 })
-const dropzoneHover = computed(() => canBrowse.value
-  ? { y: -1, scale: 1.004 }
-  : undefined)
-const dropzoneTap = computed(() => canBrowse.value
-  ? { y: 0, scale: 0.996 }
-  : undefined)
-const rootClass = computed(() => cn(
-  'flex flex-col gap-3',
-  props.variant === 'avatar' && 'items-center',
-  props.class,
-))
-const dropzoneClass = computed(() => cn(
-  'border-border bg-background hover:bg-muted/60 focus-visible:border-ring focus-visible:ring-ring/50 data-[dragging=true]:border-primary data-[dragging=true]:bg-primary/5 data-[dragging=true]:ring-primary/20 flex items-center justify-center border border-dashed text-center ring-0 will-change-transform focus-visible:ring-3 focus-visible:outline-none data-[dragging=true]:ring-2 disabled:pointer-events-none disabled:opacity-50',
-  props.variant === 'queue' && 'min-h-28 flex-col gap-2 py-5',
-  props.variant === 'compact' && 'mx-auto min-h-0 w-full max-w-xl flex-row justify-start gap-3 rounded-lg px-4 py-4 shadow-none',
-  props.variant === 'table' && 'min-h-36 flex-col gap-3 rounded-lg px-6 py-7 shadow-none',
-  props.variant === 'avatar' && 'size-28 rounded-full p-0 shadow-none',
-  props.variant === 'gallery' && 'min-h-64 flex-col gap-3 rounded-lg px-6 py-8 shadow-none',
-  props.variant === 'image' && 'min-h-36 flex-col gap-3 rounded-lg border-solid px-6 py-6 shadow-none',
-))
+const dropzoneAnimate = computed(() =>
+  isDragging.value ? { y: -2, scale: 1.01 } : { y: 0, scale: 1 },
+)
+const dropzoneHover = computed(() => (canBrowse.value ? { y: -1, scale: 1.004 } : undefined))
+const dropzoneTap = computed(() => (canBrowse.value ? { y: 0, scale: 0.996 } : undefined))
+const rootClass = computed(() =>
+  cn('flex flex-col gap-3', props.variant === 'avatar' && 'items-center', props.class),
+)
+const dropzoneClass = computed(() =>
+  cn(
+    'border-border bg-background hover:bg-muted/60 focus-visible:border-ring focus-visible:ring-ring/50 data-[dragging=true]:border-primary data-[dragging=true]:bg-primary/5 data-[dragging=true]:ring-primary/20 flex items-center justify-center border border-dashed text-center ring-0 will-change-transform focus-visible:ring-3 focus-visible:outline-none data-[dragging=true]:ring-2 disabled:pointer-events-none disabled:opacity-50',
+    props.variant === 'queue' && 'min-h-28 flex-col gap-2 py-5',
+    props.variant === 'compact' &&
+      'mx-auto min-h-0 w-full max-w-xl flex-row justify-start gap-3 rounded-lg px-4 py-4 shadow-none',
+    props.variant === 'table' && 'min-h-36 flex-col gap-3 rounded-lg px-6 py-7 shadow-none',
+    props.variant === 'avatar' && 'size-28 rounded-full p-0 shadow-none',
+    props.variant === 'gallery' && 'min-h-64 flex-col gap-3 rounded-lg px-6 py-8 shadow-none',
+    props.variant === 'image' &&
+      'min-h-36 flex-col gap-3 rounded-lg border-solid px-6 py-6 shadow-none',
+  ),
+)
 const rowsContainerSlot = computed(() => {
   if (isGridVariant.value) {
     return 'file-upload-grid'
@@ -169,12 +184,17 @@ const rowsContainerSlot = computed(() => {
 
   return 'file-upload-list'
 })
-const rowsContainerClass = computed(() => cn(
-  props.variant === 'gallery' && 'grid grid-cols-2 gap-3 md:grid-cols-3',
-  props.variant === 'image' && 'grid grid-cols-2 gap-2 sm:grid-cols-4',
-  props.variant === 'table' && 'border-border bg-card overflow-hidden rounded-lg border',
-  props.variant !== 'gallery' && props.variant !== 'image' && props.variant !== 'table' && 'flex flex-col gap-2',
-))
+const rowsContainerClass = computed(() =>
+  cn(
+    props.variant === 'gallery' && 'grid grid-cols-2 gap-3 md:grid-cols-3',
+    props.variant === 'image' && 'grid grid-cols-2 gap-2 sm:grid-cols-4',
+    props.variant === 'table' && 'border-border bg-card overflow-hidden rounded-lg border',
+    props.variant !== 'gallery' &&
+      props.variant !== 'image' &&
+      props.variant !== 'table' &&
+      'flex flex-col gap-2',
+  ),
+)
 const dropzoneTitle = computed(() => {
   switch (props.variant) {
     case 'avatar':
@@ -271,9 +291,7 @@ function formatAcceptedTypeHint(acceptedTypes: string[]) {
     }
 
     const extensions = getAcceptedFileExtensions(normalized)
-    return extensions.length > 0
-      ? extensions.map(extension => `.${extension}`)
-      : [normalized]
+    return extensions.length > 0 ? extensions.map((extension) => `.${extension}`) : [normalized]
   })
 
   return Array.from(new Set(labels)).join('、')
@@ -286,17 +304,22 @@ function buildRestrictionHint(style: 'default' | 'table') {
       ? `${style === 'table' ? '最大文件大小：' : '单个文件不超过 '}${formatFileSize(props.maxFileSizeBytes)}`
       : null,
     style === 'table' ? `最多文件数：${props.maxFiles}` : `最多 ${props.maxFiles} 个文件`,
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 const {
   list: virtualRows,
   containerProps: virtualContainerProps,
   wrapperProps: virtualWrapperProps,
-} = useVirtualList(computed(() => rows), {
-  itemHeight: virtualItemHeight.value,
-  overscan: 8,
-})
+} = useVirtualList(
+  computed(() => rows),
+  {
+    itemHeight: virtualItemHeight.value,
+    overscan: 8,
+  },
+)
 
 function browse() {
   if (canBrowse.value) {
@@ -369,11 +392,7 @@ defineExpose<FileUploadExpose>({
 </script>
 
 <template>
-  <div
-    data-slot="file-upload"
-    :data-variant="variant"
-    :class="rootClass"
-  >
+  <div data-slot="file-upload" :data-variant="variant" :class="rootClass">
     <input
       ref="fileInput"
       type="file"
@@ -382,7 +401,7 @@ defineExpose<FileUploadExpose>({
       :multiple="maxFiles > 1"
       :disabled="disabled"
       @change="handleFileChange"
-    >
+    />
 
     <MotionConfig reduced-motion="user">
       <div
@@ -418,12 +437,7 @@ defineExpose<FileUploadExpose>({
         data-slot="file-upload-default"
         class="flex flex-col items-start gap-2"
       >
-        <Button
-          type="button"
-          :disabled="!canBrowse"
-          data-file-upload-button="true"
-          @click="browse"
-        >
+        <Button type="button" :disabled="!canBrowse" data-file-upload-button="true" @click="browse">
           <UploadCloudIcon data-icon="inline-start" />
           {{ dropzoneTitle }}
         </Button>
@@ -484,14 +498,13 @@ defineExpose<FileUploadExpose>({
         </template>
 
         <template v-else>
-          <span class="bg-muted text-muted-foreground inline-flex size-14 items-center justify-center rounded-full">
+          <span
+            class="bg-muted text-muted-foreground inline-flex size-14 items-center justify-center rounded-full"
+          >
             <component :is="dropzoneIcon" class="size-5" aria-hidden="true" />
           </span>
           <span class="text-sm font-medium">{{ dropzoneTitle }}</span>
-          <span
-            v-if="dropzoneDescription"
-            class="text-muted-foreground text-sm"
-          >
+          <span v-if="dropzoneDescription" class="text-muted-foreground text-sm">
             {{ dropzoneDescription }}
           </span>
         </template>
@@ -518,10 +531,7 @@ defineExpose<FileUploadExpose>({
         </span>
       </MotionButton>
 
-      <div
-        v-if="variant === 'avatar'"
-        class="text-center"
-      >
+      <div v-if="variant === 'avatar'" class="text-center">
         <div class="text-sm font-medium">
           {{ primaryRow ? '更换头像' : dropzoneTitle }}
         </div>
@@ -576,9 +586,7 @@ defineExpose<FileUploadExpose>({
       >
         <div class="min-w-0">
           <div class="text-sm font-medium">
-            <template v-if="variant === 'table'">
-              文件 ({{ occupiedSlotCount }})
-            </template>
+            <template v-if="variant === 'table'"> 文件 ({{ occupiedSlotCount }}) </template>
             <template v-else>
               {{ variant === 'gallery' ? '画廊' : '文件' }} ({{ occupiedSlotCount }}/{{ maxFiles }})
             </template>
