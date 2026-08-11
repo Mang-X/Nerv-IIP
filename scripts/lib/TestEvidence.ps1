@@ -146,8 +146,8 @@ function Get-NervOrdinalRankedTop {
     }
     $decorated.Sort([Comparison[object]] {
         param($Left, $Right)
-        if (((([double]$Right.Metric) -gt ([double]$Left.Metric)))) { return 1 }
-        if (((([double]$Right.Metric) -lt ([double]$Left.Metric)))) { return -1 }
+        if ([double]$Right.Metric -gt [double]$Left.Metric) { return 1 }
+        if ([double]$Right.Metric -lt [double]$Left.Metric) { return -1 }
         return [int]$Left.Rank - [int]$Right.Rank
     })
 
@@ -215,7 +215,7 @@ function Test-NervTestEvidenceLaneName {
 function Import-NervTestEvidencePolicy {
     param([Parameter(Mandatory)] [string] $Path)
     $policy = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 100
-    if ((-not (([int] $policy.schemaVersion) -eq (1)))) {
+    if ([int] $policy.schemaVersion -ne 1) {
         throw "Unsupported test-evidence policy schemaVersion '$($policy.schemaVersion)'."
     }
     return $policy
@@ -276,12 +276,12 @@ function Get-NervSourceSkipAssignments {
             $verbatim = $false
             while ($position -lt $content.Length) {
                 $character = $content[$position]
-                if ((-not [string]::Equals([string]($quote), [string]([char]0), [StringComparison]::OrdinalIgnoreCase))) {
-                    if ($verbatim -and [string]::Equals([string]($character), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -and $position + 1 -lt $content.Length -and [string]::Equals([string]($content[$position + 1]), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase)) {
+                if ($quote -ne [char]0) {
+                    if ($verbatim -and $character -eq [char]'"' -and $position + 1 -lt $content.Length -and $content[$position + 1] -eq [char]'"') {
                         $position += 2
                         continue
                     }
-                    if (-not $verbatim -and [string]::Equals([string]($character), [string]([char]'\'), [StringComparison]::OrdinalIgnoreCase) -and -not $escaped) {
+                    if (-not $verbatim -and $character -eq [char]'\' -and -not $escaped) {
                         $escaped = $true
                         $position++
                         continue
@@ -292,11 +292,11 @@ function Get-NervSourceSkipAssignments {
                     }
                     $escaped = $false
                 }
-                elseif ([string]::Equals([string]($character), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]"'"), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ($character -eq [char]'"' -or $character -eq [char]"'") {
                     $quote = $character
-                    $verbatim = [string]::Equals([string]($character), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -and $position -gt 0 -and [string]::Equals([string]($content[$position - 1]), [string]([char]'@'), [StringComparison]::OrdinalIgnoreCase)
+                    $verbatim = $character -eq [char]'"' -and $position -gt 0 -and $content[$position - 1] -eq [char]'@'
                 }
-                elseif ([string]::Equals([string]($character), [string]([char]';'), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ($character -eq [char]';') {
                     break
                 }
                 $position++
@@ -398,7 +398,7 @@ function Test-NervTestEvidencePolicy {
     foreach ($assignment in $live) {
         $matchedSources = @($Policy.sources | Where-Object {
             (Test-NervOrdinalEquals ([string]$_.sourcePath) ([string]$assignment.sourcePath)) -and
-            (([int]$_.sourceOrdinal) -eq ([int]$assignment.sourceOrdinal)) -and
+            [int]$_.sourceOrdinal -eq [int]$assignment.sourceOrdinal -and
             [string]$assignment.sourceText -cmatch [string]$_.sourceReasonPattern
         })
         if ($matchedSources.Count -ne 1) {
@@ -412,7 +412,7 @@ function Test-NervTestEvidencePolicy {
         }
         $matchedAssignments = @($live | Where-Object {
             (Test-NervOrdinalEquals ([string]$_.sourcePath) ([string]$source.sourcePath)) -and
-            (([int]$_.sourceOrdinal) -eq ([int]$source.sourceOrdinal))
+            [int]$_.sourceOrdinal -eq [int]$source.sourceOrdinal
         })
         if ($matchedAssignments.Count -ne 1) {
             $violations.Add((New-NervTestEvidenceViolation 'unregistered-skip' ([string]$source.id) 'Registered source does not map to exactly one live Skip assignment.'))
@@ -471,13 +471,13 @@ function ConvertTo-NervRetainedDisplayName {
         [void]$builder.Append($match.Groups['label'].Value)
         $valueStart = $match.Index + $match.Length
         $valueEnd = $valueStart
-        if ($valueStart -lt $source.Length -and ([string]::Equals([string]($source[$valueStart]), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($source[$valueStart]), [string]([char]"'"), [StringComparison]::OrdinalIgnoreCase))) {
+        if ($valueStart -lt $source.Length -and ($source[$valueStart] -eq [char]'"' -or $source[$valueStart] -eq [char]"'")) {
             $quote = $source[$valueStart]
             $valueEnd++
             while ($valueEnd -lt $source.Length) {
                 if ($source[$valueEnd] -eq $quote) {
                     $slashes = 0
-                    for ($lookBehind = $valueEnd - 1; $lookBehind -ge $valueStart -and [string]::Equals([string]($source[$lookBehind]), [string]([char]'\'), [StringComparison]::OrdinalIgnoreCase); $lookBehind--) { $slashes++ }
+                    for ($lookBehind = $valueEnd - 1; $lookBehind -ge $valueStart -and $source[$lookBehind] -eq [char]'\'; $lookBehind--) { $slashes++ }
                     if (($slashes % 2) -eq 0) { $valueEnd++; break }
                 }
                 $valueEnd++
@@ -489,19 +489,19 @@ function ConvertTo-NervRetainedDisplayName {
             $escaped = $false
             while ($valueEnd -lt $source.Length) {
                 $character = $source[$valueEnd]
-                if ((-not [string]::Equals([string]($quote), [string]([char]0), [StringComparison]::OrdinalIgnoreCase))) {
-                    if ([string]::Equals([string]($character), [string]([char]'\'), [StringComparison]::OrdinalIgnoreCase) -and -not $escaped) { $escaped = $true; $valueEnd++; continue }
+                if ($quote -ne [char]0) {
+                    if ($character -eq [char]'\' -and -not $escaped) { $escaped = $true; $valueEnd++; continue }
                     if ($character -eq $quote -and -not $escaped) { $quote = [char]0 }
                     $escaped = $false
                 }
-                elseif ([string]::Equals([string]($character), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]"'"), [StringComparison]::OrdinalIgnoreCase)) { $quote = $character }
-                # `[char]` casts, not `-in` over string literals: `-in` compares as *strings* and is
-                # culture-aware. Keep delimiter checks as explicit ordinal string comparisons.
-                elseif ([string]::Equals([string]($character), [string]([char]'{'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]'['), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]'('), [StringComparison]::OrdinalIgnoreCase)) { $depth++ }
-                elseif ([string]::Equals([string]($character), [string]([char]'}'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]']'), [StringComparison]::OrdinalIgnoreCase)) { if ($depth -gt 0) { $depth-- } }
-                elseif ([string]::Equals([string]($character), [string]([char]')'), [StringComparison]::OrdinalIgnoreCase) -and $depth -eq 0) { break }
-                elseif ([string]::Equals([string]($character), [string]([char]')'), [StringComparison]::OrdinalIgnoreCase) -and $depth -gt 0) { $depth-- }
-                elseif ([string]::Equals([string]($character), [string]([char]','), [StringComparison]::OrdinalIgnoreCase) -and $depth -eq 0) { break }
+                elseif ($character -eq [char]'"' -or $character -eq [char]"'") { $quote = $character }
+                # `[char]` casts, not `-in` over string literals: `-in` compares as *strings*, which is
+                # culture-aware. Char equality is numeric and is what a brace matcher wants.
+                elseif ($character -eq [char]'{' -or $character -eq [char]'[' -or $character -eq [char]'(') { $depth++ }
+                elseif ($character -eq [char]'}' -or $character -eq [char]']') { if ($depth -gt 0) { $depth-- } }
+                elseif ($character -eq [char]')' -and $depth -eq 0) { break }
+                elseif ($character -eq [char]')' -and $depth -gt 0) { $depth-- }
+                elseif ($character -eq [char]',' -and $depth -eq 0) { break }
                 $valueEnd++
             }
         }
@@ -1005,7 +1005,7 @@ function New-NervTestEvidenceSummary {
     })
     $baselineAvailable = @($deltas | Where-Object available).Count -gt 0
     $summaryBaselineUnavailableReason = if ($baselineAvailable) { $null } elseif ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason } else { 'no-compatible-assembly' }
-    $attemptClassification = if ((([int]$RunMetadata.runAttempt) -eq (1))) {
+    $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }
     elseif ((Test-NervOrdinalEquals ([string]$PriorAttemptOutcome) 'failure') -and $RunMetadata.ContainsKey('priorAttemptVerified') -and [bool]$RunMetadata.priorAttemptVerified -and
