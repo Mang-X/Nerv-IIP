@@ -38,6 +38,7 @@ $temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativeP
 $runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
+$timingAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 
 function Assert-Contract {
@@ -429,6 +430,42 @@ $selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertio
 Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
 $runnerSweep = Get-NervOrdinalComparisonFindings -ScriptPath $runnerPath -DisplayName 'run-backend-test-shard.ps1'
 Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
+$timingSweep = Get-NervOrdinalComparisonFindings -ScriptPath $timingAssertionsPath -DisplayName 'BackendTestShardTimings.ps1'
+Assert-Contract ($timingSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardTimings.ps1 must compare timing identities ordinally (#1512):`n  $(@($timingSweep.Findings) -join "`n  ")"
+$validatorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $validatorPath -DisplayName 'verify-backend-test-shards.ps1'
+Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
+$aggregateAssertionEquality = '-not [string]::Equals($actualAggregateAssertions, $expectedAggregateAssertions, [StringComparison]::Ordinal)'
+$validatorSource = [IO.File]::ReadAllText($validatorPath)
+Assert-Contract ([regex]::Matches($validatorSource, [regex]::Escape($aggregateAssertionEquality)).Count -eq 1) 'The aggregate assertion sequence must use explicit ordinal equality after ordinal sorting.'
+
+$lastIndexProductionProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-production-last-index-ordinal-{0}" -f [Guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($lastIndexProductionProbeRoot) | Out-Null
+    foreach ($lastIndexCase in @(
+            [pscustomobject]@{
+                Name = 'validator-method-selector'
+                SourcePath = $validatorPath
+                Original = "`$methodSelector.LastIndexOf('.', [StringComparison]::Ordinal)"
+                Mutated = "`$methodSelector.LastIndexOf('.')"
+            },
+            [pscustomobject]@{
+                Name = 'timing-assembly-leaf'
+                SourcePath = $timingAssertionsPath
+                Original = "`$trimmed.LastIndexOf('/', [StringComparison]::Ordinal)"
+                Mutated = "`$trimmed.LastIndexOf('/')"
+            }
+        )) {
+        $lastIndexSource = [IO.File]::ReadAllText([string]$lastIndexCase.SourcePath)
+        Assert-Contract ([regex]::Matches($lastIndexSource, [regex]::Escape([string]$lastIndexCase.Original)).Count -eq 1) "LastIndexOf mutation '$($lastIndexCase.Name)' must target exactly one production callsite."
+        $lastIndexProbePath = Join-Path $lastIndexProductionProbeRoot "$($lastIndexCase.Name).ps1"
+        [IO.File]::WriteAllText($lastIndexProbePath, $lastIndexSource.Replace([string]$lastIndexCase.Original, [string]$lastIndexCase.Mutated), [Text.UTF8Encoding]::new($false))
+        $lastIndexMutationFindings = @((Get-NervOrdinalComparisonFindings -ScriptPath $lastIndexProbePath -DisplayName "$($lastIndexCase.Name)-mutation.ps1").Findings)
+        Assert-Contract ($lastIndexMutationFindings.Count -eq 1 -and $lastIndexMutationFindings[0].Contains('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal)) "Weakening production LastIndexOf '$($lastIndexCase.Name)' must make the ordinal scanner fail."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $lastIndexProductionProbeRoot) { Remove-Item -LiteralPath $lastIndexProductionProbeRoot -Recurse -Force }
+}
 
 # Exercise the real manifest lookup with the U+00AD value that PowerShell's -eq folds away. The
 # canonical runner must reject it before resolving or executing any solution filter. A copied

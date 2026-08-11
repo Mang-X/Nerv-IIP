@@ -147,7 +147,7 @@ NvUI 是 `@nerv-iip/ui` / `@nerv-iip/ui-mobile` 中 Nerv-IIP 的品牌组件层�
 2. **仅通过稳定边界导入：**裸 `@nerv-iip/ui` 与 `@nerv-iip/ui-mobile`（唯一允许的 sub-entry 是 `@nerv-iip/ui/file-preview`）。禁止 deep path、直接 `reka-ui` 或直接 `shadcn-vue`。
 3. **通过 contract test 而非 ESLint 强制执行**（ADR 0006）：每个 app 的 `nvui-imports.contract.test.ts`，以及每个 package 的 `nvui-naming.contract.test.ts`。
 4. **package 名称永不变更**（ADR 0020 Decision 2）：品牌体现在 `Nv*` 前缀，绝不得顺带重命名 `@nerv-iip/ui` / `@nerv-iip/ui-mobile`。
-5. `components/ui/` 中的 shadcn 原版保持 byte-for-byte 不变（没有 `Nv`，没有 `--nv-`）。定制通过品牌层中的重建副本实现。
+5. `components/ui/` 下除 `file-preview`、`file-upload`、`date-picker` 三个自研目录（以及 `sonner/index.ts` 这一被 Nerv 补丁的 barrel）外，其余为 shadcn 原版，保持 byte-for-byte 不变（没有 `Nv`，没有 `--nv-`）。定制通过品牌层中的重建副本实现。原版整体豁免 fmt/lint，自研部分必须逐条 negation 纳管（见 `frontend/vite.config.ts` 的 `frozenShadcnSourceIgnorePatterns`）。
 
 **四类界面映射**（仅为示例；冻结表见 ADR 0020 Appendix A）：
 

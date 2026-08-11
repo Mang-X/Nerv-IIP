@@ -10,6 +10,7 @@
 #     - PowerShell 7
 
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
 <#
 MAN-799 CI timeout-budget invariants.

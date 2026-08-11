@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
@@ -23,6 +24,11 @@ namespace Nerv.IIP.Ops.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
+    /// <summary>appsettings.Development.json 里那把「本地开发假凭据」。</summary>
+    private const string DevelopmentFakeConnectorSecret = "local-connector-secret";
+
+    private const string ProductionInternalServiceToken = "production-internal-token";
+
     [Fact]
     public async Task Ops_api_endpoints_require_internal_service_authorization()
     {
@@ -361,9 +367,27 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Production_does_not_accept_development_fake_connector_credential()
     {
+        var iam = new StubbedIamCredentialHandlerFilter(HttpStatusCode.Unauthorized);
+        await using var productionFactory = CreateProductionFactory(iam);
+        var client = CreateInternalServiceClient(productionFactory, ProductionInternalServiceToken);
+        AddConnectorHeaders(client, DevelopmentFakeConnectorSecret);
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        // 401 必须来自「Production 把凭据交给 IAM、IAM 拒绝」，而不是内部服务令牌不对、连接器请求头
+        // 缺失之类的提前短路——那些同样是 401，会让本用例在断言强度归零后依旧全绿。
+        Assert.Equal(1, iam.RequestCount);
+    }
+
+    [Fact]
+    public async Task Production_connector_credential_validator_ignores_the_configured_secret()
+    {
         var options = new FixedOptionsMonitor<OpsConnectorCredentialOptions>(new()
         {
-            Secret = "local-connector-secret"
+            Secret = DevelopmentFakeConnectorSecret
         });
         var configuredValidator = new ConfiguredOpsConnectorCredentialValidator(options);
         using var handler = new ScriptedHttpMessageHandler((_, _) =>
@@ -381,17 +405,22 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
             configuredValidator,
             iamValidator);
 
-        var result = await validator.ValidateAsync(
-            new OpsConnectorCredentialValidationRequest(
-                "connector-host-001",
-                "local-connector-secret",
-                "org-001",
-                "env-dev",
-                "ops.operation-tasks.execute"),
-            CancellationToken.None);
+        var request = new OpsConnectorCredentialValidationRequest(
+            "connector-host-001",
+            DevelopmentFakeConnectorSecret,
+            "org-001",
+            "env-dev",
+            "ops.operation-tasks.execute");
+
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
 
         Assert.False(result.IsAuthorized);
         Assert.Equal("iam-rejected", result.Reason);
+
+        // 「忽略」的对照面：同一份凭据在 configured 分支下本来是通过的，所以上面的拒绝确实来自
+        // Production 改走 IAM，而不是这份凭据本身就不合法。
+        var configuredResult = await configuredValidator.ValidateAsync(request, CancellationToken.None);
+        Assert.True(configuredResult.IsAuthorized);
     }
 
     [Fact]
@@ -1044,11 +1073,49 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 configuration.AddInMemoryCollection(settings)));
     }
 
+    /// <summary>
+    /// 起一个 Production 档的 Ops 宿主：环境、持久化档位与认证语义都保持真实，但外部依赖全部隔离。
+    /// </summary>
+    /// <remarks>
+    /// Production 档下 <c>PersistenceStartupGovernance</c> 强制 PostgreSQL，而 PostgreSQL 档会带上 CAP，
+    /// CAP 的后台生命周期正是 NERV-733 里那条 teardown 竞态的来源，所以这里显式摘掉它
+    /// （<see cref="OpsTestHostIsolation.WithoutCapBackgroundProcessing"/>）。连接串与 broker 只需存在
+    /// 到能通过启动治理即可：被测请求在 401 处返回，根本不会走到 DB 或 broker。
+    /// </remarks>
+    private static WebApplicationFactory<Program> CreateProductionFactory(StubbedIamCredentialHandlerFilter iam)
+    {
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("InternalService:BearerToken", ProductionInternalServiceToken);
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting(
+                    "ConnectionStrings:OpsDb",
+                    "Host=ops-production-test.invalid;Database=ops_test;Username=ops_test;Password=ops_test");
+                builder.UseSetting("Messaging:Provider", "RabbitMQ");
+                builder.UseSetting("RabbitMQ:HostName", "ops-production-test.invalid");
+                builder.UseSetting("Iam:BaseUrl", "http://iam.ops-production-test.invalid");
+                builder.UseSetting("Ops:LeaseReaper:Enabled", "false");
+
+                // Development 的 fake 凭据在 Production 宿主里被显式配上：不配的话 Production 分支
+                // 拿不到可比对的 secret，用例就退化成「没有凭据当然 401」，证明不了「Production 不接受
+                // Development fake 凭据」。
+                builder.UseSetting("ConnectorHostCredential:Secret", DevelopmentFakeConnectorSecret);
+
+                builder.WithoutCapBackgroundProcessing();
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IHttpMessageHandlerBuilderFilter>(iam));
+            });
+    }
+
     private static WebApplicationFactory<Program> CreateEfInMemoryFactory(string databaseName)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                // PostgreSQL 档同样会注册 CAP；这些用例只验 EF 查询面，不需要 CAP 后台处理。
+                builder.WithoutCapBackgroundProcessing();
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
