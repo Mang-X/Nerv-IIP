@@ -24,7 +24,7 @@ function Test-NervDockerResourceOwnership {
     )
 
     $id = "$($InspectObject.Id)"
-    if ($RecordedIds -cnotcontains $id) {
+    if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($RecordedIds), [StringComparer]::Ordinal).Contains([string]$id)) {
         return $false
     }
 
@@ -44,7 +44,7 @@ function Test-NervDockerResourceOwnership {
     }
 
     $sessionLabel = $labels.PSObject.Properties['com.nerv-iip.session']
-    return $null -ne $sessionLabel -and "$($sessionLabel.Value)" -ceq $SessionId
+    return $null -ne $sessionLabel -and [string]::Equals([string]$sessionLabel.Value, $SessionId, [StringComparison]::Ordinal)
 }
 
 function Test-NervDockerRecordedNameOwnership {
@@ -58,7 +58,7 @@ function Test-NervDockerRecordedNameOwnership {
         return $false
     }
 
-    return ($RecordedNames -ccontains $Name) -and
+    return ([Collections.Generic.HashSet[string]]::new([string[]]@($RecordedNames), [StringComparer]::Ordinal).Contains($Name)) -and
         $Name.EndsWith("-$SessionId", [StringComparison]::Ordinal)
 }
 
@@ -76,7 +76,7 @@ function Test-NervDockerOptionalSessionLabel {
     }
 
     $sessionLabel = $Labels.PSObject.Properties['com.nerv-iip.session']
-    return $null -eq $sessionLabel -or "$($sessionLabel.Value)" -ceq $SessionId
+    return $null -eq $sessionLabel -or [string]::Equals([string]$sessionLabel.Value, $SessionId, [StringComparison]::Ordinal)
 }
 
 function Test-NervDockerNetworkOwnership {
@@ -87,13 +87,13 @@ function Test-NervDockerNetworkOwnership {
     )
 
     if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) { return $false }
-    if (@('bridge', 'host', 'none') -ccontains "$($InspectObject.Name)") { return $false }
+    if ([Collections.Generic.HashSet[string]]::new([string[]]@('bridge', 'host', 'none'), [StringComparer]::Ordinal).Contains([string]$InspectObject.Name)) { return $false }
 
     $id = "$($InspectObject.Id)"
     $labels = if ($null -ne $InspectObject.PSObject.Properties['Labels']) { $InspectObject.Labels } else { $null }
     $sessionLabel = if ($null -ne $labels) { $labels.PSObject.Properties['com.nerv-iip.session'] } else { $null }
-    if ($null -ne $sessionLabel) { return "$($sessionLabel.Value)" -ceq $SessionId }
-    return $RecordedIds -ccontains $id
+    if ($null -ne $sessionLabel) { return [string]::Equals([string]$sessionLabel.Value, $SessionId, [StringComparison]::Ordinal) }
+    return [Collections.Generic.HashSet[string]]::new([string[]]@($RecordedIds), [StringComparer]::Ordinal).Contains($id)
 }
 
 function Get-NervFullStackCleanupWorkingDirectory {
@@ -196,7 +196,7 @@ function Get-NervAspireResourceSnapshot {
         [Parameter(Mandatory)] [string] $ResourceName
     )
 
-    $matches = @($DescribeObject.resources | Where-Object { "$($_.displayName)" -ceq $ResourceName })
+    $matches = @($DescribeObject.resources | Where-Object { [string]::Equals([string]$_.displayName, $ResourceName, [StringComparison]::Ordinal) })
     if ($matches.Count -ne 1) {
         throw "Expected one Aspire resource named '$ResourceName', found $($matches.Count)."
     }
@@ -211,7 +211,7 @@ function Get-NervAspireResourceEndpoint {
     )
 
     $resource = Get-NervAspireResourceSnapshot -DescribeObject $DescribeObject -ResourceName $ResourceName
-    $matches = @($resource.urls | Where-Object { "$($_.name)" -ceq $EndpointName })
+    $matches = @($resource.urls | Where-Object { [string]::Equals([string]$_.name, $EndpointName, [StringComparison]::Ordinal) })
     if ($matches.Count -ne 1 -or [string]::IsNullOrWhiteSpace("$($matches[0].url)")) {
         throw "Expected one '$EndpointName' endpoint for Aspire resource '$ResourceName'."
     }
@@ -392,7 +392,7 @@ function Invoke-NervFullStackSmokeScenario {
 
     $snapshot = & $AspireSnapshotAction $Manifest
     $finishedProjects = @($snapshot.resources | Where-Object {
-        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished'
+        "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase)
     })
     if ($finishedProjects.Count -gt 0) {
         throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
@@ -476,9 +476,9 @@ function Assert-NervLeaderDemoMainChainEvidence {
         'wms-completed-account-receivable',
         'account-receivable-voucher'
     )
-    if ("$($evidence.runtimeProfileSource)" -cne 'session-manifest') { throw 'Leader-demo evidence runtime profile must come from the managed session manifest.' }
-    if ("$($evidence.transport)" -cne 'redis-cross-process') { throw 'Leader-demo evidence must declare redis-cross-process transport.' }
-    if ("$($evidence.persistence)" -cne 'postgresql') { throw 'Leader-demo evidence must declare PostgreSQL persistence.' }
+    if (-not [string]::Equals([string]$evidence.runtimeProfileSource, 'session-manifest', [StringComparison]::Ordinal)) { throw 'Leader-demo evidence runtime profile must come from the managed session manifest.' }
+    if (-not [string]::Equals([string]$evidence.transport, 'redis-cross-process', [StringComparison]::Ordinal)) { throw 'Leader-demo evidence must declare redis-cross-process transport.' }
+    if (-not [string]::Equals([string]$evidence.persistence, 'postgresql', [StringComparison]::Ordinal)) { throw 'Leader-demo evidence must declare PostgreSQL persistence.' }
     if ([string]::IsNullOrWhiteSpace("$($evidence.salesOrderNo)") -or "$($evidence.salesOrderNo)" -notlike 'SO-MAN524-*') {
         throw 'Leader-demo evidence must identify one run-scoped SO-MAN524-* sales order.'
     }
@@ -487,31 +487,31 @@ function Assert-NervLeaderDemoMainChainEvidence {
         throw "Leader-demo evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
     }
     foreach ($node in $requiredNodes) {
-        $nodeEntries = @($entries | Where-Object { "$($_.node)" -ceq $node })
+        $nodeEntries = @($entries | Where-Object { [string]::Equals([string]$_.node, $node, [StringComparison]::Ordinal) })
         if ($nodeEntries.Count -ne 1) { throw "Leader-demo evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)." }
     }
     foreach ($entry in $entries) {
-        if (@('runtime-confirmed', 'gap', 'not-verified') -cnotcontains "$($entry.conclusion)") {
+        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@('runtime-confirmed', 'gap', 'not-verified'), [StringComparer]::Ordinal).Contains([string]$entry.conclusion)) {
             throw "Leader-demo evidence node '$($entry.node)' has invalid conclusion '$($entry.conclusion)'."
         }
         if ([string]::IsNullOrWhiteSpace("$($entry.stableKey)") -or [string]::IsNullOrWhiteSpace("$($entry.demoWording)")) {
             throw "Leader-demo evidence node '$($entry.node)' is missing its stable key or demo wording."
         }
     }
-    $notVerifiedEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'not-verified' })
+    $notVerifiedEntries = @($entries | Where-Object { [string]::Equals([string]$_.conclusion, 'not-verified', [StringComparison]::Ordinal) })
     if ($notVerifiedEntries.Count -gt 0) {
         throw "Leader-demo evidence cannot pass with not-verified nodes: $($notVerifiedEntries.node -join ', ')."
     }
     $unexpectedGaps = @($entries | Where-Object {
-        "$($_.conclusion)" -ceq 'gap' -and -not (
-            "$($_.node)" -ceq 'inventory-produced-lot-fulfillment-lookup' -and
+        [string]::Equals([string]$_.conclusion, 'gap', [StringComparison]::Ordinal) -and -not (
+            [string]::Equals([string]$_.node, 'inventory-produced-lot-fulfillment-lookup', [StringComparison]::Ordinal) -and
             "$($_.responsibilityIssue)" -match '(?<!\d)#972(?!\d)'
         )
     })
     if ($unexpectedGaps.Count -gt 0) {
         throw "Leader-demo evidence contains gaps outside the accepted #972 baseline: $($unexpectedGaps.node -join ', ')."
     }
-    if (@($entries | Where-Object { "$($_.conclusion)" -ceq 'runtime-confirmed' }).Count -eq 0) {
+    if (@($entries | Where-Object { [string]::Equals([string]$_.conclusion, 'runtime-confirmed', [StringComparison]::Ordinal) }).Count -eq 0) {
         throw 'Leader-demo evidence must contain at least one runtime-confirmed node.'
     }
     $raw = Get-Content -LiteralPath $EvidencePath -Raw
@@ -581,10 +581,10 @@ function Invoke-NervLeaderDemoMainChainScenario {
         }
     }
 
-    if ("$($Manifest.runtime.messagingProvider)" -cne 'Redis') {
+    if (-not [string]::Equals([string]$Manifest.runtime.messagingProvider, 'Redis', [StringComparison]::Ordinal)) {
         throw "Leader-demo main-chain requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
     }
-    if ("$($Manifest.runtime.persistenceProvider)" -cne 'PostgreSQL') {
+    if (-not [string]::Equals([string]$Manifest.runtime.persistenceProvider, 'PostgreSQL', [StringComparison]::Ordinal)) {
         throw "Leader-demo main-chain requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
     }
 
@@ -598,8 +598,8 @@ function Invoke-NervLeaderDemoMainChainScenario {
 
     $snapshot = & $AspireSnapshotAction $Manifest
     $finishedProjects = @($snapshot.resources | Where-Object {
-        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished' -and
-        $resourceNames -ccontains "$($_.displayName)"
+        "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase) -and
+        [Collections.Generic.HashSet[string]]::new([string[]]@($resourceNames), [StringComparer]::Ordinal).Contains([string]$_.displayName)
     })
     if ($finishedProjects.Count -gt 0) {
         throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
@@ -634,13 +634,13 @@ function Assert-NervLeaderDemoBranchEvidence {
         throw "$ScenarioLabel evidence was not created at '$EvidencePath'."
     }
     $evidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json -Depth 100
-    if ("$($evidence.runtimeProfileSource)" -cne 'session-manifest') {
+    if (-not [string]::Equals([string]$evidence.runtimeProfileSource, 'session-manifest', [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel evidence runtime profile must come from the managed session manifest."
     }
-    if ("$($evidence.transport)" -cne 'redis-cross-process') {
+    if (-not [string]::Equals([string]$evidence.transport, 'redis-cross-process', [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel evidence must declare redis-cross-process transport."
     }
-    if ("$($evidence.persistence)" -cne 'postgresql') {
+    if (-not [string]::Equals([string]$evidence.persistence, 'postgresql', [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel evidence must declare PostgreSQL persistence."
     }
     foreach ($identity in $RequiredIdentityPrefixes.GetEnumerator()) {
@@ -663,9 +663,9 @@ function Assert-NervLeaderDemoBranchEvidence {
     # the hop is blocked, and every entry must carry the public request it actually observed.
     $blockedProperty = $evidence.PSObject.Properties['blockedPublicPaths']
     $blockedEntries = if ($null -eq $blockedProperty -or $null -eq $blockedProperty.Value) { @() } else { @($blockedProperty.Value) }
-    [string[]] $observedBlockedCapabilities = @(@($blockedEntries | ForEach-Object { "$($_.capability)" }) | Sort-Object -Unique)
-    [string[]] $expectedBlockedCapabilities = @(@($ExpectedBlockedCapabilities) | Sort-Object -Unique)
-    if (($expectedBlockedCapabilities -join '|') -cne ($observedBlockedCapabilities -join '|')) {
+    [string[]] $observedBlockedCapabilities = @(Get-NervStringsSorted -Values @($blockedEntries | ForEach-Object { [string]$_.capability }) -Comparer ([StringComparer]::Ordinal) -Unique)
+    [string[]] $expectedBlockedCapabilities = @(Get-NervStringsSorted -Values @($ExpectedBlockedCapabilities) -Comparer ([StringComparer]::Ordinal) -Unique)
+    if (-not [string]::Equals(($expectedBlockedCapabilities -join '|'), ($observedBlockedCapabilities -join '|'), [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel evidence must declare exactly these blocked capabilities: [$($expectedBlockedCapabilities -join ', ')]; found [$($observedBlockedCapabilities -join ', ')]."
     }
     if (@($blockedEntries).Length -ne $observedBlockedCapabilities.Length) {
@@ -689,24 +689,24 @@ function Assert-NervLeaderDemoBranchEvidence {
         throw "$ScenarioLabel evidence must contain exactly $($RequiredNodes.Count) entries; found $($entries.Count)."
     }
     foreach ($node in $RequiredNodes) {
-        $nodeEntries = @($entries | Where-Object { "$($_.node)" -ceq $node })
+        $nodeEntries = @($entries | Where-Object { [string]::Equals([string]$_.node, $node, [StringComparison]::Ordinal) })
         if ($nodeEntries.Count -ne 1) {
             throw "$ScenarioLabel evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)."
         }
     }
     foreach ($entry in $entries) {
-        if (@('runtime-confirmed', 'gap', 'not-verified') -cnotcontains "$($entry.conclusion)") {
+        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@('runtime-confirmed', 'gap', 'not-verified'), [StringComparer]::Ordinal).Contains([string]$entry.conclusion)) {
             throw "$ScenarioLabel evidence node '$($entry.node)' has invalid conclusion '$($entry.conclusion)'."
         }
         if ([string]::IsNullOrWhiteSpace("$($entry.stableKey)") -or [string]::IsNullOrWhiteSpace("$($entry.demoWording)")) {
             throw "$ScenarioLabel evidence node '$($entry.node)' is missing its stable key or demo wording."
         }
     }
-    $notVerifiedEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'not-verified' })
+    $notVerifiedEntries = @($entries | Where-Object { [string]::Equals([string]$_.conclusion, 'not-verified', [StringComparison]::Ordinal) })
     if ($notVerifiedEntries.Count -gt 0) {
         throw "$ScenarioLabel evidence cannot pass with not-verified nodes: $($notVerifiedEntries.node -join ', ')."
     }
-    $gapEntries = @($entries | Where-Object { "$($_.conclusion)" -ceq 'gap' })
+    $gapEntries = @($entries | Where-Object { [string]::Equals([string]$_.conclusion, 'gap', [StringComparison]::Ordinal) })
     if ($gapEntries.Count -gt 0) {
         throw "$ScenarioLabel evidence cannot pass with gap nodes: $($gapEntries.node -join ', ')."
     }
@@ -864,10 +864,10 @@ function Invoke-NervLeaderDemoBranchScenario {
     }
     if ($null -eq $BrowserAction) { $BrowserAction = $DefaultBrowserAction }
 
-    if ("$($Manifest.runtime.messagingProvider)" -cne 'Redis') {
+    if (-not [string]::Equals([string]$Manifest.runtime.messagingProvider, 'Redis', [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
     }
-    if ("$($Manifest.runtime.persistenceProvider)" -cne 'PostgreSQL') {
+    if (-not [string]::Equals([string]$Manifest.runtime.persistenceProvider, 'PostgreSQL', [StringComparison]::Ordinal)) {
         throw "$ScenarioLabel requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
     }
 
@@ -875,8 +875,8 @@ function Invoke-NervLeaderDemoBranchScenario {
 
     $snapshot = & $AspireSnapshotAction $Manifest
     $finishedProjects = @($snapshot.resources | Where-Object {
-        "$($_.resourceType)" -like 'Project*' -and "$($_.state)" -eq 'Finished' -and
-        $ResourceNames -ccontains "$($_.displayName)"
+        "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase) -and
+        [Collections.Generic.HashSet[string]]::new([string[]]@($ResourceNames), [StringComparer]::Ordinal).Contains([string]$_.displayName)
     })
     if ($finishedProjects.Count -gt 0) {
         throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
@@ -1000,9 +1000,9 @@ function Invoke-NervFullStackGuardian {
             continue
         }
 
-        if ("$($manifest.state)" -eq 'Stopped') { return [pscustomobject]@{ State = 'Stopped' } }
+        if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
         $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset]::UtcNow
-        $coordinatorMissing = $Mode -eq 'Automated' -and
+        $coordinatorMissing = [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
             ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc) -or -not (& $CoordinatorAliveAction))
         if (-not ($leaseExpired -or $coordinatorMissing)) {
             & $DelayAction $IntervalSeconds
@@ -1014,7 +1014,7 @@ function Invoke-NervFullStackGuardian {
             try {
                 & $StopAction
                 $afterStop = & $ReadAction
-                if ("$($afterStop.state)" -eq 'Stopped') { return [pscustomobject]@{ State = 'Stopped' } }
+                if ([string]::Equals([string]$afterStop.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
                 $lastStopError = "cleanup returned state '$($afterStop.state)'"
             }
             catch { $lastStopError = $_.Exception.Message }
@@ -1329,18 +1329,16 @@ function Merge-NervSessionContainerIds {
         [object[]] $DiscoveredRecords = @()
     )
 
-    return @(
+    return @(Get-NervStringsSorted -Values @(
         @($RecordedIds | ForEach-Object { "$_" }) +
             @($DiscoveredRecords | ForEach-Object { "$($_.id)" }) |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-            Select-Object -Unique
-    )
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -Comparer ([StringComparer]::Ordinal) -Unique)
 }
 
 function Get-NervContainerNetworkIds {
     param([object[]] $Containers = @())
 
-    return @(
+    return @(Get-NervStringsSorted -Values @(
         foreach ($container in $Containers) {
             $networks = $container.NetworkSettings.Networks
             if ($null -eq $networks) { continue }
@@ -1349,7 +1347,7 @@ function Get-NervContainerNetworkIds {
                 if (-not [string]::IsNullOrWhiteSpace($networkId)) { $networkId }
             }
         }
-    ) | Select-Object -Unique
+    ) -Comparer ([StringComparer]::Ordinal) -Unique)
 }
 
 function Get-NervRecordableDcpNetworkIds {
@@ -1358,7 +1356,7 @@ function Get-NervRecordableDcpNetworkIds {
         [Parameter(Mandatory)] [string[]] $OwnedContainerIds
     )
 
-    return @(
+    return @(Get-NervStringsSorted -Values @(
         foreach ($network in $Networks) {
             $name = "$($network.Name)"
             if (-not $name.StartsWith('aspire-session-network-', [StringComparison]::Ordinal)) { continue }
@@ -1368,18 +1366,18 @@ function Get-NervRecordableDcpNetworkIds {
             $creator = $labels.PSObject.Properties['com.microsoft.developer.usvc-dev.creatorProcessId']
             $persistent = $labels.PSObject.Properties['com.microsoft.developer.usvc-dev.persistent']
             if ($null -eq $creator -or [string]::IsNullOrWhiteSpace("$($creator.Value)")) { continue }
-            if ($null -eq $persistent -or "$($persistent.Value)" -cne 'false') { continue }
+            if ($null -eq $persistent -or -not [string]::Equals([string]$persistent.Value, 'false', [StringComparison]::Ordinal)) { continue }
 
             $attachedIds = @(if ($null -ne $network.PSObject.Properties['Containers'] -and $null -ne $network.Containers) {
                 $network.Containers.PSObject.Properties.Name
             })
             if ($attachedIds.Count -eq 0) { continue }
-            if (@($attachedIds | Where-Object { $OwnedContainerIds -cnotcontains $_ }).Count -gt 0) { continue }
+            if (@($attachedIds | Where-Object { -not [Collections.Generic.HashSet[string]]::new([string[]]@($OwnedContainerIds), [StringComparer]::Ordinal).Contains([string]$_) }).Count -gt 0) { continue }
 
             $id = "$($network.Id)"
             if (-not [string]::IsNullOrWhiteSpace($id)) { $id }
         }
-    ) | Select-Object -Unique
+    ) -Comparer ([StringComparer]::Ordinal) -Unique)
 }
 
 function Get-NervFullStackDcpNetworkIds {
@@ -1433,7 +1431,7 @@ function Get-NervSessionDockerResources {
         $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory)
         $candidateContainerIds = @(Merge-NervSessionContainerIds -RecordedIds $recordedContainerIds -DiscoveredRecords $discoveredContainers)
         $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list"
-        $presentContainerIds = @($candidateContainerIds | Where-Object { $listedContainerIds -ccontains $_ })
+        $presentContainerIds = @($candidateContainerIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedContainerIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $containerInspect = if ($presentContainerIds.Count -gt 0) {
             @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect")
         }
@@ -1444,7 +1442,7 @@ function Get-NervSessionDockerResources {
         $discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers $containers)
         $ownedContainerIds = @($containers | ForEach-Object { "$($_.Id)" })
         foreach ($id in $presentContainerIds) {
-            if ($ownedContainerIds -cnotcontains $id) { $unresolved.Add("container:$id") }
+            if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($ownedContainerIds), [StringComparer]::Ordinal).Contains([string]$id)) { $unresolved.Add("container:$id") }
         }
     }
     catch {
@@ -1453,9 +1451,9 @@ function Get-NervSessionDockerResources {
     }
 
     try {
-        $candidateNetworkIds = @($recordedNetworkIds + $discoveredNetworkIds | Select-Object -Unique)
+        $candidateNetworkIds = @(Get-NervStringsSorted -Values @($recordedNetworkIds + $discoveredNetworkIds) -Comparer ([StringComparer]::Ordinal) -Unique)
         $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list"
-        $presentNetworkIds = @($candidateNetworkIds | Where-Object { $listedNetworkIds -ccontains $_ })
+        $presentNetworkIds = @($candidateNetworkIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedNetworkIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $networkInspect = if ($presentNetworkIds.Count -gt 0) {
             @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect")
         }
@@ -1465,7 +1463,7 @@ function Get-NervSessionDockerResources {
         })
         $ownedNetworkIds = @($networks | ForEach-Object { "$($_.Id)" })
         foreach ($id in $presentNetworkIds) {
-            if ($ownedNetworkIds -cnotcontains $id) { $unresolved.Add("network:$id") }
+            if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($ownedNetworkIds), [StringComparer]::Ordinal).Contains([string]$id)) { $unresolved.Add("network:$id") }
         }
     }
     catch {
@@ -1475,7 +1473,7 @@ function Get-NervSessionDockerResources {
 
     try {
         $listedVolumeNames = Get-NervDockerListedValues -Arguments @('volume', 'ls', '--format', '{{.Name}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-list"
-        $presentVolumeNames = @($recordedVolumeNames | Where-Object { $listedVolumeNames -ccontains $_ })
+        $presentVolumeNames = @($recordedVolumeNames | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedVolumeNames), [StringComparer]::Ordinal).Contains([string]$_) })
         $volumeInspect = if ($presentVolumeNames.Count -gt 0) {
             @(Get-NervDockerInspectObjects -Kind volume -Identifiers $presentVolumeNames -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-inspect")
         }
@@ -1487,7 +1485,7 @@ function Get-NervSessionDockerResources {
         })
         $ownedVolumeNames = @($volumes | ForEach-Object { "$($_.Name)" })
         foreach ($name in $presentVolumeNames) {
-            if ($ownedVolumeNames -cnotcontains $name) { $unresolved.Add("volume:$name") }
+            if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($ownedVolumeNames), [StringComparer]::Ordinal).Contains([string]$name)) { $unresolved.Add("volume:$name") }
         }
     }
     catch {
@@ -1499,7 +1497,7 @@ function Get-NervSessionDockerResources {
         Containers = @($containers)
         Networks = @($networks)
         Volumes = @($volumes)
-        Unresolved = @($unresolved | Select-Object -Unique)
+        Unresolved = @(Get-NervStringsSorted -Values @($unresolved) -Comparer ([StringComparer]::Ordinal) -Unique)
     }
 }
 
@@ -1537,7 +1535,7 @@ function Remove-NervSessionDockerResources {
 
     return [pscustomobject]@{
         Complete = $unresolved.Count -eq 0
-        Remaining = @($unresolved | Select-Object -Unique)
+        Remaining = @(Get-NervStringsSorted -Values @($unresolved) -Comparer ([StringComparer]::Ordinal) -Unique)
     }
 }
 
@@ -1642,7 +1640,7 @@ function Stop-NervWorktreeProcesses {
     foreach ($process in @(& $ProcessQueryAction)) {
         $processId = [int] $process.ProcessId
         if ($processId -le 0 -or $excluded -contains $processId) { continue }
-        if ($allowedProcessNames -cnotcontains "$($process.Name)".ToLowerInvariant()) { continue }
+        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($allowedProcessNames), [StringComparer]::Ordinal).Contains([string]("$($process.Name)".ToLowerInvariant()))) { continue }
         $commandLine = "$($process.CommandLine)".Replace('/', '\')
         if ([string]::IsNullOrWhiteSpace($commandLine) -or -not $commandLine.Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
         & $StopAction $processId "Exact worktree process cleanup for $normalizedRoot"
@@ -1706,17 +1704,17 @@ function Stop-NervFullStackSession {
     }
 
     $manifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
-    $wasStopped = "$($manifest.state)" -eq 'Stopped'
+    $wasStopped = [string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)
     if (-not $wasStopped) {
         $manifest = Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
             $lockedManifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
-            if ("$($lockedManifest.state)" -ne 'Stopped' -and "$($lockedManifest.state)" -ne 'Stopping') {
+            if (-not [string]::Equals([string]$lockedManifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase) -and -not [string]::Equals([string]$lockedManifest.state, 'Stopping', [StringComparison]::OrdinalIgnoreCase)) {
                 $lockedManifest = Move-NervFullStackSessionState -Manifest $lockedManifest -State Stopping
                 Write-NervFullStackManifest -Manifest $lockedManifest -StateRoot $StateRoot
             }
             return $lockedManifest
         }
-        $wasStopped = "$($manifest.state)" -eq 'Stopped'
+        $wasStopped = [string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)
     }
 
     $errors = [System.Collections.Generic.List[string]]::new()
@@ -1739,10 +1737,8 @@ function Stop-NervFullStackSession {
         $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
         $dockerResult = [pscustomobject]@{ Complete = $false; Remaining = @('docker:inspection-failed') }
     }
-    $remaining = @(
-        @($cleanupFailures) + @($dockerResult.Remaining | ForEach-Object { "$_" }) |
-            Select-Object -Unique
-    )
+    $remaining = @(Get-NervStringsSorted -Values @(
+        @($cleanupFailures) + @($dockerResult.Remaining | ForEach-Object { "$_" })) -Comparer ([StringComparer]::Ordinal) -Unique)
     $complete = $errors.Count -eq 0 -and [bool] $dockerResult.Complete -and $remaining.Count -eq 0
 
     $manifest = Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
@@ -1751,11 +1747,11 @@ function Stop-NervFullStackSession {
         $lockedManifest.cleanup.errors = @($lockedManifest.cleanup.errors) + @($errors)
         if ($complete) {
             $lockedManifest.cleanup.completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-            if ("$($lockedManifest.state)" -eq 'Stopping') {
+            if ([string]::Equals([string]$lockedManifest.state, 'Stopping', [StringComparison]::OrdinalIgnoreCase)) {
                 $lockedManifest = Move-NervFullStackSessionState -Manifest $lockedManifest -State Stopped
             }
         }
-        elseif ("$($lockedManifest.state)" -eq 'Stopping') {
+        elseif ([string]::Equals([string]$lockedManifest.state, 'Stopping', [StringComparison]::OrdinalIgnoreCase)) {
             $lockedManifest = Move-NervFullStackSessionState -Manifest $lockedManifest -State CleanupFailed
         }
         Write-NervFullStackManifest -Manifest $lockedManifest -StateRoot $StateRoot
@@ -2102,10 +2098,10 @@ function Invoke-NervLeaderDemoVerification {
         'screen' = $accessUrls.screen
     }
 
-    if ($state -cne 'Running') {
+    if (-not [string]::Equals($state, 'Running', [StringComparison]::Ordinal)) {
         $failures.Add([ordered]@{ name = 'session'; message = "Session '$sessionId' is '$state', expected Running."; hint = 'Run .\nerv.ps1 demo reset and retry.' })
     }
-    if ($messagingProvider -cne 'Redis') {
+    if (-not [string]::Equals($messagingProvider, 'Redis', [StringComparison]::Ordinal)) {
         $failures.Add([ordered]@{ name = 'messaging'; message = "Leader-demo session '$sessionId' must use Redis messaging; manifest reports '$messagingProvider'."; hint = 'Run .\nerv.ps1 demo reset to recreate the isolated Redis profile.' })
     }
     foreach ($urlName in @('gateway', 'businessGateway', 'console', 'businessConsole', 'screen')) {
@@ -2146,12 +2142,15 @@ function Invoke-NervLeaderDemoVerification {
             @(Get-NervObjectPropertyValue -InputObject $snapshot -Name 'resources')
         }
         else { @() }
+        $failedSnapshotStates = [Collections.Generic.HashSet[string]]::new(
+            [string[]]@('Missing', 'Ambiguous', 'Failed', 'Finished', 'Exited'),
+            [StringComparer]::OrdinalIgnoreCase)
         foreach ($resource in $requiredResources) {
             $resourceName = "$($resource.name)"
-            $matches = @($snapshotResources | Where-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'displayName')" -ceq $resourceName })
+            $matches = @($snapshotResources | Where-Object { [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'displayName'), $resourceName, [StringComparison]::Ordinal) })
             $snapshotState = if ($matches.Count -eq 1) { "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'state')" } elseif ($matches.Count -eq 0) { 'Missing' } else { 'Ambiguous' }
             $waitFailure = if ($waitFailures.ContainsKey($resourceName)) { "$($waitFailures[$resourceName])" } else { $null }
-            $stateFailed = $snapshotState -in @('Missing', 'Ambiguous', 'Failed', 'Finished', 'Exited')
+            $stateFailed = $failedSnapshotStates.Contains([string]$snapshotState)
             $hint = $null
             if (-not [string]::IsNullOrWhiteSpace($waitFailure)) {
                 $hint = "Aspire wait failed: $waitFailure Inspect '$resourceName' logs under '$fullStackArtifactPath' and retry within the bounded gate."
@@ -2189,14 +2188,14 @@ function Invoke-NervLeaderDemoVerification {
                 $safeMessage = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)" -SensitiveValues @($sensitiveValues)
                 $hint = "Check '$($httpTarget.name)' startup logs under '$fullStackArtifactPath' and retry the health gate."
                 $failures.Add([ordered]@{ name = "$($httpTarget.name)"; message = $safeMessage; hint = $hint })
-                $resourceRow = @($resourceEvidence | Where-Object { $_.name -ceq "$($httpTarget.name)" }) | Select-Object -First 1
+                $resourceRow = @($resourceEvidence | Where-Object { [string]::Equals([string]$_.name, [string]$httpTarget.name, [StringComparison]::Ordinal) }) | Select-Object -First 1
                 if ($null -ne $resourceRow) { $resourceRow.hint = $hint }
             }
         }
     }
 
     if ($resourceEvidence.Count -eq 0) {
-        $preconditionNames = @($failures | ForEach-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'name')" } | Select-Object -Unique)
+        $preconditionNames = @(Get-NervStringsSorted -Values @($failures | ForEach-Object { [string](Get-NervObjectPropertyValue -InputObject $_ -Name 'name') }) -Comparer ([StringComparer]::Ordinal) -Unique)
         $preconditionSummary = if ($preconditionNames.Count -gt 0) { $preconditionNames -join ', ' } else { 'unavailable precondition' }
         foreach ($resource in $requiredResources) {
             $resourceName = "$($resource.name)"
@@ -2262,12 +2261,10 @@ function Invoke-NervLeaderDemoVerification {
             $principalData = Get-NervLeaderDemoResponseData -Response $principalResponse
             $principalId = "$(Get-NervObjectPropertyValue -InputObject $principalData -Name 'principalId')"
             if ([string]::IsNullOrWhiteSpace($principalId)) { throw 'Platform Gateway auth/me returned no principal ID.' }
-            $principalRoleIds = @(
+            $principalRoleIds = @(Get-NervStringsSorted -Values @(
                 Get-NervObjectPropertyValue -InputObject $principalData -Name 'roleIds' |
                     ForEach-Object { "$_" } |
-                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-                    Select-Object -Unique
-            )
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -Comparer ([StringComparer]::Ordinal) -Unique)
             if ($principalRoleIds.Count -eq 0) { throw 'Platform Gateway auth/me returned no membership role IDs.' }
             $observedPrincipal = [ordered]@{
                 principalId = $principalId
@@ -2286,7 +2283,7 @@ function Invoke-NervLeaderDemoVerification {
             $resolvedRoles = [System.Collections.Generic.List[object]]::new()
             foreach ($roleId in $principalRoleIds) {
                 $role = @($roleItems | Where-Object {
-                    "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'roleId')" -ceq $roleId
+                    [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'roleId'), $roleId, [StringComparison]::Ordinal)
                 }) | Select-Object -First 1
                 if ($null -eq $role) { throw "Membership role '$roleId' was not found in the public IAM role catalog." }
                 $roleName = "$(Get-NervObjectPropertyValue -InputObject $role -Name 'roleName')"
@@ -2306,46 +2303,44 @@ function Invoke-NervLeaderDemoVerification {
                     $response = & $PublicFactQueryAction "$($fact.key)" "$($fact.link)" $headers
                     $data = Get-NervLeaderDemoResponseData -Response $response
                     $matches = @()
-                    switch ("$($fact.key)") {
-                        'SO-DEMO-001' {
+                    if ([string]::Equals([string]$fact.key, 'SO-DEMO-001', [StringComparison]::OrdinalIgnoreCase)) {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
-                            $matches = @($items | Where-Object { "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'salesOrderNo')" -ceq 'SO-DEMO-001' })
+                            $matches = @($items | Where-Object { [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'salesOrderNo'), 'SO-DEMO-001', [StringComparison]::Ordinal) })
                             if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
-                        'WO-DEMO-Q01' {
-                            if ("$(Get-NervObjectPropertyValue -InputObject $data -Name 'workOrderId')" -ceq 'WO-DEMO-Q01') { $matches = @($data) }
+                    elseif ([string]::Equals([string]$fact.key, 'WO-DEMO-Q01', [StringComparison]::OrdinalIgnoreCase)) {
+                            if ([string]::Equals([string](Get-NervObjectPropertyValue -InputObject $data -Name 'workOrderId'), 'WO-DEMO-Q01', [StringComparison]::Ordinal)) { $matches = @($data) }
                             if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
-                        'DEV-CNC-DEMO' {
+                    elseif ([string]::Equals([string]$fact.key, 'DEV-CNC-DEMO', [StringComparison]::OrdinalIgnoreCase)) {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'resources')
                             $matches = @($items | Where-Object {
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'resourceType')" -ceq 'device-asset' -and
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'code')" -ceq 'DEV-CNC-DEMO'
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'resourceType'), 'device-asset', [StringComparison]::Ordinal) -and
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'code'), 'DEV-CNC-DEMO', [StringComparison]::Ordinal)
                             })
                             if ($matches.Count -gt 0) {
                                 $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'active')) { 'active' } else { 'disabled' }
                             }
                         }
-                        'ALARM-DEMO-001' {
+                    elseif ([string]::Equals([string]$fact.key, 'ALARM-DEMO-001', [StringComparison]::OrdinalIgnoreCase)) {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
                             $matches = @($items | Where-Object {
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId')" -ceq 'DEV-CNC-DEMO' -and
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'ruleCode')" -ceq 'ALARM-DEMO-001'
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId'), 'DEV-CNC-DEMO', [StringComparison]::Ordinal) -and
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'ruleCode'), 'ALARM-DEMO-001', [StringComparison]::Ordinal)
                             })
                             if ($matches.Count -gt 0) {
                                 $observedStatus = if ([bool] (Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'isEnabled')) { 'enabled' } else { 'disabled' }
                             }
                         }
-                        'MWO-DEMO-001' {
+                    elseif ([string]::Equals([string]$fact.key, 'MWO-DEMO-001', [StringComparison]::OrdinalIgnoreCase)) {
                             $items = @(Get-NervObjectPropertyValue -InputObject $data -Name 'items')
                             $matches = @($items | Where-Object {
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId')" -ceq 'DEV-CNC-DEMO' -and
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceAlarmId')" -ceq 'ALARM-DEMO-001' -and
-                                "$(Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceReferenceId')" -ceq 'MWO-DEMO-001'
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'deviceAssetId'), 'DEV-CNC-DEMO', [StringComparison]::Ordinal) -and
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceAlarmId'), 'ALARM-DEMO-001', [StringComparison]::Ordinal) -and
+                                [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'sourceReferenceId'), 'MWO-DEMO-001', [StringComparison]::Ordinal)
                             })
                             if ($matches.Count -gt 0) { $observedStatus = "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'status')" }
                         }
-                    }
                     $matchCount = @($matches).Count
                     $found = $matchCount -eq 1
                     if ($matchCount -eq 0) {
@@ -2388,7 +2383,7 @@ function Invoke-NervLeaderDemoVerification {
     }
 
     foreach ($fact in $factDefinitions) {
-        if (@($factEvidence | Where-Object { $_.key -ceq "$($fact.key)" }).Count -eq 0) {
+        if (@($factEvidence | Where-Object { [string]::Equals([string]$_.key, [string]$fact.key, [StringComparison]::Ordinal) }).Count -eq 0) {
             $factEvidence.Add([ordered]@{
                 key = "$($fact.key)"
                 event = "$($fact.event)"
@@ -2495,7 +2490,7 @@ function Resolve-NervLeaderDemoOwnedSession {
     $pointerSessionId = "$($pointer.sessionId)"
     $manifest = Read-NervFullStackManifest -SessionId $pointerSessionId -StateRoot $StateRoot
     $manifestSessionId = "$($manifest.sessionId)"
-    if ($manifestSessionId -cne $pointerSessionId) {
+    if (-not [string]::Equals($manifestSessionId, $pointerSessionId, [StringComparison]::Ordinal)) {
         throw "Leader-demo pointer session '$pointerSessionId' does not match authoritative manifest session '$manifestSessionId'."
     }
     if ([string]::IsNullOrWhiteSpace("$($manifest.worktreeRoot)")) {
@@ -2607,7 +2602,7 @@ function Invoke-NervLeaderDemoCommand {
     $testReservationReclaimable = {
         param($Pointer)
 
-        if ("$($Pointer.ownershipState)" -cne 'Reserved') { return $false }
+        if (-not [string]::Equals([string]$Pointer.ownershipState, 'Reserved', [StringComparison]::Ordinal)) { return $false }
         $reservedSessionId = "$($Pointer.sessionId)"
         $manifestPath = Get-NervFullStackManifestPath -SessionId $reservedSessionId -StateRoot $resolvedStateRoot
         if (Test-Path -LiteralPath $manifestPath -PathType Leaf) { return $false }
@@ -2621,11 +2616,14 @@ function Invoke-NervLeaderDemoCommand {
         else {
             "$(& $OwnerProcessIdentityAction ([int] $Pointer.ownerPid) "$($Pointer.ownerProcessStartTimeUtc)")"
         }
-        if (@('Active', 'Absent', 'Mismatched', 'Unknown') -cnotcontains $identityStatus) {
+        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@('Active', 'Absent', 'Mismatched', 'Unknown'), [StringComparer]::Ordinal).Contains([string]$identityStatus)) {
             throw "Leader-demo reservation '$reservedSessionId' owner identity returned invalid status '$identityStatus'."
         }
-        if ($identityStatus -eq 'Active') { return $false }
-        if ($identityStatus -in @('Absent', 'Mismatched')) { return $true }
+        if ([string]::Equals($identityStatus, 'Active', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+        if (
+            [string]::Equals($identityStatus, 'Absent', [StringComparison]::Ordinal) -or
+            [string]::Equals($identityStatus, 'Mismatched', [StringComparison]::Ordinal)
+        ) { return $true }
 
         $createdAt = [DateTimeOffset]::Parse("$($Pointer.createdAtUtc)")
         return ($UtcNow - $createdAt).TotalSeconds -ge $ReservationTtlSeconds
@@ -2636,7 +2634,7 @@ function Invoke-NervLeaderDemoCommand {
             -StateRoot $resolvedStateRoot `
             -ExpectedWorktreeRoot $resolvedWorktreeRoot
         $pointerSessionId = "$($pointer.sessionId)"
-        if ("$($pointer.ownershipState)" -eq 'Reserved') {
+        if ([string]::Equals([string]$pointer.ownershipState, 'Reserved', [StringComparison]::OrdinalIgnoreCase)) {
             $manifestPath = Get-NervFullStackManifestPath -SessionId $pointerSessionId -StateRoot $resolvedStateRoot
             if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
                 if (& $testReservationReclaimable $pointer) {
@@ -2751,11 +2749,10 @@ function Invoke-NervLeaderDemoCommand {
         -StateRoot $resolvedStateRoot `
         -TimeoutSeconds $LifecycleLockTimeoutSeconds `
         -ScriptBlock {
-            switch ($Action) {
-                'start' {
+            if ([string]::Equals($Action, 'start', [StringComparison]::OrdinalIgnoreCase)) {
                     return (& $startSession)
                 }
-                'reset' {
+            elseif ([string]::Equals($Action, 'reset', [StringComparison]::OrdinalIgnoreCase)) {
                     $password = Get-NervLeaderDemoAdminPassword
                     $pointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $resolvedStateRoot
                     if (Test-Path -LiteralPath $pointerPath -PathType Leaf) {
@@ -2774,7 +2771,7 @@ function Invoke-NervLeaderDemoCommand {
                     }
                     return $newSessionId
                 }
-                'seed' {
+            elseif ([string]::Equals($Action, 'seed', [StringComparison]::OrdinalIgnoreCase)) {
                     $password = Get-NervLeaderDemoAdminPassword
                     $current = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
                     $exactSessionId = "$($current.SessionId)"
@@ -2783,7 +2780,7 @@ function Invoke-NervLeaderDemoCommand {
                         & $SeedAction $exactSessionId
                     }
                 }
-                'health-check' {
+            elseif ([string]::Equals($Action, 'health-check', [StringComparison]::OrdinalIgnoreCase)) {
                     $password = Get-NervLeaderDemoAdminPassword
                     $current = Resolve-NervLeaderDemoOwnedSession -StateRoot $resolvedStateRoot -ExpectedWorktreeRoot $resolvedWorktreeRoot
                     $exactSessionId = "$($current.SessionId)"
@@ -2791,7 +2788,7 @@ function Invoke-NervLeaderDemoCommand {
                         & $HealthCheckAction $exactSessionId
                     }
                 }
-                'stop' {
+            elseif ([string]::Equals($Action, 'stop', [StringComparison]::OrdinalIgnoreCase)) {
                     $target = & $resolveLifecycleTarget
                     $exactSessionId = "$($target.SessionId)"
                     if ($target.Reclaimed) {
@@ -2802,6 +2799,5 @@ function Invoke-NervLeaderDemoCommand {
                     Remove-NervLeaderDemoSessionPointer -StateRoot $resolvedStateRoot -ExpectedSessionId $exactSessionId
                     Write-Output "$exactSessionId state=Stopped"
                 }
-            }
         }
 }

@@ -59,10 +59,13 @@ function Assert-Equal {
         [string] $Message
     )
 
-    if ($Expected -cne $Actual) {
+    if ((-not [string]::Equals([string]($Expected), [string]($Actual), [StringComparison]::Ordinal))) {
         throw "$Message Expected='$Expected' Actual='$Actual'."
     }
 }
+
+$earlySettingsIndex = [Array]::IndexOf([object[]] @('--no-build', '--settings', 'early.runsettings'), '--settings')
+Assert-Equal -Expected 1 -Actual $earlySettingsIndex -Message 'Array.IndexOf must find --settings before index 4.'
 
 function Write-Utf8NoBom {
     param(
@@ -226,7 +229,7 @@ function Invoke-VerifierCase {
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             ForEach-Object { $_ | ConvertFrom-Json }
     )
-    $testRecords = @($records | Where-Object { $_.arguments[0] -ceq 'test' })
+    $testRecords = @($records | Where-Object { [string]::Equals([string]($_.arguments[0]), [string]('test'), [StringComparison]::Ordinal) })
     $summaryPath = Join-Path (Join-Path $artifactRoot $InvocationId) 'summary.json'
     Assert-True -Condition (Test-Path -LiteralPath $summaryPath -PathType Leaf) -Message "Summary was not written for '$InvocationId'."
 
@@ -252,7 +255,7 @@ function Assert-SixRoundContract {
         $roundNumber = $index + 1
         $seed = 'man662-{0:d2}' -f $roundNumber
         $profile = if ($roundNumber % 2 -eq 1) { 'serial' } else { 'parallel' }
-        $threads = if ($profile -ceq 'serial') { '1' } else { '4' }
+        $threads = if ([string]::Equals([string]($profile), [string]('serial'), [StringComparison]::Ordinal)) { '1' } else { '4' }
         $expectedOrder = @(
             for ($offset = 0; $offset -lt $projects.Count; $offset++) {
                 $projects[($index + $offset) % $projects.Count]
@@ -260,26 +263,25 @@ function Assert-SixRoundContract {
         )
 
         $row = $Case.Summary[$index]
-        $actualFields = @($row.PSObject.Properties.Name | Sort-Object)
+        $actualFields = @(Get-NervStringsSorted -Values @($row.PSObject.Properties.Name) -Comparer ([StringComparer]::Ordinal))
         Assert-Equal -Expected ($expectedFields -join '|') -Actual ($actualFields -join '|') -Message "Round $roundNumber summary fields must stay local-reproduction-only."
         Assert-Equal -Expected $roundNumber -Actual ([int] $row.run) -Message "Round $roundNumber run number is wrong."
         Assert-Equal -Expected $seed -Actual ([string] $row.seed) -Message "Round $roundNumber seed is wrong."
         Assert-Equal -Expected $profile -Actual ([string] $row.profile) -Message "Round $roundNumber profile is wrong."
         Assert-Equal -Expected ($expectedOrder -join '|') -Actual (@($row.projectOrder) -join '|') -Message "Round $roundNumber project order is not the required rotation."
-        Assert-True -Condition ([long] $row.elapsedMs -ge 0) -Message "Round $roundNumber elapsedMs must be nonnegative."
+        Assert-True -Condition (((([long] $row.elapsedMs) -ge (0)))) -Message "Round $roundNumber elapsedMs must be nonnegative."
 
-        $roundRecords = @($Case.Records | Where-Object { $_.seed -ceq $seed })
+        $roundRecords = @($Case.Records | Where-Object { [string]::Equals([string]($_.seed), [string]($seed), [StringComparison]::Ordinal) })
         Assert-Equal -Expected 4 -Actual $roundRecords.Count -Message "Round $roundNumber must invoke four seeded test projects."
         Assert-Equal -Expected ($expectedOrder -join '|') -Actual (($roundRecords | ForEach-Object { $_.arguments[1] }) -join '|') -Message "Round $roundNumber invocation order is wrong."
 
         $settingsPaths = @(
-            $roundRecords |
+            Get-NervStringsSorted -Values @($roundRecords |
                 ForEach-Object {
                     $settingsIndex = [Array]::IndexOf([object[]] $_.arguments, '--settings')
                     Assert-True -Condition ($settingsIndex -ge 0) -Message "Round $roundNumber invocation omitted --settings."
                     [string] $_.arguments[$settingsIndex + 1]
-                } |
-                Sort-Object -Unique
+                }) -Comparer ([StringComparer]::Ordinal) -Unique
         )
         Assert-Equal -Expected 1 -Actual $settingsPaths.Count -Message "Round $roundNumber must use one generated runsettings file."
         Assert-True -Condition (Test-Path -LiteralPath $settingsPaths[0] -PathType Leaf) -Message "Round $roundNumber runsettings file is missing."
@@ -304,7 +306,7 @@ function Assert-VerifierPreservesCallerLocation {
                 -InvocationId 'cwd-existing'
         }
         catch {
-            Assert-True -Condition $_.Exception.Message.Contains('already exists') -Message "Expected existing-evidence rejection, got: $($_.Exception.Message)"
+            Assert-True -Condition $_.Exception.Message.Contains('already exists', [StringComparison]::Ordinal) -Message "Expected existing-evidence rejection, got: $($_.Exception.Message)"
         }
 
         Assert-Equal -Expected $before -Actual (Get-Location).Path -Message 'Verifier must preserve the caller runspace location when it fails.'
@@ -430,7 +432,7 @@ try {
     $successful = Invoke-VerifierCase -InvocationId 'success'
     Assert-Equal -Expected 0 -Actual $successful.ExitCode -Message 'Successful six-round verifier run must exit zero.'
     Assert-SixRoundContract -Case $successful
-    Assert-True -Condition (@($successful.Summary | Where-Object { [int] $_.exitCode -ne 0 }).Count -eq 0) -Message 'Successful summary must record exitCode 0 for every round.'
+    Assert-True -Condition (@($successful.Summary | Where-Object { (-not (([int] $_.exitCode) -eq (0))) }).Count -eq 0) -Message 'Successful summary must record exitCode 0 for every round.'
 
     $failed = Invoke-VerifierCase `
         -InvocationId 'failure' `
@@ -440,7 +442,7 @@ try {
     Assert-SixRoundContract -Case $failed
     Assert-Equal -Expected 23 -Actual ([int] $failed.Summary[2].exitCode) -Message 'The failing project exit code must fail its round.'
     Assert-True -Condition (Test-Path -LiteralPath $successful.SummaryPath -PathType Leaf) -Message 'A later verifier execution must not replace prior evidence.'
-    Assert-True -Condition ($successful.SummaryPath -cne $failed.SummaryPath) -Message 'Reruns must be recorded under a new invocation path.'
+    Assert-True -Condition ((-not [string]::Equals([string]($successful.SummaryPath), [string]($failed.SummaryPath), [StringComparison]::Ordinal))) -Message 'Reruns must be recorded under a new invocation path.'
 
     # Equal exit codes are not equal results: a round that silently skipped tests must still fail.
     $drifted = Invoke-VerifierCase `
@@ -448,7 +450,7 @@ try {
         -DriftProject $projects[1] `
         -DriftSeed 'man662-04'
     Assert-True -Condition ($drifted.ExitCode -ne 0) -Message 'A round whose test results drift must fail even when every exit code is zero.'
-    Assert-True -Condition (@($drifted.Summary | Where-Object { [int] $_.exitCode -ne 0 }).Count -eq 0) -Message 'The drift case must be detected through results, not exit codes.'
+    Assert-True -Condition (@($drifted.Summary | Where-Object { (-not (([int] $_.exitCode) -eq (0))) }).Count -eq 0) -Message 'The drift case must be detected through results, not exit codes.'
     Assert-Equal -Expected 24 -Actual $drifted.Records.Count -Message 'The drift case must still run all 24 project invocations.'
 }
 finally {

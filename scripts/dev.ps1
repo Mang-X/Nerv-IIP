@@ -68,7 +68,7 @@ function Test-IsLinkedWorktree {
     }
 
     $normalizedRoot = $root.Path -replace '\\', '/'
-    return $normalizedRoot.Contains('/worktrees/')
+    return $normalizedRoot.Contains('/worktrees/', [StringComparison]::Ordinal)
 }
 
 function Get-AppHostUserSecrets {
@@ -82,7 +82,7 @@ function Get-AppHostUserSecrets {
     }
     catch {
         $message = "$($_.Exception.Message)"
-        if ($message.Contains("Could not find the global property 'UserSecretsId'") -or $message.Contains('No UserSecretsId')) {
+        if ($message.Contains("Could not find the global property 'UserSecretsId'", [StringComparison]::Ordinal) -or $message.Contains('No UserSecretsId', [StringComparison]::Ordinal)) {
             Write-Diagnostic -Level 'WARN' -Message "AppHost project has no initialized user-secrets store; treating all required AppHost secrets as missing."
             return @{}
         }
@@ -114,12 +114,12 @@ function Assert-AppHostUserSecrets {
     $explicitSecrets = [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"\s*,\s*secret\s*:\s*true\s*\)') |
         ForEach-Object { "Parameters:$($_.Groups['name'].Value)" }
 
-    $requiredSecrets = @(
+    $requiredSecrets = Get-NervStringsSorted -Values @(@(
         $explicitSecrets
         # Aspire's Postgres integration owns this parameter implicitly; it is not declared
         # through AddParameter(...) in the AppHost source, but local startup still needs it.
         'Parameters:postgres-password'
-    ) | Sort-Object -Unique
+    )) -Comparer ([StringComparer]::Ordinal) -Unique
 
     $matchedExplicitCount = @($explicitSecrets).Count
     if ($matchedExplicitCount -eq 0) {
@@ -132,7 +132,7 @@ function Assert-AppHostUserSecrets {
     )
 
     $nonSecretAppHostParameters = @($appHostSecretParameterNames | Where-Object {
-        $requiredSecrets -notcontains "Parameters:$_"
+        (-not [Collections.Generic.HashSet[string]]::new([string[]]@($requiredSecrets), [StringComparer]::OrdinalIgnoreCase).Contains([string]("Parameters:$_")))
     })
     if ($nonSecretAppHostParameters.Count -gt 0) {
         Write-Diagnostic -Level 'WARN' -Message "Found AppHost parameters that are not marked secret and were not required by dev preflight: $($nonSecretAppHostParameters -join ', ')"
@@ -207,11 +207,11 @@ function Write-AspireProjectResourceLogs {
 function Assert-NoStoppedAspireProjectResources {
     try {
         $snapshot = Get-AspireResourceSnapshot
-        $stoppedProjects = @($snapshot.resources | Where-Object {
-            (Get-AspireResourceProperty -Resource $_ -Name 'resourceType') -eq 'Project' -and
-            ((Get-AspireResourceProperty -Resource $_ -Name 'state') -eq 'Finished' -or
-                (Get-AspireResourceProperty -Resource $_ -Name 'state') -eq 'Failed')
-        } | Sort-Object displayName)
+        $stoppedProjects = @(Get-NervItemsSortedByString -Items @($snapshot.resources | Where-Object {
+            [string]::Equals([string]((Get-AspireResourceProperty -Resource $_ -Name 'resourceType')), [string]('Project'), [StringComparison]::OrdinalIgnoreCase) -and
+            ([string]::Equals([string]((Get-AspireResourceProperty -Resource $_ -Name 'state')), [string]('Finished'), [StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals([string]((Get-AspireResourceProperty -Resource $_ -Name 'state')), [string]('Failed'), [StringComparison]::OrdinalIgnoreCase))
+        }) -KeySelector { param($row) [string]$row.displayName } -Comparer ([StringComparer]::Ordinal))
     }
     catch {
         Write-Diagnostic -Level 'WARN' -Message "Could not inspect Aspire project resource states: $($_.Exception.Message)"

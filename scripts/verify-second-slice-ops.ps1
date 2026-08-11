@@ -34,7 +34,7 @@ function Wait-Healthy {
   do {
     try {
       $result = Invoke-RestMethod -Method Get -Uri $healthUri
-      if ($result -eq "Healthy") { return }
+      if ([string]::Equals([string]($result), [string]("Healthy"), [StringComparison]::OrdinalIgnoreCase)) { return }
     }
     catch {
       Start-Sleep -Milliseconds 500
@@ -55,7 +55,7 @@ function Wait-TaskCompleted {
   $deadline = (Get-Date).AddSeconds(30)
   do {
     $task = Invoke-RestMethod -Method Get -Uri $taskUri -Headers $Headers
-    if ($task.status -eq "completed") { return $task }
+    if ([string]::Equals([string]($task.status), [string]("completed"), [StringComparison]::OrdinalIgnoreCase)) { return $task }
     Start-Sleep -Milliseconds 500
   } while ((Get-Date) -lt $deadline)
 
@@ -165,7 +165,7 @@ try {
       $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__AppHubDb = $connectionString
       $env:Messaging__Provider = $messagingProvider
-      if ($messagingProvider -eq "RabbitMQ") {
+      if ([string]::Equals([string]($messagingProvider), [string]("RabbitMQ"), [StringComparison]::OrdinalIgnoreCase)) {
         $env:RabbitMQ__HostName = "localhost"
         $env:RabbitMQ__Port = "5672"
         $env:RabbitMQ__UserName = "guest"
@@ -185,7 +185,7 @@ try {
       $env:Persistence__AutoMigrate = "true"
       $env:ConnectionStrings__OpsDb = $connectionString
       $env:Messaging__Provider = $messagingProvider
-      if ($messagingProvider -eq "RabbitMQ") {
+      if ([string]::Equals([string]($messagingProvider), [string]("RabbitMQ"), [StringComparison]::OrdinalIgnoreCase)) {
         $env:RabbitMQ__HostName = "localhost"
         $env:RabbitMQ__Port = "5672"
         $env:RabbitMQ__UserName = "guest"
@@ -239,7 +239,7 @@ try {
   $jobs += $connectorHostJob
 
   Start-Sleep -Seconds 4
-  if ($connectorHostJob.State -ne "Running") {
+  if ((-not [string]::Equals([string]($connectorHostJob.State), [string]("Running"), [StringComparison]::OrdinalIgnoreCase))) {
     Write-JobDiagnostics $jobs
     throw "Connector Host job exited before verification could run."
   }
@@ -275,15 +275,15 @@ try {
   }
 
   $completed = Wait-TaskCompleted $gatewayUrl $created.operationTaskId $gatewayHeaders
-  if ($completed.status -ne "completed") {
+  if ((-not [string]::Equals([string]($completed.status), [string]("completed"), [StringComparison]::OrdinalIgnoreCase))) {
     throw "Expected operation task to be completed, got '$($completed.status)'."
   }
 
   $auditActions = @($completed.auditRecords | ForEach-Object { $_.action })
-  if ($auditActions -notcontains "operation.requested") {
+  if ((-not [Collections.Generic.HashSet[string]]::new([string[]]@($auditActions), [StringComparer]::OrdinalIgnoreCase).Contains([string]("operation.requested")))) {
     throw "Completed operation task did not include operation.requested audit record."
   }
-  if ($auditActions -notcontains "operation.completed") {
+  if ((-not [Collections.Generic.HashSet[string]]::new([string[]]@($auditActions), [StringComparer]::OrdinalIgnoreCase).Contains([string]("operation.completed")))) {
     throw "Completed operation task did not include operation.completed audit record."
   }
 

@@ -78,7 +78,7 @@ function New-AcceptanceDatabase {
                 'psql', '-h', '127.0.0.1', '-U', 'nerv', '-d', 'postgres',
                 '-X', '-tA', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName';"
             ) -WorkingDirectory $root -Name 'man517-check-database'
-            if ("$($databaseExists.Stdout)".Trim() -eq '1') {
+            if ([string]::Equals([string]("$($databaseExists.Stdout)".Trim()), [string]('1'), [StringComparison]::OrdinalIgnoreCase)) {
                 return
             }
 
@@ -104,7 +104,7 @@ function Wait-Healthy {
             throw "Managed service exited before becoming healthy. Logs: $($ManagedProcess.LogDirectory)"
         }
         try {
-            if ((Invoke-RestMethod -Method Get -Uri $Uri) -eq 'Healthy') { return }
+            if ([string]::Equals([string]((Invoke-RestMethod -Method Get -Uri $Uri)), [string]('Healthy'), [StringComparison]::OrdinalIgnoreCase)) { return }
         }
         catch { Start-Sleep -Milliseconds 500 }
     } while ((Get-Date) -lt $deadline)
@@ -348,7 +348,7 @@ function Wait-ErpSalesOrderReady {
             }
             break
         }
-        $rows = @($response.data.items | Where-Object { $_.salesOrderNo -ceq 'SO-DEMO-001' })
+        $rows = @($response.data.items | Where-Object { [string]::Equals([string]($_.salesOrderNo), [string]('SO-DEMO-001'), [StringComparison]::Ordinal) })
         $lastObservedOrder = if ($rows.Count -eq 1) {
             [ordered]@{
                 salesOrderNo = $rows[0].salesOrderNo
@@ -359,7 +359,7 @@ function Wait-ErpSalesOrderReady {
             [ordered]@{ matchingRowCount = $rows.Count }
         }
         if ($rows.Count -eq 1 -and
-            "$($rows[0].status)" -ieq 'released' -and
+            [string]::Equals([string]("$($rows[0].status)"), [string]('released'), [StringComparison]::OrdinalIgnoreCase) -and
             [decimal]$rows[0].totalAmount -eq 200) {
             return $rows[0]
         }
@@ -399,13 +399,13 @@ function Wait-Demand {
         $fullResponseBody = $response | ConvertTo-Json -Depth 12 -Compress
         $lastResponseBody = if ($fullResponseBody.Length -gt 8192) { $fullResponseBody.Substring(0, 8192) } else { $fullResponseBody }
         $lastRequestException = $null
-        $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
+        $rows = @($response.data | Where-Object { [string]::Equals([string]($_.sourceReference), [string]('SO-DEMO-001'), [StringComparison]::OrdinalIgnoreCase) })
         $lastObservedDemand = if ($rows.Count -eq 1) {
             [ordered]@{ version = $rows[0].sourceVersion; quantity = $rows[0].quantity; status = $rows[0].sourceStatus }
         } else {
             [ordered]@{ matchingRowCount = $rows.Count }
         }
-        if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and [decimal]$rows[0].quantity -eq $Quantity -and $rows[0].sourceStatus -eq $Status) {
+        if ($rows.Count -eq 1 -and $rows[0].sourceVersion -eq $Version -and (([decimal]$rows[0].quantity) -eq ($Quantity)) -and [string]::Equals([string]$rows[0].sourceStatus, $Status, [StringComparison]::Ordinal)) {
             return $rows[0]
         }
         $remainingMilliseconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalMilliseconds)
@@ -440,8 +440,8 @@ function Assert-DemandStable {
             }
             break
         }
-        $rows = @($response.data | Where-Object { $_.sourceReference -eq 'SO-DEMO-001' })
-        if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or [decimal]$rows[0].quantity -ne $Quantity -or $rows[0].sourceStatus -ne $Status) {
+        $rows = @($response.data | Where-Object { [string]::Equals([string]($_.sourceReference), [string]('SO-DEMO-001'), [StringComparison]::OrdinalIgnoreCase) })
+        if ($rows.Count -ne 1 -or $rows[0].sourceVersion -ne $Version -or (-not (([decimal]$rows[0].quantity) -eq ($Quantity))) -or -not [string]::Equals([string]$rows[0].sourceStatus, $Status, [StringComparison]::Ordinal)) {
             throw "Demand SO-DEMO-001 changed during the stability window; expected version=$Version quantity=$Quantity status=$Status."
         }
         $row = $rows[0]
@@ -613,8 +613,8 @@ FROM (SELECT organization_id, environment_id, source_document_id, source_referen
 $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
 $runningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man517-compose-running'
 $running = @("$($runningResult.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
-$startedPostgres = $running -notcontains 'postgres'
-$startedRedis = $running -notcontains 'redis'
+$startedPostgres = (-not [Collections.Generic.HashSet[string]]::new([string[]]@($running), [StringComparer]::OrdinalIgnoreCase).Contains([string]('postgres')))
+$startedRedis = (-not [Collections.Generic.HashSet[string]]::new([string[]]@($running), [StringComparer]::OrdinalIgnoreCase).Contains([string]('redis')))
 $databaseName = "man517_$([Guid]::NewGuid().ToString('N'))"
 $databaseConnectionString = if ($PostgresAdminConnectionString -match '(?i)Database=[^;]*') {
     $PostgresAdminConnectionString -replace '(?i)Database=[^;]*', "Database=$databaseName"
@@ -730,7 +730,7 @@ try {
         }
         [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
         $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_injects_duplicate_and_out_of_order_sales_order_events', [StringComparison]::Ordinal) })
-        if ($probeExecutions.Count -ne 1 -or $probeExecutions[0].GetAttribute('outcome') -ne 'Passed') {
+        if ($probeExecutions.Count -ne 1 -or (-not [string]::Equals([string]($probeExecutions[0].GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase))) {
             throw 'MAN-517 fault-injection probe did not execute exactly once and pass.'
         }
         # 「按名字找到一条 Passed」还不足以排除同一次 run 里另有失败或被跳过的用例，
@@ -782,7 +782,7 @@ try {
             $testName = $_.GetAttribute('testName')
             $expectedRedisProofs | Where-Object { $testName.EndsWith($_, [StringComparison]::Ordinal) }
         })
-        if ($redisProofExecutions.Count -ne 2 -or @($redisProofExecutions | Where-Object { $_.GetAttribute('outcome') -ne 'Passed' }).Count -ne 0) {
+        if ($redisProofExecutions.Count -ne 2 -or @($redisProofExecutions | Where-Object { (-not [string]::Equals([string]($_.GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase)) }).Count -ne 0) {
             throw 'MAN-517 Redis duplicate and fallback-scan retry probes did not both execute exactly once and pass.'
         }
     }

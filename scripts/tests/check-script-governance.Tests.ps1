@@ -141,7 +141,7 @@ finally {
 $failurePrecedenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-failure-precedence-$([System.Guid]::NewGuid().ToString('N'))"
 $faultedStreamTaskAction = {
     param($Reader, $StreamName)
-    if ($StreamName -ceq 'stdout') {
+    if ([string]::Equals([string]($StreamName), [string]('stdout'), [StringComparison]::Ordinal)) {
         return [System.Threading.Tasks.Task]::FromException[string](
             [InvalidOperationException]::new('token=super-secret-token simulated stdout drain failure')
         )
@@ -163,10 +163,10 @@ try {
             -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
     }
     catch { $withTimeoutExitFailure = $_ }
-    if ($null -eq $withTimeoutExitFailure -or -not $withTimeoutExitFailure.Exception.Message.Contains('exited with 31')) {
+    if ($null -eq $withTimeoutExitFailure -or -not $withTimeoutExitFailure.Exception.Message.Contains('exited with 31', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandWithTimeout must prioritize the native nonzero exit over a completed drain fault.'
     }
-    if ($withTimeoutExitFailure.Exception.Message.Contains('super-secret-token')) {
+    if ($withTimeoutExitFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandWithTimeout nonzero diagnostics must redact drain secrets.'
     }
 
@@ -185,7 +185,7 @@ try {
     if ($null -eq $outputExitFailure -or [int] $outputExitFailure.Exception.Data['ExitCode'] -ne 32) {
         throw 'Invoke-NativeCommandOutput must preserve structured native exit data over a completed drain fault.'
     }
-    if ($outputExitFailure.Exception.Message.Contains('super-secret-token')) {
+    if ($outputExitFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandOutput nonzero diagnostics must redact drain secrets.'
     }
 
@@ -201,10 +201,10 @@ try {
             -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
     }
     catch { $withTimeoutTimeoutFailure = $_ }
-    if ($null -eq $withTimeoutTimeoutFailure -or -not $withTimeoutTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+    if ($null -eq $withTimeoutTimeoutFailure -or -not $withTimeoutTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandWithTimeout must prioritize its timeout over a completed drain fault.'
     }
-    if ($withTimeoutTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+    if ($withTimeoutTimeoutFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandWithTimeout timeout diagnostics must redact drain secrets.'
     }
 
@@ -220,10 +220,10 @@ try {
             -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
     }
     catch { $outputTimeoutFailure = $_ }
-    if ($null -eq $outputTimeoutFailure -or -not $outputTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds')) {
+    if ($null -eq $outputTimeoutFailure -or -not $outputTimeoutFailure.Exception.Message.Contains('timed out after 1 seconds', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandOutput must prioritize its timeout over a completed drain fault.'
     }
-    if ($outputTimeoutFailure.Exception.Message.Contains('super-secret-token')) {
+    if ($outputTimeoutFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandOutput timeout diagnostics must redact drain secrets.'
     }
 
@@ -258,13 +258,13 @@ try {
         $drainOnlyFailure = $null
         try { & $zeroExitCase.Action }
         catch { $drainOnlyFailure = $_ }
-        if ($null -eq $drainOnlyFailure -or -not $drainOnlyFailure.Exception.Message.Contains('redirected stream drain failed')) {
+        if ($null -eq $drainOnlyFailure -or -not $drainOnlyFailure.Exception.Message.Contains('redirected stream drain failed', [StringComparison]::Ordinal)) {
             throw "$($zeroExitCase.Name) must surface a drain failure when the root exits zero."
         }
-        if ($drainOnlyFailure.Exception.Message.Contains('super-secret-token')) {
+        if ($drainOnlyFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
             throw "$($zeroExitCase.Name) drain-only diagnostics must redact secrets."
         }
-        if (-not $drainOnlyFailure.Exception.Message.Contains('token=<redacted>')) {
+        if (-not $drainOnlyFailure.Exception.Message.Contains('token=<redacted>', [StringComparison]::Ordinal)) {
             throw "$($zeroExitCase.Name) drain-only diagnostics must retain a useful redacted marker."
         }
     }
@@ -291,17 +291,17 @@ $partialEofResult = Invoke-NativeCommandOutput `
     -WorkingDirectory $repoRoot `
     -TimeoutSeconds 10 `
     -Name 'partial-eof-output'
-if ($partialEofResult.Stdout -cne 'stdout-final-partial') {
+if ((-not [string]::Equals([string]($partialEofResult.Stdout), [string]('stdout-final-partial'), [StringComparison]::Ordinal))) {
     throw "Invoke-NativeCommandOutput changed final partial stdout at normal EOF: '$($partialEofResult.Stdout)'."
 }
-if ($partialEofResult.Stderr -cne 'stderr-final-partial') {
+if ((-not [string]::Equals([string]($partialEofResult.Stderr), [string]('stderr-final-partial'), [StringComparison]::Ordinal))) {
     throw "Invoke-NativeCommandOutput changed final partial stderr at normal EOF: '$($partialEofResult.Stderr)'."
 }
 if ($partialEofResult.PartialOutput -or @($partialEofResult.UnfinishedStreams).Count -ne 0) {
     throw 'Invoke-NativeCommandOutput must identify normal EOF output as complete.'
 }
 $aspireOutputDefinition = (Get-Command Invoke-AspireOutput -ErrorAction Stop).Definition
-if (-not $aspireOutputDefinition.Contains('[switch] $AllowPartialOutput') -or -not $aspireOutputDefinition.Contains('-AllowPartialOutput:$AllowPartialOutput')) {
+if (-not $aspireOutputDefinition.Contains('[switch] $AllowPartialOutput', [StringComparison]::Ordinal) -or -not $aspireOutputDefinition.Contains('-AllowPartialOutput:$AllowPartialOutput', [StringComparison]::Ordinal)) {
     throw 'Invoke-AspireOutput must explicitly forward the narrow partial-output opt-in.'
 }
 
@@ -401,13 +401,13 @@ if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
     foreach ($logName in @('stdout.log', 'stderr.log')) {
         $logPath = Join-Path $streamDrainRoot "output-default-logs/$logName"
         $logText = [System.IO.File]::ReadAllText($logPath)
-        if (-not $logText.Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+        if (-not $logText.Contains('[NERV-IIP PARTIAL OUTPUT:', [StringComparison]::Ordinal)) {
             throw "Partial output diagnostic '$logName' must contain an explicit truncation marker."
         }
-        if (-not $logText.Contains('inherited parent')) {
+        if (-not $logText.Contains('inherited parent', [StringComparison]::Ordinal)) {
             throw "Partial output diagnostic '$logName' discarded the captured root prefix."
         }
-        if ($logText.Contains('partial-output-secret') -or ($logName -ceq 'stderr.log' -and -not $logText.Contains('token=<redacted>'))) {
+        if ($logText.Contains('partial-output-secret', [StringComparison]::Ordinal) -or ([string]::Equals([string]($logName), [string]('stderr.log'), [StringComparison]::Ordinal) -and -not $logText.Contains('token=<redacted>', [StringComparison]::Ordinal))) {
             throw "Partial output diagnostic '$logName' did not redact captured output before publishing the truncation marker."
         }
     }
@@ -447,11 +447,11 @@ if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
         if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
             throw "Bounded output drain must publish its '$logName' diagnostic path."
         }
-        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        $expected = if ([string]::Equals([string]($logName), [string]('stdout.log'), [StringComparison]::Ordinal)) { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
         if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
             throw "Bounded output drain '$logName' discarded root output received before cutoff: '$expected'."
         }
-        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:', [StringComparison]::Ordinal)) {
             throw "Bounded output drain '$logName' must retain the truncation marker when partial output is explicitly allowed."
         }
     }
@@ -492,7 +492,7 @@ if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
     }
     catch { $timeoutFailure = $_ }
     $timeoutStopwatch.Stop()
-    if ($null -eq $timeoutFailure -or -not $timeoutFailure.Exception.Message.Contains('timed out after 10 seconds')) {
+    if ($null -eq $timeoutFailure -or -not $timeoutFailure.Exception.Message.Contains('timed out after 10 seconds', [StringComparison]::Ordinal)) {
         throw 'Invoke-NativeCommandWithTimeout must preserve its timeout failure.'
     }
     if ($timeoutStopwatch.Elapsed.TotalSeconds -gt 25) {
@@ -503,11 +503,11 @@ if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
         if (-not (Test-Path -LiteralPath $logPath -PathType Leaf)) {
             throw "Bounded timeout drain must publish its '$logName' diagnostic path."
         }
-        $expected = if ($logName -ceq 'stdout.log') { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
+        $expected = if ([string]::Equals([string]($logName), [string]('stdout.log'), [StringComparison]::Ordinal)) { 'inherited parent stdout partial' } else { 'inherited parent stderr partial' }
         if (-not [System.IO.File]::ReadAllText($logPath).Contains($expected)) {
             throw "Bounded timeout drain '$logName' discarded root output received before cutoff: '$expected'."
         }
-        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:')) {
+        if (-not [System.IO.File]::ReadAllText($logPath).Contains('[NERV-IIP PARTIAL OUTPUT:', [StringComparison]::Ordinal)) {
             throw "Bounded timeout drain '$logName' must contain an explicit truncation marker."
         }
     }
@@ -563,7 +563,7 @@ try {
         }
     }
 
-    if ($redactedText.Contains('super-secret-token')) {
+    if ($redactedText.Contains('super-secret-token', [StringComparison]::Ordinal)) {
         throw "Expected redacted log to remove secret token. Output: $redactedText"
     }
 
@@ -576,7 +576,7 @@ try {
 
     $protectLogFileAst = $helperAst.Find({
         param($node)
-        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Protect-ScriptAutomationLogFile'
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and [string]::Equals([string]($node.Name), [string]('Protect-ScriptAutomationLogFile'), [StringComparison]::OrdinalIgnoreCase)
     }, $true)
     if (-not $protectLogFileAst) {
         throw 'Could not find Protect-ScriptAutomationLogFile implementation.'
@@ -706,7 +706,7 @@ if (`$identity.Pid -le 0 -or [string]::IsNullOrWhiteSpace("`$(`$identity.Process
     }
     if (-not (Test-Path -LiteralPath $detachedMarker)) { throw 'Detached child did not survive its launcher process.' }
     $markerText = [System.IO.File]::ReadAllText($detachedMarker)
-    if ($markerText -ne 'a b|a "quoted" b') { throw "Detached arguments were corrupted: $markerText" }
+    if ((-not [string]::Equals([string]($markerText), [string]('a b|a "quoted" b'), [StringComparison]::Ordinal))) { throw "Detached arguments were corrupted: $markerText" }
     $identity = Get-Content -LiteralPath $detachedIdentity -Raw | ConvertFrom-Json
     Wait-Process -Id ([int] $identity.Pid) -Timeout 10 -ErrorAction SilentlyContinue
 }

@@ -91,8 +91,8 @@ $script:healthCalls = [System.Collections.Generic.List[string]]::new()
 
 $startAction = {
     param($SessionId)
-    Assert-True ($env:NERV_IIP_LEADER_DEMO -ceq 'true') 'Start must opt in to the AppHost leader-demo profile.'
-    Assert-True ($env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD -ceq 'controlled-local-password') 'The demo password must reach full-stack only through scoped process environment.'
+    Assert-True ([string]::Equals([string]($env:NERV_IIP_LEADER_DEMO), [string]('true'), [StringComparison]::Ordinal)) 'Start must opt in to the AppHost leader-demo profile.'
+    Assert-True ([string]::Equals([string]($env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD), [string]('controlled-local-password'), [StringComparison]::Ordinal)) 'The demo password must reach full-stack only through scoped process environment.'
     Write-TestFullStackManifest -SessionId $SessionId -ManifestWorktreeRoot $repoRoot -StateRoot $stateRoot
     $script:startCalls.Add($SessionId)
 }
@@ -106,13 +106,13 @@ try {
     $currentProcess = Get-Process -Id $PID -ErrorAction Stop
     $currentProcessStartTimeUtc = $currentProcess.StartTime.ToUniversalTime()
     Assert-True (
-        (Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc) -ceq 'Active'
+        [string]::Equals([string]((Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc)), [string]('Active'), [StringComparison]::Ordinal)
     ) 'The real process probe must identify the exact live process identity as Active.'
     Assert-True (
-        (Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc.AddSeconds(-1)) -ceq 'Mismatched'
+        [string]::Equals([string]((Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentProcessStartTimeUtc.AddSeconds(-1))), [string]('Mismatched'), [StringComparison]::Ordinal)
     ) 'The real process probe must identify PID reuse/start-time mismatch as Mismatched.'
     Assert-True (
-        (Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentProcessStartTimeUtc) -ceq 'Absent'
+        [string]::Equals([string]((Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentProcessStartTimeUtc)), [string]('Absent'), [StringComparison]::Ordinal)
     ) 'The real process probe must identify a missing PID as Absent.'
 
     $deleteFailureStateRoot = Join-Path $stateRoot 'pointer-delete-failure'
@@ -130,7 +130,7 @@ try {
             -RemoveAction { param($Path) throw 'simulated pointer deletion failure' }
     }
     catch {
-        $pointerDeleteFailurePropagated = $_.Exception.Message.Contains('simulated pointer deletion failure')
+        $pointerDeleteFailurePropagated = $_.Exception.Message.Contains('simulated pointer deletion failure', [StringComparison]::Ordinal)
     }
     Assert-True $pointerDeleteFailurePropagated 'Pointer deletion failures must propagate instead of reporting successful cleanup.'
     Assert-True `
@@ -140,10 +140,10 @@ try {
     $script:throwingStartTimeProbe = [pscustomobject]@{}
     $script:throwingStartTimeProbe | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw 'simulated StartTime access failure' }
     Assert-True (
-        (Get-NervProcessIdentityStatus `
+        [string]::Equals([string]((Get-NervProcessIdentityStatus `
             -ProcessId 4107 `
             -ProcessStartTimeUtc $currentProcessStartTimeUtc `
-            -ProcessLookupAction { param($ProcessId) $script:throwingStartTimeProbe }) -ceq 'Unknown'
+            -ProcessLookupAction { param($ProcessId) $script:throwingStartTimeProbe })), [string]('Unknown'), [StringComparison]::Ordinal)
     ) 'A process StartTime inspection failure must be Unknown rather than a reclaimable mismatch.'
 
     $lockPath = Get-NervLeaderDemoLifecycleLockPath -StateRoot $stateRoot
@@ -154,7 +154,7 @@ try {
         try {
             Invoke-WithNervLeaderDemoLifecycleLock -StateRoot $stateRoot -TimeoutSeconds 1 -ScriptBlock { throw 'must not enter a concurrently owned lifecycle' }
         }
-        catch { $concurrentLockFailed = $_.Exception.Message.Contains('leader-demo lifecycle lock') }
+        catch { $concurrentLockFailed = $_.Exception.Message.Contains('leader-demo lifecycle lock', [StringComparison]::Ordinal) }
         Assert-True $concurrentLockFailed 'A concurrent leader-demo lifecycle must fail before entering the protected action.'
     }
     finally {
@@ -187,7 +187,7 @@ try {
     catch { $reservedFailed = $_.Exception.Message.Contains($reservedSessionId) }
     Assert-True $reservedFailed 'A Reserved ownership pointer must block another start for the same leader-demo slot.'
     Assert-True ($script:reservedStartCalls -eq 0) 'A Reserved ownership pointer must fail before starting another full-stack session.'
-    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $reservedStateRoot).sessionId -ceq $reservedSessionId) 'An active owner must retain its Reserved pointer even after the stale TTL.'
+    Assert-True ([string]::Equals([string]((Read-NervLeaderDemoSessionPointer -StateRoot $reservedStateRoot).sessionId), [string]($reservedSessionId), [StringComparison]::Ordinal)) 'An active owner must retain its Reserved pointer even after the stale TTL.'
 
     $legacyRecentRoot = Join-Path $stateRoot 'legacy-recent'
     $legacyRecentSessionId = 'nerv-dead-000019'
@@ -298,7 +298,7 @@ try {
     }
     catch { $unknownRecentRejected = $_.Exception.Message.Contains($unknownRecentSessionId) }
     Assert-True $unknownRecentRejected 'An unknown but non-stale reservation must remain owned.'
-    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $unknownRecentRoot).sessionId -ceq $unknownRecentSessionId) 'A non-stale unknown reservation must not be cleared.'
+    Assert-True ([string]::Equals([string]((Read-NervLeaderDemoSessionPointer -StateRoot $unknownRecentRoot).sessionId), [string]($unknownRecentSessionId), [StringComparison]::Ordinal)) 'A non-stale unknown reservation must not be cleared.'
 
     $unknownStaleRoot = Join-Path $stateRoot 'unknown-stale'
     $unknownStaleSessionId = 'nerv-dead-000018'
@@ -365,7 +365,7 @@ try {
         -SeedAction { param($SessionId) } `
         -HealthCheckAction { param($SessionId) }
     Assert-True $script:pidReuseIdentityChecked 'PID-reuse recovery must compare the recorded process start time, not PID alone.'
-    Assert-True ($pidReuseReplacementId -ne $pidReuseSessionId) 'Reset must reclaim a start-time-mismatched reservation and allocate a fresh session.'
+    Assert-True (-not [string]::Equals($pidReuseReplacementId, $pidReuseSessionId, [StringComparison]::Ordinal)) 'Reset must reclaim a start-time-mismatched reservation and allocate a fresh session.'
 
     $manifestOwnedReservationRoot = Join-Path $stateRoot 'reserved-with-manifest'
     $manifestOwnedSessionId = 'nerv-dead-000016'
@@ -390,14 +390,14 @@ try {
     catch { $manifestOwnedRejected = $_.Exception.Message.Contains($manifestOwnedSessionId) }
     Assert-True $manifestOwnedRejected 'A Reserved pointer with an authoritative manifest must never be reclaimed by start.'
     Assert-True ($script:manifestOwnedReplacementStarts -eq 0) 'Manifest-backed ownership must block replacement startup.'
-    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $manifestOwnedReservationRoot).sessionId -ceq $manifestOwnedSessionId) 'Manifest-backed ownership must retain its sole cleanup route.'
+    Assert-True ([string]::Equals([string]((Read-NervLeaderDemoSessionPointer -StateRoot $manifestOwnedReservationRoot).sessionId), [string]($manifestOwnedSessionId), [StringComparison]::Ordinal)) 'Manifest-backed ownership must retain its sole cleanup route.'
 
     $finalizationStateRoot = Join-Path $stateRoot 'finalization'
     $finalizationSessionIds = [System.Collections.Generic.List[string]]::new()
     $finalizationCleanupIds = [System.Collections.Generic.List[string]]::new()
     $pointerWriteAction = {
         param($SessionId, $WorktreeRoot, $InputStateRoot, $OwnershipState, $OwnerPid, $OwnerProcessStartTimeUtc, $CreatedAtUtc)
-        if ($OwnershipState -eq 'Current') { throw 'simulated pointer finalization failure' }
+        if ([string]::Equals([string]($OwnershipState), [string]('Current'), [StringComparison]::OrdinalIgnoreCase)) { throw 'simulated pointer finalization failure' }
         Write-NervLeaderDemoSessionPointer `
             -SessionId $SessionId `
             -WorktreeRoot $WorktreeRoot `
@@ -423,10 +423,10 @@ try {
         $finalizationError = $_.Exception.Message
     }
     Assert-True $finalizationFailed 'Pointer finalization failure must fail start.'
-    Assert-True ($finalizationError.Contains('simulated pointer finalization failure')) 'Start must preserve the original pointer finalization error.'
-    Assert-True ($finalizationError.Contains('exact-session cleanup completed')) 'Start must append exact cleanup diagnostics to the original error.'
+    Assert-True ($finalizationError.Contains('simulated pointer finalization failure', [StringComparison]::Ordinal)) 'Start must preserve the original pointer finalization error.'
+    Assert-True ($finalizationError.Contains('exact-session cleanup completed', [StringComparison]::Ordinal)) 'Start must append exact cleanup diagnostics to the original error.'
     Assert-True ($finalizationSessionIds.Count -eq 1) 'The finalization failure fixture must start exactly one session.'
-    Assert-True ($finalizationCleanupIds.Count -eq 1 -and $finalizationCleanupIds[0] -ceq $finalizationSessionIds[0]) 'Pointer finalization failure must clean only the exact started session.'
+    Assert-True ($finalizationCleanupIds.Count -eq 1 -and [string]::Equals([string]($finalizationCleanupIds[0]), [string]($finalizationSessionIds[0]), [StringComparison]::Ordinal)) 'Pointer finalization failure must clean only the exact started session.'
     Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $finalizationStateRoot))) 'Successful compensation must remove the exact Reserved pointer.'
 
     $partialStartupStateRoot = Join-Path $stateRoot 'partial-startup'
@@ -452,11 +452,11 @@ try {
             } | Out-Null
     }
     catch { $partialStartupError = $_.Exception.Message }
-    Assert-True ($partialStartupError.Contains('simulated partial startup failure')) 'Partial-startup compensation must preserve the original startup error.'
-    Assert-True ($partialStartupError.Contains('exact-session cleanup completed')) 'Partial-startup compensation must report successful exact cleanup.'
+    Assert-True ($partialStartupError.Contains('simulated partial startup failure', [StringComparison]::Ordinal)) 'Partial-startup compensation must preserve the original startup error.'
+    Assert-True ($partialStartupError.Contains('exact-session cleanup completed', [StringComparison]::Ordinal)) 'Partial-startup compensation must report successful exact cleanup.'
     Assert-True ($partialStartupIds.Count -eq 1) 'The partial-startup fixture must reserve exactly one session.'
-    Assert-True ($partialStartupCleanupIds.Count -eq 1 -and $partialStartupCleanupIds[0] -ceq $partialStartupIds[0]) 'A partial startup with an authoritative manifest must clean only the exact reserved session.'
-    Assert-True ($script:partialStartupOwnershipAtCleanup -ceq 'Reserved') 'The Reserved pointer must remain available until exact cleanup is confirmed.'
+    Assert-True ($partialStartupCleanupIds.Count -eq 1 -and [string]::Equals([string]($partialStartupCleanupIds[0]), [string]($partialStartupIds[0]), [StringComparison]::Ordinal)) 'A partial startup with an authoritative manifest must clean only the exact reserved session.'
+    Assert-True ([string]::Equals([string]($script:partialStartupOwnershipAtCleanup), [string]('Reserved'), [StringComparison]::Ordinal)) 'The Reserved pointer must remain available until exact cleanup is confirmed.'
     Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $partialStartupStateRoot))) 'Successful partial-startup cleanup must remove the exact Reserved pointer.'
 
     $failedCleanupStateRoot = Join-Path $stateRoot 'partial-cleanup-failed'
@@ -479,12 +479,12 @@ try {
             } | Out-Null
     }
     catch { $failedCleanupError = $_.Exception.Message }
-    Assert-True ($failedCleanupError.Contains('simulated startup failure before cleanup failure')) 'Failed compensation must preserve the original startup error.'
-    Assert-True ($failedCleanupError.Contains('simulated partial-startup cleanup failure')) 'Failed compensation must append exact cleanup diagnostics.'
+    Assert-True ($failedCleanupError.Contains('simulated startup failure before cleanup failure', [StringComparison]::Ordinal)) 'Failed compensation must preserve the original startup error.'
+    Assert-True ($failedCleanupError.Contains('simulated partial-startup cleanup failure', [StringComparison]::Ordinal)) 'Failed compensation must append exact cleanup diagnostics.'
     Assert-True ($failedCleanupIds.Count -eq 1) 'Failed compensation must attempt exact cleanup once.'
     $failedOwnership = Read-NervLeaderDemoSessionPointer -StateRoot $failedCleanupStateRoot
-    Assert-True ($failedOwnership.ownershipState -ceq 'Reserved') 'Failed compensation must retain actionable Reserved ownership.'
-    Assert-True ($failedOwnership.sessionId -ceq $failedCleanupIds[0]) 'Failed compensation must retain the exact session route.'
+    Assert-True ([string]::Equals([string]($failedOwnership.ownershipState), [string]('Reserved'), [StringComparison]::Ordinal)) 'Failed compensation must retain actionable Reserved ownership.'
+    Assert-True ([string]::Equals([string]($failedOwnership.sessionId), [string]($failedCleanupIds[0]), [StringComparison]::Ordinal)) 'Failed compensation must retain the exact session route.'
 
     $noManifestStateRoot = Join-Path $stateRoot 'startup-no-manifest'
     $script:noManifestCleanupCalls = 0
@@ -498,7 +498,7 @@ try {
             -StopSessionAction { param($SessionId) $script:noManifestCleanupCalls++ } | Out-Null
     }
     catch { $noManifestError = $_.Exception.Message }
-    Assert-True ($noManifestError.Contains('simulated failure before manifest creation')) 'A pre-manifest failure must preserve the original startup error.'
+    Assert-True ($noManifestError.Contains('simulated failure before manifest creation', [StringComparison]::Ordinal)) 'A pre-manifest failure must preserve the original startup error.'
     Assert-True ($script:noManifestCleanupCalls -eq 0) 'A pre-manifest failure must not invoke exact cleanup without authority.'
     Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $noManifestStateRoot))) 'A pre-manifest failure may release its Reserved pointer.'
 
@@ -568,12 +568,12 @@ try {
         -StopSessionAction { param($SessionId) $script:coldResetStopCalls++ } `
         -SeedAction { param($SessionId) $coldResetSeeds.Add($SessionId) } `
         -HealthCheckAction { param($SessionId) $coldResetHealthChecks.Add($SessionId) }
-    Assert-True ($coldResetStarts.Count -eq 1 -and $coldResetStarts[0] -ceq $coldResetSessionId) 'Cold reset must start exactly one fresh session.'
+    Assert-True ($coldResetStarts.Count -eq 1 -and [string]::Equals([string]($coldResetStarts[0]), [string]($coldResetSessionId), [StringComparison]::Ordinal)) 'Cold reset must start exactly one fresh session.'
     Assert-True ($script:coldResetStopCalls -eq 0) 'Cold reset must not invoke stop when no current pointer exists.'
-    Assert-True ($coldResetSeeds.Count -eq 1 -and $coldResetSeeds[0] -ceq $coldResetSessionId) 'Cold reset must seed the fresh exact session.'
-    Assert-True ($coldResetHealthChecks.Count -eq 1 -and $coldResetHealthChecks[0] -ceq $coldResetSessionId) 'Cold reset must health-check the fresh exact session.'
+    Assert-True ($coldResetSeeds.Count -eq 1 -and [string]::Equals([string]($coldResetSeeds[0]), [string]($coldResetSessionId), [StringComparison]::Ordinal)) 'Cold reset must seed the fresh exact session.'
+    Assert-True ($coldResetHealthChecks.Count -eq 1 -and [string]::Equals([string]($coldResetHealthChecks[0]), [string]($coldResetSessionId), [StringComparison]::Ordinal)) 'Cold reset must health-check the fresh exact session.'
     Assert-True (
-        (Read-NervLeaderDemoSessionPointer -StateRoot $coldResetRoot -ExpectedWorktreeRoot $repoRoot).sessionId -ceq $coldResetSessionId
+        [string]::Equals([string]((Read-NervLeaderDemoSessionPointer -StateRoot $coldResetRoot -ExpectedWorktreeRoot $repoRoot).sessionId), [string]($coldResetSessionId), [StringComparison]::Ordinal)
     ) 'Cold reset must finalize the fresh exact session pointer.'
 
     $firstSessionId = Invoke-NervLeaderDemoCommand `
@@ -585,23 +585,23 @@ try {
         -SeedAction $seedAction `
         -HealthCheckAction $healthAction
     Assert-True ($firstSessionId -match '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$') 'Start must allocate a validated full-stack session ID.'
-    Assert-True ($script:startCalls.Count -eq 1 -and $script:startCalls[0] -ceq $firstSessionId) 'Start must operate on the allocated exact session ID.'
+    Assert-True ($script:startCalls.Count -eq 1 -and [string]::Equals([string]($script:startCalls[0]), [string]($firstSessionId), [StringComparison]::Ordinal)) 'Start must operate on the allocated exact session ID.'
     Assert-True (-not (Test-Path Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD)) 'The mapped full-stack password must be removed after start.'
     Assert-True (-not (Test-Path Env:NERV_IIP_LEADER_DEMO)) 'The AppHost demo flag must be removed after start.'
 
     $pointer = Read-NervLeaderDemoSessionPointer -StateRoot $stateRoot -ExpectedWorktreeRoot $repoRoot
-    Assert-True ($pointer.sessionId -ceq $firstSessionId) 'Start must persist the current exact session pointer outside the worktree.'
+    Assert-True ([string]::Equals([string]($pointer.sessionId), [string]($firstSessionId), [StringComparison]::Ordinal)) 'Start must persist the current exact session pointer outside the worktree.'
     Assert-True ((Get-NervLeaderDemoSessionPointerPath -StateRoot $stateRoot).StartsWith([IO.Path]::GetFullPath($stateRoot), [StringComparison]::OrdinalIgnoreCase)) 'The pointer must live under the machine state root.'
 
     Invoke-NervLeaderDemoCommand -Action seed -StateRoot $stateRoot -WorktreeRoot $repoRoot -SeedAction $seedAction | Out-Null
     Invoke-NervLeaderDemoCommand -Action health-check -StateRoot $stateRoot -WorktreeRoot $repoRoot -HealthCheckAction $healthAction | Out-Null
-    Assert-True ($script:seedCalls.Count -eq 1 -and $script:seedCalls[0] -ceq $firstSessionId) 'Seed must use the recorded exact session ID.'
-    Assert-True ($script:healthCalls.Count -eq 1 -and $script:healthCalls[0] -ceq $firstSessionId) 'Health-check must use the recorded exact session ID.'
+    Assert-True ($script:seedCalls.Count -eq 1 -and [string]::Equals([string]($script:seedCalls[0]), [string]($firstSessionId), [StringComparison]::Ordinal)) 'Seed must use the recorded exact session ID.'
+    Assert-True ($script:healthCalls.Count -eq 1 -and [string]::Equals([string]($script:healthCalls[0]), [string]($firstSessionId), [StringComparison]::Ordinal)) 'Health-check must use the recorded exact session ID.'
 
     $leaderDemoRuntimeText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
-    Assert-True ($leaderDemoRuntimeText.Contains('Invoke-NervLeaderDemoVerification')) 'The default seed/health actions must use the governed verification and evidence implementation.'
-    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'seed'")) 'The default seed action must write seed verification evidence.'
-    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'health-check'")) 'The default health action must write bounded health evidence.'
+    Assert-True ($leaderDemoRuntimeText.Contains('Invoke-NervLeaderDemoVerification', [StringComparison]::Ordinal)) 'The default seed/health actions must use the governed verification and evidence implementation.'
+    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'seed'", [StringComparison]::Ordinal)) 'The default seed action must write seed verification evidence.'
+    Assert-True ($leaderDemoRuntimeText.Contains("-Command 'health-check'", [StringComparison]::Ordinal)) 'The default health action must write bounded health evidence.'
     $mainChainScenarioText = Get-Content -LiteralPath (Join-Path $repoRoot 'frontend/apps/business-console/e2e/leader-demo-main-chain.spec.ts') -Raw
     $planCreateIndex = $mainChainScenarioText.IndexOf('/api/business-console/v1/quality/inspection-plans', [StringComparison]::Ordinal)
     $productionReportIndex = $mainChainScenarioText.IndexOf('/api/business-console/v1/mes/production-reports', [StringComparison]::Ordinal)
@@ -617,31 +617,31 @@ try {
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'siteCode\s*:\s*finishedGoodsSiteCode')) 'The sales order must use the same finished-goods site later posted by MES and consumed by WMS.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'locationCode\s*:\s*finishedGoodsLocationCode')) 'The ERP delivery must preserve the exact finished-goods location in the WMS posting key.'
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'lotNo\s*:\s*producedLotNo')) 'The ERP delivery must preserve the exact produced lot in the WMS posting key.'
-    Assert-True ($mainChainScenarioText.Contains("textOf(row.inventoryPostingStatus) === 'posted'")) 'The main chain must wait for public WMS Inventory-posted status before accepting ERP completion.'
-    Assert-True ($mainChainScenarioText.Contains('Number(data.onHandQuantity ?? 0) === 0')) 'The main chain must prove the exact produced-stock balance is decremented to zero.'
-    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'production'")) 'The main chain must audit the production/null ownership partition rather than customer ownership.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(row.inventoryPostingStatus) === 'posted'", [StringComparison]::Ordinal)) 'The main chain must wait for public WMS Inventory-posted status before accepting ERP completion.'
+    Assert-True ($mainChainScenarioText.Contains('Number(data.onHandQuantity ?? 0) === 0', [StringComparison]::Ordinal)) 'The main chain must prove the exact produced-stock balance is decremented to zero.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'production'", [StringComparison]::Ordinal)) 'The main chain must audit the production/null ownership partition rather than customer ownership.'
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
-    Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode')) 'The leader-demo entrypoint must extract a structured verification exit code.'
-    Assert-True ($leaderDemoEntryText.Contains('exit $exitCode')) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'
+    Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode', [StringComparison]::Ordinal)) 'The leader-demo entrypoint must extract a structured verification exit code.'
+    Assert-True ($leaderDemoEntryText.Contains('exit $exitCode', [StringComparison]::Ordinal)) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'
     $simulatorEntryPath = Join-Path $repoRoot 'scripts/verify-leader-demo-telemetry-simulator.ps1'
     Assert-True (Test-Path -LiteralPath $simulatorEntryPath -PathType Leaf) 'The governed leader-demo telemetry simulator entrypoint must exist.'
     $simulatorEntryText = Get-Content -LiteralPath $simulatorEntryPath -Raw
-    Assert-True ($simulatorEntryText.Contains('scripts/lib/ScriptAutomation.ps1')) 'The simulator entrypoint must use the governed script helper.'
-    Assert-True ($simulatorEntryText.Contains('scripts/lib/FullStackSessionRuntime.ps1')) 'The simulator entrypoint must resolve the exact current leader-demo session.'
-    Assert-True ($simulatorEntryText.Contains('scripts/lib/LeaderDemoTelemetrySimulator.ps1')) 'The simulator entrypoint must use the deterministic simulator core.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) 'The simulator entrypoint must use the governed script helper.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/FullStackSessionRuntime.ps1', [StringComparison]::Ordinal)) 'The simulator entrypoint must resolve the exact current leader-demo session.'
+    Assert-True ($simulatorEntryText.Contains('scripts/lib/LeaderDemoTelemetrySimulator.ps1', [StringComparison]::Ordinal)) 'The simulator entrypoint must use the deterministic simulator core.'
     Assert-True ([regex]::IsMatch($simulatorEntryText, '\[int\]\s*\$SampleIntervalSeconds\s*=\s*2')) 'The simulator must default to a two-second public sample cadence.'
-    Assert-True ($simulatorEntryText.Contains('[switch] $HistoricalBackfill')) 'The simulator must expose the governed historical backfill probe.'
-    Assert-True ($simulatorEntryText.Contains('[switch] $ReplayExisting')) 'The simulator must expose an explicit no-delay replay mode for an exact run identity.'
-    Assert-True ($simulatorEntryText.Contains('Get-NervLeaderDemoTelemetryReplayBaseline')) 'Replay must load the completed real-time evidence for the exact session and run.'
-    Assert-True ($simulatorEntryText.Contains('Assert-NervLeaderDemoTelemetryReplayContract')) 'Replay must validate the complete scenario contract before publishing facts.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $HistoricalBackfill', [StringComparison]::Ordinal)) 'The simulator must expose the governed historical backfill probe.'
+    Assert-True ($simulatorEntryText.Contains('[switch] $ReplayExisting', [StringComparison]::Ordinal)) 'The simulator must expose an explicit no-delay replay mode for an exact run identity.'
+    Assert-True ($simulatorEntryText.Contains('Get-NervLeaderDemoTelemetryReplayBaseline', [StringComparison]::Ordinal)) 'Replay must load the completed real-time evidence for the exact session and run.'
+    Assert-True ($simulatorEntryText.Contains('Assert-NervLeaderDemoTelemetryReplayContract', [StringComparison]::Ordinal)) 'Replay must validate the complete scenario contract before publishing facts.'
     Assert-True (-not [regex]::IsMatch($simulatorEntryText, '(?m)^\s*Write-Error\b')) 'Explicit simulator exit codes must not be preempted by terminating Write-Error calls.'
-    Assert-True ($simulatorEntryText.Contains('[Console]::Error.WriteLine')) 'Simulator failures must write stderr without bypassing the explicit exit code.'
-    Assert-True ($simulatorEntryText.Contains('artifacts/leader-demo')) 'The simulator must write redacted evidence under artifacts/leader-demo.'
-    Assert-True ($simulatorEntryText.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD')) 'The simulator must accept the local password only through the controlled environment variable.'
+    Assert-True ($simulatorEntryText.Contains('[Console]::Error.WriteLine', [StringComparison]::Ordinal)) 'Simulator failures must write stderr without bypassing the explicit exit code.'
+    Assert-True ($simulatorEntryText.Contains('artifacts/leader-demo', [StringComparison]::Ordinal)) 'The simulator must write redacted evidence under artifacts/leader-demo.'
+    Assert-True ($simulatorEntryText.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD', [StringComparison]::Ordinal)) 'The simulator must accept the local password only through the controlled environment variable.'
     $simulatorCoreText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/LeaderDemoTelemetrySimulator.ps1') -Raw
-    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/samples')) 'Simulator writes must use the public telemetry sample facade.'
-    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/devices/')) 'Simulator verification must use the public history facade.'
-    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/alarms')) 'Simulator verification must use the public alarm facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/samples', [StringComparison]::Ordinal)) 'Simulator writes must use the public telemetry sample facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/devices/', [StringComparison]::Ordinal)) 'Simulator verification must use the public history facade.'
+    Assert-True ($simulatorCoreText.Contains('/api/business-console/v1/telemetry/alarms', [StringComparison]::Ordinal)) 'Simulator verification must use the public alarm facade.'
     Assert-True (-not [regex]::IsMatch($simulatorCoreText, '(?i)\b(sql|npgsql|dbcontext|invoke-sqlcmd)\b')) 'The simulator core must not contain a database write path.'
 
     $secondSessionId = Invoke-NervLeaderDemoCommand `
@@ -652,15 +652,15 @@ try {
         -StopSessionAction $stopAction `
         -SeedAction $seedAction `
         -HealthCheckAction $healthAction
-    Assert-True ($secondSessionId -ne $firstSessionId) 'Reset must allocate a fresh isolated session.'
-    Assert-True ($script:stopCalls.Count -eq 1 -and $script:stopCalls[0] -ceq $firstSessionId) 'Reset must stop only the validated recorded session ID.'
-    Assert-True ($script:startCalls.Count -eq 2 -and $script:startCalls[1] -ceq $secondSessionId) 'Reset with a current pointer must start exactly one fresh replacement session.'
-    Assert-True ($script:seedCalls[-1] -ceq $secondSessionId) 'Reset must seed the fresh exact session.'
-    Assert-True ($script:healthCalls[-1] -ceq $secondSessionId) 'Reset must health-check the fresh exact session.'
-    Assert-True ((Read-NervLeaderDemoSessionPointer -StateRoot $stateRoot -ExpectedWorktreeRoot $repoRoot).sessionId -ceq $secondSessionId) 'Reset must replace the pointer only after a fresh start succeeds.'
+    Assert-True (-not [string]::Equals($secondSessionId, $firstSessionId, [StringComparison]::Ordinal)) 'Reset must allocate a fresh isolated session.'
+    Assert-True ($script:stopCalls.Count -eq 1 -and [string]::Equals([string]($script:stopCalls[0]), [string]($firstSessionId), [StringComparison]::Ordinal)) 'Reset must stop only the validated recorded session ID.'
+    Assert-True ($script:startCalls.Count -eq 2 -and [string]::Equals([string]($script:startCalls[1]), [string]($secondSessionId), [StringComparison]::Ordinal)) 'Reset with a current pointer must start exactly one fresh replacement session.'
+    Assert-True ([string]::Equals([string]($script:seedCalls[-1]), [string]($secondSessionId), [StringComparison]::Ordinal)) 'Reset must seed the fresh exact session.'
+    Assert-True ([string]::Equals([string]($script:healthCalls[-1]), [string]($secondSessionId), [StringComparison]::Ordinal)) 'Reset must health-check the fresh exact session.'
+    Assert-True ([string]::Equals([string]((Read-NervLeaderDemoSessionPointer -StateRoot $stateRoot -ExpectedWorktreeRoot $repoRoot).sessionId), [string]($secondSessionId), [StringComparison]::Ordinal)) 'Reset must replace the pointer only after a fresh start succeeds.'
 
     Invoke-NervLeaderDemoCommand -Action stop -StateRoot $stateRoot -WorktreeRoot $repoRoot -StopSessionAction $stopAction | Out-Null
-    Assert-True ($script:stopCalls.Count -eq 2 -and $script:stopCalls[1] -ceq $secondSessionId) 'Stop must use only the recorded exact session ID.'
+    Assert-True ($script:stopCalls.Count -eq 2 -and [string]::Equals([string]($script:stopCalls[1]), [string]($secondSessionId), [StringComparison]::Ordinal)) 'Stop must use only the recorded exact session ID.'
     Assert-True (-not (Test-Path -LiteralPath (Get-NervLeaderDemoSessionPointerPath -StateRoot $stateRoot))) 'Stop must remove the current pointer after exact cleanup succeeds.'
 
     $invalidPointerPath = Get-NervLeaderDemoSessionPointerPath -StateRoot $stateRoot
@@ -670,7 +670,7 @@ try {
     try {
         Invoke-NervLeaderDemoCommand -Action stop -StateRoot $stateRoot -WorktreeRoot $repoRoot -StopSessionAction $stopAction | Out-Null
     }
-    catch { $invalidPointerFailed = $_.Exception.Message.Contains('Invalid leader-demo session ID') }
+    catch { $invalidPointerFailed = $_.Exception.Message.Contains('Invalid leader-demo session ID', [StringComparison]::Ordinal) }
     Assert-True $invalidPointerFailed 'An invalid pointer must fail before any cleanup action runs.'
     Assert-True ($script:stopCalls.Count -eq 2) 'An invalid pointer must never reach the stop action.'
 
@@ -680,7 +680,7 @@ try {
     try {
         Invoke-NervLeaderDemoCommand -Action start -StateRoot $stateRoot -WorktreeRoot $repoRoot -StartSessionAction $startAction | Out-Null
     }
-    catch { $missingPasswordFailed = $_.Exception.Message.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD') }
+    catch { $missingPasswordFailed = $_.Exception.Message.Contains('NERV_IIP_LEADER_DEMO_ADMIN_PASSWORD', [StringComparison]::Ordinal) }
     Assert-True $missingPasswordFailed 'Start must require the demo admin password from its sole controlled environment variable.'
     Assert-True ($script:startCalls.Count -eq 2) 'Missing credentials must fail before a new session starts.'
 }

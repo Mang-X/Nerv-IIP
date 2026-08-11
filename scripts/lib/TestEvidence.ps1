@@ -11,6 +11,8 @@
 
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
+
 # --------------------------------------------------------------------------------------------
 # Ordinal identifier primitives (#1509 round 2).
 #
@@ -40,11 +42,25 @@ function Test-NervOrdinalEquals {
     return [string]::Equals([string]$Left, [string]$Right, [StringComparison]::Ordinal)
 }
 
+function Get-NervOrdinalCompositeKey {
+    <#
+        Encodes a sequence of identity components into one injective ordinal key.
+
+        A delimiter-only key is ambiguous: ('a|b','c') and ('a','b|c') both become 'a|b|c'.
+        Escape backslash first and the delimiter second, then join with the unescaped delimiter.
+        The result is prefix-decodable and leaves today's keys byte-for-byte unchanged when their
+        components contain neither reserved character. Components stay objects until the shared
+        encoder validates them, so null and empty remain distinct instead of being collapsed by
+        PowerShell's [string] conversion or rejected by [string[]] parameter binding.
+    #>
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [object[]] $Components)
+
+    return Get-NervStringCompositeKey -Components $Components
+}
+
 function Get-NervOrdinalSet {
     param([Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values)
-    # Wrapped in a single-element array: PowerShell unrolls a returned IEnumerable, which would hand
-    # the caller a plain object[] and turn every `.Contains()` back into a culture-aware `-contains`.
-    return ,([Collections.Generic.HashSet[string]]::new([string[]] $Values, [StringComparer]::Ordinal))
+    return Get-NervStringSet -Values $Values -Comparer ([StringComparer]::Ordinal)
 }
 
 function Get-NervOrdinalSorted {
@@ -55,15 +71,7 @@ function Get-NervOrdinalSorted {
     # Built with an explicit statement rather than `$items = if (…) { [List]::new(…) } else { … }`:
     # PowerShell unrolls an IEnumerable produced by a block, so that spelling hands back an object[]
     # (or $null when empty) and `$items.Sort(…)` fails at run time instead of sorting.
-    $items = [Collections.Generic.List[string]]::new()
-    if ($Unique) {
-        $items.AddRange([Collections.Generic.HashSet[string]]::new([string[]] $Values, [StringComparer]::Ordinal))
-    }
-    else {
-        $items.AddRange([string[]] $Values)
-    }
-    $items.Sort([StringComparer]::Ordinal)
-    return @($items)
+    return Get-NervStringsSorted -Values $Values -Comparer ([StringComparer]::Ordinal) -Unique:$Unique
 }
 
 function Get-NervOrdinalGroups {
@@ -80,19 +88,7 @@ function Get-NervOrdinalGroups {
         [Parameter(Mandatory)] [scriptblock] $KeySelector
     )
 
-    $groups = [Collections.Generic.Dictionary[string, Collections.Generic.List[object]]]::new([StringComparer]::Ordinal)
-    foreach ($item in @($Items)) {
-        if ($null -eq $item) { continue }
-        $key = [string](& $KeySelector $item)
-        if (-not $groups.ContainsKey($key)) {
-            $groups[$key] = [Collections.Generic.List[object]]::new()
-        }
-        $groups[$key].Add($item)
-    }
-
-    return @(Get-NervOrdinalSorted -Values @($groups.Keys) | ForEach-Object {
-        [pscustomobject]@{ Name = $_; Group = @($groups[$_]) }
-    })
+    return Get-NervStringGroups -Items $Items -KeySelector $KeySelector -Comparer ([StringComparer]::Ordinal)
 }
 
 function Get-NervOrdinalSortedBy {
@@ -109,7 +105,7 @@ function Get-NervOrdinalSortedBy {
         [Parameter(Mandatory)] [scriptblock] $KeySelector
     )
 
-    return @(Get-NervOrdinalGroups -Items $Items -KeySelector $KeySelector | ForEach-Object { @($_.Group) })
+    return Get-NervItemsSortedByString -Items $Items -KeySelector $KeySelector -Comparer ([StringComparer]::Ordinal)
 }
 
 function Get-NervOrdinalRankedTop {
@@ -567,7 +563,37 @@ function Read-NervTrxResults {
         $root = $document.DocumentElement
         $persistedHeadSha = $root.GetAttribute('headSha')
         $persistedTestedSha = $root.GetAttribute('testedSha')
-        if (-not [string]::IsNullOrWhiteSpace($persistedHeadSha) -or -not [string]::IsNullOrWhiteSpace($persistedTestedSha)) {
+        $normalizedIdentityNamespace = 'urn:nerv-iip:test-evidence:assembly-identity:v1'
+        $definitionNodes = @($document.SelectNodes("//*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))
+        $reservedAssemblyIdentityAttributes = [Collections.Generic.List[object]]::new()
+        foreach ($definitionNode in $definitionNodes) {
+            foreach ($attribute in @($definitionNode.Attributes)) {
+                if ([string]::Equals([string]$attribute.LocalName, 'assemblyIdentity', [StringComparison]::Ordinal)) {
+                    $reservedAssemblyIdentityAttributes.Add($attribute)
+                }
+            }
+        }
+        $hasReservedAssemblyIdentityMarker = $reservedAssemblyIdentityAttributes.Count -gt 0
+        if ($hasReservedAssemblyIdentityMarker) {
+            # Fail closed on the reserved local name in any other namespace, duplicate marker
+            # attributes, or a partially marked definition set. The namespace URI is the authority;
+            # the XML prefix is intentionally irrelevant.
+            foreach ($definitionNode in $definitionNodes) {
+                $definitionMarkerAttributes = @($definitionNode.Attributes | Where-Object {
+                    [string]::Equals([string]$_.LocalName, 'assemblyIdentity', [StringComparison]::Ordinal)
+                })
+                if ($definitionMarkerAttributes.Count -ne 1 -or
+                    -not [string]::Equals([string]$definitionMarkerAttributes[0].NamespaceURI, $normalizedIdentityNamespace, [StringComparison]::Ordinal)) {
+                    throw [IO.InvalidDataException]::new("TRX assembly identity marker metadata is malformed or uses an unsupported namespace in '$([IO.Path]::GetFullPath($trxPath))'.")
+                }
+            }
+            if ($persistedHeadSha -notmatch '^[0-9a-f]{40}$' -or $persistedTestedSha -notmatch '^[0-9a-f]{40}$' -or
+                -not [string]::Equals($persistedHeadSha, [string]$RunMetadata.headSha, [StringComparison]::Ordinal) -or
+                -not [string]::Equals($persistedTestedSha, [string]$RunMetadata.testedSha, [StringComparison]::Ordinal)) {
+                throw [IO.InvalidDataException]::new("TRX assembly identity markers require exact normalized head and tested provenance in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($persistedHeadSha) -or -not [string]::IsNullOrWhiteSpace($persistedTestedSha)) {
             # Ordinal (#1509): a commit SHA is an identifier and this is the guard that stops a
             # normalized TRX from being read under someone else's provenance. `-cne` is culture-aware,
             # so a persisted SHA carrying an ignorable character would compare equal and pass.
@@ -591,9 +617,24 @@ function Read-NervTrxResults {
         $trxElapsedMilliseconds += $elapsed
 
         $definitions = @{}
-        foreach ($definition in @($document.SelectNodes("//*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))) {
+        foreach ($definition in $definitionNodes) {
             $method = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
-            $assembly = [IO.Path]::GetFileName([string]$definition.storage)
+            $hasAssemblyIdentityMarker = $definition.HasAttribute('assemblyIdentity', $normalizedIdentityNamespace)
+            $assemblyIdentityMarker = $definition.GetAttribute('assemblyIdentity', $normalizedIdentityNamespace)
+            if ($hasAssemblyIdentityMarker -and
+                ([string]::Equals($assemblyIdentityMarker, 'null', [StringComparison]::Ordinal) -or [string]::Equals($assemblyIdentityMarker, 'empty', [StringComparison]::Ordinal)) -and
+                -not [string]::IsNullOrEmpty([string]$definition.storage)) {
+                throw [IO.InvalidDataException]::new("TRX assembly identity markers require empty standard storage in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
+            if ($hasAssemblyIdentityMarker -and [string]::Equals($assemblyIdentityMarker, 'verbatim', [StringComparison]::Ordinal) -and
+                ([string]::IsNullOrWhiteSpace([string]$definition.storage) -or [string]$definition.storage -notmatch '[/\\]')) {
+                throw [IO.InvalidDataException]::new("TRX verbatim assembly identity marker requires non-empty canonical path storage in '$([IO.Path]::GetFullPath($trxPath))'.")
+            }
+            $assembly = if (-not $hasAssemblyIdentityMarker) { [IO.Path]::GetFileName([string]$definition.storage) }
+                elseif ([string]::Equals($assemblyIdentityMarker, 'null', [StringComparison]::Ordinal)) { $null }
+                elseif ([string]::Equals($assemblyIdentityMarker, 'empty', [StringComparison]::Ordinal)) { '' }
+                elseif ([string]::Equals($assemblyIdentityMarker, 'verbatim', [StringComparison]::Ordinal)) { [string]$definition.storage }
+                else { throw [IO.InvalidDataException]::new("TRX has an unsupported normalized assembly identity marker in '$([IO.Path]::GetFullPath($trxPath))'.") }
             $testName = if ($null -ne $method -and -not [string]::IsNullOrWhiteSpace([string]$method.className)) {
                 "$($method.className).$($method.name)"
             }
@@ -621,11 +662,19 @@ function Read-NervTrxResults {
             $counterPassed -ne $actualPassed -or $counterFailed -ne $actualFailed -or $counterSkipped -ne $actualSkipped) {
             throw [IO.InvalidDataException]::new("TRX ResultSummary/Counters do not match Results in '$([IO.Path]::GetFullPath($trxPath))'.")
         }
-        $assembliesInRun = @(Get-NervOrdinalSorted -Unique -Values @($definitions.Values | ForEach-Object { [string]$_.assembly }))
+        # Assembly is an identity-bearing nullable value in normalized TRX. Do not route it through
+        # Get-NervOrdinalSorted: that wrapper intentionally accepts ordinary non-empty identifiers,
+        # and a [string] projection would collapse null and empty before it could validate them.
+        $assembliesInRun = @(Get-NervOrdinalGroups -Items @($definitions.Values) -KeySelector {
+            param($row) Get-NervOrdinalCompositeKey -Components @($row.assembly)
+        } | ForEach-Object { $_.Group[0].assembly })
         if ($assembliesInRun.Count -gt 1) { throw [IO.InvalidDataException]::new("TRX contains multiple assemblies in '$([IO.Path]::GetFullPath($trxPath))'.") }
         $trxRuns.Add([pscustomobject][ordered]@{
             lane = [string]$RunMetadata.lane
-            assembly = if ($assembliesInRun.Count -eq 1) { [string]$assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }
+            # Preserve the identity restored from the normalized marker. This projection feeds the
+            # summary timing join; casting here would collapse null into empty after the record rows
+            # had already restored it correctly.
+            assembly = if ($assembliesInRun.Count -eq 1) { $assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }
             elapsedMilliseconds = $elapsed
             total = $counterTotal
             executed = $counterExecuted
@@ -634,7 +683,7 @@ function Read-NervTrxResults {
             skipped = $counterSkipped
         })
 
-        $ordinals = @{}
+        $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         foreach ($result in $results) {
             $rawOutcome = [string]$result.outcome
             if (-not $outcomeMap.ContainsKey($rawOutcome)) {
@@ -652,7 +701,7 @@ function Read-NervTrxResults {
             $displayName = [string]$retainedDisplay.text
             if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = [string]$definition.testName }
             if ($displayName.Length -gt 512) { $displayName = $displayName.Substring(0, 512) }
-            $ordinalKey = "$($definition.testName)|$displayName"
+            $ordinalKey = Get-NervOrdinalCompositeKey -Components @($definition.testName, $displayName)
             $ordinal = if ($ordinals.ContainsKey($ordinalKey)) { [int]$ordinals[$ordinalKey] + 1 } else { 1 }
             $ordinals[$ordinalKey] = $ordinal
             $rawError = if (Test-NervOrdinalEquals $rawOutcome 'Failed') {
@@ -672,13 +721,13 @@ function Read-NervTrxResults {
                 testedSha = [string]$RunMetadata.testedSha
                 lane = [string]$RunMetadata.lane
                 project = [IO.Path]::GetFileNameWithoutExtension([string]$definition.assembly)
-                assembly = [string]$definition.assembly
+                assembly = $definition.assembly
                 testName = [string]$definition.testName
                 displayName = $displayName
                 testClassName = [string]$definition.className
                 testMethodName = [string]$definition.methodName
-                definitionId = Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)"
-                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid "$($definition.assembly)|$($definition.testName)|$displayName|$ordinal" }
+                definitionId = Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName))
+                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }
                 durationTicks = [long]$duration.Ticks
                 durationMilliseconds = [double]$duration.TotalMilliseconds
                 outcome = [string]$outcomeMap[$rawOutcome]
@@ -850,11 +899,14 @@ function New-NervTestEvidenceSummary {
     # Ordinal grouping and ordinal membership (#1509): the group key is `lane|assembly`, both
     # identifiers, and `Group-Object lane, assembly` folds them. Two assemblies differing by an
     # ignorable character would report one merged timing row under one of the two names.
-    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) "$([string]$row.lane)|$([string]$row.assembly)" } | ForEach-Object {
+    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {
         $items = @($_.Group)
-        $laneName = [string]$items[0].lane
-        $assemblyName = [string]$items[0].assembly
-        $runRows = @($trxRuns | Where-Object { (Test-NervOrdinalEquals ([string]$_.lane) $laneName) -and (Test-NervOrdinalEquals ([string]$_.assembly) $assemblyName) })
+        $laneName = $items[0].lane
+        $assemblyName = $items[0].assembly
+        $runIdentity = Get-NervOrdinalCompositeKey -Components @($laneName, $assemblyName)
+        $runRows = @($trxRuns | Where-Object {
+            Test-NervOrdinalEquals (Get-NervOrdinalCompositeKey -Components @($_.lane, $_.assembly)) $runIdentity
+        })
         [pscustomobject][ordered]@{
             lane = $laneName
             assembly = $assemblyName
@@ -911,7 +963,10 @@ function New-NervTestEvidenceSummary {
         # Ordinal, not `-ceq`. The `c` prefix only disables case-insensitivity; the comparison still
         # runs through the collation table, which reports "equal" for strings that differ by an
         # ignorable character. An assembly name is an identifier, so it is compared as bytes.
-        [object[]]$assemblyMatches = if ($compatible) { @($baselineAssemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]$current.assembly, [StringComparison]::Ordinal) }) } else { @() }
+        $currentAssemblyIdentity = Get-NervOrdinalCompositeKey -Components @($current.assembly)
+        [object[]]$assemblyMatches = if ($compatible) { @($baselineAssemblies | Where-Object {
+            [string]::Equals((Get-NervOrdinalCompositeKey -Components @($_.assembly)), $currentAssemblyIdentity, [StringComparison]::Ordinal)
+        }) } else { @() }
         # One assembly classified into two lanes would give two rows that are not the same
         # measurement. Prefer this lane's row; with no lane match the comparison is genuinely
         # ambiguous and stays report-only unavailable rather than picking one arbitrarily.
@@ -926,7 +981,10 @@ function New-NervTestEvidenceSummary {
             @($assemblyMatches)
         }
         else {
-            @(@($assemblyMatches) | Where-Object { [string]::Equals([string]$_.lane, [string]$current.lane, [StringComparison]::Ordinal) } | Select-Object -First 1)
+            $currentLaneIdentity = Get-NervOrdinalCompositeKey -Components @($current.lane)
+            @(@($assemblyMatches) | Where-Object {
+                [string]::Equals((Get-NervOrdinalCompositeKey -Components @($_.lane)), $currentLaneIdentity, [StringComparison]::Ordinal)
+            } | Select-Object -First 1)
         }
         $baselineDuration = if (@($previous).Count -eq 1) { [double]@($previous)[0].elapsedMilliseconds } else { $null }
         $unavailableReason = if ($null -ne $baselineUnavailableReason) { $baselineUnavailableReason }
@@ -1047,6 +1105,81 @@ function Write-NervEvidenceOutputPath {
     [IO.File]::AppendAllText($ManifestPath, "evidence-path=$Path`n", [Text.UTF8Encoding]::new($false))
 }
 
+function New-NervNormalizedTrxFileNameSet {
+    # The retained artifact can be unpacked on a case-insensitive filesystem even when it was
+    # generated on Linux. Final-path uniqueness therefore uses the destination contract, not the
+    # current host filesystem's comparison rules.
+    return ,([Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase))
+}
+
+function Add-NervNormalizedTrxFileName {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $ResolvedFileNames,
+        [Parameter(Mandatory)] [string] $FileName
+    )
+    if (-not $ResolvedFileNames.Add($FileName)) {
+        throw 'Normalized TRX identities resolved to the same cross-platform artifact filename.'
+    }
+}
+
+function Get-NervNormalizedTrxHashedFileName {
+    param(
+        [Parameter(Mandatory)] [object] $Group,
+        [Parameter(Mandatory)] [object] $Summary,
+        [Parameter(Mandatory)] [string] $Sha8,
+        [int] $CollisionOrdinal = 0
+    )
+
+    $identityDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes([string]$Group.Identity))).ToLowerInvariant()
+    $laneStem = [regex]::Replace([string]$Summary.lane, '[^A-Za-z0-9_.-]', '_')
+    if ([string]::IsNullOrEmpty($laneStem)) { $laneStem = 'lane' }
+    if ($laneStem.Length -gt 64) { $laneStem = $laneStem.Substring(0, 64) }
+    $assemblyStem = [string]$Group.AssemblyName
+    if ([string]::IsNullOrEmpty($assemblyStem)) { $assemblyStem = 'assembly' }
+    $collisionSuffix = if ($CollisionOrdinal -eq 0) { '' } else { "-collision-$CollisionOrdinal" }
+    $suffix = "-id-$identityDigest$collisionSuffix-$Sha8-attempt-$($Summary.runAttempt).trx"
+    $maximumAssemblyLength = 240 - $laneStem.Length - 1 - $suffix.Length
+    if ($maximumAssemblyLength -lt 1) { throw 'Normalized TRX filename metadata exceeds the cross-platform safe length budget.' }
+    if ($assemblyStem.Length -gt $maximumAssemblyLength) { $assemblyStem = $assemblyStem.Substring(0, $maximumAssemblyLength) }
+    return "$laneStem-$assemblyStem$suffix"
+}
+
+function Resolve-NervNormalizedTrxFileNames {
+    param(
+        [Parameter(Mandatory)] [object[]] $Groups,
+        [Parameter(Mandatory)] [object] $Summary,
+        [Parameter(Mandatory)] [string] $Sha8
+    )
+
+    $resolved = [Collections.Hashtable]::new([StringComparer]::Ordinal)
+    $used = New-NervNormalizedTrxFileNameSet
+    $legacyGroups = Get-NervStringGroups -Items $Groups -KeySelector { param($row) [string]$row.LegacyFileName } -Comparer ([StringComparer]::OrdinalIgnoreCase)
+    $legacyCounts = [Collections.Hashtable]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($legacyGroup in $legacyGroups) { $legacyCounts[[string]$legacyGroup.Name] = @($legacyGroup.Group).Count }
+
+    # Reserve every compatible unique legacy path first. Hashed candidates are allocated only after
+    # that reservation, so input order cannot decide whether a legacy identity or an attacker-shaped
+    # hash lookalike keeps the historical name.
+    foreach ($group in @(Get-NervOrdinalSortedBy -Items $Groups -KeySelector { param($row) [string]$row.Identity })) {
+        $legacy = [string]$group.LegacyFileName
+        if ($legacy.Length -le 240 -and [int]$legacyCounts[$legacy] -eq 1) {
+            Add-NervNormalizedTrxFileName -ResolvedFileNames $used -FileName $legacy
+            $resolved[[string]$group.Identity] = $legacy
+        }
+    }
+    foreach ($group in @(Get-NervOrdinalSortedBy -Items $Groups -KeySelector { param($row) [string]$row.Identity })) {
+        if ($resolved.ContainsKey([string]$group.Identity)) { continue }
+        $collisionOrdinal = 0
+        do {
+            $candidate = Get-NervNormalizedTrxHashedFileName -Group $group -Summary $Summary -Sha8 $Sha8 -CollisionOrdinal $collisionOrdinal
+            $collisionOrdinal++
+        } while (-not $used.Add($candidate))
+        $resolved[[string]$group.Identity] = $candidate
+    }
+    return $resolved
+}
+
 function Write-NervTestEvidenceArtifacts {
     param(
         [Parameter(Mandatory)] [object[]] $Records,
@@ -1064,7 +1197,7 @@ function Write-NervTestEvidenceArtifacts {
         # Ordinal ordering (#1509): these keys are identifiers and this sort fixes the byte layout of
         # a retained artifact, so culture collation would make the same run produce different files on
         # different machines.
-        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) "$([string]$row.assembly)|$([string]$row.testName)" })) {
+        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.assembly, $row.testName) })) {
             $safeRecord = [ordered]@{
                 schemaVersion = [int]$record.schemaVersion
                 workflowRunId = [string]$record.workflowRunId
@@ -1073,7 +1206,9 @@ function Write-NervTestEvidenceArtifacts {
                 testedSha = [string]$record.testedSha
                 lane = [string]$record.lane
                 project = [string]$record.project
-                assembly = [string]$record.assembly
+                # Nullable normalized assembly identity is retained in JSON as well as TRX. A
+                # string cast here would make tests.jsonl disagree with the marker-bearing TRX.
+                assembly = $record.assembly
                 testName = [string]$record.testName
                 displayName = [string]$record.displayName
                 testClassName = [string]$record.testClassName
@@ -1187,10 +1322,20 @@ function Write-NervTestEvidenceArtifacts {
         # Ordinal grouping and ordinal ordering (#1509): `lane|assembly` and the record key are
         # identifiers, and this decides both which normalized TRX a record lands in and the byte order
         # inside it.
-        foreach ($group in @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) "$([string]$row.lane)|$([string]$row.assembly)" })) {
-            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($group.Group) -KeySelector { param($row) "$([string]$row.testName)|$([string]$row.displayName)|$([string]$row.testInstanceId)" })
+        $normalizedGroups = @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {
+            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($_.Group) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.testName, $row.displayName, $row.testInstanceId) })
             $assemblyName = [regex]::Replace([string]$groupRecords[0].assembly, '[^A-Za-z0-9_.-]', '_')
-            $fileName = "$($Summary.lane)-$assemblyName-$sha8-attempt-$($Summary.runAttempt).trx"
+            [pscustomobject]@{
+                Identity = [string]$_.Name
+                Records = $groupRecords
+                AssemblyName = $assemblyName
+                LegacyFileName = "$($Summary.lane)-$assemblyName-$sha8-attempt-$($Summary.runAttempt).trx"
+            }
+        })
+        $resolvedFileNames = Resolve-NervNormalizedTrxFileNames -Groups $normalizedGroups -Summary $Summary -Sha8 $sha8
+        foreach ($normalizedGroup in $normalizedGroups) {
+            $groupRecords = @($normalizedGroup.Records)
+            $fileName = [string]$resolvedFileNames[[string]$normalizedGroup.Identity]
             $xmlRows = foreach ($record in $groupRecords) {
                 $name = [Security.SecurityElement]::Escape([string]$record.displayName)
                 # Explicit ordinal comparisons rather than `switch` (#1509 round 3): PowerShell's
@@ -1208,17 +1353,34 @@ function Write-NervTestEvidenceArtifacts {
             }
             $xmlDefinitions = foreach ($definitionGroup in @(Get-NervOrdinalGroups -Items @($groupRecords) -KeySelector { param($row) [string]$row.definitionId })) {
                 $record = $definitionGroup.Group[0]
-                "<UnitTest id=`"$($record.definitionId)`" name=`"$([Security.SecurityElement]::Escape([string]$record.testName))`" storage=`"$([Security.SecurityElement]::Escape([string]$record.assembly))`"><TestMethod className=`"$([Security.SecurityElement]::Escape([string]$record.testClassName))`" name=`"$([Security.SecurityElement]::Escape([string]$record.testMethodName))`" /></UnitTest>"
+                $assemblyIdentityAttribute = if ($null -eq $record.assembly) { ' nerv:assemblyIdentity="null"' }
+                    elseif ($record.assembly -is [string] -and $record.assembly.Length -eq 0) { ' nerv:assemblyIdentity="empty"' }
+                    elseif ([string]$record.assembly -match '[/\\]') { ' nerv:assemblyIdentity="verbatim"' }
+                    else { '' }
+                "<UnitTest id=`"$($record.definitionId)`" name=`"$([Security.SecurityElement]::Escape([string]$record.testName))`" storage=`"$([Security.SecurityElement]::Escape([string]$record.assembly))`"$assemblyIdentityAttribute><TestMethod className=`"$([Security.SecurityElement]::Escape([string]$record.testClassName))`" name=`"$([Security.SecurityElement]::Escape([string]$record.testMethodName))`" /></UnitTest>"
             }
             $passedCount = @($groupRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'passed' }).Count
             $failedCount = @($groupRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'failed' }).Count
             $skippedCount = @($groupRecords | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' }).Count
             $executedCount = $passedCount + $failedCount
-            $assemblySummary = @($Summary.assemblies | Where-Object { (Test-NervOrdinalEquals ([string]$_.lane) ([string]$groupRecords[0].lane)) -and (Test-NervOrdinalEquals ([string]$_.assembly) ([string]$groupRecords[0].assembly)) })[0]
+            $groupIdentity = Get-NervOrdinalCompositeKey -Components @($groupRecords[0].lane, $groupRecords[0].assembly)
+            $assemblySummary = @($Summary.assemblies | Where-Object {
+                Test-NervOrdinalEquals (Get-NervOrdinalCompositeKey -Components @($_.lane, $_.assembly)) $groupIdentity
+            })[0]
             $start = [DateTimeOffset]'2000-01-01T00:00:00Z'
             $finish = $start.AddMilliseconds([double]$assemblySummary.elapsedMilliseconds)
-            $runId = Get-NervStableEvidenceGuid "$($Summary.workflowRunId)|$($Summary.runAttempt)|$($groupRecords[0].lane)|$($groupRecords[0].assembly)"
-            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" headSha=`"$($Summary.headSha)`" testedSha=`"$($Summary.testedSha)`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
+            $runIdentity = Get-NervOrdinalCompositeKey -Components @(
+                $Summary.workflowRunId,
+                [string]$Summary.runAttempt,
+                $groupRecords[0].lane,
+                $groupRecords[0].assembly)
+            $runId = Get-NervStableEvidenceGuid $runIdentity
+            $assemblyIdentityNamespace = if (@($groupRecords | Where-Object {
+                    $null -eq $_.assembly -or
+                    ($_.assembly -is [string] -and $_.assembly.Length -eq 0) -or
+                    ([string]$_.assembly -match '[/\\]')
+                }).Count -gt 0) { ' xmlns:nerv="urn:nerv-iip:test-evidence:assembly-identity:v1"' } else { '' }
+            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" headSha=`"$($Summary.headSha)`" testedSha=`"$($Summary.testedSha)`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"$assemblyIdentityNamespace><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
             Write-NervUtf8NoBom (Join-Path $temporary "trx/$fileName") $safeXml
         }
         [IO.Directory]::Move($temporary, $OutputDirectory)
@@ -1263,7 +1425,7 @@ function Write-NervTestEvidenceFailureArtifacts {
         schemaVersion = 1
         collectionStatus = 'failed'
         workflowRunId = $safeRun
-        runAttempt = if ([int]$RunMetadata.runAttempt -ge 1 -and [int]$RunMetadata.runAttempt -le 1000) { [int]$RunMetadata.runAttempt } else { 0 }
+        runAttempt = if (((([int]$RunMetadata.runAttempt) -ge (1))) -and ((([int]$RunMetadata.runAttempt) -le (1000)))) { [int]$RunMetadata.runAttempt } else { 0 }
         headSha = $safeHeadSha
         testedSha = $safeTestedSha
         lane = $safeLane
@@ -1401,12 +1563,12 @@ function Resolve-NervPriorAttemptAuthority {
     $expectedJobs = Get-NervTestEvidenceLaneJobs
     if (-not $expectedJobs.Contains($Lane) -or -not (Test-NervOrdinalEquals ([string]$expectedJobs[$Lane]) $JobName) -or
         -not (Test-NervOrdinalEquals ([string]$Run.id) $WorkflowRunId) -or -not (Test-NervOrdinalEquals ([string]$Run.head_sha) $HeadSha) -or
-        [int]$Run.run_attempt -ne $RunAttempt) {
+        (-not (([int]$Run.run_attempt) -eq ($RunAttempt)))) {
         return $result
     }
     $priorAttempt = $RunAttempt - 1
     $failedJobs = @($Jobs | Where-Object {
-        (Test-NervOrdinalEquals ([string]$_.name) $JobName) -and [int]$_.run_attempt -eq $priorAttempt -and (Test-NervOrdinalEquals ([string]$_.conclusion) 'failure')
+        (Test-NervOrdinalEquals ([string]$_.name) $JobName) -and (([int]$_.run_attempt) -eq ($priorAttempt)) -and (Test-NervOrdinalEquals ([string]$_.conclusion) 'failure')
     })
     if ($failedJobs.Count -ne 1) { return $result }
     $result.verified = $true
@@ -1486,9 +1648,9 @@ function Assert-NervEvidenceSourceSummaries {
         foreach ($field in @('lane', 'jobName', 'artifactName')) {
             if ([string]::IsNullOrWhiteSpace([string]$summary.$field)) { throw "Evidence summary metadata field '$field' must be nonempty." }
         }
-        if ([int]$summary.runAttempt -ne 1 -or -not (Test-NervOrdinalEquals ([string]$summary.attemptClassification) 'initial') -or
+        if ((-not (([int]$summary.runAttempt) -eq (1))) -or -not (Test-NervOrdinalEquals ([string]$summary.attemptClassification) 'initial') -or
             -not (Test-NervOrdinalEquals ([string]$summary.currentTestOutcome) 'success') -or -not (Test-NervOrdinalEquals ([string]$summary.collectionStatus) 'succeeded') -or
-            [int]$summary.failed -ne 0 -or [int]$summary.executed -le 0 -or @($summary.violations).Count -ne 0 -or
+            (-not (([int]$summary.failed) -eq (0))) -or ((([int]$summary.executed) -le (0))) -or @($summary.violations).Count -ne 0 -or
             -not (Test-NervOrdinalEquals ([string]$summary.event) 'push') -or -not (Test-NervOrdinalEquals ([string]$summary.headBranch) 'main') -or
             [string]$summary.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$summary.testedSha -notmatch '^[0-9a-f]{40}$' -or
             -not (Test-NervOrdinalEquals ([string]$summary.testedSha) ([string]$summary.headSha)) -or
@@ -1512,14 +1674,14 @@ function Assert-NervEvidenceRootAuthority {
     )
 
     $first = Assert-NervEvidenceSourceSummaries -SourceSummaries $SourceSummaries
-    if (-not (Test-NervOrdinalEquals ([string]$Run.event) 'push') -or -not (Test-NervOrdinalEquals ([string]$Run.headBranch) 'main') -or [int]$Run.attempt -ne 1 -or
+    if (-not (Test-NervOrdinalEquals ([string]$Run.event) 'push') -or -not (Test-NervOrdinalEquals ([string]$Run.headBranch) 'main') -or (-not (([int]$Run.attempt) -eq (1))) -or
         -not (Test-NervOrdinalEquals ([string]$Run.conclusion) 'success') -or -not (Test-NervOrdinalEquals ([string]$Run.headSha) ([string]$first.headSha)) -or
         -not (Test-NervOrdinalEquals ([string]$Run.url) ([string]$first.sourceUrl)) -or -not (Test-NervOrdinalEquals ([string]$Run.workflowName) 'CI') -or
         -not (Test-NervOrdinalEquals ([string]$Run.databaseId) ([string]$first.workflowRunId))) {
         throw 'Evidence source is not an authoritative successful attempt-1 main CI run.'
     }
     if ($LatestRuns.Count -ne 1 -or -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].databaseId) ([string]$first.workflowRunId)) -or
-        [int]$LatestRuns[0].attempt -ne 1 -or -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].headSha) ([string]$first.headSha)) -or
+        (-not (([int]$LatestRuns[0].attempt) -eq (1))) -or -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].headSha) ([string]$first.headSha)) -or
         -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].conclusion) 'success') -or -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].event) 'push') -or
         -not (Test-NervOrdinalEquals ([string]$LatestRuns[0].headBranch) 'main')) {
         throw 'Evidence source is not the latest qualifying successful attempt-1 main CI run.'
@@ -1607,11 +1769,11 @@ function New-NervTestEvidenceBaseline {
     if (-not (Test-NervOrdinalEquals ($provenanceLanes -join '|') ($recordedLanes -join '|'))) {
         throw "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$($provenanceLanes -join ', ')] recorded=[$($recordedLanes -join ', ')]."
     }
-    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) "$([string]$row.lane)|$([string]$row.assembly)" } | ForEach-Object {
+    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {
         $items = @($_.Group)
         [pscustomobject][ordered]@{
-            lane = [string]$items[0].lane
-            assembly = [string]$items[0].assembly
+            lane = $items[0].lane
+            assembly = $items[0].assembly
             passed = [int](($items | Measure-Object passed -Sum).Sum)
             failed = [int](($items | Measure-Object failed -Sum).Sum)
             skipped = [int](($items | Measure-Object skipped -Sum).Sum)

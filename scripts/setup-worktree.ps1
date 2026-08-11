@@ -155,7 +155,7 @@ else {
 }
 
 # --- Backend (.NET) restore - opt-in (slow; not needed for frontend work) ---
-if ($env:NERV_SETUP_BACKEND -eq '1') {
+if ([string]::Equals([string]($env:NERV_SETUP_BACKEND), [string]('1'), [StringComparison]::OrdinalIgnoreCase)) {
   $marker = Join-Path $root 'backend/services/Iam/src/Nerv.IIP.Iam.Web/obj/project.assets.json'
   if (-not (Test-Path $marker)) {
     Write-SetupStep 'backend: dotnet restore (NERV_SETUP_BACKEND=1)'

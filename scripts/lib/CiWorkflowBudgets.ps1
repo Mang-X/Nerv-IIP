@@ -10,6 +10,7 @@
 #     - PowerShell 7
 
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
 <#
 MAN-799 CI timeout-budget invariants.
@@ -227,7 +228,7 @@ function Test-NervCiWorkflowConditionRunsAfterFailure {
     # classifies more strictly, so the loose pattern is the fail-closed choice.
     if ([string]::IsNullOrWhiteSpace($expression)) { return $true }
     if ($expression -match '^[>|][0-9]*[+-]?[0-9]*$') { return $true }
-    if ($expression.StartsWith('*') -or $expression.StartsWith('&')) { return $true }
+    if ($expression.StartsWith('*', [StringComparison]::Ordinal) -or $expression.StartsWith('&', [StringComparison]::Ordinal)) { return $true }
 
     # GitHub status-check functions. `always()` and `!cancelled()` run after a failure by design,
     # and `failure()` runs *only* after one; all three keep the step reachable when an earlier step
@@ -241,8 +242,9 @@ function Test-NervCiWorkflowConditionRunsAfterFailure {
     $statusNeutralFunctions = @(
         'success', 'contains', 'startswith', 'endswith', 'format', 'join', 'tojson', 'fromjson', 'hashfiles'
     )
-    foreach ($call in [regex]::Matches($expression, '(?i)(?<name>[A-Za-z_][A-Za-z0-9_-]*)\s*\(')) {
-        if ($statusNeutralFunctions -notcontains $call.Groups['name'].Value.ToLowerInvariant()) {
+    $statusNeutralFunctionSet = Get-NervStringSet -Values $statusNeutralFunctions -Comparer ([StringComparer]::Ordinal)
+    foreach ($call in [regex]::Matches($expression, '(?i)(?<name>[A-Za-z_][^\s(]*)\s*\(')) {
+        if (-not $statusNeutralFunctionSet.Contains([string]$call.Groups['name'].Value.ToLowerInvariant())) {
             return $true
         }
     }
@@ -270,15 +272,15 @@ function Remove-NervCiWorkflowInlineComment {
         # as the end reopened the rest of the value to comment stripping, so `"a \" # b" && always()`
         # lost its `always()` and the step was demoted to the weaker tier. Cutting less is the
         # fail-closed direction here, so the escape is consumed whole.
-        if ($inDoubleQuote -and $character -eq '\' -and $index + 1 -lt $Text.Length) {
+        if ($inDoubleQuote -and $character -eq [char]'\' -and $index + 1 -lt $Text.Length) {
             $index++
             continue
         }
 
-        if ($character -eq "'" -and -not $inDoubleQuote) {
+        if ($character -eq [char]"'" -and -not $inDoubleQuote) {
             # YAML's single-quote escape is a doubled quote; consuming the pair keeps the run open
             # explicitly instead of relying on two toggles happening to cancel out.
-            if ($inSingleQuote -and $index + 1 -lt $Text.Length -and $Text[$index + 1] -eq "'") {
+            if ($inSingleQuote -and $index + 1 -lt $Text.Length -and $Text[$index + 1] -eq [char]"'") {
                 $index++
                 continue
             }
@@ -287,8 +289,8 @@ function Remove-NervCiWorkflowInlineComment {
             continue
         }
 
-        if ($character -eq '"' -and -not $inSingleQuote) { $inDoubleQuote = -not $inDoubleQuote; continue }
-        if ($character -ne '#' -or $inSingleQuote -or $inDoubleQuote) { continue }
+        if ($character -eq [char]'"' -and -not $inSingleQuote) { $inDoubleQuote = -not $inDoubleQuote; continue }
+        if ($character -ne [char]'#' -or $inSingleQuote -or $inDoubleQuote) { continue }
         if ($index -eq 0 -or [char]::IsWhiteSpace($Text[$index - 1])) {
             return $Text.Substring(0, $index).Trim()
         }

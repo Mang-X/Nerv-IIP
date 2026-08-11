@@ -25,21 +25,21 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
 
-if ($PSCmdlet.ParameterSetName -eq 'GitHubConsole') {
+if ([string]::Equals([string]($PSCmdlet.ParameterSetName), [string]('GitHubConsole'), [StringComparison]::OrdinalIgnoreCase)) {
     $view = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('run', 'view', $GitHubRunId, '--repo', $Repository, '--json', 'event,headBranch,headSha,attempt,conclusion,url,jobs') -WorkingDirectory $repoRoot -Name 'man-661-baseline-run'
     $run = (Protect-ScriptAutomationText $view.Stdout) | ConvertFrom-Json -AsHashtable
-    $jobs = @($run.jobs | Where-Object { [string]$_.databaseId -eq $GitHubJobId })
+    $jobs = @($run.jobs | Where-Object { [string]::Equals([string]([string]$_.databaseId), [string]($GitHubJobId), [StringComparison]::OrdinalIgnoreCase) })
     if ($jobs.Count -ne 1) { throw "GitHub job '$GitHubJobId' was missing or ambiguous in run '$GitHubRunId'." }
     $job = $jobs[0]
-    if ([int]$run.attempt -ne 1 -or [string]$run.conclusion -cne 'success' -or [string]$job.conclusion -cne 'success' -or
-        [string]$run.headSha -notmatch '^[0-9a-f]{40}$' -or [string]$job.name -cne 'Backend Tests') {
+    if ([int]$run.attempt -ne 1 -or (-not [string]::Equals([string]([string]$run.conclusion), [string]('success'), [StringComparison]::Ordinal)) -or (-not [string]::Equals([string]([string]$job.conclusion), [string]('success'), [StringComparison]::Ordinal)) -or
+        [string]$run.headSha -notmatch '^[0-9a-f]{40}$' -or (-not [string]::Equals([string]([string]$job.name), [string]('Backend Tests'), [StringComparison]::Ordinal))) {
         throw 'Baseline source must be a successful attempt-1 run and successful Backend Tests job with a full head SHA.'
     }
     $logResult = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('run', 'view', $GitHubRunId, '--repo', $Repository, '--job', $GitHubJobId, '--log') -WorkingDirectory $repoRoot -TimeoutSeconds 180 -Name 'man-661-baseline-log'
     $safeLog = Protect-ScriptAutomationText $logResult.Stdout
     $runnerProvenance = Get-NervGitHubRunnerProvenance -Text $safeLog
     $checkoutProvenance = Assert-NervGitHubRunCheckoutProvenance -Run ([pscustomobject]$run) -RunnerProvenance $runnerProvenance
-    if ([string]$run.event -cne 'push' -or [string]$run.headBranch -cne 'main') {
+    if ((-not [string]::Equals([string]([string]$run.event), [string]('push'), [StringComparison]::Ordinal)) -or (-not [string]::Equals([string]([string]$run.headBranch), [string]('main'), [StringComparison]::Ordinal))) {
         throw 'Baseline source must be a main push; pull-request checkout provenance is validated but is not baseline-eligible.'
     }
     $metadata = @{
@@ -59,7 +59,7 @@ if ($PSCmdlet.ParameterSetName -eq 'GitHubConsole') {
     $summaries = @(ConvertFrom-NervDotNetConsoleSummary -Text $safeLog -RunMetadata $metadata)
 }
 else {
-    $summaryPaths = @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter 'summary.json' -File -Recurse | Sort-Object FullName)
+    $summaryPaths = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $EvidenceRoot -Filter 'summary.json' -File -Recurse) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal))
     if ($summaryPaths.Count -eq 0) { throw "No normalized summary.json files found under '$EvidenceRoot'." }
     $sourceSummaries = @($summaryPaths | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json })
     $first = Assert-NervEvidenceSourceSummaries -SourceSummaries $sourceSummaries
@@ -69,7 +69,7 @@ else {
     $latestRun = @((Protect-ScriptAutomationText $latest.Stdout) | ConvertFrom-Json)
     $jobLogs = @{}
     foreach ($summary in $sourceSummaries) {
-        $job = @($run.jobs | Where-Object { [string]$_.name -ceq [string]$summary.jobName -and [string]$_.conclusion -ceq 'success' })
+        $job = @($run.jobs | Where-Object { [string]::Equals([string]([string]$_.name), [string]([string]$summary.jobName), [StringComparison]::Ordinal) -and [string]::Equals([string]([string]$_.conclusion), [string]('success'), [StringComparison]::Ordinal) })
         if ($job.Count -ne 1) { throw "Evidence job '$($summary.jobName)' is missing, ambiguous, or unsuccessful." }
         $jobLog = Invoke-NativeCommandOutput -Command 'gh' -Arguments @('run', 'view', [string]$first.workflowRunId, '--repo', [string]$first.repository, '--job', [string]$job[0].databaseId, '--log') -WorkingDirectory $repoRoot -TimeoutSeconds 180 -Name "man-661-evidence-$($summary.lane)-log"
         $jobLogs[[string]$summary.jobName] = $jobLog.Stdout
@@ -83,7 +83,7 @@ else {
     $metadata = @{
         sourceKind = 'trx-evidence'; repository = [string]$first.repository; workflowRunId = [string]$first.workflowRunId; runAttempt = 1; jobId = ''
         headSha = [string]$first.headSha; testedSha = [string]$first.testedSha; sourceUrl = [string]$first.sourceUrl; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
-        laneProvenance = @(Get-NervEvidenceLaneProvenance -SourceSummaries $sourceSummaries); selectedLanes = @($summaries.lane | Sort-Object -Unique)
+        laneProvenance = @(Get-NervEvidenceLaneProvenance -SourceSummaries $sourceSummaries); selectedLanes = @(Get-NervStringsSorted -Values @($summaries.lane) -Comparer ([StringComparer]::Ordinal) -Unique)
         generatorCommand = 'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json'
     }
 }

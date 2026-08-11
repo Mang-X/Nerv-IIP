@@ -757,8 +757,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限；step 预算合计为 53m（11 个 step：3m
-    # checkout + 10 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 10m job 预算是快速失败界限；step 预算合计为 58m（12 个 step：3m
+    # checkout + 11 × 5m），且仅为逐 step 上限。合计超过 job 预算
     # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -766,8 +766,9 @@ jobs:
     # MAN-669 PR-C 添加了两个 solution-configuration-membership step；两者
     # 在本地均于 5s 内完成（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算保持不变。
     # #1509 添加了扫描边界契约 step（本地 5.2s）；基于同一理由，job 预算保持不变，
-    # step 预算合计由 43m 调整为 48m。#1512 的 ordinal-string 合同只覆盖内存对象边界，
-    # 本地实测为 0.41s；以同一理由加入独立 5m step，job 预算保持不变，合计为 53m。
+    # step 预算合计由 43m 调整为 48m。#1512 保留 ordinal-string 的内存对象边界合同，
+    # 并增加独立的 ordinal comparison layers 合同；二者各有 5m step，合计为 58m。
+    # 本 job 没有 `if: always()` 证据步骤，故仍属于层级 B，job 预算保持不变。
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -802,6 +803,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/script-governance-scan-boundary.Tests.ps1
+
+      - name: Test ordinal comparison layers
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ordinal-comparison-layers.Tests.ps1
 
       - name: Test backend determinism checker
         timeout-minutes: 5
