@@ -135,6 +135,54 @@ foreach ($invalidCharacterCase in @(
         'Unknown, string-typed, or reassigned character-shaped values must remain findings.'
 }
 
+foreach ($newItemWriteCase in @(
+    'function Test-NewItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Item variable:character -Value ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-NewItemAliasForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { ni variable:character -Value ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-QualifiedNewItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Management\New-Item variable:character -Value ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-ComposedNewItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Item -Path variable: -Name character -Value ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-DynamicNameNewItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Item -Path variable: -Name $target -Value ''{'' -Force; if ($character -eq ''{'') { return $true } } }'
+)) {
+    $findings = @(Get-LayerProbeFindings -Source $newItemWriteCase)
+    Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+        "New-Item writes to the foreach iterator must invalidate its character proof: $newItemWriteCase"
+}
+
+foreach ($commonWriteParameter in @(
+    'OutVariable', 'ov',
+    'ErrorVariable', 'ev',
+    'WarningVariable', 'wv',
+    'InformationVariable', 'iv',
+    'PipelineVariable', 'pv'
+)) {
+    $source = "function Test-CommonParameterForeachCharacter { param([string]`$text) foreach (`$character in `$text.ToCharArray()) { Get-Thing -${commonWriteParameter}:character; if (`$character -eq '{') { return `$true } } }"
+    $findings = @(Get-LayerProbeFindings -Source $source)
+    Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+        "The common -$commonWriteParameter parameter must invalidate a foreach character proof."
+}
+
+$commonParameterTypedIdentityFindings = @(Get-LayerProbeFindings -Source 'function Test-CommonParameterTypedIdentity { [int]$leftId = 1; Get-Thing -OutVariable leftId; return $leftId -eq $rightId }')
+Assert-Layer (@($commonParameterTypedIdentityFindings | Where-Object { $_.StartsWith('[culture-operator-with-identity-variable]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'A common output-variable parameter must invalidate a prior typed-local identity proof.'
+
+$refComparerFindings = @(Get-LayerProbeFindings -Source 'function Test-RefComparer { $comparison = [StringComparison]::Ordinal; [int]::TryParse(''1'', [ref]$comparison); return $value.StartsWith($prefix, $comparison) }')
+Assert-Layer (@($refComparerFindings | Where-Object { $_.StartsWith('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'Exposing a proven comparer through [ref] must invalidate the local comparer proof.'
+
+$refOrdinalSetFindings = @(Get-LayerProbeFindings -Source 'function Test-RefOrdinalSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); Get-Thing ([ref]$names); return $names.Contains(''Name'') }')
+Assert-Layer (@($refOrdinalSetFindings | Where-Object { $_.StartsWith('[ambiguous-method-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'Exposing a proven ordinal HashSet through [ref] must invalidate the local receiver proof.'
+
+foreach ($nonWriteCase in @(
+    'function Test-OtherCommonParameterTarget { param([string]$text) foreach ($character in $text.ToCharArray()) { Get-Thing -OutVariable other; if ($character -eq ''{'') { return $true } } }',
+    'function Test-NonCommonParameterName { param([string]$text) foreach ($character in $text.ToCharArray()) { Get-Thing -OutputVariable character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-OtherReferenceTarget { param([string]$text) foreach ($character in $text.ToCharArray()) { Get-Thing ([ref]$other); if ($character -eq ''{'') { return $true } } }',
+    'function Test-NonVariableNewItem { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Item -Path ./character -ItemType File; if ($character -eq ''{'') { return $true } } }',
+    'function Test-CustomNewThing { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Thing variable:character; if ($character -eq ''{'') { return $true } } }'
+)) {
+    Assert-Layer (@(Get-LayerProbeFindings -Source $nonWriteCase).Count -eq 0) `
+        "A syntactically similar write to another target or provider must preserve the character proof: $nonWriteCase"
+}
+
 foreach ($safeOrdinalSetCase in @(
     'function Test-DirectOrdinalSet { return [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal).Contains(''Name'') }',
     'function Test-LocalOrdinalSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase); return $names.Contains(''Name'') }'

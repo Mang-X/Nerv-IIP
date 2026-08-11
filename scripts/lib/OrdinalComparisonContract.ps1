@@ -344,7 +344,15 @@ function Get-NervOrdinalContractLocalAssignments {
         $owner = Get-NervOrdinalContractEnclosingFunction -Node $_
         [object]::ReferenceEquals($owner, $scope)
     })
-    if ($commandWrites.Count -gt 0) { return @() }
+    $referenceWrites = @($searchScope.FindAll({
+        param($node)
+        $node.Extent.StartOffset -lt $Context.Extent.StartOffset -and
+            (Test-NervOrdinalContractReferenceMayWriteVariable -Node $node -Name $name)
+    }, $true) | Where-Object {
+        $owner = Get-NervOrdinalContractEnclosingFunction -Node $_
+        [object]::ReferenceEquals($owner, $scope)
+    })
+    if ($commandWrites.Count -gt 0 -or $referenceWrites.Count -gt 0) { return @() }
     return $assignments
 }
 
@@ -462,7 +470,13 @@ function Test-NervOrdinalContractForeachIteratorIsUnmodified {
         $candidate -is [System.Management.Automation.Language.CommandAst] -and
             (Test-NervOrdinalContractCommandMayWriteVariable -Command $candidate -Name $name)
     }, $true))
-    return $commandWrites.Count -eq 0
+    if ($commandWrites.Count -gt 0) { return $false }
+
+    $referenceWrites = @($ForEach.Body.FindAll({
+        param($candidate)
+        Test-NervOrdinalContractReferenceMayWriteVariable -Node $candidate -Name $name
+    }, $true))
+    return $referenceWrites.Count -eq 0
 }
 
 function Test-NervOrdinalContractAssignmentWritesVariable {
@@ -481,16 +495,69 @@ function Test-NervOrdinalContractAssignmentWritesVariable {
         [string]::Equals([string] $target.VariablePath.UserPath, $Name, [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-NervOrdinalContractReferenceMayWriteVariable {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.Ast] $Node,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    if ($Node -isnot [System.Management.Automation.Language.ConvertExpressionAst] -or
+        -not [string]::Equals([string] $Node.Type.TypeName.FullName, 'ref', [StringComparison]::OrdinalIgnoreCase) -or
+        $Node.Child -isnot [System.Management.Automation.Language.VariableExpressionAst]) {
+        return $false
+    }
+    return Test-NervOrdinalContractVariablePathTextMayMatch `
+        -CandidateName ([string] $Node.Child.VariablePath.UserPath) `
+        -Name $Name
+}
+
 function Test-NervOrdinalContractCommandMayWriteVariable {
     param(
         [Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command,
         [Parameter(Mandatory)] [string] $Name
     )
 
+    if (Test-NervOrdinalContractCommonParameterMayWriteVariable -Command $Command -Name $Name) { return $true }
     if (Test-NervOrdinalContractBuiltinVariableMutationCommand -Command $Command) {
         return Test-NervOrdinalContractCommandNameMayMatch -Command $Command -Name $Name
     }
     return Test-NervOrdinalContractItemCommandMayWriteVariable -Command $Command -Name $Name
+}
+
+function Test-NervOrdinalContractCommonParameterMayWriteVariable {
+    param(
+        [Parameter(Mandatory)] [System.Management.Automation.Language.CommandAst] $Command,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $writeParameters = @(
+        'OutVariable', 'ov',
+        'ErrorVariable', 'ev',
+        'WarningVariable', 'wv',
+        'InformationVariable', 'iv',
+        'PipelineVariable', 'pv'
+    )
+    $elements = @($Command.CommandElements)
+    for ($index = 1; $index -lt $elements.Count; $index++) {
+        $element = $elements[$index]
+        if ($element -isnot [System.Management.Automation.Language.CommandParameterAst]) { continue }
+        if (@($writeParameters | Where-Object {
+            [string]::Equals([string] $element.ParameterName, $_, [StringComparison]::OrdinalIgnoreCase)
+        }).Count -eq 0) { continue }
+
+        $candidate = if ($null -ne $element.Argument) {
+            $element.Argument
+        }
+        elseif ($index + 1 -lt $elements.Count -and
+            $elements[$index + 1] -isnot [System.Management.Automation.Language.CommandParameterAst]) {
+            $elements[$index + 1]
+        }
+        else { $null }
+        if ($candidate -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $true }
+        $candidateName = [string] $candidate.Value
+        if (Test-NervOrdinalContractVariablePathTextMayMatch -CandidateName $candidateName -Name $Name) { return $true }
+    }
+    return $false
 }
 
 function Test-NervOrdinalContractBuiltinVariableMutationCommand {
@@ -518,6 +585,7 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
     $kind = $null
     foreach ($entry in @(
         [pscustomobject]@{ Kind = 'path'; Names = @('Set-Item', 'Microsoft.PowerShell.Management\Set-Item', 'si', 'Clear-Item', 'Microsoft.PowerShell.Management\Clear-Item', 'cli', 'Remove-Item', 'Microsoft.PowerShell.Management\Remove-Item', 'ri', 'rm', 'del', 'erase', 'rd', 'rmdir', 'Rename-Item', 'Microsoft.PowerShell.Management\Rename-Item', 'rni', 'ren') },
+        [pscustomobject]@{ Kind = 'new-item'; Names = @('New-Item', 'Microsoft.PowerShell.Management\New-Item', 'ni') },
         [pscustomobject]@{ Kind = 'source-and-destination'; Names = @('Move-Item', 'Microsoft.PowerShell.Management\Move-Item', 'mi', 'mv', 'move') },
         [pscustomobject]@{ Kind = 'destination'; Names = @('Copy-Item', 'Microsoft.PowerShell.Management\Copy-Item', 'cpi', 'cp', 'copy') }
     )) {
@@ -534,6 +602,8 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
     $elements = @($Command.CommandElements)
     $positionals = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
     $namedTargets = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
+    $newItemPaths = [Collections.Generic.List[System.Management.Automation.Language.Ast]]::new()
+    $newItemName = $null
     $hasNamedSource = $false
     $hasNamedDestination = $false
     for ($index = 1; $index -lt $elements.Count; $index++) {
@@ -553,12 +623,24 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
         $isSourcePath = [string]::Equals($parameterName, 'Path', [StringComparison]::OrdinalIgnoreCase) -or
             [string]::Equals($parameterName, 'LiteralPath', [StringComparison]::OrdinalIgnoreCase)
         $isDestination = [string]::Equals($parameterName, 'Destination', [StringComparison]::OrdinalIgnoreCase)
+        $isName = [string]::Equals($parameterName, 'Name', [StringComparison]::OrdinalIgnoreCase)
+        if ([string]::Equals($kind, 'new-item', [StringComparison]::Ordinal)) {
+            if ($isSourcePath) { $newItemPaths.Add($argument) }
+            if ($isName) { $newItemName = $argument }
+        }
         if (($isSourcePath -and -not [string]::Equals($kind, 'destination', [StringComparison]::Ordinal)) -or
             ($isDestination -and -not [string]::Equals($kind, 'path', [StringComparison]::Ordinal))) {
             $namedTargets.Add($argument)
             if ($isSourcePath) { $hasNamedSource = $true }
             if ($isDestination) { $hasNamedDestination = $true }
         }
+    }
+
+    if ([string]::Equals($kind, 'new-item', [StringComparison]::Ordinal)) {
+        $path = if ($newItemPaths.Count -gt 0) { $newItemPaths[0] }
+        elseif ($positionals.Count -gt 0) { $positionals[0] }
+        else { $null }
+        return Test-NervOrdinalContractNewItemMayWriteVariable -Path $path -ItemName $newItemName -Name $Name
     }
 
     foreach ($candidate in $namedTargets) {
@@ -580,6 +662,26 @@ function Test-NervOrdinalContractItemCommandMayWriteVariable {
     if ($hasNamedDestination) { return $false }
     return $positionals.Count -ge 2 -and
         (Test-NervOrdinalContractVariableProviderPathMayMatch -Candidate $positionals[1] -Name $Name)
+}
+
+function Test-NervOrdinalContractNewItemMayWriteVariable {
+    param(
+        [AllowNull()] [System.Management.Automation.Language.Ast] $Path,
+        [AllowNull()] [System.Management.Automation.Language.Ast] $ItemName,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    # Dynamic provider paths remain the registered provider-path blind spot. With an explicit
+    # variable: provider root, however, a dynamic item name can be the protected binding and must
+    # invalidate the proof.
+    if ($Path -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $false }
+    $providerPath = [string] $Path.Value
+    if (-not $providerPath.StartsWith('variable:', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    $variablePath = $providerPath.Substring('variable:'.Length).TrimStart('/', '\')
+    if (-not [string]::IsNullOrEmpty($variablePath)) {
+        return Test-NervOrdinalContractVariablePathTextMayMatch -CandidateName $variablePath -Name $Name
+    }
+    return Test-NervOrdinalContractVariablePathMayMatch -Candidate $ItemName -Name $Name
 }
 
 function Test-NervOrdinalContractVariableProviderPathMayMatch {
