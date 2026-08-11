@@ -8,6 +8,7 @@
 #     - bin/ and obj/ build outputs under tested .NET projects
 #     - artifacts/script-logs/**
 #     - Machine-readable metrics JSONL and summary JSON under artifacts/script-logs/**
+#     - Caller-specified paths passed through -MetricsOutputPath and -SummaryOutputPath
 #   Cleanup:
 #     - Restores scoped environment variables after the test command finishes
 #   Requires:

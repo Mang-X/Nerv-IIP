@@ -110,6 +110,93 @@ puts JSON.generate(workflow)
     return ($parsed.Stdout | ConvertFrom-Json -ErrorAction Stop)
 }
 
+function Get-NightlyBusinessPerformanceRunBlock {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $workflow = Get-NightlyBusinessPerformanceWorkflow -Path $Path
+    $jobs = Get-WorkflowProperty -Object $workflow -Name 'jobs'
+    $job = Get-WorkflowProperty -Object $jobs -Name 'business-performance'
+    $steps = @(Get-WorkflowProperty -Object $job -Name 'steps')
+    $performanceSteps = @($steps | Where-Object {
+            [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'name'), 'Run performance baseline', [StringComparison]::Ordinal)
+        })
+    Assert-WorkflowContract ($performanceSteps.Count -eq 1) 'Nightly business performance workflow must contain exactly one named performance run step.'
+    return [string](Get-WorkflowProperty -Object $performanceSteps[0] -Name 'run')
+}
+
+function Invoke-NightlyBusinessPerformanceRunFixture {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $ManualThreshold
+    )
+
+    $runBlock = Get-NightlyBusinessPerformanceRunBlock -Path $Path
+    $verifierInvocation = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'
+    Assert-WorkflowContract ([regex]::Matches($runBlock, [regex]::Escape($verifierInvocation)).Count -eq 1) 'Performance run fixture must replace exactly one governed verifier invocation.'
+    $recordingInvocation = @'
+$script:nightlyVerifierInvoked = $true
+$script:nightlyThresholdArguments = @($thresholdArguments)
+'@.Trim()
+    $instrumentedRunBlock = $runBlock.Replace($verifierInvocation, $recordingInvocation)
+    $script:nightlyVerifierInvoked = $false
+    $script:nightlyThresholdArguments = @()
+    $failure = $null
+
+    try {
+        Invoke-WithScopedEnvironment -Variables @{
+            MANUAL_MAX_ELAPSED_MILLISECONDS = $ManualThreshold
+        } -ScriptBlock {
+            & ([scriptblock]::Create($instrumentedRunBlock))
+        }
+    }
+    catch {
+        $failure = $_
+    }
+
+    return [pscustomobject]@{
+        Failure = $failure
+        VerifierInvoked = $script:nightlyVerifierInvoked
+        ThresholdArguments = @($script:nightlyThresholdArguments)
+    }
+}
+
+function Test-NightlyBusinessPerformanceInvalidManualThresholds {
+    foreach ($invalidThreshold in @('-1', 'abc')) {
+        $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $workflowPath -ManualThreshold $invalidThreshold
+        Assert-WorkflowContract ($null -ne $result.Failure) "Manual threshold '$invalidThreshold' must fail before invoking the verifier."
+        Assert-WorkflowContract ($result.Failure.Exception.Message.Contains('must be an invariant integer greater than or equal to 0', [StringComparison]::Ordinal)) "Manual threshold '$invalidThreshold' must produce the governed deterministic diagnostic. Actual: $($result.Failure.Exception.Message)"
+        Assert-WorkflowContract (-not $result.VerifierInvoked) "Manual threshold '$invalidThreshold' must not invoke the verifier."
+    }
+
+    Write-Host 'Invalid manual threshold behavior tests passed.'
+}
+
+function Test-NightlyBusinessPerformanceManualThresholdModes {
+    foreach ($testCase in @(
+            @{
+                Input = '0'
+                ExpectedArguments = @(
+                    '-InventoryMaxElapsedMilliseconds', '600000',
+                    '-MesMaxElapsedMilliseconds', '600000',
+                    '-ErpMaxElapsedMilliseconds', '600000'
+                )
+            },
+            @{
+                Input = '1'
+                ExpectedArguments = @('-MaxElapsedMilliseconds', '1')
+            }
+        )) {
+        $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $workflowPath -ManualThreshold $testCase.Input
+        Assert-WorkflowContract ($null -eq $result.Failure) "Manual threshold '$($testCase.Input)' must execute its governed threshold mode. Actual failure: $($result.Failure)"
+        Assert-WorkflowContract $result.VerifierInvoked "Manual threshold '$($testCase.Input)' must invoke the verifier exactly once."
+        $actualArguments = @($result.ThresholdArguments | ForEach-Object { [string]$_ }) -join "`n"
+        $expectedArguments = @($testCase.ExpectedArguments) -join "`n"
+        Assert-WorkflowContract ([string]::Equals($actualArguments, $expectedArguments, [StringComparison]::Ordinal)) "Manual threshold '$($testCase.Input)' must pass only its governed threshold arguments. Actual: $actualArguments"
+    }
+
+    Write-Host 'Manual threshold mode behavior tests passed.'
+}
+
 function Assert-NightlyBusinessPerformanceWorkflow {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -174,10 +261,20 @@ $commonArguments = @(
     '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
     '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
 )
-if ([int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS -gt 0) {
+$manualMaxElapsedMilliseconds = 0
+$manualInputParsed = [int]::TryParse(
+    [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
+    [Globalization.NumberStyles]::Integer,
+    [Globalization.CultureInfo]::InvariantCulture,
+    [ref]$manualMaxElapsedMilliseconds
+)
+if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
+    throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
+}
+if ($manualMaxElapsedMilliseconds -gt 0) {
     $thresholdArguments = @(
         '-MaxElapsedMilliseconds',
-        [int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS
+        $manualMaxElapsedMilliseconds
     )
 }
 else {
@@ -257,10 +354,20 @@ jobs:
               '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
               '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
           )
-          if ([int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS -gt 0) {
+          $manualMaxElapsedMilliseconds = 0
+          $manualInputParsed = [int]::TryParse(
+              [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
+              [Globalization.NumberStyles]::Integer,
+              [Globalization.CultureInfo]::InvariantCulture,
+              [ref]$manualMaxElapsedMilliseconds
+          )
+          if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
+              throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
+          }
+          if ($manualMaxElapsedMilliseconds -gt 0) {
               $thresholdArguments = @(
                   '-MaxElapsedMilliseconds',
-                  [int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS
+                  $manualMaxElapsedMilliseconds
               )
           }
           else {
@@ -285,8 +392,8 @@ jobs:
     try {
         [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
         Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
-        $manualOnly = "                  '-MaxElapsedMilliseconds',`n                  [int]`$env:MANUAL_MAX_ELAPSED_MILLISECONDS"
-        $manualWithScheduledThreshold = "                  '-MaxElapsedMilliseconds',`n                  [int]`$env:MANUAL_MAX_ELAPSED_MILLISECONDS,`n                  '-InventoryMaxElapsedMilliseconds', 600000"
+        $manualOnly = "                  '-MaxElapsedMilliseconds',`n                  `$manualMaxElapsedMilliseconds"
+        $manualWithScheduledThreshold = "                  '-MaxElapsedMilliseconds',`n                  `$manualMaxElapsedMilliseconds,`n                  '-InventoryMaxElapsedMilliseconds', 600000"
         Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
         [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
         $failure = $null
@@ -300,6 +407,8 @@ jobs:
     }
 }
 
+Test-NightlyBusinessPerformanceInvalidManualThresholds
+Test-NightlyBusinessPerformanceManualThresholdModes
 Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 

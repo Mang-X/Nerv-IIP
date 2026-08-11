@@ -23,7 +23,7 @@
 - 使用 `actions/checkout@v4`、`actions/setup-dotnet@v4`、`actions/cache@v4` 和 `actions/upload-artifact@v4`；
 - job 级 `NERV_IIP_PERF_POSTGRES` 指向 service container 暴露的本机端口；
 - PowerShell step 调用 `scripts/verify-business-performance-baseline.ps1`，场景为 `all`、profile 为 `nightly`、输出路径固定在 `artifacts/business-performance/nightly/`；
-- 正常 scheduled run 使用分场景阈值。人工触发若提供全局阈值，则用它覆盖分场景阈值，专门服务于失败探针；
+- 正常 scheduled run 使用分场景阈值。人工输入按 invariant integer 解析：缺省或 `0` 使用分场景阈值，大于 `0` 时仅使用该全局阈值，无法解析或小于 `0` 时显式失败，避免把无效探针静默解释成正常运行；
 - artifact step 使用 `if: always()`，仅上传 `metrics.jsonl` 与 `summary.json`，缺文件时失败，不上传 TRX、stdout、stderr、数据库内容或连接串，保留 30 天；
 - 不使用 `continue-on-error`、`|| true` 或其他失败吞噬手段。
 
@@ -44,7 +44,7 @@
 
 ## 阈值校准与真实验收
 
-workflow 首次推送后，从该分支连续人工触发至少三次正常运行。记录每个 run 的 Inventory、MES、ERP `elapsedMilliseconds`，以同一通道的观测最大值为基线，并设置足以覆盖 hosted runner 抖动的整数阈值；阈值不得为 0。校准值和 run URL 写入 PR 描述与 Linear 验收评论，但运行 artifact 不提交仓库。
+GitHub 只允许人工调度默认分支中已存在的 workflow，因此该新文件合并到默认分支后才能连续人工触发至少三次正常运行。记录每个 run 的 Inventory、MES、ERP `elapsedMilliseconds`，以同一通道的观测最大值为基线，并设置足以覆盖 hosted runner 抖动的整数阈值；阈值不得为 0。三个分场景阈值之和还必须明显小于性能 step 的 20 分钟预算，为 restore/build 留出余量；若实测无法满足，则在保持 step 预算合计小于 45 分钟 job 预算的前提下调整性能 step/job 预算。校准值和 run URL 写入 PR 描述与 Linear 验收评论，但运行 artifact 不提交仓库。
 
 随后人工触发一次 `1 ms` 全局阈值失败探针，要求：
 
@@ -52,7 +52,7 @@ workflow 首次推送后，从该分支连续人工触发至少三次正常运�
 - summary 的 `passed` 为 `false` 且 `violations` 非空；
 - `metrics.jsonl` 与 `summary.json` artifact 仍可下载。
 
-最后以正式阈值再触发一次成功运行，确认 PostgreSQL 已真实执行、三个场景指标齐全、summary `passed=true`、artifact 可下载。只有该最终正常运行成功后才把 PR 标为可审核；远端运行状态与本地合同测试分别报告，不互相替代。
+最后以正式阈值再触发一次成功运行，确认 PostgreSQL 已真实执行、三个场景指标齐全、summary `passed=true`、artifact 可下载。只有该最终正常运行成功后才可把 NERV-183 标为完成；远端运行状态与本地合同测试分别报告，不互相替代。
 
 ## 文档与失败处理
 

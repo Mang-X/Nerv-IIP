@@ -237,3 +237,52 @@ Expected: run conclusion 为 success；artifact 中三个场景齐全、summary 
 - [ ] **Step 6: 更新 PR 和 Linear，转为等待审核**
 
 把 calibration runs、失败探针、最终成功 run、artifact 名称、校准公式与最终阈值写入 PR 正文和 NERV-183 中文评论。将 draft PR 转为 ready；保持 Linear 为 In Progress 或团队约定的审核中状态，不标记 Done，不合并 PR。
+
+### Task 5: 审核后输入边界与治理声明收口
+
+**Files:**
+- Modify: `.github/workflows/nightly-business-performance.yml`
+- Modify: `scripts/tests/nightly-business-performance-workflow.Tests.ps1`
+- Modify: `scripts/verify-business-performance-baseline.ps1`
+- Modify: `docs/architecture/implementation-readiness.md`
+
+**Interfaces:**
+- Consumes: `workflow_dispatch.inputs.max_elapsed_milliseconds` 的字符串值。
+- Produces: invariant integer 的三态语义——`0` 使用定时分场景阈值、`>0` 仅使用人工全局阈值、无法解析或 `<0` 显式失败。
+
+- [ ] **Step 1: 写入负数输入的 RED 行为合同**
+
+在 `scripts/tests/nightly-business-performance-workflow.Tests.ps1` 中执行真实 workflow 的 performance run block，但把最终 verifier 调用替换为记录参数的测试函数。以 `MANUAL_MAX_ELAPSED_MILLISECONDS=-1` 执行时，断言脚本抛出包含 `must be greater than or equal to 0` 的确定性错误，且测试 verifier 未被调用。
+
+- [ ] **Step 2: 运行合同并确认预期 RED**
+
+```powershell
+pwsh scripts/tests/nightly-business-performance-workflow.Tests.ps1
+```
+
+Expected: FAIL，因为当前 `-1` 会进入 scheduled 分支并调用 verifier。
+
+- [ ] **Step 3: 实现最小输入解析与校验**
+
+在 performance step 中用 `[int]::TryParse(..., [Globalization.NumberStyles]::Integer, [Globalization.CultureInfo]::InvariantCulture, [ref]...)` 解析输入；解析失败时显式 throw，小于 `0` 时显式 throw，后续分支仅使用解析后的整数。
+
+- [ ] **Step 4: 同步治理声明与工程文档**
+
+在 `scripts/verify-business-performance-baseline.ps1` 的 `Writes` 中声明 `-MetricsOutputPath`/`-SummaryOutputPath` 指定路径；在 `implementation-readiness.md` 记录人工输入三态语义与合并后校准验收条件，不宣称 hosted run 已执行。
+
+- [ ] **Step 5: 运行相关门禁**
+
+```powershell
+pwsh scripts/tests/nightly-business-performance-workflow.Tests.ps1
+pwsh scripts/tests/business-performance-metrics-completeness.Tests.ps1
+pwsh scripts/check-script-governance.ps1
+pwsh scripts/tests/ordinal-comparison-layers.Tests.ps1
+pwsh scripts/tests/test-evidence.Tests.ps1
+pwsh scripts/tests/backend-test-shards.Tests.ps1
+```
+
+Expected: 全部 exit 0；随后运行 `git diff --check`。
+
+- [ ] **Step 6: 更新 Linear 验收记录并推送 PR**
+
+在 NERV-183 明确登记：默认分支合并后至少三次校准、`1 ms` 失败探针、正式阈值成功 run，以及三个阈值之和必须明显低于性能 step 预算（否则同步调整预算）。保持 Issue 为 In Progress，直到 hosted 验收全部完成。

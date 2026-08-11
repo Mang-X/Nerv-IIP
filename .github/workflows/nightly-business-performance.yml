@@ -55,10 +55,20 @@ jobs:
               '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
               '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
           )
-          if ([int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS -gt 0) {
+          $manualMaxElapsedMilliseconds = 0
+          $manualInputParsed = [int]::TryParse(
+              [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
+              [Globalization.NumberStyles]::Integer,
+              [Globalization.CultureInfo]::InvariantCulture,
+              [ref]$manualMaxElapsedMilliseconds
+          )
+          if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
+              throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
+          }
+          if ($manualMaxElapsedMilliseconds -gt 0) {
               $thresholdArguments = @(
                   '-MaxElapsedMilliseconds',
-                  [int]$env:MANUAL_MAX_ELAPSED_MILLISECONDS
+                  $manualMaxElapsedMilliseconds
               )
           }
           else {
