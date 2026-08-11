@@ -9,6 +9,8 @@
 #   Requires:
 #     - PowerShell 7
 
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
+
 function Get-BackendTestShardUniqueSorted {
     <#
         Deduplicates and orders identifiers by an explicitly supplied comparer.
@@ -45,10 +47,7 @@ function Get-BackendTestShardUniqueSorted {
         [System.StringComparer] $Comparer = [System.StringComparer]::Ordinal
     )
 
-    $unique = [System.Collections.Generic.List[string]]::new(
-        [System.Collections.Generic.HashSet[string]]::new([string[]] $Values, $Comparer))
-    $unique.Sort($Comparer)
-    return @($unique)
+    return Get-NervStringsSorted -Values $Values -Comparer $Comparer -Unique
 }
 
 function Get-BackendTestShardMembershipSet {
@@ -63,7 +62,7 @@ function Get-BackendTestShardMembershipSet {
     # Wrapped in a single-element array on the way out: PowerShell unrolls an IEnumerable return
     # value, which would hand the caller a plain object[] (or $null for an empty set) and turn every
     # `.Contains()` below into a culture-aware `-contains` at best and a null-reference at worst.
-    return ,([System.Collections.Generic.HashSet[string]]::new([string[]] $Values, $Comparer))
+    return Get-NervStringSet -Values $Values -Comparer $Comparer
 }
 
 function Get-BackendTestShardOptionalArray {
