@@ -621,7 +621,9 @@ else {
                         $errors.Add("Backend Tests aggregate must fail when '$requiredJob' is not success.")
                     }
                 }
-                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or ((@(Get-NervStringsSorted -Values @($aggregateCommands) -Comparer ([StringComparer]::Ordinal)) -join '|') -ne (@(Get-NervStringsSorted -Values @($requiredAssertions) -Comparer ([StringComparer]::Ordinal)) -join '|'))) {
+                $actualAggregateAssertions = @(Get-NervStringsSorted -Values @($aggregateCommands) -Comparer ([StringComparer]::Ordinal)) -join '|'
+                $expectedAggregateAssertions = @(Get-NervStringsSorted -Values @($requiredAssertions) -Comparer ([StringComparer]::Ordinal)) -join '|'
+                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or -not [string]::Equals($actualAggregateAssertions, $expectedAggregateAssertions, [StringComparison]::Ordinal)) {
                     $errors.Add('Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.')
                 }
             }

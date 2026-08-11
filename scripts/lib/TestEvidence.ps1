@@ -495,8 +495,8 @@ function ConvertTo-NervRetainedDisplayName {
                     $escaped = $false
                 }
                 elseif ([string]::Equals([string]($character), [string]([char]'"'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]"'"), [StringComparison]::OrdinalIgnoreCase)) { $quote = $character }
-                # `[char]` casts, not `-in` over string literals: `-in` compares as *strings*, which is
-                # culture-aware. Char equality is numeric and is what a brace matcher wants.
+                # `[char]` casts, not `-in` over string literals: `-in` compares as *strings* and is
+                # culture-aware. Keep delimiter checks as explicit ordinal string comparisons.
                 elseif ([string]::Equals([string]($character), [string]([char]'{'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]'['), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]'('), [StringComparison]::OrdinalIgnoreCase)) { $depth++ }
                 elseif ([string]::Equals([string]($character), [string]([char]'}'), [StringComparison]::OrdinalIgnoreCase) -or [string]::Equals([string]($character), [string]([char]']'), [StringComparison]::OrdinalIgnoreCase)) { if ($depth -gt 0) { $depth-- } }
                 elseif ([string]::Equals([string]($character), [string]([char]')'), [StringComparison]::OrdinalIgnoreCase) -and $depth -eq 0) { break }
@@ -1375,7 +1375,12 @@ function Write-NervTestEvidenceArtifacts {
                 $groupRecords[0].lane,
                 $groupRecords[0].assembly)
             $runId = Get-NervStableEvidenceGuid $runIdentity
-            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" headSha=`"$($Summary.headSha)`" testedSha=`"$($Summary.testedSha)`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`" xmlns:nerv=`"urn:nerv-iip:test-evidence:assembly-identity:v1`"><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
+            $assemblyIdentityNamespace = if (@($groupRecords | Where-Object {
+                    $null -eq $_.assembly -or
+                    ($_.assembly -is [string] -and $_.assembly.Length -eq 0) -or
+                    ([string]$_.assembly -match '[/\\]')
+                }).Count -gt 0) { ' xmlns:nerv="urn:nerv-iip:test-evidence:assembly-identity:v1"' } else { '' }
+            $safeXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><TestRun id=`"$runId`" headSha=`"$($Summary.headSha)`" testedSha=`"$($Summary.testedSha)`" xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"$assemblyIdentityNamespace><Times creation=`"$($start.ToString('o'))`" queuing=`"$($start.ToString('o'))`" start=`"$($start.ToString('o'))`" finish=`"$($finish.ToString('o'))`" /><Results>$([string]::Join('', @($xmlRows)))</Results><TestDefinitions>$([string]::Join('', @($xmlDefinitions)))</TestDefinitions><ResultSummary outcome=`"Completed`"><Counters total=`"$($groupRecords.Count)`" executed=`"$executedCount`" passed=`"$passedCount`" failed=`"$failedCount`" notExecuted=`"$skippedCount`" /></ResultSummary></TestRun>"
             Write-NervUtf8NoBom (Join-Path $temporary "trx/$fileName") $safeXml
         }
         [IO.Directory]::Move($temporary, $OutputDirectory)

@@ -965,7 +965,7 @@ function Resolve-PnpmInvocation {
     $index = 0
     while ($index -lt $Arguments.Count) {
         $argument = $Arguments[$index]
-        if ([string]::Equals($argument, '--', [StringComparison]::OrdinalIgnoreCase)) {
+        if ($argument -eq '--') {
             # -- 之后的参数属于下游命令（pnpm run/exec 透传），原样保留、停止扫描。
             while ($index -lt $Arguments.Count) {
                 $normalizedArguments.Add($Arguments[$index])
@@ -974,7 +974,7 @@ function Resolve-PnpmInvocation {
             break
         }
         # -C 必须大小写敏感：小写 -c 是下游命令（如 playwright test -c）常见参数。
-        if (([string]::Equals($argument, '-C', [StringComparison]::Ordinal) -or [string]::Equals($argument, '--dir', [StringComparison]::OrdinalIgnoreCase)) -and ($index + 1) -lt $Arguments.Count) {
+        if (($argument -ceq '-C' -or $argument -eq '--dir') -and ($index + 1) -lt $Arguments.Count) {
             $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $baseDirectory -Target $Arguments[$index + 1]
             $index += 2
             continue
