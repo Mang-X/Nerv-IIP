@@ -249,11 +249,11 @@ try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
     foreach ($mutation in @(
             @{ Name = 'connection-string'; Original = 'NERV_IIP_PERF_POSTGRES:'; Replacement = 'NERV_IIP_PERF_POSTGRES_REMOVED:' },
-            @{ Name = 'scheduled-threshold'; Original = '-InventoryMaxElapsedMilliseconds 600000'; Replacement = '-InventoryMaxElapsedMilliseconds 0' },
+            @{ Name = 'scheduled-threshold'; Original = "'-InventoryMaxElapsedMilliseconds', 600000"; Replacement = "'-InventoryMaxElapsedMilliseconds', 0" },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
-            @{ Name = 'masked-performance-failure'; Original = '-ErpMaxElapsedMilliseconds 600000'; Replacement = '-ErpMaxElapsedMilliseconds 600000 || true' }
+            @{ Name = 'masked-performance-failure'; Original = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'; Replacement = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments || true' }
         )) {
         Assert-WorkflowContract ($workflowText.Contains($mutation.Original, [StringComparison]::Ordinal)) "Mutation '$($mutation.Name)' must match its canonical workflow text."
         $mutatedPath = Join-Path $mutationRoot "$($mutation.Name).yml"
