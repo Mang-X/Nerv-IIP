@@ -12,9 +12,10 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
+$ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
-. (Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1')
+. $ciWorkflowBudgetsPath
 
 $repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
 $initialRepoCommandLogs = @(
@@ -63,6 +64,27 @@ function Invoke-TestPwshScript {
         -TimeoutSeconds $TimeoutSeconds `
         -Name $Name `
         -LogDirectory $logDirectory
+}
+
+function Test-NervCiWorkflowBudgetsOwnsOrdinalDependency {
+    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-workflow-budgets-dependency-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+        $probePath = Join-Path $probeRoot 'ci-workflow-budgets-probe.ps1'
+        [IO.File]::WriteAllText($probePath, @'
+param([Parameter(Mandatory)] [string] $LibraryPath)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+. $LibraryPath
+if (Test-NervCiWorkflowConditionRunsAfterFailure -Condition "contains(github.ref, 'main')") {
+    throw 'The isolated CI workflow budget probe must classify a recognized value-shaping condition as not evidence-publishing.'
+}
+'@, [Text.UTF8Encoding]::new($false))
+        Invoke-TestPwshScript -ScriptPath $probePath -LogRoot $probeRoot -WorkingDirectory $repoRoot -Name 'ci-workflow-budgets-isolated-ordinal-dependency' -Arguments @('-LibraryPath', $ciWorkflowBudgetsPath) | Out-Null
+    }
+    finally {
+        if (Test-Path -LiteralPath $probeRoot) { Remove-Item -LiteralPath $probeRoot -Recurse -Force }
+    }
 }
 
 function Test-NervProductionCompositeKeyCallsites {
@@ -198,6 +220,18 @@ function Test-NervProductionCompositeKeyCallsites {
             Mutated = '            $ordinalKey = "$($definition.testName)|$displayName"'
         },
         [pscustomobject]@{
+            Name = 'derived-definition-ordinal-composite-key'
+            Fixture = 'derived-instance-id'
+            Original = '                definitionId = Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName))'
+            Mutated = '                definitionId = Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)")'
+        },
+        [pscustomobject]@{
+            Name = 'derived-test-instance-ordinal-composite-key'
+            Fixture = 'derived-instance-id'
+            Original = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }'
+            Mutated = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)|$displayName|$([string]$ordinal)") }'
+        },
+        [pscustomobject]@{
             Name = 'derived-instance-ordinal-comparer'
             Fixture = 'derived-instance-id'
             Original = '        $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)'
@@ -269,6 +303,10 @@ function Test-NervProductionCompositeKeyByteEvidenceFixture {
 
         $safeSummary = Get-Content -LiteralPath (Join-Path $byteEvidenceRoot 'safe/summary.json') -Raw | ConvertFrom-Json
         Assert-True ([int]$safeSummary.total -eq 2 -and @($safeSummary.assemblies).Count -eq 2) 'Safe byte-evidence fixture input must retain two ordinary assemblies.'
+        $safeTrx = @(Get-ChildItem -LiteralPath (Join-Path $byteEvidenceRoot 'safe/trx') -Filter '*.trx' -File)
+        Assert-Equal 2 $safeTrx.Count 'Safe byte-evidence fixture input must retain two normalized TRX artifacts.'
+        Assert-Equal 0 @($safeTrx | Where-Object { [IO.File]::ReadAllText($_.FullName).Contains('xmlns:nerv=', [StringComparison]::Ordinal) }).Count `
+            'Safe normalized TRX must not add an unused assembly-identity namespace declaration.'
 
         $discriminatingSummary = Get-Content -LiteralPath (Join-Path $byteEvidenceRoot 'discriminating/summary.json') -Raw | ConvertFrom-Json
         Assert-True ([int]$discriminatingSummary.total -eq 2 -and @($discriminatingSummary.assemblies).Count -eq 2) 'Discriminating byte-evidence fixture input must not merge delimiter-colliding identities.'
@@ -285,6 +323,7 @@ Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling', [St
 Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
 Test-NervProductionCompositeKeyCallsites
 Test-NervProductionCompositeKeyByteEvidenceFixture
+Test-NervCiWorkflowBudgetsOwnsOrdinalDependency
 
 Assert-True (Test-NervTestEvidenceLaneName 'backend') 'backend must be valid.'
 Assert-True (Test-NervTestEvidenceLaneName 'backend-shard-1') 'backend-shard-1 must use schema v1.'
@@ -1375,6 +1414,8 @@ try {
     $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane backend-shard-2 -JobName 'Backend Tests - Platform'
     Assert-True $priorAuthority.verified 'Pure prior-attempt validation must accept exact authenticated response data.'
     Assert-Equal 'failure' $priorAuthority.outcome 'Pure prior-attempt validation must return the authoritative failed outcome.'
+    $softHyphenLaneAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId 'fixture-rerun' -HeadSha '0123456789abcdef0123456789abcdef01234567' -RunAttempt 2 -Lane "backend-shard-2$softHyphen" -JobName 'Backend Tests - Platform'
+    Assert-True (-not $softHyphenLaneAuthority.verified) 'Prior-attempt authority must reject a U+00AD-mutated lane through the production allowlist lookup.'
     foreach ($invalidPrior in @(
         @{ Name = 'wrong-run'; Run = [pscustomobject]@{ id = 'other'; head_sha = '0123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests - Platform' },
         @{ Name = 'wrong-sha'; Run = [pscustomobject]@{ id = 'fixture-rerun'; head_sha = '1123456789abcdef0123456789abcdef01234567'; run_attempt = 2 }; Jobs = $priorJobs; JobName = 'Backend Tests - Platform' },
@@ -1431,9 +1472,6 @@ Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordin
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
 Assert-Equal 5 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover exactly the four backend shards and connector-host.'
 $laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
-$softHyphenLaneJobKeys = @($laneJobKeys + "backend$softHyphen")
-$strictBackendKeyMatches = @($softHyphenLaneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
-Assert-Equal 0 $strictBackendKeyMatches.Count 'A U+00AD-mutated evidence lane key must not be accepted as the retired backend lane.'
 $actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
 Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'
 Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($laneJobAllowlist.Values)), [StringComparer]::Ordinal).Contains([string]('Backend Tests')))) 'The test-free shard aggregate must own no evidence lane.'
