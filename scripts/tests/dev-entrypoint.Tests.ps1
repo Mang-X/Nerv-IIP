@@ -15,7 +15,7 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $nerv = Join-Path $repoRoot 'nerv.ps1'
 
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
-if ($appHostText.Contains('env: fullStackEphemeral ? "PORT" : null') -or -not $appHostText.Contains('env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null')) {
+if ($appHostText.Contains('env: fullStackEphemeral ? "PORT" : null', [StringComparison]::Ordinal) -or -not $appHostText.Contains('env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null', [StringComparison]::Ordinal)) {
     throw 'Ephemeral Vite endpoints must use the dedicated NERV_IIP_VITE_PORT environment variable.'
 }
 foreach ($relativePath in @(
@@ -24,7 +24,7 @@ foreach ($relativePath in @(
     'frontend/apps/screen/vite.config.ts'
 )) {
     $viteText = Get-Content -LiteralPath (Join-Path $repoRoot $relativePath) -Raw
-    if ($viteText.Contains('process.env.PORT') -or -not $viteText.Contains('process.env.NERV_IIP_VITE_PORT')) {
+    if ($viteText.Contains('process.env.PORT', [StringComparison]::Ordinal) -or -not $viteText.Contains('process.env.NERV_IIP_VITE_PORT', [StringComparison]::Ordinal)) {
         throw "$relativePath must not let a generic PORT variable change persistent development ports."
     }
 }
@@ -33,7 +33,7 @@ foreach ($relativePath in @(
     'frontend/apps/business-console/playwright.config.ts'
 )) {
     $playwrightText = Get-Content -LiteralPath (Join-Path $repoRoot $relativePath) -Raw
-    if ($playwrightText.Contains('process.env.PLAYWRIGHT_BASE_URL') -or -not $playwrightText.Contains('process.env.NERV_IIP_PLAYWRIGHT_BASE_URL')) {
+    if ($playwrightText.Contains('process.env.PLAYWRIGHT_BASE_URL', [StringComparison]::Ordinal) -or -not $playwrightText.Contains('process.env.NERV_IIP_PLAYWRIGHT_BASE_URL', [StringComparison]::Ordinal)) {
         throw "$relativePath must use the dedicated NERV_IIP_PLAYWRIGHT_BASE_URL override."
     }
 }
@@ -84,6 +84,23 @@ $fullStackHelp = Invoke-Nerv -Arguments @('fullstack', 'help')
 if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
 }
+
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+foreach ($expected in @(
+    '[string]::Equals([string]($Mode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
+    '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
+    'elseif ([string]::Equals([string]($Scenario), [string](''leader-demo-equipment-branch''), [StringComparison]::OrdinalIgnoreCase))'
+)) {
+    if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
+        throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
+    }
+}
+if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::OrdinalIgnoreCase) -or
+    -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'
+}
 foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
         throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
@@ -115,20 +132,20 @@ param(
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json
-    if ($fullStackRun.ExitCode -ne 0 -or $runCapture.action -ne 'run' -or $runCapture.scenario -ne 'smoke' -or -not $runCapture.noBuild) {
+    if ($fullStackRun.ExitCode -ne 0 -or (-not [string]::Equals([string]($runCapture.action), [string]('run'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]($runCapture.scenario), [string]('smoke'), [StringComparison]::OrdinalIgnoreCase)) -or -not $runCapture.noBuild) {
         throw "Named full-stack run options were not forwarded. Output: $($fullStackRun.Output)"
     }
 
     $forwardedSessionId = 'nerv-abcd-123456'
     $fullStackStop = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'stop', '-SessionId', $forwardedSessionId)
     $stopCapture = $fullStackStop.Output | ConvertFrom-Json
-    if ($fullStackStop.ExitCode -ne 0 -or $stopCapture.action -ne 'stop' -or $stopCapture.sessionId -ne $forwardedSessionId) {
+    if ($fullStackStop.ExitCode -ne 0 -or (-not [string]::Equals([string]($stopCapture.action), [string]('stop'), [StringComparison]::OrdinalIgnoreCase)) -or -not [string]::Equals([string]$stopCapture.sessionId, $forwardedSessionId, [StringComparison]::Ordinal)) {
         throw "Named full-stack session ID was not forwarded. Output: $($fullStackStop.Output)"
     }
 
     $fullStackUrl = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'url', 'business-console')
     $urlCapture = $fullStackUrl.Output | ConvertFrom-Json
-    if ($fullStackUrl.ExitCode -ne 0 -or $urlCapture.action -ne 'url' -or $urlCapture.target -ne 'business-console') {
+    if ($fullStackUrl.ExitCode -ne 0 -or (-not [string]::Equals([string]($urlCapture.action), [string]('url'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]($urlCapture.target), [string]('business-console'), [StringComparison]::OrdinalIgnoreCase))) {
         throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
     }
 
@@ -174,7 +191,7 @@ if ($unknown.ExitCode -eq 0) {
     throw "Expected unknown command to fail. Output: $($unknown.Output)"
 }
 
-if (-not $unknown.Output.Contains("Unknown command 'unknown-command'")) {
+if (-not $unknown.Output.Contains("Unknown command 'unknown-command'", [StringComparison]::Ordinal)) {
     throw "Unknown command output was not helpful. Output: $($unknown.Output)"
 }
 

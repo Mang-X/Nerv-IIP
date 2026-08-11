@@ -45,10 +45,10 @@ reset, seed, or health-check. The password is never accepted as a command-line a
 '@
 }
 
-if ($MyInvocation.InvocationName -eq '.') { return }
+if ([string]::Equals([string]($MyInvocation.InvocationName), [string]('.'), [StringComparison]::OrdinalIgnoreCase)) { return }
 
 try {
-    if ($Action -eq 'help') {
+    if ([string]::Equals([string]($Action), [string]('help'), [StringComparison]::OrdinalIgnoreCase)) {
         Write-NervLeaderDemoHelp
     }
     else {

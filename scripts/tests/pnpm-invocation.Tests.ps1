@@ -31,7 +31,7 @@ function Assert-Equal {
         [string] $Actual
     )
 
-    if ($Actual -cne $Expected) {
+    if ((-not [string]::Equals([string]($Actual), [string]($Expected), [StringComparison]::Ordinal))) {
         throw "[$Case] expected '$Expected' but got '$Actual'."
     }
 }

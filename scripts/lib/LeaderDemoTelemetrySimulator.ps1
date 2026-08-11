@@ -11,6 +11,8 @@
 
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
+
 function Get-NervLeaderDemoTelemetryProfile {
     param(
         [Parameter(Mandatory)] [int] $ElapsedSeconds,
@@ -36,29 +38,25 @@ function Get-NervLeaderDemoTelemetryValue {
     )
 
     $wave = [Math]::Sin($Index * 0.7)
-    if ($TagKey -ceq 'temperature') {
-        $value = switch ($Phase) {
-            'normal' { 42.0 + $wave }
-            'degrading' {
+    if ([string]::Equals([string]($TagKey), [string]('temperature'), [StringComparison]::Ordinal)) {
+        $value = if ([string]::Equals([string]($Phase), [string]('normal'), [StringComparison]::OrdinalIgnoreCase)) { 42.0 + $wave }
+elseif ([string]::Equals([string]($Phase), [string]('degrading'), [StringComparison]::OrdinalIgnoreCase)) {
                 $duration = [Math]::Max(1, $AlarmAtSeconds - $DegradingAtSeconds)
                 $progress = [Math]::Min(1.0, [Math]::Max(0.0, ($ElapsedSeconds - $DegradingAtSeconds) / $duration))
                 46.0 + (10.0 * $progress) + ($wave * 0.5)
             }
-            'alarm' { 62.0 + ($wave * 1.5) }
-            'recovered' { 44.0 + ($wave * 0.6) }
-        }
+elseif ([string]::Equals([string]($Phase), [string]('alarm'), [StringComparison]::OrdinalIgnoreCase)) { 62.0 + ($wave * 1.5) }
+elseif ([string]::Equals([string]($Phase), [string]('recovered'), [StringComparison]::OrdinalIgnoreCase)) { 44.0 + ($wave * 0.6) }
     }
     else {
-        $value = switch ($Phase) {
-            'normal' { 2.2 + ($wave * 0.15) }
-            'degrading' {
+        $value = if ([string]::Equals([string]($Phase), [string]('normal'), [StringComparison]::OrdinalIgnoreCase)) { 2.2 + ($wave * 0.15) }
+elseif ([string]::Equals([string]($Phase), [string]('degrading'), [StringComparison]::OrdinalIgnoreCase)) {
                 $duration = [Math]::Max(1, $AlarmAtSeconds - $DegradingAtSeconds)
                 $progress = [Math]::Min(0.99, [Math]::Max(0.0, ($ElapsedSeconds - $DegradingAtSeconds) / $duration))
                 3.4 + (4.4 * $progress) + ($wave * 0.05)
             }
-            'alarm' { 8.6 + ($wave * 0.2) }
-            'recovered' { 2.8 + ($wave * 0.1) }
-        }
+elseif ([string]::Equals([string]($Phase), [string]('alarm'), [StringComparison]::OrdinalIgnoreCase)) { 8.6 + ($wave * 0.2) }
+elseif ([string]::Equals([string]($Phase), [string]('recovered'), [StringComparison]::OrdinalIgnoreCase)) { 2.8 + ($wave * 0.1) }
     }
 
     return [decimal]::Round([decimal]$value, 3, [MidpointRounding]::AwayFromZero)
@@ -93,11 +91,9 @@ function New-NervLeaderDemoTelemetryTimeline {
             -DegradingAtSeconds $DegradingAtSeconds `
             -AlarmAtSeconds $AlarmAtSeconds `
             -RecoveredAtSeconds $RecoveredAtSeconds
-        $state = switch ($profile) {
-            'alarm' { 'unavailable' }
-            'recovered' { 'available' }
-            default { 'running' }
-        }
+        $state = if ([string]::Equals([string]($profile), [string]('alarm'), [StringComparison]::OrdinalIgnoreCase)) { 'unavailable' }
+elseif ([string]::Equals([string]($profile), [string]('recovered'), [StringComparison]::OrdinalIgnoreCase)) { 'available' }
+else { 'running' }
 
         [pscustomobject][ordered]@{
             Index = $index
@@ -135,10 +131,10 @@ function New-NervLeaderDemoTelemetrySampleBody {
     )
 
     $sourcePhase = if ([string]::IsNullOrWhiteSpace($SourcePhase)) { "$($Point.Profile)" } else { $SourcePhase }
-    $value = if ($TagKey -ceq 'vibration') { [decimal]$Point.Vibration } else { [decimal]$Point.Temperature }
+    $value = if ([string]::Equals([string]($TagKey), [string]('vibration'), [StringComparison]::Ordinal)) { [decimal]$Point.Vibration } else { [decimal]$Point.Temperature }
     $sourceSequence = "leader-demo:$RunId`:$sourcePhase`:$(([int]$Point.Index).ToString('000000'))`:$TagKey"
-    $deviceState = if ($TagKey -ceq 'vibration') { "$($Point.DeviceState)" } else { $null }
-    $stateOccurredAtUtc = if ($TagKey -ceq 'vibration') { "$($Point.BucketEndUtc)" } else { $null }
+    $deviceState = if ([string]::Equals([string]($TagKey), [string]('vibration'), [StringComparison]::Ordinal)) { "$($Point.DeviceState)" } else { $null }
+    $stateOccurredAtUtc = if ([string]::Equals([string]($TagKey), [string]('vibration'), [StringComparison]::Ordinal)) { "$($Point.BucketEndUtc)" } else { $null }
 
     return [pscustomobject][ordered]@{
         organizationId = $OrganizationId
@@ -404,8 +400,7 @@ function Get-NervLeaderDemoTelemetryReplayBaseline {
     $normalizedStart = [DateTimeOffset]::FromUnixTimeMilliseconds(
         $ScenarioStartUtc.ToUniversalTime().ToUnixTimeMilliseconds()
     )
-    foreach ($file in @(Get-ChildItem -LiteralPath $directory -Filter 'telemetry-simulator-*.json' -File |
-        Sort-Object LastWriteTimeUtc -Descending)) {
+    foreach ($file in @(Get-NervItemsSorted -Items @(Get-ChildItem -LiteralPath $directory -Filter 'telemetry-simulator-*.json' -File) -Comparison { param($left, $right) if ($right.LastWriteTimeUtc -gt $left.LastWriteTimeUtc) { 1 } elseif ($right.LastWriteTimeUtc -lt $left.LastWriteTimeUtc) { -1 } else { 0 } })) {
         try {
             $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -Depth 50
             $simulation = Get-NervLeaderDemoPropertyValue -InputObject $evidence -Name 'simulation'
@@ -413,9 +408,9 @@ function Get-NervLeaderDemoTelemetryReplayBaseline {
                 "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'ScenarioStartUtc')"
             )
             if (
-                "$(Get-NervLeaderDemoPropertyValue -InputObject $evidence -Name 'executionMode')" -ceq 'real-time' -and
-                "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')" -ceq 'completed' -and
-                "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')" -ceq $RunId -and
+                [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $evidence -Name 'executionMode')"), [string]('real-time'), [StringComparison]::Ordinal) -and
+                [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')"), [string]('completed'), [StringComparison]::Ordinal) -and
+                [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')"), [string]($RunId), [StringComparison]::Ordinal) -and
                 $candidateStart -eq $normalizedStart
             ) {
                 return $evidence
@@ -438,12 +433,12 @@ function Assert-NervLeaderDemoTelemetryReplayContract {
 
     $simulation = Get-NervLeaderDemoPropertyValue -InputObject $BaselineEvidence -Name 'simulation'
     if (
-        "$(Get-NervLeaderDemoPropertyValue -InputObject $BaselineEvidence -Name 'executionMode')" -cne 'real-time' -or
-        "$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')" -cne 'completed'
+        (-not [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $BaselineEvidence -Name 'executionMode')"), [string]('real-time'), [StringComparison]::Ordinal)) -or
+        (-not [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'Result')"), [string]('completed'), [StringComparison]::Ordinal))
     ) {
         throw 'Replay baseline must be completed real-time evidence.'
     }
-    if ("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')" -cne $RunId) {
+    if ((-not [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $simulation -Name 'RunId')"), [string]($RunId), [StringComparison]::Ordinal))) {
         throw 'Replay RunId does not match the completed real-time evidence.'
     }
     $expectedStart = [DateTimeOffset]::Parse(
@@ -471,7 +466,7 @@ function Assert-NervLeaderDemoTelemetryReplayContract {
     )) {
         $expected = Get-NervLeaderDemoPropertyValue -InputObject $expectedContract -Name $field
         $actual = Get-NervLeaderDemoPropertyValue -InputObject $ScenarioContract -Name $field
-        if ("$expected" -cne "$actual") {
+        if ((-not [string]::Equals([string]("$expected"), [string]("$actual"), [StringComparison]::Ordinal))) {
             throw "Replay scenario field '$field' differs from completed real-time evidence (expected '$expected', actual '$actual')."
         }
     }
@@ -503,8 +498,8 @@ function Test-NervLeaderDemoTelemetryReplay {
     $replay = Get-NervLeaderDemoTelemetryIdentity -Response $replayResponse
     return [pscustomobject][ordered]@{
         IdentityStable = (
-            $first.TelemetrySummaryId -ceq $replay.TelemetrySummaryId -and
-            $first.DeviceStateSnapshotId -ceq $replay.DeviceStateSnapshotId
+            [string]::Equals([string]($first.TelemetrySummaryId), [string]($replay.TelemetrySummaryId), [StringComparison]::Ordinal) -and
+            [string]::Equals([string]($first.DeviceStateSnapshotId), [string]($replay.DeviceStateSnapshotId), [StringComparison]::Ordinal)
         )
         SourceSequence = "$($Body.sourceSequence)"
         TelemetrySummaryId = $first.TelemetrySummaryId
@@ -552,12 +547,10 @@ function Get-NervLeaderDemoTelemetryAlarmEvidence {
     $response = Invoke-NervLeaderDemoTelemetryRequest -Method GET -Path $path -Body $null -HttpAction $HttpAction
     $data = Get-NervLeaderDemoPropertyValue -InputObject $response -Name 'data'
     $items = @(Get-NervLeaderDemoPropertyValue -InputObject $data -Name 'items')
-    $alarm = @($items | Where-Object {
-        "$(Get-NervLeaderDemoPropertyValue -InputObject $_ -Name 'alarmCode')" -ceq 'VIBRATION-HIGH' -or
+    $alarm = @(Get-NervItemsSortedByString -Items @($items | Where-Object {
+        [string]::Equals([string]("$(Get-NervLeaderDemoPropertyValue -InputObject $_ -Name 'alarmCode')"), [string]('VIBRATION-HIGH'), [StringComparison]::Ordinal) -or
         "$(Get-NervLeaderDemoPropertyValue -InputObject $_ -Name 'externalAlarmId')" -like 'ALARM-DEMO-001:*'
-    } | Sort-Object {
-        "$(Get-NervLeaderDemoPropertyValue -InputObject $_ -Name 'raisedAtUtc')"
-    } | Select-Object -Last 1)
+    }) -KeySelector { param($row) "$(Get-NervLeaderDemoPropertyValue -InputObject $row -Name 'raisedAtUtc')" } -Comparer ([StringComparer]::Ordinal) | Select-Object -Last 1)
     if ($alarm.Count -eq 0) {
         return [pscustomobject][ordered]@{
             Found = $false
@@ -617,7 +610,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             return & $HttpAction $Method $Path $Body
         }
         finally {
-            if ($Method -ceq 'POST') {
+            if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal)) {
                 & $PostRequestPacingAction
             }
         }
@@ -628,7 +621,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             return & $effectiveHttpAction $Method $Path $Body
         }
         finally {
-            if ($Method -ceq 'POST') {
+            if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal)) {
                 & $HistoricalPostRequestPacingAction
             }
         }
@@ -681,7 +674,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
                 -Body $body `
                 -HttpAction $effectiveHttpAction
             $publishedRequestCount++
-            if ($null -eq $replay -and $tagKey -ceq 'vibration') {
+            if ($null -eq $replay -and [string]::Equals([string]($tagKey), [string]('vibration'), [StringComparison]::Ordinal)) {
                 $replay = Test-NervLeaderDemoTelemetryReplay -Body $body -FirstResponse $response -HttpAction $effectiveHttpAction
             }
         }
@@ -691,7 +684,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
         }
     }
 
-    $history = if ($result -ceq 'completed') {
+    $history = if ([string]::Equals([string]($result), [string]('completed'), [StringComparison]::Ordinal)) {
         Get-NervLeaderDemoTelemetryHistoryEvidence `
             -OrganizationId $OrganizationId `
             -EnvironmentId $EnvironmentId `
@@ -703,7 +696,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
     else {
         [pscustomobject][ordered]@{ ItemCount = 0; FirstOccurredAtUtc = $null; LastOccurredAtUtc = $null }
     }
-    $alarm = if ($result -ceq 'completed') {
+    $alarm = if ([string]::Equals([string]($result), [string]('completed'), [StringComparison]::Ordinal)) {
         Get-NervLeaderDemoTelemetryAlarmEvidence `
             -OrganizationId $OrganizationId `
             -EnvironmentId $EnvironmentId `
@@ -738,7 +731,7 @@ function Invoke-NervLeaderDemoTelemetrySimulator {
             PublishedPointCount = $publishedPointCount
             PublishedRequestCount = $publishedRequestCount
             SampleIntervalSeconds = $SampleIntervalSeconds
-            Profiles = @($timeline | Select-Object -ExpandProperty Profile -Unique)
+            Profiles = @(Get-NervStringsUniqueInOrder -Values @($timeline | ForEach-Object { [string]$_.Profile }) -Comparer ([StringComparer]::Ordinal))
             VibrationMinimum = ($timeline | Measure-Object -Property Vibration -Minimum).Minimum
             VibrationMaximum = ($timeline | Measure-Object -Property Vibration -Maximum).Maximum
         }
