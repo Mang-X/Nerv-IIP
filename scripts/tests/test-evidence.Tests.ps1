@@ -236,6 +236,13 @@ function Test-NervProductionCompositeKeyCallsites {
             Fixture = 'derived-instance-id'
             Original = '        $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)'
             Mutated = '        $ordinals = @{}'
+        },
+        [pscustomobject]@{
+            Name = 'literal-null-marker-escape'
+            Fixture = 'marker-literal'
+            TargetLibrary = 'OrdinalString.ps1'
+            Original = '        $_.Replace(''\'', ''\\'').Replace(''|'', ''\|'')'
+            Mutated = '        $_.Replace(''|'', ''\|'')'
         }
     )
 
@@ -253,7 +260,13 @@ function Test-NervProductionCompositeKeyCallsites {
             foreach ($libraryName in @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1')) {
                 Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $libraryRoot $libraryName)
             }
-            $mutatedLibrary = Join-Path $libraryRoot 'TestEvidence.ps1'
+            $mutationTargetLibrary = if ($case.PSObject.Properties.Match('TargetLibrary').Count -eq 1) {
+                [string]$case.TargetLibrary
+            }
+            else {
+                'TestEvidence.ps1'
+            }
+            $mutatedLibrary = Join-Path $libraryRoot $mutationTargetLibrary
             $source = [IO.File]::ReadAllText($mutatedLibrary)
             Assert-Equal 1 ([regex]::Matches($source, [regex]::Escape([string]$case.Original)).Count) `
                 "Mutation '$($case.Name)' must identify exactly one production callsite."
@@ -262,7 +275,7 @@ function Test-NervProductionCompositeKeyCallsites {
             $mutationFailed = $false
             try {
                 Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $caseRoot -WorkingDirectory $repoRoot -Name "composite-production-$($case.Name)-mutation" -Arguments @(
-                    '-TestEvidenceLibraryPath', $mutatedLibrary,
+                    '-TestEvidenceLibraryPath', (Join-Path $libraryRoot 'TestEvidence.ps1'),
                     '-Fixture', $case.Fixture
                 ) | Out-Null
             }
@@ -414,6 +427,7 @@ Assert-True ([string]::Equals((Get-NervOrdinalCompositeKey -Components @('lane',
 $zeroComponentKey = Get-NervOrdinalCompositeKey -Components @()
 $emptyComponentKey = Get-NervOrdinalCompositeKey -Components @('')
 $nullComponentKey = Get-NervOrdinalCompositeKey -Components @($null)
+$literalNullMarkerComponentKey = Get-NervOrdinalCompositeKey -Components @('\n')
 $trailingEmptyComponentKey = Get-NervOrdinalCompositeKey -Components @('tail', '')
 $reservedComponentKey = Get-NervOrdinalCompositeKey -Components @('path\part', 'lane|part')
 Assert-True ([string]::Equals($zeroComponentKey, '\z', [StringComparison]::Ordinal)) `
@@ -422,6 +436,8 @@ Assert-True ([string]::Equals($emptyComponentKey, '', [StringComparison]::Ordina
     'The production composite-key wrapper must preserve one empty component.'
 Assert-True ([string]::Equals($nullComponentKey, '\n', [StringComparison]::Ordinal)) `
     'The production composite-key wrapper must preserve one null component.'
+Assert-True (-not [string]::Equals($nullComponentKey, $literalNullMarkerComponentKey, [StringComparison]::Ordinal)) `
+    'The production composite-key wrapper must escape literal backslash-n content so it cannot collide with the null marker.'
 Assert-True ([string]::Equals($trailingEmptyComponentKey, 'tail|', [StringComparison]::Ordinal)) `
     'The production composite-key wrapper must preserve a trailing empty component.'
 Assert-True ([string]::Equals($reservedComponentKey, 'path\\part|lane\|part', [StringComparison]::Ordinal)) `

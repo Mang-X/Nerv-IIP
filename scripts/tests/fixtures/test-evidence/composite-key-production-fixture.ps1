@@ -12,7 +12,7 @@
 param(
     [Parameter(Mandatory)] [string] $TestEvidenceLibraryPath,
     [Parameter(Mandatory)]
-    [ValidateSet('artifact-record-sort', 'normalized-trx-group', 'normalized-trx-record-sort', 'baseline-aggregate', 'derived-instance-id', 'byte-evidence')]
+    [ValidateSet('artifact-record-sort', 'normalized-trx-group', 'normalized-trx-record-sort', 'baseline-aggregate', 'derived-instance-id', 'marker-literal', 'byte-evidence')]
     [string] $Fixture,
     [ValidateSet('safe', 'discriminating')]
     [string] $ByteEvidenceMode,
@@ -250,6 +250,12 @@ try {
             New-ProductionFixtureRecord -Sequence 10 -Assembly "A_B.dll-id-$slashIdentityDigest"
         )
     }
+    elseif ([string]::Equals($Fixture, 'marker-literal', [StringComparison]::Ordinal)) {
+        @(
+            New-ProductionFixtureRecord -Sequence 1 -Assembly $null
+            New-ProductionFixtureRecord -Sequence 2 -Assembly '\n'
+        )
+    }
     else {
         @(
             New-ProductionFixtureRecord -Sequence 1 -TestInstanceId $null
@@ -420,6 +426,18 @@ try {
         $firstResult = @($trx.TestRun.Results.UnitTestResult)[0]
         Assert-ProductionFixture ([string]::Equals([string]$firstResult.testId, '10000000-0000-0000-0000-000000000002', [StringComparison]::Ordinal)) `
             'normalized TRX record selector did not ordinal-sort empty before null; the record identities collapsed.'
+    }
+    elseif ([string]::Equals($Fixture, 'marker-literal', [StringComparison]::Ordinal)) {
+        Assert-ProductionFixture (([int]$summary.total -eq 2) -and (@($summary.assemblies).Count -eq 2)) `
+            'the null marker and literal backslash-n assembly content merged into one summary group.'
+        Assert-ProductionFixture (@($summary.assemblies | Where-Object { $null -eq $_.assembly }).Count -eq 1) `
+            'the null marker group was not retained as null.'
+        Assert-ProductionFixture (@($summary.assemblies | Where-Object {
+                $_.assembly -is [string] -and [string]::Equals([string]$_.assembly, '\n', [StringComparison]::Ordinal)
+            }).Count -eq 1) `
+            'literal backslash-n assembly content was not retained independently from the null marker.'
+        Assert-ProductionFixture (@(Get-ChildItem (Join-Path $fixtureRoot 'trx') -File -Filter '*.trx').Count -eq 2) `
+            'the null marker and literal backslash-n assembly content must produce two normalized TRX groups.'
     }
 
     Write-Host "Composite-key production fixture '$Fixture' passed."
