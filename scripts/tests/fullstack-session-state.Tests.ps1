@@ -22,19 +22,19 @@ try {
         -LeaseMinutes 90
 
     Assert-True ($manifest.schemaVersion -eq 1) 'Manifest schema must be 1.'
-    Assert-True ($manifest.state -eq 'Creating') 'New manifests must be Creating.'
+    Assert-True ([string]::Equals([string]$manifest.state, 'Creating', [StringComparison]::OrdinalIgnoreCase)) 'New manifests must be Creating.'
     Assert-True ($null -eq $manifest.runtime.messagingProvider) 'A new manifest must not claim a messaging provider before startup records it.'
     Assert-True ($null -eq $manifest.runtime.persistenceProvider) 'A new manifest must not claim a persistence provider before startup records it.'
-    Assert-True (-not ($manifest | ConvertTo-Json -Depth 20).Contains('connectionString')) 'Manifest must not contain connection strings.'
+    Assert-True (-not ($manifest | ConvertTo-Json -Depth 20).Contains('connectionString', [StringComparison]::Ordinal)) 'Manifest must not contain connection strings.'
 
     Write-NervFullStackManifest -Manifest $manifest -StateRoot $testRoot
     Assert-True (-not (Test-NervFullStackSessionIdAvailable -SessionId $sessionId -StateRoot $testRoot)) 'An existing session ID must never be available for overwrite.'
     Assert-True (Test-NervFullStackSessionIdAvailable -SessionId 'nerv-abcd-654321' -StateRoot $testRoot) 'An unused valid session ID must be available.'
     $reloaded = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
-    Assert-True ($reloaded.sessionId -eq $sessionId) 'Atomic manifest round-trip failed.'
+    Assert-True ([string]::Equals([string]$reloaded.sessionId, $sessionId, [StringComparison]::Ordinal)) 'Atomic manifest round-trip failed.'
 
     Move-NervFullStackSessionState -Manifest $reloaded -State Running | Out-Null
-    Assert-True ($reloaded.state -eq 'Running') 'Creating -> Running must be allowed.'
+    Assert-True ([string]::Equals([string]$reloaded.state, 'Running', [StringComparison]::OrdinalIgnoreCase)) 'Creating -> Running must be allowed.'
     $invalidFailed = $false
     try { Move-NervFullStackSessionState -Manifest $reloaded -State Creating } catch { $invalidFailed = $true }
     Assert-True $invalidFailed 'Running -> Creating must be rejected.'
@@ -42,6 +42,14 @@ try {
     Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
     $admission = Test-NervFullStackAdmission -StateRoot $testRoot -MaximumSessions 1 -ExcludeSessionId 'none'
     Assert-True (-not $admission.Allowed) 'A second active session must be denied at the configured ceiling.'
+    $softHyphen = [string][char]0x00AD
+    $softHyphenAdmission = Test-NervFullStackAdmission `
+        -StateRoot $testRoot `
+        -MaximumSessions 1 `
+        -ExcludeSessionId "$sessionId$softHyphen"
+    Assert-True (-not $softHyphenAdmission.Allowed) 'A session ID differing by U+00AD must not exclude the current active session from admission.'
+    Assert-True ($softHyphenAdmission.ActiveCount -eq 1) 'A U+00AD-distinct exclusion must retain the current active session in the admission count.'
+    Assert-True ([string]::Equals([string]$softHyphenAdmission.Reason, 'MaximumSessionsReached', [StringComparison]::Ordinal)) 'A U+00AD-distinct exclusion must retain the maximum-session blocker.'
 
     $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
     Assert-True (Test-NervFullStackSessionStale -Manifest $reloaded -Now ([DateTimeOffset]::UtcNow)) 'Expired lease must be stale.'
@@ -63,7 +71,7 @@ try {
     $reloaded.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
     Write-NervFullStackManifest -Manifest $reloaded -StateRoot $testRoot
     $renewed = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
-    Assert-True ($renewed.state -eq 'Running') 'Atomic renewal must keep a running session active.'
+    Assert-True ([string]::Equals([string]$renewed.state, 'Running', [StringComparison]::OrdinalIgnoreCase)) 'Atomic renewal must keep a running session active.'
     Assert-True (@(Claim-NervStaleFullStackSessions -StateRoot $testRoot).Count -eq 0) 'GC must not claim a session renewed before its stale recheck.'
 
     $renewed.leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
@@ -71,7 +79,7 @@ try {
     $claimed = @(Claim-NervStaleFullStackSessions -StateRoot $testRoot)
     Assert-True ($claimed.Count -eq 1 -and $claimed[0] -eq $sessionId) 'GC must atomically claim an actually stale session.'
     $renewAfterClaim = Renew-NervFullStackSessionLease -SessionId $sessionId -StateRoot $testRoot -LeaseMinutes 30
-    Assert-True ($renewAfterClaim.state -eq 'Stopping') 'Lease renewal must never overwrite a GC or user stop claim.'
+    Assert-True ([string]::Equals([string]$renewAfterClaim.state, 'Stopping', [StringComparison]::OrdinalIgnoreCase)) 'Lease renewal must never overwrite a GC or user stop claim.'
     $reclaimedStopping = @(Claim-NervStaleFullStackSessions -StateRoot $testRoot)
     Assert-True ($reclaimedStopping.Count -eq 1 -and $reclaimedStopping[0] -eq $sessionId) 'GC must reclaim a stale session already left in Stopping.'
 
@@ -89,7 +97,7 @@ try {
     catch { $staleStartupWriteRejected = $true }
     Assert-True $staleStartupWriteRejected 'A stale startup writer must not overwrite a session already claimed and stopped.'
     $afterRejectedWrite = Read-NervFullStackManifest -SessionId $sessionId -StateRoot $testRoot
-    Assert-True ($afterRejectedWrite.state -eq 'Stopped' -and @($afterRejectedWrite.runtime.processIds).Count -eq 0) 'Rejected stale writes must leave the stopped manifest unchanged.'
+    Assert-True ([string]::Equals([string]$afterRejectedWrite.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase) -and @($afterRejectedWrite.runtime.processIds).Count -eq 0) 'Rejected stale writes must leave the stopped manifest unchanged.'
 
     $reloaded = $afterRejectedWrite
     $reloaded.state = 'Stopped'
