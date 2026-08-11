@@ -103,6 +103,10 @@ $directDockerFinding = "Real dependency test type '$directDockerType' uses the a
 $directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
 $containedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
 $containedDockerFinding = "Real dependency test type '$containedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$ordinaryEmptyStringThenDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.OrdinaryEmptyStringThenDockerTests'
+$ordinaryEmptyStringThenDockerFinding = "Real dependency test type '$ordinaryEmptyStringThenDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$verbatimEmptyStringThenDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.VerbatimEmptyStringThenDockerTests'
+$verbatimEmptyStringThenDockerFinding = "Real dependency test type '$verbatimEmptyStringThenDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 $interpolatedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedDockerTests'
 $interpolatedDockerFinding = "Real dependency test type '$interpolatedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 $interpolatedRawDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedRawDockerTests'
@@ -153,6 +157,43 @@ public sealed class Unexcluded
     $containedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-containment-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
     Assert-Contract (-not $containedDocker.Passed) 'A later unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
     Assert-Contract ($containedDocker.Message.Contains($containedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class OrdinaryEmptyStringThenDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_empty_and_quote_like_ordinary_strings()
+    {
+        _ = $"";
+        _ = "\"";
+        _ = "" + "";
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+    $ordinaryEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-ordinary-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class VerbatimEmptyStringThenDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_empty_and_quote_like_verbatim_strings()
+    {
+        _ = @"""";
+        _ = @"";
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+    $verbatimEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-verbatim-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $verbatimEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like verbatim strings must fail shard governance.'
+    Assert-Contract ($verbatimEmptyStringThenDocker.Message.Contains($verbatimEmptyStringThenDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must not let a verbatim empty string swallow a later Docker call and must report the exact containing test type.'
+    Assert-Contract (-not $ordinaryEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like ordinary strings must fail shard governance.'
+    Assert-Contract ($ordinaryEmptyStringThenDocker.Message.Contains($ordinaryEmptyStringThenDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must not let an ordinary empty string swallow a later Docker call and must report the exact containing test type.'
 
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 namespace Nerv.IIP.TemporaryShardClassification.Tests;

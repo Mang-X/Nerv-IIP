@@ -233,8 +233,13 @@ function Get-NervCSharpStringTokenLayout {
         $quoteCount++
     }
 
-    $raw = $quoteCount -ge 3
-    $verbatim = $false
+    $verbatim = ($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $atSign) -or
+        ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $atSign -and $characters[$QuoteIndex - 1] -eq $dollarSign)
+    $raw = -not $verbatim -and $quoteCount -ge 3
+    if (-not $raw) {
+        $quoteCount = 1
+    }
+
     $interpolationDollarCount = 0
     if ($raw) {
         $prefixIndex = $QuoteIndex - 1
@@ -244,8 +249,6 @@ function Get-NervCSharpStringTokenLayout {
         }
     }
     else {
-        $verbatim = ($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $atSign) -or
-            ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $atSign -and $characters[$QuoteIndex - 1] -eq $dollarSign)
         if (($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $dollarSign) -or
             ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $dollarSign -and $characters[$QuoteIndex - 1] -eq $atSign)) {
             $interpolationDollarCount = 1
