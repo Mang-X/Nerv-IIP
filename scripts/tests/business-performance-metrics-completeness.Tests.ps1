@@ -253,7 +253,10 @@ try {
     Assert-Contract $partialResult.Failed 'The production verifier must reject a partial metric set end to end.'
     Assert-Contract ($null -ne $partialResult.Summary -and $partialResult.Summary.passed -eq $false) 'The production verifier must publish passed=false before rejecting a partial metric set.'
     $partialViolationCodes = @($partialResult.Summary.violations | ForEach-Object { "$($_.code)|$($_.metricScenario)" })
-    Assert-Contract ($partialViolationCodes -contains 'missing-performance-metric|erp-sales-order-list-high-read') 'The production verifier summary must identify the missing ERP metric.'
+    $missingErpViolations = @($partialViolationCodes | Where-Object {
+            [string]::Equals($_, 'missing-performance-metric|erp-sales-order-list-high-read', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($missingErpViolations.Count -eq 1) 'The production verifier summary must identify the missing ERP metric exactly once.'
 
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1') -Destination (Join-Path $mutationLibraryDirectory 'OrdinalString.ps1')
     Copy-Item -LiteralPath $libraryPath -Destination (Join-Path $mutationLibraryDirectory 'BusinessPerformanceMetrics.ps1')

@@ -27,6 +27,17 @@ function Assert-WorkflowContract {
     if (-not $Condition) { throw $Message }
 }
 
+function Test-OrdinalStringMember {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Values,
+        [Parameter(Mandatory)] [string] $Expected
+    )
+
+    return @($Values | Where-Object {
+            [string]::Equals($_, $Expected, [StringComparison]::Ordinal)
+        }).Count -gt 0
+}
+
 function Get-WorkflowProperty {
     param(
         [Parameter(Mandatory)] [object] $Object,
@@ -106,7 +117,7 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     $triggers = Get-WorkflowProperty -Object $workflow -Name 'on'
     Assert-WorkflowContract ($null -ne $triggers) 'Nightly business performance workflow must declare triggers.'
     $triggerNames = @($triggers.PSObject.Properties.Name)
-    Assert-WorkflowContract ($triggerNames.Count -eq 2 -and $triggerNames.Contains('schedule') -and $triggerNames.Contains('workflow_dispatch')) 'Nightly business performance workflow must have only schedule and workflow_dispatch triggers.'
+    Assert-WorkflowContract ($triggerNames.Count -eq 2 -and (Test-OrdinalStringMember -Values $triggerNames -Expected 'schedule') -and (Test-OrdinalStringMember -Values $triggerNames -Expected 'workflow_dispatch')) 'Nightly business performance workflow must have only schedule and workflow_dispatch triggers.'
     $schedule = @(Get-WorkflowProperty -Object $triggers -Name 'schedule')
     Assert-WorkflowContract ($schedule.Count -eq 1 -and [string]::Equals([string](Get-WorkflowProperty -Object $schedule[0] -Name 'cron'), '0 17 * * *', [StringComparison]::Ordinal)) 'Nightly business performance workflow must schedule exactly 0 17 * * *.'
     $dispatch = Get-WorkflowProperty -Object $triggers -Name 'workflow_dispatch'
@@ -187,7 +198,7 @@ else {
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifactWith -Name 'if-no-files-found'), 'error', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must fail on missing files.'
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $artifactWith -Name 'retention-days') -eq 30) 'Nightly business performance artifact retention must be 30 days.'
     $artifactPaths = @([string](Get-WorkflowProperty -Object $artifactWith -Name 'path') -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
-    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and $artifactPaths.Contains('artifacts/business-performance/nightly/metrics.jsonl') -and $artifactPaths.Contains('artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
+    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/metrics.jsonl') -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
 
     $serializedWorkflow = $workflow | ConvertTo-Json -Depth 100 -Compress
     Assert-WorkflowContract ($serializedWorkflow -notmatch 'continue-on-error') 'Nightly business performance workflow must not use continue-on-error.'
