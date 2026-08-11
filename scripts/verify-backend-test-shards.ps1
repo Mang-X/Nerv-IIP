@@ -16,7 +16,10 @@ param(
 
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
 
-    [string] $PolicyPath = (Join-Path $PSScriptRoot 'test-evidence-policy.json')
+    [string] $PolicyPath = (Join-Path $PSScriptRoot 'test-evidence-policy.json'),
+
+    # 测试专用 seam：仅供 backend-test-shards contract test 注入仓库外的镜像 inventory。
+    [string] $BackendInventoryRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,7 +108,7 @@ function Get-WorkflowStepsById {
     return @(
         foreach ($step in @($Steps)) {
             $property = $step.PSObject.Properties['id']
-            if ($null -ne $property -and [string] $property.Value -eq $StepId) {
+            if ($null -ne $property -and [string]::Equals([string]([string] $property.Value), [string]($StepId), [StringComparison]::OrdinalIgnoreCase)) {
                 $step
             }
         }
@@ -169,10 +172,10 @@ foreach ($shard in $fastShards) {
     }
 }
 
-foreach ($duplicateEvidenceLane in @($fastShards.evidenceLane) | Group-Object | Where-Object Count -gt 1) {
+foreach ($duplicateEvidenceLane in Get-NervStringGroups -Items @($fastShards.evidenceLane) -KeySelector { param($value) [string]$value } -Comparer ([StringComparer]::Ordinal) | Where-Object Count -gt 1) {
     $errors.Add("Duplicate fast shard evidence lane: $($duplicateEvidenceLane.Name).")
 }
-foreach ($duplicateJobName in @($fastShards.jobName) | Group-Object | Where-Object Count -gt 1) {
+foreach ($duplicateJobName in Get-NervStringGroups -Items @($fastShards.jobName) -KeySelector { param($value) [string]$value } -Comparer ([StringComparer]::Ordinal) | Where-Object Count -gt 1) {
     $errors.Add("Duplicate fast shard job name: $($duplicateJobName.Name).")
 }
 foreach ($lane in $heavyLanes) {
@@ -194,14 +197,15 @@ foreach ($lane in $heavyLanes) {
 }
 
 $allLaneIds = @($fastShards.id) + @($heavyLanes.id)
-foreach ($duplicateLaneId in $allLaneIds | Group-Object | Where-Object Count -gt 1) {
+$heavyLaneIdSet = Get-NervStringSet -Values @($heavyLanes.id) -Comparer ([StringComparer]::Ordinal)
+foreach ($duplicateLaneId in Get-NervStringGroups -Items @($allLaneIds) -KeySelector { param($value) [string]$value } -Comparer ([StringComparer]::Ordinal) | Where-Object Count -gt 1) {
     $errors.Add("Duplicate shard or lane id: $($duplicateLaneId.Name).")
 }
 
 $excludedClassOwners = @{}
 foreach ($shard in $fastShards) {
     foreach ($excludedLane in @($shard.excludedTestLanes | ForEach-Object { [string] $_ })) {
-        if (@($heavyLanes.id) -notcontains $excludedLane) {
+        if (-not $heavyLaneIdSet.Contains([string]$excludedLane)) {
             $errors.Add("Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'.")
         }
     }
@@ -277,9 +281,9 @@ else {
 
         # The declared owner lanes must equal the lanes MAN-661 actually requires, so a shard cannot
         # attribute a full-chain or performance exclusion to the real-postgres owner script.
-        $declaredLanes = @($shard.excludedTestLanes | ForEach-Object { [string] $_ } | Sort-Object -Unique)
-        $derivedLanes = @($ownerLanes | Sort-Object)
-        if ((@($declaredLanes) -join '|') -cne (@($derivedLanes) -join '|')) {
+        $declaredLanes = @(Get-NervStringsSorted -Values @($shard.excludedTestLanes | ForEach-Object { [string] $_ }) -Comparer ([StringComparer]::Ordinal) -Unique)
+        $derivedLanes = @(Get-NervStringsSorted -Values @($ownerLanes) -Comparer ([StringComparer]::Ordinal))
+        if ((-not [string]::Equals([string]((@($declaredLanes) -join '|')), [string]((@($derivedLanes) -join '|')), [StringComparison]::Ordinal))) {
             $errors.Add("Fast shard '$($shard.id)' must declare excludedTestLanes [$(@($derivedLanes) -join ', ')] to match the MAN-661 requiredLane of its exclusions; it declares [$(@($declaredLanes) -join ', ')].")
         }
 
@@ -288,15 +292,14 @@ else {
         # runner and cannot collide this way.
         foreach ($methodSelector in @(Get-BackendTestShardExcludedSelectors -Shard $shard -Kind 'method')) {
             $sourceIds = @(
-                Get-BackendTestShardPolicyIdentityMatches -Selector $methodSelector -Rules $realDependencyRules |
-                    ForEach-Object { [string] $_.sourceId } |
-                    Sort-Object -Unique
+                Get-NervStringsSorted -Values @(Get-BackendTestShardPolicyIdentityMatches -Selector $methodSelector -Rules $realDependencyRules |
+                    ForEach-Object { [string] $_.sourceId }) -Comparer ([StringComparer]::Ordinal) -Unique
             )
             if ($sourceIds.Count -eq 0) {
                 $errors.Add("Method selector '$methodSelector' has no MAN-661 source registration to scan for prefix collisions.")
                 continue
             }
-            $methodName = $methodSelector.Substring($methodSelector.LastIndexOf('.') + 1)
+            $methodName = $methodSelector.Substring($methodSelector.LastIndexOf('.', [StringComparison]::Ordinal) + 1)
             foreach ($sourceId in $sourceIds) {
                 $sourcePath = Join-Path $repositoryRoot ([string] $policySourcePaths[$sourceId])
                 if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
@@ -332,19 +335,17 @@ foreach ($entry in $classificationEntries) {
     }
 }
 
-$backendRoot = Join-Path $repositoryRoot 'backend'
+$backendRoot = if ([string]::IsNullOrWhiteSpace($BackendInventoryRoot)) { Join-Path $repositoryRoot 'backend' } else { (Resolve-Path $BackendInventoryRoot).Path }
 $discoveredProjects = @(
-    Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
+    Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
-        ForEach-Object { Get-RepoRelativePath -RepositoryRoot $repositoryRoot -Path $_.FullName } |
-        Sort-Object -Unique
+        ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
 
 $discoveredBackendProjects = @(
-    Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.csproj' |
+    Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
-        ForEach-Object { Get-RepoRelativePath -RepositoryRoot $repositoryRoot -Path $_.FullName } |
-        Sort-Object -Unique
+        ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
 
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
@@ -352,7 +353,8 @@ if ($unclassifiedProjects.Count -gt 0) {
     $errors.Add("Unclassified backend test projects: $($unclassifiedProjects -join ', ').")
 }
 
-$unknownClassifications = @($projectOwners.Keys | Where-Object { $discoveredProjects -notcontains $_ })
+$discoveredProjectSet = Get-NervStringSet -Values $discoveredProjects -Comparer ([StringComparer]::Ordinal)
+$unknownClassifications = @($projectOwners.Keys | Where-Object { -not $discoveredProjectSet.Contains([string]$_) })
 if ($unknownClassifications.Count -gt 0) {
     $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
@@ -363,15 +365,15 @@ if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
 }
 else {
     $solutionProjects = @(
-        Get-Content -LiteralPath $solutionPath |
+        Get-NervStringsSorted -Values @(Get-Content -LiteralPath $solutionPath |
             ForEach-Object {
                 if ($_ -match '"(?<path>[^" ]*\.csproj)"') {
                     'backend/' + ($Matches.path -replace '\\', '/')
                 }
-            } |
-            Sort-Object -Unique
+            }) -Comparer ([StringComparer]::Ordinal) -Unique
     )
-    $projectsMissingFromSolution = @($discoveredProjects | Where-Object { $solutionProjects -notcontains $_ })
+    $solutionProjectSet = Get-NervStringSet -Values $solutionProjects -Comparer ([StringComparer]::Ordinal)
+    $projectsMissingFromSolution = @($discoveredProjects | Where-Object { -not $solutionProjectSet.Contains([string]$_) })
     if ($projectsMissingFromSolution.Count -gt 0) {
         $errors.Add("Backend test projects must also be in backend/Nerv.IIP.sln: $($projectsMissingFromSolution -join ', ').")
     }
@@ -393,9 +395,10 @@ else {
     # exceptions. If a future change genuinely needs a backend project outside the solution, the
     # exemption path is to edit this script (with its own contract test) and go through script
     # governance; see docs/architecture/script-automation-governance.md.
+    $projectsMissingFromSolutionSet = Get-NervStringSet -Values $projectsMissingFromSolution -Comparer ([StringComparer]::Ordinal)
     $backendProjectsMissingFromSolution = @(
         $discoveredBackendProjects |
-            Where-Object { $solutionProjects -notcontains $_ -and $projectsMissingFromSolution -notcontains $_ }
+            Where-Object { -not $solutionProjectSet.Contains([string]$_) -and -not $projectsMissingFromSolutionSet.Contains([string]$_) }
     )
     if ($backendProjectsMissingFromSolution.Count -gt 0) {
         $errors.Add("Backend projects must be registered in backend/Nerv.IIP.sln, otherwise a Release shard build resolves them through their own default configuration and emits them into bin/Debug: $($backendProjectsMissingFromSolution -join ', ').")
@@ -423,7 +426,7 @@ foreach ($shard in $fastShards) {
     # path, or `backend/nerv.iip.sln` — lands in this branch instead of the "invalid JSON" report.
     $normalizedFilter = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $shard.solutionFilter)
     $normalizedSolution = Get-CanonicalRepoPath -RepositoryRoot $repositoryRoot -Path ([string] $manifest.solution)
-    if ($normalizedFilter -eq $normalizedSolution) {
+    if ([string]::Equals($normalizedFilter, $normalizedSolution, [StringComparison]::OrdinalIgnoreCase)) {
         $errors.Add("Fast shard '$($shard.id)' must build its own solution filter, not the whole backend solution.")
         continue
     }
@@ -439,15 +442,16 @@ foreach ($shard in $fastShards) {
         $filterSolutionPath = Join-Path (Split-Path -Parent $filterPath) $filter.solution.path
         $filterSolutionDirectory = Split-Path -Parent $filterSolutionPath
         $filterProjects = @(
-            @($filter.solution.projects) |
+            Get-NervStringsSorted -Values @(@($filter.solution.projects) |
                 ForEach-Object {
                     Get-RepoRelativePath -RepositoryRoot $repositoryRoot -Path (Join-Path $filterSolutionDirectory $_)
-                } |
-                Sort-Object -Unique
+                }) -Comparer ([StringComparer]::Ordinal) -Unique
         )
-        $manifestProjects = @($shard.projects | ForEach-Object { $_ -replace '\\', '/' } | Sort-Object -Unique)
-        $missingFromFilter = @($manifestProjects | Where-Object { $filterProjects -notcontains $_ })
-        $unexpectedInFilter = @($filterProjects | Where-Object { $manifestProjects -notcontains $_ })
+        $manifestProjects = @(Get-NervStringsSorted -Values @($shard.projects | ForEach-Object { $_ -replace '\\', '/' }) -Comparer ([StringComparer]::Ordinal) -Unique)
+        $filterProjectSet = Get-NervStringSet -Values $filterProjects -Comparer ([StringComparer]::Ordinal)
+        $manifestProjectSet = Get-NervStringSet -Values $manifestProjects -Comparer ([StringComparer]::Ordinal)
+        $missingFromFilter = @($manifestProjects | Where-Object { -not $filterProjectSet.Contains([string]$_) })
+        $unexpectedInFilter = @($filterProjects | Where-Object { -not $manifestProjectSet.Contains([string]$_) })
         if ($missingFromFilter.Count -gt 0 -or $unexpectedInFilter.Count -gt 0) {
             $errors.Add("Fast shard '$($shard.id)' solution filter must match manifest projects exactly. Missing: $($missingFromFilter -join ', '); unexpected: $($unexpectedInFilter -join ', ').")
         }
@@ -480,7 +484,7 @@ else {
 
                 $lane = [string] $shard.evidenceLane
                 $shardJobName = [string] $shard.jobName
-                if ((Get-WorkflowStringValue -Object $job -PropertyName 'name') -ne $shardJobName) {
+                if (-not [string]::Equals((Get-WorkflowStringValue -Object $job -PropertyName 'name'), $shardJobName, [StringComparison]::OrdinalIgnoreCase)) {
                     $errors.Add("Fast shard job '$jobId' must be named '$shardJobName' so the evidence lane maps to one allowlisted job.")
                 }
 
@@ -525,7 +529,7 @@ else {
                 else {
                     $collectStep = $collectSteps[0]
                     $collectRun = Get-WorkflowStringValue -Object $collectStep -PropertyName 'run'
-                    if ((Get-WorkflowStringValue -Object $collectStep -PropertyName 'if') -ne 'always()') {
+                    if ((-not [string]::Equals([string]((Get-WorkflowStringValue -Object $collectStep -PropertyName 'if')), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
                         $errors.Add("Fast shard job '$jobId' evidence collection must run with if: always().")
                     }
                     if ($null -ne $collectStep.PSObject.Properties['continue-on-error']) {
@@ -545,7 +549,7 @@ else {
                             $errors.Add("Fast shard job '$jobId' evidence collection must pass '$requiredArgument'.")
                         }
                     }
-                    foreach ($siblingLane in @($fastShards | Where-Object { [string] $_.id -ne [string] $shard.id } | ForEach-Object { [string] $_.evidenceLane })) {
+                    foreach ($siblingLane in @($fastShards | Where-Object { (-not [string]::Equals([string]([string] $_.id), [string]([string] $shard.id), [StringComparison]::OrdinalIgnoreCase)) } | ForEach-Object { [string] $_.evidenceLane })) {
                         if ($collectRun -match [regex]::Escape($siblingLane)) {
                             $errors.Add("Fast shard job '$jobId' must not claim the sibling evidence lane '$siblingLane'.")
                         }
@@ -554,21 +558,21 @@ else {
 
                 $uploads = @($job.steps | Where-Object {
                         $uses = $_.PSObject.Properties['uses']
-                        $null -ne $uses -and [string] $uses.Value -eq 'actions/upload-artifact@v4'
+                        $null -ne $uses -and [string]::Equals([string]([string] $uses.Value), [string]('actions/upload-artifact@v4'), [StringComparison]::OrdinalIgnoreCase)
                     })
-                if ($uploads.Count -ne 1 -or (Get-WorkflowStringValue -Object $uploads[0] -PropertyName 'if') -ne 'always()') {
+                if ($uploads.Count -ne 1 -or (-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploads[0] -PropertyName 'if')), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
                     $errors.Add("Fast shard job '$jobId' must always upload exactly one redacted evidence artifact.")
                 }
                 else {
                     $uploadWith = $uploads[0].with
-                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'path') -ne '${{ steps.collect-shard-evidence.outputs.evidence-path }}') {
+                    if ((-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'path')), [string]('${{ steps.collect-shard-evidence.outputs.evidence-path }}'), [StringComparison]::OrdinalIgnoreCase))) {
                         $errors.Add("Fast shard job '$jobId' must upload only the collector-published redacted evidence path.")
                     }
-                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'name') -ne "test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}") {
+                    if ((-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'name')), [string]("test-evidence-$lane-`${{ github.run_id }}-`${{ github.run_attempt }}"), [StringComparison]::OrdinalIgnoreCase))) {
                         $errors.Add("Fast shard job '$jobId' evidence artifact must use its unique lane-scoped artifact name.")
                     }
-                    if ((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'if-no-files-found') -ne 'error' -or
-                        (Get-WorkflowStringValue -Object $uploadWith -PropertyName 'retention-days') -ne '14') {
+                    if ((-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'if-no-files-found')), [string]('error'), [StringComparison]::OrdinalIgnoreCase)) -or
+                        (-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploadWith -PropertyName 'retention-days')), [string]('14'), [StringComparison]::OrdinalIgnoreCase))) {
                         $errors.Add("Fast shard job '$jobId' evidence artifact must fail closed on missing files and retain for 14 days.")
                     }
                 }
@@ -586,10 +590,14 @@ else {
             else {
                 $expectedNeeds = @('backend-test-shard-governance') + $fastJobIds
                 $actualNeeds = @($aggregate.needs | ForEach-Object { [string] $_ })
-                if ((@($actualNeeds | Sort-Object) -join '|') -ne (@($expectedNeeds | Sort-Object) -join '|')) {
+                $expectedNeedSet = Get-NervStringSet -Values $expectedNeeds -Comparer ([StringComparer]::Ordinal)
+                $actualNeedSet = Get-NervStringSet -Values $actualNeeds -Comparer ([StringComparer]::Ordinal)
+                $missingNeeds = @($expectedNeeds | Where-Object { -not $actualNeedSet.Contains([string] $_) })
+                $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
+                if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0) {
                     $errors.Add("Backend Tests aggregate must need exactly the governance and four fast shard jobs.")
                 }
-                if ([string] $aggregate.name -ne 'Backend Tests' -or [string] $aggregate.if -ne 'always()') {
+                if ((-not [string]::Equals([string]([string] $aggregate.name), [string]('Backend Tests'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]([string] $aggregate.if), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
                     $errors.Add("Backend Tests aggregate must retain name 'Backend Tests' and if: always().")
                 }
                 $aggregateHasContinueOnError = $null -ne $aggregate.PSObject.Properties['continue-on-error'] -or @(
@@ -606,14 +614,17 @@ else {
                         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
                 )
                 $requiredAssertions = @()
+                $aggregateCommandSet = Get-NervStringSet -Values $aggregateCommands -Comparer ([StringComparer]::Ordinal)
                 foreach ($requiredJob in $expectedNeeds) {
                     $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
                     $requiredAssertions += $requiredAssertion
-                    if ($aggregateCommands -notcontains $requiredAssertion) {
+                    if (-not $aggregateCommandSet.Contains([string]$requiredAssertion)) {
                         $errors.Add("Backend Tests aggregate must fail when '$requiredJob' is not success.")
                     }
                 }
-                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or ((@($aggregateCommands | Sort-Object) -join '|') -ne (@($requiredAssertions | Sort-Object) -join '|'))) {
+                $actualAggregateAssertions = @(Get-NervStringsSorted -Values @($aggregateCommands) -Comparer ([StringComparer]::Ordinal)) -join '|'
+                $expectedAggregateAssertions = @(Get-NervStringsSorted -Values @($requiredAssertions) -Comparer ([StringComparer]::Ordinal)) -join '|'
+                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or -not [string]::Equals($actualAggregateAssertions, $expectedAggregateAssertions, [StringComparison]::Ordinal)) {
                     $errors.Add('Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.')
                 }
             }

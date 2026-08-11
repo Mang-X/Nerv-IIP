@@ -65,7 +65,7 @@ function Wait-Healthy {
             throw "Managed service exited before becoming healthy. Logs: $($ManagedProcess.LogDirectory)"
         }
         try {
-            if ((Invoke-RestMethod -Method Get -Uri $Uri) -eq 'Healthy') { return }
+            if ([string]::Equals([string]((Invoke-RestMethod -Method Get -Uri $Uri)), [string]('Healthy'), [StringComparison]::OrdinalIgnoreCase)) { return }
         }
         catch { Start-Sleep -Milliseconds 500 }
     } while ((Get-Date) -lt $deadline)
@@ -194,7 +194,7 @@ function Wait-ErpSalesOrder {
     do {
         try {
             $response = Invoke-RestMethod -Method Get -Uri "$ErpUrl/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&status=released&keyword=SO-DEMO-001" -Headers $Headers
-            $rows = @($response.data.items | Where-Object { $_.salesOrderNo -eq 'SO-DEMO-001' })
+            $rows = @($response.data.items | Where-Object { [string]::Equals([string]($_.salesOrderNo), [string]('SO-DEMO-001'), [StringComparison]::OrdinalIgnoreCase) })
             if ($rows.Count -eq 1) { return $rows[0] }
         }
         catch { }
@@ -214,11 +214,11 @@ function Wait-ErpDeliveryOrder {
             if ($rows.Count -eq 1) {
                 $row = $rows[0]
                 $lines = @($row.lines)
-                if ($row.status -eq 'completed' -and
+                if ([string]::Equals([string]($row.status), [string]('completed'), [StringComparison]::OrdinalIgnoreCase) -and
                     -not [string]::IsNullOrWhiteSpace("$($row.shippedAtUtc)") -and
                     -not [string]::IsNullOrWhiteSpace("$($row.completedAtUtc)") -and
                     $lines.Count -eq 1 -and
-                    [decimal]$lines[0].shippedQuantity -eq 2) {
+                    (([decimal]$lines[0].shippedQuantity) -eq (2))) {
                     return $row
                 }
             }
@@ -247,8 +247,8 @@ function Wait-Receivable {
 $composeFile = Join-Path $root 'infra/docker-compose.dev.yml'
 $runningResult = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-compose-running'
 $running = @("$($runningResult.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
-$startedPostgres = $running -notcontains 'postgres'
-$startedRedis = $running -notcontains 'redis'
+$startedPostgres = (-not [Collections.Generic.HashSet[string]]::new([string[]]@($running), [StringComparer]::OrdinalIgnoreCase).Contains([string]('postgres')))
+$startedRedis = (-not [Collections.Generic.HashSet[string]]::new([string[]]@($running), [StringComparer]::OrdinalIgnoreCase).Contains([string]('redis')))
 $databaseName = "man527_$([Guid]::NewGuid().ToString('N'))"
 if ($databaseName -notmatch '^man527_[a-f0-9]{32}$') {
     throw "Refusing to use an invalid MAN-527 disposable database name: $databaseName"
@@ -393,8 +393,8 @@ try {
         -DeliveryOrderNo $deliveryOrderNo `
         -ActorPrincipalId $wmsActorPrincipalId `
         -SiteCode $wmsSiteCode
-    if ($outbound.assignedPoolCode -ne $wmsShippingPoolCode -or
-        $outbound.assignedOperatorUserId -ne $wmsActorPrincipalId) {
+    if (-not [string]::Equals([string]$outbound.assignedPoolCode, $wmsShippingPoolCode, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$outbound.assignedOperatorUserId, $wmsActorPrincipalId, [StringComparison]::Ordinal)) {
         throw "Public WMS readback did not prove the first assignment for $deliveryOrderNo."
     }
     foreach ($outboundLine in @($outbound.lines)) {
@@ -526,7 +526,7 @@ try {
         }
         [xml]$probeTrx = Get-Content -LiteralPath $probeResults -Raw
         $probeExecutions = @($probeTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object { $_.GetAttribute('testName').EndsWith('.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', [StringComparison]::Ordinal) })
-        if ($probeExecutions.Count -ne 1 -or $probeExecutions[0].GetAttribute('outcome') -ne 'Passed') {
+        if ($probeExecutions.Count -ne 1 -or (-not [string]::Equals([string]($probeExecutions[0].GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase))) {
             throw 'MAN-527 repeated-event probe did not execute exactly once and pass.'
         }
     }
@@ -535,7 +535,7 @@ try {
     $receivableAfterReplay = Wait-Receivable -ErpUrl $erpUrl -Headers $headers -DeliveryOrderNo $deliveryOrderNo
     if ($deliveryAfterReplay.shippedAtUtc -ne $deliveryBeforeReplay.shippedAtUtc -or
         $deliveryAfterReplay.completedAtUtc -ne $deliveryBeforeReplay.completedAtUtc -or
-        [decimal]$deliveryAfterReplay.lines[0].shippedQuantity -ne [decimal]$deliveryBeforeReplay.lines[0].shippedQuantity -or
+        (-not (([decimal]$deliveryAfterReplay.lines[0].shippedQuantity) -eq ([decimal]$deliveryBeforeReplay.lines[0].shippedQuantity))) -or
         $receivableAfterReplay.receivableNo -ne $receivableBeforeReplay.receivableNo) {
         throw 'Repeated completion changed the public ERP delivery or receivable facts.'
     }
@@ -640,7 +640,7 @@ finally {
             Invoke-DockerCompose -Arguments @('-f', $composeFile, 'stop', 'postgres') -WorkingDirectory $root -Name 'man527-stop-postgres' | Out-Null
             $runningAfterStop = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-readback-postgres-stop'
             $runningServices = @("$($runningAfterStop.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-            if ($runningServices -contains 'postgres') {
+            if ([Collections.Generic.HashSet[string]]::new([string[]]@($runningServices), [StringComparer]::OrdinalIgnoreCase).Contains([string]('postgres'))) {
                 throw 'Script-owned PostgreSQL service is still running after stop.'
             }
             $cleanupEvidence.postgres = 'owned-stopped'
@@ -655,7 +655,7 @@ finally {
             Invoke-DockerCompose -Arguments @('-f', $composeFile, 'stop', 'redis') -WorkingDirectory $root -Name 'man527-stop-redis' | Out-Null
             $runningAfterStop = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $root -Name 'man527-readback-redis-stop'
             $runningServices = @("$($runningAfterStop.Stdout)" -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-            if ($runningServices -contains 'redis') {
+            if ([Collections.Generic.HashSet[string]]::new([string[]]@($runningServices), [StringComparer]::OrdinalIgnoreCase).Contains([string]('redis'))) {
                 throw 'Script-owned Redis service is still running after stop.'
             }
             $cleanupEvidence.redis = 'owned-stopped'

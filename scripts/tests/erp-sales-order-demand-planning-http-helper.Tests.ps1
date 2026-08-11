@@ -71,7 +71,7 @@ function Import-VerifyFunction {
     $definition = $Ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $node.Name -eq $Name
+        [string]::Equals([string]$node.Name, $Name, [StringComparison]::Ordinal)
     }, $true)
     if ($null -eq $definition) {
         throw "Verify script function '$Name' is missing."
@@ -163,10 +163,10 @@ try {
         -Headers @{} `
         -TimeoutSeconds 5 `
         -PollIntervalMilliseconds 25
-    Assert-Helper ($order.salesOrderNo -ceq 'SO-DEMO-001') 'ERP readiness must return the exact seeded sales order.'
-    Assert-Helper ($order.status -ceq 'released') 'ERP readiness must require the released lifecycle state.'
+    Assert-Helper ([string]::Equals([string]($order.salesOrderNo), [string]('SO-DEMO-001'), [StringComparison]::Ordinal)) 'ERP readiness must return the exact seeded sales order.'
+    Assert-Helper ([string]::Equals([string]($order.status), [string]('released'), [StringComparison]::Ordinal)) 'ERP readiness must require the released lifecycle state.'
     Assert-Helper ([decimal]$order.totalAmount -eq [decimal]200) 'ERP readiness must require the seeded total amount.'
-    Assert-Helper ((Get-Content -LiteralPath $counterFile -Raw).Trim() -eq '2') 'ERP readiness must poll after an initially empty successful response.'
+    Assert-Helper ([string]::Equals([string]((Get-Content -LiteralPath $counterFile -Raw).Trim()), [string]('2'), [StringComparison]::OrdinalIgnoreCase)) 'ERP readiness must poll after an initially empty successful response.'
 
     # 预算和 stage 都必须显式传入。删掉隐式的 5 秒默认之后，「少写一个参数」
     # 只能得到一条明确的拒绝，而不是悄悄退回一个对冷 runner 过紧的预算。
@@ -236,8 +236,12 @@ try {
     Assert-Helper (
         $coldMutationStopwatch.Elapsed.TotalSeconds -lt 60
     ) 'The mutation budget must stay bounded well inside its declared maximum.'
+    $softHyphenCounterValue = "1$([char]0x00AD)"
     Assert-Helper (
-        (Get-Content -LiteralPath $mutationCounterFile -Raw).Trim() -eq '1'
+        -not [string]::Equals($softHyphenCounterValue, '1', [StringComparison]::Ordinal)
+    ) 'Mutation counter identity matching must not fold U+00AD into the expected count.'
+    Assert-Helper (
+        [string]::Equals((Get-Content -LiteralPath $mutationCounterFile -Raw).Trim(), '1', [StringComparison]::Ordinal)
     ) 'A successful mutation must reach the server exactly once.'
 
     # 状态变更失败之后绝不能重发：超时/失败之后提交结果是不确定的，重试就是重复写。
@@ -249,7 +253,7 @@ try {
             -Body @{ organizationId = 'org-001'; orderedQuantity = 5 }
     } -ExpectedFragments @('classification=business', 'stage=failing-mutation', 'method=POST', 'code=409')
     Assert-Helper (
-        (Get-Content -LiteralPath $mutationCounterFile -Raw).Trim() -eq '2'
+        [string]::Equals((Get-Content -LiteralPath $mutationCounterFile -Raw).Trim(), '2', [StringComparison]::Ordinal)
     ) 'A failed mutation must not be retried; the fixture must have seen exactly one more request.'
 
     # 有界性由共享请求路径强制：给一个明确的小预算，它必须在预算处放弃并归类为 deadline。

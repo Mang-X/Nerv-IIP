@@ -234,9 +234,8 @@ $fgCandidates = @('FG-QJ-M1-L', 'FG-HJ-M1-R', 'FG-QJ-P1-L', 'FG-HJ-S1-L', 'FG-QJ
 $fgLots = @()
 foreach ($sku in $fgCandidates) {
     $availability = Invoke-NervDemoGet -Token $adminToken -PathAndQuery "/inventory/availability?$scopeQuery&skuCode=$sku&uomCode=pcs&siteCode=SITE-001"
-    $bestLot = @($availability.data.items) |
-        Where-Object { $_.availableQuantity -gt 1 } |
-        Sort-Object -Property availableQuantity -Descending |
+    $bestLot = Get-NervItemsSorted -Items @(@($availability.data.items) |
+        Where-Object { $_.availableQuantity -gt 1 }) -Comparison { param($left, $right) if ([decimal]$right.availableQuantity -gt [decimal]$left.availableQuantity) { 1 } elseif ([decimal]$right.availableQuantity -lt [decimal]$left.availableQuantity) { -1 } else { 0 } } |
         Select-Object -First 1
     if ($null -ne $bestLot) {
         $fgLots += [pscustomobject]@{ Sku = $sku; LotNo = [string] $bestLot.lotNo; Location = [string] $bestLot.locationCode; Quantity = [math]::Max(1, [int] $bestLot.availableQuantity - 1) }

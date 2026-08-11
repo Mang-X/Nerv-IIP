@@ -135,7 +135,7 @@ for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
     $run = $roundIndex + 1
     $seed = 'man662-{0:d2}' -f $run
     $parallelProfile = if ($run % 2 -eq 1) { 'serial' } else { 'parallel' }
-    $maxParallelThreads = if ($parallelProfile -ceq 'serial') { 1 } else { 4 }
+    $maxParallelThreads = if ([string]::Equals([string]($parallelProfile), [string]('serial'), [StringComparison]::Ordinal)) { 1 } else { 4 }
     $projectOrder = @(
         for ($offset = 0; $offset -lt $projects.Count; $offset++) {
             $projects[($roundIndex + $offset) % $projects.Count]
@@ -191,7 +191,7 @@ for ($roundIndex = 0; $roundIndex -lt 6; $roundIndex++) {
     $projectExitCodes = @($projectResults | ForEach-Object { $_.exitCode })
     $stopwatch.Stop()
 
-    $roundFailure = @($projectExitCodes | Where-Object { [int] $_ -ne 0 } | Select-Object -First 1)
+    $roundFailure = @($projectExitCodes | Where-Object { (-not (([int] $_) -eq (0))) } | Select-Object -First 1)
     $roundExitCode = if ($roundFailure.Count -eq 0) { 0 } else { [int] $roundFailure[0] }
     if ($roundExitCode -ne 0) {
         $hasFailures = $true
@@ -214,7 +214,7 @@ $countMismatches = [System.Collections.Generic.List[string]]::new()
 foreach ($project in $projects) {
     $observed = @(
         foreach ($row in $summaryRows) {
-            $match = @($row.projectResults | Where-Object { $_.project -ceq $project })
+            $match = @($row.projectResults | Where-Object { [string]::Equals([string]($_.project), [string]($project), [StringComparison]::Ordinal) })
             if ($match.Count -eq 1 -and $match[0].exitCode -eq 0) {
                 [pscustomobject]@{ Run = $row.run; Counts = $match[0].counts }
             }

@@ -210,13 +210,12 @@ function Get-SolutionTestSourceFiles {
         -Name 'backend-test-determinism-solution-list'
 
     $projectPaths = @(
-        $solutionList.Stdout -split "`r?`n" |
+        Get-NervStringsSorted -Values @($solutionList.Stdout -split "`r?`n" |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ -match '(?i)\.csproj$' } |
             ForEach-Object { Join-Path $backendRoot ($_ -replace '\\', [System.IO.Path]::DirectorySeparatorChar) } |
             Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-            Where-Object { (Test-IsTestProject -ProjectPath $_) -or (Test-IsSharedTestingProject -ProjectPath $_) } |
-            Sort-Object -Unique
+            Where-Object { (Test-IsTestProject -ProjectPath $_) -or (Test-IsSharedTestingProject -ProjectPath $_) }) -Comparer ([StringComparer]::Ordinal) -Unique
     )
 
     if ($projectPaths.Count -eq 0) {
@@ -235,7 +234,7 @@ function Get-SolutionTestSourceFiles {
         Get-ChildItem -LiteralPath $projectDirectory -Recurse -File -Filter '*.cs'
     }
 
-    return @($files | Sort-Object FullName -Unique)
+    return @(Get-NervItemsUniqueSortedByString -Items @($files) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal))
 }
 
 function Get-CSharpSanitizedText {
@@ -255,26 +254,26 @@ function Get-CSharpSanitizedText {
         $character = $characters[$index]
         $next = if ($index + 1 -lt $length) { $characters[$index + 1] } else { [char] 0 }
 
-        if ($character -eq '/' -and $next -eq '/') {
-            while ($index -lt $length -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::Ordinal) -and [string]::Equals([string]($next), [string]('/'), [StringComparison]::Ordinal)) {
+            while ($index -lt $length -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                 $characters[$index] = ' '
                 $index++
             }
             continue
         }
 
-        if ($character -eq '/' -and $next -eq '*') {
+        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::Ordinal) -and [string]::Equals([string]($next), [string]('*'), [StringComparison]::Ordinal)) {
             $characters[$index] = ' '
             $characters[$index + 1] = ' '
             $index += 2
             while ($index -lt $length) {
-                if ($index + 1 -lt $length -and $characters[$index] -eq '*' -and $characters[$index + 1] -eq '/') {
+                if ($index + 1 -lt $length -and [string]::Equals([string]($characters[$index]), [string]('*'), [StringComparison]::Ordinal) -and [string]::Equals([string]($characters[$index + 1]), [string]('/'), [StringComparison]::Ordinal)) {
                     $characters[$index] = ' '
                     $characters[$index + 1] = ' '
                     $index += 2
                     break
                 }
-                if ($characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
                 $index++
@@ -282,21 +281,21 @@ function Get-CSharpSanitizedText {
             continue
         }
 
-        if ($character -eq "'") {
+        if ([string]::Equals([string]($character), [string]("'"), [StringComparison]::Ordinal)) {
             $characters[$index] = ' '
             $index++
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ($current -ne "`r" -and $current -ne "`n") {
+                if ((-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
-                if ($current -eq '\' -and $index + 1 -lt $length) {
+                if ([string]::Equals([string]($current), [string]('\'), [StringComparison]::Ordinal) -and $index + 1 -lt $length) {
                     $index++
-                    if ($characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                    if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$index] = ' '
                     }
                 }
-                elseif ($current -eq "'") {
+                elseif ([string]::Equals([string]($current), [string]("'"), [StringComparison]::Ordinal)) {
                     $index++
                     break
                 }
@@ -305,9 +304,9 @@ function Get-CSharpSanitizedText {
             continue
         }
 
-        if ($character -eq '"') {
+        if ([string]::Equals([string]($character), [string]('"'), [StringComparison]::Ordinal)) {
             $quoteRunLength = 1
-            while ($index + $quoteRunLength -lt $length -and $Text[$index + $quoteRunLength] -eq '"') {
+            while ($index + $quoteRunLength -lt $length -and [string]::Equals([string]($Text[$index + $quoteRunLength]), [string]('"'), [StringComparison]::Ordinal)) {
                 $quoteRunLength++
             }
             $isRawString = $quoteRunLength -ge 3
@@ -317,14 +316,14 @@ function Get-CSharpSanitizedText {
                 $rawClosingIndex = -1
                 $rawSearchIndex = $index + $quoteCount
                 while ($rawSearchIndex -lt $length) {
-                    if ($Text[$rawSearchIndex] -ne '"') {
+                    if ((-not [string]::Equals([string]($Text[$rawSearchIndex]), [string]('"'), [StringComparison]::Ordinal))) {
                         $rawSearchIndex++
                         continue
                     }
 
                     $closingQuoteRun = 1
                     while ($rawSearchIndex + $closingQuoteRun -lt $length -and
-                        $Text[$rawSearchIndex + $closingQuoteRun] -eq '"') {
+                        [string]::Equals([string]($Text[$rawSearchIndex + $closingQuoteRun]), [string]('"'), [StringComparison]::Ordinal)) {
                         $closingQuoteRun++
                     }
                     if ($closingQuoteRun -ge $quoteCount) {
@@ -340,7 +339,7 @@ function Get-CSharpSanitizedText {
 
                 $rawDollarCount = 0
                 $dollarIndex = $index - 1
-                while ($dollarIndex -ge 0 -and $Text[$dollarIndex] -eq '$') {
+                while ($dollarIndex -ge 0 -and [string]::Equals([string]($Text[$dollarIndex]), [string]('$'), [StringComparison]::Ordinal)) {
                     $rawDollarCount++
                     $dollarIndex--
                 }
@@ -356,10 +355,10 @@ function Get-CSharpSanitizedText {
 
                 $rawContentIndex = $index + $quoteCount
                 while ($rawContentIndex -lt $rawClosingIndex) {
-                    if ($rawDollarCount -gt 0 -and $Text[$rawContentIndex] -eq '{') {
+                    if ($rawDollarCount -gt 0 -and [string]::Equals([string]($Text[$rawContentIndex]), [string]('{'), [StringComparison]::Ordinal)) {
                         $openingBraceRun = 1
                         while ($rawContentIndex + $openingBraceRun -lt $rawClosingIndex -and
-                            $Text[$rawContentIndex + $openingBraceRun] -eq '{') {
+                            [string]::Equals([string]($Text[$rawContentIndex + $openingBraceRun]), [string]('{'), [StringComparison]::Ordinal)) {
                             $openingBraceRun++
                         }
 
@@ -378,19 +377,19 @@ function Get-CSharpSanitizedText {
                             $nestedBraceDepth = 0
                             $expressionCursor = 0
                             while ($expressionCursor -lt $sanitizedExpressionTail.Length) {
-                                if ($sanitizedExpressionTail[$expressionCursor] -eq '{') {
+                                if ([string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('{'), [StringComparison]::Ordinal)) {
                                     $nestedBraceDepth++
                                     $expressionCursor++
                                     continue
                                 }
-                                if ($sanitizedExpressionTail[$expressionCursor] -ne '}') {
+                                if ((-not [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('}'), [StringComparison]::Ordinal))) {
                                     $expressionCursor++
                                     continue
                                 }
 
                                 $candidateClosingRun = 1
                                 while ($expressionCursor + $candidateClosingRun -lt $sanitizedExpressionTail.Length -and
-                                    $sanitizedExpressionTail[$expressionCursor + $candidateClosingRun] -eq '}') {
+                                    [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor + $candidateClosingRun]), [string]('}'), [StringComparison]::Ordinal)) {
                                     $candidateClosingRun++
                                 }
                                 $nestedClosingBraces = [Math]::Min($nestedBraceDepth, $candidateClosingRun)
@@ -438,7 +437,7 @@ function Get-CSharpSanitizedText {
                     }
 
                     if (-not $PreserveStringContent -and
-                        $Text[$rawContentIndex] -ne "`r" -and $Text[$rawContentIndex] -ne "`n") {
+                        (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$rawContentIndex] = ' '
                     }
                     $rawContentIndex++
@@ -454,13 +453,13 @@ function Get-CSharpSanitizedText {
             }
 
             $quoteCount = 1
-            $isVerbatimString = ($index -gt 0 -and $characters[$index - 1] -eq '@') -or
-                ($index -gt 1 -and $characters[$index - 1] -eq '$' -and $characters[$index - 2] -eq '@')
+            $isVerbatimString = ($index -gt 0 -and [string]::Equals([string]($characters[$index - 1]), [string]('@'), [StringComparison]::Ordinal)) -or
+                ($index -gt 1 -and [string]::Equals([string]($characters[$index - 1]), [string]('$'), [StringComparison]::Ordinal) -and [string]::Equals([string]($characters[$index - 2]), [string]('@'), [StringComparison]::Ordinal))
             $prefixIndex = $index - 1
-            if ($prefixIndex -ge 0 -and $characters[$prefixIndex] -eq '@') {
+            if ($prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('@'), [StringComparison]::Ordinal)) {
                 $prefixIndex--
             }
-            $isInterpolatedString = $prefixIndex -ge 0 -and $characters[$prefixIndex] -eq '$'
+            $isInterpolatedString = $prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('$'), [StringComparison]::Ordinal)
 
             for ($offset = 0; $offset -lt $quoteCount; $offset++) {
                 if (-not $PreserveStringContent) {
@@ -471,8 +470,8 @@ function Get-CSharpSanitizedText {
 
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ($isInterpolatedString -and $current -eq '{' -and
-                    $index + 1 -lt $length -and $characters[$index + 1] -eq '{') {
+                if ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::Ordinal) -and
+                    $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('{'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                         $characters[$index + 1] = ' '
@@ -480,12 +479,12 @@ function Get-CSharpSanitizedText {
                     $index += 2
                     continue
                 }
-                elseif ($isInterpolatedString -and $current -eq '{') {
+                elseif ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::Ordinal)) {
                     $expressionStart = $index + 1
                     $expressionCloseOffset = -1
                     $candidateSearchOffset = $expressionStart
                     while ($candidateSearchOffset -lt $length) {
-                        $candidateClosingIndex = $Text.IndexOf('}', $candidateSearchOffset)
+                        $candidateClosingIndex = $Text.IndexOf('}', $candidateSearchOffset, [StringComparison]::Ordinal)
                         if ($candidateClosingIndex -lt 0) {
                             break
                         }
@@ -501,11 +500,11 @@ function Get-CSharpSanitizedText {
 
                         $nestedBraceDepth = 0
                         for ($expressionCursor = 0; $expressionCursor -lt $sanitizedCandidate.Length; $expressionCursor++) {
-                            if ($sanitizedCandidate[$expressionCursor] -eq '{') {
+                            if ([string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('{'), [StringComparison]::Ordinal)) {
                                 $nestedBraceDepth++
                                 continue
                             }
-                            if ($sanitizedCandidate[$expressionCursor] -ne '}') {
+                            if ((-not [string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('}'), [StringComparison]::Ordinal))) {
                                 continue
                             }
                             if ($nestedBraceDepth -gt 0) {
@@ -546,7 +545,7 @@ function Get-CSharpSanitizedText {
                         continue
                     }
                 }
-                elseif ($isVerbatimString -and $current -eq '"' -and $index + 1 -lt $length -and $characters[$index + 1] -eq '"') {
+                elseif ($isVerbatimString -and [string]::Equals([string]($current), [string]('"'), [StringComparison]::Ordinal) -and $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('"'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                         $characters[$index + 1] = ' '
@@ -554,26 +553,26 @@ function Get-CSharpSanitizedText {
                     $index += 2
                     continue
                 }
-                elseif ($current -eq '"') {
+                elseif ([string]::Equals([string]($current), [string]('"'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                     }
                     $index++
                     break
                 }
-                elseif (-not $isVerbatimString -and $current -eq '\' -and $index + 1 -lt $length) {
+                elseif (-not $isVerbatimString -and [string]::Equals([string]($current), [string]('\'), [StringComparison]::Ordinal) -and $index + 1 -lt $length) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                     }
                     $index++
-                    if (-not $PreserveStringContent -and $characters[$index] -ne "`r" -and $characters[$index] -ne "`n") {
+                    if (-not $PreserveStringContent -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$index] = ' '
                     }
                     $index++
                     continue
                 }
 
-                if (-not $PreserveStringContent -and $current -ne "`r" -and $current -ne "`n") {
+                if (-not $PreserveStringContent -and (-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
                 $index++
@@ -611,7 +610,7 @@ function Get-LineFindingAtOffset {
     }
     $lineStart = $LineStarts[$lineIndex]
     $lineEnd = $lineStart
-    while ($lineEnd -lt $Source.Length -and $Source[$lineEnd] -ne "`r" -and $Source[$lineEnd] -ne "`n") {
+    while ($lineEnd -lt $Source.Length -and (-not [string]::Equals([string]($Source[$lineEnd]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($Source[$lineEnd]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
         $lineEnd++
     }
     $lineText = $Source.Substring($lineStart, $lineEnd - $lineStart).Trim()
@@ -645,7 +644,7 @@ function Get-SourceFindings {
         $lineStarts = New-Object System.Collections.Generic.List[int]
         $lineStarts.Add(0)
         for ($index = 0; $index -lt $source.Length; $index++) {
-            if ($source[$index] -eq "`n") {
+            if ([string]::Equals([string]($source[$index]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase)) {
                 $lineStarts.Add($index + 1)
             }
         }
@@ -694,7 +693,10 @@ function Get-SourceFindings {
         }
     }
 
-    return @($findings | Sort-Object Path, Line, Pattern)
+    return @(Get-NervItemsSortedByString -Items $findings.ToArray() -KeySelector {
+        param($row)
+        Get-NervStringCompositeKey -Components @([string]$row.Path, ('{0:D10}' -f [int]$row.Line), [string]$row.Pattern)
+    } -Comparer ([StringComparer]::Ordinal))
 }
 
 function Get-PropertyValue {
@@ -744,21 +746,21 @@ function Read-Baseline {
     }
 
     $rows = New-Object System.Collections.Generic.List[object]
-    $seen = @{}
+    $seen = [System.Collections.Hashtable]::new([StringComparer]::Ordinal)
     $today = [DateOnly]::FromDateTime([DateTime]::UtcNow)
     # Ordinal dictionaries make both path and pattern membership exact, matching the explicit ordinal
     # finding comparisons below. The nested value is the checker-owned maximum number of valid rows.
     $permanentPathPatternCapacities = [System.Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     foreach ($entry in $PermanentAllowlist) {
         $normalizedEntry = ($entry -replace '\\', '/').Trim()
-        $capacitySeparatorIndex = $normalizedEntry.LastIndexOf('=')
+        $capacitySeparatorIndex = $normalizedEntry.LastIndexOf('=', [StringComparison]::Ordinal)
         if ($capacitySeparatorIndex -lt 0) {
             $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
             continue
         }
 
         $pathAndPattern = $normalizedEntry.Substring(0, $capacitySeparatorIndex)
-        $patternSeparatorIndex = $pathAndPattern.LastIndexOf('=')
+        $patternSeparatorIndex = $pathAndPattern.LastIndexOf('=', [StringComparison]::Ordinal)
         if ($patternSeparatorIndex -lt 0) {
             $Errors.Add("permanent allowlist entry '$entry' must use '<path>=<pattern>=<maxRows>'.")
             continue
@@ -786,7 +788,7 @@ function Read-Baseline {
             $Errors.Add("permanent allowlist entry '$entry' maxRows must be a positive integer.")
             continue
         }
-        if ($allowedPatterns -cnotcontains $entryPattern) {
+        if ((-not [Collections.Generic.HashSet[string]]::new([string[]]@($allowedPatterns), [StringComparer]::Ordinal).Contains([string]($entryPattern)))) {
             $Errors.Add("permanent allowlist entry '$entry' names unsupported pattern '$entryPattern'.")
             continue
         }
@@ -808,7 +810,7 @@ function Read-Baseline {
         # The classification decides which metadata the row owes, so it is resolved before the
         # required-field check rather than alongside it.
         $classification = Get-PropertyValue -Object $exception -Name 'classification'
-        if ($classification -isnot [string] -or $allowedClassifications -cnotcontains $classification) {
+        if ($classification -isnot [string] -or (-not [Collections.Generic.HashSet[string]]::new([string[]]@($allowedClassifications), [StringComparer]::Ordinal).Contains([string]($classification)))) {
             $Errors.Add("exception[$index] classification must be one of: $($allowedClassifications -join ', ').")
             continue
         }
@@ -840,7 +842,7 @@ function Read-Baseline {
         }
 
         $rowValid = $true
-        $stringValues = @{}
+        $stringValues = [System.Collections.Hashtable]::new([StringComparer]::Ordinal)
         foreach ($field in $requiredStringBaselineFields) {
             $value = Get-PropertyValue -Object $exception -Name $field
             if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
@@ -1016,11 +1018,11 @@ try {
         Get-DirectSourceFiles -ResolvedSourceRoot $resolvedSourceRoot
     }
 
-    $sourceFiles = @($sourceFiles | Where-Object { -not (Test-GeneratedSource -File $_) } | Sort-Object FullName -Unique)
+    $sourceFiles = @(Get-NervItemsUniqueSortedByString -Items @($sourceFiles | Where-Object { -not (Test-GeneratedSource -File $_) }) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal))
     $findings = @(Get-SourceFindings -Files $sourceFiles)
     $baselineRows = @(Read-Baseline -ResolvedBaselinePath $resolvedBaselinePath -Errors $baselineErrors)
 
-    $matchedFindingKeys = @{}
+    $matchedFindingKeys = [System.Collections.Hashtable]::new([StringComparer]::Ordinal)
     foreach ($row in $baselineRows) {
         $exactMatches = @(
             $findings |

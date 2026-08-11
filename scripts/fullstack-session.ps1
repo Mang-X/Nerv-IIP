@@ -61,7 +61,7 @@ function Resolve-NervFullStackSessionId {
 
     $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
     $matches = @(Get-NervFullStackManifests | Where-Object {
-        "$($_.state)" -ne 'Stopped' -and
+        (-not [string]::Equals([string]("$($_.state)"), [string]('Stopped'), [StringComparison]::OrdinalIgnoreCase)) -and
         [string]::Equals([System.IO.Path]::GetFullPath("$($_.worktreeRoot)"), $repoRoot, $comparison)
     })
     if ($matches.Count -ne 1) {
@@ -126,7 +126,7 @@ function Invoke-NervMan528MesInventoryAcceptance {
     $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
     for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
         $argument = "$($redisArguments[$index])"
-        if ($argument -eq '--requirepass' -and $index + 1 -lt $redisArguments.Count) {
+        if ([string]::Equals([string]($argument), [string]('--requirepass'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $redisArguments.Count) {
             $redisPassword = "$($redisArguments[$index + 1])"
         }
         elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
@@ -220,7 +220,7 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
     for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
         $argument = "$($redisArguments[$index])"
-        if ($argument -eq '--requirepass' -and $index + 1 -lt $redisArguments.Count) {
+        if ([string]::Equals([string]($argument), [string]('--requirepass'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $redisArguments.Count) {
             $redisPassword = "$($redisArguments[$index + 1])"
         }
         elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
@@ -280,7 +280,7 @@ function Start-NervFullStackGuardian {
         '-IntervalSeconds', "$(Get-NervFullStackGuardianIntervalSeconds)",
         '-StateRoot', (Get-NervFullStackStateRoot)
     )
-    if ($Mode -eq 'Automated') {
+    if ([string]::Equals([string]($Mode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
     }
     return (Start-DetachedManagedProcess `
@@ -345,7 +345,7 @@ function Start-NervFullStackSession {
     $appHostProject = "$($manifest.appHostProject)"
 
     $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
-    if ($Scenario -eq 'man-440') {
+    if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
         $sessionEnvironment['Maintenance__PmGeneration__Enabled'] = 'true'
         $sessionEnvironment['Maintenance__PmGeneration__OrganizationId'] = 'org-man440'
         $sessionEnvironment['Maintenance__PmGeneration__EnvironmentId'] = 'env-man440'
@@ -374,8 +374,7 @@ function Start-NervFullStackSession {
             $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
         }
         $childEnvironmentKeys = @(
-            @($sessionEnvironment.Keys) + @($secretSet.Environment.Keys) + @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD') |
-                Select-Object -Unique
+            Get-NervStringsSorted -Values @(@($sessionEnvironment.Keys) + @($secretSet.Environment.Keys) + @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD')) -Comparer ([StringComparer]::Ordinal) -Unique
         )
         $originalEnvironment = @{}
         foreach ($key in $childEnvironmentKeys) {
@@ -439,7 +438,7 @@ function Start-NervFullStackSession {
                 return $latest
             }
 
-            $startupResources = if ($Scenario -eq 'man-440') {
+            $startupResources = if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                 @('business-industrial-telemetry', 'business-maintenance')
             }
             else {
@@ -456,7 +455,7 @@ function Start-NervFullStackSession {
                 -SessionId $newSessionId `
                 -ContainerRecords $containerRecords `
                 -WorkingDirectory $repoRoot)
-            $describe = if ($Scenario -eq 'man-440') {
+            $describe = if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                 $null
             }
             else {
@@ -476,7 +475,7 @@ function Start-NervFullStackSession {
             }
             $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
                 $latest = Read-NervFullStackManifest -SessionId $newSessionId
-                if ("$($latest.state)" -ne 'Running') {
+                if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase))) {
                     throw "Session '$newSessionId' is '$($latest.state)'; guardian registration requires Running."
                 }
                 $guardianIdentity = Start-NervFullStackGuardian `
@@ -490,7 +489,7 @@ function Start-NervFullStackSession {
                         processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
                         mode = $GuardianMode
                     }
-                    $latest.coordinator = if ($GuardianMode -eq 'Automated') {
+                    $latest.coordinator = if ([string]::Equals([string]($GuardianMode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
                         [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
                     }
                     else {
@@ -516,7 +515,7 @@ function Start-NervFullStackSession {
                 -ReturnUnchangedOnStateMismatch `
                 -UpdateAction {
                     param($latest)
-                    if ("$($latest.state)" -ne 'Failed') {
+                    if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Failed'), [StringComparison]::OrdinalIgnoreCase))) {
                         $latest = Move-NervFullStackSessionState -Manifest $latest -State Failed
                     }
                     $latest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
@@ -566,21 +565,20 @@ function Start-NervFullStackSession {
 }
 
 try {
-    switch ($Action) {
-        'help' { Write-NervFullStackHelp }
-        'start' { Start-NervFullStackSession }
-        'list' {
+    if ([string]::Equals([string]($Action), [string]('help'), [StringComparison]::OrdinalIgnoreCase)) { Write-NervFullStackHelp }
+elseif ([string]::Equals([string]($Action), [string]('start'), [StringComparison]::OrdinalIgnoreCase)) { Start-NervFullStackSession }
+elseif ([string]::Equals([string]($Action), [string]('list'), [StringComparison]::OrdinalIgnoreCase)) {
             foreach ($manifest in Get-NervFullStackManifests) {
                 Write-Output "$($manifest.sessionId) state=$($manifest.state) worktree=$($manifest.worktreeRoot) lease=$($manifest.leaseExpiresAtUtc)"
             }
         }
-        'status' {
+elseif ([string]::Equals([string]($Action), [string]('status'), [StringComparison]::OrdinalIgnoreCase)) {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest
             Write-Output "$resolvedSessionId state=$($manifest.state) containers=$($statusSummary.ContainerCount) recordedContainers=$($statusSummary.RecordedContainerCount) unresolved=$($statusSummary.UnresolvedCount)"
         }
-        'url' {
+elseif ([string]::Equals([string]($Action), [string]('url'), [StringComparison]::OrdinalIgnoreCase)) {
             if ([string]::IsNullOrWhiteSpace($Target)) { throw 'fullstack url requires a resource target.' }
             try { $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId }
             catch { throw "Cannot resolve URL target '$Target': $($_.Exception.Message)" }
@@ -589,7 +587,7 @@ try {
             if ($null -eq $endpoint) { throw "Session '$resolvedSessionId' has no endpoint named '$Target'." }
             Write-Output "$($endpoint.Value)"
         }
-        'logs' {
+elseif ([string]::Equals([string]($Action), [string]('logs'), [StringComparison]::OrdinalIgnoreCase)) {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
             $arguments = @('logs')
@@ -598,7 +596,7 @@ try {
             if ($Follow) { $arguments += '--follow' }
             Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory "$($manifest.worktreeRoot)" -Name "fullstack-$resolvedSessionId-logs"
         }
-        'run' {
+elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]::OrdinalIgnoreCase)) {
             if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot }
             $runProcess = Get-Process -Id $PID
             $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
@@ -614,37 +612,35 @@ try {
                     } `
                     -ScenarioAction {
                         param($InputManifest)
-                        switch ($Scenario) {
-                            'smoke' {
+                        if ([string]::Equals([string]($Scenario), [string]('smoke'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervFullStackSmokeScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'man-528' {
+elseif ([string]::Equals([string]($Scenario), [string]('man-528'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervFullStackSmokeScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                                 Invoke-NervMan528MesInventoryAcceptance -Manifest $InputManifest
                             }
-                            'man-440' {
+elseif ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervMan440RuntimeHoursAcceptance -Manifest $InputManifest
                             }
-                            'leader-demo-main-chain' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-main-chain'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoMainChainScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'leader-demo-quality-branch' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-quality-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoQualityBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                            'leader-demo-equipment-branch' {
+elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-branch'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervLeaderDemoEquipmentBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
                             }
-                        }
                     } `
                     -ResolveFailedManifestAction {
                         Read-NervFullStackManifest -SessionId $SessionId
@@ -676,7 +672,7 @@ try {
                                 param($current)
                                 return (Move-NervFullStackSessionState -Manifest $current -State Collecting)
                             }
-                        if ("$($latest.state)" -eq 'Collecting') {
+                        if ([string]::Equals([string]("$($latest.state)"), [string]('Collecting'), [StringComparison]::OrdinalIgnoreCase)) {
                             Collect-NervFullStackDiagnostics -Manifest $latest -SensitiveValues @($sessionAdminPassword) | Out-Null
                         }
                     } `
@@ -704,13 +700,13 @@ try {
             }
             Write-Output "$($manifest.sessionId) state=$($manifest.state) artifacts=$($manifest.artifactPath)"
         }
-        'stop' {
+elseif ([string]::Equals([string]($Action), [string]('stop'), [StringComparison]::OrdinalIgnoreCase)) {
             $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
             $result = Stop-NervFullStackSession -SessionId $resolvedSessionId
             Write-Output "$resolvedSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
             if (-not $result.Complete) { throw "Session '$resolvedSessionId' cleanup remains incomplete: $($result.Remaining -join ', ')." }
         }
-        'gc' {
+elseif ([string]::Equals([string]($Action), [string]('gc'), [StringComparison]::OrdinalIgnoreCase)) {
             $staleSessionIds = @(Claim-NervStaleFullStackSessions)
             $failures = [System.Collections.Generic.List[string]]::new()
             foreach ($staleSessionId in $staleSessionIds) {
@@ -723,7 +719,6 @@ try {
             }
             if ($failures.Count -gt 0) { throw "GC could not fully clean sessions: $($failures -join ', ')." }
         }
-    }
 }
 catch {
     Write-Error (Protect-ScriptAutomationText -Text "$($_.Exception.Message)")

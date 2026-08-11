@@ -150,7 +150,7 @@ try {
     $defaultScope = Invoke-Verifier -Name 'solution-configuration-membership'
     Assert-Contract $defaultScope.Passed "The repository must satisfy solution configuration membership; the verifier said: $($defaultScope.Message)"
     foreach ($requiredSolution in @('backend/Nerv.IIP.sln', 'connector-hosts/Nerv.IIP.ConnectorHost.sln')) {
-        Assert-Contract ($defaultScope.Message.Contains("${requiredSolution}:")) "The verifier's default scope must report on ${requiredSolution}; it reported: $($defaultScope.Message)"
+        Assert-Contract ($defaultScope.Message.Contains("${requiredSolution}:", [StringComparison]::Ordinal)) "The verifier's default scope must report on ${requiredSolution}; it reported: $($defaultScope.Message)"
     }
 
     # 2. A transitive non-member must fail. `member` references `orphan`, only `member` is listed.

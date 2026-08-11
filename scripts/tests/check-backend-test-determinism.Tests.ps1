@@ -123,8 +123,7 @@ exit $LASTEXITCODE
         }
 
         $exitCode = [int] $Matches['exitCode']
-        $latestLogDirectory = Get-ChildItem -LiteralPath $scriptLogRoot -Directory |
-            Sort-Object LastWriteTimeUtc -Descending |
+        $latestLogDirectory = Get-NervItemsSorted -Items @(Get-ChildItem -LiteralPath $scriptLogRoot -Directory) -Comparison { param($left, $right) if ($right.LastWriteTimeUtc -gt $left.LastWriteTimeUtc) { 1 } elseif ($right.LastWriteTimeUtc -lt $left.LastWriteTimeUtc) { -1 } else { 0 } } |
             Select-Object -First 1
         if ($null -eq $latestLogDirectory) {
             throw "Governed checker process failed without a log directory: $($_.Exception.Message)"
