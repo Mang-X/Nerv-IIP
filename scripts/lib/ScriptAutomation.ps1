@@ -11,6 +11,11 @@
 
 Set-StrictMode -Version Latest
 
+$ordinalStringLibrary = Join-Path $PSScriptRoot 'OrdinalString.ps1'
+if (Test-Path -LiteralPath $ordinalStringLibrary -PathType Leaf) {
+    . $ordinalStringLibrary
+}
+
 $script:ScriptAutomationStreamDrainTimeoutMilliseconds = 5000
 
 if (-not ('Nerv.IIP.ScriptAutomation.RedirectedStreamCapture' -as [type])) {
