@@ -2142,12 +2142,15 @@ function Invoke-NervLeaderDemoVerification {
             @(Get-NervObjectPropertyValue -InputObject $snapshot -Name 'resources')
         }
         else { @() }
+        $failedSnapshotStates = [Collections.Generic.HashSet[string]]::new(
+            [string[]]@('Missing', 'Ambiguous', 'Failed', 'Finished', 'Exited'),
+            [StringComparer]::OrdinalIgnoreCase)
         foreach ($resource in $requiredResources) {
             $resourceName = "$($resource.name)"
             $matches = @($snapshotResources | Where-Object { [string]::Equals([string](Get-NervObjectPropertyValue -InputObject $_ -Name 'displayName'), $resourceName, [StringComparison]::Ordinal) })
             $snapshotState = if ($matches.Count -eq 1) { "$(Get-NervObjectPropertyValue -InputObject $matches[0] -Name 'state')" } elseif ($matches.Count -eq 0) { 'Missing' } else { 'Ambiguous' }
             $waitFailure = if ($waitFailures.ContainsKey($resourceName)) { "$($waitFailures[$resourceName])" } else { $null }
-            $stateFailed = $snapshotState -in @('Missing', 'Ambiguous', 'Failed', 'Finished', 'Exited')
+            $stateFailed = $failedSnapshotStates.Contains([string]$snapshotState)
             $hint = $null
             if (-not [string]::IsNullOrWhiteSpace($waitFailure)) {
                 $hint = "Aspire wait failed: $waitFailure Inspect '$resourceName' logs under '$fullStackArtifactPath' and retry within the bounded gate."
@@ -2617,7 +2620,10 @@ function Invoke-NervLeaderDemoCommand {
             throw "Leader-demo reservation '$reservedSessionId' owner identity returned invalid status '$identityStatus'."
         }
         if ([string]::Equals($identityStatus, 'Active', [StringComparison]::OrdinalIgnoreCase)) { return $false }
-        if ($identityStatus -in @('Absent', 'Mismatched')) { return $true }
+        if (
+            [string]::Equals($identityStatus, 'Absent', [StringComparison]::Ordinal) -or
+            [string]::Equals($identityStatus, 'Mismatched', [StringComparison]::Ordinal)
+        ) { return $true }
 
         $createdAt = [DateTimeOffset]::Parse("$($Pointer.createdAtUtc)")
         return ($UtcNow - $createdAt).TotalSeconds -ge $ReservationTtlSeconds

@@ -537,7 +537,10 @@ try {
         resources = @($requiredLeaderResources | ForEach-Object {
             [pscustomobject]@{
                 displayName = $_
-                resourceType = if ($_ -in @('postgres', 'redis')) { 'Container.v0' } else { 'Project.v0' }
+                resourceType = if (
+                    [string]::Equals([string]$_, 'postgres', [StringComparison]::Ordinal) -or
+                    [string]::Equals([string]$_, 'redis', [StringComparison]::Ordinal)
+                ) { 'Container.v0' } else { 'Project.v0' }
                 state = 'Running'
                 urls = @()
             }
