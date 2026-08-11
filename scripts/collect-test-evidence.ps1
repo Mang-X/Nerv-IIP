@@ -44,6 +44,10 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
 
+$allowedEvents = [Collections.Generic.HashSet[string]]::new(
+    [string[]]@('push', 'pull_request'),
+    [StringComparer]::OrdinalIgnoreCase
+)
 $runMetadata = @{
     workflowRunId = $WorkflowRunId
     runAttempt = $RunAttempt
@@ -71,7 +75,7 @@ try {
     if ($RunAttempt -lt 1) { throw 'RunAttempt must be positive.' }
     if ($HeadSha -notmatch '^[0-9a-f]{40}$') { throw 'HeadSha must be a lowercase 40-character SHA.' }
     if ($TestedSha -notmatch '^[0-9a-f]{40}$') { throw 'TestedSha must be a lowercase 40-character SHA.' }
-    if (-not [string]::IsNullOrWhiteSpace($Event) -and $Event -notin @('push', 'pull_request')) { throw "Unsupported evidence event '$Event'." }
+    if (-not [string]::IsNullOrWhiteSpace($Event) -and (-not $allowedEvents.Contains($Event))) { throw "Unsupported evidence event '$Event'." }
     if ([string]::Equals([string]($Event), [string]('push'), [StringComparison]::OrdinalIgnoreCase) -and (-not [string]::Equals([string]($HeadSha), [string]($TestedSha), [StringComparison]::Ordinal))) { throw 'Push evidence requires HeadSha and TestedSha to be identical.' }
     if (-not (Test-Path -LiteralPath $ResultsDirectory -PathType Container)) { throw "Results directory does not exist: '$ResultsDirectory'." }
     $policy = Import-NervTestEvidencePolicy -Path $PolicyPath
