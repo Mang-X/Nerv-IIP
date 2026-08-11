@@ -90,9 +90,25 @@ internal static class OpsTestHostIsolation
 /// 而非 <c>iam-rejected</c>，两者都 fail closed 成 401，断言因此分不清「IAM 拒绝」和「连不上 IAM」；
 /// 而且 refused 在 macOS/BSD 上会被静默丢弃成超时，本身就是一类不确定性。
 /// </remarks>
-internal sealed class StubbedIamCredentialHandlerFilter(HttpStatusCode statusCode) : IHttpMessageHandlerBuilderFilter
+internal sealed class StubbedIamCredentialHandlerFilter : IHttpMessageHandlerBuilderFilter
 {
+    private readonly Func<Task<HttpResponseMessage>> response;
     private int requestCount;
+
+    public StubbedIamCredentialHandlerFilter(HttpStatusCode statusCode)
+        : this(() => Task.FromResult(new HttpResponseMessage(statusCode)))
+    {
+    }
+
+    public StubbedIamCredentialHandlerFilter(Exception exception)
+        : this(() => Task.FromException<HttpResponseMessage>(exception))
+    {
+    }
+
+    private StubbedIamCredentialHandlerFilter(Func<Task<HttpResponseMessage>> response)
+    {
+        this.response = response;
+    }
 
     /// <summary>IAM 校验实际被调用的次数。</summary>
     public int RequestCount => Volatile.Read(ref requestCount);
@@ -112,7 +128,7 @@ internal sealed class StubbedIamCredentialHandlerFilter(HttpStatusCode statusCod
             builder.PrimaryHandler = new ScriptedHttpMessageHandler((_, _) =>
             {
                 Interlocked.Increment(ref requestCount);
-                return Task.FromResult(new HttpResponseMessage(statusCode));
+                return response();
             });
         };
     }
