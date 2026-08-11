@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
+
+NERV-507 已确认问题不是订阅未触发或 `InMemory` 传输不投递：修复前 CAP 日志显示 `AssetUnavailableIntegrationEventHandlerForReschedule.HandleCapAsync` 被调度并成功返回，但处理器只在同一个作用域 `ApplicationDbContext` 中暂存 processed-event inbox（已处理事件收件箱）、open work-center unavailability（开放的工作中心不可用窗口）与 scheduling result（排程结果），缺少显式 `SaveChangesAsync` 边界，独立 PostgreSQL 作用域因而不可见这三项事实。生产修复已由 PR #1308（合并提交 `9602365f9`）吸收到 `main`：消费者完成全部可选排程变更后统一调用 `SaveChangesAsync(cancellationToken)`，由一次 EF Core 事务提交同一投递的三项事实。
+
+2026-08-11 在基于当前 `origin/main` 的工作分支上使用一次性 PostgreSQL 18 复测原始 `PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer`，结果为 1 passed / 0 failed / 0 skipped；详细日志显示同一 EF 批次插入 `processed_integration_events`、`schedule_results` 与 `work_center_unavailabilities`，随后 CAP 订阅者成功返回。回归测试继续使用真实 PostgreSQL、CAP InMemory、独立读取作用域与有界条件等待，并同时断言三项持久化事实。该测试现已由 `test-evidence-policy.json` 登记到必需的 `postgres` 证据通道，并从普通后端快速分片排除，原有“CI 从未运行”的前提已不再成立。本调查不新增或修改 HTTP endpoint（HTTP 端点）、facade（门面）、OpenAPI contract（OpenAPI 契约）、schema（数据库结构）、migration（迁移）或生产处理器；其余 MES 消费者的保存边界审计仍由 NERV-421 / #754 负责。
+
 ## 脚本标识符序数比较的分层收口（#1512，L6）
 
 `OrdinalComparisonContract.ps1` 以 AST 定义可枚举的比较轴，`ordinal-comparison-layers.Tests.ps1` 将 `scripts/verify-*`、顶层入口、递归 tests、独立 fixtures、递归 `install/package/support`、递归 `lib` 与未分类残余路径分层枚举；其并集必须对所有受治理的 `scripts/**/*.ps1` 恰好覆盖一次。新增或嵌套路径会进入对应层或 `other` 残余层继续受扫；其中的 culture comparison mutation 会失败，层枚举发生漏扫、重复或整层跳过也会失败。干净的新脚本本身不会仅因路径新增而失败，非 `.ps1` 文件不会进入扫描。tests 与 fixtures 合计也必须对 `scripts/tests/**` 恰好覆盖一次。该门禁只接受按函数和表达式精确命中一次的具名豁免，且只允许人读 skip reason 分组。
