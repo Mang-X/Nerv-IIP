@@ -175,14 +175,26 @@ public sealed class MesCapSubscriptionTests
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync("the MES CAP consumer persisted the work-center unavailable window and rescheduled", async token =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox, work-center unavailable window, and reschedule result", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var window = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(
-                x => x.DeviceAssetId == "ASSET-CNC-01", token);
-            var result = await dbContext.ScheduleResults.SingleOrDefaultAsync(token);
+            var inbox = await dbContext.ProcessedIntegrationEvents
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.ConsumerName == AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName &&
+                        x.EventId == "evt-mes-cap-asset-unavailable",
+                    token);
+            var window = await dbContext.WorkCenterUnavailabilities
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.DeviceAssetId == "ASSET-CNC-01",
+                    token);
+            var result = await dbContext.ScheduleResults
+                .AsNoTracking()
+                .SingleOrDefaultAsync(token);
 
+            Assert.True(inbox is not null, "MES CAP consumer should persist the processed-event inbox row.");
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
