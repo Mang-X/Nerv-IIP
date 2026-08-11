@@ -27,6 +27,14 @@ if ($parseErrors.Count -gt 0) {
     throw "Verify script must parse cleanly: $($parseErrors[0].Message)"
 }
 
+$forbiddenCommandNames = [Collections.Generic.HashSet[string]]::new(
+    [string[]]@('dotnet', 'docker', 'pnpm', 'pwsh', 'powershell'),
+    [StringComparer]::OrdinalIgnoreCase)
+$softHyphenCommandName = "dotnet$([char]0x00AD)"
+if ($forbiddenCommandNames.Contains($softHyphenCommandName)) {
+    throw 'Native command identity matching must not fold U+00AD into dotnet.'
+}
+
 foreach ($requiredText in @(
     '[string] $PostgresConnectionString',
     'NERV_IIP_TEST_POSTGRES',
@@ -47,7 +55,7 @@ foreach ($command in $commands) {
         continue
     }
 
-    if (@('dotnet', 'docker', 'pnpm', 'pwsh', 'powershell') -contains $commandName.ToLowerInvariant()) {
+    if ($forbiddenCommandNames.Contains($commandName)) {
         throw "Verify script must not call native '$commandName' directly."
     }
 }

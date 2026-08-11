@@ -137,7 +137,7 @@ if ($SkipRestore) {
     $testArguments += "--no-restore"
 }
 
-if ($Scenario -ne "all") {
+if ((-not [string]::Equals([string]($Scenario), [string]("all"), [StringComparison]::OrdinalIgnoreCase))) {
     $testArguments += @("--filter", "Category=$Scenario")
 }
 

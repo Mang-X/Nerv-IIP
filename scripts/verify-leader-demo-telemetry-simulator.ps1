@@ -79,10 +79,10 @@ try {
     $sessionStartedAtUtc = [DateTimeOffset]::Parse(
         "$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'createdAtUtc')"
     )
-    if ("$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'state')" -cne 'Running') {
+    if ((-not [string]::Equals([string]("$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'state')"), [string]('Running'), [StringComparison]::Ordinal))) {
         throw "Leader-demo session '$sessionId' is not Running."
     }
-    if ("$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'messagingProvider')" -cne 'Redis') {
+    if ((-not [string]::Equals([string]("$(Get-NervObjectPropertyValue -InputObject $manifest -Name 'messagingProvider')"), [string]('Redis'), [StringComparison]::Ordinal))) {
         throw "Leader-demo session '$sessionId' is not using the required Redis messaging profile."
     }
 
@@ -108,7 +108,7 @@ try {
     $httpAction = {
         param($Method, $Path, $Body)
         $uri = "$businessGatewayUrl$Path"
-        if ($Method -ceq 'POST') {
+        if ([string]::Equals([string]($Method), [string]('POST'), [StringComparison]::Ordinal)) {
             return Invoke-RestMethod `
                 -Method Post `
                 -Uri $uri `
@@ -253,7 +253,7 @@ if ($null -ne $failureMessage) {
     exit 1
 }
 
-if ($simulation.Result -cne 'completed') {
+if ((-not [string]::Equals([string]($simulation.Result), [string]('completed'), [StringComparison]::Ordinal))) {
     [Console]::Error.WriteLine("Leader-demo telemetry simulator ended with result '$($simulation.Result)'.")
     exit 2
 }
@@ -261,7 +261,7 @@ if (-not $simulation.Replay.IdentityStable) {
     [Console]::Error.WriteLine('Leader-demo telemetry replay returned different fact identities.')
     exit 3
 }
-if (-not $simulation.Alarm.Found -or $simulation.Alarm.Status -cne 'cleared') {
+if (-not $simulation.Alarm.Found -or (-not [string]::Equals([string]($simulation.Alarm.Status), [string]('cleared'), [StringComparison]::Ordinal))) {
     [Console]::Error.WriteLine('Leader-demo telemetry alarm lifecycle was not observed as cleared after recovery.')
     exit 4
 }
