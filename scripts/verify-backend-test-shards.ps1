@@ -203,6 +203,7 @@ foreach ($duplicateLaneId in Get-NervStringGroups -Items @($allLaneIds) -KeySele
 }
 
 $excludedClassOwners = @{}
+$excludedClassSelectors = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($shard in $fastShards) {
     foreach ($excludedLane in @($shard.excludedTestLanes | ForEach-Object { [string] $_ })) {
         if (-not $heavyLaneIdSet.Contains([string]$excludedLane)) {
@@ -220,6 +221,13 @@ foreach ($shard in $fastShards) {
             continue
         }
         $excludedClassOwners[$testName] = $shard.id
+    }
+
+    $classSelectorsProperty = $shard.PSObject.Properties['excludedTestClasses']
+    if ($null -ne $classSelectorsProperty) {
+        foreach ($classSelector in @($classSelectorsProperty.Value)) {
+            [void] $excludedClassSelectors.Add([string] $classSelector)
+        }
     }
 }
 
@@ -347,6 +355,42 @@ $discoveredBackendProjects = @(
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
         ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
+
+$directDockerPattern = 'new\s+ProcessStartInfo\s*\(\s*"docker"\s*\)'
+$testProjectDirectories = @(
+    Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
+        Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
+        ForEach-Object { $_.Directory.FullName }) -Comparer ([StringComparer]::Ordinal) -Unique
+)
+$auditedSourcePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($testProjectDirectory in $testProjectDirectories) {
+    foreach ($sourceFile in Get-ChildItem -LiteralPath $testProjectDirectory -Recurse -File -Filter '*.cs' |
+            Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' }) {
+        if (-not $auditedSourcePaths.Add([string] $sourceFile.FullName)) {
+            continue
+        }
+
+        $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
+        $directDockerMatches = @([regex]::Matches($sourceText, $directDockerPattern))
+        if ($directDockerMatches.Count -eq 0) {
+            continue
+        }
+
+        $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
+        $namespaceMatches = @([regex]::Matches($sourceText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
+        $classMatches = @([regex]::Matches($sourceText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*class\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)'))
+        $classBeforePrimitive = @($classMatches | Where-Object { $_.Index -lt $directDockerMatches[0].Index })
+        if ($namespaceMatches.Count -ne 1 -or $classBeforePrimitive.Count -eq 0) {
+            $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
+            continue
+        }
+
+        $fullyQualifiedType = "$($namespaceMatches[0].Groups['name'].Value).$($classBeforePrimitive[0].Groups['name'].Value)"
+        if (-not $excludedClassSelectors.Contains([string] $fullyQualifiedType)) {
+            $errors.Add("Real dependency test type '$fullyQualifiedType' uses the audited Docker CLI primitive but is not excluded from its fast shard.")
+        }
+    }
+}
 
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
 if ($unclassifiedProjects.Count -gt 0) {
