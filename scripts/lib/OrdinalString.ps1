@@ -8,6 +8,9 @@
 #     - No process or external resource ownership
 #   Requires:
 #     - PowerShell 7
+#
+# 排序约定：Get-NervStringsSorted 与 Get-NervItemsSorted 使用 .NET List.Sort；当比较器判等时，
+# 不保证保留输入顺序。依赖稳定排序的调用方必须在调用前提供能够打破平局的比较器。
 
 Set-StrictMode -Version Latest
 
@@ -77,6 +80,13 @@ function Get-NervStringsUniqueInOrder {
 }
 
 function Get-NervStringGroups {
+    <#
+        将项目按 KeySelector 产生的键分组，并按 Comparer 对组键排序。
+
+        输入中的 null 项会被忽略，以便所有输出组都包含实际项目。KeySelector 的返回值按 PowerShell
+        的字符串转换规则处理：null 转为空字符串，多值输出按当前 $OFS 连接。需要不可碰撞键的调用方
+        必须返回单个字符串，例如使用 Get-NervStringCompositeKey。
+    #>
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [object[]] $Items,
         [Parameter(Mandatory)] [scriptblock] $KeySelector,
