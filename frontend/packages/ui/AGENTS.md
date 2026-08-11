@@ -9,6 +9,11 @@
 - `components/ui/` = shadcn 原版，**byte-for-byte 零改动**（无 `Nv`、无
   `--nv-`）。定制 = 复制重建到品牌层，绝不改原版。附录 A 未列品牌版的原版件
   （`Alert`/`Empty`/`Toaster` 等）经 barrel 直接供 app 使用是合法现状。
+  **例外**：`file-preview/`、`file-upload/`、`date-picker/` 三个目录只是住在这里的
+  自研受治理源码（沿用原版命名，无 `Nv`），`sonner/index.ts` 是原版 barrel 上的
+  Nerv 补丁；这四处正常受 fmt + lint 门禁约束，carve-out 见
+  `frontend/vite.config.ts` 的 `frozenShadcnSourceIgnorePatterns`。改它们按普通
+  受治理前端源码处理，不适用「零改动」红线。
 - 品牌层：`pc/` `blocks/` `layout/`（PC）、`touch/`（工位触屏）、`screen/`
   （大屏）。一件组件跨两个表面必须建两件，绝不"一件两模式"。
 - 每个表面层有自己的产品定位文件，**改该层组件前必读**：PC =

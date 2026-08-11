@@ -1,7 +1,20 @@
-export type FileUploadStatus = 'queued' | 'uploading' | 'paused' | 'completed' | 'failed' | 'rejected'
+export type FileUploadStatus =
+  | 'queued'
+  | 'uploading'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'rejected'
 export type FileUploadMode = 'server-proxy' | 'tus'
 export type FileUploadProvider = 'server-proxy' | 'tus'
-export type FileUploadVariant = 'default' | 'queue' | 'compact' | 'avatar' | 'gallery' | 'table' | 'image'
+export type FileUploadVariant =
+  | 'default'
+  | 'queue'
+  | 'compact'
+  | 'avatar'
+  | 'gallery'
+  | 'table'
+  | 'image'
 
 export interface FileUploadOwner {
   ownerService: string

@@ -14,6 +14,31 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 
+# 复合键必须保留组件边界，且不能让保留标记与内容碰撞。
+$pipeOnLeft = Get-NervStringCompositeKey -Components @('a|b', 'c')
+$pipeOnRight = Get-NervStringCompositeKey -Components @('a', 'b|c')
+if ([string]::Equals($pipeOnLeft, $pipeOnRight, [StringComparison]::Ordinal)) {
+    throw 'Get-NervStringCompositeKey must distinguish component boundaries.'
+}
+
+$zeroComponents = Get-NervStringCompositeKey -Components @()
+$nullComponent = Get-NervStringCompositeKey -Components @($null)
+$emptyComponent = Get-NervStringCompositeKey -Components @('')
+if (@($zeroComponents, $nullComponent, $emptyComponent | Select-Object -Unique).Count -ne 3) {
+    throw 'Get-NervStringCompositeKey must distinguish zero, null, and empty-string components.'
+}
+
+$nonStringRejected = $false
+try {
+    Get-NervStringCompositeKey -Components ([object[]]@('valid', 42)) | Out-Null
+}
+catch {
+    $nonStringRejected = $true
+}
+if (-not $nonStringRejected) {
+    throw 'Get-NervStringCompositeKey must reject non-string components.'
+}
+
 $firstArray = [object[]]@('first-a', 'first-b')
 $secondArray = [object[]]@('second-a', 'second-b')
 $arrayItems = [object[]]::new(2)
@@ -47,6 +72,24 @@ $uniqueScalars = @(Get-NervItemsUniqueSortedByString `
     -Comparer ([StringComparer]::Ordinal))
 if (-not [string]::Equals(($uniqueScalars -join '|'), 'alpha|bravo', [StringComparison]::Ordinal)) {
     throw "Get-NervItemsUniqueSortedByString changed scalar behavior: [$($uniqueScalars -join ', ')]."
+}
+
+$sortedArrays = @(Get-NervItemsSortedByString `
+    -Items $arrayItems `
+    -KeySelector {
+        param($item)
+        if ([object]::ReferenceEquals($item, $firstArray)) { return 'second' }
+        if ([object]::ReferenceEquals($item, $secondArray)) { return 'first' }
+        throw 'Unexpected array item.'
+    } `
+    -Comparer ([StringComparer]::Ordinal))
+
+if ($sortedArrays.Count -ne 2 -or
+    $sortedArrays[0].GetType() -ne [object[]] -or
+    $sortedArrays[1].GetType() -ne [object[]] -or
+    -not [object]::ReferenceEquals($sortedArrays[0], $secondArray) -or
+    -not [object]::ReferenceEquals($sortedArrays[1], $firstArray)) {
+    throw 'Get-NervItemsSortedByString must sort array items without enumerating or replacing them.'
 }
 
 Write-Host 'OrdinalString contract tests passed.'

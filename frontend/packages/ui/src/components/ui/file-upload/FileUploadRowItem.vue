@@ -14,13 +14,16 @@ import FileUploadRowPreview from './FileUploadRowPreview.vue'
 import { fileUploadMotion } from './motion'
 import { formatFileSize, rowKind } from './useFileUpload'
 
-const props = withDefaults(defineProps<{
-  row: FileUploadRow
-  variant?: FileUploadVariant
-  rowStyle?: StyleValue
-}>(), {
-  variant: 'default',
-})
+const props = withDefaults(
+  defineProps<{
+    row: FileUploadRow
+    variant?: FileUploadVariant
+    rowStyle?: StyleValue
+  }>(),
+  {
+    variant: 'default',
+  },
+)
 
 const MotionDiv = motion.div
 const MotionSpan = motion.span
@@ -48,10 +51,11 @@ const badgeVariant = computed<BadgeVariants['variant']>(() => {
       return 'default'
   }
 })
-const showProgress = computed(() =>
-  props.row.status === 'uploading'
-  || props.row.status === 'paused'
-  || props.row.status === 'completed',
+const showProgress = computed(
+  () =>
+    props.row.status === 'uploading' ||
+    props.row.status === 'paused' ||
+    props.row.status === 'completed',
 )
 const statusLabel = computed(() => {
   switch (props.row.status) {
@@ -70,11 +74,13 @@ const statusLabel = computed(() => {
   }
 })
 const rowAnimate = computed(() => ({ borderColor: 'var(--border)' }))
-const progressClass = computed(() => cn(
-  props.row.status === 'completed' && '[&_[data-slot=progress-indicator]]:bg-success',
-  props.row.status === 'paused' && '[&_[data-slot=progress-indicator]]:bg-warning',
-  props.row.status === 'uploading' && '[&_[data-slot=progress-indicator]]:bg-primary',
-))
+const progressClass = computed(() =>
+  cn(
+    props.row.status === 'completed' && '[&_[data-slot=progress-indicator]]:bg-success',
+    props.row.status === 'paused' && '[&_[data-slot=progress-indicator]]:bg-warning',
+    props.row.status === 'uploading' && '[&_[data-slot=progress-indicator]]:bg-primary',
+  ),
+)
 const iconAnimate = computed(() => {
   switch (props.row.status) {
     case 'uploading':
@@ -90,47 +96,70 @@ const iconAnimate = computed(() => {
       return { scale: 1, opacity: 1, x: 0 }
   }
 })
-const iconTransition = computed(() => props.row.status === 'uploading'
-  ? { ...fileUploadMotion.fastInvokeLong, repeat: Number.POSITIVE_INFINITY, repeatType: 'mirror' as const }
-  : fileUploadMotion.fastInvoke)
-const rootClass = computed(() => cn(
-  'border-border bg-card relative flex gap-3 border shadow-sm',
-  (props.variant === 'default' || props.variant === 'queue') && 'items-center rounded-lg p-3',
-  props.variant === 'compact' && 'items-center rounded-md p-2',
-  props.variant === 'table' && 'items-center rounded-none border-x-0 border-t-0 p-2 shadow-none last:border-b-0',
-  props.variant === 'avatar' && 'items-center rounded-lg p-4 text-center',
-  (props.variant === 'gallery' || props.variant === 'image') && 'min-w-0 flex-col items-stretch rounded-lg p-2',
-))
-const overlayClass = computed(() => cn(
-  'pointer-events-none absolute inset-0 border border-transparent',
-  props.variant === 'table' ? 'rounded-none' : 'rounded-lg',
-))
-const previewClass = computed(() => cn(
-  (props.variant === 'default' || props.variant === 'queue') && 'size-9',
-  props.variant === 'compact' && 'size-8',
-  props.variant === 'table' && 'size-10',
-  props.variant === 'avatar' && 'size-20 rounded-full',
-  props.variant === 'gallery' && 'aspect-[4/3] w-full',
-  props.variant === 'image' && 'aspect-video w-full',
-))
-const contentClass = computed(() => cn(
-  'relative min-w-0 flex-1',
-  props.variant === 'avatar' && 'text-center',
-  (props.variant === 'gallery' || props.variant === 'image') && 'w-full flex-none',
-))
-const titleRowClass = computed(() => cn(
-  'flex gap-2',
-  props.variant === 'avatar' ? 'flex-col items-center' : 'items-center',
-  (props.variant === 'gallery' || props.variant === 'image') && 'items-start justify-between',
-))
-const fileNameClass = computed(() => cn(
-  'truncate font-medium',
-  props.variant === 'compact' || props.variant === 'table' ? 'text-xs' : 'text-sm',
-))
-const actionsClass = computed(() => cn(
-  'relative flex shrink-0 items-center gap-1',
-  (props.variant === 'gallery' || props.variant === 'image' || props.variant === 'avatar') && 'justify-end',
-))
+const iconTransition = computed(() =>
+  props.row.status === 'uploading'
+    ? {
+        ...fileUploadMotion.fastInvokeLong,
+        repeat: Number.POSITIVE_INFINITY,
+        repeatType: 'mirror' as const,
+      }
+    : fileUploadMotion.fastInvoke,
+)
+const rootClass = computed(() =>
+  cn(
+    'border-border bg-card relative flex gap-3 border shadow-sm',
+    (props.variant === 'default' || props.variant === 'queue') && 'items-center rounded-lg p-3',
+    props.variant === 'compact' && 'items-center rounded-md p-2',
+    props.variant === 'table' &&
+      'items-center rounded-none border-x-0 border-t-0 p-2 shadow-none last:border-b-0',
+    props.variant === 'avatar' && 'items-center rounded-lg p-4 text-center',
+    (props.variant === 'gallery' || props.variant === 'image') &&
+      'min-w-0 flex-col items-stretch rounded-lg p-2',
+  ),
+)
+const overlayClass = computed(() =>
+  cn(
+    'pointer-events-none absolute inset-0 border border-transparent',
+    props.variant === 'table' ? 'rounded-none' : 'rounded-lg',
+  ),
+)
+const previewClass = computed(() =>
+  cn(
+    (props.variant === 'default' || props.variant === 'queue') && 'size-9',
+    props.variant === 'compact' && 'size-8',
+    props.variant === 'table' && 'size-10',
+    props.variant === 'avatar' && 'size-20 rounded-full',
+    props.variant === 'gallery' && 'aspect-[4/3] w-full',
+    props.variant === 'image' && 'aspect-video w-full',
+  ),
+)
+const contentClass = computed(() =>
+  cn(
+    'relative min-w-0 flex-1',
+    props.variant === 'avatar' && 'text-center',
+    (props.variant === 'gallery' || props.variant === 'image') && 'w-full flex-none',
+  ),
+)
+const titleRowClass = computed(() =>
+  cn(
+    'flex gap-2',
+    props.variant === 'avatar' ? 'flex-col items-center' : 'items-center',
+    (props.variant === 'gallery' || props.variant === 'image') && 'items-start justify-between',
+  ),
+)
+const fileNameClass = computed(() =>
+  cn(
+    'truncate font-medium',
+    props.variant === 'compact' || props.variant === 'table' ? 'text-xs' : 'text-sm',
+  ),
+)
+const actionsClass = computed(() =>
+  cn(
+    'relative flex shrink-0 items-center gap-1',
+    (props.variant === 'gallery' || props.variant === 'image' || props.variant === 'avatar') &&
+      'justify-end',
+  ),
+)
 </script>
 
 <template>
@@ -146,7 +175,9 @@ const actionsClass = computed(() => cn(
       :row="row"
       :class="cn(variant === 'gallery' ? 'aspect-square w-full' : 'aspect-[4/3] w-full')"
     />
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-2 opacity-0 transition-opacity duration-150 group-hover/file-upload-tile:opacity-100 group-focus-within/file-upload-tile:opacity-100">
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent p-2 opacity-0 transition-opacity duration-150 group-hover/file-upload-tile:opacity-100 group-focus-within/file-upload-tile:opacity-100"
+    >
       <div class="truncate text-xs font-medium text-white">
         {{ row.fileName }}
       </div>
@@ -311,10 +342,7 @@ const actionsClass = computed(() => cn(
           :exit="{ opacity: 0, height: 0, y: -2 }"
           :transition="fileUploadMotion.fastInvoke"
         >
-          <Progress
-            :model-value="row.progress"
-            :class="cn('mt-2', progressClass)"
-          />
+          <Progress :model-value="row.progress" :class="cn('mt-2', progressClass)" />
         </MotionDiv>
       </AnimatePresence>
       <p v-if="row.error" class="text-destructive mt-2 text-xs">
