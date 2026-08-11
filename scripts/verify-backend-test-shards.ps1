@@ -18,6 +18,7 @@ param(
 
     [string] $PolicyPath = (Join-Path $PSScriptRoot 'test-evidence-policy.json'),
 
+    # 测试专用 seam：仅供 backend-test-shards contract test 注入仓库外的镜像 inventory。
     [string] $BackendInventoryRoot
 )
 

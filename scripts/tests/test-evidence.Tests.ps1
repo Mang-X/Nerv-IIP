@@ -87,6 +87,30 @@ if (Test-NervCiWorkflowConditionRunsAfterFailure -Condition "contains(github.ref
     }
 }
 
+function Test-NervCiWorkflowBudgetsOrdinalSweep {
+    . (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
+
+    $sweep = Get-NervOrdinalComparisonFindings -ScriptPath $ciWorkflowBudgetsPath -DisplayName 'CiWorkflowBudgets.ps1'
+    Assert-Equal 0 $sweep.Findings.Count "scripts/lib/CiWorkflowBudgets.ps1 must compare workflow identifiers ordinally (#1512):`n  $(@($sweep.Findings) -join "`n  ")"
+
+    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-workflow-budgets-ordinal-sweep-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+        $source = [IO.File]::ReadAllText($ciWorkflowBudgetsPath)
+        $ordinalStartsWith = '$expression.StartsWith(''*'', [StringComparison]::Ordinal)'
+        $cultureStartsWith = '$expression.StartsWith(''*'')'
+        Assert-Equal 1 ([regex]::Matches($source, [regex]::Escape($ordinalStartsWith)).Count) 'The CI workflow budget ordinal-sweep mutation must target exactly one production call site.'
+        $probePath = Join-Path $probeRoot 'CiWorkflowBudgets-mutation.ps1'
+        [IO.File]::WriteAllText($probePath, $source.Replace($ordinalStartsWith, $cultureStartsWith), [Text.UTF8Encoding]::new($false))
+        $findings = @((Get-NervOrdinalComparisonFindings -ScriptPath $probePath -DisplayName 'CiWorkflowBudgets-mutation.ps1').Findings)
+        Assert-True ($findings.Count -eq 1 -and $findings[0].Contains('[string-method-without-ordinal-comparison]', [StringComparison]::Ordinal)) `
+            'Weakening the CI workflow alias-prefix comparison must make the ordinal scanner fail.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $probeRoot) { Remove-Item -LiteralPath $probeRoot -Recurse -Force }
+    }
+}
+
 function Test-NervProductionCompositeKeyCallsites {
     $fixtureScript = Join-Path $fixtures 'composite-key-production-fixture.ps1'
     $productionLibrary = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
@@ -337,6 +361,7 @@ Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.Conta
 Test-NervProductionCompositeKeyCallsites
 Test-NervProductionCompositeKeyByteEvidenceFixture
 Test-NervCiWorkflowBudgetsOwnsOrdinalDependency
+Test-NervCiWorkflowBudgetsOrdinalSweep
 
 Assert-True (Test-NervTestEvidenceLaneName 'backend') 'backend must be valid.'
 Assert-True (Test-NervTestEvidenceLaneName 'backend-shard-1') 'backend-shard-1 must use schema v1.'
