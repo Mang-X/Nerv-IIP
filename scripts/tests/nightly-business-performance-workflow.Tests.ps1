@@ -53,16 +53,23 @@ raise 'Workflow YAML must contain exactly one document.' unless stream.children.
 root = stream.children.fetch(0).root
 raise 'Workflow YAML root must be a mapping.' unless root.is_a?(Psych::Nodes::Mapping)
 
+def converted_key_identity(key)
+  converted = Psych::Visitors::ToRuby.create.accept(key)
+  "#{converted.class.name}:#{converted.inspect}"
+end
+
 def validate_mapping_keys(node, path)
   case node
   when Psych::Nodes::Mapping
     seen = {}
     node.children.each_slice(2) do |key, value|
       raise "Workflow YAML mapping key at #{path} must be a scalar." unless key.is_a?(Psych::Nodes::Scalar)
-      identity = key.value.to_s
-      raise "Duplicate mapping key '#{identity}' at #{path}." if seen.key?(identity)
-      seen[identity] = true
-      validate_mapping_keys(value, "#{path}.#{identity}")
+      identity = converted_key_identity(key)
+      if seen.key?(identity)
+        raise "Duplicate converted mapping key #{identity} at #{path}: '#{seen.fetch(identity)}' conflicts with '#{key.value}'."
+      end
+      seen[identity] = key.value.to_s
+      validate_mapping_keys(value, "#{path}.#{key.value}")
     end
   when Psych::Nodes::Sequence
     node.children.each_with_index { |child, index| validate_mapping_keys(child, "#{path}[#{index}]") }
@@ -75,7 +82,13 @@ raise "Workflow YAML root mapping key literal 'on' must appear exactly once." un
 raise "Workflow YAML root mapping key literal 'true' cannot substitute for 'on'." if root_keys.include?('true')
 
 workflow = YAML.safe_load(source, aliases: false)
-workflow['on'] = workflow.delete(true)
+if workflow.key?('on')
+  # A quoted root key remains the string 'on' under YAML 1.1.
+elsif workflow.key?(true)
+  workflow['on'] = workflow.delete(true)
+else
+  raise "Workflow YAML trigger key did not survive parsing as literal 'on'."
+end
 puts JSON.generate(workflow)
 '@
     $parsed = Invoke-NativeCommandOutput `
@@ -284,10 +297,17 @@ $workflowNewline = if ($workflowText.Contains("`r`n", [StringComparison]::Ordina
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
+    $quotedTriggerPath = Join-Path $mutationRoot 'quoted-root-trigger.yml'
+    $quotedTriggerText = $workflowText.Replace("on:$workflowNewline", "`"on`":$workflowNewline")
+    Assert-WorkflowContract (-not [string]::Equals($quotedTriggerText, $workflowText, [StringComparison]::Ordinal)) 'Quoted root trigger fixture must replace the canonical literal on key.'
+    [IO.File]::WriteAllText($quotedTriggerPath, $quotedTriggerText, [Text.UTF8Encoding]::new($false))
+    Assert-NightlyBusinessPerformanceWorkflow -Path $quotedTriggerPath
+
     foreach ($mutation in @(
             @{ Name = 'trigger-true-substitute'; Original = "on:$workflowNewline  schedule:"; Replacement = "true:$workflowNewline  schedule:"; ExpectedMessage = "root mapping key literal 'on' must appear exactly once" },
-            @{ Name = 'duplicate-root-trigger'; Original = "on:$workflowNewline  schedule:"; Replacement = "on: {}$workflowNewline$workflowNewline" + "on:$workflowNewline  schedule:"; ExpectedMessage = "Duplicate mapping key 'on' at `$" },
-            @{ Name = 'duplicate-job-timeout'; Original = "    timeout-minutes: 45$workflowNewline    runs-on:"; Replacement = "    timeout-minutes: 45$workflowNewline    timeout-minutes: 45$workflowNewline    runs-on:"; ExpectedMessage = "Duplicate mapping key 'timeout-minutes' at `$.jobs.business-performance" },
+            @{ Name = 'trigger-yaml11-alias-collision'; Original = "on:$workflowNewline  schedule:"; Replacement = "on: {}$workflowNewline$workflowNewline" + "yes:$workflowNewline  schedule:"; ExpectedMessage = "Duplicate converted mapping key" },
+            @{ Name = 'duplicate-root-trigger'; Original = "on:$workflowNewline  schedule:"; Replacement = "on: {}$workflowNewline$workflowNewline" + "on:$workflowNewline  schedule:"; ExpectedMessage = "Duplicate converted mapping key TrueClass:true at `$" },
+            @{ Name = 'duplicate-job-timeout'; Original = "    timeout-minutes: 45$workflowNewline    runs-on:"; Replacement = "    timeout-minutes: 45$workflowNewline    timeout-minutes: 45$workflowNewline    runs-on:"; ExpectedMessage = "Duplicate converted mapping key String:`"timeout-minutes`" at `$.jobs.business-performance" },
             @{ Name = 'connection-string'; Original = 'NERV_IIP_PERF_POSTGRES:'; Replacement = 'NERV_IIP_PERF_POSTGRES_REMOVED:' },
             @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
             @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
