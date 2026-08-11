@@ -222,9 +222,13 @@ function ConvertTo-NervCSharpStructuralText {
             continue
         }
 
-        for ($maskedIndex = $index; $maskedIndex -lt $tokenEnd; $maskedIndex++) {
-            if ($structuralCharacters[$maskedIndex] -ne $carriageReturn -and $structuralCharacters[$maskedIndex] -ne $lineFeed) {
-                $structuralCharacters[$maskedIndex] = ' '
+        $tokenText = $SourceText.Substring($index, $tokenEnd - $index)
+        $preserveAuditedDockerLiteral = [string]::Equals($tokenText, '"docker"', [StringComparison]::Ordinal)
+        if (-not $preserveAuditedDockerLiteral) {
+            for ($maskedIndex = $index; $maskedIndex -lt $tokenEnd; $maskedIndex++) {
+                if ($structuralCharacters[$maskedIndex] -ne $carriageReturn -and $structuralCharacters[$maskedIndex] -ne $lineFeed) {
+                    $structuralCharacters[$maskedIndex] = ' '
+                }
             }
         }
         $index = $tokenEnd
@@ -515,13 +519,13 @@ foreach ($testProjectDirectory in $testProjectDirectories) {
         }
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
-        $directDockerMatches = @([regex]::Matches($sourceText, $directDockerPattern))
+        $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
+        $directDockerMatches = @([regex]::Matches($structuralText, $directDockerPattern))
         if ($directDockerMatches.Count -eq 0) {
             continue
         }
 
         $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
-        $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
         $namespaceMatches = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
         $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
         if ($namespaceMatches.Count -ne 1 -or $classRanges.Count -eq 0) {

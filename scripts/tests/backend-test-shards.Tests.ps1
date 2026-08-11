@@ -1,14 +1,16 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Creates a temporary backend inventory mirror with two mutation projects
+#     - Creates a temporary backend inventory mirror with mutation projects
+#     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
 #     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes every temporary project, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
+#     - Removes every temporary project, Docker-lookalike source, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -26,6 +28,7 @@ $temporaryProjectDirectory = Join-Path $temporaryBackendInventory 'tests/Nerv.II
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
 $temporaryDirectDockerTestPath = Join-Path $temporaryProjectDirectory 'DirectDockerTests.cs'
 $temporaryDirectDockerManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-direct-docker-{0}.json" -f [Guid]::NewGuid().ToString('N'))
+$temporaryDockerLookalikePath = Join-Path $repoRoot ("backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-{0}.cs" -f [Guid]::NewGuid().ToString('N'))
 $temporarySolutionMemberDirectory = Join-Path $temporaryBackendInventory 'common/Nerv.IIP.TemporarySolutionMembership'
 $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv.IIP.TemporarySolutionMembership.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
@@ -95,12 +98,31 @@ function Invoke-GovernedScript {
     }
 }
 
-$directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
-$directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
+$directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.DirectDockerTests'
 $directDockerFinding = "Real dependency test type '$directDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
+$containedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
+$containedDockerFinding = "Real dependency test type '$containedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class DirectDockerTests
+{
+    [Fact]
+    public void Starts_docker_directly()
+    {
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+
+    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $directDocker.Passed) 'An unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
+    Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must report a direct Docker call in a single top-level test class.'
+
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
 
@@ -124,13 +146,41 @@ public sealed class Unexcluded
     $directDockerShard[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($directDockerShard[0].excludedTestClasses) + $directDockerExcludedType) -Comparer ([StringComparer]::Ordinal) -Unique)
     Set-Content -LiteralPath $temporaryDirectDockerManifestPath -Value ($directDockerManifest | ConvertTo-Json -Depth 100) -NoNewline
 
-    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
-    Assert-Contract (-not $directDocker.Passed) 'An unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
-    Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
+    $containedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-containment-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
+    Assert-Contract (-not $containedDocker.Passed) 'A later unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
+    Assert-Contract ($containedDocker.Message.Contains($containedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
 }
 finally {
     Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryDirectDockerManifestPath -Force -ErrorAction SilentlyContinue
+}
+
+$dockerLookalikeType = 'Nerv.IIP.Testing.Tests.DockerLookalikeTests'
+$dockerLookalikeFinding = "Real dependency test type '$dockerLookalikeType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+Assert-Contract (-not (Test-Path -LiteralPath $temporaryDockerLookalikePath)) 'The Docker-lookalike fixture path must be unused before the test.'
+try {
+    Set-Content -LiteralPath $temporaryDockerLookalikePath -NoNewline -Value @'
+namespace Nerv.IIP.Testing.Tests;
+
+public sealed class DockerLookalikeTests
+{
+    // new ProcessStartInfo("docker") is documentation, not an invocation.
+    /* A block comment containing new ProcessStartInfo("docker") is not an invocation either. */
+    private const string Ordinary = "new ProcessStartInfo(\"docker\")";
+    private const string Verbatim = @"new ProcessStartInfo(""docker"")";
+    private static string Interpolated => $"new ProcessStartInfo(\"docker\") {nameof(DockerLookalikeTests)}";
+    private const string Raw = """
+        new ProcessStartInfo("docker")
+        """;
+}
+'@
+
+    $dockerLookalike = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-lookalike-contract'
+    Assert-Contract $dockerLookalike.Passed 'Comments and C# string lookalikes must not fail real backend shard governance.'
+    Assert-Contract (-not $dockerLookalike.Message.Contains($dockerLookalikeFinding, [StringComparison]::Ordinal)) 'Comments and C# string lookalikes must not produce a direct Docker finding.'
+}
+finally {
+    Remove-Item -LiteralPath $temporaryDockerLookalikePath -Force -ErrorAction SilentlyContinue
 }
 
 Assert-Contract (Test-Path -LiteralPath $manifestPath) 'Backend test shard manifest is missing.'
