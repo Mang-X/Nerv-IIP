@@ -129,6 +129,200 @@ function Get-WorkflowStringValue {
     return [string] $property.Value
 }
 
+function Get-NervCSharpInterpolationHoleLayout {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText,
+        [Parameter(Mandatory)] [int] $ContentStart,
+        [Parameter(Mandatory)] [int] $ClosingBraceCount
+    )
+
+    $characters = $SourceText.ToCharArray()
+    $slash = [char]0x002F
+    $asterisk = [char]0x002A
+    $doubleQuote = [char]0x0022
+    $singleQuote = [char]0x0027
+    $backslash = [char]0x005C
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $carriageReturn = [char]0x000D
+    $lineFeed = [char]0x000A
+    $depth = 0
+    $index = $ContentStart
+    while ($index -lt $characters.Length) {
+        if ($characters[$index] -eq $slash -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $slash) {
+            $index += 2
+            while ($index -lt $characters.Length -and $characters[$index] -ne $carriageReturn -and $characters[$index] -ne $lineFeed) {
+                $index++
+            }
+            continue
+        }
+        if ($characters[$index] -eq $slash -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $asterisk) {
+            $index += 2
+            while ($index + 1 -lt $characters.Length -and -not ($characters[$index] -eq $asterisk -and $characters[$index + 1] -eq $slash)) {
+                $index++
+            }
+            $index = [Math]::Min($characters.Length, $index + 2)
+            continue
+        }
+        if ($characters[$index] -eq $doubleQuote) {
+            $nestedString = Get-NervCSharpStringTokenLayout -SourceText $SourceText -QuoteIndex $index
+            $index = [Math]::Max($index + 1, $nestedString.TokenEnd)
+            continue
+        }
+        if ($characters[$index] -eq $singleQuote) {
+            $index++
+            while ($index -lt $characters.Length) {
+                if ($characters[$index] -eq $backslash) {
+                    $index = [Math]::Min($characters.Length, $index + 2)
+                    continue
+                }
+                if ($characters[$index] -eq $singleQuote) {
+                    $index++
+                    break
+                }
+                $index++
+            }
+            continue
+        }
+        if ($characters[$index] -eq $openBrace) {
+            $depth++
+            $index++
+            continue
+        }
+        if ($characters[$index] -eq $closeBrace) {
+            if ($depth -gt 0) {
+                $depth--
+                $index++
+                continue
+            }
+
+            $closingRun = 1
+            while ($index + $closingRun -lt $characters.Length -and $characters[$index + $closingRun] -eq $closeBrace) {
+                $closingRun++
+            }
+            if ($closingRun -ge $ClosingBraceCount) {
+                return [pscustomobject]@{
+                    CloseStart = $index
+                    CloseEnd = $index + $ClosingBraceCount
+                }
+            }
+            $index += $closingRun
+            continue
+        }
+        $index++
+    }
+
+    return $null
+}
+
+function Get-NervCSharpStringTokenLayout {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText,
+        [Parameter(Mandatory)] [int] $QuoteIndex
+    )
+
+    $characters = $SourceText.ToCharArray()
+    $doubleQuote = [char]0x0022
+    $atSign = [char]0x0040
+    $dollarSign = [char]0x0024
+    $backslash = [char]0x005C
+    $openBrace = [char]0x007B
+    $holes = [System.Collections.Generic.List[object]]::new()
+    $quoteCount = 1
+    while ($QuoteIndex + $quoteCount -lt $characters.Length -and $characters[$QuoteIndex + $quoteCount] -eq $doubleQuote) {
+        $quoteCount++
+    }
+
+    $raw = $quoteCount -ge 3
+    $verbatim = $false
+    $interpolationDollarCount = 0
+    if ($raw) {
+        $prefixIndex = $QuoteIndex - 1
+        while ($prefixIndex -ge 0 -and $characters[$prefixIndex] -eq $dollarSign) {
+            $interpolationDollarCount++
+            $prefixIndex--
+        }
+    }
+    else {
+        $verbatim = ($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $atSign) -or
+            ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $atSign -and $characters[$QuoteIndex - 1] -eq $dollarSign)
+        if (($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $dollarSign) -or
+            ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $dollarSign -and $characters[$QuoteIndex - 1] -eq $atSign)) {
+            $interpolationDollarCount = 1
+        }
+    }
+
+    $index = $QuoteIndex + $quoteCount
+    while ($index -lt $characters.Length) {
+        if ($raw) {
+            $closingQuoteCount = 0
+            while ($index + $closingQuoteCount -lt $characters.Length -and $characters[$index + $closingQuoteCount] -eq $doubleQuote) {
+                $closingQuoteCount++
+            }
+            if ($closingQuoteCount -ge $quoteCount) {
+                return [pscustomobject]@{ TokenEnd = $index + $quoteCount; Holes = @($holes) }
+            }
+            if ($closingQuoteCount -gt 0) {
+                $index += $closingQuoteCount
+                continue
+            }
+
+            if ($interpolationDollarCount -gt 0 -and $characters[$index] -eq $openBrace) {
+                $openingRun = 1
+                while ($index + $openingRun -lt $characters.Length -and $characters[$index + $openingRun] -eq $openBrace) {
+                    $openingRun++
+                }
+                if ($openingRun -ge $interpolationDollarCount) {
+                    $delimiterStart = $index + ($openingRun - $interpolationDollarCount)
+                    $contentStart = $delimiterStart + $interpolationDollarCount
+                    $holeLayout = Get-NervCSharpInterpolationHoleLayout -SourceText $SourceText -ContentStart $contentStart -ClosingBraceCount $interpolationDollarCount
+                    if ($null -eq $holeLayout) {
+                        [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $characters.Length })
+                        return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+                    }
+                    [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $holeLayout.CloseStart })
+                    $index = $holeLayout.CloseEnd
+                    continue
+                }
+                $index += $openingRun
+                continue
+            }
+            $index++
+            continue
+        }
+
+        if (-not $verbatim -and $characters[$index] -eq $backslash) {
+            $index = [Math]::Min($characters.Length, $index + 2)
+            continue
+        }
+        if ($characters[$index] -eq $doubleQuote) {
+            if ($verbatim -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $doubleQuote) {
+                $index += 2
+                continue
+            }
+            return [pscustomobject]@{ TokenEnd = $index + 1; Holes = @($holes) }
+        }
+        if ($interpolationDollarCount -gt 0 -and $characters[$index] -eq $openBrace) {
+            if ($index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $openBrace) {
+                $index += 2
+                continue
+            }
+            $contentStart = $index + 1
+            $holeLayout = Get-NervCSharpInterpolationHoleLayout -SourceText $SourceText -ContentStart $contentStart -ClosingBraceCount 1
+            if ($null -eq $holeLayout) {
+                [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $characters.Length })
+                return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+            }
+            [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $holeLayout.CloseStart })
+            $index = $holeLayout.CloseEnd
+            continue
+        }
+        $index++
+    }
+
+    return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+}
+
 function ConvertTo-NervCSharpStructuralText {
     param(
         [Parameter(Mandatory)] [string] $SourceText
@@ -140,14 +334,13 @@ function ConvertTo-NervCSharpStructuralText {
     $asterisk = [char]0x002A
     $doubleQuote = [char]0x0022
     $singleQuote = [char]0x0027
-    $atSign = [char]0x0040
-    $dollarSign = [char]0x0024
     $backslash = [char]0x005C
     $carriageReturn = [char]0x000D
     $lineFeed = [char]0x000A
     $index = 0
     while ($index -lt $sourceCharacters.Length) {
         $tokenEnd = -1
+        $tokenHoles = @()
         if ($sourceCharacters[$index] -eq $slash -and $index + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$index + 1] -eq $slash) {
             $tokenEnd = $index + 2
             while ($tokenEnd -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd] -ne $carriageReturn -and $sourceCharacters[$tokenEnd] -ne $lineFeed) {
@@ -162,45 +355,9 @@ function ConvertTo-NervCSharpStructuralText {
             $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
         }
         elseif ($sourceCharacters[$index] -eq $doubleQuote) {
-            $quoteCount = 1
-            while ($index + $quoteCount -lt $sourceCharacters.Length -and $sourceCharacters[$index + $quoteCount] -eq $doubleQuote) {
-                $quoteCount++
-            }
-
-            if ($quoteCount -ge 3) {
-                $tokenEnd = $index + $quoteCount
-                while ($tokenEnd -lt $sourceCharacters.Length) {
-                    $closingQuoteCount = 0
-                    while ($tokenEnd + $closingQuoteCount -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd + $closingQuoteCount] -eq $doubleQuote) {
-                        $closingQuoteCount++
-                    }
-                    if ($closingQuoteCount -ge $quoteCount) {
-                        $tokenEnd += $quoteCount
-                        break
-                    }
-                    $tokenEnd += [Math]::Max(1, $closingQuoteCount)
-                }
-            }
-            else {
-                $verbatim = ($index -gt 0 -and $sourceCharacters[$index - 1] -eq $atSign) -or
-                    ($index -gt 1 -and $sourceCharacters[$index - 2] -eq $atSign -and $sourceCharacters[$index - 1] -eq $dollarSign)
-                $tokenEnd = $index + 1
-                while ($tokenEnd -lt $sourceCharacters.Length) {
-                    if ($verbatim -and $sourceCharacters[$tokenEnd] -eq $doubleQuote -and $tokenEnd + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd + 1] -eq $doubleQuote) {
-                        $tokenEnd += 2
-                        continue
-                    }
-                    if (-not $verbatim -and $sourceCharacters[$tokenEnd] -eq $backslash) {
-                        $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
-                        continue
-                    }
-                    if ($sourceCharacters[$tokenEnd] -eq $doubleQuote) {
-                        $tokenEnd++
-                        break
-                    }
-                    $tokenEnd++
-                }
-            }
+            $stringLayout = Get-NervCSharpStringTokenLayout -SourceText $SourceText -QuoteIndex $index
+            $tokenEnd = $stringLayout.TokenEnd
+            $tokenHoles = @($stringLayout.Holes)
         }
         elseif ($sourceCharacters[$index] -eq $singleQuote) {
             $tokenEnd = $index + 1
@@ -229,6 +386,18 @@ function ConvertTo-NervCSharpStructuralText {
                 if ($structuralCharacters[$maskedIndex] -ne $carriageReturn -and $structuralCharacters[$maskedIndex] -ne $lineFeed) {
                     $structuralCharacters[$maskedIndex] = ' '
                 }
+            }
+        }
+
+        foreach ($hole in $tokenHoles) {
+            $holeLength = $hole.ContentEnd - $hole.ContentStart
+            if ($holeLength -le 0) {
+                continue
+            }
+            $holeText = $SourceText.Substring($hole.ContentStart, $holeLength)
+            $holeStructuralText = ConvertTo-NervCSharpStructuralText -SourceText $holeText
+            for ($holeIndex = 0; $holeIndex -lt $holeLength; $holeIndex++) {
+                $structuralCharacters[$hole.ContentStart + $holeIndex] = $holeStructuralText[$holeIndex]
             }
         }
         $index = $tokenEnd

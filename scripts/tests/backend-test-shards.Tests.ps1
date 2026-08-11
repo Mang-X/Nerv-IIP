@@ -103,6 +103,10 @@ $directDockerFinding = "Real dependency test type '$directDockerType' uses the a
 $directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
 $containedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
 $containedDockerFinding = "Real dependency test type '$containedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$interpolatedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedDockerTests'
+$interpolatedDockerFinding = "Real dependency test type '$interpolatedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$interpolatedRawDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedRawDockerTests'
+$interpolatedRawDockerFinding = "Real dependency test type '$interpolatedRawDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
@@ -149,6 +153,39 @@ public sealed class Unexcluded
     $containedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-containment-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
     Assert-Contract (-not $containedDocker.Passed) 'A later unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
     Assert-Contract ($containedDocker.Message.Contains($containedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class InterpolatedDockerTests
+{
+    [Fact]
+    public void Starts_docker_inside_an_ordinary_interpolation_hole()
+    {
+        _ = $"{new ProcessStartInfo("docker")}";
+    }
+}
+'@
+    $interpolatedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class InterpolatedRawDockerTests
+{
+    [Fact]
+    public void Starts_docker_inside_a_raw_interpolation_hole()
+    {
+        _ = $"""{new ProcessStartInfo("docker")}""";
+    }
+}
+'@
+    $interpolatedRawDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-raw-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Assert-Contract (-not $interpolatedDocker.Passed) 'A real Docker call inside an ordinary interpolation hole must fail shard governance.'
+    Assert-Contract ($interpolatedDocker.Message.Contains($interpolatedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable ordinary interpolation holes and report the exact containing test type.'
+    Assert-Contract (-not $interpolatedRawDocker.Passed) 'A real Docker call inside an interpolated raw string hole must fail shard governance.'
+    Assert-Contract ($interpolatedRawDocker.Message.Contains($interpolatedRawDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable raw interpolation holes and report the exact containing test type.'
 }
 finally {
     Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
