@@ -1025,33 +1025,41 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
-        $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
-        $braceRanges = @(Get-NervCSharpBraceRanges -StructuralText $structuralText)
-        $hasLocalProcessStartInfoType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b')
-        $allProcessStartInfoAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
-        $bclProcessStartInfoAliases = @($allProcessStartInfoAliases |
-            Where-Object { [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') } |
-            ForEach-Object { $_.Groups['alias'].Value })
-        $hasCustomProcessStartInfoAlias = @($allProcessStartInfoAliases |
-            Where-Object { [string]::Equals($_.Groups['alias'].Value, 'ProcessStartInfo', [StringComparison]::Ordinal) -and
-                -not [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') }).Count -gt 0
+        $classRanges = $null
         $unqualifiedProcessStartInfoNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach ($aliasName in $bclProcessStartInfoAliases) {
-            [void] $unqualifiedProcessStartInfoNames.Add([string] $aliasName)
-        }
-        if (-not $hasLocalProcessStartInfoType -and -not $hasCustomProcessStartInfoAlias) {
-            [void] $unqualifiedProcessStartInfoNames.Add('ProcessStartInfo')
+        if ($structuralText.Contains('ProcessStartInfo', [StringComparison]::Ordinal)) {
+            $hasLocalProcessStartInfoType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b')
+            $allProcessStartInfoAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
+            $bclProcessStartInfoAliases = @($allProcessStartInfoAliases |
+                Where-Object { [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') } |
+                ForEach-Object { $_.Groups['alias'].Value })
+            $hasCustomProcessStartInfoAlias = @($allProcessStartInfoAliases |
+                Where-Object { [string]::Equals($_.Groups['alias'].Value, 'ProcessStartInfo', [StringComparison]::Ordinal) -and
+                    -not [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') }).Count -gt 0
+            foreach ($aliasName in $bclProcessStartInfoAliases) {
+                [void] $unqualifiedProcessStartInfoNames.Add([string] $aliasName)
+            }
+            if (-not $hasLocalProcessStartInfoType -and -not $hasCustomProcessStartInfoAlias) {
+                [void] $unqualifiedProcessStartInfoNames.Add('ProcessStartInfo')
+            }
         }
         $escapedProcessStartInfoNames = @($unqualifiedProcessStartInfoNames | ForEach-Object { [regex]::Escape([string] $_) })
         $processStartInfoTypePattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo'
         if ($escapedProcessStartInfoNames.Count -gt 0) {
             $processStartInfoTypePattern = "(?:$processStartInfoTypePattern|$($escapedProcessStartInfoNames -join '|'))"
         }
+        $fileNameAssignmentMatches = @()
+        if ($structuralText.Contains('FileName', [StringComparison]::Ordinal) -and
+            [regex]::IsMatch($structuralText, '(?<![A-Za-z0-9_])(?:this\s*\.\s*)?[A-Za-z_][A-Za-z0-9_]*\s*\.\s*FileName\s*=')) {
+            $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+            $braceRanges = @(Get-NervCSharpBraceRanges -StructuralText $structuralText)
+            $fileNameAssignmentMatches = @(Get-NervCSharpAuditedDockerFileNameAssignmentMatches -StructuralText $structuralText -ProcessStartInfoTypePattern $processStartInfoTypePattern -BraceRanges $braceRanges -ClassRanges $classRanges)
+        }
         $hasLocalProcess = [regex]::IsMatch($structuralText, '(?m)^\s*(?:using\s+Process\s*=|(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+Process\b)')
         $directDockerMatches = @(
             Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInfoInvocationPattern
             Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $qualifiedProcessStartInfoInitializerPattern
-            Get-NervCSharpAuditedDockerFileNameAssignmentMatches -StructuralText $structuralText -ProcessStartInfoTypePattern $processStartInfoTypePattern -BraceRanges $braceRanges -ClassRanges $classRanges
+            $fileNameAssignmentMatches
             Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInvocationPattern
             foreach ($unqualifiedProcessStartInfoName in $escapedProcessStartInfoNames) {
                 Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "new\s+$unqualifiedProcessStartInfoName\s*\("
@@ -1090,6 +1098,9 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
         $namespaceMatches = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
+        if ($null -eq $classRanges) {
+            $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+        }
         if ($namespaceMatches.Count -ne 1 -or $classRanges.Count -eq 0) {
             $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
             continue
