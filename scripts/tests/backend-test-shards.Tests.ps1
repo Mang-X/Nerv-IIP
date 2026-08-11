@@ -25,6 +25,7 @@ $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-
 $temporaryProjectDirectory = Join-Path $temporaryBackendInventory 'tests/Nerv.IIP.TemporaryShardClassification.Tests'
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
 $temporaryDirectDockerTestPath = Join-Path $temporaryProjectDirectory 'DirectDockerTests.cs'
+$temporaryDirectDockerManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-direct-docker-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporarySolutionMemberDirectory = Join-Path $temporaryBackendInventory 'common/Nerv.IIP.TemporarySolutionMembership'
 $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv.IIP.TemporarySolutionMembership.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
@@ -94,7 +95,8 @@ function Invoke-GovernedScript {
     }
 }
 
-$directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.DirectDockerTests'
+$directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
+$directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
 $directDockerFinding = "Real dependency test type '$directDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
@@ -102,7 +104,11 @@ try {
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
 
-public sealed class DirectDockerTests
+public sealed class AlreadyExcluded
+{
+}
+
+public sealed class Unexcluded
 {
     [Fact]
     public void Starts_docker_directly()
@@ -112,12 +118,19 @@ public sealed class DirectDockerTests
 }
 '@
 
-    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    $directDockerManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $directDockerShard = @($directDockerManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('business-core-a'), [StringComparison]::Ordinal) })
+    Assert-Contract ($directDockerShard.Count -eq 1) 'The direct Docker containment fixture must resolve business-core-a exactly once.'
+    $directDockerShard[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($directDockerShard[0].excludedTestClasses) + $directDockerExcludedType) -Comparer ([StringComparer]::Ordinal) -Unique)
+    Set-Content -LiteralPath $temporaryDirectDockerManifestPath -Value ($directDockerManifest | ConvertTo-Json -Depth 100) -NoNewline
+
+    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
     Assert-Contract (-not $directDocker.Passed) 'An unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
-    Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must report the complete direct Docker finding with the fully-qualified type.'
+    Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
 }
 finally {
     Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryDirectDockerManifestPath -Force -ErrorAction SilentlyContinue
 }
 
 Assert-Contract (Test-Path -LiteralPath $manifestPath) 'Backend test shard manifest is missing.'

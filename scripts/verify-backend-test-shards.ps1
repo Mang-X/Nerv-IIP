@@ -129,6 +129,150 @@ function Get-WorkflowStringValue {
     return [string] $property.Value
 }
 
+function ConvertTo-NervCSharpStructuralText {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText
+    )
+
+    $sourceCharacters = $SourceText.ToCharArray()
+    $structuralCharacters = $SourceText.ToCharArray()
+    $slash = [char]0x002F
+    $asterisk = [char]0x002A
+    $doubleQuote = [char]0x0022
+    $singleQuote = [char]0x0027
+    $atSign = [char]0x0040
+    $dollarSign = [char]0x0024
+    $backslash = [char]0x005C
+    $carriageReturn = [char]0x000D
+    $lineFeed = [char]0x000A
+    $index = 0
+    while ($index -lt $sourceCharacters.Length) {
+        $tokenEnd = -1
+        if ($sourceCharacters[$index] -eq $slash -and $index + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$index + 1] -eq $slash) {
+            $tokenEnd = $index + 2
+            while ($tokenEnd -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd] -ne $carriageReturn -and $sourceCharacters[$tokenEnd] -ne $lineFeed) {
+                $tokenEnd++
+            }
+        }
+        elseif ($sourceCharacters[$index] -eq $slash -and $index + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$index + 1] -eq $asterisk) {
+            $tokenEnd = $index + 2
+            while ($tokenEnd + 1 -lt $sourceCharacters.Length -and -not ($sourceCharacters[$tokenEnd] -eq $asterisk -and $sourceCharacters[$tokenEnd + 1] -eq $slash)) {
+                $tokenEnd++
+            }
+            $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
+        }
+        elseif ($sourceCharacters[$index] -eq $doubleQuote) {
+            $quoteCount = 1
+            while ($index + $quoteCount -lt $sourceCharacters.Length -and $sourceCharacters[$index + $quoteCount] -eq $doubleQuote) {
+                $quoteCount++
+            }
+
+            if ($quoteCount -ge 3) {
+                $tokenEnd = $index + $quoteCount
+                while ($tokenEnd -lt $sourceCharacters.Length) {
+                    $closingQuoteCount = 0
+                    while ($tokenEnd + $closingQuoteCount -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd + $closingQuoteCount] -eq $doubleQuote) {
+                        $closingQuoteCount++
+                    }
+                    if ($closingQuoteCount -ge $quoteCount) {
+                        $tokenEnd += $quoteCount
+                        break
+                    }
+                    $tokenEnd += [Math]::Max(1, $closingQuoteCount)
+                }
+            }
+            else {
+                $verbatim = ($index -gt 0 -and $sourceCharacters[$index - 1] -eq $atSign) -or
+                    ($index -gt 1 -and $sourceCharacters[$index - 2] -eq $atSign -and $sourceCharacters[$index - 1] -eq $dollarSign)
+                $tokenEnd = $index + 1
+                while ($tokenEnd -lt $sourceCharacters.Length) {
+                    if ($verbatim -and $sourceCharacters[$tokenEnd] -eq $doubleQuote -and $tokenEnd + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd + 1] -eq $doubleQuote) {
+                        $tokenEnd += 2
+                        continue
+                    }
+                    if (-not $verbatim -and $sourceCharacters[$tokenEnd] -eq $backslash) {
+                        $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
+                        continue
+                    }
+                    if ($sourceCharacters[$tokenEnd] -eq $doubleQuote) {
+                        $tokenEnd++
+                        break
+                    }
+                    $tokenEnd++
+                }
+            }
+        }
+        elseif ($sourceCharacters[$index] -eq $singleQuote) {
+            $tokenEnd = $index + 1
+            while ($tokenEnd -lt $sourceCharacters.Length) {
+                if ($sourceCharacters[$tokenEnd] -eq $backslash) {
+                    $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
+                    continue
+                }
+                if ($sourceCharacters[$tokenEnd] -eq $singleQuote) {
+                    $tokenEnd++
+                    break
+                }
+                $tokenEnd++
+            }
+        }
+
+        if ($tokenEnd -le $index) {
+            $index++
+            continue
+        }
+
+        for ($maskedIndex = $index; $maskedIndex -lt $tokenEnd; $maskedIndex++) {
+            if ($structuralCharacters[$maskedIndex] -ne $carriageReturn -and $structuralCharacters[$maskedIndex] -ne $lineFeed) {
+                $structuralCharacters[$maskedIndex] = ' '
+            }
+        }
+        $index = $tokenEnd
+    }
+
+    return [string]::new($structuralCharacters)
+}
+
+function Get-NervCSharpClassRanges {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText
+    )
+
+    $classPattern = '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*class\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)'
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    foreach ($classMatch in [regex]::Matches($StructuralText, $classPattern)) {
+        $openBraceIndex = $StructuralText.IndexOf([string] $openBrace, $classMatch.Index + $classMatch.Length, [StringComparison]::Ordinal)
+        if ($openBraceIndex -lt 0) {
+            continue
+        }
+
+        $depth = 0
+        $closeBraceIndex = -1
+        for ($braceIndex = $openBraceIndex; $braceIndex -lt $StructuralText.Length; $braceIndex++) {
+            if ($StructuralText[$braceIndex] -eq $openBrace) {
+                $depth++
+            }
+            elseif ($StructuralText[$braceIndex] -eq $closeBrace) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeBraceIndex = $braceIndex
+                    break
+                }
+            }
+        }
+
+        if ($closeBraceIndex -ge 0) {
+            [pscustomobject]@{
+                Name = $classMatch.Groups['name'].Value
+                StartIndex = $classMatch.Index
+                OpenBraceIndex = $openBraceIndex
+                CloseBraceIndex = $closeBraceIndex
+            }
+        }
+    }
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
@@ -377,17 +521,27 @@ foreach ($testProjectDirectory in $testProjectDirectories) {
         }
 
         $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
-        $namespaceMatches = @([regex]::Matches($sourceText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
-        $classMatches = @([regex]::Matches($sourceText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*class\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)'))
-        $classBeforePrimitive = @($classMatches | Where-Object { $_.Index -lt $directDockerMatches[0].Index })
-        if ($namespaceMatches.Count -ne 1 -or $classBeforePrimitive.Count -eq 0) {
+        $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
+        $namespaceMatches = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
+        $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+        if ($namespaceMatches.Count -ne 1 -or $classRanges.Count -eq 0) {
             $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
             continue
         }
 
-        $fullyQualifiedType = "$($namespaceMatches[0].Groups['name'].Value).$($classBeforePrimitive[0].Groups['name'].Value)"
-        if (-not $excludedClassSelectors.Contains([string] $fullyQualifiedType)) {
-            $errors.Add("Real dependency test type '$fullyQualifiedType' uses the audited Docker CLI primitive but is not excluded from its fast shard.")
+        foreach ($directDockerMatch in $directDockerMatches) {
+            $containingClasses = @($classRanges |
+                Where-Object { $_.OpenBraceIndex -lt $directDockerMatch.Index -and $_.CloseBraceIndex -gt $directDockerMatch.Index })
+            if ($containingClasses.Count -eq 0) {
+                $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
+                continue
+            }
+
+            # Nested helpers belong to the outer test class selector used by VSTest and the shard manifest.
+            $fullyQualifiedType = "$($namespaceMatches[0].Groups['name'].Value).$($containingClasses[0].Name)"
+            if (-not $excludedClassSelectors.Contains([string] $fullyQualifiedType)) {
+                $errors.Add("Real dependency test type '$fullyQualifiedType' uses the audited Docker CLI primitive but is not excluded from its fast shard.")
+            }
         }
     }
 }
