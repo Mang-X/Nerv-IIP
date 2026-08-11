@@ -128,6 +128,7 @@ try {
     if ([string]::Equals($Fixture, 'derived-instance-id', [StringComparison]::Ordinal)) {
         $targetOnlyPath = Join-Path $fixtureRoot 'target-only.trx'
         $withUnrelatedPath = Join-Path $fixtureRoot 'with-unrelated.trx'
+        $definitionCollisionPath = Join-Path $fixtureRoot 'definition-collision.trx'
         [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
         $targetResult = '<UnitTestResult testId="11111111-1111-1111-1111-111111111111" testName="Display|Value" duration="00:00:00.0010000" outcome="Passed" />'
         $targetDefinition = '<UnitTest id="11111111-1111-1111-1111-111111111111" name="Target" storage="Fixture.Tests.dll"><TestMethod className="Fixture" name="Target" /></UnitTest>'
@@ -135,23 +136,37 @@ try {
         $delimiterCollisionDefinition = '<UnitTest id="22222222-2222-2222-2222-222222222222" name="Target|Display" storage="Fixture.Tests.dll"><TestMethod className="Fixture" name="Target|Display" /></UnitTest>'
         $caseDistinctResult = '<UnitTestResult testId="33333333-3333-3333-3333-333333333333" testName="Display|Value" duration="00:00:00.0010000" outcome="Passed" />'
         $caseDistinctDefinition = '<UnitTest id="33333333-3333-3333-3333-333333333333" name="Target" storage="Fixture.Tests.dll"><TestMethod className="fixture" name="Target" /></UnitTest>'
+        $definitionCollisionResult = '<UnitTestResult testId="44444444-4444-4444-4444-444444444444" testName="Value" duration="00:00:00.0010000" outcome="Passed" />'
+        $definitionCollisionDefinition = '<UnitTest id="44444444-4444-4444-4444-444444444444" name="Display" storage="Fixture.Tests.dll|Fixture.Target"><TestMethod className="" name="Display" /></UnitTest>'
         $targetOnlyXml = @"
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Times start="2026-08-09T00:00:00Z" finish="2026-08-09T00:00:00.001Z" /><Results>$targetResult</Results><TestDefinitions>$targetDefinition</TestDefinitions><ResultSummary outcome="Completed"><Counters total="1" executed="1" passed="1" failed="0" notExecuted="0" /></ResultSummary></TestRun>
 "@
         $withUnrelatedXml = @"
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Times start="2026-08-09T00:00:00Z" finish="2026-08-09T00:00:00.003Z" /><Results>$delimiterCollisionResult$caseDistinctResult$targetResult</Results><TestDefinitions>$delimiterCollisionDefinition$caseDistinctDefinition$targetDefinition</TestDefinitions><ResultSummary outcome="Completed"><Counters total="3" executed="3" passed="3" failed="0" notExecuted="0" /></ResultSummary></TestRun>
 "@
+        $definitionCollisionXml = @"
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Times start="2026-08-09T00:00:00Z" finish="2026-08-09T00:00:00.001Z" /><Results>$definitionCollisionResult</Results><TestDefinitions>$definitionCollisionDefinition</TestDefinitions><ResultSummary outcome="Completed"><Counters total="1" executed="1" passed="1" failed="0" notExecuted="0" /></ResultSummary></TestRun>
+"@
         [IO.File]::WriteAllText($targetOnlyPath, $targetOnlyXml, [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText($withUnrelatedPath, $withUnrelatedXml, [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($definitionCollisionPath, $definitionCollisionXml, [Text.UTF8Encoding]::new($false))
         $runMetadata = @{ lane = 'backend-shard-1'; workflowRunId = 'fixture-run'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567' }
         $targetOnly = @(Read-NervTrxResults -Path @($targetOnlyPath) -RunMetadata $runMetadata.Clone())[0]
         $targetWithUnrelated = @(Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone() | Where-Object {
             [string]::Equals([string]$_.testName, 'Fixture.Target', [StringComparison]::Ordinal)
         })[0]
+        $delimiterCollision = @(Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone() | Where-Object {
+            [string]::Equals([string]$_.testName, 'Fixture.Target|Display', [StringComparison]::Ordinal)
+        })[0]
+        $definitionCollision = @(Read-NervTrxResults -Path @($definitionCollisionPath) -RunMetadata $runMetadata.Clone())[0]
         Assert-ProductionFixture (-not [string]::IsNullOrWhiteSpace([string]$targetOnly.testInstanceId)) `
             'a TRX result without executionId must receive a derived test instance ID.'
         Assert-ProductionFixture ([string]::Equals([string]$targetOnly.testInstanceId, [string]$targetWithUnrelated.testInstanceId, [StringComparison]::Ordinal)) `
             'delimiter-colliding or case-distinct unrelated definitions changed the target derived instance ID.'
+        Assert-ProductionFixture (-not [string]::Equals([string]$delimiterCollision.definitionId, [string]$definitionCollision.definitionId, [StringComparison]::Ordinal)) `
+            'delimiter-colliding definitions must receive distinct derived definition IDs.'
+        Assert-ProductionFixture (-not [string]::Equals([string]$delimiterCollision.testInstanceId, [string]$definitionCollision.testInstanceId, [StringComparison]::Ordinal)) `
+            'delimiter-colliding definitions must receive distinct derived test instance IDs.'
         Write-Host "Composite-key production fixture '$Fixture' passed."
         exit 0
     }

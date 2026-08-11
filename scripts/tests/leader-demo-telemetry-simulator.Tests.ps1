@@ -32,10 +32,28 @@ function Assert-Equal {
         return
     }
 
-    if ((-not [string]::Equals([string]($Expected), [string]($Actual), [StringComparison]::Ordinal))) {
+    $equal = if ($Expected -is [string] -and $Actual -is [string]) {
+        [string]::Equals($Expected, $Actual, [StringComparison]::Ordinal)
+    }
+    else {
+        [System.Management.Automation.LanguagePrimitives]::Equals($Expected, $Actual)
+    }
+    if (-not $equal) {
         throw "$Message Expected '$Expected', got '$Actual'."
     }
 }
+
+$subMillisecondMismatchRejected = $false
+try {
+    Assert-Equal `
+        ([DateTimeOffset]::Parse('2026-07-24T00:00:00.123Z')) `
+        ([DateTimeOffset]::Parse('2026-07-24T00:00:00.1234567Z')) `
+        'DateTimeOffset assertions must retain sub-millisecond precision.'
+}
+catch {
+    $subMillisecondMismatchRejected = $true
+}
+Assert-True $subMillisecondMismatchRejected 'Assert-Equal must reject DateTimeOffset values that differ below millisecond precision.'
 
 $scenarioStart = [DateTimeOffset]::Parse('2026-07-24T00:00:00Z')
 $sessionStartedAt = $scenarioStart.AddMinutes(-2)

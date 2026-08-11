@@ -9,15 +9,18 @@ import { Button } from '../button'
 import { Calendar } from '../calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover'
 
-const props = withDefaults(defineProps<{
-  modelValue?: string | null
-  placeholder?: string
-  disabled?: boolean
-  class?: HTMLAttributes['class']
-}>(), {
-  modelValue: null,
-  placeholder: '选择日期',
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string | null
+    placeholder?: string
+    disabled?: boolean
+    class?: HTMLAttributes['class']
+  }>(),
+  {
+    modelValue: null,
+    placeholder: '选择日期',
+  },
+)
 
 const emits = defineEmits<{
   'update:modelValue': [value: string | null]
@@ -30,12 +33,10 @@ const open = shallowRef(false)
 const formatter = new DateFormatter('zh-CN', { dateStyle: 'long' })
 
 function toDateValue(value: string | null | undefined): DateValue | undefined {
-  if (!value)
-    return undefined
+  if (!value) return undefined
   try {
     return parseDate(value)
-  }
-  catch {
+  } catch {
     return undefined
   }
 }
@@ -52,8 +53,7 @@ const calendarValue = computed<DateValue | undefined>({
 
 const label = computed(() => {
   const value = toDateValue(props.modelValue)
-  if (!value)
-    return props.placeholder
+  if (!value) return props.placeholder
   return formatter.format(value.toDate('UTC'))
 })
 
@@ -71,7 +71,13 @@ function clear() {
         type="button"
         variant="outline"
         :disabled="disabled"
-        :class="cn('w-48 justify-start text-left font-normal', !modelValue && 'text-muted-foreground', props.class)"
+        :class="
+          cn(
+            'w-48 justify-start text-left font-normal',
+            !modelValue && 'text-muted-foreground',
+            props.class,
+          )
+        "
       >
         <CalendarIcon data-icon="inline-start" />
         <span class="truncate">{{ label }}</span>

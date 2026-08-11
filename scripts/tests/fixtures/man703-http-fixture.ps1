@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Listens on a caller-selected loopback TCP port
 #   Writes:
-#     - Caller-selected readiness and request-count files
+#     - Caller-selected readiness, sales-order request-count and mutation request-count files
 #   Cleanup:
 #     - Stops the listener when the owning test terminates the process
 #   Requires:
@@ -17,7 +17,13 @@ param(
     [Parameter(Mandatory)]
     [string]$CounterFile,
     [Parameter(Mandatory)]
-    [int]$ConnectStallPort
+    [string]$MutationCounterFile,
+    [Parameter(Mandatory)]
+    [int]$ConnectStallPort,
+    # 冷 CI runner 上，进入 handler 之后才慢的状态变更就是这个形状：
+    # 服务端最终会成功，只是比旧的 5 秒客户端预算慢。
+    [ValidateRange(1, 30)]
+    [int]$ColdMutationDelaySeconds = 7
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +40,8 @@ $listener.Start()
 $connectStallListener.Start()
 $salesOrderRequests = 0
 $demandRequests = 0
+$mutationRequests = 0
+[System.IO.File]::WriteAllText($MutationCounterFile, '0')
 [System.IO.File]::WriteAllText($ReadyFile, 'ready')
 
 try {
@@ -114,6 +122,27 @@ try {
                 else {
                     $body = '{"success":true,"code":200,"message":"OK","data":{"items":[{"salesOrderNo":"SO-DEMO-001","customerCode":"CUST-DEMO-001","siteCode":"SITE-001","status":"released","totalAmount":200}],"total":1}}'
                 }
+            }
+            elseif ($target.StartsWith('/cold-mutation', [StringComparison]::Ordinal)) {
+                # 每一次到达都记账：状态变更被重发一次，计数就会变成 2。
+                $mutationRequests++
+                [System.IO.File]::WriteAllText($MutationCounterFile, "$mutationRequests")
+                Start-Sleep -Seconds $ColdMutationDelaySeconds
+            }
+            elseif ($target.StartsWith('/failing-mutation', [StringComparison]::Ordinal)) {
+                $mutationRequests++
+                [System.IO.File]::WriteAllText($MutationCounterFile, "$mutationRequests")
+                $body = '{"success":false,"code":409,"message":"sales order version conflict","data":null}'
+            }
+            elseif ($target.StartsWith('/server-cancelled', [StringComparison]::Ordinal)) {
+                $statusCode = 499
+                $reason = 'Client Closed Request'
+                $body = '{"success":false,"code":499,"message":"client closed request","data":null}'
+            }
+            elseif ($target.StartsWith('/abort-after-request', [StringComparison]::Ordinal)) {
+                # 请求已经完整发出，连接却在任何响应字节之前被关掉：这是「连上之后失败」，
+                # 不是「连不上」。
+                continue
             }
             elseif ($target.StartsWith('/business-error', [StringComparison]::Ordinal)) {
                 $body = '{"success":false,"code":404,"message":"password=message-secret-value","data":null}'

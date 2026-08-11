@@ -254,26 +254,26 @@ function Get-CSharpSanitizedText {
         $character = $characters[$index]
         $next = if ($index + 1 -lt $length) { $characters[$index + 1] } else { [char] 0 }
 
-        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]($next), [string]('/'), [StringComparison]::OrdinalIgnoreCase)) {
-            while ($index -lt $length -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::Ordinal) -and [string]::Equals([string]($next), [string]('/'), [StringComparison]::Ordinal)) {
+            while ($index -lt $length -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                 $characters[$index] = ' '
                 $index++
             }
             continue
         }
 
-        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]($next), [string]('*'), [StringComparison]::OrdinalIgnoreCase)) {
+        if ([string]::Equals([string]($character), [string]('/'), [StringComparison]::Ordinal) -and [string]::Equals([string]($next), [string]('*'), [StringComparison]::Ordinal)) {
             $characters[$index] = ' '
             $characters[$index + 1] = ' '
             $index += 2
             while ($index -lt $length) {
-                if ($index + 1 -lt $length -and [string]::Equals([string]($characters[$index]), [string]('*'), [StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]($characters[$index + 1]), [string]('/'), [StringComparison]::OrdinalIgnoreCase)) {
+                if ($index + 1 -lt $length -and [string]::Equals([string]($characters[$index]), [string]('*'), [StringComparison]::Ordinal) -and [string]::Equals([string]($characters[$index + 1]), [string]('/'), [StringComparison]::Ordinal)) {
                     $characters[$index] = ' '
                     $characters[$index + 1] = ' '
                     $index += 2
                     break
                 }
-                if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
                 $index++
@@ -281,21 +281,21 @@ function Get-CSharpSanitizedText {
             continue
         }
 
-        if ([string]::Equals([string]($character), [string]("'"), [StringComparison]::OrdinalIgnoreCase)) {
+        if ([string]::Equals([string]($character), [string]("'"), [StringComparison]::Ordinal)) {
             $characters[$index] = ' '
             $index++
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ((-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                if ((-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
-                if ([string]::Equals([string]($current), [string]('\'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $length) {
+                if ([string]::Equals([string]($current), [string]('\'), [StringComparison]::Ordinal) -and $index + 1 -lt $length) {
                     $index++
-                    if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                    if ((-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$index] = ' '
                     }
                 }
-                elseif ([string]::Equals([string]($current), [string]("'"), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ([string]::Equals([string]($current), [string]("'"), [StringComparison]::Ordinal)) {
                     $index++
                     break
                 }
@@ -304,9 +304,9 @@ function Get-CSharpSanitizedText {
             continue
         }
 
-        if ([string]::Equals([string]($character), [string]('"'), [StringComparison]::OrdinalIgnoreCase)) {
+        if ([string]::Equals([string]($character), [string]('"'), [StringComparison]::Ordinal)) {
             $quoteRunLength = 1
-            while ($index + $quoteRunLength -lt $length -and [string]::Equals([string]($Text[$index + $quoteRunLength]), [string]('"'), [StringComparison]::OrdinalIgnoreCase)) {
+            while ($index + $quoteRunLength -lt $length -and [string]::Equals([string]($Text[$index + $quoteRunLength]), [string]('"'), [StringComparison]::Ordinal)) {
                 $quoteRunLength++
             }
             $isRawString = $quoteRunLength -ge 3
@@ -316,14 +316,14 @@ function Get-CSharpSanitizedText {
                 $rawClosingIndex = -1
                 $rawSearchIndex = $index + $quoteCount
                 while ($rawSearchIndex -lt $length) {
-                    if ((-not [string]::Equals([string]($Text[$rawSearchIndex]), [string]('"'), [StringComparison]::OrdinalIgnoreCase))) {
+                    if ((-not [string]::Equals([string]($Text[$rawSearchIndex]), [string]('"'), [StringComparison]::Ordinal))) {
                         $rawSearchIndex++
                         continue
                     }
 
                     $closingQuoteRun = 1
                     while ($rawSearchIndex + $closingQuoteRun -lt $length -and
-                        [string]::Equals([string]($Text[$rawSearchIndex + $closingQuoteRun]), [string]('"'), [StringComparison]::OrdinalIgnoreCase)) {
+                        [string]::Equals([string]($Text[$rawSearchIndex + $closingQuoteRun]), [string]('"'), [StringComparison]::Ordinal)) {
                         $closingQuoteRun++
                     }
                     if ($closingQuoteRun -ge $quoteCount) {
@@ -339,7 +339,7 @@ function Get-CSharpSanitizedText {
 
                 $rawDollarCount = 0
                 $dollarIndex = $index - 1
-                while ($dollarIndex -ge 0 -and [string]::Equals([string]($Text[$dollarIndex]), [string]('$'), [StringComparison]::OrdinalIgnoreCase)) {
+                while ($dollarIndex -ge 0 -and [string]::Equals([string]($Text[$dollarIndex]), [string]('$'), [StringComparison]::Ordinal)) {
                     $rawDollarCount++
                     $dollarIndex--
                 }
@@ -355,10 +355,10 @@ function Get-CSharpSanitizedText {
 
                 $rawContentIndex = $index + $quoteCount
                 while ($rawContentIndex -lt $rawClosingIndex) {
-                    if ($rawDollarCount -gt 0 -and [string]::Equals([string]($Text[$rawContentIndex]), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                    if ($rawDollarCount -gt 0 -and [string]::Equals([string]($Text[$rawContentIndex]), [string]('{'), [StringComparison]::Ordinal)) {
                         $openingBraceRun = 1
                         while ($rawContentIndex + $openingBraceRun -lt $rawClosingIndex -and
-                            [string]::Equals([string]($Text[$rawContentIndex + $openingBraceRun]), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                            [string]::Equals([string]($Text[$rawContentIndex + $openingBraceRun]), [string]('{'), [StringComparison]::Ordinal)) {
                             $openingBraceRun++
                         }
 
@@ -377,19 +377,19 @@ function Get-CSharpSanitizedText {
                             $nestedBraceDepth = 0
                             $expressionCursor = 0
                             while ($expressionCursor -lt $sanitizedExpressionTail.Length) {
-                                if ([string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                                if ([string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('{'), [StringComparison]::Ordinal)) {
                                     $nestedBraceDepth++
                                     $expressionCursor++
                                     continue
                                 }
-                                if ((-not [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('}'), [StringComparison]::OrdinalIgnoreCase))) {
+                                if ((-not [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor]), [string]('}'), [StringComparison]::Ordinal))) {
                                     $expressionCursor++
                                     continue
                                 }
 
                                 $candidateClosingRun = 1
                                 while ($expressionCursor + $candidateClosingRun -lt $sanitizedExpressionTail.Length -and
-                                    [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor + $candidateClosingRun]), [string]('}'), [StringComparison]::OrdinalIgnoreCase)) {
+                                    [string]::Equals([string]($sanitizedExpressionTail[$expressionCursor + $candidateClosingRun]), [string]('}'), [StringComparison]::Ordinal)) {
                                     $candidateClosingRun++
                                 }
                                 $nestedClosingBraces = [Math]::Min($nestedBraceDepth, $candidateClosingRun)
@@ -437,7 +437,7 @@ function Get-CSharpSanitizedText {
                     }
 
                     if (-not $PreserveStringContent -and
-                        (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                        (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($Text[$rawContentIndex]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$rawContentIndex] = ' '
                     }
                     $rawContentIndex++
@@ -453,13 +453,13 @@ function Get-CSharpSanitizedText {
             }
 
             $quoteCount = 1
-            $isVerbatimString = ($index -gt 0 -and [string]::Equals([string]($characters[$index - 1]), [string]('@'), [StringComparison]::OrdinalIgnoreCase)) -or
-                ($index -gt 1 -and [string]::Equals([string]($characters[$index - 1]), [string]('$'), [StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]($characters[$index - 2]), [string]('@'), [StringComparison]::OrdinalIgnoreCase))
+            $isVerbatimString = ($index -gt 0 -and [string]::Equals([string]($characters[$index - 1]), [string]('@'), [StringComparison]::Ordinal)) -or
+                ($index -gt 1 -and [string]::Equals([string]($characters[$index - 1]), [string]('$'), [StringComparison]::Ordinal) -and [string]::Equals([string]($characters[$index - 2]), [string]('@'), [StringComparison]::Ordinal))
             $prefixIndex = $index - 1
-            if ($prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('@'), [StringComparison]::OrdinalIgnoreCase)) {
+            if ($prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('@'), [StringComparison]::Ordinal)) {
                 $prefixIndex--
             }
-            $isInterpolatedString = $prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('$'), [StringComparison]::OrdinalIgnoreCase)
+            $isInterpolatedString = $prefixIndex -ge 0 -and [string]::Equals([string]($characters[$prefixIndex]), [string]('$'), [StringComparison]::Ordinal)
 
             for ($offset = 0; $offset -lt $quoteCount; $offset++) {
                 if (-not $PreserveStringContent) {
@@ -470,8 +470,8 @@ function Get-CSharpSanitizedText {
 
             while ($index -lt $length) {
                 $current = $characters[$index]
-                if ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::OrdinalIgnoreCase) -and
-                    $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                if ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::Ordinal) -and
+                    $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('{'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                         $characters[$index + 1] = ' '
@@ -479,7 +479,7 @@ function Get-CSharpSanitizedText {
                     $index += 2
                     continue
                 }
-                elseif ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ($isInterpolatedString -and [string]::Equals([string]($current), [string]('{'), [StringComparison]::Ordinal)) {
                     $expressionStart = $index + 1
                     $expressionCloseOffset = -1
                     $candidateSearchOffset = $expressionStart
@@ -500,11 +500,11 @@ function Get-CSharpSanitizedText {
 
                         $nestedBraceDepth = 0
                         for ($expressionCursor = 0; $expressionCursor -lt $sanitizedCandidate.Length; $expressionCursor++) {
-                            if ([string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('{'), [StringComparison]::OrdinalIgnoreCase)) {
+                            if ([string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('{'), [StringComparison]::Ordinal)) {
                                 $nestedBraceDepth++
                                 continue
                             }
-                            if ((-not [string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('}'), [StringComparison]::OrdinalIgnoreCase))) {
+                            if ((-not [string]::Equals([string]($sanitizedCandidate[$expressionCursor]), [string]('}'), [StringComparison]::Ordinal))) {
                                 continue
                             }
                             if ($nestedBraceDepth -gt 0) {
@@ -545,7 +545,7 @@ function Get-CSharpSanitizedText {
                         continue
                     }
                 }
-                elseif ($isVerbatimString -and [string]::Equals([string]($current), [string]('"'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('"'), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ($isVerbatimString -and [string]::Equals([string]($current), [string]('"'), [StringComparison]::Ordinal) -and $index + 1 -lt $length -and [string]::Equals([string]($characters[$index + 1]), [string]('"'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                         $characters[$index + 1] = ' '
@@ -553,26 +553,26 @@ function Get-CSharpSanitizedText {
                     $index += 2
                     continue
                 }
-                elseif ([string]::Equals([string]($current), [string]('"'), [StringComparison]::OrdinalIgnoreCase)) {
+                elseif ([string]::Equals([string]($current), [string]('"'), [StringComparison]::Ordinal)) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                     }
                     $index++
                     break
                 }
-                elseif (-not $isVerbatimString -and [string]::Equals([string]($current), [string]('\'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $length) {
+                elseif (-not $isVerbatimString -and [string]::Equals([string]($current), [string]('\'), [StringComparison]::Ordinal) -and $index + 1 -lt $length) {
                     if (-not $PreserveStringContent) {
                         $characters[$index] = ' '
                     }
                     $index++
-                    if (-not $PreserveStringContent -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                    if (-not $PreserveStringContent -and (-not [string]::Equals([string]($characters[$index]), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($characters[$index]), [string]("`n"), [StringComparison]::Ordinal))) {
                         $characters[$index] = ' '
                     }
                     $index++
                     continue
                 }
 
-                if (-not $PreserveStringContent -and (-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::OrdinalIgnoreCase)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::OrdinalIgnoreCase))) {
+                if (-not $PreserveStringContent -and (-not [string]::Equals([string]($current), [string]("`r"), [StringComparison]::Ordinal)) -and (-not [string]::Equals([string]($current), [string]("`n"), [StringComparison]::Ordinal))) {
                     $characters[$index] = ' '
                 }
                 $index++

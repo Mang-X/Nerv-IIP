@@ -80,9 +80,13 @@ utilities（`theme.css` 中玻璃拟态 `[data-slot=…]` 覆盖、`.ds-overlay-
 3. **场景层与 PC 潜在同名者保留场景词根**：`NvScreenButton`、`NvMobileDialog`、
    `NvTouchButton`；**天然独有名直接 Nv**：`NvScanBar`、`NvOeeHero`、`NvTaktGantt`。
    判定按 1.2 流程，逐件结果冻结在附录 A。
-4. **shadcn 原版（`packages/ui/src/components/ui/`，34 个目录）零改动零重命名**——
+4. **shadcn 原版（`packages/ui/src/components/ui/` 34 个目录中，除 `file-preview`、
+   `file-upload`、`date-picker` 三个自研目录外的 31 个）零改动零重命名**——
    governance 既有红线不变。原版导出名（`Button`、`Badge`、`Table`…）继续以现名从
-   `@nerv-iip/ui` 导出，不加 `Nv`，不做别名。
+   `@nerv-iip/ui` 导出，不加 `Nv`，不做别名。三个自研目录只是**住在**原版目录下（沿用
+   原版导出名，也不加 `Nv`），但它们是受治理源码：与原版相反，必须纳入 fmt + lint 门禁，
+   carve-out 写在 `frontend/vite.config.ts` 的 `frozenShadcnSourceIgnorePatterns`。
+   `sonner/` 的组件本体仍是原版，仅 barrel `index.ts` 带 Nerv 补丁并单独纳管。
 5. **非组件导出不改名**：composable（`useTheme`、`useScreenData`、`useSidebar`…）、
    函数（`messagePro`、`notificationPro`、`dismissNotify`、`resolveStatus`、`cn`…）、
    常量（`nervMotion`、`ACCENT_PRESETS`…）、独立类型（`LineSeries`、`TabItem`…）
@@ -661,7 +665,8 @@ NvFieldVariants`、`fieldProVariants → nvFieldVariants`。
 
 ### A7. 不参与改名的导出（明确列出，防代码转换误伤）
 
-- shadcn 原版全部导出（`components/ui/` 34 目录）：`Button`、`Badge`、`Table`、
+- `components/ui/` 34 个目录的全部导出（31 个 shadcn 原版目录 + `file-preview`、
+  `file-upload`、`date-picker` 三个沿用原版命名的自研目录）：`Button`、`Badge`、`Table`、
   `Dialog`、`Sidebar` 家族、`FileUpload`/`FilePreview` 家族等——零改动零别名；
 - `cn`、`useTheme` 家族（`ACCENT_PRESETS`、`initTheme`、`useColorMode`…）、
   `nervMotion`、`toast`（vue-sonner 透传）、`Toaster`；

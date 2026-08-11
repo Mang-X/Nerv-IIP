@@ -537,7 +537,10 @@ try {
         resources = @($requiredLeaderResources | ForEach-Object {
             [pscustomobject]@{
                 displayName = $_
-                resourceType = if ($_ -in @('postgres', 'redis')) { 'Container.v0' } else { 'Project.v0' }
+                resourceType = if (
+                    [string]::Equals([string]$_, 'postgres', [StringComparison]::Ordinal) -or
+                    [string]::Equals([string]$_, 'redis', [StringComparison]::Ordinal)
+                ) { 'Container.v0' } else { 'Project.v0' }
                 state = 'Running'
                 urls = @()
             }
@@ -648,7 +651,14 @@ try {
     $leaderEvidenceText = Get-Content -LiteralPath $leaderSuccess.EvidencePath -Raw
     $leaderEvidence = $leaderEvidenceText | ConvertFrom-Json -Depth 50
     Assert-True ([string]::Equals([string]$leaderEvidence.commitSha, '0123456789abcdef0123456789abcdef01234567', [StringComparison]::Ordinal)) 'Evidence must record the current commit SHA.'
-    Assert-True (([DateTimeOffset]$leaderEvidence.recordedAtUtc).UtcTicks -eq ([DateTimeOffset]::Parse('2026-07-20T12:34:56Z', [Globalization.CultureInfo]::InvariantCulture)).UtcTicks) 'Evidence must record the injected UTC time.'
+    $leaderEvidenceDocument = [Text.Json.JsonDocument]::Parse($leaderEvidenceText)
+    try {
+        $recordedAtUtcText = $leaderEvidenceDocument.RootElement.GetProperty('recordedAtUtc').GetString()
+        Assert-True ([string]::Equals($recordedAtUtcText, '2026-07-20T12:34:56.0000000+00:00', [StringComparison]::Ordinal)) 'Evidence must record the injected UTC time in UTC round-trip format.'
+    }
+    finally {
+        $leaderEvidenceDocument.Dispose()
+    }
     Assert-True ([string]::Equals([string]$leaderEvidence.sessionId, [string]$sessionId, [StringComparison]::Ordinal) -and [string]::Equals([string]$leaderEvidence.command, 'health-check', [StringComparison]::Ordinal)) 'Evidence must identify the exact session and command.'
     Assert-True ([string]::Equals([string]$leaderEvidence.result, 'passed', [StringComparison]::Ordinal) -and [string]::Equals([string]$leaderEvidence.messagingProvider, 'Redis', [StringComparison]::Ordinal)) 'Evidence must record the successful Redis result.'
     Assert-True ($script:leaderPrincipalCalls.Count -eq 1 -and $script:leaderPrincipalCalls[0].EndsWith('/api/console/v1/auth/me', [StringComparison]::Ordinal)) 'Verification must observe the authenticated principal through public auth/me.'
