@@ -383,6 +383,22 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Production_fails_closed_when_iam_request_has_helper_owned_cancellation()
+    {
+        var iam = new StubbedIamCredentialHandlerFilter(
+            new OperationCanceledException("helper-owned timeout"));
+        await using var productionFactory = CreateProductionFactory(iam);
+        var client = CreateInternalServiceClient(productionFactory, ProductionInternalServiceToken);
+        AddConnectorHeaders(client, DevelopmentFakeConnectorSecret);
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(1, iam.RequestCount);
+    }
+
+    [Fact]
     public async Task Production_connector_credential_validator_ignores_the_configured_secret()
     {
         var options = new FixedOptionsMonitor<OpsConnectorCredentialOptions>(new()
