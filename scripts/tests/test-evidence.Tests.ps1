@@ -2031,6 +2031,7 @@ try {
     $coveredProbes = [ordered]@{
         'banned-c-operator' = '$result = $left -ceq $right'
         'culture-operator-with-string-literal' = '$result = $left -eq ''passed'''
+        'culture-operator-with-identity-variable' = '$result = $leftId -eq $rightId'
         'sort-object' = '$result = @($items | Sort-Object Name)'
         'group-object' = '$result = @($items | Group-Object lane)'
         'compare-object' = '$result = Compare-Object $left $right'
@@ -2043,6 +2044,7 @@ try {
         'ambiguous-method-with-string-literal' = '$result = $text.Contains(''SKIP'')'
         'non-ordinal-stringcomparison' = '$result = [string]::Equals($left, $right, [StringComparison]::CurrentCulture)'
         'non-ordinal-stringcomparer' = '$result = [StringComparer]::InvariantCulture'
+        'culture-created-stringcomparer' = '$result = [StringComparer]::Create([Globalization.CultureInfo]::InvariantCulture, $true)'
     }
     $declaredAxes = @(Get-NervOrdinalContractCoveredAxes)
     Assert-True ([string]::Equals((@($coveredProbes.Keys) -join '|'), ($declaredAxes -join '|'), [StringComparison]::Ordinal)) `
@@ -2119,9 +2121,10 @@ try {
     # scan cannot distinguish from a safe one; the assertion is that the scan stays silent, so the day
     # any of them becomes detectable this list and the documentation have to be edited together.
     $blindSpotProbes = [ordered]@{
-        'both-operands-non-literal-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
+        'non-identity-variable-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
         'both-operands-non-literal-in' = '$result = $candidate -in $known'
         'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
+        'variable-write-via-dynamic-provider-path' = 'function Test-DynamicProviderWrite { param([string]$text) foreach ($character in $text.ToCharArray()) { $target = ''variable:character''; Set-Item -Path $target -Value ''x''; $result = $character -eq ''x'' } }'
         'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'
         'validateset-attribute' = 'function Invoke-Probe { param([ValidateSet(''all'', ''class'')] [string] $Kind) return $Kind }'
         'sort-object-via-splatted-parameters' = '$splat = @{ Property = ''name'' }; $result = @($items | Sort-Object @splat | Select-Object @splat)'
