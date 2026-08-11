@@ -43,7 +43,7 @@ function Get-FunctionContractText {
     $definition = $scriptAst.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string]$node.Name, $Name, [StringComparison]::Ordinal)
+        [string]::Equals([string]$node.Name, $Name, [StringComparison]::OrdinalIgnoreCase)
     }, $true)
     if ($null -eq $definition) {
         return ''
@@ -74,6 +74,7 @@ Assert-Contract ($content.Contains('Nerv.IIP.Business.DemandPlanning.Web.csproj'
 Assert-Contract ($content.Contains("Messaging__Provider = 'Redis'", [StringComparison]::Ordinal)) 'Verify script must use the real Redis CAP provider.'
 Assert-Contract ($content.Contains("Erp__Seed__SalesOrderDemandDemo__Enabled = 'true'", [StringComparison]::Ordinal)) 'Verify script must prove the reusable SO-DEMO-001 seed publishes through the real cross-process bridge.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'))) 'Verify script must define one fail-closed JSON request path.'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'invoke-man517jsonrequest'))) 'PowerShell function contract lookup must follow case-insensitive command-name semantics.'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady'))) 'Verify script must poll the ERP sales-order query after health before mutation.'
 foreach ($functionName in @('Invoke-JsonPost', 'Wait-Demand', 'Assert-DemandStable', 'Wait-ErpSalesOrderReady')) {
     $functionText = Get-FunctionContractText -Name $functionName
