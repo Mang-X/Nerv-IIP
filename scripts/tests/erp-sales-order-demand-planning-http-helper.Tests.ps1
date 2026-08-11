@@ -236,8 +236,12 @@ try {
     Assert-Helper (
         $coldMutationStopwatch.Elapsed.TotalSeconds -lt 60
     ) 'The mutation budget must stay bounded well inside its declared maximum.'
+    $softHyphenCounterValue = "1$([char]0x00AD)"
     Assert-Helper (
-        (Get-Content -LiteralPath $mutationCounterFile -Raw).Trim() -eq '1'
+        -not [string]::Equals($softHyphenCounterValue, '1', [StringComparison]::Ordinal)
+    ) 'Mutation counter identity matching must not fold U+00AD into the expected count.'
+    Assert-Helper (
+        [string]::Equals((Get-Content -LiteralPath $mutationCounterFile -Raw).Trim(), '1', [StringComparison]::Ordinal)
     ) 'A successful mutation must reach the server exactly once.'
 
     # 状态变更失败之后绝不能重发：超时/失败之后提交结果是不确定的，重试就是重复写。
@@ -249,7 +253,7 @@ try {
             -Body @{ organizationId = 'org-001'; orderedQuantity = 5 }
     } -ExpectedFragments @('classification=business', 'stage=failing-mutation', 'method=POST', 'code=409')
     Assert-Helper (
-        (Get-Content -LiteralPath $mutationCounterFile -Raw).Trim() -eq '2'
+        [string]::Equals((Get-Content -LiteralPath $mutationCounterFile -Raw).Trim(), '2', [StringComparison]::Ordinal)
     ) 'A failed mutation must not be retried; the fixture must have seen exactly one more request.'
 
     # 有界性由共享请求路径强制：给一个明确的小预算，它必须在预算处放弃并归类为 deadline。
