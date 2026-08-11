@@ -122,6 +122,11 @@ $dockerBclEntryTypes = @(
     'Nerv.IIP.TemporaryShardClassification.Tests.ObjectInitializerDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.EmptyConstructorInitializerDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.NestedInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.AssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.FieldAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.AliasAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ThisFieldAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.GlobalAliasAssignedFileNameDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.SingleArgumentStaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests',
@@ -247,6 +252,10 @@ public sealed class InterpolatedRawDockerTests
     Assert-Contract ($interpolatedRawDocker.Message.Contains($interpolatedRawDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable raw interpolation holes and report the exact containing test type.'
 
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+global using GlobalPsi = System.Diagnostics.ProcessStartInfo;
+using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
+using Psi = System.Diagnostics.ProcessStartInfo;
+
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
 
 public sealed class TwoArgumentConstructorDockerTests
@@ -319,6 +328,69 @@ public sealed class NestedInitializerDockerTests
     [Fact]
     public void Starts_docker_after_a_nested_collection_initializer() =>
         _ = new ProcessStartInfo { ArgumentList = { "ps" }, FileName = "docker" };
+}
+
+public sealed class AssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_the_file_name_property()
+    {
+        var processStartInfo = new ProcessStartInfo();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class FieldAssignedFileNameDockerTests
+{
+    private readonly ProcessStartInfo processStartInfo;
+
+    public FieldAssignedFileNameDockerTests()
+    {
+        processStartInfo = new ProcessStartInfo();
+    }
+
+    [Fact]
+    public void Starts_docker_after_assigning_a_field_file_name()
+    {
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class AliasAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_an_alias_file_name()
+    {
+        var processStartInfo = new Psi();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class ThisFieldAssignedFileNameDockerTests
+{
+    private readonly ProcessStartInfo options = new();
+
+    [Fact]
+    public void Starts_docker_from_the_explicit_field_despite_a_shadowing_local()
+    {
+        var options = new CustomLaunchOptions();
+        this.options.FileName = "docker";
+        _ = Process.Start(this.options);
+    }
+}
+
+public sealed class GlobalAliasAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_a_global_alias_file_name()
+    {
+        var processStartInfo = new GlobalPsi();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
 }
 
 public sealed class StaticProcessStartDockerTests
@@ -409,6 +481,61 @@ public sealed class CustomProcessTests
     [Fact]
     public void Starts_a_custom_process_type() =>
         _ = Process.Start("docker");
+}
+
+public sealed class CustomLaunchOptions
+{
+    public string FileName { get; set; } = "";
+}
+
+public sealed class CustomFileNameAssignmentTests
+{
+    [Fact]
+    public void Assigns_a_custom_file_name_property()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class ShadowedFileNameAssignmentTests
+{
+    [Fact]
+    public void Creates_a_process_start_info_in_one_scope()
+    {
+        var options = new ProcessStartInfo();
+    }
+
+    [Fact]
+    public void Assigns_a_custom_file_name_in_another_scope()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class ShadowedFieldFileNameAssignmentTests
+{
+    private readonly ProcessStartInfo options = new();
+
+    [Fact]
+    public void Assigns_a_shadowing_custom_file_name()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class CustomFieldSelectedWithThisTests
+{
+    private readonly CustomLaunchOptions options = new();
+
+    [Fact]
+    public void Assigns_the_explicit_custom_field_despite_a_shadowing_bcl_local()
+    {
+        var options = new ProcessStartInfo();
+        this.options.FileName = "docker";
+    }
 }
 '@
 

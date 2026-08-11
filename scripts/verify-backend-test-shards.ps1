@@ -449,6 +449,65 @@ function Get-NervCSharpClassRanges {
     }
 }
 
+function Get-NervCSharpContainingClassRange {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ClassRanges,
+        [Parameter(Mandatory)] [int] $Index
+    )
+
+    $containingClass = $null
+    foreach ($classRange in $ClassRanges) {
+        if ($classRange.OpenBraceIndex -ge $Index -or $classRange.CloseBraceIndex -le $Index) {
+            continue
+        }
+        if ($null -eq $containingClass -or $classRange.OpenBraceIndex -gt $containingClass.OpenBraceIndex) {
+            $containingClass = $classRange
+        }
+    }
+    return $containingClass
+}
+
+function Get-NervCSharpBraceRanges {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText
+    )
+
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $openBraceIndexes = [System.Collections.Generic.List[int]]::new()
+    for ($index = 0; $index -lt $StructuralText.Length; $index++) {
+        if ($StructuralText[$index] -eq $openBrace) {
+            [void] $openBraceIndexes.Add($index)
+        }
+        elseif ($StructuralText[$index] -eq $closeBrace -and $openBraceIndexes.Count -gt 0) {
+            $lastIndex = $openBraceIndexes.Count - 1
+            [pscustomobject]@{
+                OpenBraceIndex = $openBraceIndexes[$lastIndex]
+                CloseBraceIndex = $index
+            }
+            $openBraceIndexes.RemoveAt($lastIndex)
+        }
+    }
+}
+
+function Get-NervCSharpInnermostBraceRange {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $BraceRanges,
+        [Parameter(Mandatory)] [int] $Index
+    )
+
+    $innermost = $null
+    foreach ($braceRange in $BraceRanges) {
+        if ($braceRange.OpenBraceIndex -ge $Index -or $braceRange.CloseBraceIndex -le $Index) {
+            continue
+        }
+        if ($null -eq $innermost -or $braceRange.OpenBraceIndex -gt $innermost.OpenBraceIndex) {
+            $innermost = $braceRange
+        }
+    }
+    return $innermost
+}
+
 function Get-NervCSharpTopLevelSegments {
     param(
         [Parameter(Mandatory)] [string] $StructuralText,
@@ -647,6 +706,66 @@ function Get-NervCSharpAuditedDockerInitializerMatches {
                     Length = $closeBraceIndex - $initializerStart.Index + 1
                 }
                 break
+            }
+        }
+    }
+}
+
+function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $ProcessStartInfoTypePattern,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $BraceRanges,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ClassRanges
+    )
+
+    $fileNameAssignmentPattern = '(?<![A-Za-z0-9_])(?<member>this\s*\.\s*)?(?<variable>[A-Za-z_][A-Za-z0-9_]*)\s*\.\s*FileName\s*=\s*(?<value>[^;]+);'
+    foreach ($assignment in [regex]::Matches($StructuralText, $fileNameAssignmentPattern)) {
+        $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $assignment.Groups['value'].Value
+        if (-not [string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+            continue
+        }
+
+        $variableName = $assignment.Groups['variable'].Value
+        $explicitThisMember = $assignment.Groups['member'].Success
+        $containingClass = Get-NervCSharpContainingClassRange -ClassRanges $ClassRanges -Index $assignment.Index
+        $declarationPattern = "(?<![A-Za-z0-9_])(?<type>[A-Za-z_][A-Za-z0-9_.:]*)\s+$([regex]::Escape($variableName))\s*(?<initializer>=\s*[^;]+)?;"
+        $binding = $null
+        $bindingScope = $null
+        foreach ($declaration in [regex]::Matches($StructuralText, $declarationPattern)) {
+            if ($declaration.Index -ge $assignment.Index) {
+                continue
+            }
+            $declarationScope = Get-NervCSharpInnermostBraceRange -BraceRanges $BraceRanges -Index $declaration.Index
+            if ($null -eq $declarationScope -or $assignment.Index -ge $declarationScope.CloseBraceIndex) {
+                continue
+            }
+            if ($explicitThisMember -and
+                ($null -eq $containingClass -or
+                    $declarationScope.OpenBraceIndex -ne $containingClass.OpenBraceIndex -or
+                    $declarationScope.CloseBraceIndex -ne $containingClass.CloseBraceIndex)) {
+                continue
+            }
+            if ($null -eq $binding -or
+                $declarationScope.OpenBraceIndex -gt $bindingScope.OpenBraceIndex -or
+                ($declarationScope.OpenBraceIndex -eq $bindingScope.OpenBraceIndex -and $declaration.Index -gt $binding.Index)) {
+                $binding = $declaration
+                $bindingScope = $declarationScope
+            }
+        }
+        if ($null -eq $binding) {
+            continue
+        }
+
+        $bindingType = $binding.Groups['type'].Value
+        $isProcessStartInfo = [regex]::IsMatch($bindingType, "^(?:$ProcessStartInfoTypePattern)$", [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ([string]::Equals($bindingType, 'var', [StringComparison]::Ordinal)) {
+            $isProcessStartInfo = [regex]::IsMatch($binding.Groups['initializer'].Value, "\bnew\s+(?:$ProcessStartInfoTypePattern)\s*(?:\(|\{)", [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        }
+        if ($isProcessStartInfo) {
+            [pscustomobject]@{
+                Index = $assignment.Index
+                Length = $assignment.Length
             }
         }
     }
@@ -884,9 +1003,7 @@ $discoveredBackendProjects = @(
 )
 
 $qualifiedProcessStartInfoInvocationPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*\('
-$unqualifiedProcessStartInfoInvocationPattern = 'new\s+ProcessStartInfo\s*\('
 $qualifiedProcessStartInfoInitializerPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
-$unqualifiedProcessStartInfoInitializerPattern = 'new\s+ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
 $qualifiedProcessStartInvocationPattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*\.\s*Start\s*\('
 $unqualifiedProcessStartInvocationPattern = '(?<![A-Za-z0-9_.:])Process\s*\.\s*Start\s*\('
 $testProjectPaths = @(
@@ -908,15 +1025,37 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
-        $hasLocalProcessStartInfo = [regex]::IsMatch($structuralText, '(?m)^\s*(?:using\s+ProcessStartInfo\s*=|(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b)')
+        $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+        $braceRanges = @(Get-NervCSharpBraceRanges -StructuralText $structuralText)
+        $hasLocalProcessStartInfoType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b')
+        $allProcessStartInfoAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
+        $bclProcessStartInfoAliases = @($allProcessStartInfoAliases |
+            Where-Object { [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') } |
+            ForEach-Object { $_.Groups['alias'].Value })
+        $hasCustomProcessStartInfoAlias = @($allProcessStartInfoAliases |
+            Where-Object { [string]::Equals($_.Groups['alias'].Value, 'ProcessStartInfo', [StringComparison]::Ordinal) -and
+                -not [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') }).Count -gt 0
+        $unqualifiedProcessStartInfoNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($aliasName in $bclProcessStartInfoAliases) {
+            [void] $unqualifiedProcessStartInfoNames.Add([string] $aliasName)
+        }
+        if (-not $hasLocalProcessStartInfoType -and -not $hasCustomProcessStartInfoAlias) {
+            [void] $unqualifiedProcessStartInfoNames.Add('ProcessStartInfo')
+        }
+        $escapedProcessStartInfoNames = @($unqualifiedProcessStartInfoNames | ForEach-Object { [regex]::Escape([string] $_) })
+        $processStartInfoTypePattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo'
+        if ($escapedProcessStartInfoNames.Count -gt 0) {
+            $processStartInfoTypePattern = "(?:$processStartInfoTypePattern|$($escapedProcessStartInfoNames -join '|'))"
+        }
         $hasLocalProcess = [regex]::IsMatch($structuralText, '(?m)^\s*(?:using\s+Process\s*=|(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+Process\b)')
         $directDockerMatches = @(
             Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInfoInvocationPattern
             Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $qualifiedProcessStartInfoInitializerPattern
+            Get-NervCSharpAuditedDockerFileNameAssignmentMatches -StructuralText $structuralText -ProcessStartInfoTypePattern $processStartInfoTypePattern -BraceRanges $braceRanges -ClassRanges $classRanges
             Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInvocationPattern
-            if (-not $hasLocalProcessStartInfo) {
-                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $unqualifiedProcessStartInfoInvocationPattern
-                Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $unqualifiedProcessStartInfoInitializerPattern
+            foreach ($unqualifiedProcessStartInfoName in $escapedProcessStartInfoNames) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "new\s+$unqualifiedProcessStartInfoName\s*\("
+                Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern "new\s+$unqualifiedProcessStartInfoName\s*(?:\(\s*\))?\s*\{"
             }
             if (-not $hasLocalProcess) {
                 Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $unqualifiedProcessStartInvocationPattern
@@ -951,7 +1090,6 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
         $namespaceMatches = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
-        $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
         if ($namespaceMatches.Count -ne 1 -or $classRanges.Count -eq 0) {
             $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
             continue
