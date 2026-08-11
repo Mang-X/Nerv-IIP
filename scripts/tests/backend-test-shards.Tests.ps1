@@ -886,6 +886,18 @@ try {
     Assert-Contract (-not $missingDirectorySelector.Passed) 'Removing the Inventory directory PostgreSQL selector must fail shard governance.'
     Assert-Contract ($missingDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL selector must report the complete direct Docker finding.'
 
+    $wrongShardDirectoryManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $wrongShardDirectoryOwner = @($wrongShardDirectoryManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('business-core-a'), [StringComparison]::Ordinal) })
+    $wrongShardDirectoryTarget = @($wrongShardDirectoryManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('platform'), [StringComparison]::Ordinal) })
+    Assert-Contract ($wrongShardDirectoryOwner.Count -eq 1) 'The wrong-shard Inventory selector mutation must resolve business-core-a exactly once.'
+    Assert-Contract ($wrongShardDirectoryTarget.Count -eq 1) 'The wrong-shard Inventory selector mutation must resolve platform exactly once.'
+    $wrongShardDirectoryOwner[0].excludedTestClasses = @($wrongShardDirectoryOwner[0].excludedTestClasses | Where-Object { -not [string]::Equals([string]([string] $_), $directorySelector, [StringComparison]::Ordinal) })
+    $wrongShardDirectoryTarget[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($wrongShardDirectoryTarget[0].excludedTestClasses) + $directorySelector) -Comparer ([StringComparer]::Ordinal) -Unique)
+    Set-Content -LiteralPath $temporaryManifestPath -Value ($wrongShardDirectoryManifest | ConvertTo-Json -Depth 100) -NoNewline
+    $wrongShardDirectorySelector = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-wrong-owner-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    Assert-Contract (-not $wrongShardDirectorySelector.Passed) 'Relocating the Inventory directory PostgreSQL selector to a non-owning fast shard must fail shard governance.'
+    Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
+
     $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
     $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) })
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline

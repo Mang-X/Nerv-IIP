@@ -523,8 +523,9 @@ foreach ($duplicateLaneId in Get-NervStringGroups -Items @($allLaneIds) -KeySele
 }
 
 $excludedClassOwners = @{}
-$excludedClassSelectors = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+$excludedClassSelectorsByFastShard = @{}
 foreach ($shard in $fastShards) {
+    $shardClassSelectors = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($excludedLane in @($shard.excludedTestLanes | ForEach-Object { [string] $_ })) {
         if (-not $heavyLaneIdSet.Contains([string]$excludedLane)) {
             $errors.Add("Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'.")
@@ -546,9 +547,10 @@ foreach ($shard in $fastShards) {
     $classSelectorsProperty = $shard.PSObject.Properties['excludedTestClasses']
     if ($null -ne $classSelectorsProperty) {
         foreach ($classSelector in @($classSelectorsProperty.Value)) {
-            [void] $excludedClassSelectors.Add([string] $classSelector)
+            [void] $shardClassSelectors.Add([string] $classSelector)
         }
     }
+    $excludedClassSelectorsByFastShard[[string] $shard.id] = $shardClassSelectors
 }
 
 if (-not (Test-Path -LiteralPath $PolicyPath -PathType Leaf)) {
@@ -645,6 +647,7 @@ else {
 }
 
 $projectOwners = @{}
+$ambiguousProjectOwners = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($entry in $classificationEntries) {
     $project = $entry.Project -replace '\\', '/'
     if ([string]::IsNullOrWhiteSpace($project)) {
@@ -654,6 +657,7 @@ foreach ($entry in $classificationEntries) {
 
     if ($projectOwners.ContainsKey($project)) {
         $errors.Add("Backend test project is classified more than once: $project ($($projectOwners[$project]), $($entry.Lane)).")
+        [void] $ambiguousProjectOwners.Add([string] $project)
         continue
     }
 
@@ -677,24 +681,45 @@ $discoveredBackendProjects = @(
 )
 
 $directDockerPattern = 'new\s+ProcessStartInfo\s*\(\s*"docker"\s*\)'
-$testProjectDirectories = @(
+$testProjectPaths = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
-        ForEach-Object { $_.Directory.FullName }) -Comparer ([StringComparer]::Ordinal) -Unique
+        ForEach-Object { $_.FullName }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
-$auditedSourcePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-foreach ($testProjectDirectory in $testProjectDirectories) {
+$auditedSourceProjects = @{}
+foreach ($testProjectPath in $testProjectPaths) {
+    $testProjectDirectory = Split-Path -Parent $testProjectPath
+    $relativeTestProjectPath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $testProjectPath) -replace '\\', '/')
     foreach ($sourceFile in Get-ChildItem -LiteralPath $testProjectDirectory -Recurse -File -Filter '*.cs' |
             Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' }) {
-        if (-not $auditedSourcePaths.Add([string] $sourceFile.FullName)) {
+        if ($auditedSourceProjects.ContainsKey([string] $sourceFile.FullName)) {
+            $errors.Add("Backend test source '$($sourceFile.FullName)' maps to more than one containing test project: $($auditedSourceProjects[[string] $sourceFile.FullName]), $relativeTestProjectPath.")
             continue
         }
+        $auditedSourceProjects[[string] $sourceFile.FullName] = $relativeTestProjectPath
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
         $directDockerMatches = @([regex]::Matches($structuralText, $directDockerPattern))
         if ($directDockerMatches.Count -eq 0) {
             continue
+        }
+
+        $ownerExcludedClassSelectors = $null
+        if ($ambiguousProjectOwners.Contains([string] $relativeTestProjectPath)) {
+            $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has ambiguous shard ownership.")
+        }
+        elseif (-not $projectOwners.ContainsKey($relativeTestProjectPath)) {
+            $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has no owning shard.")
+        }
+        else {
+            $projectOwner = [string] $projectOwners[$relativeTestProjectPath]
+            if (-not $excludedClassSelectorsByFastShard.ContainsKey($projectOwner)) {
+                $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' is owned by non-fast lane '$projectOwner'.")
+            }
+            else {
+                $ownerExcludedClassSelectors = $excludedClassSelectorsByFastShard[$projectOwner]
+            }
         }
 
         $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
@@ -715,7 +740,7 @@ foreach ($testProjectDirectory in $testProjectDirectories) {
 
             # Nested helpers belong to the outer test class selector used by VSTest and the shard manifest.
             $fullyQualifiedType = "$($namespaceMatches[0].Groups['name'].Value).$($containingClasses[0].Name)"
-            if (-not $excludedClassSelectors.Contains([string] $fullyQualifiedType)) {
+            if ($null -eq $ownerExcludedClassSelectors -or -not $ownerExcludedClassSelectors.Contains([string] $fullyQualifiedType)) {
                 $errors.Add("Real dependency test type '$fullyQualifiedType' uses the audited Docker CLI primitive but is not excluded from its fast shard.")
             }
         }
