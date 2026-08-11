@@ -449,6 +449,209 @@ function Get-NervCSharpClassRanges {
     }
 }
 
+function Get-NervCSharpTopLevelSegments {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [int] $ContentStart,
+        [Parameter(Mandatory)] [int] $ContentEnd
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    $openBracket = [char]0x005B
+    $closeBracket = [char]0x005D
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $comma = [char]0x002C
+    $parenDepth = 0
+    $bracketDepth = 0
+    $braceDepth = 0
+    $segmentStart = $ContentStart
+    $segmentOrdinal = 0
+
+    for ($index = $ContentStart; $index -le $ContentEnd; $index++) {
+        $atEnd = $index -eq $ContentEnd
+        $atTopLevelComma = -not $atEnd -and $StructuralText[$index] -eq $comma -and
+            $parenDepth -eq 0 -and $bracketDepth -eq 0 -and $braceDepth -eq 0
+        if ($atEnd -or $atTopLevelComma) {
+            [pscustomobject]@{
+                Ordinal = $segmentOrdinal
+                Text = $StructuralText.Substring($segmentStart, $index - $segmentStart).Trim()
+            }
+            $segmentOrdinal++
+            $segmentStart = $index + 1
+            continue
+        }
+
+        if ($StructuralText[$index] -eq $openParen) {
+            $parenDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeParen -and $parenDepth -gt 0) {
+            $parenDepth--
+        }
+        elseif ($StructuralText[$index] -eq $openBracket) {
+            $bracketDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeBracket -and $bracketDepth -gt 0) {
+            $bracketDepth--
+        }
+        elseif ($StructuralText[$index] -eq $openBrace) {
+            $braceDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeBrace -and $braceDepth -gt 0) {
+            $braceDepth--
+        }
+    }
+
+}
+
+function Remove-NervCSharpBalancedOuterParentheses {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    $current = $Text.Trim()
+    while ($current.Length -ge 2 -and $current[0] -eq $openParen -and $current[$current.Length - 1] -eq $closeParen) {
+        $depth = 0
+        $outerCloseIndex = -1
+        for ($index = 0; $index -lt $current.Length; $index++) {
+            if ($current[$index] -eq $openParen) {
+                $depth++
+            }
+            elseif ($current[$index] -eq $closeParen) {
+                $depth--
+                if ($depth -eq 0) {
+                    $outerCloseIndex = $index
+                    break
+                }
+            }
+        }
+        if ($outerCloseIndex -ne $current.Length - 1) {
+            break
+        }
+        $current = $current.Substring(1, $current.Length - 2).Trim()
+    }
+
+    return $current
+}
+
+function Test-NervCSharpAuditedDockerArguments {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [int] $ArgumentsStart,
+        [Parameter(Mandatory)] [int] $ArgumentsEnd
+    )
+
+    foreach ($argument in Get-NervCSharpTopLevelSegments -StructuralText $StructuralText -ContentStart $ArgumentsStart -ContentEnd $ArgumentsEnd) {
+        $normalizedArgument = Remove-NervCSharpBalancedOuterParentheses -Text $argument.Text
+        if ($argument.Ordinal -eq 0 -and [string]::Equals($normalizedArgument, '"docker"', [StringComparison]::Ordinal)) {
+            return $true
+        }
+
+        $namedArgument = [regex]::Match($argument.Text, '^fileName\s*:\s*(?<value>.+)$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ($namedArgument.Success) {
+            $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $namedArgument.Groups['value'].Value
+            if ([string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
+function Get-NervCSharpAuditedDockerInvocationMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $InvocationStartPattern
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    foreach ($invocationStart in [regex]::Matches($StructuralText, $InvocationStartPattern)) {
+        $openParenIndex = $invocationStart.Index + $invocationStart.Length - 1
+        if ($StructuralText[$openParenIndex] -ne $openParen) {
+            continue
+        }
+
+        $depth = 0
+        $closeParenIndex = -1
+        for ($index = $openParenIndex; $index -lt $StructuralText.Length; $index++) {
+            if ($StructuralText[$index] -eq $openParen) {
+                $depth++
+            }
+            elseif ($StructuralText[$index] -eq $closeParen) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeParenIndex = $index
+                    break
+                }
+            }
+        }
+        if ($closeParenIndex -lt 0) {
+            continue
+        }
+
+        if (Test-NervCSharpAuditedDockerArguments -StructuralText $StructuralText -ArgumentsStart ($openParenIndex + 1) -ArgumentsEnd $closeParenIndex) {
+            [pscustomobject]@{
+                Index = $invocationStart.Index
+                Length = $closeParenIndex - $invocationStart.Index + 1
+            }
+        }
+    }
+}
+
+function Get-NervCSharpAuditedDockerInitializerMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $InitializerStartPattern
+    )
+
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    foreach ($initializerStart in [regex]::Matches($StructuralText, $InitializerStartPattern)) {
+        $openBraceIndex = $initializerStart.Index + $initializerStart.Length - 1
+        if ($StructuralText[$openBraceIndex] -ne $openBrace) {
+            continue
+        }
+
+        $depth = 0
+        $closeBraceIndex = -1
+        for ($index = $openBraceIndex; $index -lt $StructuralText.Length; $index++) {
+            if ($StructuralText[$index] -eq $openBrace) {
+                $depth++
+            }
+            elseif ($StructuralText[$index] -eq $closeBrace) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeBraceIndex = $index
+                    break
+                }
+            }
+        }
+        if ($closeBraceIndex -lt 0) {
+            continue
+        }
+
+        foreach ($initializerEntry in Get-NervCSharpTopLevelSegments -StructuralText $StructuralText -ContentStart ($openBraceIndex + 1) -ContentEnd $closeBraceIndex) {
+            $fileNameSetter = [regex]::Match($initializerEntry.Text, '^FileName\s*=\s*(?<value>.+)$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+            if (-not $fileNameSetter.Success) {
+                continue
+            }
+            $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $fileNameSetter.Groups['value'].Value
+            if ([string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+                [pscustomobject]@{
+                    Index = $initializerStart.Index
+                    Length = $closeBraceIndex - $initializerStart.Index + 1
+                }
+                break
+            }
+        }
+    }
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
@@ -680,15 +883,12 @@ $discoveredBackendProjects = @(
         ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
 
-$directDockerPatterns = @(
-    # ProcessStartInfo(string fileName) and ProcessStartInfo(string fileName, string arguments),
-    # including the equivalent named-argument spelling.
-    'new\s+ProcessStartInfo\s*\(\s*(?:fileName\s*:\s*)?"docker"\s*(?:,|\))',
-    # ProcessStartInfo() followed by the FileName setter through an object initializer.
-    'new\s+ProcessStartInfo\s*(?:\(\s*\))?\s*\{(?s:[^}]*?)\bFileName\s*=\s*"docker"\s*(?:,|\})',
-    # Process.Start(string fileName) and Process.Start(string fileName, string arguments).
-    '(?:System\s*\.\s*Diagnostics\s*\.\s*)?\bProcess\s*\.\s*Start\s*\(\s*(?:fileName\s*:\s*)?"docker"\s*(?:,|\))'
-)
+$qualifiedProcessStartInfoInvocationPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*\('
+$unqualifiedProcessStartInfoInvocationPattern = 'new\s+ProcessStartInfo\s*\('
+$qualifiedProcessStartInfoInitializerPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
+$unqualifiedProcessStartInfoInitializerPattern = 'new\s+ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
+$qualifiedProcessStartInvocationPattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*\.\s*Start\s*\('
+$unqualifiedProcessStartInvocationPattern = '(?<![A-Za-z0-9_.:])Process\s*\.\s*Start\s*\('
 $testProjectPaths = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
@@ -708,9 +908,18 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
+        $hasLocalProcessStartInfo = [regex]::IsMatch($structuralText, '(?m)^\s*(?:using\s+ProcessStartInfo\s*=|(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b)')
+        $hasLocalProcess = [regex]::IsMatch($structuralText, '(?m)^\s*(?:using\s+Process\s*=|(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+Process\b)')
         $directDockerMatches = @(
-            foreach ($directDockerPattern in $directDockerPatterns) {
-                [regex]::Matches($structuralText, $directDockerPattern)
+            Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInfoInvocationPattern
+            Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $qualifiedProcessStartInfoInitializerPattern
+            Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInvocationPattern
+            if (-not $hasLocalProcessStartInfo) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $unqualifiedProcessStartInfoInvocationPattern
+                Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $unqualifiedProcessStartInfoInitializerPattern
+            }
+            if (-not $hasLocalProcess) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $unqualifiedProcessStartInvocationPattern
             }
         )
         if ($directDockerMatches.Count -eq 0) {

@@ -114,10 +114,20 @@ $interpolatedRawDockerFinding = "Real dependency test type '$interpolatedRawDock
 $dockerBclEntryTypes = @(
     'Nerv.IIP.TemporaryShardClassification.Tests.TwoArgumentConstructorDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.NamedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ReorderedNamedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedArgumentConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.FullyQualifiedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.GlobalQualifiedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParenthesizedConstructorDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.ObjectInitializerDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.EmptyConstructorInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.SingleArgumentStaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
-    'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests'
+    'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ReorderedNamedStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedArgumentStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParenthesizedNamedStaticProcessStartDockerTests'
 )
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
@@ -253,6 +263,43 @@ public sealed class NamedConstructorDockerTests
         _ = new ProcessStartInfo(fileName: "docker", arguments: "ps");
 }
 
+public sealed class ReorderedNamedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_reordered_named_constructor_arguments() =>
+        _ = new ProcessStartInfo(arguments: "ps", fileName: "docker");
+}
+
+public sealed class NestedArgumentConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_constructor_argument() =>
+        _ = new ProcessStartInfo(arguments: BuildArgs(), fileName: "docker");
+
+    private static string BuildArgs() => "ps";
+}
+
+public sealed class FullyQualifiedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_fully_qualified_constructor() =>
+        _ = new System.Diagnostics.ProcessStartInfo("docker");
+}
+
+public sealed class GlobalQualifiedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_global_qualified_constructor() =>
+        _ = new global::System.Diagnostics.ProcessStartInfo("docker");
+}
+
+public sealed class ParenthesizedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_parenthesized_file_name() =>
+        _ = new System.Diagnostics.ProcessStartInfo(("docker"));
+}
+
 public sealed class ObjectInitializerDockerTests
 {
     [Fact]
@@ -267,6 +314,13 @@ public sealed class EmptyConstructorInitializerDockerTests
         _ = new ProcessStartInfo() { FileName = "docker" };
 }
 
+public sealed class NestedInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_collection_initializer() =>
+        _ = new ProcessStartInfo { ArgumentList = { "ps" }, FileName = "docker" };
+}
+
 public sealed class StaticProcessStartDockerTests
 {
     [Fact]
@@ -274,11 +328,41 @@ public sealed class StaticProcessStartDockerTests
         _ = Process.Start("docker", "ps");
 }
 
+public sealed class SingleArgumentStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_the_single_argument_static_process_api() =>
+        _ = Process.Start("docker");
+}
+
 public sealed class NamedStaticProcessStartDockerTests
 {
     [Fact]
     public void Starts_docker_with_named_static_process_arguments() =>
         _ = Process.Start(fileName: "docker", arguments: "ps");
+}
+
+public sealed class ReorderedNamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_reordered_named_static_process_arguments() =>
+        _ = Process.Start(arguments: "ps", fileName: "docker");
+}
+
+public sealed class NestedArgumentStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_static_process_argument() =>
+        _ = Process.Start(arguments: BuildArgs(), fileName: "docker");
+
+    private static string BuildArgs() => "ps";
+}
+
+public sealed class ParenthesizedNamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_parenthesized_named_file_name() =>
+        _ = System.Diagnostics.Process.Start(fileName: ("docker"));
 }
 '@
     $dockerBclEntries = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-bcl-entry-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
@@ -304,12 +388,27 @@ public sealed class DockerLookalikeTests
 {
     // new ProcessStartInfo("docker") is documentation, not an invocation.
     /* A block comment containing new ProcessStartInfo("docker") is not an invocation either. */
+    // new System.Diagnostics.ProcessStartInfo(arguments: "ps", fileName: "docker") is also documentation.
     private const string Ordinary = "new ProcessStartInfo(\"docker\")";
     private const string Verbatim = @"new ProcessStartInfo(""docker"")";
     private static string Interpolated => $"new ProcessStartInfo(\"docker\") {nameof(DockerLookalikeTests)}";
+    private const string StaticStart = """Process.Start(arguments: "ps", fileName: "docker")""";
+    private const string Initializer = """new ProcessStartInfo { FileName = "docker" }""";
     private const string Raw = """
         new ProcessStartInfo("docker")
         """;
+}
+
+public static class Process
+{
+    public static object? Start(string fileName) => null;
+}
+
+public sealed class CustomProcessTests
+{
+    [Fact]
+    public void Starts_a_custom_process_type() =>
+        _ = Process.Start("docker");
 }
 '@
 

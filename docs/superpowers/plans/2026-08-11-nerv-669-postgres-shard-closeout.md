@@ -4,7 +4,7 @@
 
 **Goal:** 将 `InventoryDirectoryPostgresTests` 从默认快速分片移交给 `real-postgres` owner lane，并用反向门禁防止直接 Docker 测试再次漏入快速门禁。
 
-**Architecture:** 生产测试类以显式 `CreateDockerAsync()` / `CreateExternalAsync()` 两条路径运行，并通过环境门禁属性在默认未启用状态下跳过；分片 manifest 以类级选择器整体排除它，MAN-661 政策以两个精确测试身份登记。分片治理从测试源码审计直接 Docker CLI 入口，并要求包含该入口的测试类型必须存在类级排除。
+**Architecture:** 生产测试类以显式 `CreateDockerAsync()` / `CreateExternalAsync()` 两条路径运行，并通过环境门禁属性在默认未启用状态下跳过；分片 manifest 以类级选择器整体排除它，MAN-661 政策以两个精确测试身份登记。分片治理从测试源码审计 `ProcessStartInfo` 构造函数、对象初始化器和 `Process.Start` 重载等直接 Docker CLI 入口；快速分片中的对应测试类型必须由所属分片排除，整个项目归属 heavy lane 时则由该 lane 的 owner script 与 evidence policy 管理。
 
 **Tech Stack:** PowerShell 7、.NET 10、xUnit、JSON manifest/policy、Npgsql、Docker CLI。
 
@@ -46,7 +46,7 @@
 
 - [ ] **Step 3: 实现最小反向审计**
 
-  在 validator 中扫描 `BackendInventoryRoot`（未传时为仓库 `backend`）下测试项目目录的 `*.cs`，只审计当前确认的直接入口 `new ProcessStartInfo("docker")`。从 namespace 与包含入口的 `class` 声明组合 fully-qualified type，以 `StringComparer.Ordinal` 集合比对全部 `excludedTestClasses`；无法解析 namespace/type 时也加入错误。诊断仅含仓库相对路径与类型，不含源码 body。
+  在 validator 中扫描 `BackendInventoryRoot`（未传时为仓库 `backend`）下测试项目目录的 `*.cs`，审计 `ProcessStartInfo` 构造函数、`FileName = "docker"` 对象初始化器和 `Process.Start` 重载；位置实参、命名实参及其合法换序均由真实 validator fixture 覆盖。从 namespace 与包含入口的 `class` 声明组合 fully-qualified type，以 `StringComparer.Ordinal` 集合比对所属快速分片的 `excludedTestClasses`；整个项目唯一归属 heavy lane 时交给该 lane 的 owner script 与 evidence policy，缺失、重复或未知归属仍 fail closed。无法解析 namespace/type 时也加入错误。诊断仅含仓库相对路径与类型，不含源码 body。
 
 - [ ] **Step 4: 显式化两个 PostgreSQL 运行路径**
 
