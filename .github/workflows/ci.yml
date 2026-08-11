@@ -757,8 +757,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限；step 预算合计为 53m（11 个 step：3m
-    # checkout + 10 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 10m job 预算是快速失败界限；step 预算合计为 58m（12 个 step：3m
+    # checkout + 11 × 5m），且仅为逐 step 上限。合计超过 job 预算
     # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
