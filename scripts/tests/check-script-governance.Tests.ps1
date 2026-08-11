@@ -182,7 +182,7 @@ try {
             -StreamReadTaskAction $faultedStreamTaskAction | Out-Null
     }
     catch { $outputExitFailure = $_ }
-    if ($null -eq $outputExitFailure -or (-not (([int] $outputExitFailure.Exception.Data['ExitCode']) -eq (32)))) {
+    if ($null -eq $outputExitFailure -or [int] $outputExitFailure.Exception.Data['ExitCode'] -ne 32) {
         throw 'Invoke-NativeCommandOutput must preserve structured native exit data over a completed drain fault.'
     }
     if ($outputExitFailure.Exception.Message.Contains('super-secret-token', [StringComparison]::Ordinal)) {
@@ -471,7 +471,7 @@ if ([int] $RootExitCode -ne 0) { exit ([int] $RootExitCode) }
             -LogDirectory (Join-Path $streamDrainRoot 'output-nonzero-logs') | Out-Null
     }
     catch { $partialNonzeroFailure = $_ }
-    if ($null -eq $partialNonzeroFailure -or (-not (([int] $partialNonzeroFailure.Exception.Data['ExitCode']) -eq (33)))) {
+    if ($null -eq $partialNonzeroFailure -or [int] $partialNonzeroFailure.Exception.Data['ExitCode'] -ne 33) {
         throw 'Invoke-NativeCommandOutput must prioritize a native nonzero exit over partial-output rejection.'
     }
     Stop-ExactTestProcessIdentity -IdentityPath $streamDrainNonzeroIdentity
@@ -706,7 +706,7 @@ if (`$identity.Pid -le 0 -or [string]::IsNullOrWhiteSpace("`$(`$identity.Process
     }
     if (-not (Test-Path -LiteralPath $detachedMarker)) { throw 'Detached child did not survive its launcher process.' }
     $markerText = [System.IO.File]::ReadAllText($detachedMarker)
-    if ((-not [string]::Equals([string]($markerText), [string]('a b|a "quoted" b'), [StringComparison]::OrdinalIgnoreCase))) { throw "Detached arguments were corrupted: $markerText" }
+    if ((-not [string]::Equals([string]($markerText), [string]('a b|a "quoted" b'), [StringComparison]::Ordinal))) { throw "Detached arguments were corrupted: $markerText" }
     $identity = Get-Content -LiteralPath $detachedIdentity -Raw | ConvertFrom-Json
     Wait-Process -Id ([int] $identity.Pid) -Timeout 10 -ErrorAction SilentlyContinue
 }

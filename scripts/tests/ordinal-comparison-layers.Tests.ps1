@@ -52,6 +52,9 @@ foreach ($invalidComparerCase in @(
     [pscustomobject]@{ Name = 'culture'; Source = 'function Test-CultureComparer { $comparison = [StringComparison]::CurrentCulture; return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'unknown'; Source = 'function Test-UnknownComparer { param($comparison) return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'reassigned'; Source = 'function Test-ReassignedComparer { $comparison = [StringComparison]::Ordinal; $comparison = [StringComparison]::CurrentCulture; return $value.StartsWith($prefix, $comparison) }' },
+    [pscustomobject]@{ Name = 'set-variable-reassigned'; Source = 'function Test-SetVariableReassignedComparer { $comparison = [StringComparison]::Ordinal; Set-Variable comparison $external; return $value.StartsWith($prefix, $comparison) }' },
+    [pscustomobject]@{ Name = 'typed-reassigned'; Source = 'function Test-TypedReassignedComparer { $comparison = [StringComparison]::Ordinal; [StringComparison]$comparison = $external; return $value.StartsWith($prefix, $comparison) }' },
+    [pscustomobject]@{ Name = 'dynamic-set-variable-reassigned'; Source = 'function Test-DynamicSetVariableReassignedComparer { $comparison = [StringComparison]::Ordinal; Set-Variable -Name $target -Value $external; return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'non-ordinal-branch'; Source = 'function Test-NonOrdinalBranchComparer { $comparison = if ($IsWindows) { [StringComparison]::Ordinal } else { [StringComparison]::InvariantCulture }; return $value.StartsWith($prefix, $comparison) }' },
     [pscustomobject]@{ Name = 'conditional-assignment'; Source = 'function Test-ConditionalComparer { if ($condition) { $comparison = [StringComparison]::Ordinal }; return $value.StartsWith($prefix, $comparison) }' }
 )) {
@@ -63,6 +66,13 @@ foreach ($invalidComparerCase in @(
 $identityFindings = @(Get-LayerProbeFindings -Source 'function Test-Identity { return $leftId -eq $rightId }')
 Assert-Layer (@($identityFindings | Where-Object { $_.StartsWith('[culture-operator-with-identity-variable]', [StringComparison]::Ordinal) }).Count -eq 1) `
     'Identity variables compared with -eq must be reported.'
+$arrayExpressionMembershipFindings = @(Get-LayerProbeFindings -Source 'function Test-StringArrayMembership { return $event -notin @(''push'', ''pull_request'') }')
+Assert-Layer (@($arrayExpressionMembershipFindings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'A string array expression used by a culture membership operator must be reported.'
+Assert-Layer (@(Get-LayerProbeFindings -Source 'function Test-NumericArrayMembership { return $statusCode -notin @(400, 422) }').Count -eq 0) `
+    'A numeric array expression must not be treated as a string operand.'
+Assert-Layer (@(Get-LayerProbeFindings -Source 'function Test-LowercaseIdentityNames { return $name -eq $path }').Count -eq 0) `
+    'Lowercase bare names outside the case-sensitive identity suffix set must remain a documented blind spot.'
 foreach ($nonStringIdentityCase in @(
     'function Test-Number { return [int]$leftId -eq $rightId }',
     'function Test-TypedLocalNumber { [int]$leftId = 1; [int]$rightId = 2; return $leftId -eq $rightId }',
@@ -75,6 +85,9 @@ foreach ($nonStringIdentityCase in @(
 $conditionalTypedIdentityFindings = @(Get-LayerProbeFindings -Source 'function Test-ConditionalTypedIdentity { if ($false) { [int]$leftId = 1; [int]$rightId = 2 }; return $leftId -eq $rightId }')
 Assert-Layer (@($conditionalTypedIdentityFindings | Where-Object { $_.StartsWith('[culture-operator-with-identity-variable]', [StringComparison]::Ordinal) }).Count -eq 1) `
     'A typed local declared only in a conditional block must not suppress an identity comparison finding.'
+$setVariableTypedIdentityFindings = @(Get-LayerProbeFindings -Source 'function Test-SetVariableTypedIdentity { [int]$leftId = 1; Set-Variable leftId $external; return $leftId -eq $rightId }')
+Assert-Layer (@($setVariableTypedIdentityFindings | Where-Object { $_.StartsWith('[culture-operator-with-identity-variable]', [StringComparison]::Ordinal) }).Count -eq 1) `
+    'A Set-Variable write must invalidate a prior typed-local identity proof.'
 $cultureComparerFindings = @(Get-LayerProbeFindings -Source 'function Test-CultureFactory { return [StringComparer]::Create([Globalization.CultureInfo]::InvariantCulture, $true) }')
 Assert-Layer (@($cultureComparerFindings | Where-Object { $_.StartsWith('[culture-created-stringcomparer]', [StringComparison]::Ordinal) }).Count -eq 1) `
     'Creating a StringComparer from CultureInfo must be reported.'
@@ -101,7 +114,21 @@ foreach ($invalidCharacterCase in @(
     'function Test-ScopedPositionalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable local:character ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-PrivateSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable private:character ''{''; if ($character -eq ''{'') { return $true } } }',
     'function Test-GlobalSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable global:character ''{''; if ($character -eq ''{'') { return $true } } }',
-    'function Test-QualifiedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Utility\Set-Variable character ''{''; if ($character -eq ''{'') { return $true } } }'
+    'function Test-QualifiedSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Utility\Set-Variable character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-DynamicSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable -Name $target -Value ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SubexpressionSetVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Variable $(''character'') ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-NewVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { New-Variable character ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-BuiltinAliasNewVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { nv character ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-QualifiedNewVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Utility\New-Variable character ''{'' -Force; if ($character -eq ''{'') { return $true } } }',
+    'function Test-ClearVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Clear-Variable character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-RemoveVariableForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Remove-Variable character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-SetItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Set-Item variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-QualifiedSetItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Microsoft.PowerShell.Management\Set-Item variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function Test-ClearItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Clear-Item variable:character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-RemoveItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Remove-Item variable:character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-CopyItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Copy-Item variable:source variable:character; if ($character -eq ''{'') { return $true } } }',
+    'function Test-MoveItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Move-Item variable:character variable:other; if ($character -eq ''{'') { return $true } } }',
+    'function Test-RenameItemForeachCharacter { param([string]$text) foreach ($character in $text.ToCharArray()) { Rename-Item variable:character changed; if ($character -eq ''{'') { return $true } } }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidCharacterCase)
     Assert-Layer (@($findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -eq 1) `
@@ -120,6 +147,8 @@ foreach ($invalidOrdinalSetCase in @(
     'function Test-CultureSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::CurrentCulture); return $names.Contains(''Name'') }',
     'function Test-UnknownSet { param($names) return $names.Contains(''Name'') }',
     'function Test-ReassignedSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); $names = [Collections.Generic.HashSet[string]]::new(); return $names.Contains(''Name'') }',
+    'function Test-SetVariableReassignedSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); Set-Variable names $external; return $names.Contains(''Name'') }',
+    'function Test-TypedReassignedSet { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal); [object]$names = $external; return $names.Contains(''Name'') }',
     'function Test-ConditionalSet { if ($condition) { $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal) }; return $names.Contains(''Name'') }'
 )) {
     $findings = @(Get-LayerProbeFindings -Source $invalidOrdinalSetCase)
@@ -202,6 +231,8 @@ foreach ($invalidGetContentShadowCase in @(
 
 foreach ($customAliasNameCase in @(
     'function customSv { param($name, $value) }; function Test-CustomSvName { param([string]$text) foreach ($character in $text.ToCharArray()) { customSv character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function customNv { param($name, $value) }; function Test-CustomNvName { param([string]$text) foreach ($character in $text.ToCharArray()) { customNv character ''{''; if ($character -eq ''{'') { return $true } } }',
+    'function customSi { param($name, $value) }; function Test-CustomSiName { param([string]$text) foreach ($character in $text.ToCharArray()) { customSi variable:character ''{''; if ($character -eq ''{'') { return $true } } }',
     'function customSal { param($name, $value) }; customSal Get-ChildItem Get-Thing; function Test-CustomSalName { Get-ChildItem | Sort-Object LastWriteTimeUtc }',
     'function customNal { param($name, $value) }; customNal Get-Content Get-Thing; $value = Get-Content -LiteralPath ''input.txt'' -Raw; $result = $value.IndexOf([char]'';'', 0)'
 )) {

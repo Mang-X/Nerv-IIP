@@ -2083,6 +2083,7 @@ try {
         'non-identity-variable-eq' = '$result = ($attempt -eq $runAttempt) -and ($createdAt -eq $updatedAt) -and ($items -eq $otherItems)'
         'both-operands-non-literal-in' = '$result = $candidate -in $known'
         'ambiguous-method-with-variable-argument' = '$result = $text.Contains($needle)'
+        'variable-write-via-dynamic-provider-path' = 'function Test-DynamicProviderWrite { param([string]$text) foreach ($character in $text.ToCharArray()) { $target = ''variable:character''; Set-Item -Path $target -Value ''x''; $result = $character -eq ''x'' } }'
         'like-and-match-operators' = '$result = ($text -like $pattern) -and ($text -match $expression)'
         'validateset-attribute' = 'function Invoke-Probe { param([ValidateSet(''all'', ''class'')] [string] $Kind) return $Kind }'
         'sort-object-via-splatted-parameters' = '$splat = @{ Property = ''name'' }; $result = @($items | Sort-Object @splat | Select-Object @splat)'
