@@ -1213,6 +1213,25 @@ try {
     # not against the committed baseline, whose granularity and rows move with every MAN-661 refresh.
     $projectBaselinePath = Join-Path $collectorRoot 'project-granularity-baseline.json'
     Write-NervUtf8NoBom -Path $projectBaselinePath -Text (($baselineA | ConvertTo-Json -Depth 100) + "`n")
+
+    $invalidEventRejected = $false
+    try {
+        Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-invalid-event' -Arguments @(
+            '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
+            '-OutputDirectory', (Join-Path $collectorRoot 'invalid-event'), '-WorkflowRunId', 'fixture-invalid-event', '-RunAttempt', '1',
+            '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
+            '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
+            '-Event', ("push" + [char]0x00AD), '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-invalid-event',
+            '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
+            '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+            '-BaselinePath', $projectBaselinePath
+        ) | Out-Null
+    }
+    catch {
+        $invalidEventRejected = $true
+    }
+    Assert-True $invalidEventRejected 'An event name with a culture-ignorable suffix must be rejected instead of being treated as push.'
+
     Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot -Name 'man-661-collector-success' -Arguments @(
         '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
         '-OutputDirectory', $successOut, '-WorkflowRunId', 'fixture-success', '-RunAttempt', '1',
