@@ -48,7 +48,7 @@ function Get-NightlyBusinessPerformanceWorkflow {
     $rubyProgram = @'
 path = ARGV.fetch(0)
 source = File.read(path)
-stream = Psych.parse_stream(source, path)
+stream = Psych.parse_stream(source)
 raise 'Workflow YAML must contain exactly one document.' unless stream.children.length == 1
 root = stream.children.fetch(0).root
 raise 'Workflow YAML root must be a mapping.' unless root.is_a?(Psych::Nodes::Mapping)
