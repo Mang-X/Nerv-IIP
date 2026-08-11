@@ -680,7 +680,15 @@ $discoveredBackendProjects = @(
         ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
 
-$directDockerPattern = 'new\s+ProcessStartInfo\s*\(\s*"docker"\s*\)'
+$directDockerPatterns = @(
+    # ProcessStartInfo(string fileName) and ProcessStartInfo(string fileName, string arguments),
+    # including the equivalent named-argument spelling.
+    'new\s+ProcessStartInfo\s*\(\s*(?:fileName\s*:\s*)?"docker"\s*(?:,|\))',
+    # ProcessStartInfo() followed by the FileName setter through an object initializer.
+    'new\s+ProcessStartInfo\s*(?:\(\s*\))?\s*\{(?s:[^}]*?)\bFileName\s*=\s*"docker"\s*(?:,|\})',
+    # Process.Start(string fileName) and Process.Start(string fileName, string arguments).
+    '(?:System\s*\.\s*Diagnostics\s*\.\s*)?\bProcess\s*\.\s*Start\s*\(\s*(?:fileName\s*:\s*)?"docker"\s*(?:,|\))'
+)
 $testProjectPaths = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
@@ -700,7 +708,11 @@ foreach ($testProjectPath in $testProjectPaths) {
 
         $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
-        $directDockerMatches = @([regex]::Matches($structuralText, $directDockerPattern))
+        $directDockerMatches = @(
+            foreach ($directDockerPattern in $directDockerPatterns) {
+                [regex]::Matches($structuralText, $directDockerPattern)
+            }
+        )
         if ($directDockerMatches.Count -eq 0) {
             continue
         }
@@ -714,11 +726,17 @@ foreach ($testProjectPath in $testProjectPaths) {
         }
         else {
             $projectOwner = [string] $projectOwners[$relativeTestProjectPath]
-            if (-not $excludedClassSelectorsByFastShard.ContainsKey($projectOwner)) {
-                $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' is owned by non-fast lane '$projectOwner'.")
+            if ($excludedClassSelectorsByFastShard.ContainsKey($projectOwner)) {
+                $ownerExcludedClassSelectors = $excludedClassSelectorsByFastShard[$projectOwner]
+            }
+            elseif ($heavyLaneIdSet.Contains($projectOwner)) {
+                # A heavy lane is the intended home for real-dependency tests. Its owner script and
+                # evidence policy govern execution, so fast-shard exclusion is neither required nor
+                # meaningful for a project classified wholly into that lane.
+                continue
             }
             else {
-                $ownerExcludedClassSelectors = $excludedClassSelectorsByFastShard[$projectOwner]
+                $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has unknown lane ownership '$projectOwner'.")
             }
         }
 

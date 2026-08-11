@@ -111,6 +111,14 @@ $interpolatedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Interpola
 $interpolatedDockerFinding = "Real dependency test type '$interpolatedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
 $interpolatedRawDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedRawDockerTests'
 $interpolatedRawDockerFinding = "Real dependency test type '$interpolatedRawDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$dockerBclEntryTypes = @(
+    'Nerv.IIP.TemporaryShardClassification.Tests.TwoArgumentConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NamedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ObjectInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.EmptyConstructorInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests'
+)
 try {
     New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
     Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
@@ -227,6 +235,58 @@ public sealed class InterpolatedRawDockerTests
     Assert-Contract ($interpolatedDocker.Message.Contains($interpolatedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable ordinary interpolation holes and report the exact containing test type.'
     Assert-Contract (-not $interpolatedRawDocker.Passed) 'A real Docker call inside an interpolated raw string hole must fail shard governance.'
     Assert-Contract ($interpolatedRawDocker.Message.Contains($interpolatedRawDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable raw interpolation holes and report the exact containing test type.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class TwoArgumentConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_constructor_arguments() =>
+        _ = new ProcessStartInfo("docker", "ps");
+}
+
+public sealed class NamedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_named_constructor_arguments() =>
+        _ = new ProcessStartInfo(fileName: "docker", arguments: "ps");
+}
+
+public sealed class ObjectInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_an_object_initializer() =>
+        _ = new ProcessStartInfo { FileName = "docker", UseShellExecute = false };
+}
+
+public sealed class EmptyConstructorInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_an_empty_constructor_and_initializer() =>
+        _ = new ProcessStartInfo() { FileName = "docker" };
+}
+
+public sealed class StaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_the_static_process_api() =>
+        _ = Process.Start("docker", "ps");
+}
+
+public sealed class NamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_named_static_process_arguments() =>
+        _ = Process.Start(fileName: "docker", arguments: "ps");
+}
+'@
+    $dockerBclEntries = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-bcl-entry-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $dockerBclEntries.Passed) 'Every audited BCL Docker process entry shape in an unexcluded fast-shard project must fail shard governance.'
+    foreach ($dockerBclEntryType in $dockerBclEntryTypes) {
+        $dockerBclEntryFinding = "Real dependency test type '$dockerBclEntryType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+        Assert-Contract ($dockerBclEntries.Message.Contains($dockerBclEntryFinding, [StringComparison]::Ordinal)) "Shard governance must report Docker BCL entry shape '$dockerBclEntryType'."
+    }
 }
 finally {
     Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue

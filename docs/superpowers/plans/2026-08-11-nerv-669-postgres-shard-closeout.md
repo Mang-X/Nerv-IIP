@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 所有新增或修改的人工文档使用简体中文；代码、命令、路径、标识符和配置键保持原文。
-- 只处理 NERV-812 / #1499；不接入 GitHub-hosted heavy lane，不改 `.github/workflows/ci.yml`。
+- 只处理 NERV-812 / #1499；不接入 GitHub-hosted heavy lane。审核后仅因真实 CI 的治理契约 step 超过原 5 分钟上限，把该 step 预算调整为 8 分钟；不改变 workflow 拓扑、lane 接线或 required check。
 - 不改业务 HTTP endpoint、facade、OpenAPI、schema、migration 或前端。
 - 生产脚本必须 dot-source `scripts/lib/ScriptAutomation.ps1`，不得直接调用受治理外部命令。
 - 标识符比较必须使用显式 ordinal（序数）比较；不得使用 PowerShell 默认 `-eq` / `-contains` / `Sort-Object -Unique` 承担身份判定。
