@@ -24,7 +24,9 @@ if ([string]::Equals($pipeOnLeft, $pipeOnRight, [StringComparison]::Ordinal)) {
 $zeroComponents = Get-NervStringCompositeKey -Components @()
 $nullComponent = Get-NervStringCompositeKey -Components @($null)
 $emptyComponent = Get-NervStringCompositeKey -Components @('')
-if (@($zeroComponents, $nullComponent, $emptyComponent | Select-Object -Unique).Count -ne 3) {
+if ([string]::Equals($zeroComponents, $nullComponent, [StringComparison]::Ordinal) -or
+    [string]::Equals($zeroComponents, $emptyComponent, [StringComparison]::Ordinal) -or
+    [string]::Equals($nullComponent, $emptyComponent, [StringComparison]::Ordinal)) {
     throw 'Get-NervStringCompositeKey must distinguish zero, null, and empty-string components.'
 }
 
