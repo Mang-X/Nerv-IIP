@@ -97,6 +97,19 @@ PDA 变更还须运行 `pnpm -C frontend --filter @nerv-iip/business-pda` 的 `t
 
 Linear 中的项目名称与说明、Issue 标题与正文、评论、审核意见、状态说明、验收记录、复盘结论及其他面向团队的协作文本默认使用中文。引用外部英文原文时可保留短引文，但必须提供中文上下文或中文结论。不得翻译机器输入、生成文件，或必须保持原样的测试夹具、日志、运行证据、指纹、快照和协议样本；具体范围与分类规则见 `docs/architecture/document-language-governance.md`。
 
+## Superpowers 规划产物治理
+
+自 2026-08-12 起，新建的 Superpowers spec/plan 以对应 GitHub Issue 为唯一权威来源；既有 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 历史文件不迁移、不改写。
+
+1. 持久化 spec 前必须先创建或复用 GitHub Issue，并按 Scope Gate 在票面记录范围级别、交付形态、难度与主要难点。Issue 既有需求内容不得被整体覆盖；spec 只能写入唯一的 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块。
+2. 用户批准 spec 后，在受管区块记录“已批准”、修订号与批准日期。新建的 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` 只能包含一个指向该 Issue 的 Markdown 链接，不得复制标题、状态、摘要或正文。
+3. writing-plans 在同一 Issue 创建一个计划索引评论，并为每个可独立审核的 Task 创建独立评论。索引必须保存目标、全局约束、Task 顺序、完成复选框和各 Task 永久链接；新建的 `docs/superpowers/plans/YYYY-MM-DD-<topic>.md` 只能包含一个指向计划索引评论的 Markdown 链接。
+4. 实施开始前可以原位修订计划；实施开始后不得静默覆盖已批准的 Task 评论。范围或方案变化必须新增修订评论和替代 Task 评论，由计划索引改指最新版本并保留旧评论。Scope L/XL 按 Scope Gate 拆成子 Issue，不把多个独立 PR 塞进单一 Task。
+5. 执行代理必须使用 `gh issue view` 读取 Issue 正文和评论。Issue 不存在、已关闭但仍要求实施、链接不可访问、spec 标记重复、计划索引缺失或 Task 链接失效时必须停止并报告；不得把完整正文写回本地链接文件作为降级。
+6. 测试结果、CI、审核、PR 与合并证据写入独立 Issue 评论或 PR，不混入计划正文。ADR、`docs/architecture/`、API snapshot、generated artifact 与其他长期工程资产仍按原规则保存在仓库。
+7. 只创建或复用 GitHub Issue；不得为该流程调用 Linear API 直接创建对应 Issue。Linear 仅由现有 GitHub → Linear 集成自动同步；同步延迟或失败只需报告，不阻塞 GitHub 上的 spec/plan 流程。
+8. 不修改被忽略且可刷新的 `.agents/skills/` 第三方副本或 `skills-lock.json` 来实现本规则。若后续出现违规新文件，再由独立任务评估自动门禁，不在普通规划任务中新增 CI checker 或历史白名单。
+
 ## 后端测试确定性
 
 - Scheduler、lease、expiry 等时间语义必须注入 `TimeProvider`；只有真实 transport/process 才使用 wall clock。
