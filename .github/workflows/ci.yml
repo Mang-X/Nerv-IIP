@@ -871,6 +871,7 @@ jobs:
     steps:
       - name: Require all CI lanes
         timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
         run: |
           test "${{ needs.backend-tests.result }}" = "success"
           test "${{ needs.connector-host-tests.result }}" = "success"

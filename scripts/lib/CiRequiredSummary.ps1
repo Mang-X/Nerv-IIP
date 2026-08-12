@@ -92,10 +92,22 @@ function Get-NervCiRequiredSummaryFindings {
             $findings.Add("CI Summary must not set 'continue-on-error' on the job or any step.")
         }
 
+        if ($steps.Count -eq 1 -and $null -ne $steps[0].PSObject.Properties['if']) {
+            $findings.Add('CI Summary assertion step must not have a condition.')
+        }
+
         if ($steps.Count -ne 1 -or
             -not [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'name'), 'Require all CI lanes', [StringComparison]::Ordinal) -or
             -not [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'timeout-minutes'), '3', [StringComparison]::Ordinal)) {
             $findings.Add('CI Summary must contain one three-minute required-lane assertion step.')
+        }
+
+        if ($steps.Count -ne 1 -or
+            -not [string]::Equals(
+                (Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'shell'),
+                'bash --noprofile --norc -euo pipefail {0}',
+                [StringComparison]::Ordinal)) {
+            $findings.Add('CI Summary assertion step must use the governed fail-fast Bash shell.')
         }
 
         $run = if ($steps.Count -eq 1) { Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'run' } else { '' }

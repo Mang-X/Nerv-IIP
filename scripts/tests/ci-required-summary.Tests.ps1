@@ -104,6 +104,16 @@ try {
         -Replacement "      - name: Require all CI lanes$([Environment]::NewLine)        continue-on-error: true$([Environment]::NewLine)" `
         -ExpectedDiagnostic "CI Summary must not set 'continue-on-error' on the job or any step."
 
+    Invoke-Mutation -Name 'ci-summary-skipped-assertion-step' -Workflow $workflow `
+        -Original "      - name: Require all CI lanes$([Environment]::NewLine)" `
+        -Replacement "      - name: Require all CI lanes$([Environment]::NewLine)        if: false$([Environment]::NewLine)" `
+        -ExpectedDiagnostic 'CI Summary assertion step must not have a condition.'
+
+    Invoke-Mutation -Name 'ci-summary-non-fail-fast-shell' -Workflow $workflow `
+        -Original '        shell: bash --noprofile --norc -euo pipefail {0}' `
+        -Replacement '        shell: bash {0}' `
+        -ExpectedDiagnostic 'CI Summary assertion step must use the governed fail-fast Bash shell.'
+
     Invoke-Mutation -Name 'ci-summary-job-continue-on-error' -Workflow $workflow `
         -Original "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)" `
         -Replacement "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)    continue-on-error: true$([Environment]::NewLine)" `
