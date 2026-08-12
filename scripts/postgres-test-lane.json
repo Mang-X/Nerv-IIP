@@ -15,6 +15,26 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema"
       ]
+    },
+    {
+      "id": "masterdata-postgres-profile",
+      "service": "MasterData",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
+      "databasePrefix": "nerv_iip_masterdata",
+      "diagnosticSchemas": [
+        "business_masterdata",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_store_persists_master_data_aggregates",
+        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload"
+      ]
     }
   ]
 }

@@ -35,14 +35,14 @@ public sealed class MasterDataPostgresProfileTests
     [PostgresFact]
     public async Task Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var counter = new RelationalReadCounter();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
+            .UseNpgsql(connectionString)
             .AddInterceptors(counter)
             .Options;
         await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        AssertUsesGovernedDatabase(dbContext);
         await DropMasterDataSchemaAsync(dbContext);
         await dbContext.Database.MigrateAsync();
         var devices = Enumerable.Range(1, 200)
@@ -82,15 +82,14 @@ public sealed class MasterDataPostgresProfileTests
     [PostgresFact]
     public async Task Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var connectionString = database.ConnectionString;
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var services = CreateCapServices(connectionString);
         await using var provider = services.BuildServiceProvider();
 
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
             await DropMasterDataSchemaAsync(db);
             await db.Database.MigrateAsync();
             await scope.ServiceProvider.GetRequiredService<IStorageInitializer>()
@@ -116,14 +115,13 @@ public sealed class MasterDataPostgresProfileTests
     [PostgresFact]
     public async Task Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var connectionString = database.ConnectionString;
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var services = CreateCapServices(connectionString, new LifecycleAuditInsertBarrier("K-RACE-PG"));
         await using var provider = services.BuildServiceProvider();
         using (var seedScope = provider.CreateScope())
         {
             var seed = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(seed);
             await DropMasterDataSchemaAsync(seed);
             await seed.Database.MigrateAsync();
             await seedScope.ServiceProvider.GetRequiredService<IStorageInitializer>()
@@ -406,6 +404,13 @@ public sealed class MasterDataPostgresProfileTests
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
     }
 
+    private static void AssertUsesGovernedDatabase(ApplicationDbContext db)
+    {
+        var governedConnection = new NpgsqlConnectionStringBuilder(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        Assert.Equal(governedConnection.Database, db.Database.GetDbConnection().Database);
+    }
+
     private sealed class RelationalReadCounter : DbCommandInterceptor
     {
         public int ReadCount { get; private set; }
@@ -457,41 +462,6 @@ public sealed class MasterDataPostgresProfileTests
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_masterdata_audit_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
 }
 
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
