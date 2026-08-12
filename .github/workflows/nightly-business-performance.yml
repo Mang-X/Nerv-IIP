@@ -1,0 +1,91 @@
+name: Nightly Business Performance
+
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      max_elapsed_milliseconds:
+        type: string
+        default: '0'
+
+permissions:
+  contents: read
+
+jobs:
+  business-performance:
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    env:
+      NERV_IIP_PERF_POSTGRES: Host=127.0.0.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv
+      MANUAL_MAX_ELAPSED_MILLISECONDS: ${{ github.event.inputs.max_elapsed_milliseconds || '0' }}
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: nerv
+          POSTGRES_PASSWORD: nerv
+          POSTGRES_DB: nerv_iip_performance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nerv -d nerv_iip_performance"
+    steps:
+      - uses: actions/checkout@v4
+        timeout-minutes: 3
+      - uses: actions/setup-dotnet@v4
+        timeout-minutes: 5
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/cache@v4
+        timeout-minutes: 8
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-dotnet-${{ hashFiles('**/*.csproj', '**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dotnet-
+      - name: Run performance baseline
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          $commonArguments = @(
+              '-Scenario', 'all',
+              '-Profile', 'nightly',
+              '-Rows', 25,
+              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
+              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
+          )
+          $manualMaxElapsedMilliseconds = 0
+          $manualInputParsed = [int]::TryParse(
+              [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
+              [Globalization.NumberStyles]::Integer,
+              [Globalization.CultureInfo]::InvariantCulture,
+              [ref]$manualMaxElapsedMilliseconds
+          )
+          if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
+              throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
+          }
+          if ($manualMaxElapsedMilliseconds -gt 0) {
+              $thresholdArguments = @(
+                  '-MaxElapsedMilliseconds',
+                  $manualMaxElapsedMilliseconds
+              )
+          }
+          else {
+              $thresholdArguments = @(
+                  '-InventoryMaxElapsedMilliseconds', 600000,
+                  '-MesMaxElapsedMilliseconds', 600000,
+                  '-ErpMaxElapsedMilliseconds', 600000
+              )
+          }
+          & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+      - uses: actions/upload-artifact@v4
+        timeout-minutes: 5
+        if: always()
+        with:
+          name: business-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/business-performance/nightly/metrics.jsonl
+            artifacts/business-performance/nightly/summary.json
+          if-no-files-found: error
+          retention-days: 30
