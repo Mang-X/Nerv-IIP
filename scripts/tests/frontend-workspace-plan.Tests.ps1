@@ -31,6 +31,9 @@ Assert-Contract ($inventory.project_count -gt 0) 'The live frontend inventory mu
 Assert-Contract ($inventory.test_project_count -gt 0) 'The live frontend inventory must discover test projects.'
 Assert-Contract ($inventory.test_file_count -gt 0) 'The live frontend inventory must discover unit tests.'
 Assert-Contract ($inventory.skip_count -eq 1) 'The current frontend unit-test skip inventory must match the governed allowlist.'
+Assert-Contract ($null -ne (Get-Command Test-NervFrontendIgnoredUnitTestPath -ErrorAction SilentlyContinue)) 'The inventory must expose path-normalized unit-test exclusions.'
+Assert-Contract (Test-NervFrontendIgnoredUnitTestPath -RelativePath 'apps\example\node_modules\pkg\ghost.test.ts') 'Windows-style node_modules paths must be excluded.'
+Assert-Contract (-not (Test-NervFrontendIgnoredUnitTestPath -RelativePath 'apps\example\src\ghost.test.ts')) 'Workspace source tests must not be excluded.'
 
 $workflow = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
 foreach ($requiredWorkflowToken in @(
@@ -89,6 +92,8 @@ try {
     $fixtureApp = Join-Path $fixtureFrontend 'apps/example'
     [IO.Directory]::CreateDirectory((Join-Path $fixtureApp 'src')) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $fixtureFrontend 'packages')) | Out-Null
+    $fixtureWorkspaceManifest = Join-Path $fixtureFrontend 'pnpm-workspace.yaml'
+    [IO.File]::WriteAllText($fixtureWorkspaceManifest, "packages:`n  - apps/*`n  - packages/*`n", [Text.UTF8Encoding]::new($false))
     $fixtureAllowlist = Join-Path $fixtureRoot 'allowlist.json'
     [IO.File]::WriteAllText($fixtureAllowlist, '{"version":1,"entries":[]}', [Text.UTF8Encoding]::new($false))
     [IO.File]::WriteAllText((Join-Path $fixtureApp 'package.json'), '{"name":"@nerv-iip/example","scripts":{"typecheck":"tsc"}}', [Text.UTF8Encoding]::new($false))
@@ -103,6 +108,16 @@ try {
     }
 
     [IO.File]::WriteAllText((Join-Path $fixtureApp 'package.json'), '{"name":"@nerv-iip/example","scripts":{"test":"vitest run","typecheck":"tsc","build":"vite build"}}', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($fixtureWorkspaceManifest, "packages:`n  - apps/*`n  - packages/*`n  - tools/*`n", [Text.UTF8Encoding]::new($false))
+    try {
+        Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
+        throw 'Expected an unsupported workspace glob failure.'
+    }
+    catch {
+        Assert-Contract ($_.Exception.Message.Contains('workspace patterns must exactly match', [StringComparison]::Ordinal)) 'An ungoverned pnpm workspace glob must fail closed.'
+    }
+    [IO.File]::WriteAllText($fixtureWorkspaceManifest, "packages:`n  - apps/*`n  - packages/*`n", [Text.UTF8Encoding]::new($false))
+
     [IO.File]::WriteAllText((Join-Path $fixtureApp 'src/example.test.ts'), "test.only('x', () => {})", [Text.UTF8Encoding]::new($false))
     try {
         Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
@@ -148,6 +163,33 @@ try {
         Assert-Contract ($_.Exception.Message.Contains('Aliasing Vitest test API', [StringComparison]::Ordinal)) 'A renamed Vitest test API import must fail closed.'
     }
 
+    [IO.File]::WriteAllText((Join-Path $fixtureApp 'src/example.test.ts'), "import { test } from 'vitest'`nconst { skip } = test`nskip('x', () => {})", [Text.UTF8Encoding]::new($false))
+    try {
+        Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
+        throw 'Expected a destructured Vitest API alias failure.'
+    }
+    catch {
+        Assert-Contract ($_.Exception.Message.Contains('Aliasing a Vitest test API through destructuring', [StringComparison]::Ordinal)) 'A destructured Vitest test API alias must fail closed.'
+    }
+
+    [IO.File]::WriteAllText((Join-Path $fixtureApp 'src/example.test.ts'), "test.runIf(false)('x', () => {})", [Text.UTF8Encoding]::new($false))
+    try {
+        Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
+        throw 'Expected an unallowlisted test.runIf failure.'
+    }
+    catch {
+        Assert-Contract ($_.Exception.Message.Contains('requires an allowlist entry', [StringComparison]::Ordinal)) 'Unallowlisted test.runIf must fail closed.'
+    }
+
+    [IO.File]::WriteAllText((Join-Path $fixtureApp 'src/example.test.ts'), "test.todo('x')", [Text.UTF8Encoding]::new($false))
+    try {
+        Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
+        throw 'Expected an unallowlisted test.todo failure.'
+    }
+    catch {
+        Assert-Contract ($_.Exception.Message.Contains('requires an allowlist entry', [StringComparison]::Ordinal)) 'Unallowlisted test.todo must fail closed.'
+    }
+
     [IO.File]::WriteAllText((Join-Path $fixtureApp 'src/example.test.ts'), "test.skip('x', () => {})", [Text.UTF8Encoding]::new($false))
     try {
         Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
@@ -163,6 +205,22 @@ try {
         [Text.UTF8Encoding]::new($false))
     $allowlistedInventory = Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist
     Assert-Contract ($allowlistedInventory.skip_count -eq 1) 'A complete non-expired skip allowlist row must be counted.'
+
+    [IO.File]::WriteAllText(
+        $fixtureAllowlist,
+        '{"version":1,"entries":[{"path":"apps/example/src/example.test.ts","line":1,"owner":"frontend","reason":"temporary fixture","expires":"2099-01-01T00:00:00+14:00"}]}',
+        [Text.UTF8Encoding]::new($false))
+    try {
+        Get-NervFrontendWorkspaceInventory -FrontendRoot $fixtureFrontend -SkipAllowlistPath $fixtureAllowlist | Out-Null
+        throw 'Expected a non-date allowlist expiry failure.'
+    }
+    catch {
+        Assert-Contract ($_.Exception.Message.Contains('expires must use ISO yyyy-MM-dd', [StringComparison]::Ordinal)) 'Allowlist expiry must be a timezone-independent ISO date.'
+    }
+    [IO.File]::WriteAllText(
+        $fixtureAllowlist,
+        '{"version":1,"entries":[{"path":"apps/example/src/example.test.ts","line":1,"owner":"frontend","reason":"temporary fixture","expires":"2099-01-01"}]}',
+        [Text.UTF8Encoding]::new($false))
 
     $orphanDirectory = Join-Path $fixtureFrontend 'apps/orphan/src'
     [IO.Directory]::CreateDirectory($orphanDirectory) | Out-Null

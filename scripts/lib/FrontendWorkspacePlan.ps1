@@ -23,6 +23,51 @@ function Get-NervFrontendManifestValue {
     return [string]$valueProperty.Value
 }
 
+function Get-NervFrontendWorkspacePatterns {
+    param([Parameter(Mandatory)] [string] $WorkspaceManifestPath)
+
+    $patterns = [Collections.Generic.List[string]]::new()
+    $foundPackages = $false
+    $insidePackages = $false
+    foreach ($line in Get-Content -LiteralPath $WorkspaceManifestPath) {
+        if ($line -match '^packages:\s*(?:#.*)?$') {
+            if ($foundPackages) { throw "Frontend pnpm workspace manifest '$WorkspaceManifestPath' declares packages more than once." }
+            $foundPackages = $true
+            $insidePackages = $true
+            continue
+        }
+        if (-not $insidePackages) { continue }
+        if ($line -match '^\S') { break }
+        if ($line -match '^\s*(?:#.*)?$') { continue }
+        $entryMatch = [regex]::Match($line, '^\s*-\s*(?<value>''[^'']+''|"[^"]+"|[^#\s]+)\s*(?:#.*)?$')
+        if (-not $entryMatch.Success) { throw "Frontend pnpm workspace packages entry is not governed: '$line'." }
+        $value = $entryMatch.Groups['value'].Value
+        if (($value.StartsWith("'", [StringComparison]::Ordinal) -and $value.EndsWith("'", [StringComparison]::Ordinal)) -or
+            ($value.StartsWith('"', [StringComparison]::Ordinal) -and $value.EndsWith('"', [StringComparison]::Ordinal))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $patterns.Add($value)
+    }
+    if (-not $foundPackages) { throw "Frontend pnpm workspace manifest '$WorkspaceManifestPath' has no packages list." }
+
+    $actual = $patterns.ToArray()
+    $expected = [string[]]@('apps/*', 'packages/*')
+    [Array]::Sort($actual, [StringComparer]::Ordinal)
+    [Array]::Sort($expected, [StringComparer]::Ordinal)
+    if (-not [string]::Equals(($actual -join '|'), ($expected -join '|'), [StringComparison]::Ordinal)) {
+        throw "Frontend pnpm workspace patterns must exactly match the governed set: $($expected -join ', '). Found: $($actual -join ', ')."
+    }
+    return $actual
+}
+
+function Test-NervFrontendIgnoredUnitTestPath {
+    param([Parameter(Mandatory)] [string] $RelativePath)
+
+    $normalizedPath = $RelativePath.Replace('\', '/')
+    return $normalizedPath.StartsWith('node_modules/', [StringComparison]::Ordinal) -or
+        $normalizedPath.Contains('/node_modules/', [StringComparison]::Ordinal)
+}
+
 function Get-NervFrontendWorkspaceInventory {
     param(
         [Parameter(Mandatory)] [string] $FrontendRoot,
@@ -30,13 +75,14 @@ function Get-NervFrontendWorkspaceInventory {
     )
 
     $resolvedFrontendRoot = (Resolve-Path -LiteralPath $FrontendRoot).Path
+    $workspacePatterns = Get-NervFrontendWorkspacePatterns -WorkspaceManifestPath (Join-Path $resolvedFrontendRoot 'pnpm-workspace.yaml')
+    $workspaceAreas = @($workspacePatterns | ForEach-Object { $_.Substring(0, $_.Length - 2) })
     $manifestFiles = @(
-        Get-ChildItem -LiteralPath (Join-Path $resolvedFrontendRoot 'apps') -Directory |
-            ForEach-Object { Join-Path $_.FullName 'package.json' } |
-            Where-Object { Test-Path -LiteralPath $_ }
-        Get-ChildItem -LiteralPath (Join-Path $resolvedFrontendRoot 'packages') -Directory |
-            ForEach-Object { Join-Path $_.FullName 'package.json' } |
-            Where-Object { Test-Path -LiteralPath $_ }
+        foreach ($workspaceArea in $workspaceAreas) {
+            Get-ChildItem -LiteralPath (Join-Path $resolvedFrontendRoot $workspaceArea) -Directory |
+                ForEach-Object { Join-Path $_.FullName 'package.json' } |
+                Where-Object { Test-Path -LiteralPath $_ }
+        }
     )
     [Array]::Sort($manifestFiles, [StringComparer]::Ordinal)
 
@@ -118,10 +164,11 @@ function Get-NervFrontendWorkspaceInventory {
     foreach ($project in $projects) {
         foreach ($testFile in $project.test_files) { [void]$ownedUnitTestPaths.Add([string]$testFile) }
     }
-    foreach ($workspaceArea in @('apps', 'packages')) {
+    foreach ($workspaceArea in $workspaceAreas) {
         foreach ($unitTestFile in Get-ChildItem -LiteralPath (Join-Path $resolvedFrontendRoot $workspaceArea) -File -Recurse |
-                Where-Object { $_.Name -match '\.(?:test|spec)\.(?:[cm]?[jt]sx?)$' -and -not $_.FullName.Contains('/node_modules/', [StringComparison]::Ordinal) }) {
+                Where-Object { $_.Name -match '\.(?:test|spec)\.(?:[cm]?[jt]sx?)$' }) {
             $relativeUnitTestPath = [IO.Path]::GetRelativePath($resolvedFrontendRoot, $unitTestFile.FullName).Replace('\', '/')
+            if (Test-NervFrontendIgnoredUnitTestPath -RelativePath $relativeUnitTestPath) { continue }
             if ($relativeUnitTestPath -match '/e2e(?:[-/])') { continue }
             if (-not $ownedUnitTestPaths.Contains($relativeUnitTestPath)) {
                 throw "Frontend unit test '$relativeUnitTestPath' is not owned by a discovered workspace manifest src graph."
@@ -142,8 +189,18 @@ function Get-NervFrontendWorkspaceInventory {
             [string]::IsNullOrWhiteSpace([string]$entry.expires)) {
             throw "Frontend test skip allowlist entry '$key' must include path, positive line, owner, reason, and expires."
         }
-        $expires = [DateTimeOffset]::Parse([string]$entry.expires, [Globalization.CultureInfo]::InvariantCulture)
-        if ($expires -lt [DateTimeOffset]::UtcNow.Date) { throw "Frontend test skip allowlist entry '$key' is expired." }
+        $expiresText = [string]$entry.expires
+        $expires = [DateOnly]::MinValue
+        if ($expiresText -notmatch '^\d{4}-\d{2}-\d{2}$' -or
+            -not [DateOnly]::TryParseExact(
+                $expiresText,
+                'yyyy-MM-dd',
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::None,
+                [ref]$expires)) {
+            throw "Frontend test skip allowlist entry '$key' expires must use ISO yyyy-MM-dd."
+        }
+        if ($expires -lt [DateOnly]::FromDateTime([DateTime]::UtcNow)) { throw "Frontend test skip allowlist entry '$key' is expired." }
         if ($allowlistByLocation.ContainsKey($key)) { throw "Duplicate frontend test skip allowlist entry '$key'." }
         $allowlistByLocation.Add($key, $entry)
     }
@@ -165,6 +222,9 @@ function Get-NervFrontendWorkspaceInventory {
             if ($source -match '(?ms)\bimport\s*\*\s+as\s+[A-Za-z_$][\w$]*\s+from\s*["'']vitest["'']') {
                 throw "Namespace Vitest imports are forbidden in $relativeTestPath because test skip governance requires named APIs."
             }
+            if ($source -match '(?ms)\b(?:const|let|var)\s*\{[^}]*\}\s*=\s*(?:describe|suite|it|test)\b') {
+                throw "Aliasing a Vitest test API through destructuring is forbidden in $relativeTestPath."
+            }
             if ($source -match '(?m)\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*(?:describe|suite|it|test)\b') {
                 throw "Aliasing a Vitest test API through assignment is forbidden in $relativeTestPath."
             }
@@ -174,7 +234,7 @@ function Get-NervFrontendWorkspaceInventory {
             # or namespace imports are rejected above rather than becoming blind spots.
             $gap = '(?:\s|/\*.*?\*/|//[^\r\n]*(?:\r?\n|$))*'
             $chain = "(?:(?:\?\.|\.)$gap(?:concurrent|sequential|each|for)$gap)*"
-            $modifierPattern = "(?ms)\b(?:describe|suite|it|test)$gap$chain(?:(?:\?\.|\.)$gap(?<modifier>only|skip|skipIf)|(?:\?\.)?\[$gap['\x22](?<modifier>only|skip|skipIf)['\x22]$gap\])"
+            $modifierPattern = "(?ms)\b(?:describe|suite|it|test)$gap$chain(?:(?:\?\.|\.)$gap(?<modifier>only|skip|skipIf|runIf|todo)|(?:\?\.)?\[$gap['\x22](?<modifier>only|skip|skipIf|runIf|todo)['\x22]$gap\])"
             foreach ($match in [regex]::Matches($source, $modifierPattern)) {
                 $lineNumber = 1 + ([regex]::Matches($source.Substring(0, $match.Index), '\n')).Count
                 $modifier = [string]$match.Groups['modifier'].Value
@@ -185,7 +245,7 @@ function Get-NervFrontendWorkspaceInventory {
                 $skipCount++
                 $key = "$relativeTestPath`:$lineNumber"
                 if (-not $allowlistByLocation.ContainsKey($key)) {
-                    throw "Committed test.skip requires an allowlist entry at $key."
+                    throw "Committed test suppression '$modifier' requires an allowlist entry at $key."
                 }
                 [void]$usedAllowlist.Add($key)
             }
