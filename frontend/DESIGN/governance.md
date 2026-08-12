@@ -47,8 +47,8 @@ token 之上。
   决定目录与 token 命名空间），再定名。
 - shadcn 原版（`components/ui/`）零改动零重命名——本文件既有红线不变，且由契约
   测试断言“原版目录不出现 `Nv`/`--nv-` 字样”进行机器守护。
-- 迁移期（MAN-433 合入后）旧名是 `@deprecated` 别名：**新代码禁止使用旧名**
-  （`ButtonPro`、`--sb-*`、`.ds-*`/`.sb-*` 类）。
+- S4 已收口：新代码和导出必须使用当前 NvUI 规范名称；旧名只允许出现在明确标注的
+  历史文档范围，实际封锁以契约测试为准。
 - CSS 类名前缀与 token 命名空间对齐：PC `nv-*`、screen `nv-scr-*`、mobile `nv-m-*`、
   touch `nv-t-*`；Nv 件 `data-slot` 值以 `nv-` 开头。
 

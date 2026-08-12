@@ -1,9 +1,8 @@
 # 本地开发与 Aspire 排障
 
-本文汇集本地运行平台的运维经验。内容从根 `AGENTS.md` 的“常见错误”清单中提炼，
-以保持代理指令文件精简；本地启动、Aspire、基础设施容器或部署产物异常时应查阅本文。
-硬性不变量（使用 `nerv.ps1`/Aspire CLI、AppHost 是拓扑来源、基础设施镜像必须固定版本）
-仍以 `AGENTS.md` 为准。
+本文承载本地启动、Aspire、基础设施容器和部署产物的排障规则。部署拓扑由
+`docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与
+`docs/architecture/deployment-baseline.md` 承载。
 
 ## 启动与生命周期
 
