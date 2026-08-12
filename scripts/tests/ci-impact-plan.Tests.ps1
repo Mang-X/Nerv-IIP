@@ -209,15 +209,24 @@ foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Direc
 }
 
 foreach ($erpAcceptanceInput in @(
-        'NuGet.config',
         'scripts/verify-erp-sales-order-demand-planning.ps1',
-        'scripts/lib/ScriptAutomation.ps1',
         'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
         'infra/docker-compose.dev.yml'
     )) {
     Assert-ImpactCase -Name "erp-acceptance-input-$([IO.Path]::GetFileName($erpAcceptanceInput))" -Paths @($erpAcceptanceInput) -Flags @{
         erp_sales_order_demand = $true
     }
+}
+
+foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.ps1')) {
+    $plan = Get-NervCiImpactPlan -ChangedPaths @($sharedControlInput)
+    foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+        Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $true
+    }
+    Assert-Contract ([string]::Equals(
+            (@($plan.business_services) -join '|'),
+            'approval|barcode-label|demand-planning|erp|industrial-telemetry|inventory|maintenance|master-data|mes|product-engineering|quality|scheduling|wms',
+            [StringComparison]::Ordinal)) "Shared control input '$sharedControlInput' must conservatively select every known business service."
 }
 
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{

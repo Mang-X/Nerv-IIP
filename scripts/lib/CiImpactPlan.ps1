@@ -155,9 +155,14 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        if ([string]::Equals($path, 'NuGet.config', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) {
+            Select-AllImpacts -Reason "shared-control-input:$path"
+            continue
+        }
+
         if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'NuGet.config', [StringComparison]::Ordinal)) {
+            [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
             foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
@@ -292,8 +297,7 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
-            if ([string]::Equals($path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal) -or
-                [string]::Equals($path, 'scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) {
+            if ([string]::Equals($path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
             }
             if ([string]::Equals($path, 'scripts/export-gateway-openapi.ps1', [StringComparison]::Ordinal) -or
