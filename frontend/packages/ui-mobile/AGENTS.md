@@ -1,8 +1,8 @@
 # AGENTS.md — @nerv-iip/ui-mobile（NvUI 移动层 · 库内规则）
 
-> 根 `AGENTS.md` 与 `frontend/packages/ui/AGENTS.md` 的库内规则同样适用于
-> 本包（原版零改动、复制重建、R1–R5 命名、令牌变量链）。本文件只记移动层
-> 差异。权威 ADR 0020，冻结命名表 = 附录 A。
+> 先读 `frontend/AGENTS.md` 与
+> `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`；本文件只记移动层
+> 差异。冻结命名表 = 附录 A。
 
 - 命名：与原版 / PC 层素名冲突 → `NvMobile*`（`NvMobileBadge`
   `NvMobileDialog`）；移动原生专名 → 直接 `Nv*`（`NvScanBar` `NvCell`
