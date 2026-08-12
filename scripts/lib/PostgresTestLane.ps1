@@ -77,3 +77,33 @@ function Get-NervPostgresTrxResult {
     if (-not $AllowInvalid -and -not $valid) { throw "PostgreSQL lane requires $($expected.Count) passed, 0 failed and 0 skipped; observed $passed passed, $failed failed and $skipped skipped." }
     return $result
 }
+
+function Assert-NervPostgresTestLaneSummary {
+    param(
+        [Parameter(Mandatory)] [string[]] $SelectedMemberIds,
+        [Parameter(Mandatory)] [object[]] $MemberSummaries
+    )
+
+    if ($MemberSummaries.Count -ne $SelectedMemberIds.Count) {
+        throw "PostgreSQL lane selected $($SelectedMemberIds.Count) members but summarized $($MemberSummaries.Count)."
+    }
+    for ($index = 0; $index -lt $SelectedMemberIds.Count; $index++) {
+        $selectedMemberId = $SelectedMemberIds[$index]
+        $member = $MemberSummaries[$index]
+        if (-not [string]::Equals([string]$member.memberId, $selectedMemberId, [StringComparison]::Ordinal)) {
+            throw "PostgreSQL lane member at index $index must be '$selectedMemberId' but was '$($member.memberId)'."
+        }
+        if (-not [string]::Equals([string]$member.outcome, 'passed', [StringComparison]::Ordinal)) {
+            throw "PostgreSQL lane member '$selectedMemberId' has outcome '$($member.outcome)'."
+        }
+        if (-not [string]::Equals([string]$member.cleanup, 'passed', [StringComparison]::Ordinal)) {
+            throw "PostgreSQL lane member '$selectedMemberId' has cleanup '$($member.cleanup)'."
+        }
+        if ([int]$member.expected -le 0 -or [int]$member.discovered -ne [int]$member.expected) {
+            throw "PostgreSQL lane member '$selectedMemberId' expected $($member.expected) tests but discovered $($member.discovered)."
+        }
+        if ([int]$member.passed -ne [int]$member.expected -or [int]$member.failed -ne 0 -or [int]$member.skipped -ne 0) {
+            throw "PostgreSQL lane member '$selectedMemberId' expected $($member.expected) passed, 0 failed and 0 skipped; observed $($member.passed) passed, $($member.failed) failed and $($member.skipped) skipped."
+        }
+    }
+}
