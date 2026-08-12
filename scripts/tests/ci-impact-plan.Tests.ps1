@@ -54,6 +54,7 @@ function Assert-ConditionalRoutingWorkflow {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $routingPolicies = [ordered]@{
+        'erp-sales-order-demand-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
         'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
@@ -61,7 +62,7 @@ function Assert-ConditionalRoutingWorkflow {
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'erp_sales_order_demand')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -83,7 +84,7 @@ function Assert-ConditionalRoutingWorkflow {
         [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
         [StringComparer]::Ordinal)
     $allowedConsumers = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('connector-host-tests', 'openapi-client-drift', 'postgres-provider-tests', 'script-governance', 'ci-summary'),
+        [string[]]@('erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift', 'postgres-provider-tests', 'script-governance', 'ci-summary'),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
 
@@ -138,7 +139,7 @@ Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI imp
 . $libraryPath
 
 Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/context-map.md') -Flags @{
-    docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
+    docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false; erp_sales_order_demand = $false
 }
 
 Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture/script-automation-governance.md') -Flags @{
@@ -146,7 +147,7 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture
 }
 
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
-    docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
+    docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false; erp_sales_order_demand = $false
 }
 
 Assert-ImpactCase -Name 'frontend-package-markdown' -Paths @('frontend/packages/scheduling/README.md') -Flags @{
@@ -158,15 +159,21 @@ Assert-ImpactCase -Name 'frontend-guidance-markdown' -Paths @('frontend/AGENTS.m
 }
 
 Assert-ImpactCase -Name 'single-business-service' -Paths @('backend/services/Business/Erp/src/Orders.cs') -Flags @{
-    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; connector_hosts = $false; postgresql = $true; redis_cap = $false; full_chain = $false
+    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; connector_hosts = $false; postgresql = $true; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $true
 } -Services @('erp')
 
 Assert-ImpactCase -Name 'product-engineering-service-name' -Paths @('backend/services/Business/ProductEngineering/src/Release.cs') -Flags @{
-    backend = $true; business_gateway = $true
+    backend = $true; business_gateway = $true; erp_sales_order_demand = $false
 } -Services @('product-engineering')
 
+foreach ($erpService in @('Erp', 'DemandPlanning', 'MasterData')) {
+    Assert-ImpactCase -Name "erp-acceptance-service-$erpService" -Paths @("backend/services/Business/$erpService/src/ObservedChange.cs") -Flags @{
+        backend = $true; erp_sales_order_demand = $true
+    }
+}
+
 Assert-ImpactCase -Name 'common-contract-expansion' -Paths @('backend/common/Contracts/IntegrationEvents.cs') -Flags @{
-    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
 }
 
 foreach ($sharedCase in @(
@@ -187,6 +194,7 @@ foreach ($commonDirectory in $backendCommonDirectories) {
     Assert-ImpactFlag -Plan $plan -Name 'business_gateway' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'connector_hosts' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'full_chain' -Expected $true
+    Assert-ImpactFlag -Plan $plan -Name 'erp_sales_order_demand' -Expected $true
     Assert-Contract (@($plan.business_services).Count -gt 10) "Shared backend directory '$commonDirectory' must conservatively expand to every known business service."
 }
 
@@ -196,7 +204,19 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
 
 foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
     Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
-        backend = $true; openapi_codegen = $true; connector_hosts = $true
+        backend = $true; openapi_codegen = $true; connector_hosts = $true; erp_sales_order_demand = $true
+    }
+}
+
+foreach ($erpAcceptanceInput in @(
+        'NuGet.config',
+        'scripts/verify-erp-sales-order-demand-planning.ps1',
+        'scripts/lib/ScriptAutomation.ps1',
+        'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
+        'infra/docker-compose.dev.yml'
+    )) {
+    Assert-ImpactCase -Name "erp-acceptance-input-$([IO.Path]::GetFileName($erpAcceptanceInput))" -Paths @($erpAcceptanceInput) -Flags @{
+        erp_sales_order_demand = $true
     }
 }
 
@@ -235,7 +255,7 @@ Assert-ImpactCase -Name 'frontend-design-system' -Paths @('frontend/DESIGN/compo
 }
 
 Assert-ImpactCase -Name 'connector-hosts' -Paths @('connector-hosts/src/Host.cs') -Flags @{
-    connector_hosts = $true; backend = $false; frontend = $false
+    connector_hosts = $true; backend = $false; frontend = $false; erp_sales_order_demand = $false
 }
 
 Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gateway-openapi.ps1') -Flags @{
@@ -263,7 +283,7 @@ Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Busines
 } -Services @('scheduling')
 
 Assert-ImpactCase -Name 'full-chain-test' -Paths @('backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs') -Flags @{
-    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
 }
 
 Assert-ImpactCase -Name 'postgres-infra' -Paths @('infra/postgres/init.sql') -Flags @{
@@ -280,7 +300,8 @@ foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpa
             'backend', 'frontend', 'scripts', 'docs', 'connector_hosts', 'workflows', 'infra',
             'backend_contracts', 'backend_testing', 'backend_persistence', 'backend_messaging',
             'business_gateway', 'openapi_codegen', 'frontend_apps', 'frontend_packages',
-            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain'
+            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain',
+            'erp_sales_order_demand'
         )) {
         Assert-ImpactFlag -Plan $plan -Name $requiredFlag -Expected $true
     }
@@ -314,12 +335,14 @@ try {
         -StepSummaryPath $fixtureSummary | Out-Null
     $writtenPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
     Assert-ImpactFlag -Plan $writtenPlan -Name 'backend' -Expected $true
+    Assert-ImpactFlag -Plan $writtenPlan -Name 'erp_sales_order_demand' -Expected $true
     $writtenOutputs = @(Get-Content -LiteralPath $fixtureOutputs)
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'backend=true') 'GitHub output must serialize selected booleans as lowercase true.'
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
+    Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'erp_sales_order_demand=true') 'GitHub output must serialize the selected ERP acceptance signal.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -338,9 +361,29 @@ try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
             @{
-                Name = 'scalar-needs-unrouted-erp'
-                Original = "  erp-sales-order-demand-acceptance:`n    name: ERP Sales Order Demand Acceptance"
-                Replacement = "  erp-sales-order-demand-acceptance:`n    name: ERP Sales Order Demand Acceptance`n    needs: impact-plan"
+                Name = 'erp-drops-impact-dependency'
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}`n"
+            },
+            @{
+                Name = 'erp-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
+            },
+            @{
+                Name = 'erp-drops-cancellation-guard'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
+                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
+            },
+            @{
+                Name = 'erp-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.erp_sales_order_demand != 'false'"
+                Replacement = "needs.impact-plan.outputs.full_chain != 'false'"
+            },
+            @{
+                Name = 'erp-treats-missing-output-as-unselected'
+                Original = "needs.impact-plan.outputs.erp_sales_order_demand != 'false'"
+                Replacement = "needs.impact-plan.outputs.erp_sales_order_demand == 'true'"
             },
             @{
                 Name = 'connector-drops-impact-dependency'

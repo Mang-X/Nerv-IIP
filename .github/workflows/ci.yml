@@ -120,9 +120,9 @@ jobs:
   # run 的 wall clock。
   impact-plan:
     name: CI Impact Plan
-    # NERV-668 拆解③前两批让 Script Governance、OpenAPI Drift 与 Connector Host Tests 消费这些 outputs；
+    # NERV-668 拆解③前三批让 Script Governance、OpenAPI Drift、Connector Host Tests 与 ERP acceptance 消费这些 outputs；
     # NERV-688 的 PostgreSQL Provider Tests 消费 postgresql，NERV-685 PR②让 frontend jobs 消费 workspace 选择。
-    # 计划失败时四个直接条件 job 保守运行，frontend 聚合则失败关闭；ERP 与 Backend 仍不消费。
+    # 计划失败时五个直接条件 job 保守运行，frontend 聚合则失败关闭；Backend 仍不消费。
     # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
     # 预算只表达逐 step 上限。
     timeout-minutes: 15
@@ -148,6 +148,7 @@ jobs:
       postgresql: ${{ steps.plan.outputs.postgresql }}
       redis_cap: ${{ steps.plan.outputs.redis_cap }}
       full_chain: ${{ steps.plan.outputs.full_chain }}
+      erp_sales_order_demand: ${{ steps.plan.outputs.erp_sales_order_demand }}
       business_services: ${{ steps.plan.outputs.business_services }}
       plan_path: ${{ steps.plan.outputs.plan_path }}
       frontend_selected: ${{ steps.frontend-plan.outputs.frontend_selected }}
@@ -741,6 +742,9 @@ jobs:
     # 拉取预留额外余量。step 预算合计为 46m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 55
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
@@ -1246,6 +1250,7 @@ jobs:
       - impact-plan
       - backend-tests
       - postgres-provider-tests
+      - erp-sales-order-demand-acceptance
       - connector-host-tests
       - frontend-unit-tests
       - frontend
@@ -1257,15 +1262,22 @@ jobs:
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
           impact_result="${{ needs.impact-plan.result }}"
+          erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
           connector_result="${{ needs.connector-host-tests.result }}"
           script_governance_result="${{ needs.script-governance.result }}"
           openapi_result="${{ needs.openapi-client-drift.result }}"
           postgres_result="${{ needs.postgres-provider-tests.result }}"
+          erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
           postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
+          if [[ "$erp_selected" = "true" ]]; then
+            erp_policy="selected"
+          else
+            erp_policy="skipped by design"
+          fi
           if [[ "$connector_selected" = "true" ]]; then
             connector_policy="selected"
           else
@@ -1292,6 +1304,7 @@ jobs:
             echo
             echo "| Lane | Policy | Result |"
             echo "| --- | --- | --- |"
+            echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
             echo "| Connector Host Tests | $connector_policy | $connector_result |"
             echo "| Script Governance | $script_governance_policy | $script_governance_result |"
             echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
@@ -1302,6 +1315,11 @@ jobs:
           test "${{ needs.backend-tests.result }}" = "success"
           test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
+          if [[ "$erp_selected" = "true" ]]; then
+            test "$erp_result" = "success"
+          else
+            test "$erp_result" = "skipped"
+          fi
           if [[ "$connector_selected" = "true" ]]; then
             test "$connector_result" = "success"
           else
