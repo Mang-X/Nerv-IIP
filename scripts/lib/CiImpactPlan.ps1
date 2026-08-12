@@ -162,8 +162,12 @@ function Get-NervCiImpactPlan {
         }
 
         if ([string]::Equals($path, 'scripts/backend-test-shards.json', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/test-evidence-policy.json', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/run-backend-test-shard.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/verify-backend-test-shards.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/verify-backend-real-postgres-tests.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/verify-business-full-chain-acceptance.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/verify-business-performance-baseline.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/BackendTestShardSelectors.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/BackendTestShardDiagnostics.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/tests/backend-test-shards.Tests.ps1', [StringComparison]::Ordinal)) {

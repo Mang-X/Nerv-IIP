@@ -253,8 +253,12 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
 
 foreach ($backendFastLaneControlInput in @(
         'scripts/backend-test-shards.json',
+        'scripts/test-evidence-policy.json',
         'scripts/run-backend-test-shard.ps1',
         'scripts/verify-backend-test-shards.ps1',
+        'scripts/verify-backend-real-postgres-tests.ps1',
+        'scripts/verify-business-full-chain-acceptance.ps1',
+        'scripts/verify-business-performance-baseline.ps1',
         'scripts/lib/BackendTestShardSelectors.ps1',
         'scripts/lib/BackendTestShardDiagnostics.ps1',
         'scripts/tests/backend-test-shards.Tests.ps1'

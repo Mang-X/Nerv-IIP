@@ -1306,8 +1306,12 @@ else {
             $fastJobIds = @($fastShards | ForEach-Object { "backend-tests-$($_.id)" })
             $backendRoutingPolicy = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
             foreach ($routedJobId in @('backend-test-shard-governance') + $fastJobIds) {
-                $routedJob = $jobs.PSObject.Properties[$routedJobId].Value
-                if ($null -eq $routedJob) { continue }
+                $routedJobProperty = $jobs.PSObject.Properties[$routedJobId]
+                if ($null -eq $routedJobProperty) {
+                    $errors.Add("CI workflow is missing backend execution job '$routedJobId'.")
+                    continue
+                }
+                $routedJob = $routedJobProperty.Value
                 $routedNeeds = @($routedJob.needs | ForEach-Object { [string] $_ })
                 if ($routedNeeds.Count -ne 1 -or -not [string]::Equals($routedNeeds[0], 'impact-plan', [StringComparison]::Ordinal)) {
                     $errors.Add("Backend execution job '$routedJobId' must need exactly impact-plan.")

@@ -1171,6 +1171,11 @@ try {
     Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
     Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
 
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace("  backend-test-shard-governance:$([Environment]::NewLine)", "  backend-test-shard-governance-missing:$([Environment]::NewLine)")) -NoNewline
+    $missingGovernanceValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-governance-job' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $missingGovernanceValidation.Passed) 'A missing backend shard governance job must fail structured shard governance.'
+    Assert-Contract ($missingGovernanceValidation.Message.Contains("CI workflow is missing backend execution job 'backend-test-shard-governance'.", [StringComparison]::Ordinal)) 'Structured workflow validation must identify the missing backend shard governance job.'
+
     # The aggregate needs list is an exact job-identity set. U+00AD must not be folded into the
     # real platform job name by a culture-aware joined-string comparison.
     $platformNeed = '      - backend-tests-platform'
