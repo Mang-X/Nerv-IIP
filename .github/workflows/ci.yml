@@ -121,8 +121,8 @@ jobs:
   impact-plan:
     name: CI Impact Plan
     # NERV-668 拆解③前两批让 Script Governance、OpenAPI Drift 与 Connector Host Tests 消费这些 outputs；
-    # NERV-685 PR②同时让 frontend jobs 消费 workspace 选择，ERP 与 Backend 仍不消费。
-    # 计划失败时三个直接条件 job 保守运行，frontend 聚合则失败关闭。
+    # NERV-688 的 PostgreSQL Provider Tests 消费 postgresql，NERV-685 PR②让 frontend jobs 消费 workspace 选择。
+    # 计划失败时四个直接条件 job 保守运行，frontend 聚合则失败关闭；ERP 与 Backend 仍不消费。
     # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
     # 预算只表达逐 step 上限。
     timeout-minutes: 15

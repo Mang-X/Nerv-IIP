@@ -319,7 +319,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Connector Host Tests, Script Governance, and OpenAPI/api-client Drift', [StringComparison]::Ordinal)) 'Actions Summary must identify the NERV-668 routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -337,6 +337,11 @@ $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-wor
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
+            @{
+                Name = 'scalar-needs-unrouted-erp'
+                Original = "  erp-sales-order-demand-acceptance:`n    name: ERP Sales Order Demand Acceptance"
+                Replacement = "  erp-sales-order-demand-acceptance:`n    name: ERP Sales Order Demand Acceptance`n    needs: impact-plan"
+            },
             @{
                 Name = 'connector-drops-impact-dependency'
                 Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}`n"

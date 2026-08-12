@@ -191,7 +191,7 @@ fi
         $normalizedRun = $run.Replace("`r`n", "`n").TrimEnd()
         $normalizedExpectedRun = $expectedRun.Replace("`r`n", "`n").TrimEnd()
         if (-not [string]::Equals($normalizedRun, $normalizedExpectedRun, [StringComparison]::Ordinal)) {
-            $findings.Add('CI Summary must retain the governed fail-closed selected/skipped-by-design policy and audit table.')
+            $findings.Add('CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.')
         }
     }
     catch {
