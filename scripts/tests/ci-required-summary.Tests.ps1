@@ -84,7 +84,7 @@ try {
     Assert-Contract ($crlfFindings.Count -eq 0) "Required-summary governance must be independent of the library checkout line endings: $($crlfFindings -join '; ')"
 
     $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, OpenAPI Drift, and PostgreSQL Provider Tests exactly.'
-    $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design policy and audit table.'
+    $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
 
     $needLine = '      - impact-plan'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `
@@ -111,6 +111,16 @@ try {
         -Original $skippedAssertion -Replacement '            test "$openapi_result" = "success"' `
         -ExpectedDiagnostic $policyDiagnostic
 
+    $connectorSelectedAssertion = '            test "$connector_result" = "success"'
+    Invoke-Mutation -Name 'ci-summary-selected-connector-allows-skip' -Workflow $workflow `
+        -Original $connectorSelectedAssertion -Replacement '            test "$connector_result" = "skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    $connectorSkippedAssertion = '            test "$connector_result" = "skipped"'
+    Invoke-Mutation -Name 'ci-summary-unselected-connector-allows-success' -Workflow $workflow `
+        -Original $connectorSkippedAssertion -Replacement '            test "$connector_result" = "success"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
     Invoke-Mutation -Name 'ci-summary-postgres-selected-allows-skip' -Workflow $workflow `
         -Original '            test "$postgres_result" = "success"' -Replacement '            test "$postgres_result" = "skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
@@ -131,6 +141,11 @@ try {
     Invoke-Mutation -Name 'ci-summary-hides-skipped-by-design-audit' -Workflow $workflow `
         -Original '            script_governance_policy="skipped by design"' `
         -Replacement '            script_governance_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-connector-skipped-by-design-audit' -Workflow $workflow `
+        -Original '            connector_policy="skipped by design"' `
+        -Replacement '            connector_policy="skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-step-continue-on-error' -Workflow $workflow `
