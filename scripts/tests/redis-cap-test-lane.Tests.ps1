@@ -87,9 +87,9 @@ try {
     [void]$redisKeys.Add('concurrent:other-run-stream')
     [void]$redisKeys.Add("$($attempt1Identity.redisNamespace)SalesOrderChangedIntegrationEvent")
     Remove-NervRedisCapNamespace -Claim $claim -EnumerateKeys $enumerateNamespace -RemoveKey $removeNamespaceKey
-    Assert-Contract ($redisKeys.Contains('preexisting:shared-stream')) 'Namespace cleanup must preserve a pre-existing shared stream outside the claimed namespace.'
-    Assert-Contract ($redisKeys.Contains('concurrent:other-run-stream')) 'Namespace cleanup must preserve a key concurrently created by another run.'
-    Assert-Contract (-not $redisKeys.Contains("$($attempt1Identity.redisNamespace)SalesOrderChangedIntegrationEvent")) 'Namespace cleanup must remove the stream created inside the claimed namespace.'
+    Assert-Contract ([Linq.Enumerable]::Contains($redisKeys, 'preexisting:shared-stream', [StringComparer]::Ordinal)) 'Namespace cleanup must preserve a pre-existing shared stream outside the claimed namespace.'
+    Assert-Contract ([Linq.Enumerable]::Contains($redisKeys, 'concurrent:other-run-stream', [StringComparer]::Ordinal)) 'Namespace cleanup must preserve a key concurrently created by another run.'
+    Assert-Contract (-not [Linq.Enumerable]::Contains($redisKeys, "$($attempt1Identity.redisNamespace)SalesOrderChangedIntegrationEvent", [StringComparer]::Ordinal)) 'Namespace cleanup must remove the stream created inside the claimed namespace.'
 
     [void]$redisKeys.Add("$($attempt2Identity.redisNamespace)existing-stream")
     $existingNamespaceRejected = $false

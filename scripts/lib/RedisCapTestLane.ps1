@@ -48,12 +48,14 @@ function Get-NervRedisCapNamespaceKeys {
     }
 
     $keys = @(& $EnumerateKeys $Namespace | ForEach-Object { [string]$_ })
+    $uniqueKeys = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)
     foreach ($key in $keys) {
         if (-not $key.StartsWith($Namespace, [StringComparison]::Ordinal)) {
             throw "Redis/CAP namespace enumeration returned foreign key '$key' for '$Namespace'."
         }
+        [void]$uniqueKeys.Add($key)
     }
-    return @($keys | Sort-Object -Unique)
+    return @($uniqueKeys)
 }
 
 function New-NervRedisCapNamespaceClaim {
