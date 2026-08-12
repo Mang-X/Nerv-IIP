@@ -9,6 +9,84 @@
 #   Requires:
 #     - PowerShell 7
 
+function New-NervRedisCapMemberIdentity {
+    param(
+        [Parameter(Mandatory)] [string] $MemberId,
+        [Parameter(Mandatory)] [string] $CapVersionPrefix,
+        [Parameter(Mandatory)] [string] $DatabaseSuffix
+    )
+
+    if ($DatabaseSuffix -cnotmatch '_(?<attempt>[1-9][0-9]*)$') {
+        throw "Redis/CAP database suffix '$DatabaseSuffix' must end with an explicit positive run attempt."
+    }
+
+    $attemptToken = "a$($Matches.attempt)"
+    $identityInput = "$MemberId|$DatabaseSuffix"
+    $identityBytes = [Text.Encoding]::UTF8.GetBytes($identityInput)
+    $hashBytes = [Security.Cryptography.SHA256]::HashData($identityBytes)
+    $identityHash = [Convert]::ToHexString($hashBytes).ToLowerInvariant()
+    $hashToken = $identityHash.Substring(0, 8)
+    $prefixLength = 20 - $attemptToken.Length - $hashToken.Length - 2
+    if ($prefixLength -lt 1) { throw "Redis/CAP run attempt '$($Matches.attempt)' cannot fit the 20-character CAP version contract." }
+    $capPrefix = $CapVersionPrefix.Substring(0, [Math]::Min($CapVersionPrefix.Length, $prefixLength))
+
+    return [pscustomobject]@{
+        capVersion = "$capPrefix-$attemptToken-$hashToken"
+        redisNamespace = "nerv:n688:$($identityHash.Substring(0, 16)):"
+        runAttempt = [int]$Matches.attempt
+    }
+}
+
+function Get-NervRedisCapNamespaceKeys {
+    param(
+        [Parameter(Mandatory)] [string] $Namespace,
+        [Parameter(Mandatory)] [scriptblock] $EnumerateKeys
+    )
+
+    if ($Namespace -cnotmatch '^nerv:n688:[a-z0-9-]+:$') {
+        throw "Redis/CAP namespace '$Namespace' is not canonical."
+    }
+
+    $keys = @(& $EnumerateKeys $Namespace | ForEach-Object { [string]$_ })
+    foreach ($key in $keys) {
+        if (-not $key.StartsWith($Namespace, [StringComparison]::Ordinal)) {
+            throw "Redis/CAP namespace enumeration returned foreign key '$key' for '$Namespace'."
+        }
+    }
+    return @($keys | Sort-Object -Unique)
+}
+
+function New-NervRedisCapNamespaceClaim {
+    param(
+        [Parameter(Mandatory)] [string] $Namespace,
+        [Parameter(Mandatory)] [scriptblock] $EnumerateKeys
+    )
+
+    $existingKeys = @(Get-NervRedisCapNamespaceKeys -Namespace $Namespace -EnumerateKeys $EnumerateKeys)
+    if ($existingKeys.Count -ne 0) {
+        throw "Redis/CAP namespace '$Namespace' is not empty and cannot be claimed."
+    }
+
+    return [pscustomobject]@{ namespace = $Namespace }
+}
+
+function Remove-NervRedisCapNamespace {
+    param(
+        [Parameter(Mandatory)] [psobject] $Claim,
+        [Parameter(Mandatory)] [scriptblock] $EnumerateKeys,
+        [Parameter(Mandatory)] [scriptblock] $RemoveKey
+    )
+
+    $namespace = [string]$Claim.namespace
+    $ownedKeys = @(Get-NervRedisCapNamespaceKeys -Namespace $namespace -EnumerateKeys $EnumerateKeys)
+    foreach ($key in $ownedKeys) { & $RemoveKey $key }
+
+    $remainingKeys = @(Get-NervRedisCapNamespaceKeys -Namespace $namespace -EnumerateKeys $EnumerateKeys)
+    if ($remainingKeys.Count -ne 0) {
+        throw "Redis/CAP namespace '$namespace' cleanup left $($remainingKeys.Count) key(s)."
+    }
+}
+
 function Import-NervRedisCapTestLaneMember {
     param(
         [Parameter(Mandatory)] [string] $ManifestPath,
@@ -93,6 +171,8 @@ function Assert-NervRedisCapTestLaneSummary {
         if (-not [string]::Equals([string]$member.memberId, $selectedMemberId, [StringComparison]::Ordinal)) { throw "Redis/CAP lane member at index $index must be '$selectedMemberId' but was '$($member.memberId)'." }
         if (-not [string]::Equals([string]$member.outcome, 'passed', [StringComparison]::Ordinal)) { throw "Redis/CAP lane member '$selectedMemberId' has outcome '$($member.outcome)'." }
         if (-not [string]::Equals([string]$member.cleanup, 'passed', [StringComparison]::Ordinal)) { throw "Redis/CAP lane member '$selectedMemberId' has cleanup '$($member.cleanup)'." }
+        if ([string]$member.capVersion -cnotmatch '^[a-z][a-z0-9-]*-a[1-9][0-9]*-[0-9a-f]{8}$' -or ([string]$member.capVersion).Length -gt 20) { throw "Redis/CAP lane member '$selectedMemberId' has invalid CAP version '$($member.capVersion)'." }
+        if ([string]$member.redisNamespace -cnotmatch '^nerv:n688:[0-9a-f]{16}:$') { throw "Redis/CAP lane member '$selectedMemberId' has invalid Redis namespace '$($member.redisNamespace)'." }
         if ([int]$member.expected -le 0 -or [int]$member.discovered -ne [int]$member.expected) { throw "Redis/CAP lane member '$selectedMemberId' expected $($member.expected) tests but discovered $($member.discovered)." }
         if ([int]$member.passed -ne [int]$member.expected -or [int]$member.failed -ne 0 -or [int]$member.skipped -ne 0) { throw "Redis/CAP lane member '$selectedMemberId' expected $($member.expected) passed, 0 failed and 0 skipped; observed $($member.passed) passed, $($member.failed) failed and $($member.skipped) skipped." }
     }

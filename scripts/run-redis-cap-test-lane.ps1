@@ -7,7 +7,7 @@
 #     - The caller-owned TRX results directory and machine-readable lane summary
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Drops each job-scoped database and removes only Redis keys created by the selected member
+#     - Drops each job-scoped database and removes only keys in the selected member's claimed Redis namespace
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
@@ -72,8 +72,11 @@ function Invoke-RedisCli {
 }
 
 function Get-RedisKeys {
-    param([Parameter(Mandatory)] [string] $Name)
-    $scan = Invoke-RedisCli -Name $Name -Arguments @('--scan', '--pattern', '*')
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $Namespace
+    )
+    $scan = Invoke-RedisCli -Name $Name -Arguments @('--scan', '--pattern', "$Namespace*")
     return @($scan.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
@@ -116,6 +119,7 @@ $savedRedisCliAuth = [Environment]::GetEnvironmentVariable('REDISCLI_AUTH')
 if (-not [string]::IsNullOrWhiteSpace([string]$redisContext.password)) { [Environment]::SetEnvironmentVariable('REDISCLI_AUTH', [string]$redisContext.password) }
 $savedTestPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 $savedCapVersion = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION')
+$savedCapTopicPrefix = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX')
 $savedDatabaseLifecycle = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE')
 $summary = [ordered]@{ schemaVersion = 2; lane = 'redis-cap'; selectedMemberIds = @($MemberId); readiness = [ordered]@{ postgres = 'not-run'; redis = 'not-run' }; postgresVersion = ''; redisVersion = ''; expected = 0; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'not-run'; members = @() }
 $memberSummaries = [Collections.Generic.List[object]]::new()
@@ -135,20 +139,33 @@ try {
     foreach ($member in $selectedMembers) {
         $databaseName = "$([string]$member.databasePrefix)_$DatabaseSuffix"
         if ($databaseName.Length -gt 63) { throw "Database name for Redis/CAP lane member '$($member.id)' exceeds 63 characters." }
-        $capVersion = "$([string]$member.capVersionPrefix)-$($DatabaseSuffix.Replace('_', '-'))"
-        if ($capVersion.Length -gt 20) { $capVersion = $capVersion.Substring(0, 20) }
+        $memberIdentity = New-NervRedisCapMemberIdentity -MemberId ([string]$member.id) -CapVersionPrefix ([string]$member.capVersionPrefix) -DatabaseSuffix $DatabaseSuffix
+        $capVersion = [string]$memberIdentity.capVersion
+        $redisNamespace = [string]$memberIdentity.redisNamespace
         $memberResultsDirectory = Join-Path $ResultsDirectory ([string]$member.id)
-        $memberSummary = [ordered]@{ memberId = [string]$member.id; service = [string]$member.service; database = $databaseName; capVersion = $capVersion; expected = @($member.expectedTestIdentities).Count; discovered = 0; passed = 0; failed = 0; skipped = 0; diagnostics = $null; cleanup = 'not-run'; outcome = 'not-run' }
+        $memberSummary = [ordered]@{ memberId = [string]$member.id; service = [string]$member.service; database = $databaseName; capVersion = $capVersion; redisNamespace = $redisNamespace; expected = @($member.expectedTestIdentities).Count; discovered = 0; passed = 0; failed = 0; skipped = 0; diagnostics = $null; cleanup = 'not-run'; outcome = 'not-run' }
         $memberFailure = $null
         $databaseCreated = $false
-        $beforeKeys = @()
+        $namespaceClaim = $null
+        $enumerateNamespace = {
+            param([string] $namespace)
+            return @(Get-RedisKeys -Name "redis-cap-lane-$($member.id)-namespace-scan" -Namespace $namespace)
+        }.GetNewClosure()
+        $removeNamespaceKey = {
+            param([string] $key)
+            $unlinkResult = Invoke-RedisCli -Name "redis-cap-lane-$($member.id)-cleanup-key" -Arguments @('UNLINK', $key)
+            if (-not [string]::Equals($unlinkResult.Stdout.Trim(), '1', [StringComparison]::Ordinal)) {
+                throw "Redis/CAP cleanup did not remove owned key '$key'."
+            }
+        }.GetNewClosure()
         try {
-            $beforeKeys = @(Get-RedisKeys -Name "redis-cap-lane-$($member.id)-keys-before")
+            $namespaceClaim = New-NervRedisCapNamespaceClaim -Namespace $redisNamespace -EnumerateKeys $enumerateNamespace
             Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE `"$databaseName`"") -WorkingDirectory $repoRoot -Name "redis-cap-lane-$($member.id)-create-database" | Out-Null
             $databaseCreated = $true
             $targetConnection = "Host=$($parsed.values.host);Port=$($parsed.values.port);Database=$databaseName;Username=$($parsed.values.username);Password=$($parsed.values.password)"
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $targetConnection)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION', $capVersion)
+            [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX', $redisNamespace)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE', 'external')
             $discovery = Invoke-DotNetOutput -Name "redis-cap-lane-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
             $expectedIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($member.expectedTestIdentities), [StringComparer]::Ordinal)
@@ -181,11 +198,15 @@ try {
             catch { Write-Diagnostic -Level 'WARN' -Message "Redis/CAP member '$($member.id)' failure TRX could not be summarized: $($_.Exception.Message)" }
         }
         finally {
-            $afterKeys = @()
-            try { $afterKeys = @(Get-RedisKeys -Name "redis-cap-lane-$($member.id)-keys-after") }
-            catch { Write-Diagnostic -Level 'WARN' -Message "Redis/CAP member '$($member.id)' Redis keys could not be enumerated: $($_.Exception.Message)" }
-            $beforeKeySet = [Collections.Generic.HashSet[string]]::new([string[]]$beforeKeys, [StringComparer]::Ordinal)
-            $ownedKeys = @($afterKeys | Where-Object { -not $beforeKeySet.Contains([string]$_) })
+            $ownedKeys = @()
+            $namespaceEnumerated = $false
+            if ($null -ne $namespaceClaim) {
+                try {
+                    $ownedKeys = @(Get-NervRedisCapNamespaceKeys -Namespace $redisNamespace -EnumerateKeys $enumerateNamespace)
+                    $namespaceEnumerated = $true
+                }
+                catch { Write-Diagnostic -Level 'WARN' -Message "Redis/CAP member '$($member.id)' owned namespace could not be enumerated: $($_.Exception.Message)" }
+            }
             if ($null -ne $memberFailure) {
                 $diagnostics = [ordered]@{ postgres = $null; redis = $null }
                 if ($databaseCreated) {
@@ -197,25 +218,38 @@ try {
                     }
                     catch { $diagnostics.postgres = [ordered]@{ capture = 'failed'; message = Protect-ScriptAutomationText $_.Exception.Message } }
                 }
-                try { $diagnostics.redis = [ordered]@{ keys = $ownedKeys.Count; streams = @(Get-RedisStreamDiagnostics -Keys $ownedKeys -NamePrefix "redis-cap-lane-$($member.id)-redis-diagnostics") } }
+                try {
+                    if (-not $namespaceEnumerated) { throw "Owned Redis namespace '$redisNamespace' was not enumerated successfully." }
+                    $diagnostics.redis = [ordered]@{ namespace = $redisNamespace; keys = $ownedKeys.Count; streams = @(Get-RedisStreamDiagnostics -Keys $ownedKeys -NamePrefix "redis-cap-lane-$($member.id)-redis-diagnostics") }
+                }
                 catch { $diagnostics.redis = [ordered]@{ capture = 'failed'; message = Protect-ScriptAutomationText $_.Exception.Message } }
                 $memberSummary.diagnostics = $diagnostics
             }
-            try {
-                foreach ($ownedKey in $ownedKeys) { Invoke-RedisCli -Name "redis-cap-lane-$($member.id)-cleanup-key" -Arguments @('UNLINK', $ownedKey) | Out-Null }
-                if ($databaseCreated) {
+            $cleanupFailures = [Collections.Generic.List[string]]::new()
+            if ($null -eq $namespaceClaim) { $cleanupFailures.Add("Redis namespace '$redisNamespace' was not claimed.") }
+            elseif (-not $namespaceEnumerated) { $cleanupFailures.Add("Redis namespace '$redisNamespace' post-execution enumeration failed.") }
+            else {
+                try { Remove-NervRedisCapNamespace -Claim $namespaceClaim -EnumerateKeys $enumerateNamespace -RemoveKey $removeNamespaceKey }
+                catch { $cleanupFailures.Add($_.Exception.Message) }
+            }
+            if ($databaseCreated) {
+                try {
                     [Environment]::SetEnvironmentVariable('PGDATABASE', [string]$parsed.values.database)
                     Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "DROP DATABASE `"$databaseName`" WITH (FORCE)") -WorkingDirectory $repoRoot -Name "redis-cap-lane-$($member.id)-drop-database" | Out-Null
                 }
+                catch { $cleanupFailures.Add($_.Exception.Message) }
+            }
+            if ($cleanupFailures.Count -eq 0) {
                 $memberSummary.cleanup = 'passed'
             }
-            catch {
+            else {
                 $memberSummary.cleanup = 'failed'
                 $memberSummary.outcome = 'failed'
-                if ($null -eq $memberFailure) { $memberFailure = $_ }
+                if ($null -eq $memberFailure) { $memberFailure = [InvalidOperationException]::new(($cleanupFailures -join ' ')) }
             }
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedTestPostgres)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION', $savedCapVersion)
+            [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX', $savedCapTopicPrefix)
             [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE', $savedDatabaseLifecycle)
             $memberSummaries.Add([pscustomobject]$memberSummary)
         }
@@ -228,6 +262,7 @@ finally {
     [Environment]::SetEnvironmentVariable('REDISCLI_AUTH', $savedRedisCliAuth)
     [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', $savedTestPostgres)
     [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_VERSION', $savedCapVersion)
+    [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_CAP_TOPIC_PREFIX', $savedCapTopicPrefix)
     [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_DATABASE_LIFECYCLE', $savedDatabaseLifecycle)
     $summary.members = @($memberSummaries)
     foreach ($memberSummary in $memberSummaries) {

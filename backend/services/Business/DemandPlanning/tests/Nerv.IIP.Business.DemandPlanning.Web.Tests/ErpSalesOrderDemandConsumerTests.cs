@@ -95,7 +95,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             ["Messaging:Redis:ConnectionString"] = redisConnectionString,
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
-        var topicNamePrefix = $"man517-retry-{Guid.NewGuid():N}";
+        var topicNamePrefix = RedisCapTopicNamePrefix("fallback");
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddMediatR(options => options.RegisterServicesFromAssembly(typeof(Program).Assembly));
@@ -438,6 +438,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
                 ["Messaging:Redis:ConnectionString"] = redisConnectionString,
                 ["ConnectionStrings:Redis"] = redisConnectionString,
                 ["Cap:Version"] = RedisCapVersion("man517"),
+                ["Cap:TopicNamePrefix"] = RedisCapTopicNamePrefix("transport"),
                 ["InternalService:BearerToken"] = "test-internal-token",
             };
             foreach (var (key, value) in settings)
@@ -470,6 +471,17 @@ public sealed class ErpSalesOrderDemandConsumerTests
         }
 
         return $"{fallbackPrefix}-{Guid.NewGuid():N}"[..20];
+    }
+
+    private static string RedisCapTopicNamePrefix(string testSegment)
+    {
+        var configured = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_TOPIC_PREFIX");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return $"{configured}{testSegment}:";
+        }
+
+        return $"man517-{testSegment}-{Guid.NewGuid():N}:";
     }
 
     private static SalesOrderReleasedIntegrationEvent Released(int version, decimal quantity, string lineNo) =>

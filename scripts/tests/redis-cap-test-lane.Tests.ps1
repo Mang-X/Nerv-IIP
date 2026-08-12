@@ -55,9 +55,83 @@ try {
     Assert-Contract ([string]::Equals((@($member.expectedTestIdentities) -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Redis/CAP pilot must freeze exactly the two transport identities in ordinal order.'
     Assert-Contract ([string]::Equals((@($member.diagnosticSchemas) -join '|'), 'demand_planning|cap', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must restrict PostgreSQL diagnostics to the production demand_planning and CAP schemas.'
 
-    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
-    Assert-Contract ($runnerContent.Contains('Get-RedisStreamDiagnostics -Keys $ownedKeys', [StringComparison]::Ordinal)) 'Redis failure diagnostics must inspect only keys created by the governed member.'
-    Assert-Contract (-not $runnerContent.Contains('Get-RedisStreamDiagnostics -Keys $afterKeys', [StringComparison]::Ordinal)) 'Redis failure diagnostics must not inspect keys that predated the governed member.'
+    $attempt1Identity = New-NervRedisCapMemberIdentity `
+        -MemberId 'demandplanning-sales-order-redis-cap' `
+        -CapVersionPrefix 'n688-dp' `
+        -DatabaseSuffix '31617004968_1'
+    $attempt2Identity = New-NervRedisCapMemberIdentity `
+        -MemberId 'demandplanning-sales-order-redis-cap' `
+        -CapVersionPrefix 'n688-dp' `
+        -DatabaseSuffix '31617004968_2'
+    Assert-Contract ([string]::Equals([string]$attempt1Identity.capVersion, 'n688-dp-a1-4a87964a', [StringComparison]::Ordinal)) 'Attempt 1 CAP version must retain the explicit attempt and a hash of the complete member/run/attempt input.'
+    Assert-Contract ([string]::Equals([string]$attempt2Identity.capVersion, 'n688-dp-a2-0e3b4c73', [StringComparison]::Ordinal)) 'Attempt 2 CAP version must retain the explicit attempt and a hash of the complete member/run/attempt input.'
+    Assert-Contract ($attempt1Identity.capVersion.Length -le 20 -and $attempt2Identity.capVersion.Length -le 20) 'Derived CAP versions must remain within CAP group version limits.'
+    Assert-Contract (-not [string]::Equals([string]$attempt1Identity.capVersion, [string]$attempt2Identity.capVersion, [StringComparison]::Ordinal)) 'Rerun attempts for one real run id must not collide in CAP version.'
+    Assert-Contract ([string]::Equals([string]$attempt1Identity.redisNamespace, 'nerv:n688:4a87964a1f645a47:', [StringComparison]::Ordinal)) 'Attempt 1 Redis namespace must be the frozen digest-derived member/run/attempt namespace.'
+    Assert-Contract ([string]::Equals([string]$attempt2Identity.redisNamespace, 'nerv:n688:0e3b4c733bec65b3:', [StringComparison]::Ordinal)) 'Attempt 2 Redis namespace must be independently derived from the complete input.'
+
+    $redisKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    [void]$redisKeys.Add('preexisting:shared-stream')
+    $enumerateNamespace = {
+        param([string] $namespace)
+        return @($redisKeys | Where-Object { $_.StartsWith($namespace, [StringComparison]::Ordinal) })
+    }.GetNewClosure()
+    $removeNamespaceKey = {
+        param([string] $key)
+        if (-not $redisKeys.Remove($key)) { throw "Key '$key' was not present for removal." }
+    }.GetNewClosure()
+    $claim = New-NervRedisCapNamespaceClaim -Namespace $attempt1Identity.redisNamespace -EnumerateKeys $enumerateNamespace
+    [void]$redisKeys.Add('concurrent:other-run-stream')
+    [void]$redisKeys.Add("$($attempt1Identity.redisNamespace)SalesOrderChangedIntegrationEvent")
+    Remove-NervRedisCapNamespace -Claim $claim -EnumerateKeys $enumerateNamespace -RemoveKey $removeNamespaceKey
+    Assert-Contract ($redisKeys.Contains('preexisting:shared-stream')) 'Namespace cleanup must preserve a pre-existing shared stream outside the claimed namespace.'
+    Assert-Contract ($redisKeys.Contains('concurrent:other-run-stream')) 'Namespace cleanup must preserve a key concurrently created by another run.'
+    Assert-Contract (-not $redisKeys.Contains("$($attempt1Identity.redisNamespace)SalesOrderChangedIntegrationEvent")) 'Namespace cleanup must remove the stream created inside the claimed namespace.'
+
+    [void]$redisKeys.Add("$($attempt2Identity.redisNamespace)existing-stream")
+    $existingNamespaceRejected = $false
+    try { New-NervRedisCapNamespaceClaim -Namespace $attempt2Identity.redisNamespace -EnumerateKeys $enumerateNamespace | Out-Null }
+    catch { $existingNamespaceRejected = $_.Exception.Message.Contains('is not empty', [StringComparison]::Ordinal) }
+    Assert-Contract $existingNamespaceRejected 'A pre-existing stream in the exact namespace must reject the claim rather than being appended to or deleted.'
+
+    $beforeScanRejected = $false
+    try { New-NervRedisCapNamespaceClaim -Namespace 'nerv:n688:before-failure:' -EnumerateKeys { throw 'before scan failed' } | Out-Null }
+    catch { $beforeScanRejected = $_.Exception.Message.Contains('before scan failed', [StringComparison]::Ordinal) }
+    Assert-Contract $beforeScanRejected 'A namespace claim scan failure must fail closed.'
+
+    $afterScanState = [pscustomobject]@{ calls = 0 }
+    $afterScan = {
+        param([string] $namespace)
+        $afterScanState.calls++
+        if ($afterScanState.calls -eq 1) { return @() }
+        throw 'after scan failed'
+    }.GetNewClosure()
+    $afterScanClaim = New-NervRedisCapNamespaceClaim -Namespace 'nerv:n688:after-failure:' -EnumerateKeys $afterScan
+    $afterScanRejected = $false
+    try { Remove-NervRedisCapNamespace -Claim $afterScanClaim -EnumerateKeys $afterScan -RemoveKey { param([string] $key) } }
+    catch { $afterScanRejected = $_.Exception.Message.Contains('after scan failed', [StringComparison]::Ordinal) }
+    Assert-Contract $afterScanRejected 'A post-execution namespace enumeration failure must make cleanup fail.'
+
+    $verificationKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $verificationState = [pscustomobject]@{ calls = 0 }
+    $verificationScan = {
+        param([string] $namespace)
+        $verificationState.calls++
+        if ($verificationState.calls -eq 1) { return @() }
+        if ($verificationState.calls -eq 2) { return @($verificationKeys) }
+        throw 'cleanup verification scan failed'
+    }.GetNewClosure()
+    $verificationClaim = New-NervRedisCapNamespaceClaim -Namespace 'nerv:n688:verify-failure:' -EnumerateKeys $verificationScan
+    [void]$verificationKeys.Add('nerv:n688:verify-failure:stream')
+    $verificationRejected = $false
+    try {
+        Remove-NervRedisCapNamespace -Claim $verificationClaim -EnumerateKeys $verificationScan -RemoveKey {
+            param([string] $key)
+            [void]$verificationKeys.Remove($key)
+        }.GetNewClosure()
+    }
+    catch { $verificationRejected = $_.Exception.Message.Contains('cleanup verification scan failed', [StringComparison]::Ordinal) }
+    Assert-Contract $verificationRejected 'A cleanup verification scan failure must fail closed even after owned keys were removed.'
 
     $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
     $manifest.members[0].expectedTestIdentities = @($manifest.members[0].expectedTestIdentities | Select-Object -First 1)
@@ -86,6 +160,8 @@ try {
 
     $passedSummary = [pscustomobject]@{
         memberId = 'demandplanning-sales-order-redis-cap'
+        capVersion = $attempt1Identity.capVersion
+        redisNamespace = $attempt1Identity.redisNamespace
         outcome = 'passed'
         cleanup = 'passed'
         expected = 2
@@ -100,6 +176,8 @@ try {
         Assert-NervRedisCapTestLaneSummary -SelectedMemberIds @('demandplanning-sales-order-redis-cap') -MemberSummaries @(
             [pscustomobject]@{
                 memberId = 'demandplanning-sales-order-redis-cap'
+                capVersion = $attempt1Identity.capVersion
+                redisNamespace = $attempt1Identity.redisNamespace
                 outcome = 'passed'
                 cleanup = 'failed'
                 expected = 2
