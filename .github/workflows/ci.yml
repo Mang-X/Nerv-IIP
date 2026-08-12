@@ -20,7 +20,8 @@ jobs:
   # “保护证据”仅适用于有证据可保护的地方：
   #
   #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
-  #      erp-sales-order-demand-acceptance 和 connector-host-tests：
+  #      erp-sales-order-demand-acceptance、connector-host-tests 和
+  #      frontend-unit-tests：
   #          sum(step timeout-minutes) < job timeout-minutes.
   #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
   #      连同 MAN-661 test-evidence 产物一起中断；step 级超时只会使该
@@ -727,6 +728,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  frontend-unit-tests:
+    name: Frontend Unit Tests
+    # 层级 A。测试失败后仍必须上传已经生成的 JUnit/JSON，因此 job 预算必须
+    # 严格大于全部显式 step 预算：3 + 3 + 5 + 12 + 20 + 5 = 48m < 55m，
+    # 留出 7m 给 GitHub 隐式 setup/post step。workspace:test 显式禁用任务缓存，
+    # 避免 required lane 重放历史绿色日志而没有真实执行测试或生成本次证据。
+    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Setup Node.js
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        timeout-minutes: 12
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Test frontend workspace
+        timeout-minutes: 20
+        run: >-
+          pnpm -C frontend test
+          --reporter=default
+          --reporter=junit
+          --reporter=json
+          --outputFile.junit=artifacts/test-results/junit.xml
+          --outputFile.json=artifacts/test-results/results.json
+          --slowTestThreshold=1000
+
+      - name: Upload frontend unit test evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-test-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/apps/*/artifacts/test-results/*.xml
+            frontend/apps/*/artifacts/test-results/*.json
+            frontend/packages/*/artifacts/test-results/*.xml
+            frontend/packages/*/artifacts/test-results/*.json
+          if-no-files-found: error
+          retention-days: 14
+
   frontend:
     name: Frontend Typecheck and Build
     # 层级 B（失败后没有 step 运行）。观测最大值为 4.9m / 平均值为 4.4m；20m job 预算是
@@ -932,6 +989,7 @@ jobs:
     needs:
       - backend-tests
       - connector-host-tests
+      - frontend-unit-tests
       - frontend
       - script-governance
     steps:
@@ -941,5 +999,6 @@ jobs:
         run: |
           test "${{ needs.backend-tests.result }}" = "success"
           test "${{ needs.connector-host-tests.result }}" = "success"
+          test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
           test "${{ needs.script-governance.result }}" = "success"

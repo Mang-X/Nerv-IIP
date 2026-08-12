@@ -3,13 +3,24 @@ import { describe, expect, it } from 'vitest'
 
 import { projectTelemetryHistory } from '@/components/equipment/telemetryHistoryPresentation'
 
+const sampleOccurredAt = '2026-07-02T07:30:00.000Z'
+const sampleLocalTime = new Intl.DateTimeFormat('zh-CN', {
+  day: '2-digit',
+  hour: '2-digit',
+  hour12: false,
+  minute: '2-digit',
+  month: '2-digit',
+})
+  .formatToParts(new Date(sampleOccurredAt))
+  .reduce<Record<string, string>>((parts, part) => ({ ...parts, [part.type]: part.value }), {})
+
 const items = [
   {
     itemType: 'sample',
     deviceAssetId: 'DEV-CNC-01',
     tagKey: 'temperature',
     value: '87.5',
-    occurredAtUtc: '2026-07-02T07:30:00.000Z',
+    occurredAtUtc: sampleOccurredAt,
   },
   {
     itemType: 'state',
@@ -39,7 +50,11 @@ describe('telemetry history presentation', () => {
     const result = projectTelemetryHistory(items)
 
     expect(result.chartData).toEqual([
-      { occurredAt: '2026-07-02T07:30:00.000Z', time: '07/02 15:30', value: 87.5 },
+      {
+        occurredAt: sampleOccurredAt,
+        time: `${sampleLocalTime.month}/${sampleLocalTime.day} ${sampleLocalTime.hour}:${sampleLocalTime.minute}`,
+        value: 87.5,
+      },
     ])
     expect(result.statistics).toEqual({
       basis: 'sample',
@@ -47,7 +62,7 @@ describe('telemetry history presentation', () => {
       latest: 87.5,
       maximum: 87.5,
       minimum: 87.5,
-      lastSampleAtUtc: '2026-07-02T07:30:00.000Z',
+      lastSampleAtUtc: sampleOccurredAt,
     })
     expect(result.excludedAggregateCount).toBe(1)
   })

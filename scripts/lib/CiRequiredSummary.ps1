@@ -45,7 +45,7 @@ function Get-NervCiRequiredSummaryFindings {
     )
 
     $findings = [Collections.Generic.List[string]]::new()
-    $expectedNeeds = @('backend-tests', 'connector-host-tests', 'frontend', 'script-governance')
+    $expectedNeeds = @('backend-tests', 'connector-host-tests', 'frontend-unit-tests', 'frontend', 'script-governance')
 
     try {
         $workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $RepositoryRoot
@@ -69,7 +69,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need exactly the four current required CI jobs.')
+            $findings.Add('CI Summary must need exactly the five current required CI jobs.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'

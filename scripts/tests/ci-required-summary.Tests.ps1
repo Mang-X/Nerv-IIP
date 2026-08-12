@@ -78,7 +78,7 @@ try {
     $needLine = '      - connector-host-tests'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `
         -Original "$needLine$([Environment]::NewLine)" -Replacement '' `
-        -ExpectedDiagnostic 'CI Summary must need exactly the four current required CI jobs.'
+        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
 
     Invoke-Mutation -Name 'ci-summary-not-always' -Workflow $workflow `
         -Original "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)    timeout-minutes: 5$([Environment]::NewLine)    runs-on: ubuntu-latest$([Environment]::NewLine)    if: always()" `
@@ -88,7 +88,7 @@ try {
     Invoke-Mutation -Name 'ci-summary-missing-job' -Workflow $workflow `
         -Original "  connector-host-tests:$([Environment]::NewLine)" `
         -Replacement "  connector-host-tests-missing:$([Environment]::NewLine)" `
-        -ExpectedDiagnostic 'CI Summary must need exactly the four current required CI jobs.'
+        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
 
     $strictAssertion = '          test "${{ needs.connector-host-tests.result }}" = "success"'
     Invoke-Mutation -Name 'ci-summary-noop' -Workflow $workflow `

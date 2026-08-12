@@ -45,6 +45,59 @@ function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
     Assert-True ([string]::Equals([string]($actual), [string]($expected), [StringComparison]::Ordinal)) "Violation code set mismatch at line $callerLine. Expected=[$expected] Actual=[$actual]"
 }
 
+function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
+    $findings = [Collections.Generic.List[string]]::new()
+    $job = @($Jobs | Where-Object { [string]::Equals([string]$_.Name, 'frontend-unit-tests', [StringComparison]::Ordinal) })
+    if ($job.Count -ne 1) {
+        $findings.Add('frontend-unit-job')
+        return ,$findings.ToArray()
+    }
+
+    $testStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Test frontend workspace', [StringComparison]::Ordinal) })
+    if ($testStep.Count -ne 1) {
+        $findings.Add('frontend-unit-test-step')
+    }
+    else {
+        $requiredRunTokens = @(
+            'pnpm -C frontend test',
+            '--reporter=default',
+            '--reporter=junit',
+            '--reporter=json',
+            '--outputFile.junit=artifacts/test-results/junit.xml',
+            '--outputFile.json=artifacts/test-results/results.json')
+        if ($null -ne $testStep[0].Condition) { $findings.Add('frontend-unit-test-condition') }
+        if ([string]::IsNullOrWhiteSpace([string]$testStep[0].Run) -or
+            @($requiredRunTokens | Where-Object { -not $testStep[0].Run.Contains($_, [StringComparison]::Ordinal) }).Count -gt 0) {
+            $findings.Add('frontend-unit-test-command')
+        }
+        if ([string]$testStep[0].Run -match '[|]') { $findings.Add('frontend-unit-test-pipeline') }
+        if ([string]$testStep[0].Run -match 'dangerouslyIgnoreUnhandledErrors') { $findings.Add('frontend-unit-test-unhandled-errors') }
+    }
+
+    $uploadStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Upload frontend unit test evidence', [StringComparison]::Ordinal) })
+    if ($uploadStep.Count -ne 1) {
+        $findings.Add('frontend-unit-upload-step')
+    }
+    else {
+        if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
+        if (-not $uploadStep[0].AlwaysRuns) { $findings.Add('frontend-unit-upload-condition') }
+        $uploadPaths = @(([string]$uploadStep[0].With['path']).Split("`n", [StringSplitOptions]::RemoveEmptyEntries))
+        $expectedUploadPaths = @(
+            'frontend/apps/*/artifacts/test-results/*.xml',
+            'frontend/apps/*/artifacts/test-results/*.json',
+            'frontend/packages/*/artifacts/test-results/*.xml',
+            'frontend/packages/*/artifacts/test-results/*.json')
+        $uploadPathSet = [Collections.Generic.HashSet[string]]::new([string[]]$uploadPaths, [StringComparer]::Ordinal)
+        if ($uploadPaths.Count -ne $expectedUploadPaths.Count -or
+            @($expectedUploadPaths | Where-Object { -not $uploadPathSet.Contains($_) }).Count -gt 0) {
+            $findings.Add('frontend-unit-upload-path')
+        }
+        if (-not [string]::Equals([string]$uploadStep[0].With['if-no-files-found'], 'error', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-missing-evidence') }
+    }
+
+    return ,$findings.ToArray()
+}
+
 function Invoke-TestPwshScript {
     param(
         [Parameter(Mandatory)] [string] $ScriptPath,
@@ -1496,6 +1549,7 @@ finally {
 }
 
 $workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
+$frontendPackage = Get-Content (Join-Path $repoRoot 'frontend/package.json') -Raw
 $compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
 if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
@@ -1538,6 +1592,74 @@ Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($lan
 Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Connector artifact identity mismatch.'
 Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
 Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
+
+$workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$ciJobs = Get-NervCiWorkflowBudgets -Path $workflowPath
+$frontendUnitStart = $workflow.IndexOf("  frontend-unit-tests:`n", [StringComparison]::Ordinal)
+$frontendBuildStart = $workflow.IndexOf("  frontend:`n", [StringComparison]::Ordinal)
+Assert-True ($frontendUnitStart -ge 0 -and $frontendUnitStart -lt $frontendBuildStart) 'Frontend Unit Tests must be a dedicated job before the existing frontend build job.'
+Assert-Equal 0 (Get-NervFrontendUnitWorkflowFindings -Jobs $ciJobs).Count 'Frontend unit-test workflow contract findings remain.'
+Assert-True ($workflow.Contains('name: Frontend Typecheck and Build', [StringComparison]::Ordinal)) 'The existing frontend required-check identity must remain stable.'
+Assert-True ($frontendPackage.Contains('"test": "vp run --no-cache -w workspace:test"', [StringComparison]::Ordinal)) 'The workspace test task must execute rather than replay a cached green result.'
+
+$frontendUnitFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-frontend-unit-workflow-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($frontendUnitFixtureRoot) | Out-Null
+    $frontendUnitFixture = @'
+jobs:
+  frontend-unit-tests:
+    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test frontend workspace
+        timeout-minutes: 20
+        run: >-
+          pnpm -C frontend test
+          --reporter=default
+          --reporter=junit
+          --reporter=json
+          --outputFile.junit=artifacts/test-results/junit.xml
+          --outputFile.json=artifacts/test-results/results.json
+      - name: Upload frontend unit test evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          path: |
+            frontend/apps/*/artifacts/test-results/*.xml
+            frontend/apps/*/artifacts/test-results/*.json
+            frontend/packages/*/artifacts/test-results/*.xml
+            frontend/packages/*/artifacts/test-results/*.json
+          if-no-files-found: error
+'@
+    $frontendUnitMutations = @(
+        @{ Name = 'job-renamed'; Old = '  frontend-unit-tests:'; New = '  frontend-unit-tests-missing:'; Expected = 'frontend-unit-job' },
+        @{ Name = 'test-step-renamed'; Old = '      - name: Test frontend workspace'; New = '      - name: Test frontend workspace missing'; Expected = 'frontend-unit-test-step' },
+        @{ Name = 'test-step-conditioned'; Old = "      - name: Test frontend workspace`n        timeout-minutes: 20"; New = "      - name: Test frontend workspace`n        if: success()`n        timeout-minutes: 20"; Expected = 'frontend-unit-test-condition' },
+        @{ Name = 'junit-reporter-removed'; Old = "          --reporter=junit`n"; New = ''; Expected = 'frontend-unit-test-command' },
+        @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend test'; New = '          pnpm -C frontend test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
+        @{ Name = 'unhandled-errors-ignored'; Old = '          --reporter=default'; New = "          --reporter=default`n          --dangerouslyIgnoreUnhandledErrors"; Expected = 'frontend-unit-test-unhandled-errors' },
+        @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test evidence'; New = '      - name: Upload frontend unit test evidence missing'; Expected = 'frontend-unit-upload-step' },
+        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v4'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
+        @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
+        @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
+        @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' },
+        @{ Name = 'missing-evidence-warned'; Old = '          if-no-files-found: error'; New = '          if-no-files-found: warn'; Expected = 'frontend-unit-upload-missing-evidence' }
+    )
+
+    foreach ($mutation in $frontendUnitMutations) {
+        Assert-Equal 1 ([regex]::Matches($frontendUnitFixture, [regex]::Escape($mutation.Old)).Count) "Frontend unit mutation '$($mutation.Name)' must target exactly one location."
+        $fixturePath = Join-Path $frontendUnitFixtureRoot "$($mutation.Name).yml"
+        [IO.File]::WriteAllText($fixturePath, $frontendUnitFixture.Replace($mutation.Old, $mutation.New), [Text.UTF8Encoding]::new($false))
+        $findings = @(Get-NervFrontendUnitWorkflowFindings -Jobs (Get-NervCiWorkflowBudgets -Path $fixturePath))
+        Assert-Equal 1 $findings.Count "Frontend unit mutation '$($mutation.Name)' must report exactly one finding."
+        Assert-True ([string]::Equals([string]$findings[0], [string]$mutation.Expected, [StringComparison]::Ordinal)) "Frontend unit mutation '$($mutation.Name)' must report only '$($mutation.Expected)'."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $frontendUnitFixtureRoot) { Remove-Item -LiteralPath $frontendUnitFixtureRoot -Recurse -Force }
+}
+Assert-True (-not (Test-Path -LiteralPath $frontendUnitFixtureRoot)) 'Frontend unit workflow fixtures must be cleaned up.'
 foreach ($laneContract in @(
     @{ Test = '- name: Test BusinessGateway shard'; Collect = '- name: Collect BusinessGateway shard evidence'; Upload = '- name: Upload BusinessGateway shard evidence' },
     @{ Test = '- name: Test platform shard'; Collect = '- name: Collect platform shard evidence'; Upload = '- name: Upload platform shard evidence' },
@@ -1560,13 +1682,11 @@ foreach ($laneContract in @(
 # Evidence collection is only reachable if the job survives long enough to run its `if: always()`
 # steps. These assertions are the enforcement the governance document promises; without them the
 # invariant survives only as a comment and the next added step silently breaks it.
-$workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
-$ciJobs = Get-NervCiWorkflowBudgets -Path $workflowPath
 $ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
 Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
 
 $evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
-Assert-True ($evidenceJobs.Count -ge 6) "Expected at least six evidence-publishing CI jobs; found $($evidenceJobs.Count)."
+Assert-True ($evidenceJobs.Count -ge 7) "Expected at least seven evidence-publishing CI jobs; found $($evidenceJobs.Count)."
 # MAN-669 moved the backend evidence face off the single `backend-tests` job onto the four fast
 # shards; `backend-tests` is now the test-free aggregate and publishes nothing. Naming the shards
 # individually is deliberate — a count-only assertion would stay green if a shard silently stopped
@@ -1577,7 +1697,8 @@ foreach ($expectedEvidenceJob in @(
         'backend-tests-business-core-a',
         'backend-tests-business-core-b',
         'connector-host-tests',
-        'erp-sales-order-demand-acceptance')) {
+        'erp-sales-order-demand-acceptance',
+        'frontend-unit-tests')) {
     Assert-True (@($evidenceJobs | Where-Object { [string]::Equals([string]$_.Name, [string]($expectedEvidenceJob), [StringComparison]::OrdinalIgnoreCase) }).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
 }
 

@@ -117,6 +117,12 @@ function Get-NervCiWorkflowBudgets {
                 TimeoutMinutes = $null
                 Condition = $null
                 AlwaysRuns = $false
+                Uses = $null
+                Run = $null
+                With = [ordered]@{}
+                NestedMapping = $null
+                NestedScalarKey = $null
+                BlockProperty = $null
             }
             $currentJob.Steps.Add($currentStep)
             $rest = $Matches.rest
@@ -125,9 +131,48 @@ function Get-NervCiWorkflowBudgets {
         }
 
         # Step mapping keys sit at exactly 8 spaces; anything deeper belongs to a nested mapping
-        # (`with:`) or a block scalar (`run: |`) and is not a step property.
+        # (`with:`) or a block scalar (`run: |`). Those values are retained on the owning step so
+        # evidence contracts can verify relationships rather than unrelated tokens in one job.
         if ($indent -eq 8 -and $null -ne $currentStep) {
+            $currentStep.NestedMapping = $null
+            $currentStep.NestedScalarKey = $null
+            $currentStep.BlockProperty = $null
+            if ($line.Trim() -match '^with:\s*$') {
+                $currentStep.NestedMapping = 'With'
+                continue
+            }
             Set-NervCiWorkflowStepProperty -Step $currentStep -Text $line.Trim()
+            continue
+        }
+
+        if ($indent -ge 10 -and $null -ne $currentStep) {
+            if ([string]::Equals([string]$currentStep.BlockProperty, 'Run', [StringComparison]::Ordinal)) {
+                $runLine = $line.Trim()
+                $currentStep.Run = if ([string]::IsNullOrEmpty([string]$currentStep.Run)) { $runLine } else { "$($currentStep.Run)`n$runLine" }
+                continue
+            }
+
+            if ([string]::Equals([string]$currentStep.NestedMapping, 'With', [StringComparison]::Ordinal)) {
+                if ($indent -eq 10 -and $line.Trim() -match '^(?<key>[A-Za-z0-9_.-]+):\s*(?<value>.*)$') {
+                    $key = $Matches.key
+                    $value = $Matches.value.Trim()
+                    if ($value -match '^[>|][0-9]*[+-]?[0-9]*$') {
+                        $currentStep.With[$key] = ''
+                        $currentStep.NestedScalarKey = $key
+                    }
+                    else {
+                        $currentStep.With[$key] = $value
+                        $currentStep.NestedScalarKey = $null
+                    }
+                    continue
+                }
+
+                if ($indent -ge 12 -and -not [string]::IsNullOrEmpty([string]$currentStep.NestedScalarKey)) {
+                    $key = [string]$currentStep.NestedScalarKey
+                    $valueLine = $line.Trim()
+                    $currentStep.With[$key] = if ([string]::IsNullOrEmpty([string]$currentStep.With[$key])) { $valueLine } else { "$($currentStep.With[$key])`n$valueLine" }
+                }
+            }
         }
     }
 
@@ -190,6 +235,23 @@ function Set-NervCiWorkflowStepProperty {
     if ($Text -match '^if:\s*(?<value>.*)$') {
         $Step.Condition = $Matches.value.Trim()
         $Step.AlwaysRuns = Test-NervCiWorkflowConditionRunsAfterFailure -Condition $Matches.value
+        return
+    }
+
+    if ($Text -match '^uses:\s*(?<value>.+?)\s*$') {
+        $Step.Uses = $Matches.value
+        return
+    }
+
+    if ($Text -match '^run:\s*(?<value>.*)$') {
+        $value = $Matches.value.Trim()
+        if ($value -match '^[>|][0-9]*[+-]?[0-9]*$') {
+            $Step.Run = ''
+            $Step.BlockProperty = 'Run'
+        }
+        else {
+            $Step.Run = $value
+        }
     }
 }
 
