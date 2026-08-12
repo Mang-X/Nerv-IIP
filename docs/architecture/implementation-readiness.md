@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## CI Required Summary 骨架（NERV-668 / #1235，拆解①）
+
+`.github/workflows/ci.yml` 已新增稳定展示名 `CI Summary` 的聚合 job。它以静态 `needs` 依赖当前 branch protection 的四个 required job：`Backend Tests`、`Connector Host Tests`、`Frontend Typecheck and Build` 与 `Script Governance`，并通过 `if: always()` 在上游失败、取消或跳过后仍执行；四项结果只有全部为 `success` 才通过。因此 `failure`、`cancelled`、`skipped` 或预期依赖身份缺席都不能被聚合器放绿。`scripts/verify-ci-required-summary.ps1` 结构化读取 workflow，`scripts/tests/ci-required-summary.Tests.ps1` 用缺依赖、非 always、no-op、吞退出码、job/step `continue-on-error` 及三种非成功结果变异证明该契约会失败关闭。
+
+本层只建立候选锚点，不修改任何既有 job 的触发条件，不引入 paths/impact-plan，也不把当前非 required 的 ERP acceptance 或 OpenAPI drift 升级为 required。当前远端 branch protection 的旧四项在本 PR 审核和合并前必须保持不变；合并后先确认 `CI Summary` 已在目标分支真实出现并成功，再把它加入 required，确认新锚点有效后才移除旧四项。该双锚点顺序避免先 require 尚不存在的 context 所造成的永久 pending 窗口。代码、本地合同测试、PR CI 与远端 branch-protection 切换是不同完成事实；本段在切换前不宣称远端保护已迁移。
+
 ## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
 
 NERV-507 已确认问题不是订阅未触发或 `InMemory` 传输不投递：修复前 CAP 日志显示 `AssetUnavailableIntegrationEventHandlerForReschedule.HandleCapAsync` 被调度并成功返回，但处理器只在同一个作用域 `ApplicationDbContext` 中暂存 processed-event inbox（已处理事件收件箱）、open work-center unavailability（开放的工作中心不可用窗口）与 scheduling result（排程结果），缺少显式 `SaveChangesAsync` 边界，独立 PostgreSQL 作用域因而不可见这三项事实。生产修复已由 PR #1308（合并提交 `9602365f9`）吸收到 `main`：消费者完成全部可选排程变更后统一调用 `SaveChangesAsync(cancellationToken)`，由一次 EF Core 事务提交同一投递的三项事实。
