@@ -641,7 +641,6 @@ $masterDataProject = Join-Path $root 'backend/services/Business/MasterData/src/N
 $erpProject = Join-Path $root 'backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj'
 $demandPlanningProject = Join-Path $root 'backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Nerv.IIP.Business.DemandPlanning.Web.csproj'
 $probeProject = Join-Path $root 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
-$demandPlanningTestsProject = Join-Path $root 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj'
 
 try {
     Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $root -Name 'man517-infrastructure-up' | Out-Null
@@ -653,7 +652,7 @@ try {
     New-AcceptanceDatabase -ComposeFile $composeFile -DatabaseName $databaseName
 
     if (-not $SkipBuild) {
-        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject, $demandPlanningTestsProject)) {
+        foreach ($project in @($masterDataProject, $erpProject, $demandPlanningProject, $probeProject)) {
             Invoke-DotNet -Arguments @('build', $project, '-m:1', '-nr:false') -WorkingDirectory $root -TimeoutSeconds 600 -Name 'man517-build' | Out-Null
         }
     }
@@ -759,33 +758,6 @@ try {
     }
     $outOfOrder = Wait-Demand -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 3 -Quantity 5 -Status 'active' # out-of-order v2 and duplicate v3 must not regress
     $duplicateReplay = $outOfOrder # probes above and below exercise duplicate delivery through the real Redis transport
-
-    Invoke-WithScopedEnvironment -Variables @{
-        NERV_IIP_TEST_POSTGRES = $PostgresAdminConnectionString
-        NERV_IIP_TEST_REDIS = $RedisConnectionString
-    } -ScriptBlock {
-        $redisProofResultsDirectory = Join-Path $root 'artifacts/acceptance/man517'
-        [System.IO.Directory]::CreateDirectory($redisProofResultsDirectory) | Out-Null
-        $redisProofResultsFile = "redis-proofs-$([Guid]::NewGuid().ToString('N')).trx"
-        $redisProofResults = Join-Path $redisProofResultsDirectory $redisProofResultsFile
-        $redisProofFilter = 'FullyQualifiedName~Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres|FullyQualifiedName~Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
-        Invoke-DotNet -Arguments @('test', $demandPlanningTestsProject, '--no-build', '--filter', $redisProofFilter, '--results-directory', $redisProofResultsDirectory, '--logger', "trx;LogFileName=$redisProofResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man517-redis-reliability-probes' | Out-Null
-        if (-not (Test-Path -LiteralPath $redisProofResults)) {
-            throw 'MAN-517 Redis reliability probes produced no TRX result.'
-        }
-        [xml]$redisProofTrx = Get-Content -LiteralPath $redisProofResults -Raw
-        $expectedRedisProofs = @(
-            '.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres',
-            '.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail'
-        )
-        $redisProofExecutions = @($redisProofTrx.SelectNodes("//*[local-name()='UnitTestResult']") | Where-Object {
-            $testName = $_.GetAttribute('testName')
-            $expectedRedisProofs | Where-Object { $testName.EndsWith($_, [StringComparison]::Ordinal) }
-        })
-        if ($redisProofExecutions.Count -ne 2 -or @($redisProofExecutions | Where-Object { (-not [string]::Equals([string]($_.GetAttribute('outcome')), [string]('Passed'), [StringComparison]::OrdinalIgnoreCase)) }).Count -ne 0) {
-            throw 'MAN-517 Redis duplicate and fallback-scan retry probes did not both execute exactly once and pass.'
-        }
-    }
 
     Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/cancel" -Headers $headers -Stage 'erp-cancel-order' -Body @{
         organizationId = 'org-001'; environmentId = 'env-dev'; salesOrderNo = 'SO-DEMO-001'; reason = 'MAN-517 cancellation'

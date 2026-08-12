@@ -83,7 +83,7 @@ try {
     $crlfFindings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $workflowPath -RepositoryRoot $repoRoot)
     Assert-Contract ($crlfFindings.Count -eq 0) "Required-summary governance must be independent of the library checkout line endings: $($crlfFindings -join '; ')"
 
-    $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, and PostgreSQL Provider Tests exactly.'
+    $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, and Redis/CAP Transport Tests exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
 
     $needLine = '      - impact-plan'
@@ -152,6 +152,14 @@ try {
 
     Invoke-Mutation -Name 'ci-summary-hides-skipped-by-policy-audit' -Workflow $workflow `
         -Original '            postgres_policy="skipped by policy"' -Replacement '            postgres_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-redis-cap-selected-allows-skip' -Workflow $workflow `
+        -Original '            test "$redis_cap_result" = "success"' -Replacement '            test "$redis_cap_result" = "skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-redis-cap-skipped-by-policy-audit' -Workflow $workflow `
+        -Original '            redis_cap_policy="skipped by policy"' -Replacement '            redis_cap_policy="skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
 
     $impactAssertion = '          test "$impact_result" = "success"'

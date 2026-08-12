@@ -118,6 +118,7 @@ try
         builder.Services.AddCap(x =>
         {
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.TopicNamePrefix = builder.Configuration["Cap:TopicNamePrefix"] ?? string.Empty;
             x.UseConfiguredRecovery(builder.Configuration);
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();

@@ -647,7 +647,7 @@ $fastShards = @($manifest.fastShards)
 $heavyLanes = @($manifest.heavyLanes)
 Assert-Contract ($fastShards.Count -eq 4) 'Phase 1 must define exactly four fast backend shards.'
 Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($fastShards.id)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('business-core-a|business-core-b|business-gateway|platform'), [StringComparison]::Ordinal)) 'Fast shard IDs must remain the four phase-1 CI jobs.'
-Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($heavyLanes.id)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('full-chain|performance|real-postgres'), [StringComparison]::Ordinal)) 'Heavy lane IDs must remain explicit and separate from fast shards.'
+Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @(@($heavyLanes.id)) -Comparer ([StringComparer]::Ordinal)) -join '|')), [string]('full-chain|performance|real-postgres|redis-cap'), [StringComparison]::Ordinal)) 'Heavy lane IDs must remain explicit and separate from fast shards, including the real Redis/CAP transport owner.'
 $businessGatewayShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('business-gateway'), [StringComparison]::OrdinalIgnoreCase) })
 # The BusinessGateway assembly used to be alone in its shard because it cost 869s and serialized
 # every other assembly behind it. MAN-663 removed that cost (23s on run 30999368607) and MAN-669
@@ -668,7 +668,7 @@ $excludedSelectors = @(
         if ($null -ne $methods) { @($methods.Value) }
     }
 )
-Assert-Contract ($excludedSelectors.Count -eq 50) 'Every currently excluded real PostgreSQL test selector must be explicitly classified.'
+Assert-Contract ($excludedSelectors.Count -eq 54) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests'))) 'The Inventory directory PostgreSQL test class must be excluded from its fast shard.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must remain method-scoped.'
 Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')))) 'A mixed fast test class must not be excluded wholesale.'
@@ -679,6 +679,20 @@ $platformExcludedTests = if ($null -eq $platformExcludedTestsProperty) { @() } e
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedTests), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must be in excludedTests, not the class selector list.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedTests), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics'))) 'Every narrowed PostgreSQL database selector must be method-scoped.'
 Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($platformExcludedClasses), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed')))) 'A method selector must not be treated as a class selector.'
+$businessCoreBShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('business-core-b'), [StringComparison]::OrdinalIgnoreCase) })[0]
+$businessCoreBExcludedClasses = [Collections.Generic.HashSet[string]]::new([string[]]@($businessCoreBShard.excludedTestClasses), [StringComparer]::Ordinal)
+$businessCoreBExcludedTests = [Collections.Generic.HashSet[string]]::new([string[]]@($businessCoreBShard.excludedTests), [StringComparer]::Ordinal)
+$demandPlanningClass = 'Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests'
+$demandPlanningOwnedMethods = @(
+    "$demandPlanningClass.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
+    "$demandPlanningClass.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
+    "$demandPlanningClass.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
+    "$demandPlanningClass.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail",
+    "$demandPlanningClass.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres"
+)
+Assert-Contract (-not $businessCoreBExcludedClasses.Contains($demandPlanningClass)) 'The mixed DemandPlanning consumer class must not be excluded wholesale; its four ordinary facts belong to the fast shard.'
+Assert-Contract (@($demandPlanningOwnedMethods | Where-Object { -not $businessCoreBExcludedTests.Contains($_) }).Count -eq 0) 'The three PostgreSQL and two Redis/CAP DemandPlanning methods must be handed to their heavy lanes individually.'
+Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @($businessCoreBShard.excludedTestLanes) -Comparer ([StringComparer]::Ordinal)) -join '|')), 'real-postgres|redis-cap', [StringComparison]::Ordinal)) 'Business Core B exclusions must derive exactly the PostgreSQL and Redis/CAP heavy owners.'
 Assert-Contract (Test-Path -LiteralPath $diagnosticsPath) 'Timeout diagnostics must use a separately testable helper, not a production command bypass.'
 Assert-Contract (Test-Path -LiteralPath $selectorAssertionsPath) 'Real PostgreSQL selector discovery and execution checks must be separately testable.'
 . $diagnosticsPath
@@ -1296,17 +1310,17 @@ try {
     Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'
     Assert-Contract ($missingDirectoryPolicy.Message.Contains("Fast shard exclusion '$directorySelector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip.", [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL policy rule must report the unregistered environment-gated skip finding.'
 
-    # The under-declaration has to be planted on whichever shard currently owns the one exclusion
-    # whose MAN-661 requiredLane is not `postgres`; pinning that to a shard id made this negative
+    # The under-declaration has to be planted on whichever shard currently owns the Redis/CAP
+    # exclusions; pinning that to a shard id made this negative
     # test silently pass the moment MAN-669 PR-A moved that exclusion to another shard.
     $laneManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    $fullChainShards = @($laneManifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes | ForEach-Object { [string] $_ })), [StringComparer]::OrdinalIgnoreCase).Contains([string]('full-chain')) })
-    Assert-Contract ($fullChainShards.Count -eq 1) 'Exactly one fast shard must own the full-chain exclusion for the lane-attribution contract to be able to under-declare it.'
-    $fullChainShards[0].excludedTestLanes = @('real-postgres')
+    $redisCapShards = @($laneManifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes | ForEach-Object { [string] $_ })), [StringComparer]::OrdinalIgnoreCase).Contains([string]('redis-cap')) })
+    Assert-Contract ($redisCapShards.Count -eq 1) 'Exactly one fast shard must own the Redis/CAP exclusions for the lane-attribution contract to be able to under-declare it.'
+    $redisCapShards[0].excludedTestLanes = @('real-postgres')
     Set-Content -LiteralPath $temporaryManifestPath -Value ($laneManifest | ConvertTo-Json -Depth 100) -NoNewline
     $laneAttribution = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-lane-attribution-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
     Assert-Contract (-not $laneAttribution.Passed) 'A shard that under-declares its excluded test lanes must fail shard governance.'
-    Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [full-chain, real-postgres]', [StringComparison]::Ordinal)) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
+    Assert-Contract ($laneAttribution.Message.Contains('must declare excludedTestLanes [real-postgres, redis-cap]', [StringComparison]::Ordinal)) 'Shard governance must derive owner lanes from the MAN-661 requiredLane instead of trusting the declaration.'
 
     # MAN-669 PR-B: no shard may fall back to building the whole solution. backend/Nerv.IIP.sln is a
     # readable file and would otherwise be reported as a malformed solution filter rather than as
@@ -2272,7 +2286,7 @@ try {
     # logical lane and for every shard spelling of it.
     # Narrative: docs/architecture/test-evidence-governance.md, "Timing data is a cache, not a
     # governed asset" (lane as applicability condition versus identity key).
-    $logicalLanesUnderTest = @('backend', 'connector-host', 'postgres', 'full-chain', 'performance')
+    $logicalLanesUnderTest = @('backend', 'connector-host', 'postgres', 'full-chain', 'performance', 'redis-cap')
     $laneSuffixCases = 0
     foreach ($rule in @($evidencePolicy.rules)) {
         foreach ($runnerOs in @('Linux', 'Windows')) {

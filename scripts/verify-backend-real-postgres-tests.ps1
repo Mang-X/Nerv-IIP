@@ -12,7 +12,6 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 #     - PostgreSQL reachable from NERV_IIP_TEST_POSTGRES
-#     - Redis reachable from NERV_IIP_TEST_REDIS for CAP-backed cases
 #     - Docker CLI 与可访问的 Docker daemon（InventoryDirectoryPostgresTests 的自管容器路径必需）
 
 [CmdletBinding()]
@@ -29,19 +28,27 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
+$evidencePolicy = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'test-evidence-policy.json') -Raw | ConvertFrom-Json
 $lane = @($manifest.heavyLanes | Where-Object { [string]::Equals([string]($_.id), [string]('real-postgres'), [StringComparison]::OrdinalIgnoreCase) })
 if ($lane.Count -ne 1) {
     throw 'The backend test shard manifest must define exactly one real-postgres heavy lane.'
 }
 
-foreach ($variable in @('NERV_IIP_TEST_POSTGRES', 'NERV_IIP_TEST_REDIS')) {
+foreach ($variable in @('NERV_IIP_TEST_POSTGRES')) {
     if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($variable))) {
         throw "Set $variable before running the real-postgres heavy lane."
     }
 }
 
 $ownedShards = @($manifest.fastShards | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.excludedTestLanes)), [StringComparer]::OrdinalIgnoreCase).Contains([string]('real-postgres')) })
-$ownedSelectorCount = @(Get-NervStringsSorted -Values @($ownedShards | ForEach-Object { Get-BackendTestShardExcludedSelectors -Shard $_ }) -Comparer ([StringComparer]::Ordinal) -Unique).Count
+$postgresRules = @($evidencePolicy.rules | Where-Object { [string]::Equals([string]($_.requiredLane), [string]($lane[0].policyLane), [StringComparison]::Ordinal) })
+$ownedSelectorCount = @(
+    Get-NervStringsSorted -Values @(
+        $ownedShards |
+            ForEach-Object { Get-BackendTestShardExcludedSelectors -Shard $_ } |
+            Where-Object { @(Get-BackendTestShardPolicyIdentityMatches -Selector ([string] $_) -Rules $postgresRules).Count -gt 0 }
+    ) -Comparer ([StringComparer]::Ordinal) -Unique
+).Count
 if ($ownedSelectorCount -eq 0) {
     throw 'The real-postgres heavy lane has no excluded test selectors to execute.'
 }
@@ -49,7 +56,10 @@ if ($ownedSelectorCount -eq 0) {
 $verifiedSelectorCount = 0
 foreach ($shard in $ownedShards) {
     $methodSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $shard -Kind 'method')
-    $shardSelectors = @(Get-BackendTestShardExcludedSelectors -Shard $shard)
+    $shardSelectors = @(
+        Get-BackendTestShardExcludedSelectors -Shard $shard |
+            Where-Object { @(Get-BackendTestShardPolicyIdentityMatches -Selector ([string] $_) -Rules $postgresRules).Count -gt 0 }
+    )
     if ($shardSelectors.Count -eq 0) {
         continue
     }
