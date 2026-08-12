@@ -157,6 +157,26 @@ function Assert-PostgresLaneOwningPathsRoute {
     }
 }
 
+function Assert-BackendFastLaneControlInputsRoute {
+    foreach ($backendFastLaneControlInput in @(
+            'scripts/backend-test-shards.json',
+            'scripts/test-evidence-policy.json',
+            'scripts/run-backend-test-shard.ps1',
+            'scripts/verify-backend-test-shards.ps1',
+            'scripts/verify-backend-real-postgres-tests.ps1',
+            'scripts/verify-business-full-chain-acceptance.ps1',
+            'scripts/verify-business-performance-baseline.ps1',
+            'scripts/lib/OrdinalString.ps1',
+            'scripts/lib/BackendTestShardSelectors.ps1',
+            'scripts/lib/BackendTestShardDiagnostics.ps1',
+            'scripts/tests/backend-test-shards.Tests.ps1'
+        )) {
+        Assert-ImpactCase -Name "backend-fast-lane-control-$([IO.Path]::GetFileName($backendFastLaneControlInput))" -Paths @($backendFastLaneControlInput) -Flags @{
+            scripts = $true; backend = $true
+        }
+    }
+}
+
 Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI impact-plan library is missing.'
 . $libraryPath
 
@@ -251,22 +271,7 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
             [StringComparison]::Ordinal)) "Shared control input '$sharedControlInput' must conservatively select every known business service."
 }
 
-foreach ($backendFastLaneControlInput in @(
-        'scripts/backend-test-shards.json',
-        'scripts/test-evidence-policy.json',
-        'scripts/run-backend-test-shard.ps1',
-        'scripts/verify-backend-test-shards.ps1',
-        'scripts/verify-backend-real-postgres-tests.ps1',
-        'scripts/verify-business-full-chain-acceptance.ps1',
-        'scripts/verify-business-performance-baseline.ps1',
-        'scripts/lib/BackendTestShardSelectors.ps1',
-        'scripts/lib/BackendTestShardDiagnostics.ps1',
-        'scripts/tests/backend-test-shards.Tests.ps1'
-    )) {
-    Assert-ImpactCase -Name "backend-fast-lane-control-$([IO.Path]::GetFileName($backendFastLaneControlInput))" -Paths @($backendFastLaneControlInput) -Flags @{
-        scripts = $true; backend = $true
-    }
-}
+Assert-BackendFastLaneControlInputsRoute
 
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{
     frontend = $true; frontend_apps = $true; backend = $false; scripts = $false
@@ -369,6 +374,25 @@ foreach ($invalidPaths in @(
     Assert-Contract ($null -ne $failure) "Invalid changed path set '$($invalidPaths -join ',')' must fail closed."
 }
 
+$ordinalStringRoutingClause = "            [string]::Equals(`$path, 'scripts/lib/OrdinalString.ps1', [StringComparison]::Ordinal) -or`n"
+$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
+$weakenedImpactLibrary = $canonicalImpactLibrary.Replace($ordinalStringRoutingClause, '')
+Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'OrdinalString control-input mutation must remove the canonical routing clause.'
+$ordinalMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-ordinal-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($ordinalMutationRoot) | Out-Null
+    $ordinalMutationPath = Join-Path $ordinalMutationRoot 'CiImpactPlan.ps1'
+    [IO.File]::WriteAllText($ordinalMutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
+    . $ordinalMutationPath
+    $ordinalMutationFailure = $null
+    try { Assert-BackendFastLaneControlInputsRoute } catch { $ordinalMutationFailure = $_ }
+    Assert-Contract ($null -ne $ordinalMutationFailure) 'Removing the OrdinalString control-input routing clause must fail the behavioral contract.'
+}
+finally {
+    . $libraryPath
+    if (Test-Path -LiteralPath $ordinalMutationRoot) { Remove-Item -LiteralPath $ordinalMutationRoot -Recurse -Force }
+}
+
 $postgresRoutingBlock = @'
             if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
@@ -376,7 +400,6 @@ $postgresRoutingBlock = @'
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
 '@
-$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
 $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($postgresRoutingBlock, '')
 Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'PostgreSQL owning-path mutation must remove the canonical routing branch.'
 $impactMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-library-$([Guid]::NewGuid().ToString('N'))"
