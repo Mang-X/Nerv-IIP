@@ -6,7 +6,13 @@
 
 `.github/workflows/ci.yml` 已新增稳定展示名 `CI Summary` 的聚合 job。它以静态 `needs` 依赖当前 branch protection 的四个 required job：`Backend Tests`、`Connector Host Tests`、`Frontend Typecheck and Build` 与 `Script Governance`，并通过 `if: always()` 在上游失败、取消或跳过后仍执行；四项结果只有全部为 `success` 才通过。唯一断言 step 不允许自带条件，并固定使用 `bash --noprofile --norc -euo pipefail {0}`，防止跳过断言或让前一条失败被后一条成功退出码覆盖。因此 `failure`、`cancelled` 或 `skipped` 都不能被聚合器放绿。预期 job 身份缺席会使 workflow 无法实例化并令 required context 缺席，从 branch protection 视角保持失败关闭，但不会伪称为 summary job 自身的红色结论。`scripts/verify-ci-required-summary.ps1` 结构化读取 workflow，`scripts/tests/ci-required-summary.Tests.ps1` 用缺依赖、非 always、step 条件、非 fail-fast shell、no-op、吞退出码、job/step `continue-on-error` 及三种非成功结果变异证明该契约会失败关闭。
 
-本层只建立候选锚点，不修改任何既有 job 的触发条件，不引入 paths/impact-plan，也不把当前非 required 的 ERP acceptance 或 OpenAPI drift 升级为 required。当前远端 branch protection 的旧四项在本 PR 审核和合并前必须保持不变；合并后先确认 `CI Summary` 已在目标分支真实出现并成功，再把它加入 required，确认新锚点有效后才移除旧四项。该双锚点顺序避免先 require 尚不存在的 context 所造成的永久 pending 窗口。代码、本地合同测试、PR CI 与远端 branch-protection 切换是不同完成事实；本段在切换前不宣称远端保护已迁移。
+拆解①本身只建立候选锚点，不修改任何既有 job 的触发条件，也不把当前非 required 的 ERP acceptance 或 OpenAPI drift 升级为 required。当前远端 branch protection 的旧四项在本 PR 审核和合并前必须保持不变；合并后先确认 `CI Summary` 已在目标分支真实出现并成功，再把它加入 required，确认新锚点有效后才移除旧四项。该双锚点顺序避免先 require 尚不存在的 context 所造成的永久 pending 窗口。代码、本地合同测试、PR CI 与远端 branch-protection 切换是不同完成事实；本段在切换前不宣称远端保护已迁移。
+
+## CI 影响判定只观测层（NERV-668 / #1235，拆解②）
+
+`.github/workflows/ci.yml` 已新增 `CI Impact Plan (Observation)` job。它对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；共享层扩散宁宽勿窄，无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
+
+本层严格只观测：现有 job 没有增加 `needs: impact-plan`，也没有任何 `if` 读取影响 outputs；required summary、branch protection、测试命令和各 lane 是否运行均未基于计划改变。`scripts/tests/ci-impact-plan.Tests.ps1` 覆盖代表路径、扩散、稳定输出、非法路径失败关闭、入口序列化以及“禁止既有 job 消费影响计划”的反向合同。只有后续拆解③经独立 PR 才能逐 lane 使用这些结果，因此本段不声称纯文档或纯前端 PR 已节省 CI 成本，也不勾销 NERV-668 的最终验收项。
 
 ## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
 

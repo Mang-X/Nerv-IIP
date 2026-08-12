@@ -118,6 +118,67 @@ jobs:
   # 该次 run，而不是最慢的分片。二者已不再相同——已有一个 frontend job
   # 超过最慢的分片——因此依据“最慢分片”估算任何内容都会低估
   # run 的 wall clock。
+  impact-plan:
+    name: CI Impact Plan (Observation)
+    # NERV-668 拆解②只产出观测计划，任何既有 job 都不消费这些 outputs。
+    # 层级 B：失败后没有 evidence step；3 个显式 step 的预算为 3m / 5m / 3m，
+    # job 的 10m 是快速失败界限，各 step 预算只表达逐 step 上限。
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.plan.outputs.backend }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      scripts: ${{ steps.plan.outputs.scripts }}
+      docs: ${{ steps.plan.outputs.docs }}
+      connector_hosts: ${{ steps.plan.outputs.connector_hosts }}
+      workflows: ${{ steps.plan.outputs.workflows }}
+      infra: ${{ steps.plan.outputs.infra }}
+      backend_contracts: ${{ steps.plan.outputs.backend_contracts }}
+      backend_testing: ${{ steps.plan.outputs.backend_testing }}
+      backend_persistence: ${{ steps.plan.outputs.backend_persistence }}
+      backend_messaging: ${{ steps.plan.outputs.backend_messaging }}
+      business_gateway: ${{ steps.plan.outputs.business_gateway }}
+      openapi_codegen: ${{ steps.plan.outputs.openapi_codegen }}
+      frontend_apps: ${{ steps.plan.outputs.frontend_apps }}
+      frontend_packages: ${{ steps.plan.outputs.frontend_packages }}
+      frontend_design_system: ${{ steps.plan.outputs.frontend_design_system }}
+      frontend_docs: ${{ steps.plan.outputs.frontend_docs }}
+      postgresql: ${{ steps.plan.outputs.postgresql }}
+      redis_cap: ${{ steps.plan.outputs.redis_cap }}
+      full_chain: ${{ steps.plan.outputs.full_chain }}
+      business_services: ${{ steps.plan.outputs.business_services }}
+      plan_path: ${{ steps.plan.outputs.plan_path }}
+    steps:
+      - name: Checkout full history for impact observation
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build observed impact plan
+        id: plan
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          DIFF_MODE: ${{ github.event_name == 'pull_request' && 'MergeBase' || 'Range' }}
+        run: >-
+          ./scripts/get-ci-impact-plan.ps1
+          -BaseSha $env:BASE_SHA
+          -HeadSha $env:HEAD_SHA
+          -DiffMode $env:DIFF_MODE
+          -OutputPath artifacts/ci-impact-plan/impact-plan.json
+
+      - name: Upload observed impact plan
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-impact-plan/impact-plan.json
+          if-no-files-found: error
+          retention-days: 14
+
   backend-tests:
     name: Backend Tests
     # 层级 B。纯聚合：对 needs 结果进行五次 `test` 比较，观测值为 ~2s。
@@ -756,8 +817,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限；step 预算合计为 78m（16 个 step：3m
-    # checkout + 15 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 10m job 预算是快速失败界限；step 预算合计为 83m（17 个 step：3m
+    # checkout + 16 × 5m），且仅为逐 step 上限。合计超过 job 预算
     # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -795,6 +856,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/ci-required-summary.Tests.ps1
+
+      - name: Test CI impact plan
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ci-impact-plan.Tests.ps1
 
       - name: Test nightly business performance workflow
         timeout-minutes: 5
