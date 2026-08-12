@@ -201,6 +201,7 @@ function Get-NervTestEvidenceLaneJobs {
         'backend-shard-3' = 'Backend Tests - Business Core A'
         'backend-shard-4' = 'Backend Tests - Business Core B'
         'connector-host' = 'Connector Host Tests'
+        'postgres' = 'PostgreSQL Provider Tests'
     }
 }
 

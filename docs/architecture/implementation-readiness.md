@@ -2,6 +2,12 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## PostgreSQL Provider Tests 单服务试点（NERV-688，拆解②）
+
+`.github/workflows/ci.yml` 已接入稳定展示名 `PostgreSQL Provider Tests`：PR 复用 NERV-668 的 `postgresql` 影响信号，影响计划失败或输出缺失时保守运行；`main` push 运行当前 core 试点。job 使用 PostgreSQL 18 service container，health check 后由 `psql` 执行协议级 readiness，再由 `scripts/run-postgres-test-lane.ps1` 创建 run/attempt 专属数据库、执行 Inventory 的单个 `InventoryPostgresProfileTests`、按冻结身份验证 TRX 为 1 passed / 0 skipped；失败时先按成员声明的受限 schema 保留脱敏关系诊断，再在 `finally` 强制删除数据库。`scripts/postgres-test-lane.json` 是本层成员清单，显式记录 `core/extended`、`active/deferred/blocked` 与诊断 schema；当前只登记 Inventory，其他服务仍属于拆解③。
+
+测试原始 TRX 只进入 job 内部目录；MAN-661 collector 输出脱敏 `postgres` 证据 artifact，另一个机器可读 dependency summary 记录 PostgreSQL 版本、expected/discovered/passed/skipped 与 cleanup 结果。环境缺失、readiness 失败、零发现、身份不完整、任一 skip/失败、证据缺失或清理失败均使 job 失败。稳定 required `CI Summary` 对选中 lane 只接受 `success`，未选中时只接受精确 `skipped` 并显示 `skipped by policy`；lane job 本身不直接加入 branch protection。该接线不运行 Redis/CAP、FullChain 或其余 PostgreSQL 服务，也不代表拆解③–⑤完成。
+
 ## CI Required Summary 与首批条件 lane（NERV-668 / #1235，拆解①、③首批）
 
 `.github/workflows/ci.yml` 的稳定 `CI Summary` 仍是 branch protection 的唯一 required context。它以静态 `needs` 等待影响计划、当前五个 required 候选 job（`Backend Tests`、`Connector Host Tests`、`Frontend Unit Tests`、`Frontend Typecheck and Build`、`Script Governance`）以及首批纳管的 `OpenAPI/api-client Drift`。四个尚未条件化的 required 候选 job 必须为 `success`；首批两个条件 lane 则只接受两种精确状态：计划选择时必须为 `success`，计划成功且明确未选择时必须为 `skipped`，并在 Actions Summary 中显示 `skipped by design`。影响计划失败、被跳过或输出缺失时两个条件 lane 都保守运行，同时 summary 自身仍因影响计划非成功而失败；整次 workflow 被取消时则尊重取消，不再启动后继 lane。被选择 lane 的 `failure`、`cancelled`、错误 `skipped`，以及未选择 lane 的意外执行结果均不能放绿。

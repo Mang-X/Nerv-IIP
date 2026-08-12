@@ -15,6 +15,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 | `backend-shard-3` | `Backend Tests - Business Core A` | `business-core-a` |
 | `backend-shard-4` | `Backend Tests - Business Core B` | `business-core-b` |
 | `connector-host` | `Connector Host Tests` | — |
+| `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`（拆解②试点） |
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。
 
@@ -22,7 +23,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 
 `run-backend-test-shard.ps1` 使用 `FullyQualifiedName!~` 排除真实依赖选择器，因此这些测试不会出现在分片 TRX 中，而不是以已登记跳过项出现。以下门禁确保该排除诚实可信，不会变成私自绕过门禁的入口：
 
-- **政策闭合与责任执行通道推导。**每个快速分片排除选择器都必须解析到至少一个政策测试身份，其规则必须是带真实依赖 `requiredLane` 的 `environment-gated`。除非本文档的跳过政策已登记某项测试，否则不得将其移出默认门禁。分片声明的 `excludedTestLanes` 随后必须等于这些 `requiredLane` 值通过 `heavyLanes[].policyLane` 映射到的高成本执行通道，因此分片不能把 `full-chain` 排除归给真实 PostgreSQL 责任脚本。当前全部 49 个选择器都解析为 `postgres` 或 `full-chain`；强制机制位于 `verify-backend-test-shards.ps1`。已通过执行的证明仍由按需启用的 `scripts/verify-backend-real-postgres-tests.ps1` 负责；这目前只是登记层面的分离，因为高成本执行通道尚未接入 CI。
+- **政策闭合与责任执行通道推导。**每个快速分片排除选择器都必须解析到至少一个政策测试身份，其规则必须是带真实依赖 `requiredLane` 的 `environment-gated`。除非本文档的跳过政策已登记某项测试，否则不得将其移出默认门禁。分片声明的 `excludedTestLanes` 随后必须等于这些 `requiredLane` 值通过 `heavyLanes[].policyLane` 映射到的高成本执行通道，因此分片不能把 `full-chain` 排除归给真实 PostgreSQL 责任脚本。当前全部 49 个选择器都解析为 `postgres` 或 `full-chain`；强制机制位于 `verify-backend-test-shards.ps1`。NERV-688 拆解②只把 Inventory 的一个 core 成员接入 hosted `postgres` job；其余登记仍由按需 `scripts/verify-backend-real-postgres-tests.ps1` 承接，须在拆解③逐服务接入，不能据此宣称全量已运行。
 - **选择器锚定。**VSTest `!~` 是子串匹配，因此类选择器输出时带尾随点（`FullyQualifiedName!~Ns.XTests.`），不会误吞仅共享前缀的兄弟类。方法选择器保持无锚定，以便参数化用例继续匹配；治理通过扫描已登记的 MAN-661 源文件，并拒绝名称是该文件其他成员前缀的方法选择器来补偿这一点。
 - **逐项目执行。**分片运行后，它分类的每个项目都必须在该分片自身 TRX 中出现，且至少有一个已执行结果；分片也不得执行未由其分类的程序集。该检查读取与采集器相同的 `UnitTest/@storage` 属性。它有意**不**扫描 dotnet 控制台文本：该文本会本地化，在任何非英文运行器上使用短语匹配都会失败后放行，而这正是该边界要阻止的静默放行。
 
@@ -49,7 +50,7 @@ artifacts/test-evidence/<run>/attempt-<n>/<lane>/
 2. **每个显式步骤都声明 `timeout-minutes`**——包括 checkout、SDK/pnpm 设置、缓存恢复以及证据采集/上传步骤。`if: always()` 不会免除步骤预算要求。
 3. **发布证据的作业必须使步骤预算总和严格小于作业预算。**这样作业预算实际上才不可达：某个步骤必须先超过自身预算，而步骤超时只会使该步骤失败，因此作业会继续进入 `Collect …` / `Upload …`，脱敏包仍可发布。只要存在一个无预算步骤，就会重新打开作业预算先触发并连同产物一起取消的路径。
 
-规则 3 有意限定范围。四个后端快速分片（`backend-tests-business-gateway`、`backend-tests-platform`、`backend-tests-business-core-a`、`backend-tests-business-core-b`）、`erp-sales-order-demand-acceptance` 和 `connector-host-tests` 都有 `if: always()` 采集/上传步骤，因此确有可能损失的内容；它们的作业预算远高于任何真实运行时间，以覆盖步骤预算总和。`backend-tests`（MAN-669 留下的不运行测试的聚合作业）、`backend-test-shard-governance`、`frontend`、`openapi-client-drift` 和 `script-governance` 没有能在前一步失败后继续运行的步骤：活得比自身预算更久也不会保留任何内容，因此将预算抬高到步骤总和以上只会把快速失败变成缓慢失败。
+规则 3 有意限定范围。四个后端快速分片（`backend-tests-business-gateway`、`backend-tests-platform`、`backend-tests-business-core-a`、`backend-tests-business-core-b`）、`postgres-provider-tests`、`erp-sales-order-demand-acceptance` 和 `connector-host-tests` 都有 `if: always()` 采集/上传步骤，因此确有可能损失的内容；它们的作业预算远高于任何真实运行时间，以覆盖步骤预算总和。`backend-tests`（MAN-669 留下的不运行测试的聚合作业）、`backend-test-shard-governance`、`frontend`、`openapi-client-drift` 和 `script-governance` 没有能在前一步失败后继续运行的步骤：活得比自身预算更久也不会保留任何内容，因此将预算抬高到步骤总和以上只会把快速失败变成缓慢失败。
 
 因此在 B 级中，**作业**预算是根据观测运行时间设定的快速失败上限，步骤预算仅是逐步骤上限。这里有意不声称各步骤预算都可独立触发：`frontend` 在 20 分钟作业内的步骤预算合计为 58 分钟，因此其 15 分钟构建预算绝不可能自行触发——作业预算总会先到。门禁对 B 级强制执行的唯一规则，是任何调度下都不可能生效的情形：步骤预算大于或等于整个作业预算。两级都保留步骤预算；在 B 级中，它既记录健康步骤的成本，也是在作业只有一个长步骤时真正触发的上限。
 

@@ -1130,6 +1130,7 @@ try {
         'backend-shard-3' = 'ubuntu24@20260720.247.2'
         'backend-shard-4' = 'ubuntu24@20260804.265.1'
         'connector-host' = 'ubuntu24@20260804.265.1'
+        'postgres' = 'ubuntu24@20260804.265.1'
     }
     function New-NervEvidenceJobLog {
         param([Parameter(Mandatory)] [string] $RunnerImage, [string] $DotnetSdk = '10.0.302')
@@ -1307,14 +1308,17 @@ try {
     # Baseline for the negative cases: the full, correct row set is accepted.
     Assert-Equal @($sourceSummaries).Count @((Invoke-NervProvenanceBaseline -LaneProvenance $laneProvenance).source.laneProvenance).Count 'The complete per-lane provenance row set must be accepted.'
 
-    $strayRow = [pscustomobject][ordered]@{ lane = 'postgres'; jobName = 'Real PostgreSQL Tests'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302' }
+    $coverageSummaries = @($provenanceSummaries | Where-Object { -not [string]::Equals([string]$_.assemblies[0].lane, 'postgres', [StringComparison]::Ordinal) })
+    $coverageLaneProvenance = @($laneProvenance | Where-Object { -not [string]::Equals([string]$_.lane, 'postgres', [StringComparison]::Ordinal) })
+    $coverageRecordedLaneList = (@(Get-NervStringsSorted -Values @($coverageSummaries | ForEach-Object { [string]$_.assemblies[0].lane }) -Comparer ([StringComparer]::Ordinal) -Unique) -join ', ')
+    $strayRow = [pscustomobject][ordered]@{ lane = 'postgres'; jobName = 'PostgreSQL Provider Tests'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302' }
     foreach ($coverageCase in @(
-        @{ Name = 'missing-lane-rows'; Rows = @($laneProvenance[0]); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$([string]$laneProvenance[0].lane)] recorded=[$recordedLaneList]." },
-        @{ Name = 'stray-lane-row'; Rows = @($laneProvenance + @($strayRow)); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$recordedLaneList, postgres] recorded=[$recordedLaneList]." },
-        @{ Name = 'duplicate-lane-rows'; Rows = @($laneProvenance + @($laneProvenance[0])); Expected = 'Baseline lane provenance rows must name unique lanes.' }
+        @{ Name = 'missing-lane-rows'; Rows = @($coverageLaneProvenance[0]); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$([string]$coverageLaneProvenance[0].lane)] recorded=[$coverageRecordedLaneList]." },
+        @{ Name = 'stray-lane-row'; Rows = @($coverageLaneProvenance + @($strayRow)); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$coverageRecordedLaneList, postgres] recorded=[$coverageRecordedLaneList]." },
+        @{ Name = 'duplicate-lane-rows'; Rows = @($coverageLaneProvenance + @($coverageLaneProvenance[0])); Expected = 'Baseline lane provenance rows must name unique lanes.' }
     )) {
         $coverageMessage = $null
-        try { Invoke-NervProvenanceBaseline -LaneProvenance $coverageCase.Rows | Out-Null } catch { $coverageMessage = [string]$_.Exception.Message }
+        try { Invoke-NervProvenanceBaseline -LaneProvenance $coverageCase.Rows -Summaries $coverageSummaries | Out-Null } catch { $coverageMessage = [string]$_.Exception.Message }
         Assert-Equal $coverageCase.Expected $coverageMessage "Lane provenance coverage case '$($coverageCase.Name)' must be rejected with its exact reason."
     }
 
@@ -1584,12 +1588,14 @@ foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3'
 }
 Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
-Assert-Equal 5 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover exactly the four backend shards and connector-host.'
+Assert-Equal 6 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, and PostgreSQL pilot.'
 $laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
 $actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
 Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'
 Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($laneJobAllowlist.Values)), [StringComparer]::Ordinal).Contains([string]('Backend Tests')))) 'The test-free shard aggregate must own no evidence lane.'
 Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Connector artifact identity mismatch.'
+Assert-True ($workflow.Contains('test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'PostgreSQL artifact identity mismatch.'
+Assert-True ($workflow.Contains('-Lane postgres', [StringComparison]::Ordinal)) 'PostgreSQL hosted lane must collect the stable postgres evidence ID.'
 Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
 Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
 

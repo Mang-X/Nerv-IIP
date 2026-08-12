@@ -29,4 +29,4 @@ if ($findings.Count -gt 0) {
     exit 1
 }
 
-Write-Output 'CI required-summary governance passed: CI Summary accepts only successful selected lanes or explicit skipped-by-design routed lanes.'
+Write-Output 'CI required-summary governance passed: CI Summary accepts only successful selected lanes or explicit policy/design skips.'
