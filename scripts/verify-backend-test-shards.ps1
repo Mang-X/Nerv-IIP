@@ -1304,6 +1304,18 @@ else {
         }
         else {
             $fastJobIds = @($fastShards | ForEach-Object { "backend-tests-$($_.id)" })
+            $backendRoutingPolicy = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+            foreach ($routedJobId in @('backend-test-shard-governance') + $fastJobIds) {
+                $routedJob = $jobs.PSObject.Properties[$routedJobId].Value
+                if ($null -eq $routedJob) { continue }
+                $routedNeeds = @($routedJob.needs | ForEach-Object { [string] $_ })
+                if ($routedNeeds.Count -ne 1 -or -not [string]::Equals($routedNeeds[0], 'impact-plan', [StringComparison]::Ordinal)) {
+                    $errors.Add("Backend execution job '$routedJobId' must need exactly impact-plan.")
+                }
+                if (-not [string]::Equals((Get-WorkflowStringValue -Object $routedJob -PropertyName 'if'), $backendRoutingPolicy, [StringComparison]::Ordinal)) {
+                    $errors.Add("Backend execution job '$routedJobId' must retain the governed fail-open backend routing policy.")
+                }
+            }
             foreach ($shard in $fastShards) {
                 $jobId = "backend-tests-$($shard.id)"
                 $job = $jobs.PSObject.Properties[$jobId].Value
@@ -1418,14 +1430,14 @@ else {
                 $errors.Add("CI workflow is missing the stable 'backend-tests' aggregate job.")
             }
             else {
-                $expectedNeeds = @('backend-test-shard-governance') + $fastJobIds
+                $expectedNeeds = @('impact-plan', 'backend-test-shard-governance') + $fastJobIds
                 $actualNeeds = @($aggregate.needs | ForEach-Object { [string] $_ })
                 $expectedNeedSet = Get-NervStringSet -Values $expectedNeeds -Comparer ([StringComparer]::Ordinal)
                 $actualNeedSet = Get-NervStringSet -Values $actualNeeds -Comparer ([StringComparer]::Ordinal)
                 $missingNeeds = @($expectedNeeds | Where-Object { -not $actualNeedSet.Contains([string] $_) })
                 $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
                 if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0) {
-                    $errors.Add("Backend Tests aggregate must need exactly the governance and four fast shard jobs.")
+                    $errors.Add("Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.")
                 }
                 if ((-not [string]::Equals([string]([string] $aggregate.name), [string]('Backend Tests'), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]([string] $aggregate.if), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
                     $errors.Add("Backend Tests aggregate must retain name 'Backend Tests' and if: always().")
@@ -1437,25 +1449,35 @@ else {
                     $errors.Add("Backend Tests aggregate must not set 'continue-on-error' on the job or any step.")
                 }
 
-                $aggregateRun = (Get-WorkflowStepValues -Steps @($aggregate.steps) -PropertyName 'run') -join "`n"
-                $aggregateCommands = @(
-                    $aggregateRun -split "`r?`n" |
-                        ForEach-Object { $_.Trim() } |
-                        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-                )
-                $requiredAssertions = @()
-                $aggregateCommandSet = Get-NervStringSet -Values $aggregateCommands -Comparer ([StringComparer]::Ordinal)
-                foreach ($requiredJob in $expectedNeeds) {
-                    $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
-                    $requiredAssertions += $requiredAssertion
-                    if (-not $aggregateCommandSet.Contains([string]$requiredAssertion)) {
-                        $errors.Add("Backend Tests aggregate must fail when '$requiredJob' is not success.")
-                    }
+                $aggregateSteps = @($aggregate.steps)
+                if ($aggregateSteps.Count -ne 1 -or
+                    -not [string]::Equals((Get-WorkflowStringValue -Object $aggregateSteps[0] -PropertyName 'shell'), 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) {
+                    $errors.Add('Backend Tests aggregate assertion step must use the governed fail-fast Bash shell.')
                 }
-                $actualAggregateAssertions = @(Get-NervStringsSorted -Values @($aggregateCommands) -Comparer ([StringComparer]::Ordinal)) -join '|'
-                $expectedAggregateAssertions = @(Get-NervStringsSorted -Values @($requiredAssertions) -Comparer ([StringComparer]::Ordinal)) -join '|'
-                if ($aggregateCommands.Count -ne $requiredAssertions.Count -or -not [string]::Equals($actualAggregateAssertions, $expectedAggregateAssertions, [StringComparison]::Ordinal)) {
-                    $errors.Add('Backend Tests aggregate must contain only standalone success assertions for its exact dependencies.')
+                $aggregateRun = if ($aggregateSteps.Count -eq 1) { Get-WorkflowStringValue -Object $aggregateSteps[0] -PropertyName 'run' } else { '' }
+                $expectedAggregateRun = @'
+backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
+expected_result="skipped"
+backend_policy="skipped by design"
+if [[ "$backend_selected" = "true" ]]; then
+  expected_result="success"
+  backend_policy="selected"
+fi
+
+test "${{ needs.backend-test-shard-governance.result }}" = "$expected_result"
+test "${{ needs.backend-tests-business-gateway.result }}" = "$expected_result"
+test "${{ needs.backend-tests-platform.result }}" = "$expected_result"
+test "${{ needs.backend-tests-business-core-a.result }}" = "$expected_result"
+test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
+
+{
+  echo "## Backend fast lane decision"
+  echo
+  echo "Policy: $backend_policy"
+} >> "$GITHUB_STEP_SUMMARY"
+'@
+                if (-not [string]::Equals($aggregateRun.Replace("`r`n", "`n").TrimEnd(), $expectedAggregateRun.Replace("`r`n", "`n").TrimEnd(), [StringComparison]::Ordinal)) {
+                    $errors.Add('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.')
                 }
             }
         }

@@ -120,9 +120,9 @@ jobs:
   # run 的 wall clock。
   impact-plan:
     name: CI Impact Plan
-    # NERV-668 拆解③前三批让 Script Governance、OpenAPI Drift、Connector Host Tests 与 ERP acceptance 消费这些 outputs；
+    # NERV-668 拆解③让 Backend Tests、Script Governance、OpenAPI Drift、Connector Host Tests 与 ERP acceptance 消费这些 outputs；
     # NERV-688 的 PostgreSQL Provider Tests 消费 postgresql，NERV-685 PR②让 frontend jobs 消费 workspace 选择。
-    # 计划失败时五个直接条件 job 保守运行，frontend 聚合则失败关闭；Backend 仍不消费。
+    # 计划失败时受管条件 job 保守运行，frontend 聚合则失败关闭。
     # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
     # 预算只表达逐 step 上限。
     timeout-minutes: 15
@@ -204,11 +204,12 @@ jobs:
 
   backend-tests:
     name: Backend Tests
-    # 层级 B。纯聚合：对 needs 结果进行五次 `test` 比较，观测值为 ~2s。
+    # 层级 B。稳定聚合：按 backend 选择政策严格接受五个执行 job 的 success/skipped，观测值为 ~2s。
     timeout-minutes: 5
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - impact-plan
       - backend-test-shard-governance
       - backend-tests-business-gateway
       - backend-tests-platform
@@ -217,12 +218,27 @@ jobs:
     steps:
       - name: Require all backend fast shards
         timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
         run: |
-          test "${{ needs.backend-test-shard-governance.result }}" = "success"
-          test "${{ needs.backend-tests-business-gateway.result }}" = "success"
-          test "${{ needs.backend-tests-platform.result }}" = "success"
-          test "${{ needs.backend-tests-business-core-a.result }}" = "success"
-          test "${{ needs.backend-tests-business-core-b.result }}" = "success"
+          backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
+          expected_result="skipped"
+          backend_policy="skipped by design"
+          if [[ "$backend_selected" = "true" ]]; then
+            expected_result="success"
+            backend_policy="selected"
+          fi
+
+          test "${{ needs.backend-test-shard-governance.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-gateway.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-platform.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-core-a.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
+
+          {
+            echo "## Backend fast lane decision"
+            echo
+            echo "Policy: $backend_policy"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   backend-test-shard-governance:
     name: Backend Test Shard Governance
@@ -230,6 +246,9 @@ jobs:
     # 15m job 预算仍是快速失败界限，step 预算合计为 21m 且仅为逐 step 上限。
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -263,6 +282,9 @@ jobs:
     # 仅存在于 scripts/backend-test-shards.json 中。
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -351,6 +373,9 @@ jobs:
     # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-2 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -439,6 +464,9 @@ jobs:
     # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-3 映射到它。
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -529,6 +557,9 @@ jobs:
     # 而重平衡本身已将该比率证伪——参见 `jobs:` 顶部的超时策略。
     timeout-minutes: 45
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -1262,17 +1293,24 @@ jobs:
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
           impact_result="${{ needs.impact-plan.result }}"
+          backend_result="${{ needs.backend-tests.result }}"
           erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
           connector_result="${{ needs.connector-host-tests.result }}"
           script_governance_result="${{ needs.script-governance.result }}"
           openapi_result="${{ needs.openapi-client-drift.result }}"
           postgres_result="${{ needs.postgres-provider-tests.result }}"
+          backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
           erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
           postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
+          if [[ "$backend_selected" = "true" ]]; then
+            backend_policy="selected"
+          else
+            backend_policy="skipped by design"
+          fi
           if [[ "$erp_selected" = "true" ]]; then
             erp_policy="selected"
           else
@@ -1304,6 +1342,7 @@ jobs:
             echo
             echo "| Lane | Policy | Result |"
             echo "| --- | --- | --- |"
+            echo "| Backend Tests | $backend_policy | $backend_result |"
             echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
             echo "| Connector Host Tests | $connector_policy | $connector_result |"
             echo "| Script Governance | $script_governance_policy | $script_governance_result |"
@@ -1312,7 +1351,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           test "$impact_result" = "success"
-          test "${{ needs.backend-tests.result }}" = "success"
+          test "$backend_result" = "success"
           test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
           if [[ "$erp_selected" = "true" ]]; then

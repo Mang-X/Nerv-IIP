@@ -133,6 +133,19 @@ try {
         -Original '            erp_policy="skipped by design"' -Replacement '            erp_policy="skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
 
+    Invoke-Mutation -Name 'ci-summary-backend-uses-wrong-signal' -Workflow $workflow `
+        -Original "needs.impact-plan.outputs.backend != 'false'" `
+        -Replacement "needs.impact-plan.outputs.frontend != 'false'" `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-backend-skipped-by-design-audit' -Workflow $workflow `
+        -Original '            backend_policy="skipped by design"' -Replacement '            backend_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-drops-backend-audit-row' -Workflow $workflow `
+        -Original ('            echo "| Backend Tests | $backend_policy | $backend_result |"' + [Environment]::NewLine) -Replacement '' `
+        -ExpectedDiagnostic $policyDiagnostic
+
     Invoke-Mutation -Name 'ci-summary-postgres-selected-allows-skip' -Workflow $workflow `
         -Original '            test "$postgres_result" = "success"' -Replacement '            test "$postgres_result" = "skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
