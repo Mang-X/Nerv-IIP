@@ -14,6 +14,8 @@
 
 - 服务边界、目录或跨域调整：读取 `docs/architecture/repo-layout.md` 与
   `docs/architecture/context-map.md`。
+- 本地启动、Aspire/fullstack 运行或排障：读取
+  `docs/architecture/local-dev-troubleshooting.md`。
 - 人工文档或协作文本：读取 `docs/architecture/document-language-governance.md`。
 - 新建、修订或执行 Superpowers spec/plan：先读取 `docs/superpowers/AGENTS.md`。
 - 用户可见页面或流程变更：按
