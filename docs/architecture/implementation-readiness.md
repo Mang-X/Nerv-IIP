@@ -2,11 +2,11 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
-## PostgreSQL Provider Tests 单服务试点（NERV-688，拆解②）
+## PostgreSQL Provider Tests 首批逐服务接入（NERV-688，拆解②、③首批）
 
-`.github/workflows/ci.yml` 已接入稳定展示名 `PostgreSQL Provider Tests`：PR 复用 NERV-668 的 `postgresql` 影响信号，影响计划失败或输出缺失时保守运行；`main` push 运行当前 core 试点。job 使用 PostgreSQL 18 service container，health check 后由 `psql` 执行协议级 readiness，再由 `scripts/run-postgres-test-lane.ps1` 创建 run/attempt 专属数据库、执行 Inventory 的单个 `InventoryPostgresProfileTests`、按冻结身份验证 TRX 为 1 passed / 0 skipped；失败时先按成员声明的受限 schema 保留脱敏关系诊断，再在 `finally` 强制删除数据库。`scripts/postgres-test-lane.json` 是本层成员清单，显式记录 `core/extended`、`active/deferred/blocked` 与诊断 schema；当前只登记 Inventory，其他服务仍属于拆解③。
+`.github/workflows/ci.yml` 已接入稳定展示名 `PostgreSQL Provider Tests`：PR 复用 NERV-668 的 `postgresql` 影响信号，影响计划失败或输出缺失时保守运行；`main` push 运行当前 active/core 成员。job 使用 PostgreSQL 18 service container，health check 后由 `psql` 执行协议级 readiness，再由 `scripts/run-postgres-test-lane.ps1` 为每个成员创建 run/attempt 专属数据库并顺序执行。当前成员是 Inventory 的 1 个 `InventoryPostgresProfileTests` 与 MasterData 的 5 个 `MasterDataPostgresProfileTests`；MasterData 五条用例统一使用 runner 注入的 member 数据库，不再自行创建无法被外层诊断和清理证明的内层数据库。每个成员拥有独立 TRX 目录和结果，聚合 summary 必须覆盖选中的全部成员。任一成员零发现、冻结身份不完整、skip、失败或清理失败都会使 job 失败；失败时先按该成员声明的受限 schema 保留脱敏关系诊断，其中 MasterData 同时覆盖业务 `business_masterdata` 与持久 outbox `cap` schema，再在 `finally` 强制删除对应数据库。`scripts/postgres-test-lane.json` 是本层成员清单，显式记录 `core/extended`、`active/deferred/blocked` 与诊断 schema；其余服务仍属于拆解③，MasterData World Bible 规模种子继续由 NERV-677/nightly 分层承接。
 
-测试原始 TRX 只进入 job 内部目录；MAN-661 collector 输出脱敏 `postgres` 证据 artifact，另一个机器可读 dependency summary 记录 PostgreSQL 版本、expected/discovered/passed/skipped 与 cleanup 结果。环境缺失、readiness 失败、零发现、身份不完整、任一 skip/失败、证据缺失或清理失败均使 job 失败。稳定 required `CI Summary` 对选中 lane 只接受 `success`，未选中时只接受精确 `skipped` 并显示 `skipped by policy`；lane job 本身不直接加入 branch protection。该接线不运行 Redis/CAP、FullChain 或其余 PostgreSQL 服务，也不代表拆解③–⑤完成。
+测试原始 TRX 只进入 job 内部目录；MAN-661 collector 输出脱敏 `postgres` 证据 artifact，另一个 schema v2 机器可读 dependency summary 同时记录 PostgreSQL 版本、聚合计数与逐成员 expected/discovered/passed/skipped/cleanup 事实。环境缺失、readiness 失败、成员遗漏、零发现、身份不完整、任一 skip/失败、证据缺失或清理失败均使 job 失败。稳定 required `CI Summary` 对选中 lane 只接受 `success`，未选中时只接受精确 `skipped` 并显示 `skipped by policy`；lane job 本身不直接加入 branch protection。该接线不运行 Redis/CAP、FullChain 或其余 PostgreSQL 服务，也不代表拆解③–⑤完成。
 
 ## CI Required Summary 与条件 lane（NERV-668 / #1235，拆解①、③前三批）
 

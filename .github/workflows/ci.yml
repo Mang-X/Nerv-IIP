@@ -613,7 +613,7 @@ jobs:
 
   postgres-provider-tests:
     name: PostgreSQL Provider Tests
-    # NERV-688 拆解②：Inventory 单服务试点。层级 A；显式 step 预算合计 59m，
+    # NERV-688 拆解③首批：Inventory + MasterData。层级 A；显式 step 预算合计 59m，
     # 小于 66m job 预算，为 service setup 和 action post steps 保留 7m。
     timeout-minutes: 66
     runs-on: ubuntu-latest
@@ -674,18 +674,19 @@ jobs:
           "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
           Write-Host "tested-sha=$testedSha"
 
-      - name: Run Inventory PostgreSQL profile pilot
+      - name: Run Inventory and MasterData PostgreSQL profiles
         timeout-minutes: 20
         id: postgres-tests
         shell: pwsh
-        run: >-
-          ./scripts/run-postgres-test-lane.ps1
-          -MemberId inventory-postgres-profile
-          -DatabaseName nerv_iip_inventory_${{ github.run_id }}_${{ github.run_attempt }}
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
-          -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+        run: |
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile')
+          ./scripts/run-postgres-test-lane.ps1 `
+            -MemberId $members `
+            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
+            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
+            -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
 
-      - name: Collect PostgreSQL pilot evidence
+      - name: Collect PostgreSQL profile evidence
         timeout-minutes: 5
         id: collect-postgres-evidence
         if: always()
