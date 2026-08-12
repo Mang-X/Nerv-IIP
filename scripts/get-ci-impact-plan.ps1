@@ -59,7 +59,7 @@ if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) {
     $summary = [Text.StringBuilder]::new()
     [void]$summary.AppendLine('## CI impact plan')
     [void]$summary.AppendLine()
-    [void]$summary.AppendLine('Coarse-domain signals remain observation-only outside frontend; NERV-685 derives governed frontend workspace shards from this plan.')
+    [void]$summary.AppendLine('NERV-668 routes Script Governance and OpenAPI/api-client Drift; NERV-685 derives governed frontend workspace shards. Other jobs remain unrouted.')
     [void]$summary.AppendLine()
     [void]$summary.AppendLine('| Signal | Selected | Reason |')
     [void]$summary.AppendLine('| --- | --- | --- |')
