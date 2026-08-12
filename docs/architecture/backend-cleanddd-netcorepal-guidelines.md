@@ -168,7 +168,7 @@ backend/services/AppHub/
 6. 只有当单个端点同时需要复杂元数据、特殊 Swagger 描述或其他高级 FastEndpoints 配置时，才把该端点完整切换到 `Configure()`；切换后路由、鉴权和元数据都放在同一个 `Configure()` 中。
 7. 响应统一使用 `ResponseData<T>` 和 `.AsResponseData()`。
 8. 请求/响应类型可以直接使用强类型 ID，不解包 `.Value`。
-9. 新增或修改业务服务对外 HTTP 端点时，必须在 Issue/PR 声明该端点的门面消费方式三选一（`exposed`/`deferred`/`internal`）并登记 `docs/architecture/facade-coverage-matrix.json`；详见 AGENTS.md“Facade 覆盖治理”与 `docs/architecture/facade-coverage-matrix.md`。
+9. 新增或修改业务服务对外 HTTP 端点时，必须在 Issue/PR 声明该端点的门面消费方式三选一（`exposed`/`deferred`/`internal`）并登记 `docs/architecture/facade-coverage-matrix.json`；具体规则见 `docs/architecture/facade-coverage-matrix.md`。
 
 ## 事务、领域事件与集成事件
 
@@ -276,7 +276,7 @@ Web 集成测试：
 1. 使用模板生成的 `MyWebApplicationFactory` 或等价测试工厂。
 2. 使用 Testcontainers 或本地开发编排启动当前配置所需依赖；默认开发配置为 PostgreSQL、`Messaging:Provider=InMemory` 和 Redis，显式 `Messaging:Provider=Redis` 时要求 Redis 持久化，只有显式 `Messaging:Provider=RabbitMQ` 时才要求 RabbitMQ。
 3. 端点测试覆盖请求、响应、KnownException、权限上下文和幂等行为。
-4. 当前测试宿主使用 `WebApplicationFactoryCollection` 阻止 xUnit 并行测试执行，以避免 FastEndpoints 静态配置竞态：FastEndpoints 8.1.0 在全局静态状态中存储 `Config` 和 `Serializer.Options`；并发测试宿主启动可能同时变更和复制共享的转换器列表，导致 `System.ArgumentException: Destination array was not long enough`。每个使用 `WebApplicationFactory<Program>` 的测试类必须标记 `[Collection(WebApplicationFactoryCollection.Name)]`，并在测试项目中定义对应的 `[CollectionDefinition(Name, DisableParallelization = true)]` 集合。只有当 FastEndpoints 支持逐宿主配置或宿主启动不再触碰共享状态时，才可以移除此集合。
+4. 全局状态与测试宿主隔离策略以 `docs/architecture/backend-test-determinism.md` 的当前矩阵和机器门禁为准；本 CleanDDD 指南不复制具体实现。
 
 事件测试：
 

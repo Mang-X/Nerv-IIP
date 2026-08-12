@@ -106,7 +106,7 @@ MAN-664 的 IndustrialTelemetry 顺序敏感宿主界面结构拆分仍明确延
 `app.UseFastEndpoints(c => c.Serializer.Options.Converters.Add(...))` 写 FastEndpoints 进程静态状态。
 `BusinessGatewayTestHostGate` 精确处理这一点——多读单写信号量，宿主构建独占全部许可，网关请求各占一个
 许可。因此「构建时无请求在飞、请求时无构建发生」，请求之间仍完全并行。这是真实互斥，
-**不宣称 FastEndpoints 静态状态可恢复**。这是根 `AGENTS.md`「后端测试确定性」允许的第三种手段
+**不宣称 FastEndpoints 静态状态可恢复**。这是本文件规定的第三种隔离手段
 （互斥门），与测试集合串行化、一次性进程隔离并列，同样不声称恢复。
 
 **许可必须由服务端持有。** 许可曾由客户端 `DelegatingHandler` 环绕 `base.SendAsync` 持有，这是**不成立**的：

@@ -373,7 +373,7 @@ Release`——一次 MSBuild 调用、一个解决方案，而该解决方案里
 **与 backend 的交集**：闭包里有 8 个 `backend/common/**` 项目（SDK 与 contracts）。
 这不是新引入的跨引用——`ProjectReference` 本来就在，解决方案里本来就登记了其中 5 个。
 `connector-hosts/` 与 `backend/` 仍是两个独立 `.sln`，本 PR 没有合并它们，也没有新增任何
-跨目录引用（AGENTS.md“禁止（Do NOT）”#2 未被触碰）。
+跨目录引用（`docs/architecture/repo-layout.md` 的解决方案分离与引用边界未被触碰）。
 
 **盘点中发现的真实缺陷（已修）**：那 8 个里只有 5 个是解决方案成员
 （`Sdk.Core`、`Sdk.Auth`、`Sdk.ConnectorProtocol`、`Contracts.ConnectorProtocol`、`ServiceAuth`）。

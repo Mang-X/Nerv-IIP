@@ -39,7 +39,7 @@ token 之上。
 [ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)，
 执行批次为 MAN-433（库侧）/ MAN-435（分 app codemod）/ MAN-436（守护收口）。要点：
 
-- `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座（或待收口的 deprecated 旧名）。
+- `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座。
 - PC 层（pc/blocks/layout）取素名：`NvButton`、`NvDataTable`、`NvPageHeader`（素名
   优先权归 PC）。screen/mobile/touch 与 PC 潜在同名者保留场景词根（`NvScreenButton`、
   `NvMobileDialog`、`NvTouchButton`），天然独有名直接 Nv（`NvScanBar`、`NvOeeHero`）。
@@ -47,8 +47,8 @@ token 之上。
   决定目录与 token 命名空间），再定名。
 - shadcn 原版（`components/ui/`）零改动零重命名——本文件既有红线不变，且由契约
   测试断言“原版目录不出现 `Nv`/`--nv-` 字样”进行机器守护。
-- 迁移期（MAN-433 合入后）旧名是 `@deprecated` 别名：**新代码禁止使用旧名**
-  （`ButtonPro`、`--sb-*`、`.ds-*`/`.sb-*` 类）。
+- S4 已收口：新代码和导出必须使用当前 NvUI 规范名称；旧名只允许出现在明确标注的
+  历史文档范围，实际封锁以契约测试为准。
 - CSS 类名前缀与 token 命名空间对齐：PC `nv-*`、screen `nv-scr-*`、mobile `nv-m-*`、
   touch `nv-t-*`；Nv 件 `data-slot` 值以 `nv-` 开头。
 
@@ -183,10 +183,8 @@ PY
 使用 `pnpm -C frontend --filter @nerv-iip/ui test` 运行。任何 token 变更合并前，
 此测试必须通过。如果需要更新受守护的值，必须有意更新测试，并在此记录决策。
 
-ADR 0020 落地批（MAN-433）将把守护面扩展到：八层层序声明、库内零未分层（unlayered）规则（白名单
-外）、`--nv-scr-*` 全表与 `--sb-*` 别名期形态、关键 var 引用链、原版目录纯净
-（无 `Nv`/`--nv-` 字样）、Nv 件 `data-slot` 命名空间、跨场景 token 引用污染、旧名零
-新增。清单见 ADR 0020 §4.4。
+当前守护以 `packages/ui/src/design-system.contract.test.ts` 为准：screen token 使用
+`--nv-scr-*`，并断言 S4 收口后不存在 `--sb-*` 过渡别名。
 
 ## 迁移待办
 
