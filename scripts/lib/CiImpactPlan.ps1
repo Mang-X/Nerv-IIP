@@ -135,7 +135,11 @@ function Get-NervCiImpactPlan {
         $isRuleSelfChange = [string]::Equals($path, '.github/workflows/ci.yml', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/CiImpactPlan.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/get-ci-impact-plan.ps1', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)
+            [string]::Equals($path, 'scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/lib/FrontendWorkspacePlan.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/get-frontend-workspace-plan.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/frontend-test-skip-allowlist.json', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/tests/frontend-workspace-plan.Tests.ps1', [StringComparison]::Ordinal)
         if ($isRuleSelfChange -or $path.StartsWith('.github/workflows/', [StringComparison]::Ordinal)) {
             Select-AllImpacts -Reason "rule-self-check:$path"
             Select-Impact -Name 'workflows' -Reason $reason

@@ -49,19 +49,28 @@ function Test-OrdinalMember {
     return @($Values | Where-Object { [string]::Equals($_, $Expected, [StringComparison]::Ordinal) }).Count -gt 0
 }
 
-function Assert-ObservationOnlyWorkflow {
+function Assert-FrontendOnlyImpactConsumption {
     param([Parameter(Mandatory)] [string] $Path)
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $frontendConsumers = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
+        [StringComparer]::Ordinal)
     foreach ($jobProperty in @($parsedWorkflow.jobs.PSObject.Properties | Where-Object { -not [string]::Equals($_.Name, 'impact-plan', [StringComparison]::Ordinal) })) {
         $job = $jobProperty.Value
         $needsProperty = $job.PSObject.Properties['needs']
         [string[]]$needs = @()
         if ($null -ne $needsProperty) { $needs = @($needsProperty.Value | ForEach-Object { [string]$_ }) }
-        Assert-Contract ($needs.Count -eq 0 -or -not (Test-OrdinalMember -Values $needs -Expected 'impact-plan')) "Observation-only impact-plan must not be a dependency of existing job '$($jobProperty.Name)'."
+        $consumesImpact = Test-OrdinalMember -Values $needs -Expected 'impact-plan'
         $conditionProperty = $job.PSObject.Properties['if']
         $condition = if ($null -eq $conditionProperty) { '' } else { [string]$conditionProperty.Value }
-        Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Observation-only impact outputs must not control existing job '$($jobProperty.Name)'."
+        if ($frontendConsumers.Contains([string]$jobProperty.Name)) {
+            Assert-Contract $consumesImpact "Frontend job '$($jobProperty.Name)' must fail closed through impact-plan."
+        }
+        else {
+            Assert-Contract (-not $consumesImpact) "Only frontend jobs may consume impact-plan; '$($jobProperty.Name)' must remain unconditional."
+            Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Only frontend job conditions may consume impact outputs; '$($jobProperty.Name)' must remain unconditional."
+        }
     }
 }
 
@@ -262,7 +271,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('observation only', [StringComparison]::Ordinal)) 'Actions Summary must state that the plan is observation-only.'
+    Assert-Contract ($writtenSummary.Contains('observation-only outside frontend', [StringComparison]::Ordinal)) 'Actions Summary must state the frontend-only consumption boundary.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
 finally {
@@ -273,7 +282,7 @@ $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan observation job.'
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
-Assert-ObservationOnlyWorkflow -Path $workflowPath
+Assert-FrontendOnlyImpactConsumption -Path $workflowPath
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -281,8 +290,8 @@ try {
     foreach ($mutation in @(
             @{
                 Name = 'scalar-needs'
-                Original = "  frontend:`n    name: Frontend Typecheck and Build"
-                Replacement = "  frontend:`n    name: Frontend Typecheck and Build`n    needs: impact-plan"
+                Original = "  connector-host-tests:`n    name: Connector Host Tests"
+                Replacement = "  connector-host-tests:`n    name: Connector Host Tests`n    needs: impact-plan"
             },
             @{
                 Name = 'list-needs'
@@ -291,12 +300,12 @@ try {
             }
         )) {
         $mutated = $workflow.Replace($mutation.Original, $mutation.Replacement)
-        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Observation-only mutation '$($mutation.Name)' must match the canonical workflow."
+        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Frontend-only mutation '$($mutation.Name)' must match the canonical workflow."
         $mutationPath = Join-Path $workflowMutationRoot "$($mutation.Name).yml"
         [IO.File]::WriteAllText($mutationPath, $mutated, [Text.UTF8Encoding]::new($false))
         $failure = $null
-        try { Assert-ObservationOnlyWorkflow -Path $mutationPath } catch { $failure = $_ }
-        Assert-Contract ($null -ne $failure) "Observation-only mutation '$($mutation.Name)' must be rejected."
+        try { Assert-FrontendOnlyImpactConsumption -Path $mutationPath } catch { $failure = $_ }
+        Assert-Contract ($null -ne $failure) "Frontend-only mutation '$($mutation.Name)' must be rejected."
     }
 }
 finally {

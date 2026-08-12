@@ -57,9 +57,9 @@ if (-not [string]::IsNullOrWhiteSpace($GitHubOutputPath)) {
 
 if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) {
     $summary = [Text.StringBuilder]::new()
-    [void]$summary.AppendLine('## CI impact plan (observation only)')
+    [void]$summary.AppendLine('## CI impact plan')
     [void]$summary.AppendLine()
-    [void]$summary.AppendLine('This plan does not skip or gate any CI job in NERV-668 decomposition item 2.')
+    [void]$summary.AppendLine('Coarse-domain signals remain observation-only outside frontend; NERV-685 derives governed frontend workspace shards from this plan.')
     [void]$summary.AppendLine()
     [void]$summary.AppendLine('| Signal | Selected | Reason |')
     [void]$summary.AppendLine('| --- | --- | --- |')
