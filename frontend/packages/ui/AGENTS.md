@@ -1,7 +1,7 @@
 # AGENTS.md — @nerv-iip/ui（NvUI 组件库 · 库内规则）
 
-> 根 `AGENTS.md` 的 NvUI 章节写的是**消费者侧**（app 怎么用）；本文件是
-> **库内侧**（改库本身的规矩）。权威 ADR：
+> `frontend/AGENTS.md` 路由 NvUI **消费者侧**规则（app 怎么用）；本文件只补充
+> **库内侧**规则（改库本身）。权威 ADR：
 > `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`。
 
 ## 分层与改动边界
