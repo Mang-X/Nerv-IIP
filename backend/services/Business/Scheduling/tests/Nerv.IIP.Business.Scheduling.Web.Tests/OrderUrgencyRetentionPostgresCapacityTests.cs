@@ -10,6 +10,7 @@ using Nerv.IIP.Contracts.FileStorage;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
+[Collection(SchedulingPostgresLaneDatabase.CollectionName)]
 public sealed class OrderUrgencyRetentionPostgresCapacityTests
 {
     private const int OrderCount = 5_001;
@@ -19,12 +20,10 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
     [SchedulingPostgresFact]
     public async Task Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL()
     {
-        var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(
-            adminConnectionString,
-            "nerv_scheduling_retention_capacity");
-        await using (var setup = CreateContext(database.ConnectionString))
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var setup = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString))
         {
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync();
             for (var index = 0; index < OrderCount; index++)
             {
@@ -52,8 +51,8 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
             null);
 
         var stopwatch = Stopwatch.StartNew();
-        await using var firstContext = CreateContext(database.ConnectionString);
-        await using var secondContext = CreateContext(database.ConnectionString);
+        await using var firstContext = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString);
+        await using var secondContext = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString);
         var firstService = new OrderUrgencyRetentionService(firstContext, archive, new FixedTimeProvider(Now), "worker-a");
         var secondService = new OrderUrgencyRetentionService(secondContext, archive, new FixedTimeProvider(Now), "worker-b");
         var firstRun = firstService.RunScopeAsync(policy, CancellationToken.None);
@@ -67,7 +66,7 @@ public sealed class OrderUrgencyRetentionPostgresCapacityTests
         var completedRun = Assert.Single(runs, x => x.LeaseAcquired);
         stopwatch.Stop();
 
-        await using var assertion = CreateContext(database.ConnectionString);
+        await using var assertion = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString);
         var remaining = await assertion.OrderUrgencySnapshots.CountAsync();
         var latestRemaining = await assertion.OrderUrgencySnapshots.CountAsync(x => x.BusinessPriorityRevision == 2);
         var batches = await assertion.OrderUrgencyArchiveBatches.ToArrayAsync();

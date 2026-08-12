@@ -25,12 +25,22 @@ function Assert-MasterDataDiagnosticSchemas([object]$Member) {
         throw 'The MasterData member must retain restricted business_masterdata and CAP outbox diagnostics.'
     }
 }
+function Assert-SchedulingLaneOwnedDatabase([string]$SourcePath) {
+    $source = [IO.File]::ReadAllText($SourcePath)
+    if (-not $source.Contains('[Collection(SchedulingPostgresLaneDatabase.CollectionName)]', [StringComparison]::Ordinal)) {
+        throw "Scheduling lane source '$([IO.Path]::GetFileName($SourcePath))' must join the serializing lane collection."
+    }
+    if ($source.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) {
+        throw "Scheduling lane source '$([IO.Path]::GetFileName($SourcePath))' must not create an inner database the lane cannot diagnose or clean."
+    }
+}
 function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
     $document = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $repoRoot
     $job = $document.jobs.'postgres-provider-tests'
     $testSteps = @($job.steps | Where-Object { [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $_ -PropertyName 'id'), 'postgres-tests', [StringComparison]::Ordinal) })
     if ($testSteps.Count -ne 1) { throw 'PostgreSQL Provider Tests must contain exactly one authoritative postgres-tests step.' }
-    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select Inventory and MasterData exactly through one AST-validated assignment and runner invocation.'
+    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select Inventory, MasterData and Scheduling exactly through one AST-validated assignment and runner invocation.'
+    $expectedMemberIds = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')
     $run = [regex]::Replace([string]$testSteps[0].run, '\$\{\{.*?\}\}', 'github-expression')
     $tokens = $null
     $parseErrors = $null
@@ -53,12 +63,12 @@ function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
         $arrayExpression.SubExpression.Statements[0].PipelineElements[0].Expression
     } else { $null }
     $memberValues = if ($arrayLiteral -is [System.Management.Automation.Language.ArrayLiteralAst]) { @($arrayLiteral.Elements) } else { @() }
-    if ($memberValues.Count -ne 2 -or
-        $memberValues[0] -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
-        $memberValues[1] -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
-        -not [string]::Equals($memberValues[0].Value, 'inventory-postgres-profile', [StringComparison]::Ordinal) -or
-        -not [string]::Equals($memberValues[1].Value, 'masterdata-postgres-profile', [StringComparison]::Ordinal)) {
-        throw $invalidBatchMessage
+    if ($memberValues.Count -ne $expectedMemberIds.Count) { throw $invalidBatchMessage }
+    for ($memberIndex = 0; $memberIndex -lt $expectedMemberIds.Count; $memberIndex++) {
+        if ($memberValues[$memberIndex] -isnot [System.Management.Automation.Language.StringConstantExpressionAst] -or
+            -not [string]::Equals($memberValues[$memberIndex].Value, $expectedMemberIds[$memberIndex], [StringComparison]::Ordinal)) {
+            throw $invalidBatchMessage
+        }
     }
 
     $pipeline = $ast.EndBlock.Statements[1]
@@ -103,6 +113,47 @@ try {
     try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
     Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
     Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the five profile identities and exclude the world-bible seed test.'
+
+    $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
+    $schedulingIdentities = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests.Representative_capacity_scan_and_overlapping_workers_are_safe_on_PostgreSQL',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie'
+    )
+    Assert-Contract ([string]::Equals([string]$schedulingMember.service, 'Scheduling', [StringComparison]::Ordinal)) 'The second checklist-three batch must register Scheduling as its own lane member.'
+    Assert-Contract ([string]::Equals([string]$schedulingMember.project, 'backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The Scheduling member must target the owning test project.'
+    Assert-Contract (@($schedulingMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$schedulingMember.diagnosticSchemas[0], 'scheduling', [StringComparison]::Ordinal)) 'The Scheduling member must own its restricted diagnostic schema declaration.'
+    Assert-Contract ([string]::Equals((@($schedulingMember.expectedTestIdentities) -join "`n"), ($schedulingIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Scheduling member must freeze exactly the six governed profile and capacity identities.'
+    $schedulingFilterClasses = @(
+        'Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests',
+        'Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests'
+    )
+    foreach ($schedulingClass in $schedulingFilterClasses) {
+        Assert-Contract ([string]$schedulingMember.filter).Contains("FullyQualifiedName~$schedulingClass", [StringComparison]::Ordinal) "The Scheduling member filter must select '$schedulingClass'."
+    }
+    $schedulingSourceDirectory = Join-Path $repoRoot 'backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests'
+    foreach ($schedulingClass in $schedulingFilterClasses) {
+        $schedulingSourcePath = Join-Path $schedulingSourceDirectory "$($schedulingClass.Substring($schedulingClass.LastIndexOf('.', [StringComparison]::Ordinal) + 1)).cs"
+        Assert-Contract (Test-Path -LiteralPath $schedulingSourcePath -PathType Leaf) "The Scheduling lane source '$schedulingSourcePath' must exist."
+        Assert-SchedulingLaneOwnedDatabase -SourcePath $schedulingSourcePath
+    }
+    $innerDatabaseSourcePath = Join-Path $fixtureRoot 'inner-database-scheduling-source.cs'
+    [IO.File]::WriteAllText(
+        $innerDatabaseSourcePath,
+        "[Collection(SchedulingPostgresLaneDatabase.CollectionName)]`nawait PostgreSqlTestDatabase.CreateAsync(connectionString, `"nerv_scheduling_test`");`n",
+        [Text.UTF8Encoding]::new($false))
+    $innerDatabaseRejected = $false
+    try { Assert-SchedulingLaneOwnedDatabase -SourcePath $innerDatabaseSourcePath } catch { $innerDatabaseRejected = $_.Exception.Message.Contains('inner database', [StringComparison]::Ordinal) }
+    Assert-Contract $innerDatabaseRejected 'Reintroducing an inner Scheduling database must fail the lane-owned database contract.'
+    $unserializedSourcePath = Join-Path $fixtureRoot 'unserialized-scheduling-source.cs'
+    [IO.File]::WriteAllText($unserializedSourcePath, "public sealed class ScheduleReleaseGovernancePostgresProfileTests`n", [Text.UTF8Encoding]::new($false))
+    $unserializedRejected = $false
+    try { Assert-SchedulingLaneOwnedDatabase -SourcePath $unserializedSourcePath } catch { $unserializedRejected = $_.Exception.Message.Contains('serializing lane collection', [StringComparison]::Ordinal) }
+    Assert-Contract $unserializedRejected 'Dropping the serializing collection must fail closed, because the members share one governed database.'
     $identity = [string]$member.expectedTestIdentities[0]
     $separatorIndex = $identity.LastIndexOf('.', [StringComparison]::Ordinal)
     $class = $identity.Substring(0, $separatorIndex)
@@ -119,21 +170,24 @@ try {
     try { Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) | Out-Null } catch { $rejected = $_.Exception.Message.Contains('0 skipped', [StringComparison]::Ordinal) }
     Assert-Contract $rejected 'An all-skipped pilot must fail closed.'
 
+    $selectedMemberIds = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')
     $validMemberSummaries = @(
         [pscustomobject]@{ memberId = 'inventory-postgres-profile'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' },
-        [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
+        [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' },
+        [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 6; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
     )
-    Assert-NervPostgresTestLaneSummary -SelectedMemberIds @('inventory-postgres-profile', 'masterdata-postgres-profile') -MemberSummaries $validMemberSummaries
+    Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries $validMemberSummaries
     $invalidSummaryCases = @(
-        @{ name = 'missing-member'; members = @($validMemberSummaries[0]); diagnostic = 'summarized 1' },
-        @{ name = 'zero-discovery'; members = @($validMemberSummaries[0], [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 0' },
-        @{ name = 'skipped'; members = @($validMemberSummaries[0], [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 4; failed = 0; skipped = 1; cleanup = 'passed'; outcome = 'passed' }); diagnostic = '1 skipped' },
-        @{ name = 'failed'; members = @($validMemberSummaries[0], [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 4; failed = 1; skipped = 0; cleanup = 'passed'; outcome = 'failed' }); diagnostic = "outcome 'failed'" },
-        @{ name = 'cleanup-failed'; members = @($validMemberSummaries[0], [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'failed'; outcome = 'passed' }); diagnostic = "cleanup 'failed'" }
+        @{ name = 'missing-member'; members = @($validMemberSummaries[0], $validMemberSummaries[1]); diagnostic = 'summarized 2' },
+        @{ name = 'zero-discovery'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 0' },
+        @{ name = 'partial-discovery'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 5' },
+        @{ name = 'skipped'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 5; failed = 0; skipped = 1; cleanup = 'passed'; outcome = 'passed' }); diagnostic = '1 skipped' },
+        @{ name = 'failed'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 5; failed = 1; skipped = 0; cleanup = 'passed'; outcome = 'failed' }); diagnostic = "outcome 'failed'" },
+        @{ name = 'cleanup-failed'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 6; failed = 0; skipped = 0; cleanup = 'failed'; outcome = 'passed' }); diagnostic = "cleanup 'failed'" }
     )
     foreach ($case in $invalidSummaryCases) {
         $summaryRejected = $false
-        try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds @('inventory-postgres-profile', 'masterdata-postgres-profile') -MemberSummaries @($case.members) } catch { $summaryRejected = $_.Exception.Message.Contains([string]$case.diagnostic, [StringComparison]::Ordinal) }
+        try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries @($case.members) } catch { $summaryRejected = $_.Exception.Message.Contains([string]$case.diagnostic, [StringComparison]::Ordinal) }
         Assert-Contract $summaryRejected "PostgreSQL aggregate case '$($case.name)' must fail closed with its governed diagnostic."
     }
 
@@ -142,17 +196,25 @@ try {
     $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
     $workflow = [IO.File]::ReadAllText($workflowPath)
     Assert-PostgresWorkflowMemberBatch -WorkflowPath $workflowPath
-    $mutatedWorkflowPath = Join-Path $fixtureRoot 'inventory-only-ci.yml'
-    [IO.File]::WriteAllText($mutatedWorkflowPath, $workflow.Replace("`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')", "`$members = @('inventory-postgres-profile')"), [Text.UTF8Encoding]::new($false))
-    $workflowMutationRejected = $false
-    try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $mutatedWorkflowPath } catch { $workflowMutationRejected = $true }
-    Assert-Contract $workflowMutationRejected 'Removing MasterData from the authoritative workflow step must fail the structural contract.'
-    $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-inventory-only-ci.yml'
-    $commentMaskedAssignment = "# `$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')`n          `$members = @('inventory-postgres-profile')"
-    [IO.File]::WriteAllText($commentMaskedWorkflowPath, $workflow.Replace("`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')", $commentMaskedAssignment), [Text.UTF8Encoding]::new($false))
+    $authoritativeAssignment = "`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')"
+    Assert-Contract ($workflow.Contains($authoritativeAssignment, [StringComparison]::Ordinal)) 'The authoritative workflow assignment must select the full governed member batch.'
+    $droppedMemberCases = @(
+        @{ name = 'scheduling'; assignment = "`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')" },
+        @{ name = 'masterdata'; assignment = "`$members = @('inventory-postgres-profile', 'scheduling-postgres-profile')" }
+    )
+    foreach ($droppedMemberCase in $droppedMemberCases) {
+        $mutatedWorkflowPath = Join-Path $fixtureRoot "dropped-$($droppedMemberCase.name)-ci.yml"
+        [IO.File]::WriteAllText($mutatedWorkflowPath, $workflow.Replace($authoritativeAssignment, [string]$droppedMemberCase.assignment), [Text.UTF8Encoding]::new($false))
+        $workflowMutationRejected = $false
+        try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $mutatedWorkflowPath } catch { $workflowMutationRejected = $true }
+        Assert-Contract $workflowMutationRejected "Removing $($droppedMemberCase.name) from the authoritative workflow step must fail the structural contract."
+    }
+    $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-dropped-scheduling-ci.yml'
+    $commentMaskedAssignment = "# $authoritativeAssignment`n          `$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')"
+    [IO.File]::WriteAllText($commentMaskedWorkflowPath, $workflow.Replace($authoritativeAssignment, $commentMaskedAssignment), [Text.UTF8Encoding]::new($false))
     $commentMaskedMutationRejected = $false
     try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $commentMaskedWorkflowPath } catch { $commentMaskedMutationRejected = $true }
-    Assert-Contract $commentMaskedMutationRejected 'A comment must not mask an active workflow assignment that removes MasterData.'
+    Assert-Contract $commentMaskedMutationRejected 'A comment must not mask an active workflow assignment that removes Scheduling.'
     Assert-Contract ($runner.Contains('[string[]] $MemberId', [StringComparison]::Ordinal)) 'The runner must accept an explicit ordered member batch.'
     Assert-Contract ($runner.Contains('foreach ($selectedMemberId in $MemberId)', [StringComparison]::Ordinal)) 'The runner must execute every selected member instead of authenticating only the pilot.'
     Assert-Contract ($runner.Contains("Join-Path `$ResultsDirectory ([string]`$member.id)", [StringComparison]::Ordinal)) 'Each selected member must own an isolated TRX directory.'
