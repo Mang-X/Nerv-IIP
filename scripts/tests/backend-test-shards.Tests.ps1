@@ -127,6 +127,9 @@ $dockerBclEntryTypes = @(
     'Nerv.IIP.TemporaryShardClassification.Tests.AliasAssignedFileNameDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.ThisFieldAssignedFileNameDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.GlobalAliasAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessStartInfoPropertyChainDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessAliasStartInfoPropertyChainDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParameterAssignedFileNameDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.SingleArgumentStaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests',
@@ -254,6 +257,7 @@ public sealed class InterpolatedRawDockerTests
     Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
 global using GlobalPsi = System.Diagnostics.ProcessStartInfo;
 using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
+using ProcAlias = System.Diagnostics.Process;
 using Psi = System.Diagnostics.ProcessStartInfo;
 
 namespace Nerv.IIP.TemporaryShardClassification.Tests;
@@ -393,6 +397,42 @@ public sealed class GlobalAliasAssignedFileNameDockerTests
     }
 }
 
+public sealed class ParameterAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Configures_a_parameter_for_docker()
+    {
+        Configure(new ProcessStartInfo());
+    }
+
+    private static void Configure(ProcessStartInfo target)
+    {
+        target.FileName = "docker";
+    }
+}
+
+public sealed class ProcessStartInfoPropertyChainDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_the_process_start_info_property()
+    {
+        var process = new Process();
+        process.StartInfo.FileName = "docker";
+        _ = process.Start();
+    }
+}
+
+public sealed class ProcessAliasStartInfoPropertyChainDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_an_aliased_process_type()
+    {
+        var process = new ProcAlias();
+        process.StartInfo.FileName = "docker";
+        _ = process.Start();
+    }
+}
+
 public sealed class StaticProcessStartDockerTests
 {
     [Fact]
@@ -495,6 +535,48 @@ public sealed class CustomFileNameAssignmentTests
     {
         var options = new CustomLaunchOptions();
         options.FileName = "docker";
+    }
+}
+
+public sealed class CustomParameterFileNameAssignmentTests
+{
+    [Fact]
+    public void Configures_a_custom_parameter()
+    {
+        Configure(new CustomLaunchOptions());
+    }
+
+    private static void Configure(CustomLaunchOptions target)
+    {
+        target.FileName = "docker";
+    }
+}
+
+public sealed class CustomProcessWithStartInfo
+{
+    public CustomLaunchOptions StartInfo { get; } = new();
+}
+
+public sealed class CustomProcessStartInfoPropertyChainTests
+{
+    [Fact]
+    public void Assigns_a_custom_start_info_property()
+    {
+        var process = new CustomProcessWithStartInfo();
+        process.StartInfo.FileName = "docker";
+    }
+}
+
+public sealed class CrossMethodExpressionBodiedParameterLeakTests
+{
+    private readonly CustomLaunchOptions target = new();
+
+    private static void Earlier(System.Diagnostics.ProcessStartInfo target) => _ = target;
+
+    [Fact]
+    public void Assigns_the_custom_field_in_a_later_method()
+    {
+        target.FileName = "docker";
     }
 }
 
