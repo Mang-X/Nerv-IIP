@@ -923,6 +923,7 @@ jobs:
     needs:
       - backend-tests
       - connector-host-tests
+      - frontend-unit-tests
       - frontend
       - script-governance
     steps:
@@ -932,5 +933,6 @@ jobs:
         run: |
           test "${{ needs.backend-tests.result }}" = "success"
           test "${{ needs.connector-host-tests.result }}" = "success"
+          test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
           test "${{ needs.script-governance.result }}" = "success"

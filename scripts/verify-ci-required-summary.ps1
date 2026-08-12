@@ -29,4 +29,4 @@ if ($findings.Count -gt 0) {
     exit 1
 }
 
-Write-Output 'CI required-summary governance passed: CI Summary fails closed over the four current required jobs.'
+Write-Output 'CI required-summary governance passed: CI Summary fails closed over the five current required candidates.'

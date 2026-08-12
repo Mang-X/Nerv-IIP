@@ -72,13 +72,29 @@ try {
     Assert-Contract (Test-Path -LiteralPath $verifierPath -PathType Leaf) 'The CI required-summary verifier is missing.'
 
     $workflow = [IO.File]::ReadAllText($workflowPath)
+    $fiveLaneWorkflow = $workflow
+    if (-not $fiveLaneWorkflow.Contains("      - frontend-unit-tests$([Environment]::NewLine)", [StringComparison]::Ordinal)) {
+        $fiveLaneWorkflow = $fiveLaneWorkflow.Replace(
+            "      - frontend$([Environment]::NewLine)",
+            "      - frontend-unit-tests$([Environment]::NewLine)      - frontend$([Environment]::NewLine)")
+    }
+    if (-not $fiveLaneWorkflow.Contains('          test "${{ needs.frontend-unit-tests.result }}" = "success"', [StringComparison]::Ordinal)) {
+        $fiveLaneWorkflow = $fiveLaneWorkflow.Replace(
+            '          test "${{ needs.frontend.result }}" = "success"',
+            ('          test "${{ needs.frontend-unit-tests.result }}" = "success"' + [Environment]::NewLine +
+                '          test "${{ needs.frontend.result }}" = "success"'))
+    }
+    [IO.File]::WriteAllText($fixturePath, $fiveLaneWorkflow, [Text.UTF8Encoding]::new($false))
+    $fiveLaneResult = Invoke-SummaryVerifier -Name 'ci-required-summary-five-lane' -Path $fixturePath
+    Assert-Contract $fiveLaneResult.Passed "CI Summary must accept frontend unit tests as a fifth required lane: $($fiveLaneResult.Message)"
+
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
 
     $needLine = '      - connector-host-tests'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `
         -Original "$needLine$([Environment]::NewLine)" -Replacement '' `
-        -ExpectedDiagnostic 'CI Summary must need exactly the four current required CI jobs.'
+        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
 
     Invoke-Mutation -Name 'ci-summary-not-always' -Workflow $workflow `
         -Original "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)    timeout-minutes: 5$([Environment]::NewLine)    runs-on: ubuntu-latest$([Environment]::NewLine)    if: always()" `
@@ -88,7 +104,7 @@ try {
     Invoke-Mutation -Name 'ci-summary-missing-job' -Workflow $workflow `
         -Original "  connector-host-tests:$([Environment]::NewLine)" `
         -Replacement "  connector-host-tests-missing:$([Environment]::NewLine)" `
-        -ExpectedDiagnostic 'CI Summary must need exactly the four current required CI jobs.'
+        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
 
     $strictAssertion = '          test "${{ needs.connector-host-tests.result }}" = "success"'
     Invoke-Mutation -Name 'ci-summary-noop' -Workflow $workflow `
