@@ -1040,7 +1040,6 @@ $discoveredBackendProjects = @(
 $qualifiedProcessStartInfoInvocationPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*\('
 $qualifiedProcessStartInfoInitializerPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
 $qualifiedProcessStartInvocationPattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*\.\s*Start\s*\('
-$unqualifiedProcessStartInvocationPattern = '(?<![A-Za-z0-9_.:])Process\s*\.\s*Start\s*\('
 $testProjectPaths = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
@@ -1084,7 +1083,6 @@ foreach ($testProjectPath in $testProjectPaths) {
             $processStartInfoTypePattern = "(?:$processStartInfoTypePattern|$($escapedProcessStartInfoNames -join '|'))"
         }
         $unqualifiedProcessNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        $hasLocalProcess = $false
         if ($structuralText.Contains('Process', [StringComparison]::Ordinal)) {
             $hasLocalProcessType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+Process\b')
             $allProcessAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
@@ -1100,7 +1098,6 @@ foreach ($testProjectPath in $testProjectPaths) {
             if (-not $hasLocalProcessType -and -not $hasCustomProcessAlias) {
                 [void] $unqualifiedProcessNames.Add('Process')
             }
-            $hasLocalProcess = $hasLocalProcessType -or $hasCustomProcessAlias
         }
         $escapedProcessNames = @($unqualifiedProcessNames | ForEach-Object { [regex]::Escape([string] $_) })
         $processTypePattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process'
@@ -1123,8 +1120,8 @@ foreach ($testProjectPath in $testProjectPaths) {
                 Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "new\s+$unqualifiedProcessStartInfoName\s*\("
                 Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern "new\s+$unqualifiedProcessStartInfoName\s*(?:\(\s*\))?\s*\{"
             }
-            if (-not $hasLocalProcess) {
-                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $unqualifiedProcessStartInvocationPattern
+            foreach ($unqualifiedProcessName in $escapedProcessNames) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "(?<![A-Za-z0-9_.:])$unqualifiedProcessName\s*\.\s*Start\s*\("
             }
         )
         if ($directDockerMatches.Count -eq 0) {

@@ -130,6 +130,7 @@ $dockerBclEntryTypes = @(
     'Nerv.IIP.TemporaryShardClassification.Tests.ProcessStartInfoPropertyChainDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.ProcessAliasStartInfoPropertyChainDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.ParameterAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessAliasStaticStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.SingleArgumentStaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
     'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests',
@@ -438,6 +439,13 @@ public sealed class StaticProcessStartDockerTests
     [Fact]
     public void Starts_docker_with_the_static_process_api() =>
         _ = Process.Start("docker", "ps");
+}
+
+public sealed class ProcessAliasStaticStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_an_aliased_static_process_api() =>
+        _ = ProcAlias.Start("docker");
 }
 
 public sealed class SingleArgumentStaticProcessStartDockerTests
