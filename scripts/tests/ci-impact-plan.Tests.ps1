@@ -157,7 +157,7 @@ Assert-ImpactCase -Name 'frontend-guidance-markdown' -Paths @('frontend/AGENTS.m
 }
 
 Assert-ImpactCase -Name 'single-business-service' -Paths @('backend/services/Business/Erp/src/Orders.cs') -Flags @{
-    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+    backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; connector_hosts = $false; postgresql = $true; redis_cap = $false; full_chain = $false
 } -Services @('erp')
 
 Assert-ImpactCase -Name 'product-engineering-service-name' -Paths @('backend/services/Business/ProductEngineering/src/Release.cs') -Flags @{
@@ -165,7 +165,7 @@ Assert-ImpactCase -Name 'product-engineering-service-name' -Paths @('backend/ser
 } -Services @('product-engineering')
 
 Assert-ImpactCase -Name 'common-contract-expansion' -Paths @('backend/common/Contracts/IntegrationEvents.cs') -Flags @{
-    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; backend_contracts = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 foreach ($sharedCase in @(
@@ -184,6 +184,7 @@ foreach ($commonDirectory in $backendCommonDirectories) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @("backend/common/$commonDirectory/ObservedChange.cs")
     Assert-ImpactFlag -Plan $plan -Name 'backend' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'business_gateway' -Expected $true
+    Assert-ImpactFlag -Plan $plan -Name 'connector_hosts' -Expected $true
     Assert-ImpactFlag -Plan $plan -Name 'full_chain' -Expected $true
     Assert-Contract (@($plan.business_services).Count -gt 10) "Shared backend directory '$commonDirectory' must conservatively expand to every known business service."
 }
@@ -194,7 +195,7 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
 
 foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
     Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
-        backend = $true; openapi_codegen = $true
+        backend = $true; openapi_codegen = $true; connector_hosts = $true
     }
 }
 

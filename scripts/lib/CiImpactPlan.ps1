@@ -153,7 +153,7 @@ function Get-NervCiImpactPlan {
 
         if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'openapi_codegen')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
 
@@ -191,6 +191,10 @@ function Get-NervCiImpactPlan {
         if ($path.StartsWith('docs/', [StringComparison]::Ordinal) -or $path.EndsWith('.md', [StringComparison]::OrdinalIgnoreCase)) {
             Select-Impact -Name 'docs' -Reason $reason
             continue
+        }
+
+        if ($path.StartsWith('backend/common/', [StringComparison]::Ordinal)) {
+            Select-Impact -Name 'connector_hosts' -Reason $reason
         }
 
         if ($path.StartsWith('backend/common/Contracts/', [StringComparison]::Ordinal)) {
