@@ -60,8 +60,8 @@ param(
     # Repo-relative solution paths. Left empty, every *.sln in the repository is discovered and
     # checked — a new solution must not be able to join the repo unchecked. Supplied explicitly only
     # by the contract test, which points the script at throwaway fixture solutions.
-    # The two real solutions stay separate by design (AGENTS.md "Do NOT" #2): this check reads both,
-    # it never merges them.
+    # The backend and Connector Host solutions stay separate by design (see
+    # docs/architecture/repo-layout.md, 放置规则 5); this check reads both and never merges them.
     [string[]] $SolutionPath = @(),
 
     [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

@@ -551,7 +551,7 @@ function Get-NervShardTimingObservationsFromEvidenceDirectory {
                 # `-ceq`/`-cne` still consult the collation table, which folds away ignorable
                 # characters, so a status of "succee<U+00AD>ded" compares *equal* to 'succeeded' and
                 # a failed bundle's diagnostics would be admitted as measurements. Same rule as the
-                # rest of the repository (AGENTS.md, "Backend Test Determinism").
+                # rest of the repository (docs/architecture/backend-test-determinism.md).
                 if ($null -ne $status -and -not [string]::Equals([string] $status, 'succeeded', [StringComparison]::Ordinal)) { continue }
                 $rows = @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $summary)
             }

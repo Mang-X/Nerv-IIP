@@ -167,7 +167,7 @@ function Test-IsExempted {
 # The names a library is allowed to invoke with `&`: variables the file itself proves are script
 # blocks, either as a `[scriptblock]`-typed parameter or as a variable assigned a `{ ... }` literal.
 # That is exactly the injected-action seam this repository builds testable libraries out of (see
-# AGENTS.md, 后端测试确定性), and it is provable from the AST — unlike `& $someString`, which is the
+# docs/architecture/backend-test-determinism.md), and it is provable from the AST — unlike `& $someString`, which is the
 # arbitrary-command hole ForbiddenCommand cannot see. PowerShell variable names are case-insensitive,
 # so the set is too.
 #
