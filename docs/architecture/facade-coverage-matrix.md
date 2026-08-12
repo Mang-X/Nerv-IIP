@@ -33,7 +33,7 @@ endpoint”。无 facade 的 endpoint 仅在本应为 `exposed` 时才是缺陷�
 
 ## DoD 契约（强制声明）
 
-依 AGENTS.md 的“Facade 覆盖治理”，**任何新增或变更业务服务 HTTP endpoint 的 Issue，必须为每个新增/变更
+本矩阵规定：**任何新增或变更业务服务 HTTP endpoint 的 Issue，必须为每个新增/变更
 endpoint 声明一个使用面结果——`exposed`、`deferred` 或 `internal`——并在同一 PR 更新本矩阵。**不存在默认值。
 PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 为 `exposed`；矩阵的
 `followUp` 用于 `deferred`；矩阵的 `rationale` 用于 `internal`）。

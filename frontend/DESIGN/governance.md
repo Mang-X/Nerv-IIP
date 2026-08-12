@@ -183,10 +183,8 @@ PY
 使用 `pnpm -C frontend --filter @nerv-iip/ui test` 运行。任何 token 变更合并前，
 此测试必须通过。如果需要更新受守护的值，必须有意更新测试，并在此记录决策。
 
-ADR 0020 落地批（MAN-433）将把守护面扩展到：八层层序声明、库内零未分层（unlayered）规则（白名单
-外）、`--nv-scr-*` 全表与 `--sb-*` 别名期形态、关键 var 引用链、原版目录纯净
-（无 `Nv`/`--nv-` 字样）、Nv 件 `data-slot` 命名空间、跨场景 token 引用污染、旧名零
-新增。清单见 ADR 0020 §4.4。
+当前守护以 `packages/ui/src/design-system.contract.test.ts` 为准：screen token 使用
+`--nv-scr-*`，并断言 S4 收口后不存在 `--sb-*` 过渡别名。
 
 ## 迁移待办
 
