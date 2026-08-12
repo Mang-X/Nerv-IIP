@@ -54,12 +54,13 @@ function Assert-ConditionalRoutingWorkflow {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $routingPolicies = [ordered]@{
+        'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'openapi_codegen')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -81,7 +82,7 @@ function Assert-ConditionalRoutingWorkflow {
         [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
         [StringComparer]::Ordinal)
     $allowedConsumers = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('openapi-client-drift', 'script-governance', 'ci-summary'),
+        [string[]]@('connector-host-tests', 'openapi-client-drift', 'script-governance', 'ci-summary'),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
 
@@ -316,7 +317,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Script Governance and OpenAPI/api-client Drift', [StringComparison]::Ordinal)) 'Actions Summary must identify the NERV-668 routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Connector Host Tests, Script Governance, and OpenAPI/api-client Drift', [StringComparison]::Ordinal)) 'Actions Summary must identify the NERV-668 routed batch.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -335,9 +336,29 @@ try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
             @{
-                Name = 'scalar-needs'
-                Original = "  connector-host-tests:`n    name: Connector Host Tests"
-                Replacement = "  connector-host-tests:`n    name: Connector Host Tests`n    needs: impact-plan"
+                Name = 'connector-drops-impact-dependency'
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}`n"
+            },
+            @{
+                Name = 'connector-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
+            },
+            @{
+                Name = 'connector-drops-cancellation-guard'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
+                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
+            },
+            @{
+                Name = 'connector-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.connector_hosts != 'false'"
+                Replacement = "needs.impact-plan.outputs.backend != 'false'"
+            },
+            @{
+                Name = 'connector-treats-missing-output-as-unselected'
+                Original = "needs.impact-plan.outputs.connector_hosts != 'false'"
+                Replacement = "needs.impact-plan.outputs.connector_hosts == 'true'"
             },
             @{
                 Name = 'openapi-drops-plan-failure-fail-open'

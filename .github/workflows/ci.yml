@@ -120,9 +120,9 @@ jobs:
   # run 的 wall clock。
   impact-plan:
     name: CI Impact Plan
-    # NERV-668 拆解③首批让 Script Governance 与 OpenAPI Drift 消费这些 outputs；
-    # NERV-685 PR②同时让 frontend jobs 消费 workspace 选择，其余 job 仍不消费。
-    # 计划失败时首批两个低风险 job 保守运行，frontend 聚合则失败关闭。
+    # NERV-668 拆解③前两批让 Script Governance、OpenAPI Drift 与 Connector Host Tests 消费这些 outputs；
+    # NERV-685 PR②同时让 frontend jobs 消费 workspace 选择，ERP 与 Backend 仍不消费。
+    # 计划失败时三个直接条件 job 保守运行，frontend 聚合则失败关闭。
     # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
     # 预算只表达逐 step 上限。
     timeout-minutes: 15
@@ -668,6 +668,9 @@ jobs:
     # 该事件发生在 MAN-799 中。step 预算合计为 41m，为隐式 setup/post step 留下 9m 余量。
     timeout-minutes: 50
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -1123,11 +1126,18 @@ jobs:
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
           impact_result="${{ needs.impact-plan.result }}"
+          connector_result="${{ needs.connector-host-tests.result }}"
           script_governance_result="${{ needs.script-governance.result }}"
           openapi_result="${{ needs.openapi-client-drift.result }}"
+          connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
 
+          if [[ "$connector_selected" = "true" ]]; then
+            connector_policy="selected"
+          else
+            connector_policy="skipped by design"
+          fi
           if [[ "$script_governance_selected" = "true" ]]; then
             script_governance_policy="selected"
           else
@@ -1144,15 +1154,20 @@ jobs:
             echo
             echo "| Lane | Policy | Result |"
             echo "| --- | --- | --- |"
+            echo "| Connector Host Tests | $connector_policy | $connector_result |"
             echo "| Script Governance | $script_governance_policy | $script_governance_result |"
             echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           test "$impact_result" = "success"
           test "${{ needs.backend-tests.result }}" = "success"
-          test "${{ needs.connector-host-tests.result }}" = "success"
           test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
+          if [[ "$connector_selected" = "true" ]]; then
+            test "$connector_result" = "success"
+          else
+            test "$connector_result" = "skipped"
+          fi
           if [[ "$script_governance_selected" = "true" ]]; then
             test "$script_governance_result" = "success"
           else

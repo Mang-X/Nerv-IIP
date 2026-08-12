@@ -111,6 +111,16 @@ try {
         -Original $skippedAssertion -Replacement '            test "$openapi_result" = "success"' `
         -ExpectedDiagnostic $policyDiagnostic
 
+    $connectorSelectedAssertion = '            test "$connector_result" = "success"'
+    Invoke-Mutation -Name 'ci-summary-selected-connector-allows-skip' -Workflow $workflow `
+        -Original $connectorSelectedAssertion -Replacement '            test "$connector_result" = "skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    $connectorSkippedAssertion = '            test "$connector_result" = "skipped"'
+    Invoke-Mutation -Name 'ci-summary-unselected-connector-allows-success' -Workflow $workflow `
+        -Original $connectorSkippedAssertion -Replacement '            test "$connector_result" = "success"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
     $impactAssertion = '          test "$impact_result" = "success"'
     Invoke-Mutation -Name 'ci-summary-ignores-impact-plan-failure' -Workflow $workflow `
         -Original $impactAssertion -Replacement '          echo "$impact_result"' `
@@ -123,6 +133,11 @@ try {
     Invoke-Mutation -Name 'ci-summary-hides-skipped-by-design-audit' -Workflow $workflow `
         -Original '            script_governance_policy="skipped by design"' `
         -Replacement '            script_governance_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-connector-skipped-by-design-audit' -Workflow $workflow `
+        -Original '            connector_policy="skipped by design"' `
+        -Replacement '            connector_policy="skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-step-continue-on-error' -Workflow $workflow `
