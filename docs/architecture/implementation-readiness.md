@@ -8,6 +8,12 @@
 
 本层只建立候选锚点，不修改任何既有 job 的触发条件，不引入 paths/impact-plan，也不把当前非 required 的 ERP acceptance 或 OpenAPI drift 升级为 required。远端 branch protection 已按双锚点顺序完成迁移：先确认 `CI Summary` 在目标分支真实出现并成功，再将其加入 required，最后移除旧四项；2026-08-12 实时复核显示 `strict=true` 且唯一 required context 为 `CI Summary`。NERV-685 PR①只扩展 summary 内部依赖，不修改 branch protection。代码、本地合同测试、PR CI 与远端 branch-protection 状态仍是不同完成事实，后续交付必须分别验证。
 
+## CI 影响判定只观测层（NERV-668 / #1235，拆解②）
+
+`.github/workflows/ci.yml` 已新增 `CI Impact Plan (Observation)` job。它对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；`backend/common/**` 的任一当前共享目录会扩散到全部业务服务，标准 `IntegrationEventHandlers` 目录也属于 Redis/CAP 消息链信号。普通 Markdown 只选择 docs，但 `frontend/**` 下的 Markdown 同时保留所属前端层，因为前端格式门禁会读取这些文件。无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
+
+本层严格只观测：现有 job 没有增加 `needs: impact-plan`，也没有任何 `if` 读取影响 outputs；required summary、branch protection、测试命令和各 lane 是否运行均未基于计划改变。`scripts/tests/ci-impact-plan.Tests.ps1` 覆盖代表路径、扩散、稳定输出、非法路径失败关闭、入口序列化以及“禁止既有 job 消费影响计划”的反向合同。只有后续拆解③经独立 PR 才能逐 lane 使用这些结果，因此本段不声称纯文档或纯前端 PR 已节省 CI 成本，也不勾销 NERV-668 的最终验收项。
+
 ## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
 
 NERV-507 已确认问题不是订阅未触发或 `InMemory` 传输不投递：修复前 CAP 日志显示 `AssetUnavailableIntegrationEventHandlerForReschedule.HandleCapAsync` 被调度并成功返回，但处理器只在同一个作用域 `ApplicationDbContext` 中暂存 processed-event inbox（已处理事件收件箱）、open work-center unavailability（开放的工作中心不可用窗口）与 scheduling result（排程结果），缺少显式 `SaveChangesAsync` 边界，独立 PostgreSQL 作用域因而不可见这三项事实。生产修复已由 PR #1308（合并提交 `9602365f9`）吸收到 `main`：消费者完成全部可选排程变更后统一调用 `SaveChangesAsync(cancellationToken)`，由一次 EF Core 事务提交同一投递的三项事实。
