@@ -18,6 +18,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 
 $verifierPath = Join-Path $repoRoot 'scripts/verify-ci-required-summary.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$libraryPath = Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-required-summary-$([Guid]::NewGuid().ToString('N'))"
 $fixturePath = Join-Path $fixtureRoot 'ci.yml'
 
@@ -74,6 +75,13 @@ try {
     $workflow = [IO.File]::ReadAllText($workflowPath)
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
+
+    $crlfLibraryPath = Join-Path $fixtureRoot 'CiRequiredSummary-crlf.ps1'
+    $librarySource = [IO.File]::ReadAllText($libraryPath).Replace("`r`n", "`n").Replace("`n", "`r`n")
+    [IO.File]::WriteAllText($crlfLibraryPath, $librarySource, [Text.UTF8Encoding]::new($false))
+    . $crlfLibraryPath
+    $crlfFindings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $workflowPath -RepositoryRoot $repoRoot)
+    Assert-Contract ($crlfFindings.Count -eq 0) "Required-summary governance must be independent of the library checkout line endings: $($crlfFindings -join '; ')"
 
     $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, and OpenAPI Drift exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design policy and audit table.'

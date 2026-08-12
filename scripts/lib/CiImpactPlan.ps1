@@ -142,6 +142,24 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        if ([string]::Equals($path, 'docs/architecture/script-automation-governance.md', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('docs', 'scripts')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
+        if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('backend', 'openapi_codegen')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
+        if ([string]::Equals($path, 'frontend/package.json', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'frontend/pnpm-lock.yaml', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'frontend/pnpm-workspace.yaml', [StringComparison]::Ordinal)) {
+            foreach ($flag in @('frontend', 'frontend_packages', 'openapi_codegen')) { Select-Impact -Name $flag -Reason $reason }
+            continue
+        }
+
         if ($path.StartsWith('frontend/', [StringComparison]::Ordinal) -and $path.EndsWith('.md', [StringComparison]::OrdinalIgnoreCase)) {
             foreach ($flag in @('frontend', 'docs')) { Select-Impact -Name $flag -Reason $reason }
             if ($path.StartsWith('frontend/apps/', [StringComparison]::Ordinal)) { Select-Impact -Name 'frontend_apps' -Reason $reason }

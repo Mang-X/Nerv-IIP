@@ -54,8 +54,8 @@ function Assert-ConditionalRoutingWorkflow {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $routingPolicies = [ordered]@{
-        'openapi-client-drift' = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
-        'script-governance' = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
+        'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
@@ -130,6 +130,10 @@ Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/con
     docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
+Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture/script-automation-governance.md') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
+}
+
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
@@ -178,6 +182,12 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
     backend = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
 }
 
+foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
+    Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
+        backend = $true; openapi_codegen = $true
+    }
+}
+
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{
     frontend = $true; frontend_apps = $true; backend = $false; scripts = $false
 }
@@ -200,6 +210,12 @@ Assert-ImpactCase -Name 'frontend-design-system-markdown' -Paths @('frontend/app
 
 Assert-ImpactCase -Name 'frontend-api-client' -Paths @('frontend/packages/api-client/src/generated.ts') -Flags @{
     frontend = $true; frontend_packages = $true; openapi_codegen = $true; business_gateway = $true
+}
+
+foreach ($frontendBuildInput in @('frontend/package.json', 'frontend/pnpm-lock.yaml', 'frontend/pnpm-workspace.yaml')) {
+    Assert-ImpactCase -Name "openapi-frontend-build-input-$([IO.Path]::GetFileName($frontendBuildInput))" -Paths @($frontendBuildInput) -Flags @{
+        frontend = $true; frontend_packages = $true; openapi_codegen = $true
+    }
 }
 
 Assert-ImpactCase -Name 'frontend-design-system' -Paths @('frontend/DESIGN/components/button.md') -Flags @{
@@ -315,12 +331,12 @@ try {
             },
             @{
                 Name = 'openapi-drops-plan-failure-fail-open'
-                Original = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
-                Replacement = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
             },
             @{
-                Name = 'openapi-drops-always'
-                Original = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+                Name = 'openapi-drops-cancellation-guard'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
                 Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
             },
             @{
@@ -345,16 +361,11 @@ try {
             },
             @{
                 Name = 'openapi-drops-impact-dependency'
-                Original = "  openapi-client-drift:`n    name: OpenAPI/api-client Drift`n"
-                Replacement = "  openapi-client-drift:`n    name: OpenAPI/api-client Drift`n"
-                SecondaryOriginal = "    needs: impact-plan`n    if: >-`n      `${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
-                SecondaryReplacement = "    if: >-`n      `${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
             }
         )) {
         $mutated = $workflow.Replace($mutation.Original, $mutation.Replacement)
-        if ($mutation.ContainsKey('SecondaryOriginal')) {
-            $mutated = $mutated.Replace([string]$mutation.SecondaryOriginal, [string]$mutation.SecondaryReplacement)
-        }
         Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Conditional-routing mutation '$($mutation.Name)' must match the canonical workflow."
         $mutationPath = Join-Path $workflowMutationRoot "$($mutation.Name).yml"
         [IO.File]::WriteAllText($mutationPath, $mutated, [Text.UTF8Encoding]::new($false))
