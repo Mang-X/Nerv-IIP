@@ -55,6 +55,9 @@ try {
     Assert-Contract ([string]::Equals((@($member.expectedTestIdentities) -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Redis/CAP pilot must freeze exactly the two transport identities in ordinal order.'
     Assert-Contract ([string]::Equals((@($member.diagnosticSchemas) -join '|'), 'demand_planning|cap', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must restrict PostgreSQL diagnostics to the production demand_planning and CAP schemas.'
 
+    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
+    Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
+
     $attempt1Identity = New-NervRedisCapMemberIdentity `
         -MemberId 'demandplanning-sales-order-redis-cap' `
         -CapVersionPrefix 'n688-dp' `

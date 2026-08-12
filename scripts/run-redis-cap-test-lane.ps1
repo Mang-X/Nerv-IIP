@@ -150,14 +150,14 @@ try {
         $enumerateNamespace = {
             param([string] $namespace)
             return @(Get-RedisKeys -Name "redis-cap-lane-$($member.id)-namespace-scan" -Namespace $namespace)
-        }.GetNewClosure()
+        }
         $removeNamespaceKey = {
             param([string] $key)
             $unlinkResult = Invoke-RedisCli -Name "redis-cap-lane-$($member.id)-cleanup-key" -Arguments @('UNLINK', $key)
             if (-not [string]::Equals($unlinkResult.Stdout.Trim(), '1', [StringComparison]::Ordinal)) {
                 throw "Redis/CAP cleanup did not remove owned key '$key'."
             }
-        }.GetNewClosure()
+        }
         try {
             $namespaceClaim = New-NervRedisCapNamespaceClaim -Namespace $redisNamespace -EnumerateKeys $enumerateNamespace
             Invoke-NativeCommandOutput -Command 'psql' -Arguments @('-X', '-v', 'ON_ERROR_STOP=1', '-c', "CREATE DATABASE `"$databaseName`"") -WorkingDirectory $repoRoot -Name "redis-cap-lane-$($member.id)-create-database" | Out-Null
