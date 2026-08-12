@@ -14,17 +14,12 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
 public sealed class InventoryDirectoryPostgresTests
 {
-    [Fact]
+    [InventoryDirectoryPostgresFact]
     public async Task PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run()
     {
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
-        {
-            return;
-        }
-
         var scopes = await Task.WhenAll(
-            DirectoryPostgresScope.CreateAsync(),
-            DirectoryPostgresScope.CreateAsync());
+            DirectoryPostgresScope.CreateDockerAsync(),
+            DirectoryPostgresScope.CreateDockerAsync());
         try
         {
             var ports = scopes
@@ -39,10 +34,10 @@ public sealed class InventoryDirectoryPostgresTests
         }
     }
 
-    [Fact]
+    [InventoryDirectoryPostgresFact]
     public async Task PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index()
     {
-        await using var postgres = await DirectoryPostgresScope.CreateAsync();
+        await using var postgres = await DirectoryPostgresScope.CreateExternalAsync();
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddInventoryPostgreSqlPersistence(postgres.ConnectionString);
@@ -159,14 +154,8 @@ public sealed class InventoryDirectoryPostgresTests
 
         public string ConnectionString { get; }
 
-        public static async Task<DirectoryPostgresScope> CreateAsync()
+        public static async Task<DirectoryPostgresScope> CreateDockerAsync()
         {
-            var external = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-            if (!string.IsNullOrWhiteSpace(external))
-            {
-                return new DirectoryPostgresScope(external);
-            }
-
             var run = Guid.CreateVersion7().ToString("N");
             var container = $"nerv-iip-man632-pg-{run}";
             var volume = $"nerv-iip-man632-pg-data-{run}";
@@ -209,6 +198,17 @@ public sealed class InventoryDirectoryPostgresTests
                 await scope.DisposeAsync();
                 throw;
             }
+        }
+
+        public static Task<DirectoryPostgresScope> CreateExternalAsync()
+        {
+            var external = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+            if (string.IsNullOrWhiteSpace(external))
+            {
+                throw new InvalidOperationException("NERV_IIP_TEST_POSTGRES must be set for the external PostgreSQL test path.");
+            }
+
+            return Task.FromResult(new DirectoryPostgresScope(external));
         }
 
         public async ValueTask DisposeAsync()
@@ -413,5 +413,16 @@ public sealed class InventoryDirectoryPostgresTests
         await using var command = db.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
         await command.ExecuteNonQueryAsync();
+    }
+}
+
+public sealed class InventoryDirectoryPostgresFactAttribute : FactAttribute
+{
+    public InventoryDirectoryPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES and ensure Docker is available to run Inventory directory PostgreSQL tests.";
+        }
     }
 }

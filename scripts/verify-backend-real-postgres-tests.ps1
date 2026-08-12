@@ -13,6 +13,7 @@
 #     - .NET SDK 10
 #     - PostgreSQL reachable from NERV_IIP_TEST_POSTGRES
 #     - Redis reachable from NERV_IIP_TEST_REDIS for CAP-backed cases
+#     - Docker CLI 与可访问的 Docker daemon（InventoryDirectoryPostgresTests 的自管容器路径必需）
 
 [CmdletBinding()]
 param(

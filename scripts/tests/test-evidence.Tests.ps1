@@ -389,7 +389,7 @@ $quarantineWithoutIssue.responsibilityIssue = ''
 Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue -AsOfUtc ([DateTimeOffset]'2026-08-04T00:00:00Z'))) 'Quarantine metadata must require a responsibility issue.'
 
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
-Assert-Equal 40 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
+Assert-Equal 41 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
