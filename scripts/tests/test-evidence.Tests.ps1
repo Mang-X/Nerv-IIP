@@ -81,9 +81,15 @@ function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
     else {
         if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
         if (-not $uploadStep[0].AlwaysRuns) { $findings.Add('frontend-unit-upload-condition') }
-        $uploadPath = [string]$uploadStep[0].With['path']
-        if (-not $uploadPath.Contains('frontend/**/artifacts/test-results/*.xml', [StringComparison]::Ordinal) -or
-            -not $uploadPath.Contains('frontend/**/artifacts/test-results/*.json', [StringComparison]::Ordinal)) {
+        $uploadPaths = @(([string]$uploadStep[0].With['path']).Split("`n", [StringSplitOptions]::RemoveEmptyEntries))
+        $expectedUploadPaths = @(
+            'frontend/apps/*/artifacts/test-results/*.xml',
+            'frontend/apps/*/artifacts/test-results/*.json',
+            'frontend/packages/*/artifacts/test-results/*.xml',
+            'frontend/packages/*/artifacts/test-results/*.json')
+        $uploadPathSet = [Collections.Generic.HashSet[string]]::new([string[]]$uploadPaths, [StringComparer]::Ordinal)
+        if ($uploadPaths.Count -ne $expectedUploadPaths.Count -or
+            @($expectedUploadPaths | Where-Object { -not $uploadPathSet.Contains($_) }).Count -gt 0) {
             $findings.Add('frontend-unit-upload-path')
         }
         if (-not [string]::Equals([string]$uploadStep[0].With['if-no-files-found'], 'error', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-missing-evidence') }
@@ -1620,14 +1626,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           path: |
-            frontend/**/artifacts/test-results/*.xml
-            frontend/**/artifacts/test-results/*.json
+            frontend/apps/*/artifacts/test-results/*.xml
+            frontend/apps/*/artifacts/test-results/*.json
+            frontend/packages/*/artifacts/test-results/*.xml
+            frontend/packages/*/artifacts/test-results/*.json
           if-no-files-found: error
 '@
     $frontendUnitMutations = @(
         @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
         @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend test'; New = '          pnpm -C frontend test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
-        @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/**/artifacts/test-results/*.xml`n            frontend/**/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/**/artifacts/test-results/*.xml frontend/**/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' }
+        @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
+        @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' }
     )
 
     foreach ($mutation in $frontendUnitMutations) {

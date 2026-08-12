@@ -716,8 +716,10 @@ jobs:
         with:
           name: frontend-unit-test-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            frontend/**/artifacts/test-results/*.xml
-            frontend/**/artifacts/test-results/*.json
+            frontend/apps/*/artifacts/test-results/*.xml
+            frontend/apps/*/artifacts/test-results/*.json
+            frontend/packages/*/artifacts/test-results/*.xml
+            frontend/packages/*/artifacts/test-results/*.json
           if-no-files-found: error
           retention-days: 14
 
