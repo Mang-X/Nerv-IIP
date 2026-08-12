@@ -134,6 +134,18 @@ function Assert-ImpactCase {
     }
 }
 
+function Assert-PostgresLaneOwningPathsRoute {
+    foreach ($owningPath in @(
+            'scripts/run-postgres-test-lane.ps1',
+            'scripts/lib/PostgresTestLane.ps1',
+            'scripts/postgres-test-lane.json'
+        )) {
+        Assert-ImpactCase -Name "postgres-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
+            scripts = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+        }
+    }
+}
+
 Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI impact-plan library is missing.'
 . $libraryPath
 
@@ -242,6 +254,8 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
     scripts = $true; openapi_codegen = $true; business_gateway = $true; frontend = $true; frontend_packages = $true
 }
 
+Assert-PostgresLaneOwningPathsRoute
+
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
 }
@@ -296,6 +310,31 @@ foreach ($invalidPaths in @(
     $failure = $null
     try { Get-NervCiImpactPlan -ChangedPaths $invalidPaths | Out-Null } catch { $failure = $_ }
     Assert-Contract ($null -ne $failure) "Invalid changed path set '$($invalidPaths -join ',')' must fail closed."
+}
+
+$postgresRoutingBlock = @'
+            if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/postgres-test-lane.json', [StringComparison]::Ordinal)) {
+                Select-Impact -Name 'postgresql' -Reason $reason
+            }
+'@
+$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
+$weakenedImpactLibrary = $canonicalImpactLibrary.Replace($postgresRoutingBlock, '')
+Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'PostgreSQL owning-path mutation must remove the canonical routing branch.'
+$impactMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-library-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($impactMutationRoot) | Out-Null
+    $impactMutationPath = Join-Path $impactMutationRoot 'CiImpactPlan.ps1'
+    [IO.File]::WriteAllText($impactMutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
+    . $impactMutationPath
+    $mutationFailure = $null
+    try { Assert-PostgresLaneOwningPathsRoute } catch { $mutationFailure = $_ }
+    Assert-Contract ($null -ne $mutationFailure) 'Removing the PostgreSQL owning-path routing branch must fail the behavioral contract.'
+}
+finally {
+    . $libraryPath
+    if (Test-Path -LiteralPath $impactMutationRoot) { Remove-Item -LiteralPath $impactMutationRoot -Recurse -Force }
 }
 
 Assert-Contract (Test-Path -LiteralPath $entrypointPath -PathType Leaf) 'The governed CI impact-plan entrypoint is missing.'

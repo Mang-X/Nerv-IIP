@@ -287,6 +287,11 @@ function Get-NervCiImpactPlan {
                 [string]::Equals($path, 'scripts/verify-openapi-client-drift.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('openapi_codegen', 'business_gateway', 'frontend', 'frontend_packages')) { Select-Impact -Name $flag -Reason $reason }
             }
+            if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/postgres-test-lane.json', [StringComparison]::Ordinal)) {
+                Select-Impact -Name 'postgresql' -Reason $reason
+            }
             if ($path.Contains('full-chain', [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('fullstack', [StringComparison]::OrdinalIgnoreCase)) {
                 foreach ($flag in @('postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
