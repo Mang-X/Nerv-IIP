@@ -25,7 +25,8 @@
       "filter": "FullyQualifiedName~Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
       "databasePrefix": "nerv_iip_masterdata",
       "diagnosticSchemas": [
-        "business_masterdata"
+        "business_masterdata",
+        "cap"
       ],
       "expectedTestIdentities": [
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox",

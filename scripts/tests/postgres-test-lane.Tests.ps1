@@ -17,6 +17,14 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $manifestPath = Join-Path $repoRoot 'scripts/postgres-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-postgres-lane-$([Guid]::NewGuid().ToString('N'))"
 function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
+function Assert-MasterDataDiagnosticSchemas([object]$Member) {
+    $schemas = @($Member.diagnosticSchemas)
+    if ($schemas.Count -ne 2 -or
+        -not [string]::Equals([string]$schemas[0], 'business_masterdata', [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$schemas[1], 'cap', [StringComparison]::Ordinal)) {
+        throw 'The MasterData member must retain restricted business_masterdata and CAP outbox diagnostics.'
+    }
+}
 function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
     $document = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $repoRoot
     $job = $document.jobs.'postgres-provider-tests'
@@ -83,7 +91,17 @@ try {
     )
     Assert-Contract ([string]::Equals([string]$masterDataMember.service, 'MasterData', [StringComparison]::Ordinal)) 'The first checklist-three batch must register MasterData as its own lane member.'
     Assert-Contract ([string]::Equals([string]$masterDataMember.project, 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The MasterData member must target the owning test project.'
-    Assert-Contract (@($masterDataMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$masterDataMember.diagnosticSchemas[0], 'business_masterdata', [StringComparison]::Ordinal)) 'The MasterData member must restrict failure diagnostics to its owning schema.'
+    Assert-MasterDataDiagnosticSchemas -Member $masterDataMember
+    $missingCapManifestPath = Join-Path $fixtureRoot 'missing-masterdata-cap-diagnostics.json'
+    $missingCapManifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
+    $missingCapManifestMember = @($missingCapManifest.members | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })[0]
+    $missingCapManifestMember.diagnosticSchemas = @($missingCapManifestMember.diagnosticSchemas | Where-Object { -not [string]::Equals([string]$_, 'cap', [StringComparison]::Ordinal) })
+    Assert-Contract (@($missingCapManifestMember.diagnosticSchemas).Count -eq 1) 'The CAP diagnostics mutation must remove exactly one governed schema.'
+    [IO.File]::WriteAllText($missingCapManifestPath, (($missingCapManifest | ConvertTo-Json -Depth 20) + "`n"), [Text.UTF8Encoding]::new($false))
+    $missingCapMember = Import-NervPostgresTestLaneMember -ManifestPath $missingCapManifestPath -MemberId 'masterdata-postgres-profile' -RepositoryRoot $repoRoot
+    $missingCapRejected = $false
+    try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
+    Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
     Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the five profile identities and exclude the world-bible seed test.'
     $identity = [string]$member.expectedTestIdentities[0]
     $separatorIndex = $identity.LastIndexOf('.', [StringComparison]::Ordinal)
