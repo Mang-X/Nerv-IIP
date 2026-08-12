@@ -120,8 +120,9 @@ jobs:
   # 超过最慢的分片——因此依据“最慢分片”估算任何内容都会低估
   # run 的 wall clock。
   impact-plan:
-    name: CI Impact Plan (Observation)
-    # NERV-668 拆解②只产出观测计划，任何既有 job 都不消费这些 outputs。
+    name: CI Impact Plan
+    # NERV-668 拆解③首批让 Script Governance 与 OpenAPI Drift 消费这些 outputs；
+    # 其余 job 仍不消费。计划失败时两个已接入 job 都保守运行，不能静默跳过。
     # 层级 B：失败后没有 evidence step；3 个显式 step 的预算为 3m / 5m / 3m，
     # job 的 10m 是快速失败界限，各 step 预算只表达逐 step 上限。
     timeout-minutes: 10
@@ -831,6 +832,9 @@ jobs:
     # 快速失败界限。step 预算合计为 39m，且仅为逐 step 上限。
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -888,6 +892,9 @@ jobs:
     # 本 job 没有 `if: always()` 证据步骤，故仍属于层级 B，job 预算保持不变。
     timeout-minutes: 10
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -987,18 +994,56 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - impact-plan
       - backend-tests
       - connector-host-tests
       - frontend-unit-tests
       - frontend
+      - openapi-client-drift
       - script-governance
     steps:
       - name: Require all CI lanes
         timeout-minutes: 3
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
+          impact_result="${{ needs.impact-plan.result }}"
+          script_governance_result="${{ needs.script-governance.result }}"
+          openapi_result="${{ needs.openapi-client-drift.result }}"
+          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
+          openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
+
+          if [[ "$script_governance_selected" = "true" ]]; then
+            script_governance_policy="selected"
+          else
+            script_governance_policy="skipped by design"
+          fi
+          if [[ "$openapi_selected" = "true" ]]; then
+            openapi_policy="selected"
+          else
+            openapi_policy="skipped by design"
+          fi
+
+          {
+            echo "## CI lane decisions"
+            echo
+            echo "| Lane | Policy | Result |"
+            echo "| --- | --- | --- |"
+            echo "| Script Governance | $script_governance_policy | $script_governance_result |"
+            echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          test "$impact_result" = "success"
           test "${{ needs.backend-tests.result }}" = "success"
           test "${{ needs.connector-host-tests.result }}" = "success"
           test "${{ needs.frontend-unit-tests.result }}" = "success"
           test "${{ needs.frontend.result }}" = "success"
-          test "${{ needs.script-governance.result }}" = "success"
+          if [[ "$script_governance_selected" = "true" ]]; then
+            test "$script_governance_result" = "success"
+          else
+            test "$script_governance_result" = "skipped"
+          fi
+          if [[ "$openapi_selected" = "true" ]]; then
+            test "$openapi_result" = "success"
+          else
+            test "$openapi_result" = "skipped"
+          fi
