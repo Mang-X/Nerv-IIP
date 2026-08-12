@@ -1633,10 +1633,18 @@ jobs:
           if-no-files-found: error
 '@
     $frontendUnitMutations = @(
-        @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
+        @{ Name = 'job-renamed'; Old = '  frontend-unit-tests:'; New = '  frontend-unit-tests-missing:'; Expected = 'frontend-unit-job' },
+        @{ Name = 'test-step-renamed'; Old = '      - name: Test frontend workspace'; New = '      - name: Test frontend workspace missing'; Expected = 'frontend-unit-test-step' },
+        @{ Name = 'test-step-conditioned'; Old = "      - name: Test frontend workspace`n        timeout-minutes: 20"; New = "      - name: Test frontend workspace`n        if: success()`n        timeout-minutes: 20"; Expected = 'frontend-unit-test-condition' },
+        @{ Name = 'junit-reporter-removed'; Old = "          --reporter=junit`n"; New = ''; Expected = 'frontend-unit-test-command' },
         @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend test'; New = '          pnpm -C frontend test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
+        @{ Name = 'unhandled-errors-ignored'; Old = '          --reporter=default'; New = "          --reporter=default`n          --dangerouslyIgnoreUnhandledErrors"; Expected = 'frontend-unit-test-unhandled-errors' },
+        @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test evidence'; New = '      - name: Upload frontend unit test evidence missing'; Expected = 'frontend-unit-upload-step' },
+        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v4'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
+        @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
         @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
-        @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' }
+        @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' },
+        @{ Name = 'missing-evidence-warned'; Old = '          if-no-files-found: error'; New = '          if-no-files-found: warn'; Expected = 'frontend-unit-upload-missing-evidence' }
     )
 
     foreach ($mutation in $frontendUnitMutations) {
@@ -1644,7 +1652,8 @@ jobs:
         $fixturePath = Join-Path $frontendUnitFixtureRoot "$($mutation.Name).yml"
         [IO.File]::WriteAllText($fixturePath, $frontendUnitFixture.Replace($mutation.Old, $mutation.New), [Text.UTF8Encoding]::new($false))
         $findings = @(Get-NervFrontendUnitWorkflowFindings -Jobs (Get-NervCiWorkflowBudgets -Path $fixturePath))
-        Assert-True (@($findings | Where-Object { [string]::Equals([string]$_, [string]$mutation.Expected, [StringComparison]::Ordinal) }).Count -eq 1) "Frontend unit mutation '$($mutation.Name)' must report '$($mutation.Expected)'."
+        Assert-Equal 1 $findings.Count "Frontend unit mutation '$($mutation.Name)' must report exactly one finding."
+        Assert-True ([string]::Equals([string]$findings[0], [string]$mutation.Expected, [StringComparison]::Ordinal)) "Frontend unit mutation '$($mutation.Name)' must report only '$($mutation.Expected)'."
     }
 }
 finally {

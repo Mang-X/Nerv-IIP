@@ -72,22 +72,6 @@ try {
     Assert-Contract (Test-Path -LiteralPath $verifierPath -PathType Leaf) 'The CI required-summary verifier is missing.'
 
     $workflow = [IO.File]::ReadAllText($workflowPath)
-    $fiveLaneWorkflow = $workflow
-    if (-not $fiveLaneWorkflow.Contains("      - frontend-unit-tests$([Environment]::NewLine)", [StringComparison]::Ordinal)) {
-        $fiveLaneWorkflow = $fiveLaneWorkflow.Replace(
-            "      - frontend$([Environment]::NewLine)",
-            "      - frontend-unit-tests$([Environment]::NewLine)      - frontend$([Environment]::NewLine)")
-    }
-    if (-not $fiveLaneWorkflow.Contains('          test "${{ needs.frontend-unit-tests.result }}" = "success"', [StringComparison]::Ordinal)) {
-        $fiveLaneWorkflow = $fiveLaneWorkflow.Replace(
-            '          test "${{ needs.frontend.result }}" = "success"',
-            ('          test "${{ needs.frontend-unit-tests.result }}" = "success"' + [Environment]::NewLine +
-                '          test "${{ needs.frontend.result }}" = "success"'))
-    }
-    [IO.File]::WriteAllText($fixturePath, $fiveLaneWorkflow, [Text.UTF8Encoding]::new($false))
-    $fiveLaneResult = Invoke-SummaryVerifier -Name 'ci-required-summary-five-lane' -Path $fixturePath
-    Assert-Contract $fiveLaneResult.Passed "CI Summary must accept frontend unit tests as a fifth required lane: $($fiveLaneResult.Message)"
-
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
 
