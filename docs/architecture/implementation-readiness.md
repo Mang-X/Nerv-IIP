@@ -10,7 +10,7 @@
 
 ## CI 影响判定只观测层（NERV-668 / #1235，拆解②）
 
-`.github/workflows/ci.yml` 已新增 `CI Impact Plan (Observation)` job。它对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；共享层扩散宁宽勿窄，无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
+`.github/workflows/ci.yml` 已新增 `CI Impact Plan (Observation)` job。它对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；`backend/common/**` 的任一当前共享目录会扩散到全部业务服务，标准 `IntegrationEventHandlers` 目录也属于 Redis/CAP 消息链信号。普通 Markdown 只选择 docs，但 `frontend/**` 下的 Markdown 同时保留所属前端层，因为前端格式门禁会读取这些文件。无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
 
 本层严格只观测：现有 job 没有增加 `needs: impact-plan`，也没有任何 `if` 读取影响 outputs；required summary、branch protection、测试命令和各 lane 是否运行均未基于计划改变。`scripts/tests/ci-impact-plan.Tests.ps1` 覆盖代表路径、扩散、稳定输出、非法路径失败关闭、入口序列化以及“禁止既有 job 消费影响计划”的反向合同。只有后续拆解③经独立 PR 才能逐 lane 使用这些结果，因此本段不声称纯文档或纯前端 PR 已节省 CI 成本，也不勾销 NERV-668 的最终验收项。
 

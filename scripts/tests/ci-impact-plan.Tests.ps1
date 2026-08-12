@@ -105,6 +105,14 @@ Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business
     docs = $true; backend = $false; frontend = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
 }
 
+Assert-ImpactCase -Name 'frontend-package-markdown' -Paths @('frontend/packages/scheduling/README.md') -Flags @{
+    docs = $true; frontend = $true; frontend_packages = $true; backend = $false; postgresql = $false; full_chain = $false
+}
+
+Assert-ImpactCase -Name 'frontend-guidance-markdown' -Paths @('frontend/AGENTS.md') -Flags @{
+    docs = $true; frontend = $true; frontend_apps = $false; frontend_packages = $false; backend = $false
+}
+
 Assert-ImpactCase -Name 'single-business-service' -Paths @('backend/services/Business/Erp/src/Orders.cs') -Flags @{
     backend = $true; business_gateway = $true; openapi_codegen = $true; frontend_packages = $true; postgresql = $true; redis_cap = $false; full_chain = $false
 } -Services @('erp')
@@ -125,6 +133,16 @@ foreach ($sharedCase in @(
     $flags = @{ backend = $true; business_gateway = $true; postgresql = $true; full_chain = $true; redis_cap = [bool]$sharedCase.Redis }
     $flags[[string]$sharedCase.Flag] = $true
     Assert-ImpactCase -Name "shared-$($sharedCase.Name)" -Paths @([string]$sharedCase.Path) -Flags $flags
+}
+
+$backendCommonDirectories = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend/common') -Directory | ForEach-Object { $_.Name })
+Assert-Contract ($backendCommonDirectories.Count -eq 11) 'The backend common-directory observation baseline must be revised when a shared directory is added or removed.'
+foreach ($commonDirectory in $backendCommonDirectories) {
+    $plan = Get-NervCiImpactPlan -ChangedPaths @("backend/common/$commonDirectory/ObservedChange.cs")
+    Assert-ImpactFlag -Plan $plan -Name 'backend' -Expected $true
+    Assert-ImpactFlag -Plan $plan -Name 'business_gateway' -Expected $true
+    Assert-ImpactFlag -Plan $plan -Name 'full_chain' -Expected $true
+    Assert-Contract (@($plan.business_services).Count -gt 10) "Shared backend directory '$commonDirectory' must conservatively expand to every known business service."
 }
 
 Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGateway/src/Facade.cs') -Flags @{
@@ -173,6 +191,14 @@ Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/Pla
 
 Assert-ImpactCase -Name 'service-cap-integration' -Paths @('backend/services/Business/Mes/src/MesCapServiceCollectionExtensions.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'integration-event-handler' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/WorkOrderCostCapitalizedIntegrationEventHandler.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
 } -Services @('mes')
 
 Assert-ImpactCase -Name 'capacity-is-not-cap' -Paths @('backend/services/Business/Scheduling/src/FiniteCapacityScheduler.cs') -Flags @{

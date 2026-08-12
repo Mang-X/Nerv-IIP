@@ -103,6 +103,17 @@ function Get-NervCiImpactPlan {
         foreach ($service in $knownBusinessServices) { [void]$serviceSet.Add($service) }
     }
 
+    function Test-MessagingImpactPath {
+        param([Parameter(Mandatory)] [string] $Path)
+
+        return [regex]::IsMatch($Path, '(?:^|[/_.-])CAP(?:$|[/_.-])', [Text.RegularExpressions.RegexOptions]::IgnoreCase) -or
+            [regex]::IsMatch($Path, '(?<=[a-z0-9])Cap(?=[A-Z0-9])', [Text.RegularExpressions.RegexOptions]::CultureInvariant) -or
+            $Path.Contains('Redis', [StringComparison]::OrdinalIgnoreCase) -or
+            $Path.Contains('Messaging', [StringComparison]::OrdinalIgnoreCase) -or
+            $Path.Contains('/IntegrationEventHandlers/', [StringComparison]::Ordinal) -or
+            [regex]::IsMatch($Path, 'IntegrationEventHandler\.cs$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    }
+
     $normalizedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($rawPath in $ChangedPaths) {
         if ([string]::IsNullOrWhiteSpace($rawPath)) { throw 'Changed repository paths cannot be empty.' }
@@ -128,6 +139,18 @@ function Get-NervCiImpactPlan {
         if ($isRuleSelfChange -or $path.StartsWith('.github/workflows/', [StringComparison]::Ordinal)) {
             Select-AllImpacts -Reason "rule-self-check:$path"
             Select-Impact -Name 'workflows' -Reason $reason
+            continue
+        }
+
+        if ($path.StartsWith('frontend/', [StringComparison]::Ordinal) -and $path.EndsWith('.md', [StringComparison]::OrdinalIgnoreCase)) {
+            foreach ($flag in @('frontend', 'docs')) { Select-Impact -Name $flag -Reason $reason }
+            if ($path.StartsWith('frontend/apps/', [StringComparison]::Ordinal)) { Select-Impact -Name 'frontend_apps' -Reason $reason }
+            if ($path.StartsWith('frontend/packages/', [StringComparison]::Ordinal)) { Select-Impact -Name 'frontend_packages' -Reason $reason }
+            if ($path.StartsWith('frontend/DESIGN/', [StringComparison]::Ordinal)) {
+                foreach ($flag in @('frontend_design_system', 'frontend_docs')) { Select-Impact -Name $flag -Reason $reason }
+            }
+            if ($path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal)) { Select-Impact -Name 'frontend_docs' -Reason $reason }
+            if ($path.StartsWith('frontend/apps/design-system/', [StringComparison]::Ordinal)) { Select-Impact -Name 'frontend_design_system' -Reason $reason }
             continue
         }
 
@@ -168,6 +191,12 @@ function Get-NervCiImpactPlan {
             foreach ($flag in @('backend_messaging', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
+        if ($path.StartsWith('backend/common/', [StringComparison]::Ordinal)) {
+            Select-BusinessServices -Services $knownBusinessServices -Reason $reason
+            Select-Impact -Name 'full_chain' -Reason $reason
+            if (Test-MessagingImpactPath -Path $path) { Select-Impact -Name 'redis_cap' -Reason $reason }
+            continue
+        }
 
         $businessServiceMatch = [regex]::Match($path, '^backend/services/Business/([^/]+)/')
         if ($businessServiceMatch.Success) {
@@ -177,11 +206,7 @@ function Get-NervCiImpactPlan {
                 continue
             }
             Select-BusinessServices -Services @((ConvertTo-NervCiImpactServiceId -Name $serviceName)) -Reason $reason
-            $hasCapToken = [regex]::IsMatch($path, '(?:^|[/_.-])CAP(?:$|[/_.-])', [Text.RegularExpressions.RegexOptions]::IgnoreCase) -or
-                [regex]::IsMatch($path, '(?<=[a-z0-9])Cap(?=[A-Z0-9])', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
-            if ($hasCapToken -or
-                $path.Contains('Redis', [StringComparison]::OrdinalIgnoreCase) -or
-                $path.Contains('Messaging', [StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-MessagingImpactPath -Path $path) {
                 foreach ($flag in @('redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
             continue
@@ -204,7 +229,7 @@ function Get-NervCiImpactPlan {
             if ($path.Contains('Postgres', [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('Persistence', [StringComparison]::OrdinalIgnoreCase)) {
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
-            if ($path.Contains('CAP', [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('Redis', [StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-MessagingImpactPath -Path $path) {
                 Select-Impact -Name 'redis_cap' -Reason $reason
             }
             continue
