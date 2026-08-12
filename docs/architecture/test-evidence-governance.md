@@ -16,6 +16,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 | `backend-shard-4` | `Backend Tests - Business Core B` | `business-core-b` |
 | `connector-host` | `Connector Host Tests` | — |
 | `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`（拆解②与③首批） |
+| `redis-cap` | `Redis/CAP Transport Tests` | `demandplanning-sales-order-redis-cap`（拆解④） |
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。
 
@@ -23,7 +24,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 
 `run-backend-test-shard.ps1` 使用 `FullyQualifiedName!~` 排除真实依赖选择器，因此这些测试不会出现在分片 TRX 中，而不是以已登记跳过项出现。以下门禁确保该排除诚实可信，不会变成私自绕过门禁的入口：
 
-- **政策闭合与责任执行通道推导。**每个快速分片排除选择器都必须解析到至少一个政策测试身份，其规则必须是带真实依赖 `requiredLane` 的 `environment-gated`。除非本文档的跳过政策已登记某项测试，否则不得将其移出默认门禁。分片声明的 `excludedTestLanes` 随后必须等于这些 `requiredLane` 值通过 `heavyLanes[].policyLane` 映射到的高成本执行通道，因此分片不能把 `full-chain` 排除归给真实 PostgreSQL 责任脚本。当前全部 49 个选择器都解析为 `postgres` 或 `full-chain`；强制机制位于 `verify-backend-test-shards.ps1`。NERV-688 拆解②与③首批已把 Inventory 的 1 个 core 用例和 MasterData 的 5 个 profile 用例接入 hosted `postgres` job；其余登记仍由按需 `scripts/verify-backend-real-postgres-tests.ps1` 承接，须在拆解③继续逐服务接入，不能据此宣称全量已运行。
+- **政策闭合与责任执行通道推导。**每个快速分片排除选择器都必须解析到至少一个政策测试身份，其规则必须是带真实依赖 `requiredLane` 的 `environment-gated`。除非本文档的跳过政策已登记某项测试，否则不得将其移出默认门禁。分片声明的 `excludedTestLanes` 随后必须等于这些 `requiredLane` 值通过 `heavyLanes[].policyLane` 映射到的高成本执行通道，因此分片不能把 `redis-cap` 或 `full-chain` 排除归给真实 PostgreSQL 责任脚本。当前全部 54 个选择器都解析为 `postgres`、`redis-cap` 或 `full-chain`；强制机制位于 `verify-backend-test-shards.ps1`。NERV-688 拆解②与③首批已把 Inventory 的 1 个 core 用例和 MasterData 的 5 个 profile 用例接入 hosted `postgres` job，拆解④把 DemandPlanning 的 2 个 Redis/CAP 用例接入 hosted `redis-cap` job；其余 PostgreSQL 登记仍由按需 `scripts/verify-backend-real-postgres-tests.ps1` 承接，须在拆解③继续逐服务接入，不能据此宣称全量已运行。
 - **选择器锚定。**VSTest `!~` 是子串匹配，因此类选择器输出时带尾随点（`FullyQualifiedName!~Ns.XTests.`），不会误吞仅共享前缀的兄弟类。方法选择器保持无锚定，以便参数化用例继续匹配；治理通过扫描已登记的 MAN-661 源文件，并拒绝名称是该文件其他成员前缀的方法选择器来补偿这一点。
 - **逐项目执行。**分片运行后，它分类的每个项目都必须在该分片自身 TRX 中出现，且至少有一个已执行结果；分片也不得执行未由其分类的程序集。该检查读取与采集器相同的 `UnitTest/@storage` 属性。它有意**不**扫描 dotnet 控制台文本：该文本会本地化，在任何非英文运行器上使用短语匹配都会失败后放行，而这正是该边界要阻止的静默放行。
 

@@ -11,7 +11,7 @@
       "databasePrefix": "nerv_iip_demandplanning",
       "capVersionPrefix": "n688-dp",
       "diagnosticSchemas": [
-        "business_demand_planning",
+        "demand_planning",
         "cap"
       ],
       "expectedTestIdentities": [

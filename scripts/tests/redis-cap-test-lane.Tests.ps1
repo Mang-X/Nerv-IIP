@@ -53,7 +53,11 @@ try {
     Assert-Contract ([string]::Equals([string]$member.tier, 'core', [StringComparison]::Ordinal) -and [string]::Equals([string]$member.status, 'active', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must be active/core.'
     Assert-Contract ([string]::Equals([string]$member.project, 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/Nerv.IIP.Business.DemandPlanning.Web.Tests.csproj', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must target the DemandPlanning Web test project.'
     Assert-Contract ([string]::Equals((@($member.expectedTestIdentities) -join "`n"), ($expectedIdentities -join "`n"), [StringComparison]::Ordinal)) 'The Redis/CAP pilot must freeze exactly the two transport identities in ordinal order.'
-    Assert-Contract ([string]::Equals((@($member.diagnosticSchemas) -join '|'), 'business_demand_planning|cap', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must restrict PostgreSQL diagnostics to business_demand_planning and cap.'
+    Assert-Contract ([string]::Equals((@($member.diagnosticSchemas) -join '|'), 'demand_planning|cap', [StringComparison]::Ordinal)) 'The Redis/CAP pilot must restrict PostgreSQL diagnostics to the production demand_planning and CAP schemas.'
+
+    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
+    Assert-Contract ($runnerContent.Contains('Get-RedisStreamDiagnostics -Keys $ownedKeys', [StringComparison]::Ordinal)) 'Redis failure diagnostics must inspect only keys created by the governed member.'
+    Assert-Contract (-not $runnerContent.Contains('Get-RedisStreamDiagnostics -Keys $afterKeys', [StringComparison]::Ordinal)) 'Redis failure diagnostics must not inspect keys that predated the governed member.'
 
     $manifest = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json -Depth 20
     $manifest.members[0].expectedTestIdentities = @($manifest.members[0].expectedTestIdentities | Select-Object -First 1)

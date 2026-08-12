@@ -447,6 +447,12 @@ Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnec
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
+$redisCapLanes = @($livePolicy.lanes | Where-Object { [string]::Equals([string]$_.namePattern, '^redis-cap(?:-shard-[1-9][0-9]*)?$', [StringComparison]::Ordinal) -and [bool]$_.realDependency })
+Assert-Equal 1 $redisCapLanes.Count 'MAN-661 must register exactly one real-dependency Redis/CAP evidence lane pattern.'
+$demandPlanningRedisRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'demandplanning-postgres-redis', [StringComparison]::Ordinal) })
+Assert-Equal 1 $demandPlanningRedisRules.Count 'The DemandPlanning Redis/CAP proofs must have one evidence policy rule.'
+Assert-True ([string]::Equals([string]$demandPlanningRedisRules[0].requiredLane, 'redis-cap', [StringComparison]::Ordinal)) 'The DemandPlanning Redis/CAP proofs must be owned by redis-cap rather than full-chain.'
+Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/CAP policy rule must freeze exactly the duplicate/ordering and fallback-scan identities.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenClosure.rules[0].sourceId = 'missing-source'
 Assert-ViolationSet (Test-NervTestEvidencePolicy -Policy $brokenClosure -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)) 'unregistered-skip'
@@ -1131,6 +1137,7 @@ try {
         'backend-shard-4' = 'ubuntu24@20260804.265.1'
         'connector-host' = 'ubuntu24@20260804.265.1'
         'postgres' = 'ubuntu24@20260804.265.1'
+        'redis-cap' = 'ubuntu24@20260804.265.1'
     }
     function New-NervEvidenceJobLog {
         param([Parameter(Mandatory)] [string] $RunnerImage, [string] $DotnetSdk = '10.0.302')
@@ -1312,9 +1319,10 @@ try {
     $coverageLaneProvenance = @($laneProvenance | Where-Object { -not [string]::Equals([string]$_.lane, 'postgres', [StringComparison]::Ordinal) })
     $coverageRecordedLaneList = (@(Get-NervStringsSorted -Values @($coverageSummaries | ForEach-Object { [string]$_.assemblies[0].lane }) -Comparer ([StringComparer]::Ordinal) -Unique) -join ', ')
     $strayRow = [pscustomobject][ordered]@{ lane = 'postgres'; jobName = 'PostgreSQL Provider Tests'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302' }
+    $strayProvenanceLaneList = (@(Get-NervStringsSorted -Values @($coverageLaneProvenance.lane + @('postgres')) -Comparer ([StringComparer]::Ordinal) -Unique) -join ', ')
     foreach ($coverageCase in @(
         @{ Name = 'missing-lane-rows'; Rows = @($coverageLaneProvenance[0]); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$([string]$coverageLaneProvenance[0].lane)] recorded=[$coverageRecordedLaneList]." },
-        @{ Name = 'stray-lane-row'; Rows = @($coverageLaneProvenance + @($strayRow)); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$coverageRecordedLaneList, postgres] recorded=[$coverageRecordedLaneList]." },
+        @{ Name = 'stray-lane-row'; Rows = @($coverageLaneProvenance + @($strayRow)); Expected = "Baseline lane provenance must cover exactly the lanes the baseline records; provenance=[$strayProvenanceLaneList] recorded=[$coverageRecordedLaneList]." },
         @{ Name = 'duplicate-lane-rows'; Rows = @($coverageLaneProvenance + @($coverageLaneProvenance[0])); Expected = 'Baseline lane provenance rows must name unique lanes.' }
     )) {
         $coverageMessage = $null
@@ -1588,7 +1596,7 @@ foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3'
 }
 Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
-Assert-Equal 6 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, and PostgreSQL pilot.'
+Assert-Equal 7 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, PostgreSQL, and Redis/CAP lanes.'
 $laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
 $actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
 Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'
@@ -1596,6 +1604,8 @@ Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@(@($lan
 Assert-True ($workflow.Contains('test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Connector artifact identity mismatch.'
 Assert-True ($workflow.Contains('test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'PostgreSQL artifact identity mismatch.'
 Assert-True ($workflow.Contains('-Lane postgres', [StringComparison]::Ordinal)) 'PostgreSQL hosted lane must collect the stable postgres evidence ID.'
+Assert-True ($workflow.Contains('test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Redis/CAP artifact identity mismatch.'
+Assert-True ($workflow.Contains('-Lane redis-cap', [StringComparison]::Ordinal)) 'Redis/CAP hosted lane must collect the stable redis-cap evidence ID.'
 Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
 Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
 

@@ -45,7 +45,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [DemandPlanningRealPostgresRedisFact]
     public async Task Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await RedisCapTestDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
         await using var factory = CreateRedisCapFactory(
             database.ConnectionString,
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!);
@@ -87,7 +87,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [DemandPlanningRealPostgresRedisFact]
     public async Task Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await RedisCapTestDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
         var redisConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_REDIS")!;
         var settings = new Dictionary<string, string?>
         {
@@ -106,7 +106,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", DemandPlanningFacts.Schema)));
         services.AddCap(options =>
             {
-                options.Version = $"man517-retry-{Guid.NewGuid():N}"[..20];
+                options.Version = RedisCapVersion("man517-retry");
                 options.FailedRetryCount = 4;
                 options.FailedRetryInterval = 2;
                 options.FallbackWindowLookbackSeconds = 30;
@@ -437,7 +437,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
                 ["Messaging:Provider"] = "Redis",
                 ["Messaging:Redis:ConnectionString"] = redisConnectionString,
                 ["ConnectionStrings:Redis"] = redisConnectionString,
-                ["Cap:Version"] = $"man517-{Guid.NewGuid():N}"[..20],
+                ["Cap:Version"] = RedisCapVersion("man517"),
                 ["InternalService:BearerToken"] = "test-internal-token",
             };
             foreach (var (key, value) in settings)
@@ -459,6 +459,17 @@ public sealed class ErpSalesOrderDemandConsumerTests
             condition: "the Redis CAP sales-order demand projection satisfies the asserted state",
             assertion: assertion,
             options: new EventuallyOptions(TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250), []));
+    }
+
+    private static string RedisCapVersion(string fallbackPrefix)
+    {
+        var configured = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION");
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        return $"{fallbackPrefix}-{Guid.NewGuid():N}"[..20];
     }
 
     private static SalesOrderReleasedIntegrationEvent Released(int version, decimal quantity, string lineNo) =>
@@ -543,6 +554,46 @@ public sealed class ErpSalesOrderDemandConsumerTests
             await connection.OpenAsync();
             await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    private sealed class RedisCapTestDatabase(string connectionString, TemporaryDatabase? ownedDatabase) : IAsyncDisposable
+    {
+        public string ConnectionString { get; } = connectionString;
+
+        public static async Task<RedisCapTestDatabase> CreateAsync(string baseConnectionString)
+        {
+            if (string.Equals(
+                    Environment.GetEnvironmentVariable("NERV_IIP_TEST_DATABASE_LIFECYCLE"),
+                    "external",
+                    StringComparison.Ordinal))
+            {
+                await ResetExternalDatabaseAsync(baseConnectionString);
+                return new RedisCapTestDatabase(baseConnectionString, null);
+            }
+
+            var temporaryDatabase = await TemporaryDatabase.CreateAsync(baseConnectionString);
+            return new RedisCapTestDatabase(temporaryDatabase.ConnectionString, temporaryDatabase);
+        }
+
+        private static async Task ResetExternalDatabaseAsync(string connectionString)
+        {
+            await using var connection = new NpgsqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DROP SCHEMA IF EXISTS demand_planning CASCADE;
+                DROP SCHEMA IF EXISTS cap CASCADE;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (ownedDatabase is not null)
+            {
+                await ownedDatabase.DisposeAsync();
+            }
         }
     }
 }

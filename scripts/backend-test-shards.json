@@ -160,7 +160,6 @@
         "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/Nerv.IIP.Business.ProductEngineering.Web.Tests.csproj"
       ],
       "excludedTestClasses": [
-        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeviceControlReadFaceTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryHistorianTests",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests",
@@ -168,9 +167,16 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
         "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"
       ],
+      "excludedTests": [
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_fallback_scan_converges_changed_v2_after_immediate_retries_fail",
+        "Nerv.IIP.Business.DemandPlanning.Web.Tests.ErpSalesOrderDemandConsumerTests.Redis_cap_transport_converges_duplicate_out_of_order_change_and_cancel_in_postgres"
+      ],
       "excludedTestLanes": [
-        "full-chain",
-        "real-postgres"
+        "real-postgres",
+        "redis-cap"
       ]
     }
   ],
@@ -180,6 +186,13 @@
       "policyLane": "postgres",
       "owner": "opt-in real PostgreSQL verification",
       "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "projects": []
+    },
+    {
+      "id": "redis-cap",
+      "policyLane": "redis-cap",
+      "owner": "governed Redis/CAP transport verification",
+      "ownerScript": "scripts/run-redis-cap-test-lane.ps1",
       "projects": []
     },
     {

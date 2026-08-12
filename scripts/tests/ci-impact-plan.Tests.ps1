@@ -63,11 +63,12 @@ function Assert-ConditionalRoutingWorkflow {
         'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
+        'redis-cap-transport-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
         'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'erp_sales_order_demand')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'erp_sales_order_demand')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -93,7 +94,7 @@ function Assert-ConditionalRoutingWorkflow {
             'backend-test-shard-governance', 'backend-tests-business-gateway', 'backend-tests-platform',
             'backend-tests-business-core-a', 'backend-tests-business-core-b', 'backend-tests',
             'erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift',
-            'postgres-provider-tests', 'script-governance', 'ci-summary'
+            'postgres-provider-tests', 'redis-cap-transport-tests', 'script-governance', 'ci-summary'
         ),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
@@ -173,6 +174,18 @@ function Assert-BackendFastLaneControlInputsRoute {
         )) {
         Assert-ImpactCase -Name "backend-fast-lane-control-$([IO.Path]::GetFileName($backendFastLaneControlInput))" -Paths @($backendFastLaneControlInput) -Flags @{
             scripts = $true; backend = $true
+        }
+    }
+}
+
+function Assert-RedisCapLaneOwningPathsRoute {
+    foreach ($owningPath in @(
+            'scripts/run-redis-cap-test-lane.ps1',
+            'scripts/lib/RedisCapTestLane.ps1',
+            'scripts/redis-cap-test-lane.json'
+        )) {
+        Assert-ImpactCase -Name "redis-cap-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
+            scripts = $true; postgresql = $false; redis_cap = $true; full_chain = $false
         }
     }
 }
@@ -316,6 +329,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 }
 
 Assert-PostgresLaneOwningPathsRoute
+Assert-RedisCapLaneOwningPathsRoute
 
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
@@ -440,7 +454,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'erp_sales_order_demand=true') 'GitHub output must serialize the selected ERP acceptance signal.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Backend Tests, ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Backend Tests, ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests and Redis/CAP Transport Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -562,6 +576,16 @@ try {
                 Name = 'postgres-uses-wrong-signal'
                 Original = "needs.impact-plan.outputs.postgresql != 'false'"
                 Replacement = "needs.impact-plan.outputs.redis_cap != 'false'"
+            },
+            @{
+                Name = 'redis-cap-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.redis_cap != 'false') }}"
+            },
+            @{
+                Name = 'redis-cap-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.redis_cap != 'false'"
+                Replacement = "needs.impact-plan.outputs.full_chain != 'false'"
             },
             @{
                 Name = 'openapi-treats-missing-output-as-unselected'

@@ -324,6 +324,11 @@ function Get-NervCiImpactPlan {
                 [string]::Equals($path, 'scripts/postgres-test-lane.json', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
+            if ([string]::Equals($path, 'scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/lib/RedisCapTestLane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/redis-cap-test-lane.json', [StringComparison]::Ordinal)) {
+                Select-Impact -Name 'redis_cap' -Reason $reason
+            }
             if ($path.Contains('full-chain', [StringComparison]::OrdinalIgnoreCase) -or $path.Contains('fullstack', [StringComparison]::OrdinalIgnoreCase)) {
                 foreach ($flag in @('postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }

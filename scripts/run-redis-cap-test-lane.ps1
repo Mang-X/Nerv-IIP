@@ -184,6 +184,8 @@ try {
             $afterKeys = @()
             try { $afterKeys = @(Get-RedisKeys -Name "redis-cap-lane-$($member.id)-keys-after") }
             catch { Write-Diagnostic -Level 'WARN' -Message "Redis/CAP member '$($member.id)' Redis keys could not be enumerated: $($_.Exception.Message)" }
+            $beforeKeySet = [Collections.Generic.HashSet[string]]::new([string[]]$beforeKeys, [StringComparer]::Ordinal)
+            $ownedKeys = @($afterKeys | Where-Object { -not $beforeKeySet.Contains([string]$_) })
             if ($null -ne $memberFailure) {
                 $diagnostics = [ordered]@{ postgres = $null; redis = $null }
                 if ($databaseCreated) {
@@ -195,13 +197,11 @@ try {
                     }
                     catch { $diagnostics.postgres = [ordered]@{ capture = 'failed'; message = Protect-ScriptAutomationText $_.Exception.Message } }
                 }
-                try { $diagnostics.redis = [ordered]@{ keys = $afterKeys.Count; streams = @(Get-RedisStreamDiagnostics -Keys $afterKeys -NamePrefix "redis-cap-lane-$($member.id)-redis-diagnostics") } }
+                try { $diagnostics.redis = [ordered]@{ keys = $ownedKeys.Count; streams = @(Get-RedisStreamDiagnostics -Keys $ownedKeys -NamePrefix "redis-cap-lane-$($member.id)-redis-diagnostics") } }
                 catch { $diagnostics.redis = [ordered]@{ capture = 'failed'; message = Protect-ScriptAutomationText $_.Exception.Message } }
                 $memberSummary.diagnostics = $diagnostics
             }
             try {
-                $beforeKeySet = [Collections.Generic.HashSet[string]]::new([string[]]$beforeKeys, [StringComparer]::Ordinal)
-                $ownedKeys = @($afterKeys | Where-Object { -not $beforeKeySet.Contains([string]$_) })
                 foreach ($ownedKey in $ownedKeys) { Invoke-RedisCli -Name "redis-cap-lane-$($member.id)-cleanup-key" -Arguments @('UNLINK', $ownedKey) | Out-Null }
                 if ($databaseCreated) {
                     [Environment]::SetEnvironmentVariable('PGDATABASE', [string]$parsed.values.database)
