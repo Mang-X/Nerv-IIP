@@ -129,6 +129,683 @@ function Get-WorkflowStringValue {
     return [string] $property.Value
 }
 
+function Get-NervCSharpInterpolationHoleLayout {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText,
+        [Parameter(Mandatory)] [int] $ContentStart,
+        [Parameter(Mandatory)] [int] $ClosingBraceCount
+    )
+
+    $characters = $SourceText.ToCharArray()
+    $slash = [char]0x002F
+    $asterisk = [char]0x002A
+    $doubleQuote = [char]0x0022
+    $singleQuote = [char]0x0027
+    $backslash = [char]0x005C
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $carriageReturn = [char]0x000D
+    $lineFeed = [char]0x000A
+    $depth = 0
+    $index = $ContentStart
+    while ($index -lt $characters.Length) {
+        if ($characters[$index] -eq $slash -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $slash) {
+            $index += 2
+            while ($index -lt $characters.Length -and $characters[$index] -ne $carriageReturn -and $characters[$index] -ne $lineFeed) {
+                $index++
+            }
+            continue
+        }
+        if ($characters[$index] -eq $slash -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $asterisk) {
+            $index += 2
+            while ($index + 1 -lt $characters.Length -and -not ($characters[$index] -eq $asterisk -and $characters[$index + 1] -eq $slash)) {
+                $index++
+            }
+            $index = [Math]::Min($characters.Length, $index + 2)
+            continue
+        }
+        if ($characters[$index] -eq $doubleQuote) {
+            $nestedString = Get-NervCSharpStringTokenLayout -SourceText $SourceText -QuoteIndex $index
+            $index = [Math]::Max($index + 1, $nestedString.TokenEnd)
+            continue
+        }
+        if ($characters[$index] -eq $singleQuote) {
+            $index++
+            while ($index -lt $characters.Length) {
+                if ($characters[$index] -eq $backslash) {
+                    $index = [Math]::Min($characters.Length, $index + 2)
+                    continue
+                }
+                if ($characters[$index] -eq $singleQuote) {
+                    $index++
+                    break
+                }
+                $index++
+            }
+            continue
+        }
+        if ($characters[$index] -eq $openBrace) {
+            $depth++
+            $index++
+            continue
+        }
+        if ($characters[$index] -eq $closeBrace) {
+            if ($depth -gt 0) {
+                $depth--
+                $index++
+                continue
+            }
+
+            $closingRun = 1
+            while ($index + $closingRun -lt $characters.Length -and $characters[$index + $closingRun] -eq $closeBrace) {
+                $closingRun++
+            }
+            if ($closingRun -ge $ClosingBraceCount) {
+                return [pscustomobject]@{
+                    CloseStart = $index
+                    CloseEnd = $index + $ClosingBraceCount
+                }
+            }
+            $index += $closingRun
+            continue
+        }
+        $index++
+    }
+
+    return $null
+}
+
+function Get-NervCSharpStringTokenLayout {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText,
+        [Parameter(Mandatory)] [int] $QuoteIndex
+    )
+
+    $characters = $SourceText.ToCharArray()
+    $doubleQuote = [char]0x0022
+    $atSign = [char]0x0040
+    $dollarSign = [char]0x0024
+    $backslash = [char]0x005C
+    $openBrace = [char]0x007B
+    $holes = [System.Collections.Generic.List[object]]::new()
+    $quoteCount = 1
+    while ($QuoteIndex + $quoteCount -lt $characters.Length -and $characters[$QuoteIndex + $quoteCount] -eq $doubleQuote) {
+        $quoteCount++
+    }
+
+    $verbatim = ($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $atSign) -or
+        ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $atSign -and $characters[$QuoteIndex - 1] -eq $dollarSign)
+    $raw = -not $verbatim -and $quoteCount -ge 3
+    if (-not $raw) {
+        $quoteCount = 1
+    }
+
+    $interpolationDollarCount = 0
+    if ($raw) {
+        $prefixIndex = $QuoteIndex - 1
+        while ($prefixIndex -ge 0 -and $characters[$prefixIndex] -eq $dollarSign) {
+            $interpolationDollarCount++
+            $prefixIndex--
+        }
+    }
+    else {
+        if (($QuoteIndex -gt 0 -and $characters[$QuoteIndex - 1] -eq $dollarSign) -or
+            ($QuoteIndex -gt 1 -and $characters[$QuoteIndex - 2] -eq $dollarSign -and $characters[$QuoteIndex - 1] -eq $atSign)) {
+            $interpolationDollarCount = 1
+        }
+    }
+
+    $index = $QuoteIndex + $quoteCount
+    while ($index -lt $characters.Length) {
+        if ($raw) {
+            $closingQuoteCount = 0
+            while ($index + $closingQuoteCount -lt $characters.Length -and $characters[$index + $closingQuoteCount] -eq $doubleQuote) {
+                $closingQuoteCount++
+            }
+            if ($closingQuoteCount -ge $quoteCount) {
+                return [pscustomobject]@{ TokenEnd = $index + $quoteCount; Holes = @($holes) }
+            }
+            if ($closingQuoteCount -gt 0) {
+                $index += $closingQuoteCount
+                continue
+            }
+
+            if ($interpolationDollarCount -gt 0 -and $characters[$index] -eq $openBrace) {
+                $openingRun = 1
+                while ($index + $openingRun -lt $characters.Length -and $characters[$index + $openingRun] -eq $openBrace) {
+                    $openingRun++
+                }
+                if ($openingRun -ge $interpolationDollarCount) {
+                    $delimiterStart = $index + ($openingRun - $interpolationDollarCount)
+                    $contentStart = $delimiterStart + $interpolationDollarCount
+                    $holeLayout = Get-NervCSharpInterpolationHoleLayout -SourceText $SourceText -ContentStart $contentStart -ClosingBraceCount $interpolationDollarCount
+                    if ($null -eq $holeLayout) {
+                        [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $characters.Length })
+                        return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+                    }
+                    [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $holeLayout.CloseStart })
+                    $index = $holeLayout.CloseEnd
+                    continue
+                }
+                $index += $openingRun
+                continue
+            }
+            $index++
+            continue
+        }
+
+        if (-not $verbatim -and $characters[$index] -eq $backslash) {
+            $index = [Math]::Min($characters.Length, $index + 2)
+            continue
+        }
+        if ($characters[$index] -eq $doubleQuote) {
+            if ($verbatim -and $index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $doubleQuote) {
+                $index += 2
+                continue
+            }
+            return [pscustomobject]@{ TokenEnd = $index + 1; Holes = @($holes) }
+        }
+        if ($interpolationDollarCount -gt 0 -and $characters[$index] -eq $openBrace) {
+            if ($index + 1 -lt $characters.Length -and $characters[$index + 1] -eq $openBrace) {
+                $index += 2
+                continue
+            }
+            $contentStart = $index + 1
+            $holeLayout = Get-NervCSharpInterpolationHoleLayout -SourceText $SourceText -ContentStart $contentStart -ClosingBraceCount 1
+            if ($null -eq $holeLayout) {
+                [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $characters.Length })
+                return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+            }
+            [void] $holes.Add([pscustomobject]@{ ContentStart = $contentStart; ContentEnd = $holeLayout.CloseStart })
+            $index = $holeLayout.CloseEnd
+            continue
+        }
+        $index++
+    }
+
+    return [pscustomobject]@{ TokenEnd = $characters.Length; Holes = @($holes) }
+}
+
+function ConvertTo-NervCSharpStructuralText {
+    param(
+        [Parameter(Mandatory)] [string] $SourceText
+    )
+
+    $sourceCharacters = $SourceText.ToCharArray()
+    $structuralCharacters = $SourceText.ToCharArray()
+    $slash = [char]0x002F
+    $asterisk = [char]0x002A
+    $doubleQuote = [char]0x0022
+    $singleQuote = [char]0x0027
+    $backslash = [char]0x005C
+    $carriageReturn = [char]0x000D
+    $lineFeed = [char]0x000A
+    $index = 0
+    while ($index -lt $sourceCharacters.Length) {
+        $tokenEnd = -1
+        $tokenHoles = @()
+        if ($sourceCharacters[$index] -eq $slash -and $index + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$index + 1] -eq $slash) {
+            $tokenEnd = $index + 2
+            while ($tokenEnd -lt $sourceCharacters.Length -and $sourceCharacters[$tokenEnd] -ne $carriageReturn -and $sourceCharacters[$tokenEnd] -ne $lineFeed) {
+                $tokenEnd++
+            }
+        }
+        elseif ($sourceCharacters[$index] -eq $slash -and $index + 1 -lt $sourceCharacters.Length -and $sourceCharacters[$index + 1] -eq $asterisk) {
+            $tokenEnd = $index + 2
+            while ($tokenEnd + 1 -lt $sourceCharacters.Length -and -not ($sourceCharacters[$tokenEnd] -eq $asterisk -and $sourceCharacters[$tokenEnd + 1] -eq $slash)) {
+                $tokenEnd++
+            }
+            $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
+        }
+        elseif ($sourceCharacters[$index] -eq $doubleQuote) {
+            $stringLayout = Get-NervCSharpStringTokenLayout -SourceText $SourceText -QuoteIndex $index
+            $tokenEnd = $stringLayout.TokenEnd
+            $tokenHoles = @($stringLayout.Holes)
+        }
+        elseif ($sourceCharacters[$index] -eq $singleQuote) {
+            $tokenEnd = $index + 1
+            while ($tokenEnd -lt $sourceCharacters.Length) {
+                if ($sourceCharacters[$tokenEnd] -eq $backslash) {
+                    $tokenEnd = [Math]::Min($sourceCharacters.Length, $tokenEnd + 2)
+                    continue
+                }
+                if ($sourceCharacters[$tokenEnd] -eq $singleQuote) {
+                    $tokenEnd++
+                    break
+                }
+                $tokenEnd++
+            }
+        }
+
+        if ($tokenEnd -le $index) {
+            $index++
+            continue
+        }
+
+        $tokenText = $SourceText.Substring($index, $tokenEnd - $index)
+        $preserveAuditedDockerLiteral = [string]::Equals($tokenText, '"docker"', [StringComparison]::Ordinal)
+        if (-not $preserveAuditedDockerLiteral) {
+            for ($maskedIndex = $index; $maskedIndex -lt $tokenEnd; $maskedIndex++) {
+                if ($structuralCharacters[$maskedIndex] -ne $carriageReturn -and $structuralCharacters[$maskedIndex] -ne $lineFeed) {
+                    $structuralCharacters[$maskedIndex] = ' '
+                }
+            }
+        }
+
+        foreach ($hole in $tokenHoles) {
+            $holeLength = $hole.ContentEnd - $hole.ContentStart
+            if ($holeLength -le 0) {
+                continue
+            }
+            $holeText = $SourceText.Substring($hole.ContentStart, $holeLength)
+            $holeStructuralText = ConvertTo-NervCSharpStructuralText -SourceText $holeText
+            for ($holeIndex = 0; $holeIndex -lt $holeLength; $holeIndex++) {
+                $structuralCharacters[$hole.ContentStart + $holeIndex] = $holeStructuralText[$holeIndex]
+            }
+        }
+        $index = $tokenEnd
+    }
+
+    return [string]::new($structuralCharacters)
+}
+
+function Get-NervCSharpClassRanges {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText
+    )
+
+    $classPattern = '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*class\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)'
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    foreach ($classMatch in [regex]::Matches($StructuralText, $classPattern)) {
+        $openBraceIndex = $StructuralText.IndexOf([string] $openBrace, $classMatch.Index + $classMatch.Length, [StringComparison]::Ordinal)
+        if ($openBraceIndex -lt 0) {
+            continue
+        }
+
+        $depth = 0
+        $closeBraceIndex = -1
+        for ($braceIndex = $openBraceIndex; $braceIndex -lt $StructuralText.Length; $braceIndex++) {
+            if ($StructuralText[$braceIndex] -eq $openBrace) {
+                $depth++
+            }
+            elseif ($StructuralText[$braceIndex] -eq $closeBrace) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeBraceIndex = $braceIndex
+                    break
+                }
+            }
+        }
+
+        if ($closeBraceIndex -ge 0) {
+            [pscustomobject]@{
+                Name = $classMatch.Groups['name'].Value
+                StartIndex = $classMatch.Index
+                OpenBraceIndex = $openBraceIndex
+                CloseBraceIndex = $closeBraceIndex
+            }
+        }
+    }
+}
+
+function Get-NervCSharpContainingClassRange {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ClassRanges,
+        [Parameter(Mandatory)] [int] $Index
+    )
+
+    $containingClass = $null
+    foreach ($classRange in $ClassRanges) {
+        if ($classRange.OpenBraceIndex -ge $Index -or $classRange.CloseBraceIndex -le $Index) {
+            continue
+        }
+        if ($null -eq $containingClass -or $classRange.OpenBraceIndex -gt $containingClass.OpenBraceIndex) {
+            $containingClass = $classRange
+        }
+    }
+    return $containingClass
+}
+
+function Get-NervCSharpBraceRanges {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText
+    )
+
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $openBraceIndexes = [System.Collections.Generic.List[int]]::new()
+    for ($index = 0; $index -lt $StructuralText.Length; $index++) {
+        if ($StructuralText[$index] -eq $openBrace) {
+            [void] $openBraceIndexes.Add($index)
+        }
+        elseif ($StructuralText[$index] -eq $closeBrace -and $openBraceIndexes.Count -gt 0) {
+            $lastIndex = $openBraceIndexes.Count - 1
+            [pscustomobject]@{
+                OpenBraceIndex = $openBraceIndexes[$lastIndex]
+                CloseBraceIndex = $index
+            }
+            $openBraceIndexes.RemoveAt($lastIndex)
+        }
+    }
+}
+
+function Get-NervCSharpInnermostBraceRange {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $BraceRanges,
+        [Parameter(Mandatory)] [int] $Index
+    )
+
+    $innermost = $null
+    foreach ($braceRange in $BraceRanges) {
+        if ($braceRange.OpenBraceIndex -ge $Index -or $braceRange.CloseBraceIndex -le $Index) {
+            continue
+        }
+        if ($null -eq $innermost -or $braceRange.OpenBraceIndex -gt $innermost.OpenBraceIndex) {
+            $innermost = $braceRange
+        }
+    }
+    return $innermost
+}
+
+function Get-NervCSharpTopLevelSegments {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [int] $ContentStart,
+        [Parameter(Mandatory)] [int] $ContentEnd
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    $openBracket = [char]0x005B
+    $closeBracket = [char]0x005D
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $comma = [char]0x002C
+    $parenDepth = 0
+    $bracketDepth = 0
+    $braceDepth = 0
+    $segmentStart = $ContentStart
+    $segmentOrdinal = 0
+
+    for ($index = $ContentStart; $index -le $ContentEnd; $index++) {
+        $atEnd = $index -eq $ContentEnd
+        $atTopLevelComma = -not $atEnd -and $StructuralText[$index] -eq $comma -and
+            $parenDepth -eq 0 -and $bracketDepth -eq 0 -and $braceDepth -eq 0
+        if ($atEnd -or $atTopLevelComma) {
+            [pscustomobject]@{
+                Ordinal = $segmentOrdinal
+                Text = $StructuralText.Substring($segmentStart, $index - $segmentStart).Trim()
+            }
+            $segmentOrdinal++
+            $segmentStart = $index + 1
+            continue
+        }
+
+        if ($StructuralText[$index] -eq $openParen) {
+            $parenDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeParen -and $parenDepth -gt 0) {
+            $parenDepth--
+        }
+        elseif ($StructuralText[$index] -eq $openBracket) {
+            $bracketDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeBracket -and $bracketDepth -gt 0) {
+            $bracketDepth--
+        }
+        elseif ($StructuralText[$index] -eq $openBrace) {
+            $braceDepth++
+        }
+        elseif ($StructuralText[$index] -eq $closeBrace -and $braceDepth -gt 0) {
+            $braceDepth--
+        }
+    }
+
+}
+
+function Remove-NervCSharpBalancedOuterParentheses {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    $current = $Text.Trim()
+    while ($current.Length -ge 2 -and $current[0] -eq $openParen -and $current[$current.Length - 1] -eq $closeParen) {
+        $depth = 0
+        $outerCloseIndex = -1
+        for ($index = 0; $index -lt $current.Length; $index++) {
+            if ($current[$index] -eq $openParen) {
+                $depth++
+            }
+            elseif ($current[$index] -eq $closeParen) {
+                $depth--
+                if ($depth -eq 0) {
+                    $outerCloseIndex = $index
+                    break
+                }
+            }
+        }
+        if ($outerCloseIndex -ne $current.Length - 1) {
+            break
+        }
+        $current = $current.Substring(1, $current.Length - 2).Trim()
+    }
+
+    return $current
+}
+
+function Test-NervCSharpAuditedDockerArguments {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [int] $ArgumentsStart,
+        [Parameter(Mandatory)] [int] $ArgumentsEnd
+    )
+
+    foreach ($argument in Get-NervCSharpTopLevelSegments -StructuralText $StructuralText -ContentStart $ArgumentsStart -ContentEnd $ArgumentsEnd) {
+        $normalizedArgument = Remove-NervCSharpBalancedOuterParentheses -Text $argument.Text
+        if ($argument.Ordinal -eq 0 -and [string]::Equals($normalizedArgument, '"docker"', [StringComparison]::Ordinal)) {
+            return $true
+        }
+
+        $namedArgument = [regex]::Match($argument.Text, '^fileName\s*:\s*(?<value>.+)$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ($namedArgument.Success) {
+            $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $namedArgument.Groups['value'].Value
+            if ([string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
+function Get-NervCSharpAuditedDockerInvocationMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $InvocationStartPattern
+    )
+
+    $openParen = [char]0x0028
+    $closeParen = [char]0x0029
+    foreach ($invocationStart in [regex]::Matches($StructuralText, $InvocationStartPattern)) {
+        $openParenIndex = $invocationStart.Index + $invocationStart.Length - 1
+        if ($StructuralText[$openParenIndex] -ne $openParen) {
+            continue
+        }
+
+        $depth = 0
+        $closeParenIndex = -1
+        for ($index = $openParenIndex; $index -lt $StructuralText.Length; $index++) {
+            if ($StructuralText[$index] -eq $openParen) {
+                $depth++
+            }
+            elseif ($StructuralText[$index] -eq $closeParen) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeParenIndex = $index
+                    break
+                }
+            }
+        }
+        if ($closeParenIndex -lt 0) {
+            continue
+        }
+
+        if (Test-NervCSharpAuditedDockerArguments -StructuralText $StructuralText -ArgumentsStart ($openParenIndex + 1) -ArgumentsEnd $closeParenIndex) {
+            [pscustomobject]@{
+                Index = $invocationStart.Index
+                Length = $closeParenIndex - $invocationStart.Index + 1
+            }
+        }
+    }
+}
+
+function Get-NervCSharpAuditedDockerInitializerMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $InitializerStartPattern
+    )
+
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    foreach ($initializerStart in [regex]::Matches($StructuralText, $InitializerStartPattern)) {
+        $openBraceIndex = $initializerStart.Index + $initializerStart.Length - 1
+        if ($StructuralText[$openBraceIndex] -ne $openBrace) {
+            continue
+        }
+
+        $depth = 0
+        $closeBraceIndex = -1
+        for ($index = $openBraceIndex; $index -lt $StructuralText.Length; $index++) {
+            if ($StructuralText[$index] -eq $openBrace) {
+                $depth++
+            }
+            elseif ($StructuralText[$index] -eq $closeBrace) {
+                $depth--
+                if ($depth -eq 0) {
+                    $closeBraceIndex = $index
+                    break
+                }
+            }
+        }
+        if ($closeBraceIndex -lt 0) {
+            continue
+        }
+
+        foreach ($initializerEntry in Get-NervCSharpTopLevelSegments -StructuralText $StructuralText -ContentStart ($openBraceIndex + 1) -ContentEnd $closeBraceIndex) {
+            $fileNameSetter = [regex]::Match($initializerEntry.Text, '^FileName\s*=\s*(?<value>.+)$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+            if (-not $fileNameSetter.Success) {
+                continue
+            }
+            $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $fileNameSetter.Groups['value'].Value
+            if ([string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+                [pscustomobject]@{
+                    Index = $initializerStart.Index
+                    Length = $closeBraceIndex - $initializerStart.Index + 1
+                }
+                break
+            }
+        }
+    }
+}
+
+function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [string] $ProcessStartInfoTypePattern,
+        [Parameter(Mandatory)] [string] $ProcessTypePattern,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $BraceRanges,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ClassRanges
+    )
+
+    $fileNameAssignmentPattern = '(?<![A-Za-z0-9_])(?<member>this\s*\.\s*)?(?<variable>[A-Za-z_][A-Za-z0-9_]*)(?<startInfo>\s*\.\s*StartInfo)?\s*\.\s*FileName\s*=\s*(?<value>[^;]+);'
+    foreach ($assignment in [regex]::Matches($StructuralText, $fileNameAssignmentPattern)) {
+        $normalizedValue = Remove-NervCSharpBalancedOuterParentheses -Text $assignment.Groups['value'].Value
+        if (-not [string]::Equals($normalizedValue, '"docker"', [StringComparison]::Ordinal)) {
+            continue
+        }
+
+        $variableName = $assignment.Groups['variable'].Value
+        $explicitThisMember = $assignment.Groups['member'].Success
+        $containingClass = Get-NervCSharpContainingClassRange -ClassRanges $ClassRanges -Index $assignment.Index
+        $bindingTypePattern = if ($assignment.Groups['startInfo'].Success) { $ProcessTypePattern } else { $ProcessStartInfoTypePattern }
+        $declarationPattern = "(?<![A-Za-z0-9_])(?<type>[A-Za-z_][A-Za-z0-9_.:]*)\s+$([regex]::Escape($variableName))\s*(?<initializer>=\s*[^;]+)?;"
+        $binding = $null
+        $bindingScope = $null
+        foreach ($declaration in [regex]::Matches($StructuralText, $declarationPattern)) {
+            if ($declaration.Index -ge $assignment.Index) {
+                continue
+            }
+            $declarationScope = Get-NervCSharpInnermostBraceRange -BraceRanges $BraceRanges -Index $declaration.Index
+            if ($null -eq $declarationScope -or $assignment.Index -ge $declarationScope.CloseBraceIndex) {
+                continue
+            }
+            if ($explicitThisMember -and
+                ($null -eq $containingClass -or
+                    $declarationScope.OpenBraceIndex -ne $containingClass.OpenBraceIndex -or
+                    $declarationScope.CloseBraceIndex -ne $containingClass.CloseBraceIndex)) {
+                continue
+            }
+            if ($null -eq $binding -or
+                $declarationScope.OpenBraceIndex -gt $bindingScope.OpenBraceIndex -or
+                ($declarationScope.OpenBraceIndex -eq $bindingScope.OpenBraceIndex -and $declaration.Index -gt $binding.Index)) {
+                $binding = $declaration
+                $bindingScope = $declarationScope
+            }
+        }
+        if (-not $explicitThisMember) {
+            $parameterPattern = "(?:\(|,)\s*(?<type>[A-Za-z_][A-Za-z0-9_.:]*)\s+$([regex]::Escape($variableName))\s*(?:=\s*[^,)]*)?(?=,|\))"
+            foreach ($parameter in [regex]::Matches($StructuralText, $parameterPattern)) {
+                if ($parameter.Index -ge $assignment.Index) {
+                    continue
+                }
+                $parameterScope = $null
+                foreach ($braceRange in $BraceRanges) {
+                    if ($braceRange.OpenBraceIndex -le $parameter.Index) {
+                        continue
+                    }
+                    if ($null -eq $parameterScope -or $braceRange.OpenBraceIndex -lt $parameterScope.OpenBraceIndex) {
+                        $parameterScope = $braceRange
+                    }
+                }
+                if ($null -ne $parameterScope) {
+                    $parameterBodyPrefixStart = $parameter.Index + $parameter.Length
+                    $parameterBodyPrefix = $StructuralText.Substring($parameterBodyPrefixStart, $parameterScope.OpenBraceIndex - $parameterBodyPrefixStart)
+                    if ([regex]::IsMatch($parameterBodyPrefix, '=>|;')) {
+                        $parameterScope = $null
+                    }
+                }
+                if ($null -eq $parameterScope -or $assignment.Index -ge $parameterScope.CloseBraceIndex) {
+                    continue
+                }
+                if ($null -eq $binding -or
+                    $parameterScope.OpenBraceIndex -gt $bindingScope.OpenBraceIndex -or
+                    ($parameterScope.OpenBraceIndex -eq $bindingScope.OpenBraceIndex -and $parameter.Index -gt $binding.Index)) {
+                    $binding = $parameter
+                    $bindingScope = $parameterScope
+                }
+            }
+        }
+        if ($null -eq $binding) {
+            continue
+        }
+
+        $bindingType = $binding.Groups['type'].Value
+        $isAuditedProcessType = [regex]::IsMatch($bindingType, "^(?:$bindingTypePattern)$", [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        if ([string]::Equals($bindingType, 'var', [StringComparison]::Ordinal)) {
+            $isAuditedProcessType = [regex]::IsMatch($binding.Groups['initializer'].Value, "\bnew\s+(?:$bindingTypePattern)\s*(?:\(|\{)", [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+        }
+        if ($isAuditedProcessType) {
+            [pscustomobject]@{
+                Index = $assignment.Index
+                Length = $assignment.Length
+            }
+        }
+    }
+}
+
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
 $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
@@ -203,7 +880,9 @@ foreach ($duplicateLaneId in Get-NervStringGroups -Items @($allLaneIds) -KeySele
 }
 
 $excludedClassOwners = @{}
+$excludedClassSelectorsByFastShard = @{}
 foreach ($shard in $fastShards) {
+    $shardClassSelectors = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($excludedLane in @($shard.excludedTestLanes | ForEach-Object { [string] $_ })) {
         if (-not $heavyLaneIdSet.Contains([string]$excludedLane)) {
             $errors.Add("Fast shard '$($shard.id)' must assign excluded tests to a declared heavy lane, not '$excludedLane'.")
@@ -221,6 +900,14 @@ foreach ($shard in $fastShards) {
         }
         $excludedClassOwners[$testName] = $shard.id
     }
+
+    $classSelectorsProperty = $shard.PSObject.Properties['excludedTestClasses']
+    if ($null -ne $classSelectorsProperty) {
+        foreach ($classSelector in @($classSelectorsProperty.Value)) {
+            [void] $shardClassSelectors.Add([string] $classSelector)
+        }
+    }
+    $excludedClassSelectorsByFastShard[[string] $shard.id] = $shardClassSelectors
 }
 
 if (-not (Test-Path -LiteralPath $PolicyPath -PathType Leaf)) {
@@ -317,6 +1004,7 @@ else {
 }
 
 $projectOwners = @{}
+$ambiguousProjectOwners = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($entry in $classificationEntries) {
     $project = $entry.Project -replace '\\', '/'
     if ([string]::IsNullOrWhiteSpace($project)) {
@@ -326,6 +1014,7 @@ foreach ($entry in $classificationEntries) {
 
     if ($projectOwners.ContainsKey($project)) {
         $errors.Add("Backend test project is classified more than once: $project ($($projectOwners[$project]), $($entry.Lane)).")
+        [void] $ambiguousProjectOwners.Add([string] $project)
         continue
     }
 
@@ -347,6 +1036,147 @@ $discoveredBackendProjects = @(
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
         ForEach-Object { 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $_.FullName) -replace '\\', '/') }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
+
+$qualifiedProcessStartInfoInvocationPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*\('
+$qualifiedProcessStartInfoInitializerPattern = 'new\s+(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*(?:\(\s*\))?\s*\{'
+$qualifiedProcessStartInvocationPattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*\.\s*Start\s*\('
+$testProjectPaths = @(
+    Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
+        Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
+        ForEach-Object { $_.FullName }) -Comparer ([StringComparer]::Ordinal) -Unique
+)
+$auditedSourceProjects = @{}
+foreach ($testProjectPath in $testProjectPaths) {
+    $testProjectDirectory = Split-Path -Parent $testProjectPath
+    $relativeTestProjectPath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $testProjectPath) -replace '\\', '/')
+    foreach ($sourceFile in Get-ChildItem -LiteralPath $testProjectDirectory -Recurse -File -Filter '*.cs' |
+            Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' }) {
+        if ($auditedSourceProjects.ContainsKey([string] $sourceFile.FullName)) {
+            $errors.Add("Backend test source '$($sourceFile.FullName)' maps to more than one containing test project: $($auditedSourceProjects[[string] $sourceFile.FullName]), $relativeTestProjectPath.")
+            continue
+        }
+        $auditedSourceProjects[[string] $sourceFile.FullName] = $relativeTestProjectPath
+
+        $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
+        $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
+        $classRanges = $null
+        $unqualifiedProcessStartInfoNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        if ($structuralText.Contains('ProcessStartInfo', [StringComparison]::Ordinal)) {
+            $hasLocalProcessStartInfoType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b')
+            $allProcessStartInfoAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
+            $bclProcessStartInfoAliases = @($allProcessStartInfoAliases |
+                Where-Object { [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') } |
+                ForEach-Object { $_.Groups['alias'].Value })
+            $hasCustomProcessStartInfoAlias = @($allProcessStartInfoAliases |
+                Where-Object { [string]::Equals($_.Groups['alias'].Value, 'ProcessStartInfo', [StringComparison]::Ordinal) -and
+                    -not [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo\s*$') }).Count -gt 0
+            foreach ($aliasName in $bclProcessStartInfoAliases) {
+                [void] $unqualifiedProcessStartInfoNames.Add([string] $aliasName)
+            }
+            if (-not $hasLocalProcessStartInfoType -and -not $hasCustomProcessStartInfoAlias) {
+                [void] $unqualifiedProcessStartInfoNames.Add('ProcessStartInfo')
+            }
+        }
+        $escapedProcessStartInfoNames = @($unqualifiedProcessStartInfoNames | ForEach-Object { [regex]::Escape([string] $_) })
+        $processStartInfoTypePattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*ProcessStartInfo'
+        if ($escapedProcessStartInfoNames.Count -gt 0) {
+            $processStartInfoTypePattern = "(?:$processStartInfoTypePattern|$($escapedProcessStartInfoNames -join '|'))"
+        }
+        $unqualifiedProcessNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        if ($structuralText.Contains('Process', [StringComparison]::Ordinal)) {
+            $hasLocalProcessType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+Process\b')
+            $allProcessAliases = @([regex]::Matches($structuralText, '(?m)^\s*(?:global\s+)?using\s+(?<alias>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?<target>[^;]+);'))
+            $bclProcessAliases = @($allProcessAliases |
+                Where-Object { [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*$') } |
+                ForEach-Object { $_.Groups['alias'].Value })
+            $hasCustomProcessAlias = @($allProcessAliases |
+                Where-Object { [string]::Equals($_.Groups['alias'].Value, 'Process', [StringComparison]::Ordinal) -and
+                    -not [regex]::IsMatch($_.Groups['target'].Value, '^\s*(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process\s*$') }).Count -gt 0
+            foreach ($aliasName in $bclProcessAliases) {
+                [void] $unqualifiedProcessNames.Add([string] $aliasName)
+            }
+            if (-not $hasLocalProcessType -and -not $hasCustomProcessAlias) {
+                [void] $unqualifiedProcessNames.Add('Process')
+            }
+        }
+        $escapedProcessNames = @($unqualifiedProcessNames | ForEach-Object { [regex]::Escape([string] $_) })
+        $processTypePattern = '(?:global\s*::\s*)?System\s*\.\s*Diagnostics\s*\.\s*Process'
+        if ($escapedProcessNames.Count -gt 0) {
+            $processTypePattern = "(?:$processTypePattern|$($escapedProcessNames -join '|'))"
+        }
+        $fileNameAssignmentMatches = @()
+        if ($structuralText.Contains('FileName', [StringComparison]::Ordinal) -and
+            [regex]::IsMatch($structuralText, '(?<![A-Za-z0-9_])(?:this\s*\.\s*)?[A-Za-z_][A-Za-z0-9_]*\s*\.\s*FileName\s*=')) {
+            $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+            $braceRanges = @(Get-NervCSharpBraceRanges -StructuralText $structuralText)
+            $fileNameAssignmentMatches = @(Get-NervCSharpAuditedDockerFileNameAssignmentMatches -StructuralText $structuralText -ProcessStartInfoTypePattern $processStartInfoTypePattern -ProcessTypePattern $processTypePattern -BraceRanges $braceRanges -ClassRanges $classRanges)
+        }
+        $directDockerMatches = @(
+            Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInfoInvocationPattern
+            Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern $qualifiedProcessStartInfoInitializerPattern
+            $fileNameAssignmentMatches
+            Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern $qualifiedProcessStartInvocationPattern
+            foreach ($unqualifiedProcessStartInfoName in $escapedProcessStartInfoNames) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "new\s+$unqualifiedProcessStartInfoName\s*\("
+                Get-NervCSharpAuditedDockerInitializerMatches -StructuralText $structuralText -InitializerStartPattern "new\s+$unqualifiedProcessStartInfoName\s*(?:\(\s*\))?\s*\{"
+            }
+            foreach ($unqualifiedProcessName in $escapedProcessNames) {
+                Get-NervCSharpAuditedDockerInvocationMatches -StructuralText $structuralText -InvocationStartPattern "(?<![A-Za-z0-9_.:])$unqualifiedProcessName\s*\.\s*Start\s*\("
+            }
+        )
+        if ($directDockerMatches.Count -eq 0) {
+            continue
+        }
+
+        $ownerExcludedClassSelectors = $null
+        if ($ambiguousProjectOwners.Contains([string] $relativeTestProjectPath)) {
+            $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has ambiguous shard ownership.")
+        }
+        elseif (-not $projectOwners.ContainsKey($relativeTestProjectPath)) {
+            $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has no owning shard.")
+        }
+        else {
+            $projectOwner = [string] $projectOwners[$relativeTestProjectPath]
+            if ($excludedClassSelectorsByFastShard.ContainsKey($projectOwner)) {
+                $ownerExcludedClassSelectors = $excludedClassSelectorsByFastShard[$projectOwner]
+            }
+            elseif ($heavyLaneIdSet.Contains($projectOwner)) {
+                # A heavy lane is the intended home for real-dependency tests. Its owner script and
+                # evidence policy govern execution, so fast-shard exclusion is neither required nor
+                # meaningful for a project classified wholly into that lane.
+                continue
+            }
+            else {
+                $errors.Add("Real dependency Docker CLI primitive project '$relativeTestProjectPath' has unknown lane ownership '$projectOwner'.")
+            }
+        }
+
+        $relativeSourcePath = 'backend/' + ([IO.Path]::GetRelativePath($backendRoot, $sourceFile.FullName) -replace '\\', '/')
+        $namespaceMatches = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
+        if ($null -eq $classRanges) {
+            $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+        }
+        if ($namespaceMatches.Count -ne 1 -or $classRanges.Count -eq 0) {
+            $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
+            continue
+        }
+
+        foreach ($directDockerMatch in $directDockerMatches) {
+            $containingClasses = @($classRanges |
+                Where-Object { $_.OpenBraceIndex -lt $directDockerMatch.Index -and $_.CloseBraceIndex -gt $directDockerMatch.Index })
+            if ($containingClasses.Count -eq 0) {
+                $errors.Add("Real dependency Docker CLI primitive in '$relativeSourcePath' could not be mapped to a namespace and test type.")
+                continue
+            }
+
+            # Nested helpers belong to the outer test class selector used by VSTest and the shard manifest.
+            $fullyQualifiedType = "$($namespaceMatches[0].Groups['name'].Value).$($containingClasses[0].Name)"
+            if ($null -eq $ownerExcludedClassSelectors -or -not $ownerExcludedClassSelectors.Contains([string] $fullyQualifiedType)) {
+                $errors.Add("Real dependency test type '$fullyQualifiedType' uses the audited Docker CLI primitive but is not excluded from its fast shard.")
+            }
+        }
+    }
+}
 
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
 if ($unclassifiedProjects.Count -gt 0) {

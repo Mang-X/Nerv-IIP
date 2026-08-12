@@ -1,14 +1,16 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Creates a temporary backend inventory mirror with two mutation projects
+#     - Creates a temporary backend inventory mirror with mutation projects
+#     - Creates a temporary C# Docker-lookalike fixture inside an existing backend test project
 #   Writes:
 #     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX and timing-cache fixtures (temporarily)
+#     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
 #     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
 #     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
 #     - artifacts/script-logs/**
 #   Cleanup:
-#     - Removes every temporary project, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
+#     - Removes every temporary project, Docker-lookalike source, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
 #   Requires:
 #     - PowerShell 7
 #     - Ruby 3.4 with yaml/json standard libraries
@@ -24,6 +26,9 @@ $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryProjectDirectory = Join-Path $temporaryBackendInventory 'tests/Nerv.IIP.TemporaryShardClassification.Tests'
 $temporaryProjectPath = Join-Path $temporaryProjectDirectory 'Nerv.IIP.TemporaryShardClassification.Tests.csproj'
+$temporaryDirectDockerTestPath = Join-Path $temporaryProjectDirectory 'DirectDockerTests.cs'
+$temporaryDirectDockerManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-direct-docker-{0}.json" -f [Guid]::NewGuid().ToString('N'))
+$temporaryDockerLookalikePath = Join-Path $repoRoot ("backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-{0}.cs" -f [Guid]::NewGuid().ToString('N'))
 $temporarySolutionMemberDirectory = Join-Path $temporaryBackendInventory 'common/Nerv.IIP.TemporarySolutionMembership'
 $temporarySolutionMemberPath = Join-Path $temporarySolutionMemberDirectory 'Nerv.IIP.TemporarySolutionMembership.csproj'
 $temporaryWorkflowPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-{0}.yml" -f [Guid]::NewGuid().ToString('N'))
@@ -93,6 +98,545 @@ function Invoke-GovernedScript {
     }
 }
 
+$directDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.DirectDockerTests'
+$directDockerFinding = "Real dependency test type '$directDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$directDockerExcludedType = 'Nerv.IIP.TemporaryShardClassification.Tests.AlreadyExcluded'
+$containedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.Unexcluded'
+$containedDockerFinding = "Real dependency test type '$containedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$ordinaryEmptyStringThenDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.OrdinaryEmptyStringThenDockerTests'
+$ordinaryEmptyStringThenDockerFinding = "Real dependency test type '$ordinaryEmptyStringThenDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$verbatimEmptyStringThenDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.VerbatimEmptyStringThenDockerTests'
+$verbatimEmptyStringThenDockerFinding = "Real dependency test type '$verbatimEmptyStringThenDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$interpolatedDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedDockerTests'
+$interpolatedDockerFinding = "Real dependency test type '$interpolatedDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$interpolatedRawDockerType = 'Nerv.IIP.TemporaryShardClassification.Tests.InterpolatedRawDockerTests'
+$interpolatedRawDockerFinding = "Real dependency test type '$interpolatedRawDockerType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+$dockerBclEntryTypes = @(
+    'Nerv.IIP.TemporaryShardClassification.Tests.TwoArgumentConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NamedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ReorderedNamedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedArgumentConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.FullyQualifiedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.GlobalQualifiedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParenthesizedConstructorDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ObjectInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.EmptyConstructorInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedInitializerDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.AssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.FieldAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.AliasAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ThisFieldAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.GlobalAliasAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessStartInfoPropertyChainDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessAliasStartInfoPropertyChainDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParameterAssignedFileNameDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ProcessAliasStaticStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.SingleArgumentStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.StaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NamedStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ReorderedNamedStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.NestedArgumentStaticProcessStartDockerTests',
+    'Nerv.IIP.TemporaryShardClassification.Tests.ParenthesizedNamedStaticProcessStartDockerTests'
+)
+try {
+    New-Item -ItemType Directory -Path $temporaryProjectDirectory -Force | Out-Null
+    Set-Content -LiteralPath $temporaryProjectPath -Value '<Project Sdk="Microsoft.NET.Sdk" />' -NoNewline
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class DirectDockerTests
+{
+    [Fact]
+    public void Starts_docker_directly()
+    {
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+
+    $directDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $directDocker.Passed) 'An unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
+    Assert-Contract ($directDocker.Message.Contains($directDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must report a direct Docker call in a single top-level test class.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class AlreadyExcluded
+{
+}
+
+public sealed class Unexcluded
+{
+    [Fact]
+    public void Starts_docker_directly()
+    {
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+
+    $directDockerManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $directDockerShard = @($directDockerManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('business-core-a'), [StringComparison]::Ordinal) })
+    Assert-Contract ($directDockerShard.Count -eq 1) 'The direct Docker containment fixture must resolve business-core-a exactly once.'
+    $directDockerShard[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($directDockerShard[0].excludedTestClasses) + $directDockerExcludedType) -Comparer ([StringComparer]::Ordinal) -Unique)
+    Set-Content -LiteralPath $temporaryDirectDockerManifestPath -Value ($directDockerManifest | ConvertTo-Json -Depth 100) -NoNewline
+
+    $containedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-direct-docker-containment-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory, '-ManifestPath', $temporaryDirectDockerManifestPath)
+    Assert-Contract (-not $containedDocker.Passed) 'A later unexcluded test type using the audited Docker CLI primitive must fail shard governance.'
+    Assert-Contract ($containedDocker.Message.Contains($containedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must map the Docker primitive to the later containing outer test class instead of an earlier excluded class.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class OrdinaryEmptyStringThenDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_empty_and_quote_like_ordinary_strings()
+    {
+        _ = $"";
+        _ = "\"";
+        _ = "" + "";
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+    $ordinaryEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-ordinary-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class VerbatimEmptyStringThenDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_empty_and_quote_like_verbatim_strings()
+    {
+        _ = @"""";
+        _ = @"";
+        _ = new ProcessStartInfo("docker");
+    }
+}
+'@
+    $verbatimEmptyStringThenDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-verbatim-empty-string-then-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $verbatimEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like verbatim strings must fail shard governance.'
+    Assert-Contract ($verbatimEmptyStringThenDocker.Message.Contains($verbatimEmptyStringThenDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must not let a verbatim empty string swallow a later Docker call and must report the exact containing test type.'
+    Assert-Contract (-not $ordinaryEmptyStringThenDocker.Passed) 'A real Docker call after empty and quote-like ordinary strings must fail shard governance.'
+    Assert-Contract ($ordinaryEmptyStringThenDocker.Message.Contains($ordinaryEmptyStringThenDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must not let an ordinary empty string swallow a later Docker call and must report the exact containing test type.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class InterpolatedDockerTests
+{
+    [Fact]
+    public void Starts_docker_inside_an_ordinary_interpolation_hole()
+    {
+        _ = $"{new ProcessStartInfo("docker")}";
+    }
+}
+'@
+    $interpolatedDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class InterpolatedRawDockerTests
+{
+    [Fact]
+    public void Starts_docker_inside_a_raw_interpolation_hole()
+    {
+        _ = $"""{new ProcessStartInfo("docker")}""";
+    }
+}
+'@
+    $interpolatedRawDocker = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-interpolated-raw-docker-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+
+    Assert-Contract (-not $interpolatedDocker.Passed) 'A real Docker call inside an ordinary interpolation hole must fail shard governance.'
+    Assert-Contract ($interpolatedDocker.Message.Contains($interpolatedDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable ordinary interpolation holes and report the exact containing test type.'
+    Assert-Contract (-not $interpolatedRawDocker.Passed) 'A real Docker call inside an interpolated raw string hole must fail shard governance.'
+    Assert-Contract ($interpolatedRawDocker.Message.Contains($interpolatedRawDockerFinding, [StringComparison]::Ordinal)) 'Shard governance must audit executable raw interpolation holes and report the exact containing test type.'
+
+    Set-Content -LiteralPath $temporaryDirectDockerTestPath -NoNewline -Value @'
+global using GlobalPsi = System.Diagnostics.ProcessStartInfo;
+using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
+using ProcAlias = System.Diagnostics.Process;
+using Psi = System.Diagnostics.ProcessStartInfo;
+
+namespace Nerv.IIP.TemporaryShardClassification.Tests;
+
+public sealed class TwoArgumentConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_constructor_arguments() =>
+        _ = new ProcessStartInfo("docker", "ps");
+}
+
+public sealed class NamedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_named_constructor_arguments() =>
+        _ = new ProcessStartInfo(fileName: "docker", arguments: "ps");
+}
+
+public sealed class ReorderedNamedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_reordered_named_constructor_arguments() =>
+        _ = new ProcessStartInfo(arguments: "ps", fileName: "docker");
+}
+
+public sealed class NestedArgumentConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_constructor_argument() =>
+        _ = new ProcessStartInfo(arguments: BuildArgs(), fileName: "docker");
+
+    private static string BuildArgs() => "ps";
+}
+
+public sealed class FullyQualifiedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_fully_qualified_constructor() =>
+        _ = new System.Diagnostics.ProcessStartInfo("docker");
+}
+
+public sealed class GlobalQualifiedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_global_qualified_constructor() =>
+        _ = new global::System.Diagnostics.ProcessStartInfo("docker");
+}
+
+public sealed class ParenthesizedConstructorDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_parenthesized_file_name() =>
+        _ = new System.Diagnostics.ProcessStartInfo(("docker"));
+}
+
+public sealed class ObjectInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_an_object_initializer() =>
+        _ = new ProcessStartInfo { FileName = "docker", UseShellExecute = false };
+}
+
+public sealed class EmptyConstructorInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_an_empty_constructor_and_initializer() =>
+        _ = new ProcessStartInfo() { FileName = "docker" };
+}
+
+public sealed class NestedInitializerDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_collection_initializer() =>
+        _ = new ProcessStartInfo { ArgumentList = { "ps" }, FileName = "docker" };
+}
+
+public sealed class AssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_the_file_name_property()
+    {
+        var processStartInfo = new ProcessStartInfo();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class FieldAssignedFileNameDockerTests
+{
+    private readonly ProcessStartInfo processStartInfo;
+
+    public FieldAssignedFileNameDockerTests()
+    {
+        processStartInfo = new ProcessStartInfo();
+    }
+
+    [Fact]
+    public void Starts_docker_after_assigning_a_field_file_name()
+    {
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class AliasAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_an_alias_file_name()
+    {
+        var processStartInfo = new Psi();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class ThisFieldAssignedFileNameDockerTests
+{
+    private readonly ProcessStartInfo options = new();
+
+    [Fact]
+    public void Starts_docker_from_the_explicit_field_despite_a_shadowing_local()
+    {
+        var options = new CustomLaunchOptions();
+        this.options.FileName = "docker";
+        _ = Process.Start(this.options);
+    }
+}
+
+public sealed class GlobalAliasAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_assigning_a_global_alias_file_name()
+    {
+        var processStartInfo = new GlobalPsi();
+        processStartInfo.FileName = "docker";
+        _ = Process.Start(processStartInfo);
+    }
+}
+
+public sealed class ParameterAssignedFileNameDockerTests
+{
+    [Fact]
+    public void Configures_a_parameter_for_docker()
+    {
+        Configure(new ProcessStartInfo());
+    }
+
+    private static void Configure(ProcessStartInfo target)
+    {
+        target.FileName = "docker";
+    }
+}
+
+public sealed class ProcessStartInfoPropertyChainDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_the_process_start_info_property()
+    {
+        var process = new Process();
+        process.StartInfo.FileName = "docker";
+        _ = process.Start();
+    }
+}
+
+public sealed class ProcessAliasStartInfoPropertyChainDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_an_aliased_process_type()
+    {
+        var process = new ProcAlias();
+        process.StartInfo.FileName = "docker";
+        _ = process.Start();
+    }
+}
+
+public sealed class StaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_the_static_process_api() =>
+        _ = Process.Start("docker", "ps");
+}
+
+public sealed class ProcessAliasStaticStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_through_an_aliased_static_process_api() =>
+        _ = ProcAlias.Start("docker");
+}
+
+public sealed class SingleArgumentStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_the_single_argument_static_process_api() =>
+        _ = Process.Start("docker");
+}
+
+public sealed class NamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_named_static_process_arguments() =>
+        _ = Process.Start(fileName: "docker", arguments: "ps");
+}
+
+public sealed class ReorderedNamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_reordered_named_static_process_arguments() =>
+        _ = Process.Start(arguments: "ps", fileName: "docker");
+}
+
+public sealed class NestedArgumentStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_after_a_nested_static_process_argument() =>
+        _ = Process.Start(arguments: BuildArgs(), fileName: "docker");
+
+    private static string BuildArgs() => "ps";
+}
+
+public sealed class ParenthesizedNamedStaticProcessStartDockerTests
+{
+    [Fact]
+    public void Starts_docker_with_a_parenthesized_named_file_name() =>
+        _ = System.Diagnostics.Process.Start(fileName: ("docker"));
+}
+'@
+    $dockerBclEntries = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-bcl-entry-contract' -Arguments @('-BackendInventoryRoot', $temporaryBackendInventory)
+    Assert-Contract (-not $dockerBclEntries.Passed) 'Every audited BCL Docker process entry shape in an unexcluded fast-shard project must fail shard governance.'
+    foreach ($dockerBclEntryType in $dockerBclEntryTypes) {
+        $dockerBclEntryFinding = "Real dependency test type '$dockerBclEntryType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+        Assert-Contract ($dockerBclEntries.Message.Contains($dockerBclEntryFinding, [StringComparison]::Ordinal)) "Shard governance must report Docker BCL entry shape '$dockerBclEntryType'."
+    }
+}
+finally {
+    Remove-Item -LiteralPath $temporaryBackendInventory -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $temporaryDirectDockerManifestPath -Force -ErrorAction SilentlyContinue
+}
+
+$dockerLookalikeType = 'Nerv.IIP.Testing.Tests.DockerLookalikeTests'
+$dockerLookalikeFinding = "Real dependency test type '$dockerLookalikeType' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+Assert-Contract (-not (Test-Path -LiteralPath $temporaryDockerLookalikePath)) 'The Docker-lookalike fixture path must be unused before the test.'
+try {
+    Set-Content -LiteralPath $temporaryDockerLookalikePath -NoNewline -Value @'
+namespace Nerv.IIP.Testing.Tests;
+
+public sealed class DockerLookalikeTests
+{
+    // new ProcessStartInfo("docker") is documentation, not an invocation.
+    /* A block comment containing new ProcessStartInfo("docker") is not an invocation either. */
+    // new System.Diagnostics.ProcessStartInfo(arguments: "ps", fileName: "docker") is also documentation.
+    private const string Ordinary = "new ProcessStartInfo(\"docker\")";
+    private const string Verbatim = @"new ProcessStartInfo(""docker"")";
+    private static string Interpolated => $"new ProcessStartInfo(\"docker\") {nameof(DockerLookalikeTests)}";
+    private const string StaticStart = """Process.Start(arguments: "ps", fileName: "docker")""";
+    private const string Initializer = """new ProcessStartInfo { FileName = "docker" }""";
+    private const string Raw = """
+        new ProcessStartInfo("docker")
+        """;
+}
+
+public static class Process
+{
+    public static object? Start(string fileName) => null;
+}
+
+public sealed class CustomProcessTests
+{
+    [Fact]
+    public void Starts_a_custom_process_type() =>
+        _ = Process.Start("docker");
+}
+
+public sealed class CustomLaunchOptions
+{
+    public string FileName { get; set; } = "";
+}
+
+public sealed class CustomFileNameAssignmentTests
+{
+    [Fact]
+    public void Assigns_a_custom_file_name_property()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class CustomParameterFileNameAssignmentTests
+{
+    [Fact]
+    public void Configures_a_custom_parameter()
+    {
+        Configure(new CustomLaunchOptions());
+    }
+
+    private static void Configure(CustomLaunchOptions target)
+    {
+        target.FileName = "docker";
+    }
+}
+
+public sealed class CustomProcessWithStartInfo
+{
+    public CustomLaunchOptions StartInfo { get; } = new();
+}
+
+public sealed class CustomProcessStartInfoPropertyChainTests
+{
+    [Fact]
+    public void Assigns_a_custom_start_info_property()
+    {
+        var process = new CustomProcessWithStartInfo();
+        process.StartInfo.FileName = "docker";
+    }
+}
+
+public sealed class CrossMethodExpressionBodiedParameterLeakTests
+{
+    private readonly CustomLaunchOptions target = new();
+
+    private static void Earlier(System.Diagnostics.ProcessStartInfo target) => _ = target;
+
+    [Fact]
+    public void Assigns_the_custom_field_in_a_later_method()
+    {
+        target.FileName = "docker";
+    }
+}
+
+public sealed class ShadowedFileNameAssignmentTests
+{
+    [Fact]
+    public void Creates_a_process_start_info_in_one_scope()
+    {
+        var options = new ProcessStartInfo();
+    }
+
+    [Fact]
+    public void Assigns_a_custom_file_name_in_another_scope()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class ShadowedFieldFileNameAssignmentTests
+{
+    private readonly ProcessStartInfo options = new();
+
+    [Fact]
+    public void Assigns_a_shadowing_custom_file_name()
+    {
+        var options = new CustomLaunchOptions();
+        options.FileName = "docker";
+    }
+}
+
+public sealed class CustomFieldSelectedWithThisTests
+{
+    private readonly CustomLaunchOptions options = new();
+
+    [Fact]
+    public void Assigns_the_explicit_custom_field_despite_a_shadowing_bcl_local()
+    {
+        var options = new ProcessStartInfo();
+        this.options.FileName = "docker";
+    }
+}
+'@
+
+    $dockerLookalike = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-docker-lookalike-contract'
+    Assert-Contract $dockerLookalike.Passed 'Comments and C# string lookalikes must not fail real backend shard governance.'
+    Assert-Contract (-not $dockerLookalike.Message.Contains($dockerLookalikeFinding, [StringComparison]::Ordinal)) 'Comments and C# string lookalikes must not produce a direct Docker finding.'
+}
+finally {
+    Remove-Item -LiteralPath $temporaryDockerLookalikePath -Force -ErrorAction SilentlyContinue
+}
+
 Assert-Contract (Test-Path -LiteralPath $manifestPath) 'Backend test shard manifest is missing.'
 Assert-Contract (Test-Path -LiteralPath $validatorPath) 'Backend test shard validator is missing.'
 
@@ -124,7 +668,8 @@ $excludedSelectors = @(
         if ($null -ne $methods) { @($methods.Value) }
     }
 )
-Assert-Contract ($excludedSelectors.Count -eq 49) 'Every currently excluded real PostgreSQL test selector must be explicitly classified.'
+Assert-Contract ($excludedSelectors.Count -eq 50) 'Every currently excluded real PostgreSQL test selector must be explicitly classified.'
+Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests'))) 'The Inventory directory PostgreSQL test class must be excluded from its fast shard.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must remain method-scoped.'
 Assert-Contract (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests')))) 'A mixed fast test class must not be excluded wholesale.'
 $platformShard = @($fastShards | Where-Object { [string]::Equals([string]($_.id), [string]('platform'), [StringComparison]::OrdinalIgnoreCase) })[0]
@@ -705,6 +1250,36 @@ try {
     $policyCoverage = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-policy-coverage-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $policyCoverage.Passed) 'A fast shard exclusion without a MAN-661 registered skip must fail shard governance.'
     Assert-Contract ($policyCoverage.Message.Contains('is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip', [StringComparison]::Ordinal)) 'Shard governance must reject an exclusion the evidence policy does not register.'
+
+    $directorySelector = 'Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests'
+    $directoryManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $directoryShard = @($directoryManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('business-core-a'), [StringComparison]::Ordinal) })
+    Assert-Contract ($directoryShard.Count -eq 1) 'The Inventory directory PostgreSQL selector mutation must resolve business-core-a exactly once.'
+    $directoryShard[0].excludedTestClasses = @($directoryShard[0].excludedTestClasses | Where-Object { -not [string]::Equals([string]([string] $_), $directorySelector, [StringComparison]::Ordinal) })
+    Set-Content -LiteralPath $temporaryManifestPath -Value ($directoryManifest | ConvertTo-Json -Depth 100) -NoNewline
+    $missingDirectorySelector = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-selector-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    $directoryFinding = "Real dependency test type '$directorySelector' uses the audited Docker CLI primitive but is not excluded from its fast shard."
+    Assert-Contract (-not $missingDirectorySelector.Passed) 'Removing the Inventory directory PostgreSQL selector must fail shard governance.'
+    Assert-Contract ($missingDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL selector must report the complete direct Docker finding.'
+
+    $wrongShardDirectoryManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $wrongShardDirectoryOwner = @($wrongShardDirectoryManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('business-core-a'), [StringComparison]::Ordinal) })
+    $wrongShardDirectoryTarget = @($wrongShardDirectoryManifest.fastShards | Where-Object { [string]::Equals([string]([string] $_.id), [string]('platform'), [StringComparison]::Ordinal) })
+    Assert-Contract ($wrongShardDirectoryOwner.Count -eq 1) 'The wrong-shard Inventory selector mutation must resolve business-core-a exactly once.'
+    Assert-Contract ($wrongShardDirectoryTarget.Count -eq 1) 'The wrong-shard Inventory selector mutation must resolve platform exactly once.'
+    $wrongShardDirectoryOwner[0].excludedTestClasses = @($wrongShardDirectoryOwner[0].excludedTestClasses | Where-Object { -not [string]::Equals([string]([string] $_), $directorySelector, [StringComparison]::Ordinal) })
+    $wrongShardDirectoryTarget[0].excludedTestClasses = @(Get-NervStringsSorted -Values @(@($wrongShardDirectoryTarget[0].excludedTestClasses) + $directorySelector) -Comparer ([StringComparer]::Ordinal) -Unique)
+    Set-Content -LiteralPath $temporaryManifestPath -Value ($wrongShardDirectoryManifest | ConvertTo-Json -Depth 100) -NoNewline
+    $wrongShardDirectorySelector = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-wrong-owner-contract' -Arguments @('-ManifestPath', $temporaryManifestPath)
+    Assert-Contract (-not $wrongShardDirectorySelector.Passed) 'Relocating the Inventory directory PostgreSQL selector to a non-owning fast shard must fail shard governance.'
+    Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
+
+    $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) })
+    Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline
+    $missingDirectoryPolicy = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-policy-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
+    Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'
+    Assert-Contract ($missingDirectoryPolicy.Message.Contains("Fast shard exclusion '$directorySelector' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip.", [StringComparison]::Ordinal)) 'Removing the Inventory directory PostgreSQL policy rule must report the unregistered environment-gated skip finding.'
 
     # The under-declaration has to be planted on whichever shard currently owns the one exclusion
     # whose MAN-661 requiredLane is not `postgres`; pinning that to a shard id made this negative
