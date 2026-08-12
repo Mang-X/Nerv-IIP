@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.conformance.test.ts",
+      "line": 10,
+      "owner": "frontend/scheduling",
+      "reason": "The conformance suite requires the optional @dhx/trial-gantt package, which is not distributed in the default workspace install.",
+      "expires": "2026-11-10"
+    }
+  ]
+}

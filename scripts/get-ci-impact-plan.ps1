@@ -59,7 +59,7 @@ if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) {
     $summary = [Text.StringBuilder]::new()
     [void]$summary.AppendLine('## CI impact plan')
     [void]$summary.AppendLine()
-    [void]$summary.AppendLine('NERV-668 decomposition item 3 uses this plan for the first routed batch: Script Governance and OpenAPI/api-client Drift. Other jobs remain unrouted.')
+    [void]$summary.AppendLine('NERV-668 routes Script Governance and OpenAPI/api-client Drift; NERV-685 derives governed frontend workspace shards. Other jobs remain unrouted.')
     [void]$summary.AppendLine()
     [void]$summary.AppendLine('| Signal | Selected | Reason |')
     [void]$summary.AppendLine('| --- | --- | --- |')

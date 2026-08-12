@@ -21,7 +21,7 @@ jobs:
   #
   #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
   #      erp-sales-order-demand-acceptance、connector-host-tests 和
-  #      frontend-unit-tests：
+  #      frontend-unit-test-shards：
   #          sum(step timeout-minutes) < job timeout-minutes.
   #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
   #      连同 MAN-661 test-evidence 产物一起中断；step 级超时只会使该
@@ -34,12 +34,11 @@ jobs:
   #      预算。以下每个分片 job 正是为此保留 6 分钟余量。
   #
   #   B) 不含失败后仍可运行 step 的 job——`Backend Tests` 聚合、
-  #      backend-test-shard-governance、frontend、openapi-client-drift、script-governance：不会有任何内容
+  #      backend-test-shard-governance、frontend 聚合/validation、openapi-client-drift、script-governance：不会有任何内容
   #      在 job 预算触发时丢失，因此预算*不会*为了超过 step 总和而抬高。
   #      此处 **job** 预算是根据观测运行时长确定的快速失败界限。step 预算
   #      仅为逐 step 上限：当一个 job 含多个 step 时，靠后的 step 无法
-  #      分别触达（`frontend` 在 20m job 内合计为 58m，因此其 15m build 预算
-  #      永远无法单独触发），对此明确接受，而非作出相反声明。唯一
+  #      分别触达，对此明确接受，而非作出相反声明。唯一
   #      强制的是在任何调度下都不可能生效的情形——step 预算大于或等于
   #      整个 job 预算。
   #
@@ -122,10 +121,11 @@ jobs:
   impact-plan:
     name: CI Impact Plan
     # NERV-668 拆解③首批让 Script Governance 与 OpenAPI Drift 消费这些 outputs；
-    # 其余 job 仍不消费。计划失败时两个已接入 job 都保守运行，不能静默跳过。
-    # 层级 B：失败后没有 evidence step；3 个显式 step 的预算为 3m / 5m / 3m，
-    # job 的 10m 是快速失败界限，各 step 预算只表达逐 step 上限。
-    timeout-minutes: 10
+    # NERV-685 PR②同时让 frontend jobs 消费 workspace 选择，其余 job 仍不消费。
+    # 计划失败时首批两个低风险 job 保守运行，frontend 聚合则失败关闭。
+    # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
+    # 预算只表达逐 step 上限。
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.plan.outputs.backend }}
@@ -150,6 +150,12 @@ jobs:
       full_chain: ${{ steps.plan.outputs.full_chain }}
       business_services: ${{ steps.plan.outputs.business_services }}
       plan_path: ${{ steps.plan.outputs.plan_path }}
+      frontend_selected: ${{ steps.frontend-plan.outputs.frontend_selected }}
+      frontend_tests_selected: ${{ steps.frontend-plan.outputs.frontend_tests_selected }}
+      frontend_test_matrix: ${{ steps.frontend-plan.outputs.frontend_test_matrix }}
+      frontend_validation_matrix: ${{ steps.frontend-plan.outputs.frontend_validation_matrix }}
+      frontend_plan_path: ${{ steps.frontend-plan.outputs.frontend_plan_path }}
+      frontend_inventory_path: ${{ steps.frontend-plan.outputs.frontend_inventory_path }}
     steps:
       - name: Checkout full history for impact observation
         timeout-minutes: 3
@@ -172,12 +178,26 @@ jobs:
           -DiffMode $env:DIFF_MODE
           -OutputPath artifacts/ci-impact-plan/impact-plan.json
 
-      - name: Upload observed impact plan
+      - name: Build frontend workspace plan
+        id: frontend-plan
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          FRONTEND_MODE: ${{ github.event_name == 'push' && 'Full' || 'Affected' }}
+        run: >-
+          ./scripts/get-frontend-workspace-plan.ps1
+          -ImpactPlanPath artifacts/ci-impact-plan/impact-plan.json
+          -Mode $env:FRONTEND_MODE
+
+      - name: Upload CI impact plans
         timeout-minutes: 3
         uses: actions/upload-artifact@v4
         with:
           name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/ci-impact-plan/impact-plan.json
+          path: |
+            artifacts/ci-impact-plan/impact-plan.json
+            artifacts/ci-impact-plan/frontend-workspace-plan.json
+            artifacts/ci-impact-plan/frontend-test-inventory.json
           if-no-files-found: error
           retention-days: 14
 
@@ -729,12 +749,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  frontend-unit-tests:
-    name: Frontend Unit Tests
-    # 层级 A。测试失败后仍必须上传已经生成的 JUnit/JSON，因此 job 预算必须
-    # 严格大于全部显式 step 预算：3 + 3 + 5 + 12 + 20 + 5 = 48m < 55m，
-    # 留出 7m 给 GitHub 隐式 setup/post step。workspace:test 显式禁用任务缓存，
-    # 避免 required lane 重放历史绿色日志而没有真实执行测试或生成本次证据。
+  frontend-unit-test-shards:
+    name: Frontend Unit Test (${{ matrix.name }})
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_tests_selected == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_test_matrix) }}
+    # 层级 A。每个受影响 workspace 独立产出 JUnit/JSON；测试失败后仍上传该 shard
+    # 已生成的证据。3 + 3 + 5 + 12 + 20 + 5 = 48m < 55m。
     timeout-minutes: 55
     runs-on: ubuntu-latest
     steps:
@@ -760,10 +783,10 @@ jobs:
         timeout-minutes: 12
         run: pnpm -C frontend install --frozen-lockfile
 
-      - name: Test frontend workspace
+      - name: Test affected frontend workspace
         timeout-minutes: 20
         run: >-
-          pnpm -C frontend test
+          pnpm -C frontend --filter "${{ matrix.name }}" test
           --reporter=default
           --reporter=junit
           --reporter=json
@@ -771,12 +794,12 @@ jobs:
           --outputFile.json=artifacts/test-results/results.json
           --slowTestThreshold=1000
 
-      - name: Upload frontend unit test evidence
+      - name: Upload frontend unit test shard evidence
         timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-unit-test-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: frontend-unit-test-evidence-${{ matrix.slug }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             frontend/apps/*/artifacts/test-results/*.xml
             frontend/apps/*/artifacts/test-results/*.json
@@ -785,10 +808,35 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  frontend:
-    name: Frontend Typecheck and Build
-    # 层级 B（失败后没有 step 运行）。观测最大值为 4.9m / 平均值为 4.4m；20m job 预算是
-    # 快速失败界限。step 预算合计为 58m，且仅为逐 step 上限。
+  frontend-unit-tests:
+    name: Frontend Unit Tests
+    if: always()
+    needs:
+      - impact-plan
+      - frontend-unit-test-shards
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate frontend unit test shards
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          IMPACT_RESULT: ${{ needs.impact-plan.result }}
+          FRONTEND_TESTS_SELECTED: ${{ needs.impact-plan.outputs.frontend_tests_selected }}
+          SHARD_RESULT: ${{ needs.frontend-unit-test-shards.result }}
+        run: |
+          test "$IMPACT_RESULT" = "success"
+          if test "$FRONTEND_TESTS_SELECTED" = "true"; then
+            test "$SHARD_RESULT" = "success"
+          else
+            test "$FRONTEND_TESTS_SELECTED" = "false"
+            test "$SHARD_RESULT" = "skipped"
+          fi
+
+  frontend-check:
+    name: Frontend Check (Affected)
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_selected == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
@@ -818,13 +866,76 @@ jobs:
         timeout-minutes: 10
         run: pnpm -C frontend check
 
-      - name: Typecheck frontend
-        timeout-minutes: 10
-        run: pnpm -C frontend typecheck
+  frontend-validation-shards:
+    name: Frontend Validation (${{ matrix.name }})
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_selected == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
 
-      - name: Build frontend
-        timeout-minutes: 15
-        run: pnpm -C frontend build
+      - name: Setup pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Setup Node.js
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        timeout-minutes: 12
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Typecheck affected frontend workspace
+        if: matrix.run_typecheck
+        timeout-minutes: 10
+        run: pnpm -C frontend --filter "${{ matrix.name }}" typecheck
+
+      - name: Build affected frontend app
+        if: matrix.run_build
+        timeout-minutes: 20
+        run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
+  frontend:
+    name: Frontend Typecheck and Build
+    if: always()
+    needs:
+      - impact-plan
+      - frontend-check
+      - frontend-validation-shards
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate frontend validation shards
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          IMPACT_RESULT: ${{ needs.impact-plan.result }}
+          FRONTEND_SELECTED: ${{ needs.impact-plan.outputs.frontend_selected }}
+          CHECK_RESULT: ${{ needs.frontend-check.result }}
+          VALIDATION_RESULT: ${{ needs.frontend-validation-shards.result }}
+        run: |
+          test "$IMPACT_RESULT" = "success"
+          if test "$FRONTEND_SELECTED" = "true"; then
+            test "$CHECK_RESULT" = "success"
+            test "$VALIDATION_RESULT" = "success"
+          else
+            test "$FRONTEND_SELECTED" = "false"
+            test "$CHECK_RESULT" = "skipped"
+            test "$VALIDATION_RESULT" = "skipped"
+          fi
 
   openapi-client-drift:
     name: OpenAPI/api-client Drift
@@ -878,8 +989,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限；step 预算合计为 83m（17 个 step：3m
-    # checkout + 16 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 10m job 预算是快速失败界限；step 预算合计为 88m（18 个 step：3m
+    # checkout + 17 × 5m），且仅为逐 step 上限。合计超过 job 预算
     # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -925,6 +1036,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/ci-impact-plan.Tests.ps1
+
+      - name: Test frontend workspace plan
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/frontend-workspace-plan.Tests.ps1
 
       - name: Test nightly business performance workflow
         timeout-minutes: 5

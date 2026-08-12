@@ -47,19 +47,19 @@ function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
 
 function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
     $findings = [Collections.Generic.List[string]]::new()
-    $job = @($Jobs | Where-Object { [string]::Equals([string]$_.Name, 'frontend-unit-tests', [StringComparison]::Ordinal) })
+    $job = @($Jobs | Where-Object { [string]::Equals([string]$_.Name, 'frontend-unit-test-shards', [StringComparison]::Ordinal) })
     if ($job.Count -ne 1) {
         $findings.Add('frontend-unit-job')
         return ,$findings.ToArray()
     }
 
-    $testStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Test frontend workspace', [StringComparison]::Ordinal) })
+    $testStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Test affected frontend workspace', [StringComparison]::Ordinal) })
     if ($testStep.Count -ne 1) {
         $findings.Add('frontend-unit-test-step')
     }
     else {
         $requiredRunTokens = @(
-            'pnpm -C frontend test',
+            'pnpm -C frontend --filter "${{ matrix.name }}" test',
             '--reporter=default',
             '--reporter=junit',
             '--reporter=json',
@@ -74,7 +74,7 @@ function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
         if ([string]$testStep[0].Run -match 'dangerouslyIgnoreUnhandledErrors') { $findings.Add('frontend-unit-test-unhandled-errors') }
     }
 
-    $uploadStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Upload frontend unit test evidence', [StringComparison]::Ordinal) })
+    $uploadStep = @($job[0].Steps | Where-Object { [string]::Equals([string]$_.Name, 'Upload frontend unit test shard evidence', [StringComparison]::Ordinal) })
     if ($uploadStep.Count -ne 1) {
         $findings.Add('frontend-unit-upload-step')
     }
@@ -1607,20 +1607,20 @@ try {
     [IO.Directory]::CreateDirectory($frontendUnitFixtureRoot) | Out-Null
     $frontendUnitFixture = @'
 jobs:
-  frontend-unit-tests:
+  frontend-unit-test-shards:
     timeout-minutes: 55
     runs-on: ubuntu-latest
     steps:
-      - name: Test frontend workspace
+      - name: Test affected frontend workspace
         timeout-minutes: 20
         run: >-
-          pnpm -C frontend test
+          pnpm -C frontend --filter "${{ matrix.name }}" test
           --reporter=default
           --reporter=junit
           --reporter=json
           --outputFile.junit=artifacts/test-results/junit.xml
           --outputFile.json=artifacts/test-results/results.json
-      - name: Upload frontend unit test evidence
+      - name: Upload frontend unit test shard evidence
         timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
@@ -1633,13 +1633,13 @@ jobs:
           if-no-files-found: error
 '@
     $frontendUnitMutations = @(
-        @{ Name = 'job-renamed'; Old = '  frontend-unit-tests:'; New = '  frontend-unit-tests-missing:'; Expected = 'frontend-unit-job' },
-        @{ Name = 'test-step-renamed'; Old = '      - name: Test frontend workspace'; New = '      - name: Test frontend workspace missing'; Expected = 'frontend-unit-test-step' },
-        @{ Name = 'test-step-conditioned'; Old = "      - name: Test frontend workspace`n        timeout-minutes: 20"; New = "      - name: Test frontend workspace`n        if: success()`n        timeout-minutes: 20"; Expected = 'frontend-unit-test-condition' },
+        @{ Name = 'job-renamed'; Old = '  frontend-unit-test-shards:'; New = '  frontend-unit-test-shards-missing:'; Expected = 'frontend-unit-job' },
+        @{ Name = 'test-step-renamed'; Old = '      - name: Test affected frontend workspace'; New = '      - name: Test affected frontend workspace missing'; Expected = 'frontend-unit-test-step' },
+        @{ Name = 'test-step-conditioned'; Old = "      - name: Test affected frontend workspace`n        timeout-minutes: 20"; New = "      - name: Test affected frontend workspace`n        if: success()`n        timeout-minutes: 20"; Expected = 'frontend-unit-test-condition' },
         @{ Name = 'junit-reporter-removed'; Old = "          --reporter=junit`n"; New = ''; Expected = 'frontend-unit-test-command' },
-        @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend test'; New = '          pnpm -C frontend test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
+        @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend --filter "${{ matrix.name }}" test'; New = '          pnpm -C frontend --filter "${{ matrix.name }}" test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
         @{ Name = 'unhandled-errors-ignored'; Old = '          --reporter=default'; New = "          --reporter=default`n          --dangerouslyIgnoreUnhandledErrors"; Expected = 'frontend-unit-test-unhandled-errors' },
-        @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test evidence'; New = '      - name: Upload frontend unit test evidence missing'; Expected = 'frontend-unit-upload-step' },
+        @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test shard evidence'; New = '      - name: Upload frontend unit test shard evidence missing'; Expected = 'frontend-unit-upload-step' },
         @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v4'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
         @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
         @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
@@ -1698,7 +1698,7 @@ foreach ($expectedEvidenceJob in @(
         'backend-tests-business-core-b',
         'connector-host-tests',
         'erp-sales-order-demand-acceptance',
-        'frontend-unit-tests')) {
+        'frontend-unit-test-shards')) {
     Assert-True (@($evidenceJobs | Where-Object { [string]::Equals([string]$_.Name, [string]($expectedEvidenceJob), [StringComparison]::OrdinalIgnoreCase) }).Count -eq 1) "Job '$expectedEvidenceJob' must still publish evidence under if: always()."
 }
 

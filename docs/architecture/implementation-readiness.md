@@ -16,7 +16,15 @@ Summary 继续使用 `if: always()`，唯一断言 step 无自身条件，并固
 
 拆解③首批只接入两个低风险 job。PR 上，`OpenAPI/api-client Drift` 仅在 `openapi_codegen=true` 时运行；其输入闭包包含 Gateway/业务契约、生成脚本、api-client，以及后端集中构建配置和前端 package/lock/workspace 配置。导出脚本直接构建 Gateway project，不读取 solution 成员表，因此 `backend/Nerv.IIP.sln` 不属于该闭包。`Script Governance` 在 `scripts=true` 或 `backend=true` 时运行，因为该 job 同时承载脚本治理、后端测试确定性、测试证据和 solution membership 合同；脚本治理登记文档也显式归入 `scripts`。`main` push 仍运行这两个快速 lane。两者都静态依赖 `impact-plan` 并使用 `!cancelled()` 消除 `needs` 的隐式 success gate且尊重整次运行取消：计划失败时保守运行，只有 PR 计划成功且信号未选中时才跳过。其测试命令与 tier B 超时预算没有改变。
 
-`scripts/tests/ci-impact-plan.Tests.ps1` 除代表路径、扩散、稳定输出、非法路径和入口序列化外，还结构化锁定这两个 job 的精确 fail-open 条件，并禁止其余尚未纳管 job 消费影响计划；去掉 `!cancelled()`/计划失败分支、使用错误 signal、漏掉 backend 治理面或让额外 job 偷接计划的变异都会失败。Actions Summary 继续列出逐信号理由，`CI Summary` 另列两个条件 lane 的选择政策和实际结果。其余 job 尚未条件化，Backend Tests 等后续批次仍需独立 PR；因此本首批不勾销拆解③，也不声明 NERV-668 已全部完成。
+`scripts/tests/ci-impact-plan.Tests.ps1` 除代表路径、扩散、稳定输出、非法路径和入口序列化外，还结构化锁定这两个 job 的精确 fail-open 条件，并把合法消费者限制为这两个低风险 job、下述 frontend jobs 与 `CI Summary`；去掉 `!cancelled()`/计划失败分支、使用错误 signal、漏掉 backend 治理面或让额外 job 偷接计划的变异都会失败。Actions Summary 继续列出逐信号理由，`CI Summary` 另列两个条件 lane 的选择政策和实际结果。Backend Tests 等后续批次仍需独立 PR；因此本首批不勾销拆解③，也不声明 NERV-668 已全部完成。
+
+## Frontend 受影响 workspace 分片（NERV-685 / #1252，PR②）
+
+`scripts/get-frontend-workspace-plan.ps1` 从 impact plan 的规范化 changed paths 和当前 `frontend/pnpm-workspace.yaml` 动态建立 workspace 图，不维护第二份手写依赖清单。当前选择器明确治理且只接受 `apps/*`、`packages/*` 两个 workspace pattern，再读取其 `package.json`；manifest 新增、删除或改成第三种 glob 时必须先扩展选择器合同，否则计划失败关闭，避免 workspace 静默逃逸。PR 中的 app 变更选择该 app 与传递 workspace 依赖；package 变更选择该 package、传递消费者，并补齐被选消费者的依赖。frontend 根配置、未知 frontend 路径、workflow/选择器自变更与只有粗域信号却无法定位 project 的情况全部保守全选；`main` push 不读取 affected 结果，显式使用 full 模式选择全部 project。
+
+`Frontend Unit Tests` 和 `Frontend Typecheck and Build` 保持稳定展示名，但现在是 fail-closed 聚合 job：前者汇总每个含 test script 的受影响 workspace shard，后者汇总全 workspace format/lint check 与受影响 project 的 typecheck/build shard。无 frontend 影响时，实际 shard job 为 `skipped`，聚合器只在 impact plan 成功、选择值明确为 `false` 且对应 shard 精确为 `skipped` 时成功，因此 required identity 仍实例化为绿色，而不是缺席或用模糊 `continue-on-error` 放行。选择存在、计划缺失/非法、任一 shard 失败或结果不完整均失败关闭；`CI Summary` 继续消费两个稳定聚合结果。
+
+同一选择器生成留存 inventory：当前 manifest、test/typecheck/build script、workspace dependency、unit-test 文件数和 suppression 数都进入 `frontend-test-inventory.json`。每个 workspace project 必须进入 typecheck graph，每个 app 还必须进入 build graph；含 unit test 文件却没有 test script、workspace 依赖指向未发现项目、提交态 Vitest `test/it/describe/suite` 的直连、可选链、computed 或 concurrent/sequential/each/for 链式 `only`，以及未登记/过期/陈旧的同类 `skip/skipIf/runIf/todo`，均使计划 job 失败。为避免改名绕过，Vitest 测试 API 的 import alias、namespace import、直接赋值 alias 和解构 alias 同样被拒绝。长期 suppression 只能登记在 `scripts/frontend-test-skip-allowlist.json`，并须给出精确 path/line、owner、reason 与严格 `yyyy-MM-dd` 的 expires；过期判断使用 UTC 日期，不受 runner 本地时区影响。JUnit/JSON 仍由每个真实执行的 test shard 在失败时 `if: always()` 上传；合法零测试只由选择计划证明，不伪造测试结果文件。
 
 ## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
 

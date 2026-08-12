@@ -77,20 +77,29 @@ function Assert-ConditionalRoutingWorkflow {
         Assert-Contract ([string]::Equals([string]$job.if, [string]$routingPolicies[$jobName], [StringComparison]::Ordinal)) "Routed job '$jobName' must use the governed fail-open PR policy."
     }
 
-    foreach ($jobProperty in @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
-                -not [string]::Equals($_.Name, 'impact-plan', [StringComparison]::Ordinal) -and
-                -not [string]::Equals($_.Name, 'openapi-client-drift', [StringComparison]::Ordinal) -and
-                -not [string]::Equals($_.Name, 'script-governance', [StringComparison]::Ordinal) -and
-                -not [string]::Equals($_.Name, 'ci-summary', [StringComparison]::Ordinal)
-            })) {
+    $frontendConsumers = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
+        [StringComparer]::Ordinal)
+    $allowedConsumers = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('openapi-client-drift', 'script-governance', 'ci-summary'),
+        [StringComparer]::Ordinal)
+    foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
+
+    foreach ($jobProperty in @($parsedWorkflow.jobs.PSObject.Properties | Where-Object { -not [string]::Equals($_.Name, 'impact-plan', [StringComparison]::Ordinal) })) {
         $job = $jobProperty.Value
         $needsProperty = $job.PSObject.Properties['needs']
         [string[]]$needs = @()
         if ($null -ne $needsProperty) { $needs = @($needsProperty.Value | ForEach-Object { [string]$_ }) }
-        Assert-Contract ($needs.Count -eq 0 -or -not (Test-OrdinalMember -Values $needs -Expected 'impact-plan')) "Unrouted job '$($jobProperty.Name)' must not depend on impact-plan."
+        $consumesImpact = Test-OrdinalMember -Values $needs -Expected 'impact-plan'
         $conditionProperty = $job.PSObject.Properties['if']
         $condition = if ($null -eq $conditionProperty) { '' } else { [string]$conditionProperty.Value }
-        Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Unrouted job '$($jobProperty.Name)' must not consume impact-plan outputs."
+        if ($allowedConsumers.Contains([string]$jobProperty.Name)) {
+            Assert-Contract $consumesImpact "Governed job '$($jobProperty.Name)' must consume impact-plan."
+        }
+        else {
+            Assert-Contract (-not $consumesImpact) "Unrouted job '$($jobProperty.Name)' must not depend on impact-plan."
+            Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Unrouted job '$($jobProperty.Name)' must not consume impact-plan outputs."
+        }
     }
 }
 
@@ -307,7 +316,8 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('first routed batch', [StringComparison]::Ordinal)) 'Actions Summary must identify the first routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Script Governance and OpenAPI/api-client Drift', [StringComparison]::Ordinal)) 'Actions Summary must identify the NERV-668 routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
 finally {
@@ -325,9 +335,9 @@ try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
             @{
-                Name = 'unrouted-job-consumes-plan'
-                Original = "  frontend:`n    name: Frontend Typecheck and Build"
-                Replacement = "  frontend:`n    name: Frontend Typecheck and Build`n    needs: impact-plan"
+                Name = 'scalar-needs'
+                Original = "  connector-host-tests:`n    name: Connector Host Tests"
+                Replacement = "  connector-host-tests:`n    name: Connector Host Tests`n    needs: impact-plan"
             },
             @{
                 Name = 'openapi-drops-plan-failure-fail-open'
