@@ -39,7 +39,7 @@ token 之上。
 [ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)，
 执行批次为 MAN-433（库侧）/ MAN-435（分 app codemod）/ MAN-436（守护收口）。要点：
 
-- `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座（或待收口的 deprecated 旧名）。
+- `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座。
 - PC 层（pc/blocks/layout）取素名：`NvButton`、`NvDataTable`、`NvPageHeader`（素名
   优先权归 PC）。screen/mobile/touch 与 PC 潜在同名者保留场景词根（`NvScreenButton`、
   `NvMobileDialog`、`NvTouchButton`），天然独有名直接 Nv（`NvScanBar`、`NvOeeHero`）。
