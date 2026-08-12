@@ -18,7 +18,7 @@
 
 | 事件 | 运行策略 | 门禁关系 |
 | --- | --- | --- |
-| pull request | NERV-668 按变更影响选择精确 lane、政策规则或 FullChain scenario；在该路由落地前，PR 上的真实依赖只允许 `workflow_dispatch` 预检，不建立一套临时 PR 过滤；main/nightly 自动运行不受此限制。 | lane job 不直接设为 required。`CI Required Summary` 当前尚不存在，由 [#1235](https://github.com/Mang-X/Nerv-IIP/issues/1235) 拆解①创建并在同一交付中调整 branch protection；在此之前本页不改变现有 required checks。该 summary 落地后，被选择结果失败、取消、缺席或零执行均须阻止合并。 |
+| pull request | NERV-668 按变更影响选择精确 lane、政策规则或 FullChain scenario；影响计划失败或输出缺失时保守运行。 | lane job 不直接设为 required；稳定 required `CI Summary` 汇总选择政策与实际结果。被选择结果失败、取消、缺席或零执行均阻止合并，未选择结果必须精确为 `skipped` 并显示 `skipped by policy`。 |
 | `main` push | 运行全部 `core` 且非规模型的 PostgreSQL 用例，以及全部 `active + core` Redis/CAP、FullChain 场景。 | 不回写既有 PR 结论；失败立即把 `main` 的真实依赖可信度标为降级。 |
 | nightly | 运行全部已登记的真实依赖用例、全部 active FullChain 场景及重试、乱序、故障注入变体；NERV-677 的全规模 `SeedScale` 在同层但保持独立 lane，性能继续使用 NERV-183 的独立 workflow。 | 不进入 PR branch protection；负责穷举和高成本变体，失败是 release blocker。 |
 | `workflow_dispatch` | 可选择单 lane、单 policy/scenario 或 `full`；复用自动运行的同一入口。 | 不得降低执行数、证据、清理或失败语义，手工成功也不替代下一次应运行的自动门禁。 |
@@ -46,4 +46,4 @@
 
 ## 非目标与后续边界
 
-本页不写 workflow YAML、不修改测试、脚本、`ci.yml`、证据 policy 或 manifest，也不设计各业务 scenario 的步骤；Nightly 故障工单自动化、去重和优先级升级策略须另行治理，不由本页裁决。第二层负责 PostgreSQL job 模板和单服务试点，第三层逐服务接入并收编 NERV-423，第四层接入 Redis/CAP，第五层由 NERV-767 接入 FullChain；NERV-673、NERV-677 消费本页裁决但保留各自业务矩阵和种子分层职责。
+本页的架构冻结不设计各业务 scenario 的步骤；Nightly 故障工单自动化、去重和优先级升级策略须另行治理，不由本页裁决。第二层由 `scripts/postgres-test-lane.json`、受治理 runner 与 CI job 实现 PostgreSQL 模板及 Inventory 单服务试点；第三层才逐服务接入并收编 NERV-423，第四层接入 Redis/CAP，第五层由 NERV-767 接入 FullChain。NERV-673、NERV-677 消费本页裁决但保留各自业务矩阵和种子分层职责。

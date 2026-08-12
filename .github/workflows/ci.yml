@@ -610,6 +610,131 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  postgres-provider-tests:
+    name: PostgreSQL Provider Tests
+    # NERV-688 拆解②：Inventory 单服务试点。层级 A；显式 step 预算合计 59m，
+    # 小于 66m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 66
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: nerv
+          POSTGRES_PASSWORD: nerv
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nerv -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Install PostgreSQL client
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Resolve PostgreSQL evidence environment
+        timeout-minutes: 3
+        id: postgres-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Run Inventory PostgreSQL profile pilot
+        timeout-minutes: 20
+        id: postgres-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-postgres-test-lane.ps1
+          -MemberId inventory-postgres-profile
+          -DatabaseName nerv_iip_inventory_${{ github.run_id }}_${{ github.run_attempt }}
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+
+      - name: Collect PostgreSQL pilot evidence
+        timeout-minutes: 5
+        id: collect-postgres-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane postgres
+          -SelectedLanes postgres
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.postgres-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "PostgreSQL Provider Tests"
+          -CurrentTestOutcome ${{ steps.postgres-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.postgres-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.postgres-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload PostgreSQL normalized evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-postgres-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload PostgreSQL dependency summary
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
     # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image
@@ -992,8 +1117,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限；step 预算合计为 88m（18 个 step：3m
-    # checkout + 17 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 10m job 预算是快速失败界限；step 预算合计为 93m（19 个 step：3m
+    # checkout + 18 × 5m），且仅为逐 step 上限。合计超过 job 预算
     # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -1039,6 +1164,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/ci-impact-plan.Tests.ps1
+
+      - name: Test PostgreSQL lane contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/postgres-test-lane.Tests.ps1
 
       - name: Test frontend workspace plan
         timeout-minutes: 5
@@ -1115,6 +1245,7 @@ jobs:
     needs:
       - impact-plan
       - backend-tests
+      - postgres-provider-tests
       - connector-host-tests
       - frontend-unit-tests
       - frontend
@@ -1129,9 +1260,11 @@ jobs:
           connector_result="${{ needs.connector-host-tests.result }}"
           script_governance_result="${{ needs.script-governance.result }}"
           openapi_result="${{ needs.openapi-client-drift.result }}"
+          postgres_result="${{ needs.postgres-provider-tests.result }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
+          postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
           if [[ "$connector_selected" = "true" ]]; then
             connector_policy="selected"
@@ -1148,6 +1281,11 @@ jobs:
           else
             openapi_policy="skipped by design"
           fi
+          if [[ "$postgres_selected" = "true" ]]; then
+            postgres_policy="selected"
+          else
+            postgres_policy="skipped by policy"
+          fi
 
           {
             echo "## CI lane decisions"
@@ -1157,6 +1295,7 @@ jobs:
             echo "| Connector Host Tests | $connector_policy | $connector_result |"
             echo "| Script Governance | $script_governance_policy | $script_governance_result |"
             echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
+            echo "| PostgreSQL Provider Tests | $postgres_policy | $postgres_result |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           test "$impact_result" = "success"
@@ -1167,6 +1306,11 @@ jobs:
             test "$connector_result" = "success"
           else
             test "$connector_result" = "skipped"
+          fi
+          if [[ "$postgres_selected" = "true" ]]; then
+            test "$postgres_result" = "success"
+          else
+            test "$postgres_result" = "skipped"
           fi
           if [[ "$script_governance_selected" = "true" ]]; then
             test "$script_governance_result" = "success"

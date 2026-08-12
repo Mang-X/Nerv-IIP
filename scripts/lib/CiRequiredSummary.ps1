@@ -48,6 +48,7 @@ function Get-NervCiRequiredSummaryFindings {
     $expectedNeeds = @(
         'impact-plan',
         'backend-tests',
+        'postgres-provider-tests',
         'connector-host-tests',
         'frontend-unit-tests',
         'frontend',
@@ -77,7 +78,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need the impact plan, five current required jobs, and OpenAPI Drift exactly.')
+            $findings.Add('CI Summary must need the impact plan, five current required jobs, OpenAPI Drift, and PostgreSQL Provider Tests exactly.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'
@@ -124,9 +125,11 @@ impact_result="${{ needs.impact-plan.result }}"
 connector_result="${{ needs.connector-host-tests.result }}"
 script_governance_result="${{ needs.script-governance.result }}"
 openapi_result="${{ needs.openapi-client-drift.result }}"
+postgres_result="${{ needs.postgres-provider-tests.result }}"
 connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
 script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
 openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
+postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
 if [[ "$connector_selected" = "true" ]]; then
   connector_policy="selected"
@@ -143,6 +146,11 @@ if [[ "$openapi_selected" = "true" ]]; then
 else
   openapi_policy="skipped by design"
 fi
+if [[ "$postgres_selected" = "true" ]]; then
+  postgres_policy="selected"
+else
+  postgres_policy="skipped by policy"
+fi
 
 {
   echo "## CI lane decisions"
@@ -152,6 +160,7 @@ fi
   echo "| Connector Host Tests | $connector_policy | $connector_result |"
   echo "| Script Governance | $script_governance_policy | $script_governance_result |"
   echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
+  echo "| PostgreSQL Provider Tests | $postgres_policy | $postgres_result |"
 } >> "$GITHUB_STEP_SUMMARY"
 
 test "$impact_result" = "success"
@@ -162,6 +171,11 @@ if [[ "$connector_selected" = "true" ]]; then
   test "$connector_result" = "success"
 else
   test "$connector_result" = "skipped"
+fi
+if [[ "$postgres_selected" = "true" ]]; then
+  test "$postgres_result" = "success"
+else
+  test "$postgres_result" = "skipped"
 fi
 if [[ "$script_governance_selected" = "true" ]]; then
   test "$script_governance_result" = "success"

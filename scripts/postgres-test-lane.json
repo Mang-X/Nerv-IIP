@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "members": [
+    {
+      "id": "inventory-postgres-profile",
+      "service": "Inventory",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
+      "databasePrefix": "nerv_iip_inventory",
+      "diagnosticSchemas": [
+        "inventory"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema"
+      ]
+    }
+  ]
+}
