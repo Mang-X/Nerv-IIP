@@ -2,17 +2,21 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
-## CI Required Summary 骨架（NERV-668 / #1235，拆解①）
+## CI Required Summary 与首批条件 lane（NERV-668 / #1235，拆解①、③首批）
 
-`.github/workflows/ci.yml` 已新增稳定展示名 `CI Summary` 的聚合 job。NERV-685 PR①在该骨架上把新增的 `Frontend Unit Tests` 纳入聚合，因此它以静态 `needs` 依赖当前五个 required 候选 job：`Backend Tests`、`Connector Host Tests`、`Frontend Unit Tests`、`Frontend Typecheck and Build` 与 `Script Governance`，并通过 `if: always()` 在上游失败、取消或跳过后仍执行；五项结果只有全部为 `success` 才通过。唯一断言 step 不允许自带条件，并固定使用 `bash --noprofile --norc -euo pipefail {0}`，防止跳过断言或让前一条失败被后一条成功退出码覆盖。因此 `failure`、`cancelled` 或 `skipped` 都不能被聚合器放绿。预期 job 身份缺席会使 workflow 无法实例化并令 required context 缺席，从 branch protection 视角保持失败关闭，但不会伪称为 summary job 自身的红色结论。`scripts/verify-ci-required-summary.ps1` 结构化读取 workflow，`scripts/tests/ci-required-summary.Tests.ps1` 用缺依赖、非 always、step 条件、非 fail-fast shell、no-op、吞退出码、job/step `continue-on-error` 及三种非成功结果变异证明该契约会失败关闭。
+`.github/workflows/ci.yml` 的稳定 `CI Summary` 仍是 branch protection 的唯一 required context。它以静态 `needs` 等待影响计划、当前五个 required 候选 job（`Backend Tests`、`Connector Host Tests`、`Frontend Unit Tests`、`Frontend Typecheck and Build`、`Script Governance`）以及首批纳管的 `OpenAPI/api-client Drift`。四个尚未条件化的 required 候选 job 必须为 `success`；首批两个条件 lane 则只接受两种精确状态：计划选择时必须为 `success`，计划成功且明确未选择时必须为 `skipped`，并在 Actions Summary 中显示 `skipped by design`。影响计划失败、被跳过或输出缺失时两个条件 lane 都保守运行，同时 summary 自身仍因影响计划非成功而失败；整次 workflow 被取消时则尊重取消，不再启动后继 lane。被选择 lane 的 `failure`、`cancelled`、错误 `skipped`，以及未选择 lane 的意外执行结果均不能放绿。
 
-本层只建立候选锚点，不修改任何既有 job 的触发条件，不引入 paths/impact-plan，也不把当前非 required 的 ERP acceptance 或 OpenAPI drift 升级为 required。远端 branch protection 已按双锚点顺序完成迁移：先确认 `CI Summary` 在目标分支真实出现并成功，再将其加入 required，最后移除旧四项；2026-08-12 实时复核显示 `strict=true` 且唯一 required context 为 `CI Summary`。NERV-685 PR①只扩展 summary 内部依赖，不修改 branch protection。代码、本地合同测试、PR CI 与远端 branch-protection 状态仍是不同完成事实，后续交付必须分别验证。
+Summary 继续使用 `if: always()`，唯一断言 step 无自身条件，并固定使用 `bash --noprofile --norc -euo pipefail {0}`。`scripts/verify-ci-required-summary.ps1` 结构化读取 workflow 并锁定完整 selected/skipped-by-design 决策与审计表；`scripts/tests/ci-required-summary.Tests.ps1` 通过缺依赖、非 always、step 条件、非 fail-fast shell、吞退出码、selected 错收 skipped、unselected 错收 success、忽略影响计划失败及隐藏 skip 原因等变异证明失败关闭。
 
-## CI 影响判定只观测层（NERV-668 / #1235，拆解②）
+拆解①当时只建立候选锚点，不修改任何既有 job 的触发条件，也不把 ERP acceptance 或 OpenAPI Drift 单独升级为 branch-protection context。远端 branch protection 已按双锚点顺序完成迁移：先确认 `CI Summary` 在目标分支真实出现并成功，再将其加入 required，最后移除旧四项；2026-08-12 实时复核显示 `strict=true` 且唯一 required context 为 `CI Summary`。拆解③首批只扩展 summary 内部依赖与判定，不修改这项远端保护。代码、本地合同测试、PR CI 与远端 branch-protection 状态仍是不同完成事实，后续交付必须分别验证。
 
-`.github/workflows/ci.yml` 已新增 `CI Impact Plan (Observation)` job。它对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；`backend/common/**` 的任一当前共享目录会扩散到全部业务服务，标准 `IntegrationEventHandlers` 目录也属于 Redis/CAP 消息链信号。普通 Markdown 只选择 docs，但 `frontend/**` 下的 Markdown 同时保留所属前端层，因为前端格式门禁会读取这些文件。无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
+## CI 影响判定与首批路由（NERV-668 / #1235，拆解②、③首批）
 
-本层严格只观测：现有 job 没有增加 `needs: impact-plan`，也没有任何 `if` 读取影响 outputs；required summary、branch protection、测试命令和各 lane 是否运行均未基于计划改变。`scripts/tests/ci-impact-plan.Tests.ps1` 覆盖代表路径、扩散、稳定输出、非法路径失败关闭、入口序列化以及“禁止既有 job 消费影响计划”的反向合同。只有后续拆解③经独立 PR 才能逐 lane 使用这些结果，因此本段不声称纯文档或纯前端 PR 已节省 CI 成本，也不勾销 NERV-668 的最终验收项。
+`.github/workflows/ci.yml` 的 `CI Impact Plan` job 对 PR 使用 base/head merge-base diff，对 `main` push 使用 before/head range diff，把路径交给 `scripts/get-ci-impact-plan.ps1`，再由 `scripts/lib/CiImpactPlan.ps1` 产出 schema v1 JSON、job outputs、Actions Summary 与保留 14 天的 `ci-impact-plan` artifact。计划包括 backend/frontend/scripts/docs/connector-hosts/workflows/infra 粗域，Contracts/Testing/Persistence/Messaging、BusinessGateway/OpenAPI、前端 app/package/design-system/docs、PostgreSQL/Redis-CAP/FullChain 信号，以及稳定排序的业务服务集合和逐信号理由。规则或 workflow 自身变化会保守选择全部信号；`backend/common/**` 的任一当前共享目录会扩散到全部业务服务，标准 `IntegrationEventHandlers` 目录也属于 Redis/CAP 消息链信号。普通 Markdown 只选择 docs，但 `frontend/**` 下的 Markdown 同时保留所属前端层，因为前端格式门禁会读取这些文件。无法分类的路径同样 fail-open 到全部影响，避免静默漏测。
+
+拆解③首批只接入两个低风险 job。PR 上，`OpenAPI/api-client Drift` 仅在 `openapi_codegen=true` 时运行；其输入闭包包含 Gateway/业务契约、生成脚本、api-client，以及后端集中构建配置和前端 package/lock/workspace 配置。导出脚本直接构建 Gateway project，不读取 solution 成员表，因此 `backend/Nerv.IIP.sln` 不属于该闭包。`Script Governance` 在 `scripts=true` 或 `backend=true` 时运行，因为该 job 同时承载脚本治理、后端测试确定性、测试证据和 solution membership 合同；脚本治理登记文档也显式归入 `scripts`。`main` push 仍运行这两个快速 lane。两者都静态依赖 `impact-plan` 并使用 `!cancelled()` 消除 `needs` 的隐式 success gate且尊重整次运行取消：计划失败时保守运行，只有 PR 计划成功且信号未选中时才跳过。其测试命令与 tier B 超时预算没有改变。
+
+`scripts/tests/ci-impact-plan.Tests.ps1` 除代表路径、扩散、稳定输出、非法路径和入口序列化外，还结构化锁定这两个 job 的精确 fail-open 条件，并禁止其余尚未纳管 job 消费影响计划；去掉 `!cancelled()`/计划失败分支、使用错误 signal、漏掉 backend 治理面或让额外 job 偷接计划的变异都会失败。Actions Summary 继续列出逐信号理由，`CI Summary` 另列两个条件 lane 的选择政策和实际结果。其余 job 尚未条件化，Backend Tests 等后续批次仍需独立 PR；因此本首批不勾销拆解③，也不声明 NERV-668 已全部完成。
 
 ## MES AssetUnavailable CAP 持久化调查收口（NERV-507 / #920）
 

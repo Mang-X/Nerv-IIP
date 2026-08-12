@@ -49,19 +49,48 @@ function Test-OrdinalMember {
     return @($Values | Where-Object { [string]::Equals($_, $Expected, [StringComparison]::Ordinal) }).Count -gt 0
 }
 
-function Assert-ObservationOnlyWorkflow {
+function Assert-ConditionalRoutingWorkflow {
     param([Parameter(Mandatory)] [string] $Path)
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
-    foreach ($jobProperty in @($parsedWorkflow.jobs.PSObject.Properties | Where-Object { -not [string]::Equals($_.Name, 'impact-plan', [StringComparison]::Ordinal) })) {
+    $routingPolicies = [ordered]@{
+        'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+        'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
+    }
+
+    $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
+    foreach ($outputName in @('scripts', 'backend', 'openapi_codegen')) {
+        $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
+        Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
+        $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
+        Assert-Contract ([string]::Equals([string]$outputProperty.Value, $expectedOutput, [StringComparison]::Ordinal)) "Impact plan output '$outputName' must map directly to the plan step."
+    }
+
+    foreach ($jobName in $routingPolicies.Keys) {
+        $jobProperty = $parsedWorkflow.jobs.PSObject.Properties[$jobName]
+        Assert-Contract ($null -ne $jobProperty) "CI must define routed job '$jobName'."
+        $job = $jobProperty.Value
+        $needsProperty = $job.PSObject.Properties['needs']
+        Assert-Contract ($null -ne $needsProperty) "Routed job '$jobName' must declare impact-plan as a dependency."
+        $needs = @($needsProperty.Value | ForEach-Object { [string]$_ })
+        Assert-Contract ($needs.Count -eq 1 -and [string]::Equals($needs[0], 'impact-plan', [StringComparison]::Ordinal)) "Routed job '$jobName' must need exactly impact-plan."
+        Assert-Contract ([string]::Equals([string]$job.if, [string]$routingPolicies[$jobName], [StringComparison]::Ordinal)) "Routed job '$jobName' must use the governed fail-open PR policy."
+    }
+
+    foreach ($jobProperty in @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
+                -not [string]::Equals($_.Name, 'impact-plan', [StringComparison]::Ordinal) -and
+                -not [string]::Equals($_.Name, 'openapi-client-drift', [StringComparison]::Ordinal) -and
+                -not [string]::Equals($_.Name, 'script-governance', [StringComparison]::Ordinal) -and
+                -not [string]::Equals($_.Name, 'ci-summary', [StringComparison]::Ordinal)
+            })) {
         $job = $jobProperty.Value
         $needsProperty = $job.PSObject.Properties['needs']
         [string[]]$needs = @()
         if ($null -ne $needsProperty) { $needs = @($needsProperty.Value | ForEach-Object { [string]$_ }) }
-        Assert-Contract ($needs.Count -eq 0 -or -not (Test-OrdinalMember -Values $needs -Expected 'impact-plan')) "Observation-only impact-plan must not be a dependency of existing job '$($jobProperty.Name)'."
+        Assert-Contract ($needs.Count -eq 0 -or -not (Test-OrdinalMember -Values $needs -Expected 'impact-plan')) "Unrouted job '$($jobProperty.Name)' must not depend on impact-plan."
         $conditionProperty = $job.PSObject.Properties['if']
         $condition = if ($null -eq $conditionProperty) { '' } else { [string]$conditionProperty.Value }
-        Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Observation-only impact outputs must not control existing job '$($jobProperty.Name)'."
+        Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Unrouted job '$($jobProperty.Name)' must not consume impact-plan outputs."
     }
 }
 
@@ -99,6 +128,10 @@ Assert-Contract (Test-Path -LiteralPath $libraryPath -PathType Leaf) 'The CI imp
 
 Assert-ImpactCase -Name 'pure-docs' -Paths @('README.md', 'docs/architecture/context-map.md') -Flags @{
     docs = $true; backend = $false; frontend = $false; scripts = $false; connector_hosts = $false; postgresql = $false; full_chain = $false
+}
+
+Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/architecture/script-automation-governance.md') -Flags @{
+    docs = $true; scripts = $true; backend = $false; frontend = $false
 }
 
 Assert-ImpactCase -Name 'nested-readme-docs' -Paths @('backend/services/Business/Erp/README.md', 'connector-hosts/README.md') -Flags @{
@@ -149,6 +182,12 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
     backend = $true; business_gateway = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
 }
 
+foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
+    Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
+        backend = $true; openapi_codegen = $true
+    }
+}
+
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{
     frontend = $true; frontend_apps = $true; backend = $false; scripts = $false
 }
@@ -171,6 +210,12 @@ Assert-ImpactCase -Name 'frontend-design-system-markdown' -Paths @('frontend/app
 
 Assert-ImpactCase -Name 'frontend-api-client' -Paths @('frontend/packages/api-client/src/generated.ts') -Flags @{
     frontend = $true; frontend_packages = $true; openapi_codegen = $true; business_gateway = $true
+}
+
+foreach ($frontendBuildInput in @('frontend/package.json', 'frontend/pnpm-lock.yaml', 'frontend/pnpm-workspace.yaml')) {
+    Assert-ImpactCase -Name "openapi-frontend-build-input-$([IO.Path]::GetFileName($frontendBuildInput))" -Paths @($frontendBuildInput) -Flags @{
+        frontend = $true; frontend_packages = $true; openapi_codegen = $true
+    }
 }
 
 Assert-ImpactCase -Name 'frontend-design-system' -Paths @('frontend/DESIGN/components/button.md') -Flags @{
@@ -262,7 +307,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'redis_cap=false') 'GitHub output must serialize unselected booleans as lowercase false.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('observation only', [StringComparison]::Ordinal)) 'Actions Summary must state that the plan is observation-only.'
+    Assert-Contract ($writtenSummary.Contains('first routed batch', [StringComparison]::Ordinal)) 'Actions Summary must identify the first routed batch.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
 finally {
@@ -270,33 +315,63 @@ finally {
 }
 
 $workflow = [IO.File]::ReadAllText($workflowPath)
-Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan observation job.'
+Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
-Assert-ObservationOnlyWorkflow -Path $workflowPath
+Assert-ConditionalRoutingWorkflow -Path $workflowPath
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
             @{
-                Name = 'scalar-needs'
+                Name = 'unrouted-job-consumes-plan'
                 Original = "  frontend:`n    name: Frontend Typecheck and Build"
                 Replacement = "  frontend:`n    name: Frontend Typecheck and Build`n    needs: impact-plan"
             },
             @{
-                Name = 'list-needs'
-                Original = "    needs:`n      - backend-test-shard-governance"
-                Replacement = "    needs:`n      - impact-plan`n      - backend-test-shard-governance"
+                Name = 'openapi-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+            },
+            @{
+                Name = 'openapi-drops-cancellation-guard'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
+            },
+            @{
+                Name = 'openapi-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.openapi_codegen != 'false'"
+                Replacement = "needs.impact-plan.outputs.frontend != 'false'"
+            },
+            @{
+                Name = 'script-governance-drops-backend-coverage'
+                Original = " || needs.impact-plan.outputs.backend != 'false'"
+                Replacement = ''
+            },
+            @{
+                Name = 'openapi-treats-missing-output-as-unselected'
+                Original = "needs.impact-plan.outputs.openapi_codegen != 'false'"
+                Replacement = "needs.impact-plan.outputs.openapi_codegen == 'true'"
+            },
+            @{
+                Name = 'impact-plan-drops-routed-output'
+                Original = "      openapi_codegen: `${{ steps.plan.outputs.openapi_codegen }}`n"
+                Replacement = ''
+            },
+            @{
+                Name = 'openapi-drops-impact-dependency'
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}`n"
             }
         )) {
         $mutated = $workflow.Replace($mutation.Original, $mutation.Replacement)
-        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Observation-only mutation '$($mutation.Name)' must match the canonical workflow."
+        Assert-Contract (-not [string]::Equals($mutated, $workflow, [StringComparison]::Ordinal)) "Conditional-routing mutation '$($mutation.Name)' must match the canonical workflow."
         $mutationPath = Join-Path $workflowMutationRoot "$($mutation.Name).yml"
         [IO.File]::WriteAllText($mutationPath, $mutated, [Text.UTF8Encoding]::new($false))
         $failure = $null
-        try { Assert-ObservationOnlyWorkflow -Path $mutationPath } catch { $failure = $_ }
-        Assert-Contract ($null -ne $failure) "Observation-only mutation '$($mutation.Name)' must be rejected."
+        try { Assert-ConditionalRoutingWorkflow -Path $mutationPath } catch { $failure = $_ }
+        Assert-Contract ($null -ne $failure) "Conditional-routing mutation '$($mutation.Name)' must be rejected."
     }
 }
 finally {

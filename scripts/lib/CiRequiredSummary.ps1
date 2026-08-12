@@ -45,7 +45,15 @@ function Get-NervCiRequiredSummaryFindings {
     )
 
     $findings = [Collections.Generic.List[string]]::new()
-    $expectedNeeds = @('backend-tests', 'connector-host-tests', 'frontend-unit-tests', 'frontend', 'script-governance')
+    $expectedNeeds = @(
+        'impact-plan',
+        'backend-tests',
+        'connector-host-tests',
+        'frontend-unit-tests',
+        'frontend',
+        'openapi-client-drift',
+        'script-governance'
+    )
 
     try {
         $workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $WorkflowPath -WorkingDirectory $RepositoryRoot
@@ -69,7 +77,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need exactly the five current required CI jobs.')
+            $findings.Add('CI Summary must need the impact plan, five current required jobs, and OpenAPI Drift exactly.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'
@@ -111,25 +119,53 @@ function Get-NervCiRequiredSummaryFindings {
         }
 
         $run = if ($steps.Count -eq 1) { Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'run' } else { '' }
-        $commands = @(
-            $run -split "`r?`n" |
-                ForEach-Object { $_.Trim() } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-        )
-        $requiredAssertions = @()
-        $commandSet = Get-NervStringSet -Values $commands -Comparer ([StringComparer]::Ordinal)
-        foreach ($requiredJob in $expectedNeeds) {
-            $requiredAssertion = 'test "${{ needs.' + $requiredJob + '.result }}" = "success"'
-            $requiredAssertions += $requiredAssertion
-            if (-not $commandSet.Contains($requiredAssertion)) {
-                $findings.Add("CI Summary must fail when '$requiredJob' is not success.")
-            }
-        }
+        $expectedRun = @'
+impact_result="${{ needs.impact-plan.result }}"
+script_governance_result="${{ needs.script-governance.result }}"
+openapi_result="${{ needs.openapi-client-drift.result }}"
+script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
+openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
 
-        $actualSorted = @(Get-NervStringsSorted -Values $commands -Comparer ([StringComparer]::Ordinal)) -join '|'
-        $expectedSorted = @(Get-NervStringsSorted -Values $requiredAssertions -Comparer ([StringComparer]::Ordinal)) -join '|'
-        if ($commands.Count -ne $requiredAssertions.Count -or -not [string]::Equals($actualSorted, $expectedSorted, [StringComparison]::Ordinal)) {
-            $findings.Add('CI Summary must contain only standalone success assertions for its exact dependencies.')
+if [[ "$script_governance_selected" = "true" ]]; then
+  script_governance_policy="selected"
+else
+  script_governance_policy="skipped by design"
+fi
+if [[ "$openapi_selected" = "true" ]]; then
+  openapi_policy="selected"
+else
+  openapi_policy="skipped by design"
+fi
+
+{
+  echo "## CI lane decisions"
+  echo
+  echo "| Lane | Policy | Result |"
+  echo "| --- | --- | --- |"
+  echo "| Script Governance | $script_governance_policy | $script_governance_result |"
+  echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
+} >> "$GITHUB_STEP_SUMMARY"
+
+test "$impact_result" = "success"
+test "${{ needs.backend-tests.result }}" = "success"
+test "${{ needs.connector-host-tests.result }}" = "success"
+test "${{ needs.frontend-unit-tests.result }}" = "success"
+test "${{ needs.frontend.result }}" = "success"
+if [[ "$script_governance_selected" = "true" ]]; then
+  test "$script_governance_result" = "success"
+else
+  test "$script_governance_result" = "skipped"
+fi
+if [[ "$openapi_selected" = "true" ]]; then
+  test "$openapi_result" = "success"
+else
+  test "$openapi_result" = "skipped"
+fi
+'@
+        $normalizedRun = $run.Replace("`r`n", "`n").TrimEnd()
+        $normalizedExpectedRun = $expectedRun.Replace("`r`n", "`n").TrimEnd()
+        if (-not [string]::Equals($normalizedRun, $normalizedExpectedRun, [StringComparison]::Ordinal)) {
+            $findings.Add('CI Summary must retain the governed fail-closed selected/skipped-by-design policy and audit table.')
         }
     }
     catch {

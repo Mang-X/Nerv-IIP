@@ -18,6 +18,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 
 $verifierPath = Join-Path $repoRoot 'scripts/verify-ci-required-summary.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$libraryPath = Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-required-summary-$([Guid]::NewGuid().ToString('N'))"
 $fixturePath = Join-Path $fixtureRoot 'ci.yml'
 
@@ -75,10 +76,20 @@ try {
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
 
-    $needLine = '      - connector-host-tests'
+    $crlfLibraryPath = Join-Path $fixtureRoot 'CiRequiredSummary-crlf.ps1'
+    $librarySource = [IO.File]::ReadAllText($libraryPath).Replace("`r`n", "`n").Replace("`n", "`r`n")
+    [IO.File]::WriteAllText($crlfLibraryPath, $librarySource, [Text.UTF8Encoding]::new($false))
+    . $crlfLibraryPath
+    $crlfFindings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $workflowPath -RepositoryRoot $repoRoot)
+    Assert-Contract ($crlfFindings.Count -eq 0) "Required-summary governance must be independent of the library checkout line endings: $($crlfFindings -join '; ')"
+
+    $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, and OpenAPI Drift exactly.'
+    $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design policy and audit table.'
+
+    $needLine = '      - impact-plan'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `
         -Original "$needLine$([Environment]::NewLine)" -Replacement '' `
-        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
+        -ExpectedDiagnostic $needsDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-not-always' -Workflow $workflow `
         -Original "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)    timeout-minutes: 5$([Environment]::NewLine)    runs-on: ubuntu-latest$([Environment]::NewLine)    if: always()" `
@@ -88,16 +99,31 @@ try {
     Invoke-Mutation -Name 'ci-summary-missing-job' -Workflow $workflow `
         -Original "  connector-host-tests:$([Environment]::NewLine)" `
         -Replacement "  connector-host-tests-missing:$([Environment]::NewLine)" `
-        -ExpectedDiagnostic 'CI Summary must need exactly the five current required CI jobs.'
+        -ExpectedDiagnostic $needsDiagnostic
 
-    $strictAssertion = '          test "${{ needs.connector-host-tests.result }}" = "success"'
-    Invoke-Mutation -Name 'ci-summary-noop' -Workflow $workflow `
-        -Original $strictAssertion -Replacement '          echo "${{ needs.connector-host-tests.result }}"' `
-        -ExpectedDiagnostic "CI Summary must fail when 'connector-host-tests' is not success."
+    $selectedAssertion = '            test "$script_governance_result" = "success"'
+    Invoke-Mutation -Name 'ci-summary-selected-lane-allows-skip' -Workflow $workflow `
+        -Original $selectedAssertion -Replacement '            test "$script_governance_result" = "skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    $skippedAssertion = '            test "$openapi_result" = "skipped"'
+    Invoke-Mutation -Name 'ci-summary-unselected-lane-allows-success' -Workflow $workflow `
+        -Original $skippedAssertion -Replacement '            test "$openapi_result" = "success"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    $impactAssertion = '          test "$impact_result" = "success"'
+    Invoke-Mutation -Name 'ci-summary-ignores-impact-plan-failure' -Workflow $workflow `
+        -Original $impactAssertion -Replacement '          echo "$impact_result"' `
+        -ExpectedDiagnostic $policyDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-masked-failure' -Workflow $workflow `
-        -Original $strictAssertion -Replacement "$strictAssertion || true" `
-        -ExpectedDiagnostic "CI Summary must fail when 'connector-host-tests' is not success."
+        -Original $selectedAssertion -Replacement "$selectedAssertion || true" `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-skipped-by-design-audit' -Workflow $workflow `
+        -Original '            script_governance_policy="skipped by design"' `
+        -Replacement '            script_governance_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-step-continue-on-error' -Workflow $workflow `
         -Original "      - name: Require all CI lanes$([Environment]::NewLine)" `
@@ -119,12 +145,6 @@ try {
         -Replacement "  ci-summary:$([Environment]::NewLine)    name: CI Summary$([Environment]::NewLine)    continue-on-error: true$([Environment]::NewLine)" `
         -ExpectedDiagnostic "CI Summary must not set 'continue-on-error' on the job or any step."
 
-    foreach ($nonSuccessResult in @('failure', 'cancelled', 'skipped')) {
-        $nonSuccessAssertion = '          test "${{ needs.connector-host-tests.result }}" = "' + $nonSuccessResult + '"'
-        Invoke-Mutation -Name "ci-summary-allows-$nonSuccessResult" -Workflow $workflow `
-            -Original $strictAssertion -Replacement $nonSuccessAssertion `
-            -ExpectedDiagnostic "CI Summary must fail when 'connector-host-tests' is not success."
-    }
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) {
