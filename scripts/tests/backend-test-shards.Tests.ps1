@@ -979,9 +979,9 @@ $timingSweep = Get-NervOrdinalComparisonFindings -ScriptPath $timingAssertionsPa
 Assert-Contract ($timingSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardTimings.ps1 must compare timing identities ordinally (#1512):`n  $(@($timingSweep.Findings) -join "`n  ")"
 $validatorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $validatorPath -DisplayName 'verify-backend-test-shards.ps1'
 Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
-$aggregateAssertionEquality = '-not [string]::Equals($actualAggregateAssertions, $expectedAggregateAssertions, [StringComparison]::Ordinal)'
+$aggregateAssertionEquality = '-not [string]::Equals($aggregateRun.Replace("`r`n", "`n").TrimEnd(), $expectedAggregateRun.Replace("`r`n", "`n").TrimEnd(), [StringComparison]::Ordinal)'
 $validatorSource = [IO.File]::ReadAllText($validatorPath)
-Assert-Contract ([regex]::Matches($validatorSource, [regex]::Escape($aggregateAssertionEquality)).Count -eq 1) 'The aggregate assertion sequence must use explicit ordinal equality after ordinal sorting.'
+Assert-Contract ([regex]::Matches($validatorSource, [regex]::Escape($aggregateAssertionEquality)).Count -eq 1) 'The aggregate selected/skipped contract must use explicit ordinal equality after line-ending normalization.'
 
 $lastIndexProductionProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-production-last-index-ordinal-{0}" -f [Guid]::NewGuid().ToString('N'))
 try {
@@ -1169,7 +1169,12 @@ try {
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^\s+- backend-tests-business-core-b\r?\n', '') -NoNewline
     $workflowValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-workflow-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $workflowValidation.Passed) 'A workflow with a missing aggregate dependency must fail structured shard governance.'
-    Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
+    Assert-Contract ($workflowValidation.Message.Contains('Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject an aggregate with a missing shard dependency.'
+
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace("  backend-test-shard-governance:$([Environment]::NewLine)", "  backend-test-shard-governance-missing:$([Environment]::NewLine)")) -NoNewline
+    $missingGovernanceValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-missing-governance-job' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $missingGovernanceValidation.Passed) 'A missing backend shard governance job must fail structured shard governance.'
+    Assert-Contract ($missingGovernanceValidation.Message.Contains("CI workflow is missing backend execution job 'backend-test-shard-governance'.", [StringComparison]::Ordinal)) 'Structured workflow validation must identify the missing backend shard governance job.'
 
     # The aggregate needs list is an exact job-identity set. U+00AD must not be folded into the
     # real platform job name by a culture-aware joined-string comparison.
@@ -1179,17 +1184,27 @@ try {
     Set-Content -LiteralPath $temporaryWorkflowPath -Value $workflowWithMutatedPlatformNeed -NoNewline
     $mutatedNeedValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-aggregate-needs-ordinal-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $mutatedNeedValidation.Passed) 'A U+00AD-mutated aggregate need must fail exact shard governance.'
-    Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the governance and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
+    Assert-Contract ($mutatedNeedValidation.Message.Contains('Backend Tests aggregate must need exactly the impact plan, governance, and four fast shard jobs.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a U+00AD-mutated aggregate need.'
 
-    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "\$expected_result"', 'echo "${{ needs.backend-tests-platform.result }}"') -NoNewline
     $noOpValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-noop-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $noOpValidation.Passed) 'A no-op aggregate dependency expression must fail structured shard governance.'
-    Assert-Contract ($noOpValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
+    Assert-Contract ($noOpValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a non-failing aggregate dependency expression.'
 
-    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "success"', 'test "${{ needs.backend-tests-platform.result }}" = "success" || true') -NoNewline
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace 'test "\$\{\{ needs\.backend-tests-platform\.result \}\}" = "\$expected_result"', 'test "${{ needs.backend-tests-platform.result }}" = "$expected_result" || true') -NoNewline
     $maskedFailureValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-masked-aggregate-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
     Assert-Contract (-not $maskedFailureValidation.Passed) 'An aggregate assertion masked with || true must fail structured shard governance.'
-    Assert-Contract ($maskedFailureValidation.Message.Contains("Backend Tests aggregate must fail when 'backend-tests-platform' is not success.", [StringComparison]::Ordinal)) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
+    Assert-Contract ($maskedFailureValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Structured workflow validation must reject a masked aggregate dependency assertion.'
+
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace('            expected_result="success"', '            expected_result="skipped"')) -NoNewline
+    $selectedAllowsSkipValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-selected-allows-skip' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $selectedAllowsSkipValidation.Passed) 'The selected Backend Tests policy must reject skipped execution jobs.'
+    Assert-Contract ($selectedAllowsSkipValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Selected Backend Tests must only accept successful execution jobs.'
+
+    Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent.Replace('          expected_result="skipped"', '          expected_result="success"')) -NoNewline
+    $unselectedAllowsSuccessValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-unselected-allows-success' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)
+    Assert-Contract (-not $unselectedAllowsSuccessValidation.Passed) 'The unselected Backend Tests policy must reject unexpectedly successful execution jobs.'
+    Assert-Contract ($unselectedAllowsSuccessValidation.Message.Contains('Backend Tests aggregate must retain the fail-closed selected-success and unselected-skipped contract and audit reason.', [StringComparison]::Ordinal)) 'Unselected Backend Tests must only accept precisely skipped execution jobs.'
 
     Set-Content -LiteralPath $temporaryWorkflowPath -Value ($workflowContent -replace '(?m)^(\s+- name: Require all backend fast shards\r?\n)', ('$1        continue-on-error: true' + [Environment]::NewLine)) -NoNewline
     $continueOnErrorValidation = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-continue-on-error-contract' -Arguments @('-WorkflowPath', $temporaryWorkflowPath)

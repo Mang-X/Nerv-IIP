@@ -54,6 +54,11 @@ function Assert-ConditionalRoutingWorkflow {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $routingPolicies = [ordered]@{
+        'backend-test-shard-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+        'backend-tests-business-gateway' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+        'backend-tests-platform' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+        'backend-tests-business-core-a' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+        'backend-tests-business-core-b' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
         'erp-sales-order-demand-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
         'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
@@ -84,7 +89,12 @@ function Assert-ConditionalRoutingWorkflow {
         [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
         [StringComparer]::Ordinal)
     $allowedConsumers = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift', 'postgres-provider-tests', 'script-governance', 'ci-summary'),
+        [string[]]@(
+            'backend-test-shard-governance', 'backend-tests-business-gateway', 'backend-tests-platform',
+            'backend-tests-business-core-a', 'backend-tests-business-core-b', 'backend-tests',
+            'erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift',
+            'postgres-provider-tests', 'script-governance', 'ci-summary'
+        ),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
 
@@ -143,6 +153,26 @@ function Assert-PostgresLaneOwningPathsRoute {
         )) {
         Assert-ImpactCase -Name "postgres-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+        }
+    }
+}
+
+function Assert-BackendFastLaneControlInputsRoute {
+    foreach ($backendFastLaneControlInput in @(
+            'scripts/backend-test-shards.json',
+            'scripts/test-evidence-policy.json',
+            'scripts/run-backend-test-shard.ps1',
+            'scripts/verify-backend-test-shards.ps1',
+            'scripts/verify-backend-real-postgres-tests.ps1',
+            'scripts/verify-business-full-chain-acceptance.ps1',
+            'scripts/verify-business-performance-baseline.ps1',
+            'scripts/lib/OrdinalString.ps1',
+            'scripts/lib/BackendTestShardSelectors.ps1',
+            'scripts/lib/BackendTestShardDiagnostics.ps1',
+            'scripts/tests/backend-test-shards.Tests.ps1'
+        )) {
+        Assert-ImpactCase -Name "backend-fast-lane-control-$([IO.Path]::GetFileName($backendFastLaneControlInput))" -Paths @($backendFastLaneControlInput) -Flags @{
+            scripts = $true; backend = $true
         }
     }
 }
@@ -240,6 +270,8 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
             'approval|barcode-label|demand-planning|erp|industrial-telemetry|inventory|maintenance|master-data|mes|product-engineering|quality|scheduling|wms',
             [StringComparison]::Ordinal)) "Shared control input '$sharedControlInput' must conservatively select every known business service."
 }
+
+Assert-BackendFastLaneControlInputsRoute
 
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{
     frontend = $true; frontend_apps = $true; backend = $false; scripts = $false
@@ -342,6 +374,25 @@ foreach ($invalidPaths in @(
     Assert-Contract ($null -ne $failure) "Invalid changed path set '$($invalidPaths -join ',')' must fail closed."
 }
 
+$ordinalStringRoutingClause = "            [string]::Equals(`$path, 'scripts/lib/OrdinalString.ps1', [StringComparison]::Ordinal) -or`n"
+$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
+$weakenedImpactLibrary = $canonicalImpactLibrary.Replace($ordinalStringRoutingClause, '')
+Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'OrdinalString control-input mutation must remove the canonical routing clause.'
+$ordinalMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-ordinal-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($ordinalMutationRoot) | Out-Null
+    $ordinalMutationPath = Join-Path $ordinalMutationRoot 'CiImpactPlan.ps1'
+    [IO.File]::WriteAllText($ordinalMutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
+    . $ordinalMutationPath
+    $ordinalMutationFailure = $null
+    try { Assert-BackendFastLaneControlInputsRoute } catch { $ordinalMutationFailure = $_ }
+    Assert-Contract ($null -ne $ordinalMutationFailure) 'Removing the OrdinalString control-input routing clause must fail the behavioral contract.'
+}
+finally {
+    . $libraryPath
+    if (Test-Path -LiteralPath $ordinalMutationRoot) { Remove-Item -LiteralPath $ordinalMutationRoot -Recurse -Force }
+}
+
 $postgresRoutingBlock = @'
             if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
@@ -349,7 +400,6 @@ $postgresRoutingBlock = @'
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
 '@
-$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
 $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($postgresRoutingBlock, '')
 Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'PostgreSQL owning-path mutation must remove the canonical routing branch.'
 $impactMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-library-$([Guid]::NewGuid().ToString('N'))"
@@ -390,7 +440,7 @@ try {
     Assert-Contract (Test-OrdinalMember -Values $writtenOutputs -Expected 'erp_sales_order_demand=true') 'GitHub output must serialize the selected ERP acceptance signal.'
     Assert-Contract (@($writtenOutputs | Where-Object { $_.StartsWith('business_services=[', [StringComparison]::Ordinal) }).Count -eq 1) 'GitHub output must expose the stable business-services JSON array.'
     $writtenSummary = Get-Content -LiteralPath $fixtureSummary -Raw
-    Assert-Contract ($writtenSummary.Contains('NERV-668 routes ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
+    Assert-Contract ($writtenSummary.Contains('NERV-668 routes Backend Tests, ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests', [StringComparison]::Ordinal)) 'Actions Summary must identify every routed batch.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
 }
@@ -408,6 +458,31 @@ $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-wor
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
     foreach ($mutation in @(
+            @{
+                Name = 'backend-execution-jobs-drop-impact-dependency'
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}`n"
+            },
+            @{
+                Name = 'backend-shard-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.backend != 'false') }}"
+            },
+            @{
+                Name = 'backend-shard-drops-cancellation-guard'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
+                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
+            },
+            @{
+                Name = 'backend-shard-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.backend != 'false'"
+                Replacement = "needs.impact-plan.outputs.postgresql != 'false'"
+            },
+            @{
+                Name = 'backend-shard-treats-missing-output-as-unselected'
+                Original = "needs.impact-plan.outputs.backend != 'false'"
+                Replacement = "needs.impact-plan.outputs.backend == 'true'"
+            },
             @{
                 Name = 'erp-drops-impact-dependency'
                 Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}`n"

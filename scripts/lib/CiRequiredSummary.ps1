@@ -123,17 +123,24 @@ function Get-NervCiRequiredSummaryFindings {
         $run = if ($steps.Count -eq 1) { Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'run' } else { '' }
         $expectedRun = @'
 impact_result="${{ needs.impact-plan.result }}"
+backend_result="${{ needs.backend-tests.result }}"
 erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
 connector_result="${{ needs.connector-host-tests.result }}"
 script_governance_result="${{ needs.script-governance.result }}"
 openapi_result="${{ needs.openapi-client-drift.result }}"
 postgres_result="${{ needs.postgres-provider-tests.result }}"
+backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
 erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
 connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
 script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
 openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
 postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
+if [[ "$backend_selected" = "true" ]]; then
+  backend_policy="selected"
+else
+  backend_policy="skipped by design"
+fi
 if [[ "$erp_selected" = "true" ]]; then
   erp_policy="selected"
 else
@@ -165,6 +172,7 @@ fi
   echo
   echo "| Lane | Policy | Result |"
   echo "| --- | --- | --- |"
+  echo "| Backend Tests | $backend_policy | $backend_result |"
   echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
   echo "| Connector Host Tests | $connector_policy | $connector_result |"
   echo "| Script Governance | $script_governance_policy | $script_governance_result |"
@@ -173,7 +181,7 @@ fi
 } >> "$GITHUB_STEP_SUMMARY"
 
 test "$impact_result" = "success"
-test "${{ needs.backend-tests.result }}" = "success"
+test "$backend_result" = "success"
 test "${{ needs.frontend-unit-tests.result }}" = "success"
 test "${{ needs.frontend.result }}" = "success"
 if [[ "$erp_selected" = "true" ]]; then
