@@ -59,7 +59,7 @@ if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) {
     $summary = [Text.StringBuilder]::new()
     [void]$summary.AppendLine('## CI impact plan')
     [void]$summary.AppendLine()
-    [void]$summary.AppendLine('NERV-668 routes Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests; NERV-685 derives governed frontend workspace shards. ERP acceptance and Backend Tests remain unrouted.')
+    [void]$summary.AppendLine('NERV-668 routes ERP Sales Order Demand Acceptance, Connector Host Tests, Script Governance, and OpenAPI/api-client Drift; NERV-688 routes PostgreSQL Provider Tests; NERV-685 derives governed frontend workspace shards. Backend Tests remain unrouted.')
     [void]$summary.AppendLine()
     [void]$summary.AppendLine('| Signal | Selected | Reason |')
     [void]$summary.AppendLine('| --- | --- | --- |')

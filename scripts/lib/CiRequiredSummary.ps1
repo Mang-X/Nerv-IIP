@@ -49,6 +49,7 @@ function Get-NervCiRequiredSummaryFindings {
         'impact-plan',
         'backend-tests',
         'postgres-provider-tests',
+        'erp-sales-order-demand-acceptance',
         'connector-host-tests',
         'frontend-unit-tests',
         'frontend',
@@ -78,7 +79,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need the impact plan, five current required jobs, OpenAPI Drift, and PostgreSQL Provider Tests exactly.')
+            $findings.Add('CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, and PostgreSQL Provider Tests exactly.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'
@@ -122,15 +123,22 @@ function Get-NervCiRequiredSummaryFindings {
         $run = if ($steps.Count -eq 1) { Get-NervCiRequiredSummaryStringValue -Object $steps[0] -PropertyName 'run' } else { '' }
         $expectedRun = @'
 impact_result="${{ needs.impact-plan.result }}"
+erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
 connector_result="${{ needs.connector-host-tests.result }}"
 script_governance_result="${{ needs.script-governance.result }}"
 openapi_result="${{ needs.openapi-client-drift.result }}"
 postgres_result="${{ needs.postgres-provider-tests.result }}"
+erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
 connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
 script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
 openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
 postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 
+if [[ "$erp_selected" = "true" ]]; then
+  erp_policy="selected"
+else
+  erp_policy="skipped by design"
+fi
 if [[ "$connector_selected" = "true" ]]; then
   connector_policy="selected"
 else
@@ -157,6 +165,7 @@ fi
   echo
   echo "| Lane | Policy | Result |"
   echo "| --- | --- | --- |"
+  echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
   echo "| Connector Host Tests | $connector_policy | $connector_result |"
   echo "| Script Governance | $script_governance_policy | $script_governance_result |"
   echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
@@ -167,6 +176,11 @@ test "$impact_result" = "success"
 test "${{ needs.backend-tests.result }}" = "success"
 test "${{ needs.frontend-unit-tests.result }}" = "success"
 test "${{ needs.frontend.result }}" = "success"
+if [[ "$erp_selected" = "true" ]]; then
+  test "$erp_result" = "success"
+else
+  test "$erp_result" = "skipped"
+fi
 if [[ "$connector_selected" = "true" ]]; then
   test "$connector_result" = "success"
 else
