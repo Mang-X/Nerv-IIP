@@ -55,11 +55,12 @@ function Assert-ConditionalRoutingWorkflow {
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $routingPolicies = [ordered]@{
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
+        'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
         'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'openapi_codegen')) {
+    foreach ($outputName in @('scripts', 'backend', 'openapi_codegen', 'postgresql')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -81,7 +82,7 @@ function Assert-ConditionalRoutingWorkflow {
         [string[]]@('frontend-unit-test-shards', 'frontend-unit-tests', 'frontend-check', 'frontend-validation-shards', 'frontend'),
         [StringComparer]::Ordinal)
     $allowedConsumers = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@('openapi-client-drift', 'script-governance', 'ci-summary'),
+        [string[]]@('openapi-client-drift', 'postgres-provider-tests', 'script-governance', 'ci-summary'),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
 
@@ -358,6 +359,16 @@ try {
                 Name = 'script-governance-drops-backend-coverage'
                 Original = " || needs.impact-plan.outputs.backend != 'false'"
                 Replacement = ''
+            },
+            @{
+                Name = 'postgres-drops-plan-failure-fail-open'
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.postgresql != 'false') }}"
+            },
+            @{
+                Name = 'postgres-uses-wrong-signal'
+                Original = "needs.impact-plan.outputs.postgresql != 'false'"
+                Replacement = "needs.impact-plan.outputs.redis_cap != 'false'"
             },
             @{
                 Name = 'openapi-treats-missing-output-as-unselected'
