@@ -273,6 +273,15 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("AddViteApp(\"console\"", programText);
         Assert.Contains("WithPnpm", programText);
 
+        Assert.Matches(
+            "if \\(!fullStackEphemeral\\)\\s*\\{\\s*postgres\\.WithHostPort\\(15432\\);\\s*\\}",
+            programText);
+        Assert.Matches(
+            "if \\(!fullStackEphemeral\\)\\s*\\{\\s*redis\\.WithHostPort\\(6379\\);\\s*\\}",
+            programText);
+        Assert.Single(Regex.Matches(programText, "postgres\\.WithHostPort\\(15432\\)"));
+        Assert.Single(Regex.Matches(programText, "redis\\.WithHostPort\\(6379\\)"));
+
         Assert.Contains("Nerv.IIP.Iam.Web.csproj", projectText);
         Assert.Contains("Nerv.IIP.FileStorage.Web.csproj", projectText);
         Assert.Contains("Nerv.IIP.Notification.Web.csproj", projectText);

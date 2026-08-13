@@ -123,6 +123,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -268,6 +269,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -329,6 +331,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         var interceptor = new PauseAfterArmedTransactionCommitInterceptor();
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -506,6 +509,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -578,6 +582,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -655,6 +660,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -799,6 +805,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())
@@ -936,6 +943,7 @@ public sealed class IamPostgresProfileTests
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret")
             .SetEnvironmentVariable("Iam__Seed__ExternalClientSecret", "external-client-secret");
 
+        database.AssertOwns(Environment.GetEnvironmentVariable("ConnectionStrings__IamDb"));
         await using var factory = new WebApplicationFactory<Program>();
 
         using (var scope = factory.Services.CreateScope())

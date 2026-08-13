@@ -108,6 +108,10 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 var postgres = WithFullStackOwnership(builder.AddPostgres("postgres"))
     .WithImageTag("18")
     .WithDataVolume(SessionVolume("nerv-iip-postgres-18"));
+if (!fullStackEphemeral)
+{
+    postgres.WithHostPort(15432);
+}
 if (fullStackEphemeral)
 {
     postgres.WithArgs("-c", "max_connections=300");
@@ -134,6 +138,10 @@ var redis = WithFullStackOwnership(builder.AddRedis("redis", password: redisPass
     .WithImageTag("8")
     .WithDataVolume(SessionVolume("nerv-iip-redis"))
     .WithPersistence(TimeSpan.FromSeconds(60), 1);
+if (!fullStackEphemeral)
+{
+    redis.WithHostPort(6379);
+}
 var rabbitmq = useRabbitMq
     ? WithFullStackOwnership(builder.AddRabbitMQ("rabbitmq")).WithManagementPlugin()
     : null;

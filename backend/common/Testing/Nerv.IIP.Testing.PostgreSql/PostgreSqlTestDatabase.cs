@@ -188,6 +188,26 @@ public sealed class PostgreSqlTestDatabase : IAsyncDisposable
         return new ValueTask(disposeTask);
     }
 
+    public void AssertOwns(string? connectionString)
+    {
+        NpgsqlConnectionStringBuilder builder;
+        try
+        {
+            builder = new NpgsqlConnectionStringBuilder(connectionString ?? string.Empty);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException(
+                $"PostgreSQL test database operation=assert-ownership failed: detail={exception.GetType().Name}; credentials redacted.");
+        }
+
+        if (!string.Equals(DatabaseName, builder.Database, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Refusing to initialize a profile whose connection does not target the owned PostgreSQL test database; credentials redacted.");
+        }
+    }
+
     private Task GetOrStartDropTask()
     {
         Task dropTask;
