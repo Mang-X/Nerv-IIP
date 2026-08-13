@@ -74,5 +74,6 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             integrationEvent.Payload.DispositionType,
             referenceId,
             integrationEvent.Payload.ChangedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
