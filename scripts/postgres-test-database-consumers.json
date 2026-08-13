@@ -14,6 +14,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs",
+      "sourceSha256": "3552d3c8309074df2013e65d9139139a684c7c04083893b5c63a9f51260f9ca7",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The BarcodeLabel world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
       "sourceSha256": "3b72675e9606e6fbed84a7b87dc335dcff84811a21221b9e68faaee3898e290c",
       "factoryCallCount": 4,

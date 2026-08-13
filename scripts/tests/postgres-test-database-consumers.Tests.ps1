@@ -17,6 +17,7 @@ $policyPath = Join-Path $repoRoot 'scripts/postgres-test-database-consumers.json
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 $allowedStrategies = Get-NervStringSet -Values @('best-effort-dispose', 'encapsulated-explicit-drop', 'explicit-drop-finally', 'factory-forwarder', 'helper-self-test') -Comparer ([StringComparer]::Ordinal)
 $requiredOwnerships = @(
+    @{ sourcePath = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 3 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'encapsulated-explicit-drop'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
