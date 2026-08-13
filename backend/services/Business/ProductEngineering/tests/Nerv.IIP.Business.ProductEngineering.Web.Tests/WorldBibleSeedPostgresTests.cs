@@ -2,7 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Seed;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 using System.Diagnostics;
 using Xunit.Abstractions;
 
@@ -18,34 +18,42 @@ public sealed class WorldBibleSeedPostgresTests(ITestOutputHelper output)
     [WorldBiblePostgresFact]
     public async Task World_bible_seed_publishes_all_engineering_versions_within_the_startup_budget()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
-        await using var db = new ApplicationDbContext(options, new WorldBiblePostgresTestMediator());
-        await db.Database.MigrateAsync(CancellationToken.None);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_pe_world_bible");
+        try
+        {
+            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseNpgsql(database.ConnectionString)
+                .Options;
+            await using var db = new ApplicationDbContext(options, new WorldBiblePostgresTestMediator());
+            await db.Database.MigrateAsync(CancellationToken.None);
 
-        var seed = new WorldBibleSeedService(db);
-        var stopwatch = Stopwatch.StartNew();
-        await seed.SeedAsync("org-001", "env-dev");
-        stopwatch.Stop();
-        var firstRunMilliseconds = stopwatch.ElapsedMilliseconds;
+            var seed = new WorldBibleSeedService(db);
+            var stopwatch = Stopwatch.StartNew();
+            await seed.SeedAsync("org-001", "env-dev");
+            stopwatch.Stop();
+            var firstRunMilliseconds = stopwatch.ElapsedMilliseconds;
 
-        var rerun = Stopwatch.StartNew();
-        await seed.SeedAsync("org-001", "env-dev");
-        rerun.Stop();
+            var rerun = Stopwatch.StartNew();
+            await seed.SeedAsync("org-001", "env-dev");
+            rerun.Stop();
 
-        output.WriteLine($"product-engineering-world-bible-seed-first-run-ms={firstRunMilliseconds}");
-        output.WriteLine($"product-engineering-world-bible-seed-idempotent-rerun-ms={rerun.ElapsedMilliseconds}");
+            output.WriteLine($"product-engineering-world-bible-seed-first-run-ms={firstRunMilliseconds}");
+            output.WriteLine($"product-engineering-world-bible-seed-idempotent-rerun-ms={rerun.ElapsedMilliseconds}");
 
-        Assert.Equal(32, await db.EngineeringBoms.CountAsync());
-        Assert.Equal(32, await db.ManufacturingBoms.CountAsync());
-        Assert.Equal(24, await db.Routings.CountAsync());
-        Assert.Equal(32, await db.ProductionVersions.CountAsync());
-        Assert.True(
-            firstRunMilliseconds < 30_000,
-            $"World-bible engineering seed took {firstRunMilliseconds} ms, which exceeds the 30 s budget for this block.");
+            Assert.Equal(32, await db.EngineeringBoms.CountAsync());
+            Assert.Equal(32, await db.ManufacturingBoms.CountAsync());
+            Assert.Equal(24, await db.Routings.CountAsync());
+            Assert.Equal(32, await db.ProductionVersions.CountAsync());
+            Assert.True(
+                firstRunMilliseconds < 30_000,
+                $"World-bible engineering seed took {firstRunMilliseconds} ms, which exceeds the 30 s budget for this block.");
+        }
+        finally
+        {
+            await database.DropAsync();
+        }
     }
 
     private sealed class WorldBiblePostgresTestMediator : IMediator
@@ -59,39 +67,6 @@ public sealed class WorldBibleSeedPostgresTests(ITestOutputHelper output)
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString)
-        : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_pe_world_bible_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
 }
 
 internal sealed class WorldBiblePostgresFactAttribute : FactAttribute
