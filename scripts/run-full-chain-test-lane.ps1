@@ -136,7 +136,8 @@ foreach ($member in $selectedMembers) {
         $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { [string]::Equals([string]$_, $expectedIdentity, [StringComparison]::Ordinal) })
         $memberSummary.discovered = $discovered.Count
         if ($discovered.Count -ne 1) { throw "FullChain member '$($member.id)' discovery expected 1 frozen test but found $($discovered.Count)." }
-        if ($summary.readiness.postgres -ne 'passed' -or ([bool]$member.dependencies.redis -and $summary.readiness.redis -ne 'passed')) { throw "FullChain member '$($member.id)' dependency readiness is incomplete." }
+        if (-not [string]::Equals([string]$summary.readiness.postgres, 'passed', [StringComparison]::Ordinal) -or
+            ([bool]$member.dependencies.redis -and -not [string]::Equals([string]$summary.readiness.redis, 'passed', [StringComparison]::Ordinal))) { throw "FullChain member '$($member.id)' dependency readiness is incomplete." }
         $memberSummary.dependencyEvidence = 'passed'
 
         $savedResultsDirectory = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY')
@@ -153,17 +154,18 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('Messaging__Provider', 'Redis')
             [Environment]::SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $entrypointEvidencePath)
-            switch ([string]$member.entrypoint.kind) {
-                'fullstack' {
-                    Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds 2400 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
-                }
-                'script' {
-                    Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
-                }
-                'dotnet' {
-                    Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds 900 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
-                }
-                default { throw "Unsupported FullChain entrypoint kind '$($member.entrypoint.kind)'." }
+            $entrypointKind = [string]$member.entrypoint.kind
+            if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) {
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds 2400 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+            }
+            elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+            }
+            elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) {
+                Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds 900 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
+            }
+            else {
+                throw "Unsupported FullChain entrypoint kind '$entrypointKind'."
             }
         }
         finally {
@@ -235,7 +237,10 @@ foreach ($memberSummary in $memberSummaries) {
     $summary.failed += [int]$memberSummary.failed
     $summary.skipped += [int]$memberSummary.skipped
 }
-$summary.cleanup = if ($infrastructureCleanup -eq 'passed' -and @($memberSummaries | Where-Object { $_.cleanup -ne 'passed' }).Count -eq 0) { 'passed' } else { 'failed' }
+$summary.cleanup = if (
+    [string]::Equals($infrastructureCleanup, 'passed', [StringComparison]::Ordinal) -and
+    @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
+) { 'passed' } else { 'failed' }
 try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
 catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
 $summaryDirectory = Split-Path -Parent $SummaryPath

@@ -36,8 +36,8 @@ function Import-NervFullChainTestLaneManifest {
         if ($schemas.Count -eq 0 -or @($schemas | Where-Object { $_ -cnotmatch '^[a-z][a-z0-9_]{0,62}$' -or -not $schemaSet.Add($_) }).Count -gt 0) { throw "FullChain lane member '$id' must declare unique canonical diagnosticSchemas." }
         $kind = [string]$member.entrypoint.kind
         if (-not $allowedKinds.Contains($kind)) { throw "FullChain lane member '$id' has invalid entrypoint kind '$kind'." }
-        if ($kind -eq 'fullstack' -and [string]$member.entrypoint.scenario -cnotmatch '^man-[0-9]+$') { throw "FullChain lane member '$id' has an invalid fullstack scenario." }
-        if ($kind -eq 'script') {
+        if ([string]::Equals($kind, 'fullstack', [StringComparison]::Ordinal) -and [string]$member.entrypoint.scenario -cnotmatch '^man-[0-9]+$') { throw "FullChain lane member '$id' has an invalid fullstack scenario." }
+        if ([string]::Equals($kind, 'script', [StringComparison]::Ordinal)) {
             $path = [string]$member.entrypoint.path
             if ($path -cnotmatch '^scripts/.+\.ps1$' -or -not (Test-Path -LiteralPath (Join-Path $RepositoryRoot $path) -PathType Leaf)) { throw "FullChain lane member '$id' script entrypoint is missing." }
         }

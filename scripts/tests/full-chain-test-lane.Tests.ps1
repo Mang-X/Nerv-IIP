@@ -53,9 +53,12 @@ try {
         'erp-return-closure'
     )
     Assert-Contract ([string]::Equals((@($manifest.members.id) -join '|'), ($expectedIds -join '|'), [StringComparison]::Ordinal)) 'FullChain manifest must freeze exactly the five approved scenarios in execution order.'
-    Assert-Contract (@($manifest.members | Where-Object { $_.tier -ne 'core' -or $_.status -ne 'active' }).Count -eq 0) 'All five NERV-767 scenarios must be active/core.'
+    Assert-Contract (@($manifest.members | Where-Object {
+        -not [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
+    }).Count -eq 0) 'All five NERV-767 scenarios must be active/core.'
     Assert-Contract ((@($manifest.members.expectedTestIdentities) | ForEach-Object { @($_).Count } | Measure-Object -Sum).Sum -eq 5) 'Each FullChain scenario must freeze exactly one identity.'
-    Assert-Contract (@($manifest.members | Where-Object { $_.project -ne 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj' }).Count -eq 0) 'All scenarios must target the FullChain test project.'
+    Assert-Contract (@($manifest.members | Where-Object { -not [string]::Equals([string]$_.project, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal) }).Count -eq 0) 'All scenarios must target the FullChain test project.'
     Assert-Contract (@($manifest.members | Where-Object { @($_.diagnosticSchemas).Count -eq 0 }).Count -eq 0) 'Every scenario must declare restricted PostgreSQL diagnostic schemas.'
     Assert-Contract (@($manifest.members | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.entrypoint.kind) }).Count -eq 0) 'Every scenario must declare an entrypoint kind.'
 
@@ -137,7 +140,10 @@ try {
     }
     [IO.File]::WriteAllText($memberEvidencePath, (($cleanupFixture | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
     $verifiedMemberEvidence = Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot
-    Assert-Contract ($verifiedMemberEvidence.cleanup -eq 'passed' -and $verifiedMemberEvidence.diagnosticEvidence -eq 'entrypoint-evidence-verified') 'A complete entrypoint-owned cleanup artifact must satisfy the member evidence contract.'
+    Assert-Contract (
+        [string]::Equals([string]$verifiedMemberEvidence.cleanup, 'passed', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$verifiedMemberEvidence.diagnosticEvidence, 'entrypoint-evidence-verified', [StringComparison]::Ordinal)
+    ) 'A complete entrypoint-owned cleanup artifact must satisfy the member evidence contract.'
     Remove-Item -LiteralPath $memberEvidencePath -Force
     $missingEvidenceRejected = $false
     try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
