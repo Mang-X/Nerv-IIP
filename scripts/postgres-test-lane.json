@@ -8,12 +8,13 @@
       "status": "active",
       "databaseOwnership": "runner",
       "project": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index|FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema",
       "databasePrefix": "nerv_iip_inventory",
       "diagnosticSchemas": [
         "inventory"
       ],
       "expectedTestIdentities": [
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema"
       ]
     },
@@ -303,15 +304,14 @@
       "tier": "core",
       "status": "deferred",
       "databaseOwnership": "test-owned",
-      "deferredReason": "PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run 的被测对象是自管 Docker 夹具的端口分配与清理，与 lane 的生命周期不变量互斥。同类的 PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index 走 CreateExternalAsync，形态与现有 runner 成员一致、具备入 lane 条件，唯一障碍是与 Docker 用例共享类与 gating 属性；拆分由 #1561 承接。",
+      "deferredReason": "被测对象是自管 Docker 夹具的端口分配与清理（每次运行自建容器、分配 run-scoped 端口并断言清理干净），与 lane「拥有并能证明数据库生命周期」的核心不变量按定义互斥。同类的 external 用例已由 #1561 拆分并入 inventory-postgres-profile，本条目自此只承载 Docker 夹具用例。",
       "project": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
-      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run",
       "databasePrefix": "nerv_iip_inventory_directory",
       "diagnosticSchemas": [
         "inventory"
       ],
       "expectedTestIdentities": [
-        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run"
       ]
     }

@@ -102,6 +102,20 @@ function Assert-NoDatabaseCreationStatement([string]$SourcePath) {
         throw "Lane source '$([IO.Path]::GetFileName($SourcePath))' must not issue CREATE DATABASE; the runner owns the member database."
     }
 }
+function Assert-MethodScopedFilter([object]$Member) {
+    $segments = @(([string]$Member.filter) -split '\|')
+    $frozen = [Collections.Generic.HashSet[string]]::new([string[]]@($Member.expectedTestIdentities), [StringComparer]::Ordinal)
+    $selectedIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($segment in $segments) {
+        if (-not $segment.StartsWith('FullyQualifiedName~', [StringComparison]::Ordinal)) { throw "Member '$($Member.id)' filter segment '$segment' must be a FullyQualifiedName selector." }
+        $selected = $segment.Substring('FullyQualifiedName~'.Length)
+        if (-not $frozen.Contains($selected)) { throw "Member '$($Member.id)' filter segment must name a frozen identity, not the enclosing class." }
+        # 段数相等 + 每段合法仍允许"两段重复同一身份、另一身份漏选"：必须要求段集合与冻结集合相等。
+        if (-not $selectedIdentities.Add($selected)) { throw "Member '$($Member.id)' filter repeats identity '$selected'; a repeated segment can hide a missing one." }
+    }
+    if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
+}
+
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
     $source = [IO.File]::ReadAllText($SourcePath)
     if ($source.Contains($InnerDatabaseFactory, [StringComparison]::Ordinal)) {
@@ -193,7 +207,10 @@ try {
     Assert-Contract ($discoveredFactories.Contains($sharedGovernedFactory)) 'Discovery must always find the shared governed PostgreSqlTestDatabase helper.'
     Assert-Contract ($discoveredFactories.Count -ge 5) 'Inner-database factory discovery must enumerate the test tree, not a hand-maintained list.'
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 1) 'The second-layer pilot must freeze exactly one Inventory test.'
+    # 拆解②的单条试点在 #1561 之后扩为两条：InventoryDirectory 的 external 用例形态与成员一致，已并入本成员；
+    # 同类的 Docker 夹具用例仍留在 deferred 条目里。
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 2) 'The Inventory member must freeze its profile test and the external directory test.'
+    Assert-MethodScopedFilter -Member $member
     Assert-Contract (@($member.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$member.diagnosticSchemas[0], 'inventory', [StringComparison]::Ordinal)) 'The pilot member must own its restricted diagnostic schema declaration.'
     $masterDataMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'masterdata-postgres-profile' -RepositoryRoot $repoRoot
     $masterDataIdentities = @(
@@ -318,19 +335,6 @@ try {
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
-    function Assert-MethodScopedFilter([object]$Member) {
-        $segments = @(([string]$Member.filter) -split '\|')
-        $frozen = [Collections.Generic.HashSet[string]]::new([string[]]@($Member.expectedTestIdentities), [StringComparer]::Ordinal)
-        $selectedIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach ($segment in $segments) {
-            if (-not $segment.StartsWith('FullyQualifiedName~', [StringComparison]::Ordinal)) { throw "Member '$($Member.id)' filter segment '$segment' must be a FullyQualifiedName selector." }
-            $selected = $segment.Substring('FullyQualifiedName~'.Length)
-            if (-not $frozen.Contains($selected)) { throw "Member '$($Member.id)' filter segment must name a frozen identity, not the enclosing class." }
-            # 段数相等 + 每段合法仍允许"两段重复同一身份、另一身份漏选"：必须要求段集合与冻结集合相等。
-            if (-not $selectedIdentities.Add($selected)) { throw "Member '$($Member.id)' filter repeats identity '$selected'; a repeated segment can hide a missing one." }
-        }
-        if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
-    }
     # Quality 同理：五个类共 21 条用例，只有 8 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 8) 'The Quality member must freeze exactly its eight governed PostgreSQL identities.'

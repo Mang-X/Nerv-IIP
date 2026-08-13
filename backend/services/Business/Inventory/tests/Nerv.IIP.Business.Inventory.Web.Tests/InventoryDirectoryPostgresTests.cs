@@ -12,6 +12,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
+[Collection(InventoryPostgresLaneCollection.Name)]
 public sealed class InventoryDirectoryPostgresTests
 {
     [InventoryDirectoryPostgresFact]
@@ -34,7 +35,7 @@ public sealed class InventoryDirectoryPostgresTests
         }
     }
 
-    [InventoryDirectoryPostgresFact]
+    [InventoryDirectoryExternalPostgresFact]
     public async Task PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index()
     {
         await using var postgres = await DirectoryPostgresScope.CreateExternalAsync();
@@ -416,13 +417,27 @@ public sealed class InventoryDirectoryPostgresTests
     }
 }
 
+// NERV-688 #1561：两条用例的依赖并不相同，因此门也拆开——夹具用例的被测对象是自管 Docker 容器的
+// 端口分配与清理，只有它需要 Docker；external 用例走 CreateExternalAsync 直接消费 lane 注入的
+// NERV_IIP_TEST_POSTGRES，形态与其余 Inventory lane 用例一致，因此用同一个门、同一句 skip 理由。
 public sealed class InventoryDirectoryPostgresFactAttribute : FactAttribute
 {
     public InventoryDirectoryPostgresFactAttribute()
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
         {
-            Skip = "Set NERV_IIP_TEST_POSTGRES and ensure Docker is available to run Inventory directory PostgreSQL tests.";
+            Skip = "Set NERV_IIP_TEST_POSTGRES and ensure Docker is available to run the Inventory directory Docker fixture test.";
+        }
+    }
+}
+
+public sealed class InventoryDirectoryExternalPostgresFactAttribute : FactAttribute
+{
+    public InventoryDirectoryExternalPostgresFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+        {
+            Skip = "Set NERV_IIP_TEST_POSTGRES to run the Inventory directory external PostgreSQL test.";
         }
     }
 }
