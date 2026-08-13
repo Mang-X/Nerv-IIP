@@ -79,6 +79,20 @@ function Get-NervFullChainTrxResult {
     return $result
 }
 
+function Test-NervFullChainEvidenceProperty {
+    param([AllowNull()] [object] $Object, [Parameter(Mandatory)] [string] $Name)
+    if ($null -eq $Object) { return $false }
+    return @($Object.PSObject.Properties | Where-Object { [string]::Equals([string]$_.Name, $Name, [StringComparison]::Ordinal) }).Count -eq 1
+}
+
+function Assert-NervFullChainZeroReadback {
+    param([Parameter(Mandatory)] [object] $Object, [Parameter(Mandatory)] [string] $Name, [Parameter(Mandatory)] [string] $MemberId)
+    if (-not (Test-NervFullChainEvidenceProperty -Object $Object -Name $Name)) { throw "FullChain member '$MemberId' cleanup evidence is missing required '$Name' readback." }
+    $value = $Object.PSObject.Properties[$Name].Value
+    if ($value -isnot [byte] -and $value -isnot [int16] -and $value -isnot [int32] -and $value -isnot [int64]) { throw "FullChain member '$MemberId' cleanup evidence '$Name' readback must be an integer." }
+    if ([int64]$value -ne 0) { throw "FullChain member '$MemberId' cleanup evidence '$Name' readback must be zero." }
+}
+
 function Assert-NervFullChainMemberEvidence {
     param(
         [Parameter(Mandatory)] [object] $Member,
@@ -103,6 +117,13 @@ function Assert-NervFullChainMemberEvidence {
         if (-not $artifactPath.StartsWith($artifactRoot, [StringComparison]::Ordinal) -or -not (Test-Path -LiteralPath $artifactPath -PathType Container)) {
             throw "FullChain member '$($Member.id)' diagnostic artifact directory is missing or outside the governed root."
         }
+        $summaryPath = Join-Path $artifactPath 'summary.json'
+        if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) { throw "FullChain member '$($Member.id)' FullStack diagnostic summary is missing." }
+        foreach ($schema in $schemas) {
+            $resourceName = $schema.Replace('_', '-')
+            $diagnosticPath = Join-Path $artifactPath "aspire-logs/business-$resourceName.ndjson"
+            if (-not (Test-Path -LiteralPath $diagnosticPath -PathType Leaf)) { throw "FullChain member '$($Member.id)' diagnostic artifact for schema '$schema' is missing." }
+        }
         return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'fullstack-artifacts-verified'; source = $manifests[0].FullName; diagnosticSchemas = $schemas }
     }
 
@@ -111,14 +132,17 @@ function Assert-NervFullChainMemberEvidence {
         if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) { throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is missing." }
         $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json -Depth 30
         if ([string]::Equals([string]$Member.id, 'erp-wms-delivery-completion', [StringComparison]::Ordinal)) {
-            if ([int]$evidence.cleanup.managedProcessRemaining -ne 0 -or [int]$evidence.cleanup.exactDatabaseRemaining -ne 0 -or @($evidence.cleanup.errors).Count -ne 0) {
-                throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is incomplete."
-            }
+            if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name 'cleanup')) { throw "FullChain member '$($Member.id)' cleanup evidence is missing required 'cleanup' object." }
+            Assert-NervFullChainZeroReadback -Object $evidence.cleanup -Name 'managedProcessRemaining' -MemberId ([string]$Member.id)
+            Assert-NervFullChainZeroReadback -Object $evidence.cleanup -Name 'exactDatabaseRemaining' -MemberId ([string]$Member.id)
+            if (-not (Test-NervFullChainEvidenceProperty -Object $evidence.cleanup -Name 'errors') -or $evidence.cleanup.errors -isnot [array] -or @($evidence.cleanup.errors).Count -ne 0) { throw "FullChain member '$($Member.id)' cleanup evidence must contain an empty errors array." }
         }
         elseif ([string]::Equals([string]$Member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
-            if ([int]$evidence.managedProcesses.remaining -ne 0 -or [int]$evidence.disposableDatabase.remaining -ne 0 -or [int]$evidence.composeServices.remaining -ne 0 -or @($evidence.cleanupFailures).Count -ne 0) {
-                throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is incomplete."
+            foreach ($objectName in @('managedProcesses', 'disposableDatabase', 'composeServices')) {
+                if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name $objectName)) { throw "FullChain member '$($Member.id)' cleanup evidence is missing required '$objectName' object." }
+                Assert-NervFullChainZeroReadback -Object $evidence.PSObject.Properties[$objectName].Value -Name 'remaining' -MemberId ([string]$Member.id)
             }
+            if (-not (Test-NervFullChainEvidenceProperty -Object $evidence -Name 'cleanupFailures') -or $evidence.cleanupFailures -isnot [array] -or @($evidence.cleanupFailures).Count -ne 0) { throw "FullChain member '$($Member.id)' cleanup evidence must contain an empty cleanupFailures array." }
         }
         else { throw "FullChain script member '$($Member.id)' has no cleanup evidence validator." }
         return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'entrypoint-evidence-verified'; source = $evidencePath; diagnosticSchemas = $schemas }

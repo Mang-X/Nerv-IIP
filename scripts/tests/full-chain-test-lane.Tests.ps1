@@ -143,6 +143,23 @@ try {
     try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
     catch { $missingEvidenceRejected = $_.Exception.Message.Contains('cleanup evidence is missing', [StringComparison]::Ordinal) }
     Assert-Contract $missingEvidenceRejected 'Removing entrypoint cleanup evidence must fail the FullChain member contract.'
+    $emptyShellEvidence = [ordered]@{ cleanupFailures = @() }
+    [IO.File]::WriteAllText($memberEvidencePath, (($emptyShellEvidence | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $emptyShellRejected = $false
+    try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+    catch { $emptyShellRejected = $_.Exception.Message.Contains("missing required 'managedProcesses'", [StringComparison]::Ordinal) }
+    Assert-Contract $emptyShellRejected 'An empty-shell cleanup artifact must not coerce missing readbacks to zero.'
+    $missingReadbackFixture = [ordered]@{
+        managedProcesses = [ordered]@{}
+        disposableDatabase = [ordered]@{ remaining = 0 }
+        composeServices = [ordered]@{ remaining = 0 }
+        cleanupFailures = @()
+    }
+    [IO.File]::WriteAllText($memberEvidencePath, (($missingReadbackFixture | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $missingReadbackRejected = $false
+    try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+    catch { $missingReadbackRejected = $_.Exception.Message.Contains("missing required 'remaining'", [StringComparison]::Ordinal) }
+    Assert-Contract $missingReadbackRejected 'Deleting a required cleanup readback field must fail the member evidence contract.'
 
     $summaries = @($manifest.members | ForEach-Object {
         [pscustomobject]@{ memberId = $_.id; outcome = 'passed'; cleanup = 'passed'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; dependencyEvidence = 'passed'; diagnosticEvidence = 'fixture-verified' }
