@@ -64,11 +64,12 @@ function Assert-ConditionalRoutingWorkflow {
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
         'redis-cap-transport-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}"
+        'business-full-chain-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
         'script-governance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}"
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'erp_sales_order_demand')) {
+    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'erp_sales_order_demand')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -94,7 +95,7 @@ function Assert-ConditionalRoutingWorkflow {
             'backend-test-shard-governance', 'backend-tests-business-gateway', 'backend-tests-platform',
             'backend-tests-business-core-a', 'backend-tests-business-core-b', 'backend-tests',
             'erp-sales-order-demand-acceptance', 'connector-host-tests', 'openapi-client-drift',
-            'postgres-provider-tests', 'redis-cap-transport-tests', 'script-governance', 'ci-summary'
+            'postgres-provider-tests', 'redis-cap-transport-tests', 'business-full-chain-acceptance', 'script-governance', 'ci-summary'
         ),
         [StringComparer]::Ordinal)
     foreach ($frontendConsumer in $frontendConsumers) { [void]$allowedConsumers.Add($frontendConsumer) }
@@ -186,6 +187,19 @@ function Assert-RedisCapLaneOwningPathsRoute {
         )) {
         Assert-ImpactCase -Name "redis-cap-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $false; redis_cap = $true; full_chain = $false
+        }
+    }
+}
+
+function Assert-FullChainLaneOwningPathsRoute {
+    foreach ($owningPath in @(
+            'scripts/run-full-chain-test-lane.ps1',
+            'scripts/lib/FullChainTestLane.ps1',
+            'scripts/full-chain-test-lane.json',
+            'scripts/tests/full-chain-test-lane.Tests.ps1'
+        )) {
+        Assert-ImpactCase -Name "full-chain-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
+            scripts = $true; backend = $true; postgresql = $false; redis_cap = $false; full_chain = $true
         }
     }
 }
@@ -330,6 +344,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 
 Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
+Assert-FullChainLaneOwningPathsRoute
 
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "members": [
+    {
+      "id": "maintenance-runtime-hours",
+      "service": "Maintenance+IndustrialTelemetry",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.Scheduler_generates_plan_work_order_only_after_real_runtime_crosses_threshold",
+      "entrypoint": { "kind": "fullstack", "scenario": "man-440" },
+      "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
+      "diagnosticSchemas": ["maintenance", "industrial_telemetry"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.Scheduler_generates_plan_work_order_only_after_real_runtime_crosses_threshold"]
+    },
+    {
+      "id": "mes-inventory-produced-lot",
+      "service": "MES+Inventory",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.MesInventoryProducedLotPostgresRedisAcceptanceTests.External_process_proves_exact_produced_lot_link_for_success_and_explicit_failure",
+      "entrypoint": { "kind": "fullstack", "scenario": "man-528" },
+      "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
+      "diagnosticSchemas": ["mes", "inventory"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.MesInventoryProducedLotPostgresRedisAcceptanceTests.External_process_proves_exact_produced_lot_link_for_success_and_explicit_failure"]
+    },
+    {
+      "id": "erp-wms-delivery-completion",
+      "service": "ERP+WMS+Inventory",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts",
+      "entrypoint": { "kind": "script", "path": "scripts/verify-erp-wms-delivery-completion.ps1" },
+      "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
+      "diagnosticSchemas": ["erp", "wms", "inventory"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts"]
+    },
+    {
+      "id": "sales-order-demand-planning",
+      "service": "ERP+DemandPlanning+MasterData",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events",
+      "entrypoint": { "kind": "script", "path": "scripts/verify-erp-sales-order-demand-planning.ps1" },
+      "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
+      "diagnosticSchemas": ["erp", "demand_planning", "master_data"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events"]
+    },
+    {
+      "id": "erp-return-closure",
+      "service": "ERP+WMS",
+      "tier": "core",
+      "status": "active",
+      "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+      "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety",
+      "entrypoint": { "kind": "dotnet" },
+      "dependencies": { "postgres": true, "redis": false, "externalProcesses": false },
+      "diagnosticSchemas": ["erp", "wms"],
+      "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"]
+    }
+  ]
+}

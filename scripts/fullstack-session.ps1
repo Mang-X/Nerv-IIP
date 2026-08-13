@@ -149,15 +149,21 @@ function Invoke-NervMan528MesInventoryAcceptance {
     }
     try {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
-            Invoke-DotNet `
-                -Arguments @(
+            $testArguments = @(
                     'test',
                     'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    '--configuration', 'Release',
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MesInventoryProducedLotPostgresRedisAcceptanceTests',
                     '--nologo'
-                ) `
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-DotNet `
+                -Arguments $testArguments `
                 -WorkingDirectory "$($Manifest.worktreeRoot)" `
                 -TimeoutSeconds 600 `
                 -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
@@ -245,15 +251,21 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     }
     try {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
-            Invoke-DotNet `
-                -Arguments @(
+            $testArguments = @(
                     'test',
                     'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    '--configuration', 'Release',
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MaintenanceRuntimeHoursPostgresRedisAcceptanceTests',
                     '--nologo'
-                ) `
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-DotNet `
+                -Arguments $testArguments `
                 -WorkingDirectory "$($Manifest.worktreeRoot)" `
                 -TimeoutSeconds 600 `
                 -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null

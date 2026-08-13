@@ -210,7 +210,7 @@
       "id": "full-chain",
       "policyLane": "full-chain",
       "owner": "full-stack scenario runner",
-      "ownerScript": "scripts/verify-business-full-chain-acceptance.ps1",
+      "ownerScript": "scripts/run-full-chain-test-lane.ps1",
       "projects": [
         "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj"
       ]
