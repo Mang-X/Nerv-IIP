@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
+using Nerv.IIP.Testing.PostgreSql;
 using System.Diagnostics;
 using Xunit.Abstractions;
 
@@ -23,8 +24,9 @@ public sealed class WorldHistoryQualitySeedPostgresTests(ITestOutputHelper outpu
     [QualityPostgresFact]
     public async Task Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean()
     {
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean));
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_quality_world_history");
         var connectionString = database.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
