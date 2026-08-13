@@ -77,14 +77,10 @@ public sealed class AppHubPostgresProfileTests
             domainEvents.ObservedAtUtc.OrderBy(x => x).ToArray());
     }
 
-    [Fact]
+    [AppHubRealPostgresFact]
     public async Task Postgres_store_generates_guid_strong_ids_on_add()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return;
-        }
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             connectionString,
@@ -126,14 +122,10 @@ public sealed class AppHubPostgresProfileTests
         Assert.NotEqual(Guid.Empty, version.Id.Id);
     }
 
-    [Fact]
+    [AppHubRealPostgresFact]
     public async Task Postgres_store_persists_registration_heartbeat_and_state()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return;
-        }
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             connectionString,

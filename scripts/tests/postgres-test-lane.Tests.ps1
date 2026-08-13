@@ -25,6 +25,21 @@ function Assert-MasterDataDiagnosticSchemas([object]$Member) {
         throw 'The MasterData member must retain restricted business_masterdata and CAP outbox diagnostics.'
     }
 }
+$script:GovernedPostgresMemberIds = @(
+    'inventory-postgres-profile',
+    'masterdata-postgres-profile',
+    'scheduling-postgres-profile',
+    'apphub-postgres-profile',
+    'barcodelabel-postgres-profile',
+    'filestorage-postgres-profile',
+    'maintenance-device-pause-postgres'
+)
+function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
+    $source = [IO.File]::ReadAllText($SourcePath)
+    if ($source.Contains($InnerDatabaseFactory, [StringComparison]::Ordinal)) {
+        throw "Lane source '$([IO.Path]::GetFileName($SourcePath))' must not create an inner database the lane cannot diagnose or clean."
+    }
+}
 function Assert-SchedulingLaneOwnedDatabase([string]$SourcePath) {
     $source = [IO.File]::ReadAllText($SourcePath)
     if (-not $source.Contains('[Collection(SchedulingPostgresLaneDatabase.CollectionName)]', [StringComparison]::Ordinal)) {
@@ -39,8 +54,8 @@ function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
     $job = $document.jobs.'postgres-provider-tests'
     $testSteps = @($job.steps | Where-Object { [string]::Equals((Get-NervCiRequiredSummaryStringValue -Object $_ -PropertyName 'id'), 'postgres-tests', [StringComparison]::Ordinal) })
     if ($testSteps.Count -ne 1) { throw 'PostgreSQL Provider Tests must contain exactly one authoritative postgres-tests step.' }
-    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select Inventory, MasterData and Scheduling exactly through one AST-validated assignment and runner invocation.'
-    $expectedMemberIds = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')
+    $invalidBatchMessage = 'The authoritative PostgreSQL test step must select every governed lane member exactly through one AST-validated assignment and runner invocation.'
+    $expectedMemberIds = @($script:GovernedPostgresMemberIds)
     $run = [regex]::Replace([string]$testSteps[0].run, '\$\{\{.*?\}\}', 'github-expression')
     $tokens = $null
     $parseErrors = $null
@@ -170,21 +185,87 @@ try {
     try { Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) | Out-Null } catch { $rejected = $_.Exception.Message.Contains('0 skipped', [StringComparison]::Ordinal) }
     Assert-Contract $rejected 'An all-skipped pilot must fail closed.'
 
-    $selectedMemberIds = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')
+    $smallServiceMembers = @(
+        @{ id = 'barcodelabel-postgres-profile'; service = 'BarcodeLabel'; schema = 'barcode'; identities = @(
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event')
+            source = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/BarcodeLabelPostgresProfileTests.cs'
+            innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
+        @{ id = 'filestorage-postgres-profile'; service = 'FileStorage'; schema = 'filestorage'; identities = @(
+                'Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart')
+            source = 'backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs'
+            innerDatabaseFactory = 'PostgreSqlTestDatabase.CreateAsync' },
+        @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres')
+            source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs'
+            innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' }
+    )
+    foreach ($smallServiceMember in $smallServiceMembers) {
+        $laneMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId ([string]$smallServiceMember.id) -RepositoryRoot $repoRoot
+        Assert-Contract ([string]::Equals([string]$laneMember.service, [string]$smallServiceMember.service, [StringComparison]::Ordinal)) "Member '$($smallServiceMember.id)' must register service '$($smallServiceMember.service)'."
+        Assert-Contract (@($laneMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$laneMember.diagnosticSchemas[0], [string]$smallServiceMember.schema, [StringComparison]::Ordinal)) "Member '$($smallServiceMember.id)' must declare its own restricted diagnostic schema."
+        Assert-Contract ([string]::Equals((@($laneMember.expectedTestIdentities) -join "`n"), (@($smallServiceMember.identities) -join "`n"), [StringComparison]::Ordinal)) "Member '$($smallServiceMember.id)' must freeze exactly its governed identities."
+        $laneSourcePath = Join-Path $repoRoot ([string]$smallServiceMember.source)
+        Assert-Contract (Test-Path -LiteralPath $laneSourcePath -PathType Leaf) "Lane source '$($smallServiceMember.source)' must exist."
+        Assert-LaneOwnedDatabase -SourcePath $laneSourcePath -InnerDatabaseFactory ([string]$smallServiceMember.innerDatabaseFactory)
+    }
+    # AppHub 是唯一的 test-owned 成员：NERV-822 要求它的三条用例各自拥有临时数据库，并在初始化前
+    # 断言"不在非自有库上初始化"。lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
+    $appHubMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'apphub-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract ([string]::Equals([string]$appHubMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'AppHub owns its temporary databases per NERV-822 and must be registered as test-owned.'
+    Assert-Contract (@($appHubMember.expectedTestIdentities).Count -eq 3) 'The AppHub member must freeze exactly its three PostgreSQL identities.'
+    $appHubSourcePath = Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'
+    $appHubSource = [IO.File]::ReadAllText($appHubSourcePath)
+    Assert-Contract ($appHubSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'A test-owned member must build its databases through the governed PostgreSqlTestDatabase helper.'
+    Assert-Contract ($appHubSource.Contains('AssertUsesTemporaryDatabase(', [StringComparison]::Ordinal)) 'The NERV-822 guard that refuses to initialize outside the owned database must stay.'
+    Assert-Contract (([regex]::Matches($appHubSource, 'AssertUsesTemporaryDatabase\(')).Count -ge 4) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
+    # runner 归属的成员反过来不许自建内层库；两种归属的断言互斥，避免"改了归属就没人管"。
+    foreach ($runnerOwnedMemberId in @($script:GovernedPostgresMemberIds | Where-Object { -not [string]::Equals($_, 'apphub-postgres-profile', [StringComparison]::Ordinal) })) {
+        $runnerOwnedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerOwnedMemberId -RepositoryRoot $repoRoot
+        Assert-Contract ([string]::Equals([string]$runnerOwnedMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) "Member '$runnerOwnedMemberId' must declare runner-owned databases."
+    }
+
+    # AppHub 曾有两条"环境变量缺失就 return"的静默空跑用例；lane 只有在它们真正被冻结、
+    # 且缺变量时是显式 skip 的情况下才算证明了 AppHub 的 PostgreSQL 语义。
+    $appHubSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'))
+    Assert-Contract (-not $appHubSource.Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)) 'AppHub PostgreSQL tests must not silently return when the governed connection string is missing.'
+    Assert-Contract ((([regex]::Matches($appHubSource, '\[AppHubRealPostgresFact\]')).Count) -eq 3) 'All three AppHub PostgreSQL tests must be gated by the visible-skip fact attribute.'
+    $silentSkipSourcePath = Join-Path $fixtureRoot 'silent-skip-apphub-source.cs'
+    [IO.File]::WriteAllText($silentSkipSourcePath, "if (string.IsNullOrWhiteSpace(connectionString))`n{`n    return;`n}`n", [Text.UTF8Encoding]::new($false))
+    $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
+    Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
+
+    $selectedMemberIds = @($script:GovernedPostgresMemberIds)
     $validMemberSummaries = @(
-        [pscustomobject]@{ memberId = 'inventory-postgres-profile'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' },
-        [pscustomobject]@{ memberId = 'masterdata-postgres-profile'; expected = 5; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' },
-        [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 6; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
+        foreach ($governedMemberId in $selectedMemberIds) {
+            $governedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $governedMemberId -RepositoryRoot $repoRoot
+            $governedCount = @($governedMember.expectedTestIdentities).Count
+            [pscustomobject]@{ memberId = $governedMemberId; expected = $governedCount; discovered = $governedCount; passed = $governedCount; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
+        }
     )
+    Assert-Contract ($validMemberSummaries.Count -eq $selectedMemberIds.Count) 'Every governed member id must resolve to a manifest member.'
     Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries $validMemberSummaries
+    # 变异只改最后一个成员，其余成员保持合格：证明聚合断言逐成员生效，而不是"有一个成员通过就放行"。
+    $lastIndex = $validMemberSummaries.Count - 1
+    $lastMemberId = [string]$validMemberSummaries[$lastIndex].memberId
+    $lastExpected = [int]$validMemberSummaries[$lastIndex].expected
+    $healthyPrefix = @($validMemberSummaries[0..($lastIndex - 1)])
     $invalidSummaryCases = @(
-        @{ name = 'missing-member'; members = @($validMemberSummaries[0], $validMemberSummaries[1]); diagnostic = 'summarized 2' },
-        @{ name = 'zero-discovery'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 0' },
-        @{ name = 'partial-discovery'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 5' },
-        @{ name = 'skipped'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 5; failed = 0; skipped = 1; cleanup = 'passed'; outcome = 'passed' }); diagnostic = '1 skipped' },
-        @{ name = 'failed'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 5; failed = 1; skipped = 0; cleanup = 'passed'; outcome = 'failed' }); diagnostic = "outcome 'failed'" },
-        @{ name = 'cleanup-failed'; members = @($validMemberSummaries[0], $validMemberSummaries[1], [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 6; passed = 6; failed = 0; skipped = 0; cleanup = 'failed'; outcome = 'passed' }); diagnostic = "cleanup 'failed'" }
+        @{ name = 'missing-member'; members = $healthyPrefix; diagnostic = "summarized $($healthyPrefix.Count)" },
+        @{ name = 'zero-discovery'; members = @($healthyPrefix + [pscustomobject]@{ memberId = $lastMemberId; expected = $lastExpected; discovered = 0; passed = 0; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }); diagnostic = 'discovered 0' },
+        @{ name = 'skipped'; members = @($healthyPrefix + [pscustomobject]@{ memberId = $lastMemberId; expected = $lastExpected; discovered = $lastExpected; passed = $lastExpected - 1; failed = 0; skipped = 1; cleanup = 'passed'; outcome = 'passed' }); diagnostic = '1 skipped' },
+        @{ name = 'failed'; members = @($healthyPrefix + [pscustomobject]@{ memberId = $lastMemberId; expected = $lastExpected; discovered = $lastExpected; passed = $lastExpected - 1; failed = 1; skipped = 0; cleanup = 'passed'; outcome = 'failed' }); diagnostic = "outcome 'failed'" },
+        @{ name = 'cleanup-failed'; members = @($healthyPrefix + [pscustomobject]@{ memberId = $lastMemberId; expected = $lastExpected; discovered = $lastExpected; passed = $lastExpected; failed = 0; skipped = 0; cleanup = 'failed'; outcome = 'passed' }); diagnostic = "cleanup 'failed'" }
     )
+    $schedulingIndex = [Array]::IndexOf([string[]]$selectedMemberIds, 'scheduling-postgres-profile')
+    $partialDiscoveryMembers = @(
+        foreach ($summaryIndex in 0..$lastIndex) {
+            if ($summaryIndex -eq $schedulingIndex) {
+                [pscustomobject]@{ memberId = 'scheduling-postgres-profile'; expected = 6; discovered = 5; passed = 5; failed = 0; skipped = 0; cleanup = 'passed'; outcome = 'passed' }
+            }
+            else { $validMemberSummaries[$summaryIndex] }
+        }
+    )
+    $invalidSummaryCases += @{ name = 'partial-discovery'; members = $partialDiscoveryMembers; diagnostic = 'discovered 5' }
     foreach ($case in $invalidSummaryCases) {
         $summaryRejected = $false
         try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries @($case.members) } catch { $summaryRejected = $_.Exception.Message.Contains([string]$case.diagnostic, [StringComparison]::Ordinal) }
@@ -196,11 +277,13 @@ try {
     $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
     $workflow = [IO.File]::ReadAllText($workflowPath)
     Assert-PostgresWorkflowMemberBatch -WorkflowPath $workflowPath
-    $authoritativeAssignment = "`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')"
+    $authoritativeAssignment = "`$members = @('" + ($selectedMemberIds -join "', '") + "')"
     Assert-Contract ($workflow.Contains($authoritativeAssignment, [StringComparison]::Ordinal)) 'The authoritative workflow assignment must select the full governed member batch.'
     $droppedMemberCases = @(
-        @{ name = 'scheduling'; assignment = "`$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')" },
-        @{ name = 'masterdata'; assignment = "`$members = @('inventory-postgres-profile', 'scheduling-postgres-profile')" }
+        foreach ($droppedMemberId in @('maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {
+            $remainingIds = @($selectedMemberIds | Where-Object { -not [string]::Equals($_, $droppedMemberId, [StringComparison]::Ordinal) })
+            @{ name = $droppedMemberId; assignment = "`$members = @('" + ($remainingIds -join "', '") + "')" }
+        }
     )
     foreach ($droppedMemberCase in $droppedMemberCases) {
         $mutatedWorkflowPath = Join-Path $fixtureRoot "dropped-$($droppedMemberCase.name)-ci.yml"
@@ -209,12 +292,12 @@ try {
         try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $mutatedWorkflowPath } catch { $workflowMutationRejected = $true }
         Assert-Contract $workflowMutationRejected "Removing $($droppedMemberCase.name) from the authoritative workflow step must fail the structural contract."
     }
-    $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-dropped-scheduling-ci.yml'
-    $commentMaskedAssignment = "# $authoritativeAssignment`n          `$members = @('inventory-postgres-profile', 'masterdata-postgres-profile')"
+    $commentMaskedWorkflowPath = Join-Path $fixtureRoot 'comment-masked-dropped-last-member-ci.yml'
+    $commentMaskedAssignment = "# $authoritativeAssignment`n          `$members = @('" + (@($selectedMemberIds | Select-Object -First ($selectedMemberIds.Count - 1)) -join "', '") + "')"
     [IO.File]::WriteAllText($commentMaskedWorkflowPath, $workflow.Replace($authoritativeAssignment, $commentMaskedAssignment), [Text.UTF8Encoding]::new($false))
     $commentMaskedMutationRejected = $false
     try { Assert-PostgresWorkflowMemberBatch -WorkflowPath $commentMaskedWorkflowPath } catch { $commentMaskedMutationRejected = $true }
-    Assert-Contract $commentMaskedMutationRejected 'A comment must not mask an active workflow assignment that removes Scheduling.'
+    Assert-Contract $commentMaskedMutationRejected 'A comment must not mask an active workflow assignment that drops a governed member.'
     Assert-Contract ($runner.Contains('[string[]] $MemberId', [StringComparison]::Ordinal)) 'The runner must accept an explicit ordered member batch.'
     Assert-Contract ($runner.Contains('foreach ($selectedMemberId in $MemberId)', [StringComparison]::Ordinal)) 'The runner must execute every selected member instead of authenticating only the pilot.'
     Assert-Contract ($runner.Contains("Join-Path `$ResultsDirectory ([string]`$member.id)", [StringComparison]::Ordinal)) 'Each selected member must own an isolated TRX directory.'

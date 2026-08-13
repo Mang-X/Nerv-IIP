@@ -644,9 +644,10 @@ jobs:
 
   postgres-provider-tests:
     name: PostgreSQL Provider Tests
-    # NERV-688 拆解③第二批：Inventory + MasterData + Scheduling。层级 A；显式 step 预算合计 64m，
-    # 小于 71m job 预算，为 service setup 和 action post steps 保留 7m。
-    timeout-minutes: 71
+    # NERV-688 拆解③第三批：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
+    # + FileStorage + Maintenance。层级 A；显式 step 预算合计 69m，
+    # 小于 76m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 76
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
@@ -705,12 +706,12 @@ jobs:
           "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
           Write-Host "tested-sha=$testedSha"
 
-      - name: Run Inventory, MasterData and Scheduling PostgreSQL profiles
-        timeout-minutes: 25
+      - name: Run governed PostgreSQL profile members
+        timeout-minutes: 30
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile')
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'maintenance-device-pause-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
             -MemberId $members `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `

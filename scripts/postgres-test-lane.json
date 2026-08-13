@@ -6,6 +6,7 @@
       "service": "Inventory",
       "tier": "core",
       "status": "active",
+      "databaseOwnership": "runner",
       "project": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
       "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
       "databasePrefix": "nerv_iip_inventory",
@@ -21,6 +22,7 @@
       "service": "MasterData",
       "tier": "core",
       "status": "active",
+      "databaseOwnership": "runner",
       "project": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
       "filter": "FullyQualifiedName~Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
       "databasePrefix": "nerv_iip_masterdata",
@@ -41,6 +43,7 @@
       "service": "Scheduling",
       "tier": "core",
       "status": "active",
+      "databaseOwnership": "runner",
       "project": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/Nerv.IIP.Business.Scheduling.Web.Tests.csproj",
       "filter": "FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.OrderUrgencyRetentionPostgresCapacityTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests|FullyQualifiedName~Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
       "databasePrefix": "nerv_iip_scheduling",
@@ -54,6 +57,72 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_records_invalidation_for_a_generated_plan_matched_by_resource",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions",
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests.Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie"
+      ]
+    },
+    {
+      "id": "apphub-postgres-profile",
+      "service": "AppHub",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
+      "databasePrefix": "nerv_iip_apphub",
+      "diagnosticSchemas": [
+        "apphub"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each",
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Postgres_store_generates_guid_strong_ids_on_add",
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Postgres_store_persists_registration_heartbeat_and_state"
+      ]
+    },
+    {
+      "id": "barcodelabel-postgres-profile",
+      "service": "BarcodeLabel",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
+      "databasePrefix": "nerv_iip_barcodelabel",
+      "diagnosticSchemas": [
+        "barcode"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event"
+      ]
+    },
+    {
+      "id": "filestorage-postgres-profile",
+      "service": "FileStorage",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests",
+      "databasePrefix": "nerv_iip_filestorage",
+      "diagnosticSchemas": [
+        "filestorage"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.FileStorage.Web.Tests.FileStorageRestartPersistenceTests.Metadata_usage_and_download_grant_survive_web_host_restart"
+      ]
+    },
+    {
+      "id": "maintenance-device-pause-postgres",
+      "service": "Maintenance",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "runner",
+      "project": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres",
+      "databasePrefix": "nerv_iip_maintenance",
+      "diagnosticSchemas": [
+        "maintenance"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
       ]
     }
   ]
