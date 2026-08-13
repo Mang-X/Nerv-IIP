@@ -124,7 +124,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
 
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             adminConnectionString,
-            "nerv_notification_cap_rabbitmq_dlq");
+            "nerv_notification_cap_rmq_dlq");
         await using var factory = CreateFactory(
             database.ConnectionString,
             "RabbitMQ",
@@ -143,15 +143,15 @@ public sealed class NotificationCapOutboxAcceptanceTests
             factory,
             CreateFailedEvent("event-cap-rabbitmq-poison", "operation-task-failed:cap-rabbitmq-poison")
                 with
-                {
-                    Payload = new OperationTaskFailedPayload(
+            {
+                Payload = new OperationTaskFailedPayload(
                         OperationTaskId: string.Empty,
                         AttemptId: "attempt-event-cap-rabbitmq-poison",
                         InstanceKey: "demo-api-001",
                         OperationCode: "lifecycle.restart",
                         FinishedAtUtc: DateTimeOffset.Parse("2026-05-25T08:00:05Z"),
                         FailureCode: "timeout")
-                },
+            },
             useTransaction: true);
 
         await AssertEventuallyAsync(async token =>
