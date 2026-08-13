@@ -13,6 +13,7 @@ using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 using Npgsql;
 using System.Data;
 using System.Net.Sockets;
@@ -34,9 +35,11 @@ public sealed class NotificationCapOutboxAcceptanceTests
             return;
         }
 
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "notification_cap_inmemory");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_notification_cap_inmemory");
         await using var factory = CreateFactory(database.ConnectionString, "InMemory");
-        await MigrateAsync(factory);
+        await MigrateAsync(factory, database);
         await InitializeCapStorageAsync(factory);
         using var client = factory.CreateClient();
 
@@ -71,7 +74,9 @@ public sealed class NotificationCapOutboxAcceptanceTests
             return;
         }
 
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "notification_cap_rabbitmq");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_notification_cap_rabbitmq");
         await using var factory = CreateFactory(
             database.ConnectionString,
             "RabbitMQ",
@@ -82,7 +87,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 ["RabbitMQ:UserName"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_USERNAME") ?? "guest",
                 ["RabbitMQ:Password"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_PASSWORD") ?? "guest",
             });
-        await MigrateAsync(factory);
+        await MigrateAsync(factory, database);
         await InitializeCapStorageAsync(factory);
         using var client = factory.CreateClient();
 
@@ -117,7 +122,9 @@ public sealed class NotificationCapOutboxAcceptanceTests
             return;
         }
 
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "notification_cap_rabbitmq_dlq");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_notification_cap_rabbitmq_dlq");
         await using var factory = CreateFactory(
             database.ConnectionString,
             "RabbitMQ",
@@ -128,7 +135,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 ["RabbitMQ:UserName"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_USERNAME") ?? "guest",
                 ["RabbitMQ:Password"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_PASSWORD") ?? "guest",
             });
-        await MigrateAsync(factory);
+        await MigrateAsync(factory, database);
         await InitializeCapStorageAsync(factory);
         using var client = factory.CreateClient();
 
@@ -224,10 +231,13 @@ public sealed class NotificationCapOutboxAcceptanceTests
             });
     }
 
-    private static async Task MigrateAsync(WebApplicationFactory<Program> factory)
+    private static async Task MigrateAsync(
+        WebApplicationFactory<Program> factory,
+        PostgreSqlTestDatabase database)
     {
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        database.AssertOwns(dbContext.Database.GetConnectionString());
         await dbContext.Database.MigrateAsync();
     }
 
@@ -438,52 +448,4 @@ public sealed class NotificationCapOutboxAcceptanceTests
             : defaultValue;
     }
 
-    private sealed class DisposablePostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private DisposablePostgresDatabase(string adminConnectionString, string databaseName, string connectionString)
-        {
-            this.adminConnectionString = adminConnectionString;
-            this.databaseName = databaseName;
-            ConnectionString = connectionString;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<DisposablePostgresDatabase> CreateAsync(string adminConnectionString, string prefix)
-        {
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            await using var adminConnection = new NpgsqlConnection(adminConnectionString);
-            await adminConnection.OpenAsync();
-            await using var createCommand = adminConnection.CreateCommand();
-            createCommand.CommandText = $"""CREATE DATABASE "{databaseName}";""";
-            await createCommand.ExecuteNonQueryAsync();
-
-            var builder = new NpgsqlConnectionStringBuilder(adminConnectionString)
-            {
-                Database = databaseName,
-            };
-            return new DisposablePostgresDatabase(adminConnectionString, databaseName, builder.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var cleanupConnection = new NpgsqlConnection(adminConnectionString);
-            await cleanupConnection.OpenAsync();
-            await using var terminateCommand = cleanupConnection.CreateCommand();
-            terminateCommand.CommandText = """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName;
-                """;
-            terminateCommand.Parameters.AddWithValue("databaseName", databaseName);
-            await terminateCommand.ExecuteNonQueryAsync();
-
-            await using var dropCommand = cleanupConnection.CreateCommand();
-            dropCommand.CommandText = $"""DROP DATABASE IF EXISTS "{databaseName}";""";
-            await dropCommand.ExecuteNonQueryAsync();
-        }
-    }
 }

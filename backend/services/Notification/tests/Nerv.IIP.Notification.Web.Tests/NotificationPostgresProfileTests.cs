@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Testing.PostgreSql;
 using Npgsql;
 
 namespace Nerv.IIP.Notification.Web.Tests;
@@ -20,64 +21,39 @@ public sealed class NotificationPostgresProfileTests
             return;
         }
 
-        var databaseName = $"nerv_iip_notification_schema_{Guid.NewGuid():N}";
-        var builder = new NpgsqlConnectionStringBuilder(connectionString)
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            connectionString,
+            "nerv_notification_schema");
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMediatR(configuration =>
         {
-            Database = databaseName,
-        };
+            configuration.RegisterServicesFromAssembly(typeof(NotificationIntent).Assembly);
+        });
+        services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
+            database.ConnectionString,
+            npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "notification")));
 
-        await using var adminConnection = new NpgsqlConnection(connectionString);
-        await adminConnection.OpenAsync();
-        await using (var createCommand = adminConnection.CreateCommand())
-        {
-            createCommand.CommandText = $"""CREATE DATABASE "{databaseName}";""";
-            await createCommand.ExecuteNonQueryAsync();
-        }
+        await using var serviceProvider = services.BuildServiceProvider();
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        database.AssertOwns(db.Database.GetConnectionString());
 
-        try
-        {
-            var services = new ServiceCollection();
-            services.AddMediatR(configuration =>
-            {
-                configuration.RegisterServicesFromAssembly(typeof(NotificationIntent).Assembly);
-            });
-            services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
-                builder.ConnectionString,
-                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "notification")));
+        await db.Database.MigrateAsync();
 
-            await using var serviceProvider = services.BuildServiceProvider();
-            await using var scope = serviceProvider.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-            await db.Database.MigrateAsync();
-
-            await using var connection = new NpgsqlConnection(builder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM information_schema.tables
-                    WHERE table_schema = 'notification'
-                      AND table_name = '__EFMigrationsHistory'
-                );
-                """;
-            var exists = (bool)(await command.ExecuteScalarAsync() ?? false);
-            Assert.True(exists, "Notification migrations history table must be created in notification.__EFMigrationsHistory.");
-        }
-        finally
-        {
-            await using var cleanupConnection = new NpgsqlConnection(connectionString);
-            await cleanupConnection.OpenAsync();
-            await using var terminateCommand = cleanupConnection.CreateCommand();
-            terminateCommand.CommandText = $"""
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = '{databaseName}';
-                DROP DATABASE IF EXISTS "{databaseName}";
-                """;
-            await terminateCommand.ExecuteNonQueryAsync();
-        }
+        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'notification'
+                  AND table_name = '__EFMigrationsHistory'
+            );
+            """;
+        var exists = (bool)(await command.ExecuteScalarAsync() ?? false);
+        Assert.True(exists, "Notification migrations history table must be created in notification.__EFMigrationsHistory.");
     }
 
     private static async Task<bool> CanConnectAsync(string connectionString)
