@@ -15,7 +15,7 @@ CI 以 `--logger trx` 正常运行 `dotnet test`。测试步骤不使用 `contin
 | `backend-shard-3` | `Backend Tests - Business Core A` | `business-core-a` |
 | `backend-shard-4` | `Backend Tests - Business Core B` | `business-core-b` |
 | `connector-host` | `Connector Host Tests` | — |
-| `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`、`scheduling-postgres-profile`、`apphub-postgres-profile`、`barcodelabel-postgres-profile`、`filestorage-postgres-profile`、`industrialtelemetry-postgres-profile`、`quality-postgres-profile`、`maintenance-device-pause-postgres`（拆解②与③前五批） || `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`、`scheduling-postgres-profile`、`apphub-postgres-profile`（`test-owned`）、`barcodelabel-postgres-profile`、`filestorage-postgres-profile`、`industrialtelemetry-postgres-profile`、`maintenance-device-pause-postgres`（拆解②与③前四批） |
+| `postgres` | `PostgreSQL Provider Tests` | `inventory-postgres-profile`、`masterdata-postgres-profile`、`scheduling-postgres-profile`、`apphub-postgres-profile`（`test-owned`）、`barcodelabel-postgres-profile`、`filestorage-postgres-profile`、`industrialtelemetry-postgres-profile`、`quality-postgres-profile`、`maintenance-device-pause-postgres`（拆解②与③前五批） |
 | `redis-cap` | `Redis/CAP Transport Tests` | `demandplanning-sales-order-redis-cap`（拆解④） |
 
 `Backend Tests` 仍是稳定的必需聚合作业。它不运行测试、不拥有证据执行通道，只断言分片治理与全部四个分片作业成功。`scripts/verify-backend-test-shards.ps1` 从结构上强制执行该接线：执行通道/作业绑定、仅存原始结果的目录、精确的采集器参数，以及每个分片作业恰好一个脱敏证据产物。若分片作业上传原始目录、声称拥有另一条执行通道、通过 shell 管道包装运行器，或将采集降级为 `success()`，该门禁就会失败。

@@ -257,10 +257,23 @@ try {
     }
     # 三个直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
     # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
-    $inspectionTaskSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionTaskPostgresProfileTests.cs'))
-    $historyOverrides = ([regex]::Matches($inspectionTaskSource, 'MigrationsHistoryTable\("__EFMigrationsHistory", QualityFacts\.Schema\)')).Count
-    $rawNpgsqlBuilders = ([regex]::Matches($inspectionTaskSource, 'UseNpgsql\(')).Count
-    Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders -and $historyOverrides -gt 0) 'Every raw Quality DbContext option builder must pin __EFMigrationsHistory to the quality schema.'
+    # 只扫 InspectionTask 一个文件会留下盲区：SpcAnalysis 的 CreatePostgresProvider 与 Calibration 的
+    # refused 探针也各有一处裸 builder（都已钉，但写的是 "quality" 字面量）。契约因此覆盖全部五个
+    # Quality lane 源，正则同时接受常量与字面量两种钉法。
+    $qualityPinnedBuilders = 0
+    foreach ($qualitySource in @(
+            'QualityCalibrationRecordQueryTests.cs',
+            'QualityCapaRedrivePostgresProfileTests.cs',
+            'QualityInspectionTaskPostgresProfileTests.cs',
+            'QualityReinspectionPostgresProfileTests.cs',
+            'QualitySpcAnalysisTests.cs')) {
+        $qualitySourceText = [IO.File]::ReadAllText((Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"))
+        $historyOverrides = ([regex]::Matches($qualitySourceText, 'MigrationsHistoryTable\("__EFMigrationsHistory", (?:QualityFacts\.Schema|"quality")\)')).Count
+        $rawNpgsqlBuilders = ([regex]::Matches($qualitySourceText, 'UseNpgsql\(')).Count
+        Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders) "Every raw DbContext option builder in '$qualitySource' must pin __EFMigrationsHistory to the quality schema; observed $rawNpgsqlBuilders builders and $historyOverrides pinned."
+        $qualityPinnedBuilders += $historyOverrides
+    }
+    Assert-Contract ($qualityPinnedBuilders -eq 5) 'The Quality lane sources must keep exactly their five pinned raw builders; a new unpinned one silently reintroduces the public-schema history table.'
 
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 7) 'The IndustrialTelemetry member must freeze exactly its seven governed PostgreSQL identities.'
