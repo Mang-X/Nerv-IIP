@@ -46,7 +46,7 @@ public sealed class IamPostgresProfileTests
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "iam"))
             .Options;
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        AssertUsesTemporaryDatabase(db, database);
+        database.AssertOwns(db.Database.GetConnectionString());
         await db.Database.MigrateAsync();
 
         var loginIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
@@ -129,7 +129,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -275,7 +275,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -346,7 +346,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -445,7 +445,7 @@ public sealed class IamPostgresProfileTests
             .AddInterceptors(interceptor)
             .Options;
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        AssertUsesTemporaryDatabase(db, database);
+        database.AssertOwns(db.Database.GetConnectionString());
         await db.Database.MigrateAsync();
 
         var now = DateTimeOffset.UtcNow;
@@ -515,7 +515,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -588,7 +588,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -666,7 +666,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -811,7 +811,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -949,7 +949,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -1018,16 +1018,6 @@ public sealed class IamPostgresProfileTests
     private static Task<PostgreSqlTestDatabase> CreateTemporaryDatabaseAsync(string baseConnectionString)
     {
         return PostgreSqlTestDatabase.CreateAsync(baseConnectionString, "nerv_iam_profile");
-    }
-
-    private static void AssertUsesTemporaryDatabase(
-        ApplicationDbContext db,
-        PostgreSqlTestDatabase database)
-    {
-        var targetDatabase = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database;
-        Assert.True(
-            string.Equals(database.DatabaseName, targetDatabase, StringComparison.Ordinal),
-            $"Refusing to initialize a PostgreSQL profile outside its owned temporary database. expected={database.DatabaseName}; actual={targetDatabase}.");
     }
 
     private static async Task<bool> IsUniqueLowerExpressionIndexAsync(

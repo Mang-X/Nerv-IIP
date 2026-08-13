@@ -50,9 +50,8 @@ public sealed class AppHubPostgresProfileTests
         await using var provider = services.BuildServiceProvider();
         using (var migrationScope = provider.CreateScope())
         {
-            AssertUsesTemporaryDatabase(
-                migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-                database);
+            var migrationDb = migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            database.AssertOwns(migrationDb.Database.GetConnectionString());
             await migrationScope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>().MigrateAsync();
             var mediator = migrationScope.ServiceProvider.GetRequiredService<IMediator>();
             await mediator.Send(new RegisterApplicationCommand(AppHubPostgresSamples.Registration("pg-concurrent-health")));
@@ -102,7 +101,7 @@ public sealed class AppHubPostgresProfileTests
 
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        AssertUsesTemporaryDatabase(db, database);
+        database.AssertOwns(db.Database.GetConnectionString());
         var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
         await migrationRunner.MigrateAsync();
         await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
@@ -148,7 +147,7 @@ public sealed class AppHubPostgresProfileTests
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            AssertUsesTemporaryDatabase(db, database);
+            database.AssertOwns(db.Database.GetConnectionString());
             var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
             await migrationRunner.MigrateAsync();
             await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
@@ -295,16 +294,6 @@ public sealed class AppHubPostgresProfileTests
 
         var exists = (bool?)await command.ExecuteScalarAsync() ?? false;
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
-    }
-
-    private static void AssertUsesTemporaryDatabase(
-        ApplicationDbContext db,
-        PostgreSqlTestDatabase database)
-    {
-        var targetDatabase = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database;
-        Assert.True(
-            string.Equals(database.DatabaseName, targetDatabase, StringComparison.Ordinal),
-            $"Refusing to initialize a PostgreSQL profile outside its owned temporary database. expected={database.DatabaseName}; actual={targetDatabase}.");
     }
 
     private sealed class ConcurrentCollectionHealthInsertBarrier : SaveChangesInterceptor
