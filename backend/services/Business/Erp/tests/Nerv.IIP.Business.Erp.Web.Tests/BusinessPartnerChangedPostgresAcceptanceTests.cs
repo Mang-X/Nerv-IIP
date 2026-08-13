@@ -1,6 +1,5 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Nerv.IIP.Business.Erp.Domain;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -20,19 +19,10 @@ public sealed class BusinessPartnerChangedPostgresAcceptanceTests
     [BusinessPartnerPostgresFact]
     public async Task PostgreSQL_consumer_persists_disabled_partner_and_changes_new_PO_SO_behavior()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(
-                Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"),
-                x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
         await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
-        await dbContext.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using (var command = dbContext.Database.GetDbConnection().CreateCommand())
-        {
-            command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await command.ExecuteNonQueryAsync();
-        }
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
 
         await dbContext.Database.MigrateAsync();
         var quotation = Quotation.Create(
