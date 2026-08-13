@@ -92,7 +92,7 @@ try {
         "needs.impact-plan.outputs.full_chain != 'false'",
         'bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6',
         'pnpm -C frontend install --frozen-lockfile',
-        'pnpm -C frontend exec playwright install --with-deps chromium',
+        'pnpm -C frontend --filter @nerv-iip/business-console exec playwright install --with-deps chromium',
         '-Lane full-chain',
         '-SelectedLanes full-chain',
         'full-chain-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}',

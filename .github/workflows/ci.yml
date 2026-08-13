@@ -969,7 +969,7 @@ jobs:
 
       - name: Install Playwright Chromium
         timeout-minutes: 15
-        run: pnpm -C frontend exec playwright install --with-deps chromium
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright install --with-deps chromium
 
       - name: Prepare FullChain dependency images
         timeout-minutes: 10
