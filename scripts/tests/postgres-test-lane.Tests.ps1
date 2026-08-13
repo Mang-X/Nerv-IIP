@@ -364,6 +364,33 @@ try {
         Assert-Contract ($wmsSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "WMS lane source '$wmsSource' must not hand-roll CREATE DATABASE; NERV-822 converged these files onto the shared helper."
     }
 
+    # 「其余服务（…）仍属于拆解③后续批次」这句已经三次把已接入的服务写回未接入列表（#1553 的 Quality、
+    # #1555 的 Quality/IndustrialTelemetry、#1557 的 WMS）。只改文字会让它第四次回潮，因此把它变成门禁：
+    # 该句列出的服务集合与 manifest 里 active 成员的 service 集合，交集必须为空。
+    function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
+        $readiness = [IO.File]::ReadAllText($ReadinessPath)
+        $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
+        if (-not $sentence.Success) { throw 'The readiness narrative must keep naming which services are still pending, so the gate has something to check.' }
+        $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        foreach ($activeMember in $ActiveMembers) {
+            foreach ($pendingService in $pendingServices) {
+                if ([string]::Equals($pendingService, [string]$activeMember.service, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Service '$pendingService' is already an active lane member but the readiness narrative still lists it as pending."
+                }
+            }
+        }
+    }
+    Assert-PendingServiceListExcludesLaneMembers -ReadinessPath (Join-Path $repoRoot 'docs/architecture/implementation-readiness.md') -ActiveMembers $activeMembers
+    $regressedReadinessPath = Join-Path $fixtureRoot 'regressed-readiness.md'
+    [IO.File]::WriteAllText($regressedReadinessPath, '其余服务（WMS、ERP、DemandPlanning 等）仍属于拆解③后续批次。', [Text.UTF8Encoding]::new($false))
+    $pendingListRejected = $false
+    try { Assert-PendingServiceListExcludesLaneMembers -ReadinessPath $regressedReadinessPath -ActiveMembers $activeMembers } catch { $pendingListRejected = $_.Exception.Message.Contains('still lists it as pending', [StringComparison]::Ordinal) }
+    Assert-Contract $pendingListRejected 'Listing an already-onboarded service as pending must fail closed.'
+    # runner 形态必须留一根钉：MasterData 是裁决原文里 runner 的动机样本（失败时要留 CAP outbox 状态），
+    # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
+    $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
+    Assert-Contract ($masterDataOwnership.Count -eq 1 -and [string]::Equals([string]$masterDataOwnership[0].databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'MasterData must stay runner-owned; it is the decision''s worked example for keeping failure diagnostics.'
+
     $selectedMemberIds = @($script:GovernedPostgresMemberIds)
     $validMemberSummaries = @(
         foreach ($governedMemberId in $selectedMemberIds) {
