@@ -223,6 +223,7 @@ try {
     foreach ($runnerOwnedMemberId in @($script:GovernedPostgresMemberIds | Where-Object { -not [string]::Equals($_, 'apphub-postgres-profile', [StringComparison]::Ordinal) })) {
         $runnerOwnedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerOwnedMemberId -RepositoryRoot $repoRoot
         Assert-Contract ([string]::Equals([string]$runnerOwnedMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) "Member '$runnerOwnedMemberId' must declare runner-owned databases."
+    }
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
     function Assert-MethodScopedFilter([object]$Member) {
