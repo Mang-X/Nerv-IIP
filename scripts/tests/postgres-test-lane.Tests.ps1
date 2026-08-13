@@ -229,12 +229,15 @@ try {
     function Assert-MethodScopedFilter([object]$Member) {
         $segments = @(([string]$Member.filter) -split '\|')
         $frozen = [Collections.Generic.HashSet[string]]::new([string[]]@($Member.expectedTestIdentities), [StringComparer]::Ordinal)
-        if ($segments.Count -ne $frozen.Count) { throw "Member '$($Member.id)' must select exactly one filter segment per frozen identity." }
+        $selectedIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($segment in $segments) {
             if (-not $segment.StartsWith('FullyQualifiedName~', [StringComparison]::Ordinal)) { throw "Member '$($Member.id)' filter segment '$segment' must be a FullyQualifiedName selector." }
             $selected = $segment.Substring('FullyQualifiedName~'.Length)
             if (-not $frozen.Contains($selected)) { throw "Member '$($Member.id)' filter segment must name a frozen identity, not the enclosing class." }
+            # 段数相等 + 每段合法仍允许"两段重复同一身份、另一身份漏选"：必须要求段集合与冻结集合相等。
+            if (-not $selectedIdentities.Add($selected)) { throw "Member '$($Member.id)' filter repeats identity '$selected'; a repeated segment can hide a missing one." }
         }
+        if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
     }
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 7) 'The IndustrialTelemetry member must freeze exactly its seven governed PostgreSQL identities.'
@@ -245,6 +248,14 @@ try {
         filter = 'FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests'
         expectedTestIdentities = @($telemetryMember.expectedTestIdentities)
     }
+    $duplicateSegmentMember = [pscustomobject]@{
+        id = 'industrialtelemetry-postgres-profile'
+        filter = (@($telemetryMember.expectedTestIdentities)[0..5] + @($telemetryMember.expectedTestIdentities)[0] | ForEach-Object { "FullyQualifiedName~$_" }) -join '|'
+        expectedTestIdentities = @($telemetryMember.expectedTestIdentities)
+    }
+    $duplicateSegmentRejected = $false
+    try { Assert-MethodScopedFilter -Member $duplicateSegmentMember } catch { $duplicateSegmentRejected = $_.Exception.Message.Contains('repeats identity', [StringComparison]::Ordinal) }
+    Assert-Contract $duplicateSegmentRejected 'A repeated filter segment that hides a missing identity must fail closed.'
     $classScopedRejected = $false
     try { Assert-MethodScopedFilter -Member $classScopedMember } catch { $classScopedRejected = $true }
     Assert-Contract $classScopedRejected 'A class-scoped IndustrialTelemetry filter must fail closed, because it would execute non-PostgreSQL siblings.'
@@ -255,7 +266,11 @@ try {
             'IndustrialTelemetryOeePostgresQueryTests.cs')) {
         $telemetrySourcePath = Join-Path $repoRoot "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/$telemetrySource"
         Assert-Contract (Test-Path -LiteralPath $telemetrySourcePath -PathType Leaf) "IndustrialTelemetry lane source '$telemetrySource' must exist."
-        Assert-LaneOwnedDatabase -SourcePath $telemetrySourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
+        # 这四个类改造前用的是 IndustrialTelemetryPostgresTestDatabase（Postgres 非 PostgreSql，子串不命中），
+        # 且该类仍在同一测试项目里被规模种子用例合法使用——只扫共享 helper 的名字对回潮毫无鉴别力。
+        foreach ($telemetryFactory in @('IndustrialTelemetryPostgresTestDatabase.CreateAsync', 'PostgreSqlTestDatabase.CreateAsync')) {
+            Assert-LaneOwnedDatabase -SourcePath $telemetrySourcePath -InnerDatabaseFactory $telemetryFactory
+        }
     }
 
     # AppHub 曾有两条"环境变量缺失就 return"的静默空跑用例；lane 只有在它们真正被冻结、
