@@ -3,7 +3,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -18,8 +18,9 @@ public sealed class LeaderDemoScaleSeedPostgresTests(ITestOutputHelper output)
     [ErpScaleSeedRealPostgresFact]
     public async Task Scale_seed_persists_one_thousand_released_sales_orders_within_the_startup_budget()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_erp_scale_seed");
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(database.ConnectionString)
             .Options;
@@ -57,39 +58,6 @@ public sealed class LeaderDemoScaleSeedPostgresTests(ITestOutputHelper output)
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString)
-        : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_erp_scale_seed_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
 }
 
 internal sealed class ErpScaleSeedRealPostgresFactAttribute : FactAttribute
