@@ -736,4 +736,5 @@ try {
     Assert-Contract ($workflow.Contains('-JobName "PostgreSQL Provider Tests"', [StringComparison]::Ordinal)) 'Normalized evidence must bind to the authoritative PostgreSQL job.'
 }
 finally { if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force } }
+& (Join-Path $PSScriptRoot 'postgres-test-database-consumers.Tests.ps1')
 Write-Output 'PostgreSQL test lane contract tests passed.'
