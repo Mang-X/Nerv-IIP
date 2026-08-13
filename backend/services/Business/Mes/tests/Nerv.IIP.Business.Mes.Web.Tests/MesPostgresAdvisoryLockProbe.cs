@@ -15,16 +15,17 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// </remarks>
 /// <remarks>
 /// <para>
-/// "Any advisory-lock waiter in this database" is a sufficient discriminator only because the database is
-/// per-test-invocation, not per-class and not per-assembly: every caller opens its own
-/// <c>TemporaryDatabase</c>/<c>DisposablePostgresDatabase</c> whose name carries a fresh
-/// <c>Guid.CreateVersion7()</c> and is dropped <c>WITH (FORCE)</c> on disposal
-/// (<c>MesSchedulePlanProvenancePostgresTests</c>, <c>SkuDisabledConsumerTests</c> and
-/// <c>WorkOrderCapitalizationConcurrencyPostgresTests</c> each do this inside the test method). A waiter
-/// leaked by an earlier test therefore cannot be counted here: it is parked on a database this connection
-/// cannot even see. If a caller ever shares a database across tests, this predicate has to be narrowed to
-/// the exact <c>classid</c>/<c>objid</c> of the lock the test asked for, because "some advisory lock is
-/// contended" would no longer imply "this test's lock is contended".
+/// NERV-688 拆解③起，<c>MesSchedulePlanProvenancePostgresTests</c>、<c>SkuDisabledConsumerTests</c> 与
+/// <c>WorkOrderCapitalizationConcurrencyPostgresTests</c> 不再各自新建内层数据库，而是共用
+/// <see cref="MesPostgresLaneDatabase"/> 治理的成员数据库，因此"该数据库内任意一个 advisory-lock
+/// waiter"这条判据不再依赖"数据库是每测试独占的"这条前提。它依赖的是另一条更弱但仍然成立的前提：
+/// 这三个类共同加入 <see cref="WebApplicationFactoryCollection"/>（<c>DisableParallelization = true</c>），
+/// 因此同一时刻整个成员数据库上只可能有一个测试方法在跑，该测试方法自己制造的 advisory-lock
+/// 竞争因而是"该数据库内此刻唯一可能的 waiter 来源"。前一个测试遗留的 waiter 不会被误计入：
+/// xUnit 的串行化保证前一个测试已经 <c>await</c> 完成、连接已释放（advisory lock 是事务/连接作用域，
+/// 连接释放即随之释放）之后，下一个测试才会开始。若这条串行化保证被移除（例如把某个类挪出该
+/// collection、或未来允许并行子集），这条判据必须收紧到测试自己申请的那把锁的精确
+/// <c>classid</c>/<c>objid</c>，否则"某个 advisory lock 被争用"将不再等价于"这个测试的锁被争用"。
 /// </para>
 /// </remarks>
 internal static class MesPostgresAdvisoryLockProbe

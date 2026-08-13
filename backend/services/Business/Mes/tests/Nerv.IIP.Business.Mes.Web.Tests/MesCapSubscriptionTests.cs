@@ -166,9 +166,8 @@ public sealed class MesCapSubscriptionTests
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_cap_inmemory");
-        await using var factory = CreateFactory(database.ConnectionString);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
         await MigrateAsync(factory);
         await InitializeCapStorageAsync(factory);
         await SeedScheduleFactsAsync(factory);
@@ -205,9 +204,8 @@ public sealed class MesCapSubscriptionTests
     [PostgreSqlFact]
     public async Task PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_asset_restored");
-        await using var factory = CreateFactory(database.ConnectionString);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
         await MigrateAsync(factory);
         await SeedScheduleFactsAsync(factory);
 
@@ -251,9 +249,8 @@ public sealed class MesCapSubscriptionTests
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_quality_hold_cap");
-        await using var factory = CreateFactory(database.ConnectionString);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
         await MigrateAsync(factory);
         await InitializeCapStorageAsync(factory);
         var occurredAtUtc = DateTimeOffset.Parse("2026-07-24T01:00:00Z");
@@ -332,6 +329,7 @@ public sealed class MesCapSubscriptionTests
     {
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
     }
 
@@ -491,55 +489,6 @@ public sealed class MesCapSubscriptionTests
     private static string ReadPostgresConnectionString()
     {
         return MesPostgreSqlTestSettings.ReadConnectionString();
-    }
-
-    private sealed class DisposablePostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private DisposablePostgresDatabase(string adminConnectionString, string databaseName, string connectionString)
-        {
-            this.adminConnectionString = adminConnectionString;
-            this.databaseName = databaseName;
-            ConnectionString = connectionString;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<DisposablePostgresDatabase> CreateAsync(string adminConnectionString, string prefix)
-        {
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            await using var adminConnection = new NpgsqlConnection(adminConnectionString);
-            await adminConnection.OpenAsync();
-            await using var createCommand = adminConnection.CreateCommand();
-            createCommand.CommandText = $"""CREATE DATABASE "{databaseName}";""";
-            await createCommand.ExecuteNonQueryAsync();
-
-            var builder = new NpgsqlConnectionStringBuilder(adminConnectionString)
-            {
-                Database = databaseName,
-            };
-            return new DisposablePostgresDatabase(adminConnectionString, databaseName, builder.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var cleanupConnection = new NpgsqlConnection(adminConnectionString);
-            await cleanupConnection.OpenAsync();
-            await using var terminateCommand = cleanupConnection.CreateCommand();
-            terminateCommand.CommandText = """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName;
-                """;
-            terminateCommand.Parameters.AddWithValue("databaseName", databaseName);
-            await terminateCommand.ExecuteNonQueryAsync();
-
-            await using var dropCommand = cleanupConnection.CreateCommand();
-            dropCommand.CommandText = $"""DROP DATABASE IF EXISTS "{databaseName}";""";
-            await dropCommand.ExecuteNonQueryAsync();
-        }
     }
 }
 

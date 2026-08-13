@@ -34,6 +34,7 @@ $script:GovernedPostgresMemberIds = @(
     'filestorage-postgres-profile',
     'industrialtelemetry-postgres-profile',
     'quality-postgres-profile',
+    'mes-postgres-profile',
     'maintenance-device-pause-postgres'
 )
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
@@ -280,6 +281,24 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
+    # MES：六个类共 19 条用例，只有 11 条是真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
+    $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 11) 'The MES member must freeze exactly its eleven governed PostgreSQL identities.'
+    Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
+    Assert-MethodScopedFilter -Member $mesMember
+    foreach ($mesSource in @(
+            'MesCapSubscriptionTests.cs',
+            'MesSchedulePlanProvenancePostgresTests.cs',
+            'RushWorkOrderHttpPostgresTests.cs',
+            'SkuDisabledConsumerTests.cs',
+            'TelemetryProductionReportCandidatePostgresTests.cs',
+            'WorkOrderCapitalizationConcurrencyPostgresTests.cs')) {
+        $mesSourcePath = Join-Path $repoRoot "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/$mesSource"
+        Assert-Contract (Test-Path -LiteralPath $mesSourcePath -PathType Leaf) "MES lane source '$mesSource' must exist."
+        Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
+        Assert-LaneOwnedDatabase -SourcePath $mesSourcePath -InnerDatabaseFactory 'MesPostgreSqlTestSettings.CreateDatabaseAsync'
+    }
     $classScopedMember = [pscustomobject]@{
         id = 'industrialtelemetry-postgres-profile'
         filter = 'FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests'

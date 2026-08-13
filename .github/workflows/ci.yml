@@ -644,10 +644,10 @@ jobs:
 
   postgres-provider-tests:
     name: PostgreSQL Provider Tests
-    # NERV-688 拆解③第五批：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
-    # + FileStorage + IndustrialTelemetry + Quality + Maintenance。层级 A；
-    # 显式 step 预算合计 79m，小于 86m job 预算，为 service setup 和 action post steps 保留 7m。
-    timeout-minutes: 86
+    # NERV-688 拆解③第六批：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
+    # + FileStorage + IndustrialTelemetry + Quality + MES + Maintenance。层级 A；
+    # 显式 step 预算合计 84m，小于 91m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 91
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
@@ -707,11 +707,11 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Run governed PostgreSQL profile members
-        timeout-minutes: 40
+        timeout-minutes: 45
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'maintenance-device-pause-postgres')
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-postgres-profile', 'maintenance-device-pause-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
             -MemberId $members `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `

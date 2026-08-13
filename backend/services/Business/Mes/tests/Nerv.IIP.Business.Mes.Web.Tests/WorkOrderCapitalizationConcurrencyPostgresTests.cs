@@ -10,22 +10,20 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
-using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
 {
     [MesRealPostgresFact]
     public async Task Receipt_creation_and_capitalization_serialize_without_cap_redelivery()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         await using (var setup = CreateContext(options, new NoopMediator()))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync(CancellationToken.None);
             var completedAtUtc = DateTimeOffset.Parse("2026-07-23T07:15:28Z");
             setup.WorkOrders.Add(CreateCompletedWorkOrder(completedAtUtc));
@@ -99,7 +97,7 @@ public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
         // Wait for the real edge instead of a settle window: the capitalization transaction is observably
         // parked on the work-order-scope advisory lock held by the in-flight receipt creation.
         await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
-            database.ConnectionString,
+            MesPostgresLaneDatabase.ConnectionString,
             expectedWaiters: 1,
             scopeDescription: "the MES work-order capitalization scope held by the in-flight receipt creation");
         Assert.False(
@@ -278,41 +276,4 @@ public sealed class WorkOrderCapitalizationConcurrencyPostgresTests
             throw new NotSupportedException();
     }
 
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_mes_cost_race_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-            return new TemporaryDatabase(
-                adminConnectionString,
-                databaseName,
-                new NpgsqlConnectionStringBuilder(baseConnectionString)
-                {
-                    Database = databaseName
-                }.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-    }
 }
