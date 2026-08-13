@@ -36,6 +36,9 @@ $script:GovernedPostgresMemberIds = @(
     'quality-postgres-profile',
     'mes-postgres-profile',
     'wms-postgres-profile',
+    'erp-postgres-profile',
+    'demandplanning-postgres-profile',
+    'acceptance-postgres-profile',
     'maintenance-device-pause-postgres'
 )
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
@@ -370,7 +373,11 @@ try {
     function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
         $readiness = [IO.File]::ReadAllText($ReadinessPath)
         $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
-        if (-not $sentence.Success) { throw 'The readiness narrative must keep naming which services are still pending, so the gate has something to check.' }
+        if (-not $sentence.Success) {
+            # 全部接入后该句合法消失，但必须换成同样可核的收尾表述，否则"没有待接入服务"就无从证伪。
+            if ($readiness.Contains('拆解③登记的服务至此全部接入', [StringComparison]::Ordinal)) { return }
+            throw 'The readiness narrative must either name the pending services or state that none remain, so the gate has something to check.'
+        }
         $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         foreach ($activeMember in $ActiveMembers) {
             foreach ($pendingService in $pendingServices) {
@@ -390,6 +397,51 @@ try {
     # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
     $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
     Assert-Contract ($masterDataOwnership.Count -eq 1 -and [string]::Equals([string]$masterDataOwnership[0].databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'MasterData must stay runner-owned; it is the decision''s worked example for keeping failure diagnostics.'
+
+    # 第八批三成员：DemandPlanning 走 2026-08-13 裁决的默认归属（test-owned，NERV-822 的 #1565 已把
+    # 该文件三条用例与 redis-cap 用例一并收敛到共享 PostgreSqlTestDatabase）；ERP 与跨业务 Acceptance
+    # 按裁决的例外判据保持 runner——判据是失败诊断价值：Acceptance 的终局跨四个 schema，必须能在成员
+    # 数据库里看到。ERP 本就没有手写建库；Acceptance 的手写建库（内嵌 TemporaryPostgresDatabase）由本批删除。
+    $demandPlanningMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'demandplanning-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 3) 'The DemandPlanning member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract ([string]::Equals([string]$demandPlanningMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'DemandPlanning runs on governed temporary databases, so the member must be test-owned.'
+    Assert-MethodScopedFilter -Member $demandPlanningMember
+    $demandPlanningSourcePath = Join-Path $repoRoot 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'
+    $demandPlanningSource = [IO.File]::ReadAllText($demandPlanningSourcePath)
+    Assert-Contract ($demandPlanningSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'DemandPlanning lane tests must build their databases through the governed shared helper.'
+    Assert-Contract ($demandPlanningSource -cnotmatch '"[^"\r\n]*CREATE DATABASE') 'DemandPlanning lane tests must not hand-roll CREATE DATABASE.'
+    foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
+        Assert-Contract (-not ([string]$frozenDemandPlanningIdentity).Contains('.Redis_cap_', [StringComparison]::Ordinal)) 'The Redis/CAP transport identities stay owned by the redis-cap lane, not by postgres.'
+    }
+    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
+    $redisCapIdentities = [Collections.Generic.HashSet[string]]::new([string[]]@($redisCapManifest.members | ForEach-Object { @($_.expectedTestIdentities) }), [StringComparer]::Ordinal)
+    foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
+        $frozenIdentityKey = [string]$frozenDemandPlanningIdentity
+        Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
+    }
+    $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 4) 'The ERP member must freeze exactly its four PostgreSQL identities.'
+    Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
+    $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
+    Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
+    Assert-MethodScopedFilter -Member $acceptanceMember
+    foreach ($runnerOwnedSource in @(
+            'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',
+            'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs')) {
+        $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
+        Assert-Contract (Test-Path -LiteralPath $runnerOwnedSourcePath -PathType Leaf) "Lane source '$runnerOwnedSource' must exist."
+        $runnerOwnedSourceText = [IO.File]::ReadAllText($runnerOwnedSourcePath)
+        Assert-Contract ($runnerOwnedSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "Lane source '$runnerOwnedSource' must not hand-roll CREATE DATABASE; the runner owns the member database."
+        Assert-LaneOwnedDatabase -SourcePath $runnerOwnedSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
+    }
+    # 跨业务 acceptance 用 EnsureCreatedAsync 会在共享成员库上直接跳过建表（库已存在），必须走迁移。
+    $runtimeHoursSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs'))
+    Assert-Contract (-not $runtimeHoursSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($runtimeHoursSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The cross-service acceptance member must create its schemas through migrations.'
 
     $selectedMemberIds = @($script:GovernedPostgresMemberIds)
     $validMemberSummaries = @(
