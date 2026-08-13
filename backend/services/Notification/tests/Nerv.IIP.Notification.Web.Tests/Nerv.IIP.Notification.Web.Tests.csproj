@@ -28,6 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Domain\Nerv.IIP.Notification.Domain.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj" />

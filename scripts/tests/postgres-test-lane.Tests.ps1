@@ -218,8 +218,8 @@ try {
     $appHubSourcePath = Join-Path $repoRoot 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'
     $appHubSource = [IO.File]::ReadAllText($appHubSourcePath)
     Assert-Contract ($appHubSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'A test-owned member must build its databases through the governed PostgreSqlTestDatabase helper.'
-    Assert-Contract ($appHubSource.Contains('AssertUsesTemporaryDatabase(', [StringComparison]::Ordinal)) 'The NERV-822 guard that refuses to initialize outside the owned database must stay.'
-    Assert-Contract (([regex]::Matches($appHubSource, 'AssertUsesTemporaryDatabase\(')).Count -ge 4) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
+    Assert-Contract ($appHubSource.Contains('.AssertOwns(', [StringComparison]::Ordinal)) 'The NERV-822 guard that refuses to initialize outside the owned database must stay.'
+    Assert-Contract (([regex]::Matches($appHubSource, '\.AssertOwns\(')).Count -ge 3) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
     # runner 归属的成员反过来不许自建内层库；两种归属的断言互斥，避免"改了归属就没人管"。
     foreach ($runnerOwnedMemberId in @($script:GovernedPostgresMemberIds | Where-Object { -not [string]::Equals($_, 'apphub-postgres-profile', [StringComparison]::Ordinal) })) {
         $runnerOwnedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerOwnedMemberId -RepositoryRoot $repoRoot
