@@ -1,17 +1,21 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProductionFactAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(IndustrialTelemetryPostgresLaneDatabase.CollectionName)]
 public sealed class IndustrialTelemetryOeePostgresQueryTests
 {
     [RealPostgresFact]
     public async Task Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await IndustrialTelemetryPostgresTestDatabase.CreateAsync(connectionString);
-        await using var dbContext = database.CreateContext();
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
         dbContext.OeeProductionFacts.AddRange(
             Fact("PRPT-OEE-PG-BEFORE", "2026-07-10T07:59:59Z"),
             Fact("PRPT-OEE-PG-IN", "2026-07-10T08:30:00Z"),
@@ -31,6 +35,16 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
         Assert.Equal(10m, result.GoodQuantity);
     }
 
+    private static ApplicationDbContext CreateLaneDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
     private static OeeProductionFact Fact(string reportNo, string reportedAtUtc) =>
         OeeProductionFact.Project(
             "org-001",
@@ -44,4 +58,28 @@ public sealed class IndustrialTelemetryOeePostgresQueryTests
             "PCS",
             10m,
             DateTimeOffset.Parse(reportedAtUtc));
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
 }

@@ -644,10 +644,10 @@ jobs:
 
   postgres-provider-tests:
     name: PostgreSQL Provider Tests
-    # NERV-688 拆解③第三批：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
-    # + FileStorage + Maintenance。层级 A；显式 step 预算合计 69m，
-    # 小于 76m job 预算，为 service setup 和 action post steps 保留 7m。
-    timeout-minutes: 76
+    # NERV-688 拆解③第四批：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
+    # + FileStorage + Maintenance + IndustrialTelemetry。层级 A；显式 step 预算合计 74m，
+    # 小于 81m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 81
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
@@ -707,11 +707,11 @@ jobs:
           Write-Host "tested-sha=$testedSha"
 
       - name: Run governed PostgreSQL profile members
-        timeout-minutes: 30
+        timeout-minutes: 35
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'maintenance-device-pause-postgres')
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'maintenance-device-pause-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
             -MemberId $members `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `

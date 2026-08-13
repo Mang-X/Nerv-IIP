@@ -14,9 +14,11 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Primitives;
+using Npgsql;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(IndustrialTelemetryPostgresLaneDatabase.CollectionName)]
 public sealed class IndustrialTelemetryHistorianTests
 {
     [Fact]
@@ -177,10 +179,10 @@ public sealed class IndustrialTelemetryHistorianTests
     [RealPostgresFact]
     public async Task Postgres_downsampling_executes_pending_window_antijoin_queries()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        await using var database = await IndustrialTelemetryPostgresTestDatabase.CreateAsync(postgresConnectionString);
-        await using var dbContext = database.CreateContext();
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
         dbContext.TelemetryRawSamples.AddRange(
             Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "pg-old-raw-001"),
             Raw("DEV-CNC-01", "temperature", "2026-07-02T08:00:00Z", "2026-07-02T08:01:00Z", 1, 40m, 40m, 40m, 40m, 40m, "pg-new-raw-001"));
@@ -189,10 +191,10 @@ public sealed class IndustrialTelemetryHistorianTests
             Rollup(TelemetryRollupGrain.Daily, "2026-07-01T00:00:00Z", "2026-07-02T00:00:00Z", "historian:daily:DEV-CNC-01:temperature:1782691200000"));
         await dbContext.SaveChangesAsync();
 
-        var indexes = await database.LoadIndustrialTelemetryIndexNamesAsync();
+        var indexes = await LoadIndustrialTelemetryIndexNamesAsync();
         Assert.Contains("IX_telemetry_raw_samples_hourly_window", indexes);
         Assert.Contains("IX_telemetry_rollups_daily_window", indexes);
-        var rawPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+        var rawPendingWindowPlan = await ExplainWithSeqScanDisabledAsync("""
             SELECT raw.organization_id, raw.environment_id, raw.device_asset_id, raw.tag_key, raw.hourly_window_start_utc
             FROM industrial_telemetry.telemetry_raw_samples AS raw
             WHERE raw.organization_id = 'org-001'
@@ -212,7 +214,7 @@ public sealed class IndustrialTelemetryHistorianTests
             LIMIT 1
             """);
         Assert.Contains(rawPendingWindowPlan, line => line.Contains("IX_telemetry_raw_samples_hourly_window", StringComparison.Ordinal));
-        var dailyPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+        var dailyPendingWindowPlan = await ExplainWithSeqScanDisabledAsync("""
             SELECT hourly.organization_id, hourly.environment_id, hourly.device_asset_id, hourly.tag_key, hourly.daily_window_start_utc
             FROM industrial_telemetry.telemetry_rollups AS hourly
             WHERE hourly.organization_id = 'org-001'
@@ -578,6 +580,59 @@ public sealed class IndustrialTelemetryHistorianTests
             .UseInMemoryDatabase(databaseName)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ApplicationDbContext CreateLaneDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static async Task<string[]> LoadIndustrialTelemetryIndexNamesAsync()
+    {
+        await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT indexname
+            FROM pg_indexes
+            WHERE schemaname = 'industrial_telemetry'
+            ORDER BY indexname;
+            """;
+        var names = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names.ToArray();
+    }
+
+    private static async Task<string[]> ExplainWithSeqScanDisabledAsync(string sql)
+    {
+        await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using (var disableSeqScan = connection.CreateCommand())
+        {
+            disableSeqScan.CommandText = "SET enable_seqscan = off";
+            await disableSeqScan.ExecuteNonQueryAsync();
+        }
+
+        await using var explain = connection.CreateCommand();
+        explain.CommandText = "EXPLAIN (COSTS OFF) " + sql;
+        var plan = new List<string>();
+        await using var reader = await explain.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            plan.Add(reader.GetString(0));
+        }
+
+        return plan.ToArray();
     }
 
     private static ValueTask<(bool RollupExists, bool RawOldExists)> WaitForHistorianStateAsync(
