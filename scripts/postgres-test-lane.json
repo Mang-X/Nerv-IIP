@@ -182,6 +182,30 @@
       ]
     },
     {
+      "id": "wms-postgres-profile",
+      "service": "Wms",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_different_payload_becomes_idempotency_conflict_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema|FullyQualifiedName~Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent",
+      "databasePrefix": "nerv_iip_wms",
+      "diagnosticSchemas": [
+        "wms"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_different_payload_becomes_idempotency_conflict_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests.Concurrent_same_payload_replays_the_winning_receipt_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Complete_and_fail_callbacks_are_serialized_by_the_shared_warehouse_task_lock",
+        "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsQualityInspectionGateConsumerTests.Quality_events_persist_gate_and_putaway_outcome_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent"
+      ]
+    },
+    {
       "id": "maintenance-device-pause-postgres",
       "service": "Maintenance",
       "tier": "core",
