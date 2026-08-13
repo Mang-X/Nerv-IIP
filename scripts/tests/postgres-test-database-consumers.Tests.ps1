@@ -14,7 +14,8 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $policyPath = Join-Path $repoRoot 'scripts/postgres-test-database-consumers.json'
-$allowedStrategies = @('best-effort-dispose', 'encapsulated-explicit-drop', 'explicit-drop-finally', 'factory-forwarder', 'helper-self-test')
+. (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
+$allowedStrategies = Get-NervStringSet -Values @('best-effort-dispose', 'encapsulated-explicit-drop', 'explicit-drop-finally', 'factory-forwarder', 'helper-self-test') -Comparer ([StringComparer]::Ordinal)
 $requiredOwnerships = @(
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 3 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'encapsulated-explicit-drop'; factoryCallCount = 1 },
@@ -33,19 +34,25 @@ function Test-OrdinalSequenceEqual([string[]]$Left, [string[]]$Right) {
     }
     return $true
 }
+function Test-OrdinalMember([string[]]$Values, [string]$Expected) {
+    foreach ($value in @($Values)) {
+        if ([string]::Equals($value, $Expected, [StringComparison]::Ordinal)) { return $true }
+    }
+    return $false
+}
 function Get-NormalizedSha256([string]$Source) {
     $normalized = $Source.Replace("`r`n", "`n", [StringComparison]::Ordinal)
     return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.UTF8Encoding]::new($false).GetBytes($normalized))).ToLowerInvariant()
 }
 
 function Initialize-CSharpFactoryAnalyzer {
-    $codeAnalysis = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Microsoft.CodeAnalysis' } | Select-Object -First 1
-    $csharp = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Microsoft.CodeAnalysis.CSharp' } | Select-Object -First 1
+    $codeAnalysis = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { [string]::Equals($_.GetName().Name, 'Microsoft.CodeAnalysis', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $csharp = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { [string]::Equals($_.GetName().Name, 'Microsoft.CodeAnalysis.CSharp', [StringComparison]::Ordinal) } | Select-Object -First 1
     Assert-Contract ($null -ne $codeAnalysis -and $null -ne $csharp) 'PowerShell must load its bundled Roslyn assemblies for syntax-aware consumer discovery.'
     $references = [Collections.Generic.List[string]]::new()
     foreach ($reference in ([string] [AppContext]::GetData('TRUSTED_PLATFORM_ASSEMBLIES')).Split([IO.Path]::PathSeparator)) { $references.Add($reference) }
     $references.Add($codeAnalysis.Location); $references.Add($csharp.Location)
-    Add-Type -IgnoreWarnings -CompilerOptions '/nowarn:1701' -ReferencedAssemblies ([string[]] @($references | Select-Object -Unique)) -TypeDefinition @'
+    Add-Type -IgnoreWarnings -CompilerOptions '/nowarn:1701' -ReferencedAssemblies ([string[]] @(Get-NervStringsSorted -Values @($references) -Comparer ([StringComparer]::Ordinal) -Unique)) -TypeDefinition @'
 using System;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -114,7 +121,7 @@ function Assert-ConsumerPolicy([object]$Policy, [Collections.Generic.Dictionary[
     Assert-Contract ($Policy.schemaVersion -eq 1) 'The consumer policy must use schemaVersion 1.'
     $consumers = @($Policy.consumers)
     $registeredPaths = [string[]] @($consumers | ForEach-Object { [string] $_.sourcePath })
-    Assert-Contract (($registeredPaths | Select-Object -Unique).Count -eq $registeredPaths.Count) 'Consumer source paths must be unique.'
+    Assert-Contract ((Get-NervStringsSorted -Values $registeredPaths -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $registeredPaths.Count) 'Consumer source paths must be unique.'
     Assert-Contract (Test-OrdinalSequenceEqual $registeredPaths (Get-SortedOrdinal $registeredPaths)) 'Consumer source paths must use stable ordinal ordering.'
     Assert-Contract (Test-OrdinalSequenceEqual $registeredPaths (Get-SortedOrdinal ([string[]] @($Sources.Keys)))) 'Every shared-factory source must appear exactly once in the ownership ledger.'
     foreach ($consumer in $consumers) {
@@ -125,7 +132,7 @@ function Assert-ConsumerPolicy([object]$Policy, [Collections.Generic.Dictionary[
         Assert-Contract ($consumer.factoryCallCount -eq $snapshot.FactoryCallCount) "Consumer '$path' factory count drifted: expected=$($consumer.factoryCallCount); actual=$($snapshot.FactoryCallCount)."
         $classified = 0
         foreach ($ownership in @($consumer.ownerships)) {
-            Assert-Contract ($allowedStrategies -contains [string] $ownership.strategy) "Consumer '$path' uses unsupported strategy '$($ownership.strategy)'."
+            Assert-Contract ($allowedStrategies.Contains([string] $ownership.strategy)) "Consumer '$path' uses unsupported strategy '$($ownership.strategy)'."
             Assert-Contract ($ownership.factoryCallCount -is [long] -and $ownership.factoryCallCount -gt 0) "Consumer '$path' ownership count must be a positive integer."
             Assert-Contract (-not [string]::IsNullOrWhiteSpace([string] $ownership.reason)) "Consumer '$path' ownership must explain its governance rationale."
             $classified += $ownership.factoryCallCount
@@ -133,8 +140,8 @@ function Assert-ConsumerPolicy([object]$Policy, [Collections.Generic.Dictionary[
         Assert-Contract ($classified -eq $consumer.factoryCallCount) "Consumer '$path' classified count does not match its source total."
     }
     foreach ($required in $requiredOwnerships) {
-        $consumer = @($consumers | Where-Object { $_.sourcePath -eq $required.sourcePath })
-        $ownership = @($consumer.ownerships | Where-Object { $_.strategy -eq $required.strategy -and $_.factoryCallCount -eq $required.factoryCallCount })
+        $consumer = @($consumers | Where-Object { [string]::Equals([string] $_.sourcePath, [string] $required.sourcePath, [StringComparison]::Ordinal) })
+        $ownership = @($consumer.ownerships | Where-Object { [string]::Equals([string] $_.strategy, [string] $required.strategy, [StringComparison]::Ordinal) -and $_.factoryCallCount -eq $required.factoryCallCount })
         Assert-Contract ($consumer.Count -eq 1 -and $ownership.Count -eq 1) "Consumer '$($required.sourcePath)' must retain required ownership '$($required.strategy)' for $($required.factoryCallCount) call(s)."
     }
 }
@@ -152,14 +159,14 @@ Assert-ConsumerPolicy $policy $sources
 
 $missing = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; $missing.consumers = @($missing.consumers | Select-Object -Skip 1)
 $rejected = $false; try { Assert-ConsumerPolicy $missing $sources } catch { $rejected = $_.Exception.Message.Contains('exactly once', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Deleting a ledger entry must fail closed.'
-$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { $_.sourcePath -like '*ProductEngineering*' })[0].ownerships[0]).strategy = 'best-effort-dispose'
+$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { ([string] $_.sourcePath).Contains('ProductEngineering', [StringComparison]::Ordinal) })[0].ownerships[0]).strategy = 'best-effort-dispose'
 $rejected = $false; try { Assert-ConsumerPolicy $downgraded $sources } catch { $rejected = $_.Exception.Message.Contains('required ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Downgrading required explicit ownership must fail closed.'
 $targetPath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'
 $mutatedSource = ([string] $sources[$targetPath].Source).Replace('await database.DropAsync();', 'if (DateTime.UtcNow.Ticks < 0) await database.DropAsync();', [StringComparison]::Ordinal)
 $rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $mutatedSource) } catch { $rejected = $_.Exception.Message.Contains('source hash drifted', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Any governed source mutation must fail closed before syntax tricks can preserve a stale classification.'
 $aliasProbe = 'using Pg = Nerv.IIP.Testing.PostgreSql.PostgreSqlTestDatabase; class Probe { Task Run(string value) => Pg.CreateAsync(value, "probe"); }'
-Assert-Contract ([PostgreSqlFactorySyntaxAnalyzer]::Analyze($aliasProbe).UnsupportedForms -contains 'alias') 'Alias-based factory spelling must be rejected as ambiguous governance input.'
+Assert-Contract (Test-OrdinalMember -Values ([string[]] @([PostgreSqlFactorySyntaxAnalyzer]::Analyze($aliasProbe).UnsupportedForms)) -Expected 'alias') 'Alias-based factory spelling must be rejected as ambiguous governance input.'
 $methodGroupProbe = 'class Probe { async Task Run(string value) { var create = PostgreSqlTestDatabase.CreateAsync; await create(value, "probe"); } }'
-Assert-Contract ([PostgreSqlFactorySyntaxAnalyzer]::Analyze($methodGroupProbe).UnsupportedForms -contains 'method-group') 'Factory method-group indirection must be rejected as ambiguous governance input.'
+Assert-Contract (Test-OrdinalMember -Values ([string[]] @([PostgreSqlFactorySyntaxAnalyzer]::Analyze($methodGroupProbe).UnsupportedForms)) -Expected 'method-group') 'Factory method-group indirection must be rejected as ambiguous governance input.'
 
 Write-Output "PostgreSQL test database consumer contract tests passed: sources=$($sources.Count)."
