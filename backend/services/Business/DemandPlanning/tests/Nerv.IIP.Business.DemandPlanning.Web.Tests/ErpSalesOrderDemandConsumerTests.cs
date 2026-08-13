@@ -201,35 +201,42 @@ public sealed class ErpSalesOrderDemandConsumerTests
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
             "nerv_dp_sales_order");
-        await using var provider = CreatePostgresProvider(database.ConnectionString);
-        using (var scope = provider.CreateScope())
+        try
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await dbContext.Database.MigrateAsync();
-            var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
-            var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
-            var changedHandler = new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
-            var cancelledHandler = new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+            await using var provider = CreatePostgresProvider(database.ConnectionString);
+            using (var scope = provider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await dbContext.Database.MigrateAsync();
+                var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+                var releasedHandler = new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+                var changedHandler = new SalesOrderChangedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
+                var cancelledHandler = new SalesOrderCancelledIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters);
 
-            var released = Released(1, 2m, "10");
-            await releasedHandler.HandleAsync(released, CancellationToken.None);
-            await releasedHandler.HandleAsync(released with { EventId = "evt-redelivery" }, CancellationToken.None);
-            await changedHandler.HandleAsync(Changed(3, 5m, "10"), CancellationToken.None);
-            await changedHandler.HandleAsync(Changed(2, 4m, "10"), CancellationToken.None);
-            await cancelledHandler.HandleAsync(Cancelled(4), CancellationToken.None);
-            await changedHandler.HandleAsync(Changed(3, 9m, "10"), CancellationToken.None);
+                var released = Released(1, 2m, "10");
+                await releasedHandler.HandleAsync(released, CancellationToken.None);
+                await releasedHandler.HandleAsync(released with { EventId = "evt-redelivery" }, CancellationToken.None);
+                await changedHandler.HandleAsync(Changed(3, 5m, "10"), CancellationToken.None);
+                await changedHandler.HandleAsync(Changed(2, 4m, "10"), CancellationToken.None);
+                await cancelledHandler.HandleAsync(Cancelled(4), CancellationToken.None);
+                await changedHandler.HandleAsync(Changed(3, 9m, "10"), CancellationToken.None);
+            }
+
+            using (var scope = provider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
+                Assert.Equal("SO-DEMO-001", demand.SourceReference);
+                Assert.Equal(0m, demand.Quantity);
+                Assert.Equal(4, demand.SourceVersion);
+                Assert.Equal("cancelled", demand.SourceStatus);
+                Assert.Equal(4, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
+                Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+            }
         }
-
-        using (var scope = provider.CreateScope())
+        finally
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var demand = Assert.Single(await dbContext.DemandSources.AsNoTracking().ToArrayAsync());
-            Assert.Equal("SO-DEMO-001", demand.SourceReference);
-            Assert.Equal(0m, demand.Quantity);
-            Assert.Equal(4, demand.SourceVersion);
-            Assert.Equal("cancelled", demand.SourceStatus);
-            Assert.Equal(4, Assert.Single(await dbContext.SalesOrderDemandProjections.AsNoTracking().ToArrayAsync()).OrderVersion);
-            Assert.Equal(4, await dbContext.ProcessedIntegrationEvents.CountAsync());
+            await database.DropAsync();
         }
     }
 
@@ -239,30 +246,37 @@ public sealed class ErpSalesOrderDemandConsumerTests
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
             "nerv_dp_sales_order");
-        await using var provider = CreatePostgresProvider(database.ConnectionString);
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var migrator = dbContext.Database.GetService<IMigrator>();
-        await migrator.MigrateAsync("20260706070015_AddForecastInputsAndMrpExceptions");
-        await dbContext.Database.ExecuteSqlRawAsync(
-            """
-            INSERT INTO demand_planning.demand_sources
-              (id, organization_id, environment_id, demand_type, source_reference, sku_code, uom_code, site_code, quantity, due_date, created_at_utc, updated_at_utc)
-            VALUES
-              ('01900000-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001', 'SKU-A', 'EA', 'SITE-001', 1, DATE '2026-08-15', NOW(), NOW()),
-              ('01900000-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'sales-order', 'SO-LEGACY-001', 'SKU-B', 'EA', 'SITE-001', 2, DATE '2026-08-16', NOW(), NOW()),
-              ('01900000-0000-7000-8000-000000000003', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001:legacy-so:01900000000070008000000000000002', 'SKU-C', 'EA', 'SITE-001', 3, DATE '2026-08-17', NOW(), NOW());
-            """);
+        try
+        {
+            await using var provider = CreatePostgresProvider(database.ConnectionString);
+            using var scope = provider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var migrator = dbContext.Database.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260706070015_AddForecastInputsAndMrpExceptions");
+            await dbContext.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO demand_planning.demand_sources
+                  (id, organization_id, environment_id, demand_type, source_reference, sku_code, uom_code, site_code, quantity, due_date, created_at_utc, updated_at_utc)
+                VALUES
+                  ('01900000-0000-7000-8000-000000000001', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001', 'SKU-A', 'EA', 'SITE-001', 1, DATE '2026-08-15', NOW(), NOW()),
+                  ('01900000-0000-7000-8000-000000000002', 'org-001', 'env-dev', 'sales-order', 'SO-LEGACY-001', 'SKU-B', 'EA', 'SITE-001', 2, DATE '2026-08-16', NOW(), NOW()),
+                  ('01900000-0000-7000-8000-000000000003', 'org-001', 'env-dev', 'manual', 'SO-LEGACY-001:legacy-so:01900000000070008000000000000002', 'SKU-C', 'EA', 'SITE-001', 3, DATE '2026-08-17', NOW(), NOW());
+                """);
 
-        await migrator.MigrateAsync();
+            await migrator.MigrateAsync();
 
-        var demands = await dbContext.DemandSources.AsNoTracking().OrderBy(x => x.SourceReference).ToArrayAsync();
-        Assert.Equal(3, demands.Length);
-        Assert.All(demands, demand => Assert.Equal("manual", demand.DemandType));
-        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001");
-        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002");
-        Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002:1");
-        Assert.Equal(3, demands.Select(demand => demand.SourceReference).Distinct(StringComparer.Ordinal).Count());
+            var demands = await dbContext.DemandSources.AsNoTracking().OrderBy(x => x.SourceReference).ToArrayAsync();
+            Assert.Equal(3, demands.Length);
+            Assert.All(demands, demand => Assert.Equal("manual", demand.DemandType));
+            Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001");
+            Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002");
+            Assert.Contains(demands, demand => demand.SourceReference == "SO-LEGACY-001:legacy-so:01900000000070008000000000000002:1");
+            Assert.Equal(3, demands.Select(demand => demand.SourceReference).Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            await database.DropAsync();
+        }
     }
 
     [DemandPlanningRealPostgresFact]
@@ -271,30 +285,37 @@ public sealed class ErpSalesOrderDemandConsumerTests
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
             "nerv_dp_sales_order");
-        await using (var provider = CreatePostgresProvider(database.ConnectionString))
-        using (var scope = provider.CreateScope())
+        try
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await dbContext.Database.MigrateAsync();
-            var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
-            await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
-                .HandleAsync(Released(1, 2m, "10"), CancellationToken.None);
+            await using (var provider = CreatePostgresProvider(database.ConnectionString))
+            using (var scope = provider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await dbContext.Database.MigrateAsync();
+                var deadLetters = new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext);
+                await new SalesOrderReleasedIntegrationEventHandlerForProjectDemandSource(dbContext, deadLetters)
+                    .HandleAsync(Released(1, 2m, "10"), CancellationToken.None);
+            }
+
+            for (var lowerVersion = 2; lowerVersion <= 20; lowerVersion += 2)
+            {
+                var higherVersion = lowerVersion + 1;
+                await Task.WhenAll(
+                    ProcessPostgresChangeAsync(database.ConnectionString, Changed(lowerVersion, lowerVersion, "10")),
+                    ProcessPostgresChangeAsync(database.ConnectionString, Changed(higherVersion, higherVersion, "10")));
+
+                await using var verificationProvider = CreatePostgresProvider(database.ConnectionString);
+                using var verificationScope = verificationProvider.CreateScope();
+                var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                Assert.Equal(higherVersion, (await verificationDb.SalesOrderDemandProjections.AsNoTracking().SingleAsync()).OrderVersion);
+                var demand = await verificationDb.DemandSources.AsNoTracking().SingleAsync();
+                Assert.Equal(higherVersion, demand.SourceVersion);
+                Assert.Equal(higherVersion, demand.Quantity);
+            }
         }
-
-        for (var lowerVersion = 2; lowerVersion <= 20; lowerVersion += 2)
+        finally
         {
-            var higherVersion = lowerVersion + 1;
-            await Task.WhenAll(
-                ProcessPostgresChangeAsync(database.ConnectionString, Changed(lowerVersion, lowerVersion, "10")),
-                ProcessPostgresChangeAsync(database.ConnectionString, Changed(higherVersion, higherVersion, "10")));
-
-            await using var verificationProvider = CreatePostgresProvider(database.ConnectionString);
-            using var verificationScope = verificationProvider.CreateScope();
-            var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            Assert.Equal(higherVersion, (await verificationDb.SalesOrderDemandProjections.AsNoTracking().SingleAsync()).OrderVersion);
-            var demand = await verificationDb.DemandSources.AsNoTracking().SingleAsync();
-            Assert.Equal(higherVersion, demand.SourceVersion);
-            Assert.Equal(higherVersion, demand.Quantity);
+            await database.DropAsync();
         }
     }
 
@@ -586,7 +607,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
         {
             if (ownedDatabase is not null)
             {
-                await ownedDatabase.DisposeAsync();
+                await ownedDatabase.DropAsync();
             }
         }
     }
