@@ -190,7 +190,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
     public async Task Quality_events_persist_gate_and_putaway_outcome_on_postgres()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "wms_quality_gate");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_wms_quality_gate");
 
         await using (var dbContext = CreatePostgresContext(database.ConnectionString))
         {

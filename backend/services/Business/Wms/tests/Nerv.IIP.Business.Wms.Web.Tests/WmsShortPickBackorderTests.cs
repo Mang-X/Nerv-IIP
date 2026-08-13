@@ -112,7 +112,7 @@ public sealed class WmsShortPickBackorderTests
     public async Task Short_pick_chain_is_durable_and_idempotent_on_postgres()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "wms_short_pick");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_wms_short_pick");
         Domain.AggregatesModel.BackorderOrderAggregate.BackorderOrderId backorderId;
 
         await using (var dbContext = CreatePostgresContext(database.ConnectionString))
