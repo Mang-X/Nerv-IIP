@@ -16,6 +16,7 @@ using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.AppHub.Web.Application.Queries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
+using Nerv.IIP.Testing.PostgreSql;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DependencyInjection;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
@@ -27,8 +28,9 @@ public sealed class AppHubPostgresProfileTests
     [AppHubRealPostgresFact]
     public async Task Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_apphub_profile");
         var barrier = new ConcurrentCollectionHealthInsertBarrier();
         var domainEvents = new SnapshotDomainEventRecorder();
         var services = new ServiceCollection();
@@ -48,6 +50,9 @@ public sealed class AppHubPostgresProfileTests
         await using var provider = services.BuildServiceProvider();
         using (var migrationScope = provider.CreateScope())
         {
+            AssertUsesTemporaryDatabase(
+                migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                database);
             await migrationScope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>().MigrateAsync();
             var mediator = migrationScope.ServiceProvider.GetRequiredService<IMediator>();
             await mediator.Send(new RegisterApplicationCommand(AppHubPostgresSamples.Registration("pg-concurrent-health")));
@@ -81,6 +86,10 @@ public sealed class AppHubPostgresProfileTests
             return;
         }
 
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            connectionString,
+            "nerv_apphub_profile");
+
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
         services.AddMediatR(configuration =>
@@ -88,7 +97,7 @@ public sealed class AppHubPostgresProfileTests
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
             configuration.AddUnitOfWorkBehaviors();
         });
-        AddPostgreSqlAppHubPersistence(services, connectionString);
+        AddPostgreSqlAppHubPersistence(services, database.ConnectionString);
         services.AddIntegrationEvents(typeof(Program));
         services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<AppHubDatabaseMigrationRunner>();
@@ -97,7 +106,7 @@ public sealed class AppHubPostgresProfileTests
 
         using var scope = provider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await db.Database.EnsureDeletedAsync();
+        AssertUsesTemporaryDatabase(db, database);
         var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
         await migrationRunner.MigrateAsync();
         await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
@@ -126,6 +135,10 @@ public sealed class AppHubPostgresProfileTests
             return;
         }
 
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            connectionString,
+            "nerv_apphub_profile");
+
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole());
         services.AddMediatR(configuration =>
@@ -133,7 +146,7 @@ public sealed class AppHubPostgresProfileTests
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
             configuration.AddUnitOfWorkBehaviors();
         });
-        AddPostgreSqlAppHubPersistence(services, connectionString);
+        AddPostgreSqlAppHubPersistence(services, database.ConnectionString);
         services.AddIntegrationEvents(typeof(Program));
         services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<AppHubDatabaseMigrationRunner>();
@@ -143,7 +156,7 @@ public sealed class AppHubPostgresProfileTests
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
             var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMigrationRunner>();
             await migrationRunner.MigrateAsync();
             await AssertMigrationsHistoryTableInSchemaAsync(db, "apphub");
@@ -292,6 +305,16 @@ public sealed class AppHubPostgresProfileTests
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
     }
 
+    private static void AssertUsesTemporaryDatabase(
+        ApplicationDbContext db,
+        PostgreSqlTestDatabase database)
+    {
+        var targetDatabase = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database;
+        Assert.True(
+            string.Equals(database.DatabaseName, targetDatabase, StringComparison.Ordinal),
+            $"Refusing to initialize a PostgreSQL profile outside its owned temporary database. expected={database.DatabaseName}; actual={targetDatabase}.");
+    }
+
     private sealed class ConcurrentCollectionHealthInsertBarrier : SaveChangesInterceptor
     {
         private readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -333,41 +356,6 @@ public sealed class AppHubPostgresProfileTests
         }
     }
 
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_apphub_health_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
 }
 
 internal sealed class AppHubRealPostgresFactAttribute : FactAttribute
