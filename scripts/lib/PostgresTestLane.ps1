@@ -34,6 +34,10 @@ function Import-NervPostgresTestLaneMember {
         #                成员数据库在失败时是空的，诊断能力受限。
         $ownerships = [Collections.Generic.HashSet[string]]::new([string[]]@('runner', 'test-owned'), [StringComparer]::Ordinal)
         if (-not $ownerships.Contains([string]$member.databaseOwnership)) { throw "PostgreSQL lane member '$id' must declare databaseOwnership as runner or test-owned." }
+        # deferred 成员必须写明为什么不接入：否则「登记」会退化成一个没人能复核的占位。
+        if ([string]::Equals([string]$member.status, 'deferred', [StringComparison]::Ordinal) -and [string]::IsNullOrWhiteSpace([string]$member.deferredReason)) {
+            throw "Deferred PostgreSQL lane member '$id' must record why it cannot join the lane."
+        }
         if ([string]$member.databasePrefix -cnotmatch '^[a-z][a-z0-9_]{0,39}$') { throw "PostgreSQL lane member '$id' has an invalid databasePrefix." }
         $diagnosticSchemas = @($member.diagnosticSchemas | ForEach-Object { [string]$_ })
         $diagnosticSchemaSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

@@ -278,6 +278,109 @@
       "expectedTestIdentities": [
         "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
       ]
+    },
+    {
+      "id": "testing-postgres-lifecycle",
+      "service": "TestingPostgreSql",
+      "tier": "core",
+      "status": "deferred",
+      "databaseOwnership": "test-owned",
+      "deferredReason": "被测对象就是 PostgreSqlTestDatabase 的建库/初始化失败回滚/删库生命周期本身：用例必须在成员数据库之外建库并以「删干净」为断言，与 lane「拥有并能证明数据库生命周期」的核心不变量按定义互斥。2026-08-13 栈审裁决否决为它新增弱语义成员形态；若 runner 将来落地「跑完断言 pg_database 无非成员 nerv% 残留」的全库扫描，再议。",
+      "project": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests",
+      "databasePrefix": "nerv_iip_testing_postgres",
+      "diagnosticSchemas": [
+        "public"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Initializer_failure_drops_database_and_redacts_diagnostics",
+        "Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed"
+      ]
+    },
+    {
+      "id": "inventory-directory-postgres",
+      "service": "Inventory",
+      "tier": "core",
+      "status": "deferred",
+      "databaseOwnership": "test-owned",
+      "deferredReason": "PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run 的被测对象是自管 Docker 夹具的端口分配与清理，与 lane 的生命周期不变量互斥。同类的 PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index 走 CreateExternalAsync，形态与现有 runner 成员一致、具备入 lane 条件，唯一障碍是与 Docker 用例共享类与 gating 属性；拆分由 #1561 承接。",
+      "project": "backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests",
+      "databasePrefix": "nerv_iip_inventory_directory",
+      "diagnosticSchemas": [
+        "inventory"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_executes_scoped_directories_and_uses_tenant_site_sku_index",
+        "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests.PostgreSql_fixture_allocates_parallel_run_scoped_ports_and_cleans_each_run"
+      ]
+    }
+  ],
+  "scaleSeedExemptions": [
+    {
+      "identity": "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_sales_orders_within_the_startup_budget",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Scaled_down_history_seed_produces_a_tenth_of_the_volume",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests.Full_scale_maintenance_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests.World_bible_seed_persists_the_full_l0_master_data_within_the_startup_budget",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_work_orders_within_the_startup_budget",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests.World_bible_seed_publishes_all_engineering_versions_within_the_startup_budget",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
+    },
+    {
+      "identity": "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
+      "owner": "NERV-677",
+      "reason": "全规模种子分层到 nightly，由 NERV-677 管理其执行与预算，不进 hosted postgres lane。"
     }
   ]
 }
