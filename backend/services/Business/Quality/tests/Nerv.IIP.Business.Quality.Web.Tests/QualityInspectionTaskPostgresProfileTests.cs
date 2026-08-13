@@ -14,21 +14,24 @@ using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class QualityInspectionTaskPostgresProfileTests
 {
     [QualityPostgresFact]
     public async Task Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected()
     {
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Postgres_second_claim_is_unprocessable_and_stale_concurrent_claim_is_rejected));
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
+            .UseNpgsql(
+                QualityPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", QualityFacts.Schema))
             .Options;
         InspectionTaskId firstTaskId;
         InspectionTaskId concurrentTaskId;
 
         await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
         {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync();
             var first = NewTask(ActivePlan().Id, "RCV-CLAIM-ONE", "LINE-001", "SKU-RM-1000", "pg:claim:one");
             var concurrent = NewTask(ActivePlan().Id, "RCV-CLAIM-TWO", "LINE-001", "SKU-RM-1000", "pg:claim:two");
@@ -72,14 +75,16 @@ public sealed class QualityInspectionTaskPostgresProfileTests
     [QualityPostgresFact]
     public async Task Assignment_scope_migration_backfills_existing_task_version_to_one()
     {
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Assignment_scope_migration_backfills_existing_task_version_to_one));
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
+            .UseNpgsql(
+                QualityPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", QualityFacts.Schema))
             .Options;
         var taskId = Guid.CreateVersion7();
 
         await using var db = new ApplicationDbContext(options, new NoopMediator());
+        QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         var migrator = db.GetService<IMigrator>();
         await migrator.MigrateAsync("20260724073658_AddQualityReinspectionHistory");
         await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -107,15 +112,17 @@ public sealed class QualityInspectionTaskPostgresProfileTests
     [QualityPostgresFact]
     public async Task Postgres_persists_assignment_claim_and_audit_receipts()
     {
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Postgres_persists_assignment_claim_and_audit_receipts));
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
+            .UseNpgsql(
+                QualityPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", QualityFacts.Schema))
             .Options;
         var taskId = default(InspectionTaskId);
 
         await using (var db = new ApplicationDbContext(options, new NoopMediator()))
         {
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
             var task = NewTask(
                 ActivePlan().Id,
@@ -201,9 +208,8 @@ public sealed class QualityInspectionTaskPostgresProfileTests
     [QualityPostgresFact]
     public async Task Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict()
     {
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Postgres_duplicate_retry_persists_non_conflicting_tasks_after_unique_conflict));
-        var connectionString = database.ConnectionString;
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var connectionString = QualityPostgresLaneDatabase.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddQualityPostgreSqlPersistence(connectionString);
@@ -214,7 +220,7 @@ public sealed class QualityInspectionTaskPostgresProfileTests
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await DropQualitySchemaAsync(db);
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
 
             var plan = ActivePlan();
@@ -289,14 +295,6 @@ public sealed class QualityInspectionTaskPostgresProfileTests
             DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
             DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
             triggerIdempotencyKey);
-    }
-
-    private static async Task DropQualitySchemaAsync(ApplicationDbContext db)
-    {
-        await db.Database.OpenConnectionAsync();
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"DROP SCHEMA IF EXISTS \"{QualityFacts.Schema}\" CASCADE";
-        await command.ExecuteNonQueryAsync();
     }
 
     private sealed class NoopMediator : IMediator

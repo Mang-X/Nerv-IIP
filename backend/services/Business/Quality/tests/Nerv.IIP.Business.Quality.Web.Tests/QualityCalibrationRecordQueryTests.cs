@@ -32,6 +32,7 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 /// 在返回后回到 ephemeral 池，仍存在被同机其他进程抢占的窗口（详见该方法的 XML doc 与 #1477）。
 /// 下面的分类断言正是这一前提的守卫 —— 前提一旦被破坏，是断言失败而不是静默改变语义。
 /// </summary>
+[Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class QualityCalibrationRecordQueryTests
 {
     private const string OrganizationId = "org-001";
@@ -79,9 +80,8 @@ public sealed class QualityCalibrationRecordQueryTests
     public async Task Calibration_records_are_filtered_ordered_and_scoped_on_postgres()
     {
         var anchor = new DateTimeOffset(2026, 7, 27, 0, 0, 0, TimeSpan.Zero);
-        await using var database = await QualityPostgresTestDatabase.CreateAsync(
-            nameof(Calibration_records_are_filtered_ordered_and_scoped_on_postgres));
-        var connectionString = database.ConnectionString;
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var connectionString = QualityPostgresLaneDatabase.ConnectionString;
 
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
@@ -89,6 +89,7 @@ public sealed class QualityCalibrationRecordQueryTests
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
 
         // 用一次性编码前缀把本用例的数据与库里既有种子隔开。

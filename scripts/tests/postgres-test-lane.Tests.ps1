@@ -33,6 +33,7 @@ $script:GovernedPostgresMemberIds = @(
     'barcodelabel-postgres-profile',
     'filestorage-postgres-profile',
     'industrialtelemetry-postgres-profile',
+    'quality-postgres-profile',
     'maintenance-device-pause-postgres'
 )
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
@@ -239,10 +240,33 @@ try {
         }
         if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
     }
+    # Quality 同理：五个类共 21 条用例，只有 8 条是真实 PostgreSQL 证明。
+    $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 8) 'The Quality member must freeze exactly its eight governed PostgreSQL identities.'
+    Assert-Contract (@($qualityMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$qualityMember.diagnosticSchemas[0], 'quality', [StringComparison]::Ordinal)) 'Quality business and CAP tables share one schema, which the member must declare.'
+    foreach ($qualitySource in @(
+            'QualityCalibrationRecordQueryTests.cs',
+            'QualityCapaRedrivePostgresProfileTests.cs',
+            'QualityInspectionTaskPostgresProfileTests.cs',
+            'QualityReinspectionPostgresProfileTests.cs',
+            'QualitySpcAnalysisTests.cs')) {
+        $qualitySourcePath = Join-Path $repoRoot "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/$qualitySource"
+        Assert-Contract (Test-Path -LiteralPath $qualitySourcePath -PathType Leaf) "Quality lane source '$qualitySource' must exist."
+        Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'QualityPostgresTestDatabase.CreateAsync'
+        Assert-LaneOwnedDatabase -SourcePath $qualitySourcePath -InnerDatabaseFactory 'TemporaryPostgresDatabase.CreateAsync'
+    }
+    # 三个直接 new DbContextOptionsBuilder 的 Quality 类必须把迁移历史表钉在 quality schema：
+    # 默认落 public 时 ResetSchemaAsync 删不掉它，下一条用例的 MigrateAsync 会以为迁移已应用而静默不建表。
+    $inspectionTaskSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionTaskPostgresProfileTests.cs'))
+    $historyOverrides = ([regex]::Matches($inspectionTaskSource, 'MigrationsHistoryTable\("__EFMigrationsHistory", QualityFacts\.Schema\)')).Count
+    $rawNpgsqlBuilders = ([regex]::Matches($inspectionTaskSource, 'UseNpgsql\(')).Count
+    Assert-Contract ($historyOverrides -eq $rawNpgsqlBuilders -and $historyOverrides -gt 0) 'Every raw Quality DbContext option builder must pin __EFMigrationsHistory to the quality schema.'
+
     $telemetryMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'industrialtelemetry-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($telemetryMember.expectedTestIdentities).Count -eq 7) 'The IndustrialTelemetry member must freeze exactly its seven governed PostgreSQL identities.'
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
+    Assert-MethodScopedFilter -Member $qualityMember
     $classScopedMember = [pscustomobject]@{
         id = 'industrialtelemetry-postgres-profile'
         filter = 'FullyQualifiedName~Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryIdempotentConcurrencyTests'
