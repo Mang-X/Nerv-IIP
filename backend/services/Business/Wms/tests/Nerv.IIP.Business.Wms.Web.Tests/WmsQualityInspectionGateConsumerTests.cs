@@ -8,7 +8,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -190,7 +190,7 @@ public sealed class WmsQualityInspectionGateConsumerTests
     public async Task Quality_events_persist_gate_and_putaway_outcome_on_postgres()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "wms_quality_gate");
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "nerv_wms_quality_gate");
 
         await using (var dbContext = CreatePostgresContext(database.ConnectionString))
         {
@@ -336,57 +336,6 @@ public sealed class WmsQualityInspectionGateConsumerTests
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "wms"))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
-    }
-
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-            };
-            var databaseName = $"nerv_iip_{prefix}_{Guid.CreateVersion7():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", databaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
-        }
     }
 
     private sealed class WmsRealPostgresFactAttribute : FactAttribute
