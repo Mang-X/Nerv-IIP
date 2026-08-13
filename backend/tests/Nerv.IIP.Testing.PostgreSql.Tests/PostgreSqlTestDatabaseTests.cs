@@ -405,6 +405,43 @@ public sealed class PostgreSqlTestDatabaseTests
         Assert.Empty(await FindDatabasesAsync(baseConnectionString, [createdDatabaseName]));
     }
 
+    [Fact]
+    public async Task AssertOwns_accepts_only_the_owned_database_and_redacts_failures()
+    {
+        const string username = "ownership-user";
+        const string password = "ownership-password";
+        var database = await PostgreSqlTestDatabase.CreateAsync(
+            $"Host=localhost;Database=postgres;Username={username};Password={password}",
+            "nerv_ownership",
+            initializeAsync: null,
+            executeAdminCommandAsync: (_, _, onConnectionOpened, _) =>
+            {
+                onConnectionOpened();
+                return Task.CompletedTask;
+            },
+            cancellationToken: CancellationToken.None);
+
+        database.AssertOwns(database.ConnectionString);
+
+        foreach (var databaseName in new[] { "postgres", "nerv_iip_iam" })
+        {
+            var foreignConnectionString = new NpgsqlConnectionStringBuilder(database.ConnectionString)
+            {
+                Database = databaseName
+            }.ConnectionString;
+            var exception = Assert.Throws<InvalidOperationException>(() => database.AssertOwns(foreignConnectionString));
+            Assert.Contains("does not target the owned PostgreSQL test database", exception.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain(username, exception.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(password, exception.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(foreignConnectionString, exception.ToString(), StringComparison.Ordinal);
+        }
+
+        var parseException = Assert.Throws<InvalidOperationException>(() =>
+            database.AssertOwns($"Host=localhost;Password={password};InvalidKeyword=value"));
+        Assert.Contains("operation=assert-ownership", parseException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(password, parseException.ToString(), StringComparison.Ordinal);
+    }
+
     private static async Task InitializeMarkerAsync(string connectionString, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(connectionString);

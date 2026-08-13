@@ -54,6 +54,41 @@
    build、Compose publish 验证和 smoke 启动，不得切换主版本。若 Redis 报告 RDB/AOF 格式错误，停止
    Aspire 后只移除本地 `nerv-iip-redis` cache 卷。
 
+### 并行 worktree 共用真实依赖
+
+普通开发只允许一个非 ephemeral AppHost 持有共享基础设施：从主 checkout 运行 `./nerv.ps1 dev`，
+PostgreSQL 18 与 Redis 8 分别固定暴露在 `127.0.0.1:15432`、`127.0.0.1:6379`。其他 worktree
+只作为测试客户端连接这两个 endpoint，不再各自启动 `./nerv.ps1 dev`；`fullstack run/start` 仍是一次性
+隔离会话并使用动态端口和 session 专属卷，不能把其 endpoint 写入长期 profile。若固定端口已被占用，先用
+`./nerv.ps1 status` 与 Docker 资源列表确认所有者，不得另起第二套共享 AppHost 或随意终止未知容器。
+
+真实依赖测试沿用 CI 同名入口变量。PostgreSQL 变量是能够 `CREATE DATABASE` / `DROP DATABASE` 的
+管理员基础连接串，必须指向 `postgres` 管理库；Redis 变量使用 StackExchange.Redis endpoint 格式。
+密码来自本机 AppHost user-secrets，下面的占位符必须在本机替换，绝不得提交到仓库：
+
+```bash
+export NERV_IIP_TEST_POSTGRES='Host=127.0.0.1;Port=15432;Database=postgres;Username=postgres;Password=<本机 Parameters:postgres-password>'
+export NERV_IIP_TEST_REDIS='127.0.0.1:6379,password=<本机 Parameters:redis-password>,abortConnect=false'
+```
+
+需要长期复用时，建议把这两行放进权限为 `0600`、不在仓库内的本机环境文件，再由 shell profile
+`source`；不要把明文凭据散落到各 worktree。测试使用 `PostgreSqlTestDatabase` 为每个用例创建
+`nerv_*_<UUIDv7>` 临时库，并在 factory 构建、AutoMigrate 或 seed 前验证连接目标属于该用例。
+
+测试运行期间不得执行 `./nerv.ps1 stop` 或 `./nerv.ps1 stop -All`。停止共享 AppHost 会中断连接并可能
+留下临时库；普通 dev 的 `nerv-iip-postgres-18` 与 `nerv-iip-redis` 都是持久卷，stop/restart 不会清空
+残留。崩溃或 Ctrl-C 后先预览至少存活 24 小时且没有活动连接的标准临时库，再显式清扫：
+
+```bash
+pwsh scripts/cleanup-stale-postgres-test-databases.ps1
+pwsh scripts/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
+```
+
+该入口需要 PowerShell 7、主机可用的 `psql` 和已设置的 `NERV_IIP_TEST_POSTGRES`。它只接受严格的
+`nerv_*_<UUIDv7>` 名称，以 UUIDv7 时间与最小存活时长共同筛选；删除前再次检查活动连接，使用普通
+`DROP DATABASE` 而非 `WITH (FORCE)`，并在删除后精确回读。业务库、非标准名称、未到年龄或有活动连接
+的数据库都不会删除。性能基线测试继续使用独占实例，禁止接入共享 AppHost，以免资源竞争污染测量。
+
 9. **Bootstrap seed 密码绝不硬编码。** 联网机器的 bootstrap 可以创建本地 Development user-secrets，
    但不得在源码中保留固定 IAM admin 密码。默认生成随机本地值，或要求操作者通过不记录日志的路径显式
    传入值。设置 secret 的命令必须将敏感参数标记为脚本日志脱敏对象。

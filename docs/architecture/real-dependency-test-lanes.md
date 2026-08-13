@@ -34,6 +34,15 @@
 - FullChain runner 可以为子进程派生既有 `NERV_IIP_TEST_<SERVICE>_POSTGRES` 与 probe 变量，但外部入口仍是上述基础变量，不再增加 CI 专用连接串契约。
 - 开发者本机可继续手工设置同名变量运行真实依赖测试；测试代码不得读取 `GITHUB_ACTIONS` 决定行为。CI 选中 lane 后若变量缺失或 readiness 失败，必须在测试发现前失败，不能退化为绿色 skip。
 
+本地并行开发由一个普通非 ephemeral AppHost 共享 PostgreSQL `127.0.0.1:15432` 与 Redis
+`127.0.0.1:6379`，其他 worktree 只设置上述基础变量并创建各自临时库/命名空间。PostgreSQL 基础变量
+必须指向 `postgres` 管理库，不能把固定业务库当作测试拥有或可删除目标；factory、AutoMigrate 或 seed
+启动前必须先验证连接目标是当前测试创建的临时库。普通 AppHost 使用持久卷，stop 不会清除崩溃残留，
+且测试期间 stop 会使其他会话失败。`scripts/cleanup-stale-postgres-test-databases.ps1` 默认只预览，只有
+严格 `nerv_*_<UUIDv7>` 名称、达到最小存活时长且无活动连接三项同时成立才允许显式 `-Apply` 删除；
+该回收不用 `WITH (FORCE)`，避免清扫器杀死竞态接入的活跃测试。具体配置与操作步骤见
+`docs/architecture/local-dev-troubleshooting.md`。性能基线仍使用独占实例，不复用该共享资源。
+
 失败时先保留脱敏的 PostgreSQL、Redis stream、consumer group pending（`XPENDING`）、CAP inbox/outbox/DLQ 与业务状态诊断，再由 `always()` 路径清理动态数据库、Redis 命名空间和子进程，并把清理结果写入证据；不得保存连接串、凭据、header 或业务正文。
 
 ## 执行与跳过证据
