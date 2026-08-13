@@ -15,6 +15,7 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
@@ -197,7 +198,9 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [DemandPlanningRealPostgresFact]
     public async Task PostgreSql_inbox_and_order_watermark_survive_duplicate_out_of_order_change_and_cancel()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_dp_sales_order");
         await using var provider = CreatePostgresProvider(database.ConnectionString);
         using (var scope = provider.CreateScope())
         {
@@ -233,7 +236,9 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [DemandPlanningRealPostgresFact]
     public async Task PostgreSql_upgrade_reclassifies_legacy_manual_and_sales_order_collision_without_losing_traceability()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_dp_sales_order");
         await using var provider = CreatePostgresProvider(database.ConnectionString);
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -263,7 +268,9 @@ public sealed class ErpSalesOrderDemandConsumerTests
     [DemandPlanningRealPostgresFact]
     public async Task PostgreSql_concurrent_versions_never_regress_order_watermark_or_demand()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
+            "nerv_dp_sales_order");
         await using (var provider = CreatePostgresProvider(database.ConnectionString))
         using (var scope = provider.CreateScope())
         {
@@ -542,34 +549,7 @@ public sealed class ErpSalesOrderDemandConsumerTests
             status,
             [new SalesOrderLineSnapshot(lineNo, "SKU-FG-A", quantity, "EA", new DateOnly(2026, 8, 15), false)]);
 
-    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_dp_sales_order_{Guid.NewGuid():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = "postgres" }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryDatabase(
-                adminConnectionString,
-                databaseName,
-                new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = databaseName }.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
-            await command.ExecuteNonQueryAsync();
-        }
-    }
-
-    private sealed class RedisCapTestDatabase(string connectionString, TemporaryDatabase? ownedDatabase) : IAsyncDisposable
+    private sealed class RedisCapTestDatabase(string connectionString, PostgreSqlTestDatabase? ownedDatabase) : IAsyncDisposable
     {
         public string ConnectionString { get; } = connectionString;
 
@@ -584,7 +564,9 @@ public sealed class ErpSalesOrderDemandConsumerTests
                 return new RedisCapTestDatabase(baseConnectionString, null);
             }
 
-            var temporaryDatabase = await TemporaryDatabase.CreateAsync(baseConnectionString);
+            var temporaryDatabase = await PostgreSqlTestDatabase.CreateAsync(
+                baseConnectionString,
+                "nerv_dp_sales_order");
             return new RedisCapTestDatabase(temporaryDatabase.ConnectionString, temporaryDatabase);
         }
 
