@@ -35,6 +35,7 @@ $script:GovernedPostgresMemberIds = @(
     'industrialtelemetry-postgres-profile',
     'quality-postgres-profile',
     'mes-postgres-profile',
+    'wms-postgres-profile',
     'maintenance-device-pause-postgres'
 )
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
@@ -221,11 +222,15 @@ try {
     Assert-Contract ($appHubSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'A test-owned member must build its databases through the governed PostgreSqlTestDatabase helper.'
     Assert-Contract ($appHubSource.Contains('.AssertOwns(', [StringComparison]::Ordinal)) 'The NERV-822 guard that refuses to initialize outside the owned database must stay.'
     Assert-Contract (([regex]::Matches($appHubSource, '\.AssertOwns\(')).Count -ge 3) 'Every AppHub PostgreSQL test must assert it initializes inside its own temporary database.'
-    # runner 归属的成员反过来不许自建内层库；两种归属的断言互斥，避免"改了归属就没人管"。
-    foreach ($runnerOwnedMemberId in @($script:GovernedPostgresMemberIds | Where-Object { -not [string]::Equals($_, 'apphub-postgres-profile', [StringComparison]::Ordinal) })) {
-        $runnerOwnedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerOwnedMemberId -RepositoryRoot $repoRoot
-        Assert-Contract ([string]::Equals([string]$runnerOwnedMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) "Member '$runnerOwnedMemberId' must declare runner-owned databases."
-    }
+    # 2026-08-13 裁决：lane 成员默认 test-owned——NERV-822 正把手写建库统一收敛到共享 helper，
+    # runner 注入的成员库只保留给确有失败诊断价值的成员。因此不再断言"唯一 test-owned"，
+    # 改为断言两种归属都还有成员（任一清空，它那半边契约就不再被行使）且每个成员都显式声明。
+    $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $activeMembers = @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) })
+    $testOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'test-owned', [StringComparison]::Ordinal) }).Count
+    $runnerOwnedCount = @($activeMembers | Where-Object { [string]::Equals([string]$_.databaseOwnership, 'runner', [StringComparison]::Ordinal) }).Count
+    Assert-Contract ($testOwnedCount -ge 1 -and $runnerOwnedCount -ge 1) 'Both ownership forms must stay represented; if one empties, its half of the contract stops being exercised.'
+    Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
     function Assert-MethodScopedFilter([object]$Member) {
@@ -338,6 +343,53 @@ try {
     [IO.File]::WriteAllText($silentSkipSourcePath, "if (string.IsNullOrWhiteSpace(connectionString))`n{`n    return;`n}`n", [Text.UTF8Encoding]::new($false))
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
+
+    # WMS：五个类共 20 条用例，只有 9 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
+    # 归属 test-owned：NERV-822③ 的 #1563 已把这五个类的手写建库收敛到共享 PostgreSqlTestDatabase，
+    # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
+    $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 9) 'The WMS member must freeze exactly its nine governed PostgreSQL identities.'
+    Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
+    Assert-MethodScopedFilter -Member $wmsMember
+    foreach ($wmsSource in @(
+            'WarehouseTaskActionConcurrencyPostgresTests.cs',
+            'WcsDispatchConcurrencyPostgresTests.cs',
+            'WmsQualityInspectionGateConsumerTests.cs',
+            'WmsShortPickBackorderTests.cs',
+            'WmsWorkAssignmentMigrationPostgresTests.cs')) {
+        $wmsSourcePath = Join-Path $repoRoot "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/$wmsSource"
+        Assert-Contract (Test-Path -LiteralPath $wmsSourcePath -PathType Leaf) "WMS lane source '$wmsSource' must exist."
+        $wmsSourceText = [IO.File]::ReadAllText($wmsSourcePath)
+        Assert-Contract ($wmsSourceText.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) "WMS lane source '$wmsSource' must build its database through the governed shared helper."
+        Assert-Contract ($wmsSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "WMS lane source '$wmsSource' must not hand-roll CREATE DATABASE; NERV-822 converged these files onto the shared helper."
+    }
+
+    # 「其余服务（…）仍属于拆解③后续批次」这句已经三次把已接入的服务写回未接入列表（#1553 的 Quality、
+    # #1555 的 Quality/IndustrialTelemetry、#1557 的 WMS）。只改文字会让它第四次回潮，因此把它变成门禁：
+    # 该句列出的服务集合与 manifest 里 active 成员的 service 集合，交集必须为空。
+    function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
+        $readiness = [IO.File]::ReadAllText($ReadinessPath)
+        $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
+        if (-not $sentence.Success) { throw 'The readiness narrative must keep naming which services are still pending, so the gate has something to check.' }
+        $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        foreach ($activeMember in $ActiveMembers) {
+            foreach ($pendingService in $pendingServices) {
+                if ([string]::Equals($pendingService, [string]$activeMember.service, [StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Service '$pendingService' is already an active lane member but the readiness narrative still lists it as pending."
+                }
+            }
+        }
+    }
+    Assert-PendingServiceListExcludesLaneMembers -ReadinessPath (Join-Path $repoRoot 'docs/architecture/implementation-readiness.md') -ActiveMembers $activeMembers
+    $regressedReadinessPath = Join-Path $fixtureRoot 'regressed-readiness.md'
+    [IO.File]::WriteAllText($regressedReadinessPath, '其余服务（WMS、ERP、DemandPlanning 等）仍属于拆解③后续批次。', [Text.UTF8Encoding]::new($false))
+    $pendingListRejected = $false
+    try { Assert-PendingServiceListExcludesLaneMembers -ReadinessPath $regressedReadinessPath -ActiveMembers $activeMembers } catch { $pendingListRejected = $_.Exception.Message.Contains('still lists it as pending', [StringComparison]::Ordinal) }
+    Assert-Contract $pendingListRejected 'Listing an already-onboarded service as pending must fail closed.'
+    # runner 形态必须留一根钉：MasterData 是裁决原文里 runner 的动机样本（失败时要留 CAP outbox 状态），
+    # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
+    $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
+    Assert-Contract ($masterDataOwnership.Count -eq 1 -and [string]::Equals([string]$masterDataOwnership[0].databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'MasterData must stay runner-owned; it is the decision''s worked example for keeping failure diagnostics.'
 
     $selectedMemberIds = @($script:GovernedPostgresMemberIds)
     $validMemberSummaries = @(
