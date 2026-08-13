@@ -27,6 +27,13 @@ function Import-NervPostgresTestLaneMember {
         $statuses = [Collections.Generic.HashSet[string]]::new([string[]]@('active', 'deferred', 'blocked'), [StringComparer]::Ordinal)
         if (-not $tiers.Contains([string]$member.tier)) { throw "PostgreSQL lane member '$id' has an invalid tier." }
         if (-not $statuses.Contains([string]$member.status)) { throw "PostgreSQL lane member '$id' has an invalid status." }
+        # NERV-688：成员数据库的归属必须显式声明，因为它决定 lane 能证明什么。
+        #   runner     = runner 建成员数据库并注入，失败诊断与清理由 lane 证明；
+        #   test-owned = 用例用受治理的 PostgreSqlTestDatabase 自建临时库（自身生命周期由
+        #                Nerv.IIP.Testing.PostgreSql.Tests 证明），lane 只证明执行数与冻结身份，
+        #                成员数据库在失败时是空的，诊断能力受限。
+        $ownerships = [Collections.Generic.HashSet[string]]::new([string[]]@('runner', 'test-owned'), [StringComparer]::Ordinal)
+        if (-not $ownerships.Contains([string]$member.databaseOwnership)) { throw "PostgreSQL lane member '$id' must declare databaseOwnership as runner or test-owned." }
         if ([string]$member.databasePrefix -cnotmatch '^[a-z][a-z0-9_]{0,39}$') { throw "PostgreSQL lane member '$id' has an invalid databasePrefix." }
         $diagnosticSchemas = @($member.diagnosticSchemas | ForEach-Object { [string]$_ })
         $diagnosticSchemaSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

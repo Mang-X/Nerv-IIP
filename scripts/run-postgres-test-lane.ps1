@@ -70,7 +70,7 @@ try {
         $databaseName = "$([string]$member.databasePrefix)_$DatabaseSuffix"
         if ($databaseName.Length -gt 63) { throw "Database name for PostgreSQL lane member '$($member.id)' exceeds 63 characters." }
         $memberResultsDirectory = Join-Path $ResultsDirectory ([string]$member.id)
-        $memberSummary = [ordered]@{ memberId = [string]$member.id; service = [string]$member.service; database = $databaseName; expected = @($member.expectedTestIdentities).Count; discovered = 0; passed = 0; failed = 0; skipped = 0; diagnostics = $null; cleanup = 'not-run'; outcome = 'not-run' }
+        $memberSummary = [ordered]@{ memberId = [string]$member.id; service = [string]$member.service; database = $databaseName; databaseOwnership = [string]$member.databaseOwnership; expected = @($member.expectedTestIdentities).Count; discovered = 0; passed = 0; failed = 0; skipped = 0; diagnostics = $null; cleanup = 'not-run'; outcome = 'not-run' }
         $memberFailure = $null
         $databaseCreated = $false
         try {
@@ -109,7 +109,11 @@ try {
             catch { Write-Diagnostic -Level 'WARN' -Message "PostgreSQL member '$($member.id)' failure TRX could not be summarized: $($_.Exception.Message)" }
         }
         finally {
-            if ($null -ne $memberFailure -and $databaseCreated) {
+            if ($null -ne $memberFailure -and $databaseCreated -and [string]::Equals([string]$member.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) {
+                # 用例自建并已删除自己的临时库，成员数据库里没有可采集的业务状态；如实登记而不是伪造一份空诊断。
+                $memberSummary.diagnostics = [ordered]@{ capture = 'not-applicable'; reason = 'test-owned database lifecycle' }
+            }
+            elseif ($null -ne $memberFailure -and $databaseCreated) {
                 try {
                     [Environment]::SetEnvironmentVariable('PGDATABASE', $databaseName)
                     $diagnosticSchemaLiterals = @($member.diagnosticSchemas | ForEach-Object { "'$($_)'" }) -join ', '

@@ -1,3 +1,4 @@
+using Npgsql;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -7,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.ServiceAuth;
-using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -16,14 +16,12 @@ public sealed class FileStorageRestartPersistenceTests
     [FileStorageRealPostgresFact]
     public async Task Metadata_usage_and_download_grant_survive_web_host_restart()
     {
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
-            "nerv_filestorage_restart");
+        await ResetFileStorageSchemaAsync();
         string fileId;
         string uploadSessionId;
         string grantId;
 
-        await using (var firstFactory = CreateFactory(database.ConnectionString, autoMigrate: true))
+        await using (var firstFactory = CreateFactory(LaneConnectionString, autoMigrate: true))
         {
             using var client = CreateClient(firstFactory);
             var createdResponse = await client.PostAsJsonAsync(
@@ -63,7 +61,7 @@ public sealed class FileStorageRestartPersistenceTests
             grantId = grantUrlSegments[^2];
         }
 
-        await using (var restartedFactory = CreateFactory(database.ConnectionString, autoMigrate: false))
+        await using (var restartedFactory = CreateFactory(LaneConnectionString, autoMigrate: false))
         {
             using var client = CreateClient(restartedFactory);
             var metadata = await client.GetFromJsonAsync<FileMetadataResponse>($"/api/files/v1/files/{fileId}");
@@ -89,6 +87,22 @@ public sealed class FileStorageRestartPersistenceTests
             Assert.Equal("org-restart", persistedGrant.OrganizationId);
             Assert.Equal("production", persistedGrant.EnvironmentId);
         }
+    }
+
+    // NERV-688 拆解③：FileStorage 的重启持久化冒烟使用 lane runner 注入的成员数据库
+    // （NERV_IIP_TEST_POSTGRES），不再自建内层数据库——内层数据库外层既读不到失败诊断，也证明不了清理。
+    private static string LaneConnectionString =>
+        Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")
+        ?? throw new InvalidOperationException("NERV_IIP_TEST_POSTGRES must be set for the FileStorage restart persistence smoke.");
+
+    private static async Task ResetFileStorageSchemaAsync()
+    {
+        await using var connection = new NpgsqlConnection(LaneConnectionString);
+        await connection.OpenAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier("filestorage");
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool autoMigrate)
