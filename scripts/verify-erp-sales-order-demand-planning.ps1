@@ -854,7 +854,8 @@ finally {
         catch { $cleanupFailures.Add("infrastructure cleanup verification: $($_.Exception.Message)") }
     }
     try {
-        $cleanupEvidencePath = Join-Path $root 'artifacts/acceptance/man517/cleanup-evidence.json'
+        $injectedCleanupEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
+        $cleanupEvidencePath = if ([string]::IsNullOrWhiteSpace($injectedCleanupEvidencePath)) { Join-Path $root 'artifacts/acceptance/man517/cleanup-evidence.json' } else { [IO.Path]::GetFullPath($injectedCleanupEvidencePath) }
         [System.IO.Directory]::CreateDirectory((Split-Path -Parent $cleanupEvidencePath)) | Out-Null
         @{
             scenario = 'MAN-517 cleanup accounting'

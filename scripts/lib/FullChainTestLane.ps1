@@ -79,6 +79,57 @@ function Get-NervFullChainTrxResult {
     return $result
 }
 
+function Assert-NervFullChainMemberEvidence {
+    param(
+        [Parameter(Mandatory)] [object] $Member,
+        [Parameter(Mandatory)] [string] $MemberResultsDirectory,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $schemas = @($Member.diagnosticSchemas | ForEach-Object { [string]$_ })
+    if ($schemas.Count -eq 0) { throw "FullChain member '$($Member.id)' has no diagnostic schema contract." }
+    $kind = [string]$Member.entrypoint.kind
+    if ([string]::Equals($kind, 'fullstack', [StringComparison]::Ordinal)) {
+        $manifests = @(Get-ChildItem -LiteralPath (Join-Path $MemberResultsDirectory 'fullstack-state/fullstack-sessions') -Filter '*.json' -File -ErrorAction SilentlyContinue)
+        if ($manifests.Count -ne 1) { throw "FullChain member '$($Member.id)' must produce exactly one FullStack cleanup manifest; observed $($manifests.Count)." }
+        $evidence = Get-Content -LiteralPath $manifests[0].FullName -Raw | ConvertFrom-Json -Depth 30
+        if (-not [string]::Equals([string]$evidence.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase) -or
+            @($evidence.cleanup.remaining).Count -ne 0 -or @($evidence.cleanup.errors).Count -ne 0 -or
+            [string]::IsNullOrWhiteSpace([string]$evidence.cleanup.completedAtUtc)) {
+            throw "FullChain member '$($Member.id)' FullStack cleanup manifest is incomplete."
+        }
+        $artifactPath = [IO.Path]::GetFullPath([string]$evidence.artifactPath)
+        $artifactRoot = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot 'artifacts/fullstack')) + [IO.Path]::DirectorySeparatorChar
+        if (-not $artifactPath.StartsWith($artifactRoot, [StringComparison]::Ordinal) -or -not (Test-Path -LiteralPath $artifactPath -PathType Container)) {
+            throw "FullChain member '$($Member.id)' diagnostic artifact directory is missing or outside the governed root."
+        }
+        return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'fullstack-artifacts-verified'; source = $manifests[0].FullName; diagnosticSchemas = $schemas }
+    }
+
+    if ([string]::Equals($kind, 'script', [StringComparison]::Ordinal)) {
+        $evidencePath = Join-Path $MemberResultsDirectory 'entrypoint-evidence.json'
+        if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) { throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is missing." }
+        $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json -Depth 30
+        if ([string]::Equals([string]$Member.id, 'erp-wms-delivery-completion', [StringComparison]::Ordinal)) {
+            if ([int]$evidence.cleanup.managedProcessRemaining -ne 0 -or [int]$evidence.cleanup.exactDatabaseRemaining -ne 0 -or @($evidence.cleanup.errors).Count -ne 0) {
+                throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is incomplete."
+            }
+        }
+        elseif ([string]::Equals([string]$Member.id, 'sales-order-demand-planning', [StringComparison]::Ordinal)) {
+            if ([int]$evidence.managedProcesses.remaining -ne 0 -or [int]$evidence.disposableDatabase.remaining -ne 0 -or [int]$evidence.composeServices.remaining -ne 0 -or @($evidence.cleanupFailures).Count -ne 0) {
+                throw "FullChain member '$($Member.id)' entrypoint cleanup evidence is incomplete."
+            }
+        }
+        else { throw "FullChain script member '$($Member.id)' has no cleanup evidence validator." }
+        return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'entrypoint-evidence-verified'; source = $evidencePath; diagnosticSchemas = $schemas }
+    }
+
+    if ([string]::Equals($kind, 'dotnet', [StringComparison]::Ordinal) -and -not [bool]$Member.dependencies.externalProcesses) {
+        return [pscustomobject]@{ cleanup = 'passed'; diagnosticEvidence = 'trx-and-runner-output-verified'; source = 'runner-owned-dependencies'; diagnosticSchemas = $schemas }
+    }
+    throw "FullChain member '$($Member.id)' has no governed cleanup and diagnostic evidence contract."
+}
+
 function Assert-NervFullChainTestLaneSummary {
     param(
         [Parameter(Mandatory)] [string[]] $SelectedMemberIds,
@@ -93,7 +144,7 @@ function Assert-NervFullChainTestLaneSummary {
         if (-not [string]::Equals([string]$member.outcome, 'passed', [StringComparison]::Ordinal)) { throw "FullChain lane member '$id' has outcome '$($member.outcome)'." }
         if (-not [string]::Equals([string]$member.cleanup, 'passed', [StringComparison]::Ordinal)) { throw "FullChain lane member '$id' has cleanup '$($member.cleanup)'." }
         if (-not [string]::Equals([string]$member.dependencyEvidence, 'passed', [StringComparison]::Ordinal)) { throw "FullChain lane member '$id' has dependency evidence '$($member.dependencyEvidence)'." }
-        if ([string]::IsNullOrWhiteSpace([string]$member.diagnosticEvidence)) { throw "FullChain lane member '$id' has no diagnostic evidence status." }
+        if (-not ([string]$member.diagnosticEvidence).EndsWith('-verified', [StringComparison]::Ordinal)) { throw "FullChain lane member '$id' has unverified diagnostic evidence '$($member.diagnosticEvidence)'." }
         if ([int]$member.expected -ne 1 -or [int]$member.discovered -ne 1) { throw "FullChain lane member '$id' expected 1 test but discovered $($member.discovered)." }
         if ([int]$member.passed -ne 1 -or [int]$member.failed -ne 0 -or [int]$member.skipped -ne 0) { throw "FullChain lane member '$id' expected 1 passed, 0 failed and 0 skipped; observed $($member.passed) passed, $($member.failed) failed and $($member.skipped) skipped." }
     }

@@ -74,10 +74,11 @@ try {
         'NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY',
         'NERV_IIP_FULL_CHAIN_RESULT_FILE',
         'NERV_IIP_FULLSTACK_STATE_ROOT',
+        'NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH',
         "SetEnvironmentVariable('Messaging__Provider', 'Redis')",
         "SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')",
         "dependencyEvidence = 'passed'",
-        "cleanup = 'passed'"
+        'Assert-NervFullChainMemberEvidence'
     )) {
         Assert-Contract ($runnerContent.Contains($requiredFragment, [StringComparison]::Ordinal)) "FullChain runner is missing required contract fragment '$requiredFragment'."
     }
@@ -125,8 +126,26 @@ try {
     $extra = Get-NervFullChainTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) -AllowInvalid
     Assert-Contract (-not $extra.identitiesMatch) 'An extra FullChain identity must fail the frozen set contract.'
 
+    $memberEvidenceRoot = Join-Path $fixtureRoot 'member-evidence'
+    [IO.Directory]::CreateDirectory($memberEvidenceRoot) | Out-Null
+    $memberEvidencePath = Join-Path $memberEvidenceRoot 'entrypoint-evidence.json'
+    $cleanupFixture = [ordered]@{
+        managedProcesses = [ordered]@{ remaining = 0 }
+        disposableDatabase = [ordered]@{ remaining = 0 }
+        composeServices = [ordered]@{ remaining = 0 }
+        cleanupFailures = @()
+    }
+    [IO.File]::WriteAllText($memberEvidencePath, (($cleanupFixture | ConvertTo-Json -Depth 10) + "`n"), [Text.UTF8Encoding]::new($false))
+    $verifiedMemberEvidence = Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot
+    Assert-Contract ($verifiedMemberEvidence.cleanup -eq 'passed' -and $verifiedMemberEvidence.diagnosticEvidence -eq 'entrypoint-evidence-verified') 'A complete entrypoint-owned cleanup artifact must satisfy the member evidence contract.'
+    Remove-Item -LiteralPath $memberEvidencePath -Force
+    $missingEvidenceRejected = $false
+    try { Assert-NervFullChainMemberEvidence -Member $manifest.members[3] -MemberResultsDirectory $memberEvidenceRoot -RepositoryRoot $repoRoot | Out-Null }
+    catch { $missingEvidenceRejected = $_.Exception.Message.Contains('cleanup evidence is missing', [StringComparison]::Ordinal) }
+    Assert-Contract $missingEvidenceRejected 'Removing entrypoint cleanup evidence must fail the FullChain member contract.'
+
     $summaries = @($manifest.members | ForEach-Object {
-        [pscustomobject]@{ memberId = $_.id; outcome = 'passed'; cleanup = 'passed'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; dependencyEvidence = 'passed'; diagnosticEvidence = 'available' }
+        [pscustomobject]@{ memberId = $_.id; outcome = 'passed'; cleanup = 'passed'; expected = 1; discovered = 1; passed = 1; failed = 0; skipped = 0; dependencyEvidence = 'passed'; diagnosticEvidence = 'fixture-verified' }
     })
     Assert-NervFullChainTestLaneSummary -SelectedMemberIds $expectedIds -MemberSummaries $summaries
     $summaries[2].cleanup = 'failed'

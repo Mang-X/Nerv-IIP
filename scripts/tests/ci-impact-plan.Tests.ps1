@@ -196,7 +196,9 @@ function Assert-FullChainLaneOwningPathsRoute {
             'scripts/run-full-chain-test-lane.ps1',
             'scripts/lib/FullChainTestLane.ps1',
             'scripts/full-chain-test-lane.json',
-            'scripts/tests/full-chain-test-lane.Tests.ps1'
+            'scripts/tests/full-chain-test-lane.Tests.ps1',
+            'scripts/verify-erp-sales-order-demand-planning.ps1',
+            'scripts/verify-erp-wms-delivery-completion.ps1'
         )) {
         Assert-ImpactCase -Name "full-chain-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; backend = $true; postgresql = $false; redis_cap = $false; full_chain = $true

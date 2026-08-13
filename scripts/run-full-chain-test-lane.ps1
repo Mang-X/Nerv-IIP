@@ -125,7 +125,7 @@ foreach ($member in $selectedMembers) {
         failed = 0
         skipped = 0
         dependencyEvidence = 'not-run'
-        diagnosticEvidence = 'available-on-failure'
+        diagnosticEvidence = 'not-run'
         cleanup = 'not-run'
         outcome = 'not-run'
     }
@@ -144,12 +144,15 @@ foreach ($member in $selectedMembers) {
         $savedFullStackStateRoot = [Environment]::GetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT')
         $savedMessagingProvider = [Environment]::GetEnvironmentVariable('Messaging__Provider')
         $savedPersistenceProvider = [Environment]::GetEnvironmentVariable('Persistence__Provider')
+        $savedEntrypointEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
+        $entrypointEvidencePath = Join-Path $memberResultsDirectory 'entrypoint-evidence.json'
         try {
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY', $memberResultsDirectory)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULT_FILE', $resultFile)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT', (Join-Path $memberResultsDirectory 'fullstack-state'))
             [Environment]::SetEnvironmentVariable('Messaging__Provider', 'Redis')
             [Environment]::SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')
+            [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $entrypointEvidencePath)
             switch ([string]$member.entrypoint.kind) {
                 'fullstack' {
                     Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds 2400 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
@@ -169,13 +172,16 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT', $savedFullStackStateRoot)
             [Environment]::SetEnvironmentVariable('Messaging__Provider', $savedMessagingProvider)
             [Environment]::SetEnvironmentVariable('Persistence__Provider', $savedPersistenceProvider)
+            [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $savedEntrypointEvidencePath)
         }
 
         $trx = Get-NervFullChainTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities)
         $memberSummary.passed = $trx.passed
         $memberSummary.failed = $trx.failed
         $memberSummary.skipped = $trx.skipped
-        $memberSummary.cleanup = 'passed'
+        $entrypointEvidence = Assert-NervFullChainMemberEvidence -Member $member -MemberResultsDirectory $memberResultsDirectory -RepositoryRoot $repoRoot
+        $memberSummary.diagnosticEvidence = $entrypointEvidence.diagnosticEvidence
+        $memberSummary.cleanup = $entrypointEvidence.cleanup
         $memberSummary.outcome = 'passed'
     }
     catch {
