@@ -16,21 +16,21 @@ public sealed class BarcodeLabelPostgresProfileTests
     [RealPostgresFact]
     public async Task Postgres_unique_conflicts_are_mapped_for_scan_natural_key_and_epcis_event()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "barcode_unique");
+        await ResetBarcodeLabelSchemaAsync();
 
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
+            AssertUsesGovernedDatabase(dbContext);
             await dbContext.Database.MigrateAsync();
         }
 
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-postgres-natural-001"));
             await dbContext.SaveChangesAsync();
         }
 
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             dbContext.ScanRecords.Add(NewPlainInventoryScan("idem-postgres-natural-002"));
 
@@ -39,7 +39,7 @@ public sealed class BarcodeLabelPostgresProfileTests
             Assert.Contains("accepted barcode scan natural key", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
 
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             var epcisEvent = NewEpcisObjectEvent("idem-postgres-epcis-001");
             dbContext.EpcisEvents.Add(epcisEvent);
@@ -47,7 +47,7 @@ public sealed class BarcodeLabelPostgresProfileTests
             await dbContext.SaveChangesAsync();
         }
 
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
             var epcisEvent = NewEpcisObjectEvent("idem-postgres-epcis-002");
             dbContext.EpcisEvents.Add(epcisEvent);
@@ -117,61 +117,27 @@ public sealed class BarcodeLabelPostgresProfileTests
                 2));
     }
 
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
+    // NERV-688 拆解③：BarcodeLabel 的 PostgreSQL 用例使用 lane runner 注入的成员数据库
+    // （NERV_IIP_TEST_POSTGRES），不再自建内层数据库——内层数据库外层既读不到失败诊断，也证明不了清理。
+    private static string LaneConnectionString =>
+        Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)
+        ?? throw new InvalidOperationException(
+            $"{PostgresConnectionStringEnvironmentVariable} must be set for BarcodeLabel PostgreSQL profile tests.");
+
+    private static async Task ResetBarcodeLabelSchemaAsync()
     {
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            AdminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            DatabaseName = databaseName;
-        }
+        await using var connection = new NpgsqlConnection(LaneConnectionString);
+        await connection.OpenAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(BarcodeLabelFacts.Schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
 
-        public string ConnectionString { get; }
-
-        private string AdminConnectionString { get; }
-
-        private string DatabaseName { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database
-            };
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(AdminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName AND pid <> pg_backend_pid();
-                """,
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", DatabaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{DatabaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
-        }
+    private static void AssertUsesGovernedDatabase(ApplicationDbContext dbContext)
+    {
+        var governed = new NpgsqlConnectionStringBuilder(LaneConnectionString);
+        Assert.Equal(governed.Database, dbContext.Database.GetDbConnection().Database);
     }
 
     private sealed class RealPostgresFactAttribute : FactAttribute

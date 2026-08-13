@@ -527,9 +527,11 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each"
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Concurrent_first_collection_health_reports_use_real_unique_constraint_and_publish_once_each",
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Postgres_store_generates_guid_strong_ids_on_add",
+        "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests.Postgres_store_persists_registration_heartbeat_and_state"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 3
     },
     {
       "id": "filestorage-postgres",

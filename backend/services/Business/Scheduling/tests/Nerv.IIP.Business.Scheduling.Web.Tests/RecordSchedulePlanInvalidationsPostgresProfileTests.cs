@@ -24,6 +24,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 // "could not be translated" on Postgres, which meant the whole AssetUnavailable -> plan invalidation ->
 // MES marking chain silently failed on a real database while EF InMemory (client evaluation) kept the
 // unit tests green. Gated on NERV_IIP_TEST_POSTGRES like the other *PostgresProfileTests.
+[Collection(SchedulingPostgresLaneDatabase.CollectionName)]
 public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
@@ -31,15 +32,14 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Postgres_records_invalidation_for_a_generated_plan_matched_by_resource()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-a", resourceId: "ASSET-CNC-01"));
@@ -72,15 +72,14 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Postgres_records_generated_calendar_invalidation_without_matching_released_or_other_calendar_plans()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
@@ -118,9 +117,7 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Postgres_calendar_event_handler_changes_the_generated_plan_query_state_once()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(connectionString, "nerv_scheduling_test");
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
         services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
@@ -132,11 +129,12 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssembly(typeof(Program).Assembly)
             .AddUnitOfWorkBehaviors());
-        services.AddSchedulingPostgreSqlPersistence(database.ConnectionString);
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
         services.AddUnitOfWork<ApplicationDbContext>();
         await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
 
         dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
