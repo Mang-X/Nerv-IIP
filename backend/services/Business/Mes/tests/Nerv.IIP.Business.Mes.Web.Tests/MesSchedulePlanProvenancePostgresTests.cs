@@ -1,6 +1,5 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -11,15 +10,17 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class MesSchedulePlanProvenancePostgresTests
 {
     [MesRealPostgresFact]
     public async Task Concurrent_revoke_then_release_is_serialized_and_cannot_resurrect_assignment()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         await using (var setup = new ApplicationDbContext(options, new NoopMediator()))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync();
             setup.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 1, At(8), "PCS"));
             await setup.SaveChangesAsync();
@@ -47,7 +48,7 @@ public sealed class MesSchedulePlanProvenancePostgresTests
         // Wait for the real edge instead of a settle window: the release transaction is observably parked on
         // the schedule-release advisory lock held by the in-flight revoke transaction.
         await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
-            database.ConnectionString,
+            MesPostgresLaneDatabase.ConnectionString,
             expectedWaiters: 1,
             scopeDescription: "the MES schedule-release scope held by the in-flight revoke transaction");
         Assert.False(releaseTask.IsCompleted, "Release must wait for the same-scope revoke transaction lock.");
@@ -66,12 +67,13 @@ public sealed class MesSchedulePlanProvenancePostgresTests
     [MesRealPostgresFact]
     public async Task Schedule_provenance_and_DateTimeOffset_survive_release_and_revoke_on_postgres()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         var scheduledAt = DateTimeOffset.Parse("2026-07-18T02:30:00+00:00");
 
         await using (var db = new ApplicationDbContext(options, new NoopMediator()))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
             db.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 1, scheduledAt.AddHours(4), "PCS"));
             var task = OperationTask.Queue("org-001", "env-dev", "WO-001", "OP-10", 10, "WC-OLD", [], scheduledAt, TimeSpan.FromHours(1));
@@ -105,33 +107,6 @@ public sealed class MesSchedulePlanProvenancePostgresTests
             Assert.Equal("plan-1", watermark.RevokedPlanId);
             Assert.Equal(1, watermark.RevokedReleaseRevision);
             Assert.Equal(scheduledAt, watermark.RevokedAtUtc);
-        }
-    }
-
-    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_mes_schedule_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = "postgres" }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryDatabase(
-                adminConnectionString,
-                databaseName,
-                new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = databaseName }.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
-            await command.ExecuteNonQueryAsync();
         }
     }
 

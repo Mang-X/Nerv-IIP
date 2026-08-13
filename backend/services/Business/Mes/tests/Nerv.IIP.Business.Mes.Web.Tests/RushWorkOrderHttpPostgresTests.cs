@@ -7,7 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
-using Npgsql;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -17,14 +16,14 @@ public sealed class RushWorkOrderHttpPostgresTests
     [MesRealPostgresFact]
     public async Task PostgreSQL_http_creation_still_dispatches_work_order_created_after_sku_gate_save()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
         var recorder = new WorkOrderCreatedRecorder();
-        await using var factory = CreateFactory(database.ConnectionString, recorder);
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString, recorder);
 
         using (var scope = factory.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
             await dbContext.Database.MigrateAsync(CancellationToken.None);
         }
 
@@ -109,43 +108,5 @@ public sealed class RushWorkOrderHttpPostgresTests
 
         public Task<WorkOrderCreatedDomainEvent> WaitAsync(TimeSpan timeout) =>
             completion.Task.WaitAsync(timeout);
-    }
-
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_mes_rush_http_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-            return new TemporaryDatabase(
-                adminConnectionString,
-                databaseName,
-                new NpgsqlConnectionStringBuilder(baseConnectionString)
-                {
-                    Database = databaseName
-                }.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-        }
     }
 }
