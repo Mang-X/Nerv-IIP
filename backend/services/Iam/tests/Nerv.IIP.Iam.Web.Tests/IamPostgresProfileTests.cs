@@ -18,6 +18,7 @@ using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Web.Application.Seed;
 using Nerv.IIP.Testing;
+using Nerv.IIP.Testing.PostgreSql;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
@@ -37,13 +38,15 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(
-                postgresConnectionString,
+                database.ConnectionString,
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "iam"))
             .Options;
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        await db.Database.EnsureDeletedAsync();
+        AssertUsesTemporaryDatabase(db, database);
         await db.Database.MigrateAsync();
 
         var loginIndexIsUniqueLowerExpression = await IsUniqueLowerExpressionIndexAsync(
@@ -110,10 +113,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -123,7 +128,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -253,10 +258,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -266,7 +273,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -312,10 +319,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -334,7 +343,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -415,10 +424,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -426,12 +437,12 @@ public sealed class IamPostgresProfileTests
         var interceptor = new FailNextSessionInsertInterceptor();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseNpgsql(
-                postgresConnectionString,
+                database.ConnectionString,
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "iam"))
             .AddInterceptors(interceptor)
             .Options;
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        await db.Database.EnsureDeletedAsync();
+        AssertUsesTemporaryDatabase(db, database);
         await db.Database.MigrateAsync();
 
         var now = DateTimeOffset.UtcNow;
@@ -485,10 +496,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -498,7 +511,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -555,10 +568,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -568,7 +583,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -630,10 +645,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -643,7 +660,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -772,10 +789,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
@@ -785,7 +804,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -906,10 +925,12 @@ public sealed class IamPostgresProfileTests
             return;
         }
 
+        await using var database = await CreateTemporaryDatabaseAsync(postgresConnectionString);
+
         await using var globalState = await GlobalTestStateScope.CaptureAsync();
         globalState
             .SetEnvironmentVariable("Persistence__Provider", "PostgreSQL")
-            .SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString)
+            .SetEnvironmentVariable("ConnectionStrings__IamDb", database.ConnectionString)
             .SetEnvironmentVariable("Iam__Seed__Enabled", "true")
             .SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!")
             .SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret")
@@ -920,7 +941,7 @@ public sealed class IamPostgresProfileTests
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.EnsureDeletedAsync();
+            AssertUsesTemporaryDatabase(db, database);
 
             var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
             await migrations.MigrateAsync();
@@ -984,6 +1005,21 @@ public sealed class IamPostgresProfileTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
         Assert.Contains("Persistence:AutoMigrate=true", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static Task<PostgreSqlTestDatabase> CreateTemporaryDatabaseAsync(string baseConnectionString)
+    {
+        return PostgreSqlTestDatabase.CreateAsync(baseConnectionString, "nerv_iam_profile");
+    }
+
+    private static void AssertUsesTemporaryDatabase(
+        ApplicationDbContext db,
+        PostgreSqlTestDatabase database)
+    {
+        var targetDatabase = new NpgsqlConnectionStringBuilder(db.Database.GetConnectionString()).Database;
+        Assert.True(
+            string.Equals(database.DatabaseName, targetDatabase, StringComparison.Ordinal),
+            $"Refusing to initialize a PostgreSQL profile outside its owned temporary database. expected={database.DatabaseName}; actual={targetDatabase}.");
     }
 
     private static async Task<bool> IsUniqueLowerExpressionIndexAsync(
