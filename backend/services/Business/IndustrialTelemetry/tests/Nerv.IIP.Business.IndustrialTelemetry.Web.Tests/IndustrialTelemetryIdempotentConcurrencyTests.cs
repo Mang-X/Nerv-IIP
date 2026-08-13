@@ -22,10 +22,14 @@ using Npgsql;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+// NERV-688 拆解③：这里同时承担两重串行义务——本类里两个 WebApplicationFactory<Program> 用例需要
+// FastEndpoints 静态状态串行（WebApplicationFactoryCollection 原有用途），四个 [RealPostgresFact]
+// 用例又需要与 ReadFace/Historian/OeeQuery 三个类互斥地共用同一个 lane 成员数据库
+// （IndustrialTelemetryPostgresLaneDatabase.CollectionName 就是这个 collection 名）。
+// 一个类只能属于一个 collection，因此复用同一个已 DisableParallelization=true 的 collection 满足两者。
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 {
-    private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
     private static readonly DateTimeOffset ManifestNow = new(2026, 7, 17, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -230,10 +234,11 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     [RealPostgresFact]
     public async Task Manifest_and_activation_submicrosecond_races_keep_exact_order_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await IndustrialTelemetryPostgresDatabase.CreateAsync(postgresConnectionString);
-        await using (var setupContext = database.CreateContext())
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var setupContext = CreateLaneDbContext())
         {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(setupContext);
+            await setupContext.Database.MigrateAsync();
             await CreateManifestHandler(setupContext).Handle(
                 ManifestCommand("temperature", ManifestNow, ManifestNow, "pending"),
                 CancellationToken.None);
@@ -242,8 +247,8 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 
         var newerManifest = ManifestCommand("pressure", ManifestNow.AddTicks(2), ManifestNow.AddTicks(2), "pending");
         var olderManifest = ManifestCommand("speed", ManifestNow.AddTicks(1), ManifestNow.AddTicks(1), "error");
-        await using (var winningContext = database.CreateContext())
-        await using (var racingContext = database.CreateContext())
+        await using (var winningContext = CreateLaneDbContext())
+        await using (var racingContext = CreateLaneDbContext())
         {
             var winningHandler = CreateManifestHandler(winningContext);
             var racingHandler = CreateManifestHandler(racingContext);
@@ -276,8 +281,8 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
         var activationBaseUtc = ManifestNow.AddTicks(10);
         var newerActivation = ManifestCommand("pressure", newerManifest.ManifestObservedAtUtc, activationBaseUtc.AddTicks(2), "active");
         var olderActivation = ManifestCommand("pressure", newerManifest.ManifestObservedAtUtc, activationBaseUtc.AddTicks(1), "error");
-        await using (var winningContext = database.CreateContext())
-        await using (var racingContext = database.CreateContext())
+        await using (var winningContext = CreateLaneDbContext())
+        await using (var racingContext = CreateLaneDbContext())
         {
             var winningHandler = CreateManifestHandler(winningContext);
             var racingHandler = CreateManifestHandler(racingContext);
@@ -305,7 +310,7 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             Assert.Equal(2, attempts);
         }
 
-        await using var assertionContext = database.CreateContext();
+        await using var assertionContext = CreateLaneDbContext();
         var manifest = await assertionContext.ConnectorTagManifests.Include(existing => existing.Bindings).SingleAsync();
         var binding = Assert.Single(manifest.Bindings, candidate => candidate.IsCurrent);
         Assert.Equal(newerManifest.ManifestRevision, manifest.ManifestRevision);
@@ -319,15 +324,20 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     [RealPostgresFact]
     public async Task Exact_ordering_migration_backfills_existing_microsecond_timestamps_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await IndustrialTelemetryPostgresDatabase.CreateAsync(
-            postgresConnectionString,
-            "20260717100647_AddConnectorTagManifestCoverage");
+        // 迁到历史迁移点前必须先清空 schema，否则会残留上一个用例迁移到最新版本后的表结构，
+        // 导致回退到旧迁移点失败。
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var priorMigrationContext = CreateLaneDbContext())
+        {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(priorMigrationContext);
+            await priorMigrationContext.GetService<IMigrator>().MigrateAsync("20260717100647_AddConnectorTagManifestCoverage");
+        }
+
         var manifestId = Guid.CreateVersion7();
         var bindingId = Guid.CreateVersion7();
         var manifestObservedAtUtc = ManifestNow.AddTicks(123450);
         var activationObservedAtUtc = ManifestNow.AddTicks(678900);
-        await using (var connection = new NpgsqlConnection(database.ConnectionString))
+        await using (var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString))
         {
             await connection.OpenAsync();
             await using (var manifestCommand = connection.CreateCommand())
@@ -361,12 +371,12 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             await bindingCommand.ExecuteNonQueryAsync();
         }
 
-        await using (var migrationContext = database.CreateContext())
+        await using (var migrationContext = CreateLaneDbContext())
         {
             await migrationContext.Database.MigrateAsync();
         }
 
-        await using var assertionContext = database.CreateContext();
+        await using var assertionContext = CreateLaneDbContext();
         var manifest = await assertionContext.ConnectorTagManifests.SingleAsync();
         var binding = await assertionContext.ConnectorTagBindings.SingleAsync();
         Assert.Equal(manifestObservedAtUtc.UtcTicks, manifest.ManifestObservedAtUtcTicks);
@@ -677,30 +687,30 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     [RealPostgresFact]
     public async Task Rule_alarm_race_with_changed_alarm_code_keeps_single_active_alarm_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-
-        await using var database = await IndustrialTelemetryPostgresDatabase.CreateAsync(postgresConnectionString);
-        await using (var setupContext = database.CreateContext())
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var setupContext = CreateLaneDbContext())
         {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(setupContext);
+            await setupContext.Database.MigrateAsync();
             setupContext.AlarmRules.Add(AlarmRule.Configure("org-001", "env-dev", "DEV-RACE-PG-01", "TEMP_RULE", "TEMP_HIGH", "critical", "temperature", ">=", 90m, "celsius", true));
             await setupContext.SaveChangesAsync();
         }
 
-        await using var staleRuleContext = database.CreateContext();
+        await using var staleRuleContext = CreateLaneDbContext();
         var staleRuleHandler = new RecordTelemetrySampleCommandHandler(staleRuleContext);
         var staleRuleBehavior = new IndustrialTelemetryIdempotentIngestionBehavior<RecordTelemetrySampleCommand, RecordTelemetrySampleResult>(staleRuleContext);
         var firstCommand = CreatePostgresRaceSample("pg-race-sample-001", new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero));
         var secondCommand = CreatePostgresRaceSample("pg-race-sample-002", new DateTimeOffset(2026, 6, 1, 12, 1, 0, TimeSpan.Zero));
 
         var stalePreparedResult = await staleRuleHandler.Handle(firstCommand, CancellationToken.None);
-        await using (var updateContext = database.CreateContext())
+        await using (var updateContext = CreateLaneDbContext())
         {
             var rule = await updateContext.AlarmRules.SingleAsync();
             rule.UpdateDefinition("TEMP_CRITICAL", "critical", "temperature", ">=", 90m, "celsius", true);
             await updateContext.SaveChangesAsync();
         }
 
-        await using (var winningContext = database.CreateContext())
+        await using (var winningContext = CreateLaneDbContext())
         {
             await new RecordTelemetrySampleCommandHandler(winningContext).Handle(secondCommand, CancellationToken.None);
             await winningContext.SaveChangesAsync();
@@ -723,7 +733,7 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
             },
             CancellationToken.None);
 
-        await using var assertionContext = database.CreateContext();
+        await using var assertionContext = CreateLaneDbContext();
         var alarms = await assertionContext.AlarmEvents.OrderBy(x => x.RaisedAtUtc).ToArrayAsync();
         Assert.Equal(2, attempts);
         var alarm = Assert.Single(alarms);
@@ -791,12 +801,13 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     [RealPostgresFact]
     public async Task Concurrent_shelve_with_same_key_replays_the_loser_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await IndustrialTelemetryPostgresDatabase.CreateAsync(postgresConnectionString);
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
         var t0 = new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero);
         AlarmEventId alarmId;
-        await using (var setup = database.CreateContext())
+        await using (var setup = CreateLaneDbContext())
         {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
+            await setup.Database.MigrateAsync();
             var alarm = AlarmEvent.Raise("org-001", "env-dev", "DEV-SHELVE-PG", "C", "critical", t0, "ext-shelve-pg");
             setup.AlarmEvents.Add(alarm);
             await setup.SaveChangesAsync();
@@ -805,13 +816,13 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
         var command = new ShelveAlarmCommand(alarmId, "org-001", "env-dev", t0.AddMinutes(2), 30, "op", null, "concurrent-key");
 
         // Loser context stages record + shelve while BOTH still see no idempotency record.
-        await using var loser = database.CreateContext();
+        await using var loser = CreateLaneDbContext();
         var loserHandler = new ShelveAlarmCommandHandler(loser);
         var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<ShelveAlarmCommand, AlarmEventId>(loser);
         var staged = await loserHandler.Handle(command, CancellationToken.None);
 
         // Winner commits first (inserts the row that owns the unique key).
-        await using (var winner = database.CreateContext())
+        await using (var winner = CreateLaneDbContext())
         {
             await new ShelveAlarmCommandHandler(winner).Handle(command, CancellationToken.None);
             await winner.SaveChangesAsync();
@@ -834,7 +845,7 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
         Assert.Equal(2, attempts); // retried exactly once after the unique conflict
         Assert.Equal(alarmId, result); // replayed the winner's result, not a 500
 
-        await using var assertionContext = database.CreateContext();
+        await using var assertionContext = CreateLaneDbContext();
         Assert.Equal(1, await assertionContext.AlarmShelveIdempotencies.CountAsync()); // single record; concurrency collapsed
         var shelvedAlarm = await assertionContext.AlarmEvents.SingleAsync();
         Assert.Equal("shelved", shelvedAlarm.Status);
@@ -1034,85 +1045,14 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed class IndustrialTelemetryPostgresDatabase : IAsyncDisposable
+    private static ApplicationDbContext CreateLaneDbContext()
     {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private IndustrialTelemetryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<IndustrialTelemetryPostgresDatabase> CreateAsync(
-            string baseConnectionString,
-            string? targetMigration = null)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var databaseName = $"nerv_iip_it_{Guid.NewGuid():N}";
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database
-            };
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            };
-
-            await using (var connection = new NpgsqlConnection(adminBuilder.ConnectionString))
-            {
-                await connection.OpenAsync();
-                await using var command = connection.CreateCommand();
-                command.CommandText = $"CREATE DATABASE {QuoteIdentifier(databaseName)}";
-                await command.ExecuteNonQueryAsync();
-            }
-
-            var database = new IndustrialTelemetryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-            await using var context = database.CreateContext();
-            if (targetMigration is null)
-            {
-                await context.Database.MigrateAsync();
-            }
-            else
-            {
-                await context.GetService<IMigrator>().MigrateAsync(targetMigration);
-            }
-
-            return database;
-        }
-
-        public ApplicationDbContext CreateContext()
-        {
-            var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-                .UseNpgsql(ConnectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
-                .Options;
-            return new ApplicationDbContext(options, new NoopMediator());
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminateCommand = connection.CreateCommand())
-            {
-                terminateCommand.CommandText = "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName";
-                terminateCommand.Parameters.AddWithValue("databaseName", databaseName);
-                await terminateCommand.ExecuteNonQueryAsync();
-            }
-
-            await using var dropCommand = connection.CreateCommand();
-            dropCommand.CommandText = $"DROP DATABASE IF EXISTS {QuoteIdentifier(databaseName)}";
-            await dropCommand.ExecuteNonQueryAsync();
-        }
-
-        private static string QuoteIdentifier(string identifier)
-        {
-            return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
-        }
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
     }
 
     private sealed class NoopMediator : IMediator
