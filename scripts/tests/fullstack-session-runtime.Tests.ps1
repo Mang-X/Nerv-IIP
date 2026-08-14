@@ -72,6 +72,9 @@ Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvi
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('$describe = if ([string]::Equals([string]($Scenario), [string](''man-440''), [StringComparison]::OrdinalIgnoreCase))', [StringComparison]::Ordinal)) 'MAN-440 must not require unrelated public endpoint discovery before its external-process probe.'
 Assert-True ($appHostText.Contains('max_connections=300', [StringComparison]::Ordinal)) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
+Assert-True (
+    $appHostText.Contains('.WithEnvironment("NERV_IIP_SESSION_ID", fullStackSessionId!)', [StringComparison]::Ordinal)
+) 'Ephemeral AppHost project resources must pass the exact session identity to Aspire-managed processes.'
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'", [StringComparison]::Ordinal)) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
 Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'", [StringComparison]::Ordinal)) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
 Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'", [StringComparison]::Ordinal)) 'Full-stack startup must disable the persistent .NET build server.'
