@@ -283,6 +283,18 @@
       ]
     },
     {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
+      "sourceSha256": "157b77582cfdbd6140210c500614059022dcb5069df132dee1c790d2158b940a",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs",
       "sourceSha256": "274b5b681223c18d0d69f841e35432ae8e02d9cf5f7e7584e84df857608986a1",
       "factoryCallCount": 6,
