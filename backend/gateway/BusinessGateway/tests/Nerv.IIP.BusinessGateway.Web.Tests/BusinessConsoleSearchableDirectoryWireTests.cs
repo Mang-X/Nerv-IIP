@@ -25,7 +25,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\",\"reasonCode\":null}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-A");
@@ -47,7 +47,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&scopeKind=site&scopeId=SITE-B");
 
@@ -66,7 +66,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -96,7 +96,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -121,7 +121,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -163,7 +163,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -183,7 +183,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -201,7 +201,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var forbidden = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
@@ -220,7 +220,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&rankingMode=personalized");
@@ -237,7 +237,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=");
@@ -257,7 +257,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=2147483647&pageSize=100");
@@ -278,7 +278,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler($"{{\"items\":[],\"total\":0,\"skip\":{expectedSkip},\"take\":100,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=21474837&pageSize=100");
@@ -323,7 +323,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var downstream = new JsonHandler(downstreamPayload);
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&pageIndex=21474837&pageSize=100");
@@ -359,7 +359,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         };
         await using var lease = LeaseHost(auth, downstream, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/station?organizationId=org-001&environmentId=env-dev&scopeKind=work-center&scopeId=WC-001&pageIndex=1&pageSize=20");
@@ -473,7 +473,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             masterData,
             quality);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
@@ -504,7 +504,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, inventoryHandler, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/priority?organizationId=org-001&environmentId=env-dev&keyword=urgent");
@@ -535,7 +535,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         var inventoryHandler = new JsonHandler("{\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"status\":\"available\",\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, inventoryHandler, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/directories/priority?organizationId=org-001&environmentId=env-dev&keyword=urgent");
@@ -581,7 +581,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 quality,
                 maintenance);
             var client = lease.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+            BusinessGatewayTestHost.Authenticated(client);
 
             var response = await client.GetAsync(
                 $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");

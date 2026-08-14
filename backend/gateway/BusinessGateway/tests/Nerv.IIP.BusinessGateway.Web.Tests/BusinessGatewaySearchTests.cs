@@ -67,7 +67,7 @@ public sealed class BusinessGatewaySearchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/search?q=271&types=masterDataSku,mesWorkOrder,inventoryLot,equipmentAlarm");
 
@@ -128,7 +128,7 @@ public sealed class BusinessGatewaySearchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/search?q=271&types=masterDataSku,mesWorkOrder&take=3");
 
@@ -181,7 +181,7 @@ public sealed class BusinessGatewaySearchTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/search?q={WebUtility.UrlEncode(query)}&take={take}");
