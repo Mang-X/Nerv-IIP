@@ -133,6 +133,7 @@ try {
     )
     $timeoutProbeOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $runnerPath -WorkflowPath $shortenedWorkflowPath 2>&1 | Out-String
     $timeoutProbeExitCode = $LASTEXITCODE
+    $global:LASTEXITCODE = 0
     Assert-Contract ($timeoutProbeExitCode -ne 0) 'A workflow step timeout shorter than the runner internal budget must fail before governed work starts.'
     Assert-Contract (
         $timeoutProbeOutput.Contains('FullChain internal timeout budget 6960 seconds', [StringComparison]::Ordinal) -and
