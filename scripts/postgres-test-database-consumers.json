@@ -71,6 +71,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
+      "sourceSha256": "1863ff8da3ed832182f3368bcbf1afb080ca3ba0915011b877120e9fc08c562f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The Maintenance world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
       "sourceSha256": "61b0bd316736c677eae0b2d0b0dac1f97465ded78b400143ab747febfe8f8ce2",
       "factoryCallCount": 1,
