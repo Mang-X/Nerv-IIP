@@ -22,6 +22,8 @@ $requiredOwnerships = @(
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'encapsulated-explicit-drop'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
+    @{ sourcePath = 'backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
+    @{ sourcePath = 'backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/WorldHistoryQualitySeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs'; strategy = 'factory-forwarder'; factoryCallCount = 1 },
