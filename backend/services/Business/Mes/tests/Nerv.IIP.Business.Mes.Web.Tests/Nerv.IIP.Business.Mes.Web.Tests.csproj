@@ -36,6 +36,7 @@
     <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Coding\Nerv.IIP.Coding\Nerv.IIP.Coding.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
   </ItemGroup>
 
 </Project>
