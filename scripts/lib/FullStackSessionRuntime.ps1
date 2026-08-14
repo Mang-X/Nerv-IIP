@@ -16,6 +16,64 @@ $runtimeLibraryRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 . (Join-Path $runtimeLibraryRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $runtimeLibraryRoot 'scripts/lib/FullStackSessionState.ps1')
 
+function Wait-NervFullStackPostgresRelations {
+    param(
+        [Parameter(Mandatory)] [string] $ContainerId,
+        [Parameter(Mandatory)] [string] $Database,
+        [Parameter(Mandatory)] [string[]] $Relations,
+        [ValidateRange(1, 600)] [int] $TimeoutSeconds = 180,
+        [scriptblock] $QueryAction,
+        [scriptblock] $DelayAction
+    )
+
+    if ($Relations.Count -eq 0) { throw 'PostgreSQL relation readiness requires at least one frozen relation.' }
+    foreach ($relation in $Relations) {
+        if ("$relation" -notmatch '^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$') {
+            throw "PostgreSQL readiness relation '$relation' must be a schema-qualified lowercase identifier."
+        }
+    }
+    if ($null -eq $QueryAction) {
+        $QueryAction = {
+            param($OwnedContainerId, $OwnedDatabase, $RequiredRelations)
+            $values = @($RequiredRelations | ForEach-Object { "('$_')" }) -join ','
+            $sql = "SELECT COUNT(*) FROM (VALUES $values) AS required(name) WHERE to_regclass(required.name) IS NOT NULL;"
+            $result = Invoke-NativeCommandOutput `
+                -Command 'docker' `
+                -Arguments @(
+                    'exec', $OwnedContainerId, 'sh', '-c',
+                    'PGPASSWORD="$POSTGRES_PASSWORD" exec psql -U "$POSTGRES_USER" -d "$1" -X -Atqc "$2"',
+                    'nerv-fullstack-readiness', $OwnedDatabase, $sql
+                ) `
+                -WorkingDirectory $runtimeLibraryRoot `
+                -TimeoutSeconds 30 `
+                -Name "fullstack-postgres-relations-$OwnedDatabase"
+            $count = 0
+            if (-not [int]::TryParse("$($result.Stdout)".Trim(), [ref] $count)) {
+                throw "PostgreSQL relation readiness returned a non-integer result for '$OwnedDatabase'."
+            }
+            return $count
+        }
+    }
+    if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $attempts = 0
+    do {
+        $attempts++
+        $observedCount = [int] (& $QueryAction $ContainerId $Database $Relations)
+        if ($observedCount -eq $Relations.Count) {
+            return [pscustomobject]@{ Attempts = $attempts; RelationCount = $observedCount }
+        }
+        if ($observedCount -lt 0 -or $observedCount -gt $Relations.Count) {
+            throw "PostgreSQL relation readiness returned impossible count $observedCount/$($Relations.Count) for '$Database'."
+        }
+        if ([DateTimeOffset]::UtcNow -ge $deadline) { break }
+        & $DelayAction 2
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+
+    throw "PostgreSQL relations did not become ready in '$Database' within $TimeoutSeconds seconds: $($Relations -join ', ')."
+}
+
 function Test-NervDockerResourceOwnership {
     param(
         [Parameter(Mandatory)] [object] $InspectObject,
@@ -1615,15 +1673,58 @@ function Invoke-NervAspireStartWithRetry {
 function Stop-NervWorktreeProcesses {
     param(
         [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [Parameter(Mandatory)] [string] $SessionId,
         [int[]] $ExcludedProcessIds = @(),
         [scriptblock] $ProcessQueryAction,
-        [scriptblock] $StopAction
+        [scriptblock] $StopAction,
+        [scriptblock] $ProcessAliveAction
     )
 
     if ($null -eq $ProcessQueryAction) {
         $ProcessQueryAction = {
-            if (-not $IsWindows) { return @() }
-            return @(Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine)
+            if ($IsWindows) {
+                return @(Get-CimInstance Win32_Process | Select-Object ProcessId, Name, CommandLine)
+            }
+            if ($IsLinux) {
+                $records = [System.Collections.Generic.List[object]]::new()
+                foreach ($entry in [System.IO.Directory]::EnumerateDirectories('/proc')) {
+                    $processId = 0
+                    if (-not [int]::TryParse([System.IO.Path]::GetFileName($entry), [ref] $processId)) { continue }
+                    try {
+                        $commandLinePath = Join-Path $entry 'cmdline'
+                        $commandLineBytes = [System.IO.File]::ReadAllBytes($commandLinePath)
+                        if ($commandLineBytes.Length -eq 0) { continue }
+                        $commandLine = [System.Text.Encoding]::UTF8.GetString($commandLineBytes).Replace([char] 0, ' ').Trim()
+                        if ([string]::IsNullOrWhiteSpace($commandLine)) { continue }
+                        $name = [System.IO.File]::ReadAllText((Join-Path $entry 'comm')).Trim()
+                        $ownedSessionId = $null
+                        try {
+                            $environmentBytes = [System.IO.File]::ReadAllBytes((Join-Path $entry 'environ'))
+                            foreach ($environmentEntry in [System.Text.Encoding]::UTF8.GetString($environmentBytes).Split([char] 0)) {
+                                if ($environmentEntry.StartsWith('NERV_IIP_SESSION_ID=', [StringComparison]::Ordinal)) {
+                                    $ownedSessionId = $environmentEntry.Substring('NERV_IIP_SESSION_ID='.Length)
+                                    break
+                                }
+                            }
+                        }
+                        catch {
+                            # Command-line ownership remains available when a kernel policy hides environ.
+                        }
+                        $records.Add([pscustomobject]@{
+                            ProcessId = $processId
+                            Name = $name
+                            CommandLine = $commandLine
+                            SessionId = $ownedSessionId
+                        })
+                    }
+                    catch {
+                        # A process may exit while /proc is being inspected; that is already clean.
+                    }
+                }
+                return @($records)
+            }
+
+            return @()
         }
     }
     if ($null -eq $StopAction) {
@@ -1632,22 +1733,76 @@ function Stop-NervWorktreeProcesses {
             Stop-ProcessTree -ProcessId $ProcessId -Reason $Reason | Out-Null
         }
     }
+    if ($null -eq $ProcessAliveAction) {
+        $ProcessAliveAction = {
+            param($ProcessId)
+            try {
+                Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+                return $true
+            }
+            catch { return $false }
+        }
+    }
 
-    $normalizedRoot = [System.IO.Path]::GetFullPath($WorktreeRoot).Replace('/', '\').TrimEnd('\') + '\'
+    $normalizedRoot = "$WorktreeRoot".Replace('\', '/')
+    $isDriveRooted = $normalizedRoot -match '^[A-Za-z]:/'
+    if (-not $isDriveRooted -and -not $normalizedRoot.StartsWith('/', [StringComparison]::Ordinal)) {
+        $normalizedRoot = [System.IO.Path]::GetFullPath($WorktreeRoot).Replace('\', '/')
+    }
+    $normalizedRoot = $normalizedRoot.TrimEnd('/') + '/'
+    $pathComparison = if ($IsWindows -or $isDriveRooted) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
     $excluded = @($ExcludedProcessIds | ForEach-Object { [int] $_ })
-    $allowedProcessNames = @('dotnet', 'dotnet.exe', 'node', 'node.exe', 'aspire', 'aspire.exe', 'dcp', 'dcp.exe')
+    $allowedProcessNames = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('dotnet', 'dotnet.exe', 'node', 'node.exe', 'aspire', 'aspire.exe', 'aspire-managed', 'dcp', 'dcp.exe'),
+        [StringComparer]::Ordinal)
     $stopped = [System.Collections.Generic.List[int]]::new()
     foreach ($process in @(& $ProcessQueryAction)) {
         $processId = [int] $process.ProcessId
         if ($processId -le 0 -or $excluded -contains $processId) { continue }
-        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($allowedProcessNames), [StringComparer]::Ordinal).Contains([string]("$($process.Name)".ToLowerInvariant()))) { continue }
-        $commandLine = "$($process.CommandLine)".Replace('/', '\')
-        if ([string]::IsNullOrWhiteSpace($commandLine) -or -not $commandLine.Contains($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
-        & $StopAction $processId "Exact worktree process cleanup for $normalizedRoot"
+        $sessionProperty = $process.PSObject.Properties['SessionId']
+        $isSessionOwned = $null -ne $sessionProperty -and
+            [string]::Equals([string]$sessionProperty.Value, $SessionId, [StringComparison]::Ordinal)
+        $hasAllowedWorktreeName = $allowedProcessNames.Contains([string]("$($process.Name)".ToLowerInvariant()))
+        $commandLine = "$($process.CommandLine)".Replace('\', '/')
+        $isWorktreeOwned = $hasAllowedWorktreeName -and
+            -not [string]::IsNullOrWhiteSpace($commandLine) -and
+            $commandLine.Contains($normalizedRoot, $pathComparison)
+        if (-not ($isSessionOwned -or $isWorktreeOwned)) { continue }
+        & $StopAction $processId "Exact session process cleanup for $SessionId"
         $stopped.Add($processId)
     }
 
-    return [pscustomobject]@{ StoppedProcessIds = @($stopped) }
+    $remaining = [System.Collections.Generic.List[int]]::new()
+    foreach ($processId in @($stopped)) {
+        $alive = $true
+        for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            if (-not (& $ProcessAliveAction $processId)) { $alive = $false; break }
+            Start-Sleep -Milliseconds 100
+        }
+        if ($alive) { $remaining.Add($processId) }
+    }
+
+    return [pscustomobject]@{
+        Complete = $remaining.Count -eq 0
+        StoppedProcessIds = @($stopped)
+        RemainingProcessIds = @($remaining)
+    }
+}
+
+function Invoke-NervFullStackSessionEnvironment {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid full-stack session ID '$SessionId'."
+    }
+
+    Use-ScopedEnvironmentVariable `
+        -Name 'NERV_IIP_SESSION_ID' `
+        -Value $SessionId `
+        -ScriptBlock $ScriptBlock
 }
 
 function Stop-NervFullStackSession {
@@ -1691,9 +1846,13 @@ function Stop-NervFullStackSession {
                     Stop-ProcessTree -ProcessId $processId -Reason "Exact full-stack session stop for $($Manifest.sessionId)" | Out-Null
                 }
             }
-            Stop-NervWorktreeProcesses `
+            $worktreeProcessResult = Stop-NervWorktreeProcesses `
                 -WorktreeRoot "$($Manifest.worktreeRoot)" `
-                -ExcludedProcessIds @($PID, $callerGuardianPid) | Out-Null
+                -SessionId "$($Manifest.sessionId)" `
+                -ExcludedProcessIds @($PID, $callerGuardianPid)
+            if (-not $worktreeProcessResult.Complete) {
+                throw "Owned worktree processes remain after cleanup: $($worktreeProcessResult.RemainingProcessIds -join ', ')."
+            }
         }
     }
     if ($null -eq $DockerRemoveAction) {
@@ -1720,7 +1879,12 @@ function Stop-NervFullStackSession {
     $errors = [System.Collections.Generic.List[string]]::new()
     $cleanupFailures = [System.Collections.Generic.List[string]]::new()
     if (-not $wasStopped) {
-        try { & $AspireStopAction $manifest } catch {
+        try {
+            Invoke-NervFullStackSessionEnvironment `
+                -SessionId "$($manifest.sessionId)" `
+                -ScriptBlock { & $AspireStopAction $manifest }
+        }
+        catch {
             $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
             $cleanupFailures.Add('aspire:stop-failed')
         }

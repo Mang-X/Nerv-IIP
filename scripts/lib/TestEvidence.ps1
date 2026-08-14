@@ -203,6 +203,7 @@ function Get-NervTestEvidenceLaneJobs {
         'connector-host' = 'Connector Host Tests'
         'postgres' = 'PostgreSQL Provider Tests'
         'redis-cap' = 'Redis/CAP Transport Tests'
+        'full-chain' = 'Business FullChain Acceptance'
     }
 }
 

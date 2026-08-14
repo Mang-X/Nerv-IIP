@@ -1140,6 +1140,7 @@ try {
         'connector-host' = 'ubuntu24@20260804.265.1'
         'postgres' = 'ubuntu24@20260804.265.1'
         'redis-cap' = 'ubuntu24@20260804.265.1'
+        'full-chain' = 'ubuntu24@20260804.265.1'
     }
     function New-NervEvidenceJobLog {
         param([Parameter(Mandatory)] [string] $RunnerImage, [string] $DotnetSdk = '10.0.302')
@@ -1598,7 +1599,8 @@ foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3'
 }
 Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
-Assert-Equal 7 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, PostgreSQL, and Redis/CAP lanes.'
+Assert-Equal 8 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, PostgreSQL, Redis/CAP, and FullChain lanes.'
+Assert-Equal 'Business FullChain Acceptance' $laneJobAllowlist['full-chain'] 'The stable full-chain evidence lane must bind to its only hosted job for rerun authority.'
 $laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
 $actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
 Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'
