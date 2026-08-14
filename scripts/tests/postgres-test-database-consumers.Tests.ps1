@@ -20,6 +20,7 @@ $requiredOwnerships = @(
     @{ sourcePath = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 3 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'encapsulated-explicit-drop'; factoryCallCount = 1 },
+    @{ sourcePath = 'backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/WorldHistoryDeviceSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
