@@ -89,6 +89,25 @@ pwsh scripts/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Appl
 `DROP DATABASE` 而非 `WITH (FORCE)`，并在删除后精确回读。业务库、非标准名称、未到年龄或有活动连接
 的数据库都不会删除。性能基线测试继续使用独占实例，禁止接入共享 AppHost，以免资源竞争污染测量。
 
+真实 Redis/CAP 测试把一次本地测试会话的 stream/topic、consumer group 和分布式锁统一放入
+`nerv:n822:<UUIDv7>:` 命名空间。`Cap:TopicNamePrefix` 负责 stream/topic 前缀，`Cap:Version`
+负责 consumer group 版本，`DistributedLocking:RedisKeyPrefix` 位于服务名锁前缀之外；三者缺少任一项，
+同一服务的两个 worktree 都可能发生串台。测试会写入带 5 分钟 TTL、每分钟按 owner token 原子续租的
+`__owner` 租约，正常退出时只删除自己命名空间内的 key 并回读确认为空。崩溃或 Ctrl-C 后，使用下面的
+默认预览和显式应用入口清理至少存活 24 小时、且 owner 租约已过期的本地测试命名空间：
+
+```bash
+pwsh scripts/cleanup-stale-redis-test-keys.ps1
+pwsh scripts/cleanup-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
+```
+
+该脚本需要 PowerShell 7、`redis-cli` 与 `NERV_IIP_TEST_REDIS`。它只接受严格的
+`nerv:n822:<UUIDv7>:`，逐 key 使用 `UNLINK` 并精确复核；`nerv:n688:*` hosted lane 命名空间、普通业务
+key、未到年龄或 owner 租约仍存活的会话都不会删除，且绝不使用 `FLUSHALL`。若手工运行同一真实
+Redis/CAP 用例的两个进程，需要从同一个唯一 session root 派生并分别注入
+`NERV_IIP_TEST_CAP_VERSION`、`NERV_IIP_TEST_CAP_TOPIC_PREFIX` 与
+`DistributedLocking__RedisKeyPrefix`；其中后两项都以该 root 开头，不要复制另一会话的任一项身份。
+
 9. **Bootstrap seed 密码绝不硬编码。** 联网机器的 bootstrap 可以创建本地 Development user-secrets，
    但不得在源码中保留固定 IAM admin 密码。默认生成随机本地值，或要求操作者通过不记录日志的路径显式
    传入值。设置 secret 的命令必须将敏感参数标记为脚本日志脱敏对象。

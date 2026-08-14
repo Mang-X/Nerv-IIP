@@ -198,3 +198,7 @@ finally {
 }
 
 Write-Output 'Redis/CAP test lane contract tests passed.'
+
+# Keep the destructive stale-namespace cleanup contract under the established Redis/CAP
+# governance entry without adding a second workflow surface.
+& (Join-Path $PSScriptRoot 'redis-test-namespace-cleanup.Tests.ps1')

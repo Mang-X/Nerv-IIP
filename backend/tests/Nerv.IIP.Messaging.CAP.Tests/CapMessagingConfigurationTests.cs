@@ -166,6 +166,25 @@ public sealed class CapMessagingConfigurationTests
     }
 
     [Fact]
+    public void UseConfiguredTransport_RedisProvider_AppliesSessionVersionAndTopicPrefix()
+    {
+        var options = new CapOptions();
+
+        options.UseConfiguredTransport(CreateConfiguration(new Dictionary<string, string?>
+        {
+            ["Messaging:Provider"] = "Redis",
+            ["ConnectionStrings:Redis"] = "redis.local:6379",
+            ["Cap:Version"] = "n822-a-019c1234",
+            ["Cap:TopicNamePrefix"] = "nerv:n822:019c123456787abc8def0123456789ab:transport:",
+        }));
+
+        Assert.Equal("n822-a-019c1234", options.Version);
+        Assert.Equal(
+            "nerv:n822:019c123456787abc8def0123456789ab:transport:",
+            options.TopicNamePrefix);
+    }
+
+    [Fact]
     public void UseConfiguredTransport_RedisProviderWithoutConnectionString_FailsFastWithDiagnosticKeys()
     {
         var options = new CapOptions();
