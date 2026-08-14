@@ -1673,6 +1673,7 @@ function Invoke-NervAspireStartWithRetry {
 function Stop-NervWorktreeProcesses {
     param(
         [Parameter(Mandatory)] [string] $WorktreeRoot,
+        [Parameter(Mandatory)] [string] $SessionId,
         [int[]] $ExcludedProcessIds = @(),
         [scriptblock] $ProcessQueryAction,
         [scriptblock] $StopAction,
@@ -1696,7 +1697,25 @@ function Stop-NervWorktreeProcesses {
                         $commandLine = [System.Text.Encoding]::UTF8.GetString($commandLineBytes).Replace([char] 0, ' ').Trim()
                         if ([string]::IsNullOrWhiteSpace($commandLine)) { continue }
                         $name = [System.IO.File]::ReadAllText((Join-Path $entry 'comm')).Trim()
-                        $records.Add([pscustomobject]@{ ProcessId = $processId; Name = $name; CommandLine = $commandLine })
+                        $ownedSessionId = $null
+                        try {
+                            $environmentBytes = [System.IO.File]::ReadAllBytes((Join-Path $entry 'environ'))
+                            foreach ($environmentEntry in [System.Text.Encoding]::UTF8.GetString($environmentBytes).Split([char] 0)) {
+                                if ($environmentEntry.StartsWith('NERV_IIP_SESSION_ID=', [StringComparison]::Ordinal)) {
+                                    $ownedSessionId = $environmentEntry.Substring('NERV_IIP_SESSION_ID='.Length)
+                                    break
+                                }
+                            }
+                        }
+                        catch {
+                            # Command-line ownership remains available when a kernel policy hides environ.
+                        }
+                        $records.Add([pscustomobject]@{
+                            ProcessId = $processId
+                            Name = $name
+                            CommandLine = $commandLine
+                            SessionId = $ownedSessionId
+                        })
                     }
                     catch {
                         # A process may exit while /proc is being inspected; that is already clean.
@@ -1740,10 +1759,16 @@ function Stop-NervWorktreeProcesses {
     foreach ($process in @(& $ProcessQueryAction)) {
         $processId = [int] $process.ProcessId
         if ($processId -le 0 -or $excluded -contains $processId) { continue }
-        if (-not $allowedProcessNames.Contains([string]("$($process.Name)".ToLowerInvariant()))) { continue }
+        $sessionProperty = $process.PSObject.Properties['SessionId']
+        $isSessionOwned = $null -ne $sessionProperty -and
+            [string]::Equals([string]$sessionProperty.Value, $SessionId, [StringComparison]::Ordinal)
+        $hasAllowedWorktreeName = $allowedProcessNames.Contains([string]("$($process.Name)".ToLowerInvariant()))
         $commandLine = "$($process.CommandLine)".Replace('\', '/')
-        if ([string]::IsNullOrWhiteSpace($commandLine) -or -not $commandLine.Contains($normalizedRoot, $pathComparison)) { continue }
-        & $StopAction $processId "Exact worktree process cleanup for $normalizedRoot"
+        $isWorktreeOwned = $hasAllowedWorktreeName -and
+            -not [string]::IsNullOrWhiteSpace($commandLine) -and
+            $commandLine.Contains($normalizedRoot, $pathComparison)
+        if (-not ($isSessionOwned -or $isWorktreeOwned)) { continue }
+        & $StopAction $processId "Exact session process cleanup for $SessionId"
         $stopped.Add($processId)
     }
 
@@ -1807,6 +1832,7 @@ function Stop-NervFullStackSession {
             }
             $worktreeProcessResult = Stop-NervWorktreeProcesses `
                 -WorktreeRoot "$($Manifest.worktreeRoot)" `
+                -SessionId "$($Manifest.sessionId)" `
                 -ExcludedProcessIds @($PID, $callerGuardianPid)
             if (-not $worktreeProcessResult.Complete) {
                 throw "Owned worktree processes remain after cleanup: $($worktreeProcessResult.RemainingProcessIds -join ', ')."

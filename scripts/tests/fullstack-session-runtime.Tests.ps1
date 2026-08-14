@@ -1465,6 +1465,7 @@ Assert-True ($relationReadiness.RelationCount -eq 1) 'PostgreSQL relation readin
 $script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
 $worktreeProcessResult = Stop-NervWorktreeProcesses `
     -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
+    -SessionId 'nerv-abcd-123456' `
     -ExcludedProcessIds @(102) `
     -ProcessQueryAction {
         @(
@@ -1472,16 +1473,19 @@ $worktreeProcessResult = Stop-NervWorktreeProcesses `
             [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
             [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
             [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' },
-            [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed C:/nfs/fullstack-worktrees/abcd1234/s2/backend/service.dll' }
+            [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed run'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 106; Name = 'Nerv.IIP.Business.Mes.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Mes.Web'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 107; Name = 'Nerv.IIP.Business.Wms.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Wms.Web'; SessionId = 'nerv-other-654321' }
         )
     } `
     -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) } `
     -ProcessAliveAction { param($ProcessId) $false }
-Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 2) 'Worktree cleanup must select exact owned dotnet and Aspire-managed command lines.'
-Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '101,105', [StringComparison]::Ordinal)) 'Worktree cleanup stopped the wrong process.'
+Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 3) 'Worktree cleanup must select exact worktree and session-environment owned processes.'
+Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '101,105,106', [StringComparison]::Ordinal)) 'Worktree cleanup stopped the wrong process.'
 
 $runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
+Assert-True ($runtimeSource.Contains("NERV_IIP_SESSION_ID=", [StringComparison]::Ordinal)) 'Linux cleanup must bind detached processes to the exact session environment.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {
