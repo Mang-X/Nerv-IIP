@@ -512,7 +512,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var inbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev", new
         {
@@ -641,8 +641,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var create = await client.PostAsJsonAsync(
             "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev",
@@ -702,8 +701,7 @@ public sealed class BusinessGatewayWmsTests
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var create = await client.PostAsJsonAsync(
             "/api/business-console/v1/wms/count-executions?organizationId=org-001&environmentId=env-dev",
@@ -765,7 +763,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var outbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev", new
         {
@@ -846,7 +844,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
         {
@@ -928,8 +926,7 @@ public sealed class BusinessGatewayWmsTests
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         const string forged =
             "?organizationId=org-001&environmentId=env-dev&actorPrincipalId=forged&authorizedSiteCodes=FORGED-SITE";
 
@@ -1001,8 +998,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var catalog = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
@@ -1056,8 +1052,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
@@ -1085,8 +1080,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
@@ -1128,8 +1122,7 @@ public sealed class BusinessGatewayWmsTests
             });
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
@@ -1168,8 +1161,7 @@ public sealed class BusinessGatewayWmsTests
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         var scenarios = new[]
         {
             (
@@ -1272,8 +1264,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
@@ -1315,8 +1306,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var catalog = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/receipts?organizationId=org-001&environmentId=env-dev");
@@ -1354,7 +1344,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1&skip=10&take=20&status=Open&keyword=IN&inboundOrderId=0199aa00-0000-7000-8000-000000000001");
 
@@ -1405,7 +1395,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev");
 
@@ -1436,7 +1426,7 @@ public sealed class BusinessGatewayWmsTests
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
             });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
 
@@ -1508,7 +1498,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessInventoryClient>(inventory);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
@@ -1549,7 +1539,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/inbound-orders?organizationId=org-001&environmentId=env-dev&skuCode=SKU-001&uomCode=EA&siteCode=S1");
 
@@ -1575,7 +1565,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/outbound-orders?organizationId=org-001&environmentId=env-dev&locationCode=BIN-OUT-01&lotNo=LOT-OUT-01&skip=20&take=10&status=Completed&keyword=OUT&outboundOrderId=0199aa00-0000-7000-8000-000000000002");
 
@@ -1616,7 +1606,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         var invalidRequests = new[]
         {
             "/api/business-console/v1/wms/outbound-orders?environmentId=env-dev",
@@ -1655,7 +1645,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var putaway = await client.GetAsync("/api/business-console/v1/wms/putaway-tasks?organizationId=org-001&environmentId=env-dev&locationCode=RECV-01&lotNo=LOT-001&skip=10&take=20&status=Open&keyword=PUT");
         var picking = await client.GetAsync("/api/business-console/v1/wms/picking-tasks?organizationId=org-001&environmentId=env-dev&locationCode=BIN-01&skip=20&take=10&status=Open&keyword=PICK");
@@ -1769,8 +1759,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var catalog = await client.GetAsync(
             "/api/business-console/v1/wms/work-scopes/counts?organizationId=org-001&environmentId=env-dev");
@@ -1808,7 +1797,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/wms/wcs-tasks?organizationId=org-001&environmentId=env-dev&externalTaskId=EXT-001&warehouseTaskId=warehouse-task-001&skip=30&take=15&status=Failed&failed=true&keyword=EXT");
 
@@ -1834,7 +1823,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var gates = await client.GetAsync("/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&scopeKind=work-pool&scopeId=POOL-RECEIVING&actorPrincipalId=forged&authorizedSiteCodes=FORGED&skip=5&take=15&gateStatus=rejected&keyword=IN-GATE");
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
@@ -1902,7 +1891,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/wms/receiving-quality-gates?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin&actorPrincipalId=forged&authorizedSiteCodes=FORGED&inboundOrderNo=IN-OUTSIDE&includeNotRequired=true");
@@ -1945,7 +1934,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         const string forged = "&actorPrincipalId=forged&authorizedSiteCodes=forged&assignedOperatorUserIds=forged&assignedPoolCodes=forged";
 
         var inbound = await client.GetAsync(
@@ -2016,8 +2005,7 @@ public sealed class BusinessGatewayWmsTests
                 new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         const string forged =
             "&actorPrincipalId=forged&authorizedSiteCodes=FORGED&assignedPoolCodes=FORGED";
 
@@ -2117,7 +2105,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IBusinessWmsClient>(wms);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(requestUri);
 
@@ -2151,7 +2139,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var putawayStart = await PostTaskActionAsync(client, "putaway", "putaway-001", "start", "work-pool", "POOL-A");
         Assert.Equal(HttpStatusCode.OK, putawayStart.StatusCode);
@@ -2235,7 +2223,7 @@ public sealed class BusinessGatewayWmsTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete?organizationId=org-001&environmentId=env-dev",
