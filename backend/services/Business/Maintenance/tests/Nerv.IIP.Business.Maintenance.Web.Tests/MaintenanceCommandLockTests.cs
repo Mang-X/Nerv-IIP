@@ -93,6 +93,33 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public void Redis_key_prefix_isolated_by_session_and_then_service_name()
+    {
+        var sessionA = new StackExchangeRedisCommandLockStore(
+            null!,
+            "business-maintenance",
+            "nerv:n822:019c123456787abc8def0123456789ab:");
+        var sessionB = new StackExchangeRedisCommandLockStore(
+            null!,
+            "business-maintenance",
+            "nerv:n822:019c123456797abc8def0123456789ab");
+
+        Assert.Equal(
+            "nerv:n822:019c123456787abc8def0123456789ab:nerv-iip:business-maintenance:locks:tenant-action",
+            sessionA.ToRedisKeyForTesting("tenant-action"));
+        Assert.Equal(
+            "nerv:n822:019c123456797abc8def0123456789ab:nerv-iip:business-maintenance:locks:tenant-action",
+            sessionB.ToRedisKeyForTesting("tenant-action"));
+    }
+
+    [Fact]
+    public void Redis_session_key_prefix_rejects_ambiguous_whitespace()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new StackExchangeRedisCommandLockStore(null!, "business-maintenance", "nerv:n822:invalid prefix:"));
+    }
+
+    [Fact]
     public async Task Device_state_plan_creation_plan_update_and_pm_generation_share_org_environment_lock_key()
     {
         var generateSettings = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(

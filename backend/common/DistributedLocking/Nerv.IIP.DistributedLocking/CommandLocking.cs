@@ -15,6 +15,8 @@ namespace Nerv.IIP.DistributedLocking;
 
 public static class NervIipCommandLockingServiceCollectionExtensions
 {
+    public const string RedisKeyPrefixConfigurationKey = "DistributedLocking:RedisKeyPrefix";
+
     public static IServiceCollection AddNervIipCommandLocking(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -52,7 +54,8 @@ public static class NervIipCommandLockingServiceCollectionExtensions
         });
         services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(
             sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase(),
-            serviceName));
+            serviceName,
+            configuration[RedisKeyPrefixConfigurationKey]));
         services.AddSingleton<IDistributedLock>(sp => new RedisCommandDistributedLock(
             sp.GetRequiredService<IRedisCommandLockStore>(),
             sp.GetRequiredService<TimeProvider>(),
@@ -380,11 +383,14 @@ public interface IRedisCommandLockStore
     Task ReleaseAsync(string key, string token, CancellationToken cancellationToken);
 }
 
-public sealed class StackExchangeRedisCommandLockStore(IDatabase database, string serviceName)
+public sealed class StackExchangeRedisCommandLockStore(
+    IDatabase database,
+    string serviceName,
+    string? sessionKeyPrefix = null)
     : IRedisCommandLockStore
 {
     private readonly string keyPrefix =
-        $"nerv-iip:{NormalizeServiceName(serviceName)}:locks:";
+        $"{NormalizeSessionKeyPrefix(sessionKeyPrefix)}nerv-iip:{NormalizeServiceName(serviceName)}:locks:";
 
     private const string ReleaseScript = """
         if redis.call('get', KEYS[1]) == ARGV[1] then
@@ -437,6 +443,22 @@ public sealed class StackExchangeRedisCommandLockStore(IDatabase database, strin
 
     private static string NormalizeServiceName(string serviceName) =>
         serviceName.Trim().ToLowerInvariant();
+
+    private static string NormalizeSessionKeyPrefix(string? sessionKeyPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(sessionKeyPrefix))
+        {
+            return string.Empty;
+        }
+
+        var normalized = sessionKeyPrefix.Trim();
+        if (normalized.Any(char.IsWhiteSpace) || normalized.Any(char.IsControl))
+        {
+            throw new ArgumentException("Redis session key prefix must not contain whitespace or control characters.", nameof(sessionKeyPrefix));
+        }
+
+        return normalized.EndsWith(':') ? normalized : $"{normalized}:";
+    }
 }
 
 public sealed class InMemoryRedisCommandLockStore(TimeProvider timeProvider) : IRedisCommandLockStore
