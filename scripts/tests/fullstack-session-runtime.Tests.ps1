@@ -1446,6 +1446,22 @@ Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringC
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
 
+$script:relationProbeAttempts = 0
+$relationReadiness = Wait-NervFullStackPostgresRelations `
+    -ContainerId 'postgres-owned' `
+    -Database 'nerv_iip_industrial_telemetry' `
+    -Relations @('industrial_telemetry.device_state_snapshots') `
+    -TimeoutSeconds 5 `
+    -QueryAction {
+        param($ContainerId, $Database, $Relations)
+        $script:relationProbeAttempts++
+        if ($script:relationProbeAttempts -ge 2) { return $Relations.Count }
+        return 0
+    } `
+    -DelayAction { param($Seconds) }
+Assert-True ($relationReadiness.Attempts -eq 2) 'PostgreSQL relation readiness must retry until every frozen table exists.'
+Assert-True ($relationReadiness.RelationCount -eq 1) 'PostgreSQL relation readiness must report the complete frozen table count.'
+
 $script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
 $worktreeProcessResult = Stop-NervWorktreeProcesses `
     -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
@@ -1455,12 +1471,17 @@ $worktreeProcessResult = Stop-NervWorktreeProcesses `
             [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
             [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
             [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
-            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' }
+            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' },
+            [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed C:/nfs/fullstack-worktrees/abcd1234/s2/backend/service.dll' }
         )
     } `
-    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) }
-Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 1) 'Worktree cleanup must select only exact owned process command lines.'
-Assert-True ($script:worktreeStoppedPids[0] -eq 101) 'Worktree cleanup stopped the wrong process.'
+    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) } `
+    -ProcessAliveAction { param($ProcessId) $false }
+Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 2) 'Worktree cleanup must select exact owned dotnet and Aspire-managed command lines.'
+Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '101,105', [StringComparison]::Ordinal)) 'Worktree cleanup stopped the wrong process.'
+
+$runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
+Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {

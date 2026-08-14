@@ -139,6 +139,15 @@ function Invoke-NervMan528MesInventoryAcceptance {
     $redisPort = "$($redis[0].NetworkSettings.Ports.'6379/tcp'[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-528 acceptance could not resolve the session Redis host port.' }
 
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_mes' `
+        -Relations @('mes.work_orders', 'mes.finished_goods_receipt_requests', 'mes.cap_published_messages') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_inventory' `
+        -Relations @('inventory.stock_movements', 'inventory.cap_received_messages', 'inventory.integration_event_dead_letters') | Out-Null
+
     $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
     $probeEnvironment = @{
         NERV_IIP_TEST_MES_POSTGRES = $connectionPrefix + 'Database=nerv_iip_mes'
@@ -244,6 +253,15 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     if ($redisPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session Redis host-port binding.' }
     $redisPort = "$($redisPortBindings[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-440 acceptance could not resolve the session Redis host port.' }
+
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_maintenance' `
+        -Relations @('maintenance.maintenance_plans', 'maintenance.maintenance_work_orders') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_industrial_telemetry' `
+        -Relations @('industrial_telemetry.device_state_snapshots') | Out-Null
 
     $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
     $probeEnvironment = @{
