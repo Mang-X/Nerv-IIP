@@ -16,7 +16,8 @@
   `docs/architecture/context-map.md`。
 - 本地启动、Aspire/fullstack 运行或排障：读取
   `docs/architecture/local-dev-troubleshooting.md`。
-- 人工文档或协作文本：读取 `docs/architecture/document-language-governance.md`。
+- 人工文档或协作文本：读取 `docs/architecture/document-language-governance.md`；该规则覆盖仓库文档，以及 GitHub/Linear 的 Issue、PR、评论和审核文本。
+- GitHub/Linear 发布前：除非用户明确指定其他语言，先检查标题、正文、评论、Review、状态说明和验收结论中的自然语言是否为简体中文；代码、命令、路径、标识符、检查名、SHA、URL 和必要的英文引文按语言治理规则保留。
 - 新建、修订或执行 Superpowers spec/plan：先读取 `docs/superpowers/AGENTS.md`。
 - 用户可见页面或流程变更：按
   `docs/adr/0021-product-docs-information-architecture.md` 评估产品文档影响。
