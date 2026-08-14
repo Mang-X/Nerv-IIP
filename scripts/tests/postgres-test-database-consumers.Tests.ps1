@@ -28,6 +28,7 @@ $requiredOwnerships = @(
     @{ sourcePath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/WorldHistoryQualitySeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs'; strategy = 'factory-forwarder'; factoryCallCount = 1 },
+    @{ sourcePath = 'backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs'; strategy = 'helper-self-test'; factoryCallCount = 6 }
 )
 
@@ -165,9 +166,9 @@ Assert-ConsumerPolicy $policy $sources
 
 $missing = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; $missing.consumers = @($missing.consumers | Select-Object -Skip 1)
 $rejected = $false; try { Assert-ConsumerPolicy $missing $sources } catch { $rejected = $_.Exception.Message.Contains('exactly once', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Deleting a ledger entry must fail closed.'
-$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { ([string] $_.sourcePath).Contains('ProductEngineering', [StringComparison]::Ordinal) })[0].ownerships[0]).strategy = 'best-effort-dispose'
+$downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100; (@($downgraded.consumers | Where-Object { ([string] $_.sourcePath).Contains('ErpReturnClosurePostgresAcceptanceTests', [StringComparison]::Ordinal) })[0].ownerships[0]).strategy = 'best-effort-dispose'
 $rejected = $false; try { Assert-ConsumerPolicy $downgraded $sources } catch { $rejected = $_.Exception.Message.Contains('required ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Downgrading required explicit ownership must fail closed.'
-$targetPath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'
+$targetPath = 'backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs'
 $mutatedSource = ([string] $sources[$targetPath].Source).Replace('await database.DropAsync();', 'if (DateTime.UtcNow.Ticks < 0) await database.DropAsync();', [StringComparison]::Ordinal)
 $rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $mutatedSource) } catch { $rejected = $_.Exception.Message.Contains('source hash drifted', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Any governed source mutation must fail closed before syntax tricks can preserve a stale classification.'
 $aliasProbe = 'using Pg = Nerv.IIP.Testing.PostgreSql.PostgreSqlTestDatabase; class Probe { Task Run(string value) => Pg.CreateAsync(value, "probe"); }'
