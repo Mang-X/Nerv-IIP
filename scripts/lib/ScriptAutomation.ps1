@@ -387,7 +387,6 @@ function Stop-ProcessTree {
         Reason = $Reason
         StoppedProcessIds = @($stopped)
         MissingProcessIds = @($missing)
-        RemainingProcessIds = @($remaining)
     }
 }
 

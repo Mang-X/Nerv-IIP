@@ -17,6 +17,7 @@
 param(
     [string[]] $MemberId = @(),
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
+    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json')
 )
@@ -25,6 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 . (Join-Path $PSScriptRoot 'lib/FullChainTestLane.ps1')
+. (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
@@ -43,7 +45,20 @@ foreach ($member in $selectedMembers) { $projectSet.Add([string]$member.project)
 if ($projectSet.Count -ne 1) { throw 'Selected FullChain members must share exactly one test project for governed discovery.' }
 $fullChainProject = @($projectSet)[0]
 
-$runStepTimeoutSeconds = 120 * 60
+$workflowJobs = Get-NervCiWorkflowBudgets -Path $WorkflowPath
+$fullChainWorkflowJobs = @($workflowJobs | Where-Object {
+    [string]::Equals([string]$_.Name, 'business-full-chain-acceptance', [StringComparison]::Ordinal)
+})
+if ($fullChainWorkflowJobs.Count -ne 1) {
+    throw "Workflow '$WorkflowPath' must define exactly one business-full-chain-acceptance job."
+}
+$fullChainRunSteps = @($fullChainWorkflowJobs[0].Steps | Where-Object {
+    [string]::Equals([string]$_.Name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal)
+})
+if ($fullChainRunSteps.Count -ne 1 -or [int]$fullChainRunSteps[0].TimeoutMinutes -le 0) {
+    throw "Workflow '$WorkflowPath' must define exactly one timed Run governed FullChain scenarios step."
+}
+$runStepTimeoutSeconds = [int]$fullChainRunSteps[0].TimeoutMinutes * 60
 $infrastructureTimeoutSeconds = 300
 $readinessTimeoutSeconds = 30 * 2
 $restoreTimeoutSeconds = 600

@@ -1495,10 +1495,23 @@ Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '
 $runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
 Assert-True ($runtimeSource.Contains("NERV_IIP_SESSION_ID=", [StringComparison]::Ordinal)) 'Linux cleanup must bind detached processes to the exact session environment.'
+$missingProcessCleanup = Stop-ProcessTree -ProcessId 2147483646 -Reason 'missing-process-return-contract'
+$hasRemainingProcessIdsProperty = $false
+foreach ($propertyName in @($missingProcessCleanup.PSObject.Properties.Name)) {
+    if ([string]::Equals([string]$propertyName, 'RemainingProcessIds', [StringComparison]::Ordinal)) {
+        $hasRemainingProcessIdsProperty = $true
+    }
+}
+Assert-True (
+    -not $hasRemainingProcessIdsProperty
+) 'Managed-process tree cleanup must not expose an always-empty remaining-process success field.'
 $scriptAutomationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Raw
 Assert-True ($scriptAutomationSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux managed-process cleanup must enumerate the exact descendant process tree from /proc.'
 Assert-True ($scriptAutomationSource.Contains('ParentProcessId', [StringComparison]::Ordinal)) 'Linux managed-process cleanup must retain parent-process identity for recursive tree selection.'
-Assert-True ($scriptAutomationSource.Contains('RemainingProcessIds', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must read back every frozen descendant PID and fail when one remains.'
+Assert-True ($scriptAutomationSource.Contains('foreach ($id in $ids)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must read back every frozen descendant PID.'
+Assert-True ($scriptAutomationSource.Contains('Get-Process -Id $id -ErrorAction SilentlyContinue', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must test every frozen PID for liveness.'
+Assert-True ($scriptAutomationSource.Contains('if ($remaining.Count -ne 0)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must detect a non-empty readback set.'
+Assert-True ($scriptAutomationSource.Contains('Exact managed process tree cleanup left PID(s)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must fail closed when any frozen PID remains.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {

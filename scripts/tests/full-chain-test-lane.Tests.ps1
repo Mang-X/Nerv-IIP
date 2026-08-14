@@ -122,6 +122,23 @@ try {
     }
     Assert-Contract ($workflowContent.Contains('if-no-files-found: error', [StringComparison]::Ordinal)) 'FullChain evidence uploads must fail when required artifacts are missing.'
 
+    $workflowTimeoutNeedle = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 120"
+    $shortenedWorkflowTimeout = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 90"
+    Assert-Contract ($workflowContent.Contains($workflowTimeoutNeedle, [StringComparison]::Ordinal)) 'The FullChain workflow timeout mutation must target exactly one governed run step.'
+    $shortenedWorkflowPath = Join-Path $fixtureRoot 'ci-shortened-full-chain-timeout.yml'
+    [IO.File]::WriteAllText(
+        $shortenedWorkflowPath,
+        $workflowContent.Replace($workflowTimeoutNeedle, $shortenedWorkflowTimeout, [StringComparison]::Ordinal),
+        [Text.UTF8Encoding]::new($false)
+    )
+    $timeoutProbeOutput = & pwsh -NoLogo -NoProfile -NonInteractive -File $runnerPath -WorkflowPath $shortenedWorkflowPath 2>&1 | Out-String
+    $timeoutProbeExitCode = $LASTEXITCODE
+    Assert-Contract ($timeoutProbeExitCode -ne 0) 'A workflow step timeout shorter than the runner internal budget must fail before governed work starts.'
+    Assert-Contract (
+        $timeoutProbeOutput.Contains('FullChain internal timeout budget 6960 seconds', [StringComparison]::Ordinal) -and
+        $timeoutProbeOutput.Contains('5400-second workflow step', [StringComparison]::Ordinal)
+    ) "The runner must derive its timeout guard from the actual FullChain workflow step instead of a copied constant. Probe output: $timeoutProbeOutput"
+
     $manifestObject = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestObject.members = @($manifestObject.members | Select-Object -First 4)
     $missingMemberPath = Join-Path $fixtureRoot 'missing-member.json'
