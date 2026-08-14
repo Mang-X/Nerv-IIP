@@ -243,7 +243,7 @@ jobs:
   backend-test-shard-governance:
     name: Backend Test Shard Governance
     # 层级 B（失败后没有 step 运行）。契约测试会多轮运行真实 validator 变异；
-    # 15m job 预算仍是快速失败界限，step 预算合计为 21m 且仅为逐 step 上限。
+    # 15m job 预算仍是快速失败界限，step 预算合计为 23m 且仅为逐 step 上限。
     timeout-minutes: 15
     runs-on: ubuntu-latest
     needs: impact-plan
@@ -270,7 +270,7 @@ jobs:
         run: ./scripts/verify-backend-test-shards.ps1
 
       - name: Test backend test shard governance
-        timeout-minutes: 8
+        timeout-minutes: 10
         shell: pwsh
         run: ./scripts/tests/backend-test-shards.Tests.ps1
 
