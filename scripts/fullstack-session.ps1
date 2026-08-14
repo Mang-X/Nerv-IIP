@@ -639,7 +639,8 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
             $runProcess = Get-Process -Id $PID
             $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
             try {
-                $runResult = Invoke-NervManagedFullStackRun `
+                $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
+                    Invoke-NervManagedFullStackRun `
                     -StartAction {
                         Start-NervFullStackSession `
                             -GuardianMode Automated `
@@ -731,6 +732,7 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                         param($InputManifest)
                         Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)"
                     }
+                }
                 $manifest = $runResult.Manifest
             }
             finally {

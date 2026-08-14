@@ -1789,6 +1789,22 @@ function Stop-NervWorktreeProcesses {
     }
 }
 
+function Invoke-NervFullStackSessionEnvironment {
+    param(
+        [Parameter(Mandatory)] [string] $SessionId,
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock
+    )
+
+    if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid full-stack session ID '$SessionId'."
+    }
+
+    Use-ScopedEnvironmentVariable `
+        -Name 'NERV_IIP_SESSION_ID' `
+        -Value $SessionId `
+        -ScriptBlock $ScriptBlock
+}
+
 function Stop-NervFullStackSession {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
@@ -1864,9 +1880,8 @@ function Stop-NervFullStackSession {
     $cleanupFailures = [System.Collections.Generic.List[string]]::new()
     if (-not $wasStopped) {
         try {
-            Use-ScopedEnvironmentVariable `
-                -Name 'NERV_IIP_SESSION_ID' `
-                -Value "$($manifest.sessionId)" `
+            Invoke-NervFullStackSessionEnvironment `
+                -SessionId "$($manifest.sessionId)" `
                 -ScriptBlock { & $AspireStopAction $manifest }
         }
         catch {

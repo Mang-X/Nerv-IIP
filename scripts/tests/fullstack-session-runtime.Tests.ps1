@@ -1358,6 +1358,15 @@ finally {
 
 $script:managedCollectCalls = 0
 $script:managedStopCalls = 0
+$script:managedRunSessionId = $null
+Use-ScopedEnvironmentVariable -Name 'NERV_IIP_SESSION_ID' -Value 'nerv-other-654321' -ScriptBlock {
+    Invoke-NervFullStackSessionEnvironment -SessionId 'nerv-dead-000002' -ScriptBlock {
+        $script:managedRunSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    }
+    Assert-True ([string]::Equals([string]([Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')), 'nerv-other-654321', [StringComparison]::Ordinal)) 'Managed run scope must restore the caller session environment.'
+}
+Assert-True ([string]::Equals([string]$script:managedRunSessionId, 'nerv-dead-000002', [StringComparison]::Ordinal)) 'Managed run scope must expose the exact session identity to scenario, diagnostics, and stop actions.'
+Assert-True ($fullStackSessionText.Contains("Invoke-NervFullStackSessionEnvironment -SessionId `$SessionId", [StringComparison]::Ordinal)) 'The fullstack run action must keep the exact session identity across scenario, diagnostics, and stop.'
 $managedScenarioFailure = $null
 try {
     Invoke-NervManagedFullStackRun `
