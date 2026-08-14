@@ -97,6 +97,32 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
+      "sourceSha256": "31730e88d1836c0204d7c7bfc834650ba2f3669240a93c50fd24d722a35a03f0",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MES leader-demo scale-seed budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs",
+      "sourceSha256": "90b045ba8ed1efcf97024d4721835fe67085e54c302ba304653f3e7af7fe069f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MES world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
       "sourceSha256": "61b0bd316736c677eae0b2d0b0dac1f97465ded78b400143ab747febfe8f8ce2",
       "factoryCallCount": 1,
