@@ -57,7 +57,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=5");
 
@@ -103,7 +103,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
@@ -131,7 +131,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev&take=75");
 
@@ -158,7 +158,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
@@ -184,7 +184,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
@@ -215,7 +215,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
@@ -247,7 +247,7 @@ public sealed class BusinessGatewayWorkbenchTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 

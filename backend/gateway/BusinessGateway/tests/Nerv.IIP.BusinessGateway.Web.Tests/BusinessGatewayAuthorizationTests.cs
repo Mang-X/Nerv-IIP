@@ -52,7 +52,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -79,7 +79,7 @@ public sealed class BusinessGatewayAuthorizationTests
             },
             builder => builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJsonWithoutAlgorithm()));
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -115,7 +115,7 @@ public sealed class BusinessGatewayAuthorizationTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -139,7 +139,7 @@ public sealed class BusinessGatewayAuthorizationTests
             services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/manufacturing-boms/release", new
         {
@@ -174,7 +174,7 @@ public sealed class BusinessGatewayAuthorizationTests
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/engineering/standard-operations",
@@ -192,7 +192,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
         {
@@ -220,7 +220,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(new HttpMethod(method), $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
             Content = method != "GET"
@@ -243,7 +243,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync($"{path}?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
 
@@ -262,7 +262,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/tags/current-value?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&tagKey=spindle.speed");
 
@@ -280,7 +280,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-07-02T00:00:00Z");
 
@@ -297,7 +297,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-CNC-01/health?organizationId=org-001&environmentId=env-dev");
 
@@ -328,7 +328,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/preview", new { });
 
@@ -342,7 +342,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/routings/release", new
         {
@@ -375,7 +375,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/alarm-rules", new
         {
@@ -408,7 +408,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(new HttpMethod(method), path)
         {
             Content = JsonContent.Create(new
@@ -439,7 +439,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(method, $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
             Content = method != HttpMethod.Get
@@ -479,7 +479,7 @@ public sealed class BusinessGatewayAuthorizationTests
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         await using var lease = LeaseHost(auth);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{path}?organizationId=org-001&environmentId=env-dev")
         {
             Content = JsonContent.Create(ValidPostBody(path))
