@@ -71,6 +71,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/WorldHistoryDeviceSeedPostgresTests.cs",
+      "sourceSha256": "48d93489e15ba91aad7c3279863bb4e744753f68c5de1561d02a42a8aee50dd5",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The IndustrialTelemetry world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
       "sourceSha256": "1863ff8da3ed832182f3368bcbf1afb080ca3ba0915011b877120e9fc08c562f",
       "factoryCallCount": 1,
