@@ -1495,6 +1495,10 @@ Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '
 $runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
 Assert-True ($runtimeSource.Contains("NERV_IIP_SESSION_ID=", [StringComparison]::Ordinal)) 'Linux cleanup must bind detached processes to the exact session environment.'
+$scriptAutomationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Raw
+Assert-True ($scriptAutomationSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux managed-process cleanup must enumerate the exact descendant process tree from /proc.'
+Assert-True ($scriptAutomationSource.Contains('ParentProcessId', [StringComparison]::Ordinal)) 'Linux managed-process cleanup must retain parent-process identity for recursive tree selection.'
+Assert-True ($scriptAutomationSource.Contains('RemainingProcessIds', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must read back every frozen descendant PID and fail when one remains.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {

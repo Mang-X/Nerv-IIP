@@ -297,6 +297,38 @@ function Get-ScriptAutomationProcessTreeIds {
             }
         }
     }
+    elseif ($IsLinux) {
+        $children = [System.Collections.Generic.List[object]]::new()
+        foreach ($entry in [System.IO.Directory]::EnumerateDirectories('/proc')) {
+            $candidateProcessId = 0
+            if (-not [int]::TryParse([System.IO.Path]::GetFileName($entry), [ref] $candidateProcessId)) { continue }
+            try {
+                $stat = [System.IO.File]::ReadAllText((Join-Path $entry 'stat'))
+                $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
+                if ($commandEnd -lt 0 -or ($commandEnd + 2) -ge $stat.Length) { continue }
+                $fieldsAfterCommand = @($stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+                if ($fieldsAfterCommand.Count -lt 2) { continue }
+                $parentProcessId = 0
+                if (-not [int]::TryParse($fieldsAfterCommand[1], [ref] $parentProcessId)) { continue }
+                if ($parentProcessId -eq $ProcessId) {
+                    $children.Add([pscustomobject]@{
+                        ProcessId = $candidateProcessId
+                        ParentProcessId = $parentProcessId
+                    })
+                }
+            }
+            catch {
+                # A process may exit while /proc is being inspected.
+            }
+        }
+        foreach ($child in @($children)) {
+            foreach ($childId in Get-ScriptAutomationProcessTreeIds -ProcessId ([int] $child.ProcessId)) {
+                if (-not $ids.Contains($childId)) {
+                    $ids.Add($childId)
+                }
+            }
+        }
+    }
 
     if (-not $ids.Contains($ProcessId)) {
         $ids.Add($ProcessId)
@@ -334,11 +366,28 @@ function Stop-ProcessTree {
         }
     }
 
+    $remaining = [System.Collections.Generic.List[int]]::new()
+    foreach ($id in $ids) {
+        $alive = $true
+        for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            if ($null -eq (Get-Process -Id $id -ErrorAction SilentlyContinue)) {
+                $alive = $false
+                break
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        if ($alive) { $remaining.Add($id) }
+    }
+    if ($remaining.Count -ne 0) {
+        throw "Exact managed process tree cleanup left PID(s) $($remaining -join ', ') for ${Reason}."
+    }
+
     return [pscustomobject]@{
         RequestedProcessId = $ProcessId
         Reason = $Reason
         StoppedProcessIds = @($stopped)
         MissingProcessIds = @($missing)
+        RemainingProcessIds = @($remaining)
     }
 }
 
