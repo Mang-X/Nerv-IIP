@@ -72,9 +72,6 @@ Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvi
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('$describe = if ([string]::Equals([string]($Scenario), [string](''man-440''), [StringComparison]::OrdinalIgnoreCase))', [StringComparison]::Ordinal)) 'MAN-440 must not require unrelated public endpoint discovery before its external-process probe.'
 Assert-True ($appHostText.Contains('max_connections=300', [StringComparison]::Ordinal)) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
-Assert-True (
-    $appHostText.Contains('.WithEnvironment("NERV_IIP_SESSION_ID", fullStackSessionId!)', [StringComparison]::Ordinal)
-) 'Ephemeral AppHost project resources must pass the exact session identity to Aspire-managed processes.'
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'", [StringComparison]::Ordinal)) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
 Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'", [StringComparison]::Ordinal)) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
 Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'", [StringComparison]::Ordinal)) 'Full-stack startup must disable the persistent .NET build server.'
@@ -1502,9 +1499,16 @@ try {
     $stopManifest = Move-NervFullStackSessionState -Manifest $stopManifest -State Running
     Write-NervFullStackManifest -Manifest $stopManifest -StateRoot $stopStateRoot
     $script:aspireStopCalls = 0
+    $script:aspireStopSessionId = $null
     $script:processStopCalls = 0
     $script:dockerStopCalls = 0
-    $aspireStop = { param($Manifest) $script:aspireStopCalls++ }
+    $ambientSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', 'nerv-other-654321', 'Process')
+    $aspireStop = {
+        param($Manifest)
+        $script:aspireStopCalls++
+        $script:aspireStopSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    }
     $processStop = { param($Manifest) $script:processStopCalls++ }
     $dockerStop = {
         param($Manifest)
@@ -1517,6 +1521,8 @@ try {
     Assert-True $firstStop.Complete 'The first exact stop must complete.'
     Assert-True $secondStop.Complete 'A repeated exact stop must remain complete.'
     Assert-True ($script:aspireStopCalls -eq 1) 'A stopped session must not invoke Aspire stop twice.'
+    Assert-True ([string]::Equals([string]$script:aspireStopSessionId, $stopSessionId, [StringComparison]::Ordinal)) 'Aspire stop must pass the exact session identity to its managed helper processes.'
+    Assert-True ([string]::Equals([string]([Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')), 'nerv-other-654321', [StringComparison]::Ordinal)) 'Aspire stop must restore the caller session environment.'
     Assert-True ($script:processStopCalls -eq 1) 'A stopped session must not stop recorded processes twice.'
     Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
     $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
@@ -1546,6 +1552,7 @@ try {
     Assert-True ($remainingFailures.Contains($processStopFailure)) 'Process cleanup failure must be explicit.'
 }
 finally {
+    [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', $ambientSessionId, 'Process')
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 

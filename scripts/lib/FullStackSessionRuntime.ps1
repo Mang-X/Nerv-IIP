@@ -1863,7 +1863,13 @@ function Stop-NervFullStackSession {
     $errors = [System.Collections.Generic.List[string]]::new()
     $cleanupFailures = [System.Collections.Generic.List[string]]::new()
     if (-not $wasStopped) {
-        try { & $AspireStopAction $manifest } catch {
+        try {
+            Use-ScopedEnvironmentVariable `
+                -Name 'NERV_IIP_SESSION_ID' `
+                -Value "$($manifest.sessionId)" `
+                -ScriptBlock { & $AspireStopAction $manifest }
+        }
+        catch {
             $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
             $cleanupFailures.Add('aspire:stop-failed')
         }
