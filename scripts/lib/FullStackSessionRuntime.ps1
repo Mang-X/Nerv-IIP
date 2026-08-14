@@ -1755,28 +1755,19 @@ function Stop-NervWorktreeProcesses {
     $allowedProcessNames = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('dotnet', 'dotnet.exe', 'node', 'node.exe', 'aspire', 'aspire.exe', 'aspire-managed', 'dcp', 'dcp.exe'),
         [StringComparer]::Ordinal)
-    $selectOwnedProcesses = {
-        param([object[]] $Processes)
-
-        $owned = [System.Collections.Generic.List[object]]::new()
-        foreach ($process in @($Processes)) {
-            $processId = [int] $process.ProcessId
-            if ($processId -le 0 -or $excluded -contains $processId) { continue }
-            $sessionProperty = $process.PSObject.Properties['SessionId']
-            $isSessionOwned = $null -ne $sessionProperty -and
-                [string]::Equals([string]$sessionProperty.Value, $SessionId, [StringComparison]::Ordinal)
-            $hasAllowedWorktreeName = $allowedProcessNames.Contains([string]("$($process.Name)".ToLowerInvariant()))
-            $commandLine = "$($process.CommandLine)".Replace('\', '/')
-            $isWorktreeOwned = $hasAllowedWorktreeName -and
-                -not [string]::IsNullOrWhiteSpace($commandLine) -and
-                $commandLine.Contains($normalizedRoot, $pathComparison)
-            if ($isSessionOwned -or $isWorktreeOwned) { $owned.Add($process) }
-        }
-        return @($owned)
-    }
     $stopped = [System.Collections.Generic.List[int]]::new()
-    foreach ($process in @(& $selectOwnedProcesses @(& $ProcessQueryAction))) {
+    foreach ($process in @(& $ProcessQueryAction)) {
         $processId = [int] $process.ProcessId
+        if ($processId -le 0 -or $excluded -contains $processId) { continue }
+        $sessionProperty = $process.PSObject.Properties['SessionId']
+        $isSessionOwned = $null -ne $sessionProperty -and
+            [string]::Equals([string]$sessionProperty.Value, $SessionId, [StringComparison]::Ordinal)
+        $hasAllowedWorktreeName = $allowedProcessNames.Contains([string]("$($process.Name)".ToLowerInvariant()))
+        $commandLine = "$($process.CommandLine)".Replace('\', '/')
+        $isWorktreeOwned = $hasAllowedWorktreeName -and
+            -not [string]::IsNullOrWhiteSpace($commandLine) -and
+            $commandLine.Contains($normalizedRoot, $pathComparison)
+        if (-not ($isSessionOwned -or $isWorktreeOwned)) { continue }
         & $StopAction $processId "Exact session process cleanup for $SessionId"
         $stopped.Add($processId)
     }
@@ -1789,10 +1780,6 @@ function Stop-NervWorktreeProcesses {
             Start-Sleep -Milliseconds 100
         }
         if ($alive) { $remaining.Add($processId) }
-    }
-    foreach ($process in @(& $selectOwnedProcesses @(& $ProcessQueryAction))) {
-        $processId = [int] $process.ProcessId
-        if (-not $remaining.Contains($processId)) { $remaining.Add($processId) }
     }
 
     return [pscustomobject]@{

@@ -978,11 +978,6 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithNervIipTelemetry(
     Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
 {
-    if (fullStackEphemeral)
-    {
-        project = project.WithEnvironment("NERV_IIP_SESSION_ID", fullStackSessionId!);
-    }
-
     if (victoriaLogs is not null)
     {
         project = project

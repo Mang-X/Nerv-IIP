@@ -72,9 +72,6 @@ Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvi
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('$describe = if ([string]::Equals([string]($Scenario), [string](''man-440''), [StringComparison]::OrdinalIgnoreCase))', [StringComparison]::Ordinal)) 'MAN-440 must not require unrelated public endpoint discovery before its external-process probe.'
 Assert-True ($appHostText.Contains('max_connections=300', [StringComparison]::Ordinal)) 'Ephemeral AppHost PostgreSQL must leave capacity for full-stack probes and service pools.'
-Assert-True (
-    $appHostText.Contains('.WithEnvironment("NERV_IIP_SESSION_ID", fullStackSessionId!)', [StringComparison]::Ordinal)
-) 'Ephemeral AppHost project resources must pass the exact session identity to business service processes.'
 Assert-True ($fullStackSessionText.Contains("ASPIRE_CLI_START_TIMEOUT'] = '300'", [StringComparison]::Ordinal)) 'Full-stack startup must extend the Aspire CLI handshake timeout.'
 Assert-True ($fullStackSessionText.Contains("MSBUILDDISABLENODEREUSE'] = '1'", [StringComparison]::Ordinal)) 'Full-stack startup must prevent reusable MSBuild worker accumulation.'
 Assert-True ($fullStackSessionText.Contains("DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'", [StringComparison]::Ordinal)) 'Full-stack startup must disable the persistent .NET build server.'
@@ -1475,37 +1472,25 @@ Assert-True ($relationReadiness.Attempts -eq 2) 'PostgreSQL relation readiness m
 Assert-True ($relationReadiness.RelationCount -eq 1) 'PostgreSQL relation readiness must report the complete frozen table count.'
 
 $script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
-$worktreeProcesses = @(
-    [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
-    [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
-    [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
-    [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' },
-    [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed run'; SessionId = 'nerv-abcd-123456' },
-    [pscustomobject]@{ ProcessId = 106; Name = 'Nerv.IIP.Business.Mes.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Mes.Web'; SessionId = 'nerv-abcd-123456' },
-    [pscustomobject]@{ ProcessId = 107; Name = 'Nerv.IIP.Business.Wms.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Wms.Web'; SessionId = 'nerv-other-654321' }
-)
 $worktreeProcessResult = Stop-NervWorktreeProcesses `
     -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
     -SessionId 'nerv-abcd-123456' `
     -ExcludedProcessIds @(102) `
     -ProcessQueryAction {
-        @($worktreeProcesses | Where-Object { -not $script:worktreeStoppedPids.Contains([int] $_.ProcessId) })
+        @(
+            [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
+            [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
+            [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
+            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' },
+            [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed run'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 106; Name = 'Nerv.IIP.Business.Mes.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Mes.Web'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 107; Name = 'Nerv.IIP.Business.Wms.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Wms.Web'; SessionId = 'nerv-other-654321' }
+        )
     } `
     -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) } `
     -ProcessAliveAction { param($ProcessId) $false }
 Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 3) 'Worktree cleanup must select exact worktree and session-environment owned processes.'
 Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '101,105,106', [StringComparison]::Ordinal)) 'Worktree cleanup stopped the wrong process.'
-
-$residualProcessResult = Stop-NervWorktreeProcesses `
-    -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
-    -SessionId 'nerv-abcd-123456' `
-    -ProcessQueryAction {
-        @([pscustomobject]@{ ProcessId = 108; Name = 'Nerv.IIP.Business.Erp.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Erp.Web'; SessionId = 'nerv-abcd-123456' })
-    } `
-    -StopAction { param($ProcessId, $Reason) } `
-    -ProcessAliveAction { param($ProcessId) $false }
-Assert-True (-not $residualProcessResult.Complete) 'A session-owned process found by the post-cleanup readback must fail cleanup.'
-Assert-True ($residualProcessResult.RemainingProcessIds -contains 108) 'Post-cleanup readback must identify the exact residual process.'
 
 $runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
