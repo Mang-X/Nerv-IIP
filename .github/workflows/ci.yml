@@ -995,7 +995,6 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/run-full-chain-test-lane.ps1 `
-            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
             -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
 

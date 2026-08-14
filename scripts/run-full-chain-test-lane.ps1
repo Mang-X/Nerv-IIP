@@ -17,7 +17,6 @@
 param(
     [string[]] $MemberId = @(),
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
-    [string] $DatabaseSuffix = "$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())_1",
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json')
 )
@@ -28,7 +27,6 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/FullChainTestLane.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ($DatabaseSuffix -cnotmatch '^[a-z0-9_]{1,32}_[1-9][0-9]*$') { throw 'DatabaseSuffix must be canonical and end with an explicit positive run attempt.' }
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
 if ($MemberId.Count -eq 0) { $MemberId = @($manifest.members.id | ForEach-Object { [string]$_ }) }
 $selectedIdSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -40,6 +38,32 @@ $selectedMembers = @(
         $matches[0]
     }
 )
+$projectSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($member in $selectedMembers) { $projectSet.Add([string]$member.project) | Out-Null }
+if ($projectSet.Count -ne 1) { throw 'Selected FullChain members must share exactly one test project for governed discovery.' }
+$fullChainProject = @($projectSet)[0]
+
+$runStepTimeoutSeconds = 120 * 60
+$infrastructureTimeoutSeconds = 300
+$readinessTimeoutSeconds = 30 * 2
+$restoreTimeoutSeconds = 600
+$discoveryTimeoutSeconds = 600
+$fullstackEntrypointTimeoutSeconds = 1200
+$scriptEntrypointTimeoutSeconds = 900
+$dotnetEntrypointTimeoutSeconds = 600
+$cleanupTimeoutSeconds = 300
+$timeoutGuardSeconds = 300
+$maximumGovernedRuntimeSeconds = $infrastructureTimeoutSeconds + $readinessTimeoutSeconds + $restoreTimeoutSeconds + $discoveryTimeoutSeconds + $cleanupTimeoutSeconds + $timeoutGuardSeconds
+foreach ($member in $selectedMembers) {
+    $entrypointKind = [string]$member.entrypoint.kind
+    if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $fullstackEntrypointTimeoutSeconds }
+    elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $scriptEntrypointTimeoutSeconds }
+    elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) { $maximumGovernedRuntimeSeconds += $dotnetEntrypointTimeoutSeconds }
+    else { throw "Unsupported FullChain entrypoint kind '$entrypointKind'." }
+}
+if ($maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds) {
+    throw "FullChain internal timeout budget $maximumGovernedRuntimeSeconds seconds must remain below the $runStepTimeoutSeconds-second workflow step."
+}
 
 $adminPostgres = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')
 $redis = [Environment]::GetEnvironmentVariable('NERV_IIP_TEST_REDIS')
@@ -62,11 +86,53 @@ $summary = [ordered]@{
     members = @()
 }
 $memberSummaries = [Collections.Generic.List[object]]::new()
+$memberSummaryById = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+foreach ($member in $selectedMembers) {
+    $memberSummary = [pscustomobject][ordered]@{
+        memberId = [string]$member.id
+        service = [string]$member.service
+        expected = 1
+        discovered = 0
+        passed = 0
+        failed = 0
+        skipped = 0
+        dependencyEvidence = 'not-run'
+        diagnosticEvidence = 'not-run'
+        cleanup = 'not-run'
+        outcome = 'not-run'
+    }
+    $memberSummaries.Add($memberSummary)
+    $memberSummaryById.Add([string]$member.id, $memberSummary)
+}
 $firstFailure = $null
 $composeFile = Join-Path $repoRoot 'infra/docker-compose.dev.yml'
 $initialServices = @()
 $ownedServices = [Collections.Generic.List[string]]::new()
 $infrastructureCleanup = 'not-run'
+$discoveryLines = @()
+$savedMsbuildNodeReuse = [Environment]::GetEnvironmentVariable('MSBUILDDISABLENODEREUSE')
+$savedDotnetBuildServer = [Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER')
+[Environment]::SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')
+[Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')
+
+function Write-NervFullChainSummarySnapshot {
+    $summary.members = @($memberSummaries)
+    $summary.expected = 0
+    $summary.discovered = 0
+    $summary.passed = 0
+    $summary.failed = 0
+    $summary.skipped = 0
+    foreach ($memberSummary in $memberSummaries) {
+        $summary.expected += [int]$memberSummary.expected
+        $summary.discovered += [int]$memberSummary.discovered
+        $summary.passed += [int]$memberSummary.passed
+        $summary.failed += [int]$memberSummary.failed
+        $summary.skipped += [int]$memberSummary.skipped
+    }
+    $summaryDirectory = Split-Path -Parent $SummaryPath
+    if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
+    [IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), [Text.UTF8Encoding]::new($false))
+}
 
 function Wait-NervFullChainComposeProbe {
     param(
@@ -94,12 +160,13 @@ function Wait-NervFullChainComposeProbe {
     throw "FullChain $Dependency readiness did not pass after $MaximumAttempts attempts. $($lastFailure.Exception.Message)"
 }
 
+Write-NervFullChainSummarySnapshot
 try {
     $runningBefore = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'ps', '--services', '--status', 'running') -WorkingDirectory $repoRoot -Name 'full-chain-infrastructure-before'
     $initialServices = @($runningBefore.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     $initialSet = [Collections.Generic.HashSet[string]]::new([string[]]$initialServices, [StringComparer]::OrdinalIgnoreCase)
     foreach ($service in @('postgres', 'redis')) { if (-not $initialSet.Contains($service)) { $ownedServices.Add($service) } }
-    Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $repoRoot -TimeoutSeconds 300 -Name 'full-chain-infrastructure-up' | Out-Null
+    Invoke-DockerCompose -Arguments @('-f', $composeFile, 'up', '-d', '--pull', 'never', 'postgres', 'redis') -WorkingDirectory $repoRoot -TimeoutSeconds $infrastructureTimeoutSeconds -Name 'full-chain-infrastructure-up' | Out-Null
     Wait-NervFullChainComposeProbe -Dependency postgres -ComposeFile $composeFile -RepositoryRoot $repoRoot | Out-Null
     $postgresProbe = Invoke-NativeCommandOutput -Command 'docker' -Arguments @('compose', '-f', $composeFile, 'exec', '-T', 'postgres', 'psql', '-U', 'nerv', '-d', 'postgres', '-X', '-Atqc', "SELECT current_setting('server_version')") -WorkingDirectory $repoRoot -Name 'full-chain-postgres-version'
     $summary.readiness.postgres = 'passed'
@@ -112,30 +179,27 @@ try {
     $summary.readiness.redis = 'passed'
     $summary.redisVersion = $redisVersionLine[0].Substring('redis_version:'.Length).Trim()
 
+    Write-NervFullChainSummarySnapshot
+    Invoke-DotNetOutput -Name 'full-chain-project-restore' -WorkingDirectory $repoRoot -TimeoutSeconds $restoreTimeoutSeconds -Arguments @('restore', $fullChainProject) | Out-Null
+    $discovery = Invoke-DotNetOutput -Name 'full-chain-project-discovery' -WorkingDirectory $repoRoot -TimeoutSeconds $discoveryTimeoutSeconds -Arguments @('test', $fullChainProject, '--configuration', 'Release', '--no-restore', '--list-tests')
+    $discoveryLines = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    foreach ($member in $selectedMembers) {
+        $memberSummary = $memberSummaryById[[string]$member.id]
+        $expectedIdentity = [string]$member.expectedTestIdentities[0]
+        $discovered = @($discoveryLines | Where-Object { [string]::Equals([string]$_, $expectedIdentity, [StringComparison]::Ordinal) })
+        $memberSummary.discovered = $discovered.Count
+        if ($discovered.Count -ne 1) { throw "FullChain member '$($member.id)' discovery expected 1 frozen test but found $($discovered.Count)." }
+    }
+    Write-NervFullChainSummarySnapshot
+
 foreach ($member in $selectedMembers) {
     $memberResultsDirectory = Join-Path $ResultsDirectory ([string]$member.id)
     [IO.Directory]::CreateDirectory($memberResultsDirectory) | Out-Null
     $resultFile = "full-chain-$($member.id).trx"
-    $memberSummary = [ordered]@{
-        memberId = [string]$member.id
-        service = [string]$member.service
-        expected = 1
-        discovered = 0
-        passed = 0
-        failed = 0
-        skipped = 0
-        dependencyEvidence = 'not-run'
-        diagnosticEvidence = 'not-run'
-        cleanup = 'not-run'
-        outcome = 'not-run'
-    }
+    $memberSummary = $memberSummaryById[[string]$member.id]
+    Write-NervFullChainSummarySnapshot
     $memberFailure = $null
     try {
-        $discovery = Invoke-DotNetOutput -Name "full-chain-$($member.id)-discovery" -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--list-tests', '--filter', [string]$member.filter)
-        $expectedIdentity = [string]$member.expectedTestIdentities[0]
-        $discovered = @($discovery.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { [string]::Equals([string]$_, $expectedIdentity, [StringComparison]::Ordinal) })
-        $memberSummary.discovered = $discovered.Count
-        if ($discovered.Count -ne 1) { throw "FullChain member '$($member.id)' discovery expected 1 frozen test but found $($discovered.Count)." }
         if (-not [string]::Equals([string]$summary.readiness.postgres, 'passed', [StringComparison]::Ordinal) -or
             ([bool]$member.dependencies.redis -and -not [string]::Equals([string]$summary.readiness.redis, 'passed', [StringComparison]::Ordinal))) { throw "FullChain member '$($member.id)' dependency readiness is incomplete." }
         $memberSummary.dependencyEvidence = 'passed'
@@ -146,6 +210,7 @@ foreach ($member in $selectedMembers) {
         $savedMessagingProvider = [Environment]::GetEnvironmentVariable('Messaging__Provider')
         $savedPersistenceProvider = [Environment]::GetEnvironmentVariable('Persistence__Provider')
         $savedEntrypointEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
+        $savedFullChainConfiguration = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION')
         $entrypointEvidencePath = Join-Path $memberResultsDirectory 'entrypoint-evidence.json'
         try {
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY', $memberResultsDirectory)
@@ -154,15 +219,17 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('Messaging__Provider', 'Redis')
             [Environment]::SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $entrypointEvidencePath)
+            [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION', 'Release')
+            Write-NervFullChainSummarySnapshot
             $entrypointKind = [string]$member.entrypoint.kind
             if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) {
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds 2400 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot 'nerv.ps1') -Arguments @('fullstack', 'run', '-Scenario', [string]$member.entrypoint.scenario) -WorkingDirectory $repoRoot -TimeoutSeconds $fullstackEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'script', [StringComparison]::Ordinal)) {
-                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -WorkingDirectory $repoRoot -TimeoutSeconds 1800 -Name "full-chain-$($member.id)-entrypoint" | Out-Null
+                Invoke-PwshScript -ScriptPath (Join-Path $repoRoot ([string]$member.entrypoint.path)) -WorkingDirectory $repoRoot -TimeoutSeconds $scriptEntrypointTimeoutSeconds -Name "full-chain-$($member.id)-entrypoint" | Out-Null
             }
             elseif ([string]::Equals($entrypointKind, 'dotnet', [StringComparison]::Ordinal)) {
-                Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds 900 -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
+                Invoke-DotNetOutput -Name "full-chain-$($member.id)-entrypoint" -WorkingDirectory $repoRoot -TimeoutSeconds $dotnetEntrypointTimeoutSeconds -Arguments @('test', [string]$member.project, '--configuration', 'Release', '--no-restore', '--no-build', '--filter', [string]$member.filter, '--logger', "trx;LogFileName=$resultFile", '--results-directory', $memberResultsDirectory) | Out-Null
             }
             else {
                 throw "Unsupported FullChain entrypoint kind '$entrypointKind'."
@@ -175,6 +242,7 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('Messaging__Provider', $savedMessagingProvider)
             [Environment]::SetEnvironmentVariable('Persistence__Provider', $savedPersistenceProvider)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $savedEntrypointEvidencePath)
+            [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION', $savedFullChainConfiguration)
         }
 
         $trx = Get-NervFullChainTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities)
@@ -198,7 +266,7 @@ foreach ($member in $selectedMembers) {
         }
         catch { }
     }
-    $memberSummaries.Add([pscustomobject]$memberSummary)
+    Write-NervFullChainSummarySnapshot
     if ($null -ne $memberFailure -and $null -eq $firstFailure) { $firstFailure = $memberFailure }
 }
 }
@@ -211,10 +279,10 @@ finally {
         try {
             $composeProjectName = [Environment]::GetEnvironmentVariable('COMPOSE_PROJECT_NAME')
             if ($ownedServices.Count -eq 2 -and $composeProjectName -cmatch '^nerv_full_chain_[a-z0-9_]+$') {
-                Invoke-DockerCompose -Arguments @('-f', $composeFile, 'down', '--volumes', '--remove-orphans') -WorkingDirectory $repoRoot -TimeoutSeconds 300 -Name 'full-chain-infrastructure-down' | Out-Null
+                Invoke-DockerCompose -Arguments @('-f', $composeFile, 'down', '--volumes', '--remove-orphans') -WorkingDirectory $repoRoot -TimeoutSeconds $cleanupTimeoutSeconds -Name 'full-chain-infrastructure-down' | Out-Null
             }
             else {
-                Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + @($ownedServices)) -WorkingDirectory $repoRoot -TimeoutSeconds 300 -Name 'full-chain-infrastructure-stop' | Out-Null
+                Invoke-DockerCompose -Arguments (@('-f', $composeFile, 'stop') + @($ownedServices)) -WorkingDirectory $repoRoot -TimeoutSeconds $cleanupTimeoutSeconds -Name 'full-chain-infrastructure-stop' | Out-Null
             }
         }
         catch { $cleanupFailures.Add($_.Exception.Message) }
@@ -227,24 +295,17 @@ finally {
     }
     $infrastructureCleanup = if ($cleanupFailures.Count -eq 0) { 'passed' } else { 'failed' }
     if ($cleanupFailures.Count -gt 0 -and $null -eq $firstFailure) { $firstFailure = [InvalidOperationException]::new(($cleanupFailures -join ' ')) }
+    [Environment]::SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', $savedMsbuildNodeReuse)
+    [Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', $savedDotnetBuildServer)
+    $summary.cleanup = if (
+        [string]::Equals($infrastructureCleanup, 'passed', [StringComparison]::Ordinal) -and
+        @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
+    ) { 'passed' } else { 'failed' }
+    Write-NervFullChainSummarySnapshot
 }
 
-$summary.members = @($memberSummaries)
-foreach ($memberSummary in $memberSummaries) {
-    $summary.expected += [int]$memberSummary.expected
-    $summary.discovered += [int]$memberSummary.discovered
-    $summary.passed += [int]$memberSummary.passed
-    $summary.failed += [int]$memberSummary.failed
-    $summary.skipped += [int]$memberSummary.skipped
-}
-$summary.cleanup = if (
-    [string]::Equals($infrastructureCleanup, 'passed', [StringComparison]::Ordinal) -and
-    @($memberSummaries | Where-Object { -not [string]::Equals([string]$_.cleanup, 'passed', [StringComparison]::Ordinal) }).Count -eq 0
-) { 'passed' } else { 'failed' }
 try { Assert-NervFullChainTestLaneSummary -SelectedMemberIds @($MemberId) -MemberSummaries @($memberSummaries) }
 catch { if ($null -eq $firstFailure) { $firstFailure = $_ } }
-$summaryDirectory = Split-Path -Parent $SummaryPath
-if (-not [string]::IsNullOrWhiteSpace($summaryDirectory)) { [IO.Directory]::CreateDirectory($summaryDirectory) | Out-Null }
-[IO.File]::WriteAllText($SummaryPath, (($summary | ConvertTo-Json -Depth 12) + "`n"), [Text.UTF8Encoding]::new($false))
+Write-NervFullChainSummarySnapshot
 if ($null -ne $firstFailure) { throw $firstFailure }
 Write-Host "FullChain lane passed: expected=$($summary.expected) discovered=$($summary.discovered) passed=$($summary.passed) failed=$($summary.failed) skipped=$($summary.skipped) cleanup=$($summary.cleanup)."

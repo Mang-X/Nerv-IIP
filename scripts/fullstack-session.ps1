@@ -151,8 +151,12 @@ function Invoke-NervMan528MesInventoryAcceptance {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
             $testArguments = @(
                     'test',
-                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
-                    '--configuration', 'Release',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MesInventoryProducedLotPostgresRedisAcceptanceTests',
@@ -253,8 +257,12 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
             $testArguments = @(
                     'test',
-                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
-                    '--configuration', 'Release',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MaintenanceRuntimeHoursPostgresRedisAcceptanceTests',

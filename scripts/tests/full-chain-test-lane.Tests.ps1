@@ -87,6 +87,22 @@ try {
     }
     Assert-Contract (-not $runnerContent.Contains('continue-on-error', [StringComparison]::OrdinalIgnoreCase)) 'FullChain runner must preserve natural failures.'
     Assert-Contract (-not $runnerContent.Contains('FLUSHALL', [StringComparison]::OrdinalIgnoreCase)) 'FullChain runner must never use broad Redis cleanup.'
+    Assert-Contract (([regex]::Matches($runnerContent, "'--list-tests'", [Text.RegularExpressions.RegexOptions]::CultureInvariant)).Count -eq 1) 'FullChain discovery must execute exactly once for the shared test project.'
+    $discoveryIndex = $runnerContent.IndexOf("'--list-tests'", [StringComparison]::Ordinal)
+    $memberLoopIndex = $runnerContent.IndexOf('$memberResultsDirectory =', [StringComparison]::Ordinal)
+    Assert-Contract ($discoveryIndex -ge 0 -and $memberLoopIndex -ge 0 -and $discoveryIndex -lt $memberLoopIndex) 'FullChain discovery must finish before any side-effecting member entrypoint runs.'
+    Assert-Contract ($runnerContent.IndexOf('discovery expected 1 frozen test', [StringComparison]::Ordinal) -lt $memberLoopIndex) 'Every frozen identity must be validated from the shared discovery result before member entrypoints run.'
+    Assert-Contract ($runnerContent.Contains("'restore', $fullChainProject", [StringComparison]::Ordinal)) 'FullChain runner must restore the shared project exactly once before discovery.'
+    Assert-Contract ($runnerContent.Contains("'--no-restore', '--list-tests'", [StringComparison]::Ordinal)) 'FullChain discovery must not restore again after the explicit restore phase.'
+    Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')", [StringComparison]::Ordinal)) 'FullChain runner must disable MSBuild node reuse on hosted runners.'
+    Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')", [StringComparison]::Ordinal)) 'FullChain runner must disable the persistent dotnet build server.'
+    Assert-Contract ($runnerContent.Contains('$maximumGovernedRuntimeSeconds -ge $runStepTimeoutSeconds', [StringComparison]::Ordinal)) 'FullChain runner must fail closed when its internal timeout sum no longer fits the workflow step.'
+    Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
+    Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
+
+    $fullstackSessionContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/fullstack-session.ps1'))
+    Assert-Contract ($fullstackSessionContent.Contains('[string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, ''Release'', [StringComparison]::Ordinal)', [StringComparison]::Ordinal)) 'FullChain lane probes must opt into Release without changing the standalone fullstack recipe.'
+    Assert-Contract (-not $fullstackSessionContent.Contains("'--configuration', 'Release',`n                    '--no-restore'", [StringComparison]::Ordinal)) 'Standalone fullstack probes must retain their existing default configuration.'
 
     $workflowContent = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
     foreach ($requiredWorkflowFragment in @(
