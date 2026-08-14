@@ -84,6 +84,19 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs",
+      "sourceSha256": "97cd9bcdcef31403369d9111030f5dbdfd8566183b21998d787002cc85158f77",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MasterData world-bible budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
       "sourceSha256": "61b0bd316736c677eae0b2d0b0dac1f97465ded78b400143ab747febfe8f8ce2",
       "factoryCallCount": 1,
