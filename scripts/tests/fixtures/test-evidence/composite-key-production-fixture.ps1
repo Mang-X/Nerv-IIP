@@ -67,23 +67,13 @@ function New-ProductionFixtureRecord {
 }
 
 function New-ProductionFixtureSummary([object[]] $Records) {
-    $metadata = @{
-        workflowRunId = 'fixture-run'
-        runAttempt = 1
-        headSha = '0123456789abcdef0123456789abcdef01234567'
-        testedSha = '0123456789abcdef0123456789abcdef01234567'
-        lane = 'backend-shard-1'
-        selectedLanes = @('backend-shard-1')
-        jobName = 'Backend Tests - BusinessGateway'
-        currentTestOutcome = 'success'
-        runnerOs = 'Linux'
-        runnerImage = 'ubuntu24@20260720.247.2'
-        dotnetSdk = '10.0.302'
-        artifactName = 'composite-key-production-fixture'
-        retentionDays = 1
-        retentionLocation = 'fixture://composite-key-production/'
-    }
-    return New-NervTestEvidenceSummary -Records $Records -RunMetadata $metadata -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+    $metadata = New-NervTestEvidenceRunMetadata -WorkflowRunId 'fixture-run' -RunAttempt 1 `
+        -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -Lane 'backend-shard-1' -SelectedLanes @('backend-shard-1') -JobName 'Backend Tests - BusinessGateway' `
+        -RunnerOs 'Linux' -RunnerImage 'ubuntu24@20260720.247.2' -DotnetSdk '10.0.302' `
+        -ArtifactName 'composite-key-production-fixture' -RetentionDays 1
+    return New-NervTestEvidenceSummary -Records $Records -RunMetadata $metadata -Violations @() -Baseline $null `
+        -PriorAttemptOutcome $null -CurrentTestOutcome 'success' -TopCount 5
 }
 
 function New-ProductionByteEvidenceRecords {
@@ -151,14 +141,18 @@ try {
         [IO.File]::WriteAllText($withUnrelatedPath, $withUnrelatedXml, [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText($definitionCollisionPath, $definitionCollisionXml, [Text.UTF8Encoding]::new($false))
         $runMetadata = @{ lane = 'backend-shard-1'; workflowRunId = 'fixture-run'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567' }
-        $targetOnly = @(Read-NervTrxResults -Path @($targetOnlyPath) -RunMetadata $runMetadata.Clone())[0]
-        $targetWithUnrelated = @(Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone() | Where-Object {
+        $targetOnlyParseResult = Read-NervTrxResults -Path @($targetOnlyPath) -RunMetadata $runMetadata.Clone()
+        $targetOnly = @($targetOnlyParseResult.Records)[0]
+        $targetWithUnrelatedParseResult = Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone()
+        $targetWithUnrelated = @($targetWithUnrelatedParseResult.Records | Where-Object {
             [string]::Equals([string]$_.testName, 'Fixture.Target', [StringComparison]::Ordinal)
         })[0]
-        $delimiterCollision = @(Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone() | Where-Object {
+        $delimiterCollisionParseResult = Read-NervTrxResults -Path @($withUnrelatedPath) -RunMetadata $runMetadata.Clone()
+        $delimiterCollision = @($delimiterCollisionParseResult.Records | Where-Object {
             [string]::Equals([string]$_.testName, 'Fixture.Target|Display', [StringComparison]::Ordinal)
         })[0]
-        $definitionCollision = @(Read-NervTrxResults -Path @($definitionCollisionPath) -RunMetadata $runMetadata.Clone())[0]
+        $definitionCollisionParseResult = Read-NervTrxResults -Path @($definitionCollisionPath) -RunMetadata $runMetadata.Clone()
+        $definitionCollision = @($definitionCollisionParseResult.Records)[0]
         Assert-ProductionFixture (-not [string]::IsNullOrWhiteSpace([string]$targetOnly.testInstanceId)) `
             'a TRX result without executionId must receive a derived test instance ID.'
         Assert-ProductionFixture ([string]::Equals([string]$targetOnly.testInstanceId, [string]$targetWithUnrelated.testInstanceId, [StringComparison]::Ordinal)) `
@@ -325,7 +319,8 @@ try {
             headSha = '0123456789abcdef0123456789abcdef01234567'
             testedSha = '0123456789abcdef0123456789abcdef01234567'
         }
-        $roundTrip = @(Read-NervTrxResults -Path @($trxFiles.FullName) -RunMetadata $roundTripMetadata)
+        $roundTripParseResult = Read-NervTrxResults -Path @($trxFiles.FullName) -RunMetadata $roundTripMetadata
+        $roundTrip = @($roundTripParseResult.Records)
         Assert-ProductionFixture ($roundTrip.Count -eq $records.Count) `
             'Write-NervTestEvidenceArtifacts to Read-NervTrxResults round-trip changed the total record count.'
         $expectedAssemblyKeys = @(Get-NervStringsSorted -Values @($records | ForEach-Object { Get-NervOrdinalCompositeKey -Components @($_.assembly) }) -Comparer ([StringComparer]::Ordinal))
@@ -336,10 +331,10 @@ try {
             'normalized TRX round-trip did not restore the null assembly identity.'
         Assert-ProductionFixture (@($roundTrip | Where-Object { $_.assembly -is [string] -and $_.assembly.Length -eq 0 }).Count -eq 1) `
             'normalized TRX round-trip did not restore the empty assembly identity.'
-        Assert-ProductionFixture (@($roundTripMetadata.trxRuns | Where-Object { $null -eq $_.assembly }).Count -eq 1) `
-            'normalized TRX RunMetadata timing projection did not retain the null assembly identity.'
-        Assert-ProductionFixture (@($roundTripMetadata.trxRuns | Where-Object { $_.assembly -is [string] -and $_.assembly.Length -eq 0 }).Count -eq 1) `
-            'normalized TRX RunMetadata timing projection did not retain the empty assembly identity.'
+        Assert-ProductionFixture (@($roundTripParseResult.TrxRuns | Where-Object { $null -eq $_.assembly }).Count -eq 1) `
+            'normalized TRX parse result timing projection did not retain the null assembly identity.'
+        Assert-ProductionFixture (@($roundTripParseResult.TrxRuns | Where-Object { $_.assembly -is [string] -and $_.assembly.Length -eq 0 }).Count -eq 1) `
+            'normalized TRX parse result timing projection did not retain the empty assembly identity.'
 
         $markerProbeRoot = Join-Path $fixtureRoot 'marker-probes'
         [IO.Directory]::CreateDirectory($markerProbeRoot) | Out-Null
@@ -353,7 +348,10 @@ try {
         $prefixAliasPath = Join-Path $markerProbeRoot 'prefix-alias.trx'
         Set-Content -LiteralPath $prefixAliasPath -NoNewline -Value ($nullMarkerXml.Replace('xmlns:nerv=', 'xmlns:identity=').Replace('nerv:assemblyIdentity=', 'identity:assemblyIdentity='))
         $prefixAliasAccepted = $true
-        try { $prefixAliasRecords = @(Read-NervTrxResults -Path @($prefixAliasPath) -RunMetadata $roundTripMetadata.Clone()) }
+        try {
+            $prefixAliasParseResult = Read-NervTrxResults -Path @($prefixAliasPath) -RunMetadata $roundTripMetadata.Clone()
+            $prefixAliasRecords = @($prefixAliasParseResult.Records)
+        }
         catch { $prefixAliasAccepted = $false }
         Assert-ProductionFixture ($prefixAliasAccepted -and $prefixAliasRecords.Count -eq 1 -and $null -eq $prefixAliasRecords[0].assembly) `
             'assembly identity markers must bind by namespace URI rather than one literal XML prefix.'

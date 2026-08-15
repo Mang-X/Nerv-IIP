@@ -215,6 +215,67 @@ function Test-NervTestEvidenceLaneName {
     return $Lane -cmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$'
 }
 
+function New-NervTestEvidenceRunMetadata {
+    param(
+        [Parameter(Mandatory)] [string] $WorkflowRunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $HeadSha,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $Lane,
+        [AllowNull()] [string[]] $SelectedLanes,
+        [string] $Repository = '',
+        [string] $Event = '',
+        [string] $HeadBranch = '',
+        [string] $JobName = '',
+        [string] $SourceUrl = '',
+        [string] $RunnerOs = '',
+        [string] $RunnerImage = '',
+        [string] $DotnetSdk = '',
+        [string] $ArtifactName = '',
+        [int] $RetentionDays = 0
+    )
+
+    if (-not (Test-NervTestEvidenceLaneName $Lane)) { throw "Invalid evidence lane '$Lane'." }
+    [string[]] $resolvedSelectedLanes = @()
+    if ($null -ne $SelectedLanes) { $resolvedSelectedLanes = @($SelectedLanes) }
+    if ($resolvedSelectedLanes.Count -eq 0) { $resolvedSelectedLanes = @($Lane) }
+    foreach ($selected in $resolvedSelectedLanes) {
+        if (-not (Test-NervTestEvidenceLaneName $selected)) { throw "Invalid selected lane '$selected'." }
+    }
+    if ($RunAttempt -lt 1) { throw 'RunAttempt must be positive.' }
+    if ($HeadSha -notmatch '^[0-9a-f]{40}$') { throw 'HeadSha must be a lowercase 40-character SHA.' }
+    if ($TestedSha -notmatch '^[0-9a-f]{40}$') { throw 'TestedSha must be a lowercase 40-character SHA.' }
+    $allowedEvents = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('push', 'pull_request'),
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Event) -and (-not $allowedEvents.Contains($Event))) { throw "Unsupported evidence event '$Event'." }
+    if ([string]::Equals([string]$Event, 'push', [StringComparison]::OrdinalIgnoreCase) -and
+        (-not [string]::Equals($HeadSha, $TestedSha, [StringComparison]::Ordinal))) {
+        throw 'Push evidence requires HeadSha and TestedSha to be identical.'
+    }
+
+    return [pscustomobject][ordered]@{
+        workflowRunId = $WorkflowRunId
+        runAttempt = $RunAttempt
+        headSha = $HeadSha
+        testedSha = $TestedSha
+        lane = $Lane
+        selectedLanes = $resolvedSelectedLanes
+        repository = $Repository
+        event = $Event
+        headBranch = $HeadBranch
+        jobName = $JobName
+        sourceUrl = $SourceUrl
+        runnerOs = $RunnerOs
+        runnerImage = $RunnerImage
+        dotnetSdk = $DotnetSdk
+        artifactName = $ArtifactName
+        retentionDays = $RetentionDays
+        retentionLocation = if ([string]::IsNullOrWhiteSpace($ArtifactName)) { 'local-output' } else { "artifact://$ArtifactName/" }
+    }
+}
+
 function Import-NervTestEvidencePolicy {
     param([Parameter(Mandatory)] [string] $Path)
     $policy = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 100
@@ -542,7 +603,7 @@ function Get-NervRetainedSkipReason {
 function Read-NervTrxResults {
     param(
         [Parameter(Mandatory)] [string[]] $Path,
-        [Parameter(Mandatory)] [hashtable] $RunMetadata
+        [Parameter(Mandatory)] [object] $RunMetadata
     )
 
     if (-not (Test-NervTestEvidenceLaneName ([string]$RunMetadata.lane))) {
@@ -740,9 +801,11 @@ function Read-NervTrxResults {
             })
         }
     }
-    $RunMetadata.trxElapsedMilliseconds = [double]$trxElapsedMilliseconds
-    $RunMetadata.trxRuns = @($trxRuns)
-    @($records)
+    return [pscustomobject][ordered]@{
+        Records = @($records)
+        TrxElapsedMilliseconds = [double]$trxElapsedMilliseconds
+        TrxRuns = @($trxRuns)
+    }
 }
 
 function Test-NervRuleApplies {
@@ -855,10 +918,13 @@ function Protect-NervTestEvidenceText {
 function New-NervTestEvidenceSummary {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Records,
-        [Parameter(Mandatory)] [hashtable] $RunMetadata,
+        [Parameter(Mandatory)] [object] $RunMetadata,
+        [AllowNull()] [object] $TrxParseResult,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Violations,
         [AllowNull()] [object] $Baseline,
         [AllowNull()] [string] $PriorAttemptOutcome,
+        [bool] $PriorAttemptVerified = $false,
+        [AllowNull()] [string] $CurrentTestOutcome,
         [int] $TopCount = 10
     )
 
@@ -876,9 +942,7 @@ function New-NervTestEvidenceSummary {
     # character would be dropped here, or folded into a group whose gateResult belongs to a different
     # lane. The dedup has to be ordinal *before* the set is built, or the set never sees the second
     # spelling and the ordinal comparer below is decorative.
-    [string[]] $selectedLanes = if ($RunMetadata.ContainsKey('selectedLanes')) {
-        Get-NervOrdinalSorted -Unique -Values @($RunMetadata.selectedLanes | ForEach-Object { [string]$_ })
-    } else { @([string]$RunMetadata.lane) }
+    [string[]] $selectedLanes = Get-NervOrdinalSorted -Unique -Values @($RunMetadata.selectedLanes | ForEach-Object { [string]$_ })
     $selectedLaneResults = @(Get-NervOrdinalGroups -Items @($selectedLanes) -KeySelector { param($lane) [string]$lane -replace '-shard-[1-9][0-9]*$', '' } | ForEach-Object {
         $baseLane = [string]$_.Name
         [string[]] $selectors = @(Get-NervOrdinalSorted -Unique -Values @($_.Group | ForEach-Object { [string]$_ }))
@@ -898,7 +962,7 @@ function New-NervTestEvidenceSummary {
             gateResult = if ($zeroExecution) { 'zero-execution' } elseif ($invalidSelection) { 'invalid-selection' } else { 'pass' }
         }
     })
-    $trxRuns = if ($RunMetadata.ContainsKey('trxRuns')) { @($RunMetadata.trxRuns) } else { @() }
+    $trxRuns = if ($null -ne $TrxParseResult) { @($TrxParseResult.TrxRuns) } else { @() }
     # Ordinal grouping and ordinal membership (#1509): the group key is `lane|assembly`, both
     # identifiers, and `Group-Object lane, assembly` folds them. Two assemblies differing by an
     # ignorable character would report one merged timing row under one of the two names.
@@ -1011,8 +1075,8 @@ function New-NervTestEvidenceSummary {
     $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }
-    elseif ((Test-NervOrdinalEquals ([string]$PriorAttemptOutcome) 'failure') -and $RunMetadata.ContainsKey('priorAttemptVerified') -and [bool]$RunMetadata.priorAttemptVerified -and
-        $RunMetadata.ContainsKey('currentTestOutcome') -and (Test-NervOrdinalEquals ([string]$RunMetadata.currentTestOutcome) 'success') -and
+    elseif ((Test-NervOrdinalEquals ([string]$PriorAttemptOutcome) 'failure') -and $PriorAttemptVerified -and
+        (Test-NervOrdinalEquals ([string]$CurrentTestOutcome) 'success') -and
         ($passed + $failed) -gt 0 -and $failed -eq 0 -and $safeViolations.Count -eq 0) {
         'recovered-after-rerun'
     }
@@ -1028,25 +1092,25 @@ function New-NervTestEvidenceSummary {
         lane = [string]$RunMetadata.lane
         selectedLanes = $selectedLanes
         selectedLaneResults = $selectedLaneResults
-        repository = if ($RunMetadata.ContainsKey('repository')) { [string]$RunMetadata.repository } else { '' }
-        event = if ($RunMetadata.ContainsKey('event')) { [string]$RunMetadata.event } else { '' }
-        headBranch = if ($RunMetadata.ContainsKey('headBranch')) { [string]$RunMetadata.headBranch } else { '' }
-        jobName = if ($RunMetadata.ContainsKey('jobName')) { [string]$RunMetadata.jobName } else { '' }
-        currentTestOutcome = if ($RunMetadata.ContainsKey('currentTestOutcome')) { [string]$RunMetadata.currentTestOutcome } else { '' }
-        sourceUrl = if ($RunMetadata.ContainsKey('sourceUrl')) { [string]$RunMetadata.sourceUrl } else { '' }
-        runnerOs = if ($RunMetadata.ContainsKey('runnerOs')) { [string]$RunMetadata.runnerOs } else { '' }
-        runnerImage = if ($RunMetadata.ContainsKey('runnerImage')) { [string]$RunMetadata.runnerImage } else { '' }
-        dotnetSdk = if ($RunMetadata.ContainsKey('dotnetSdk')) { [string]$RunMetadata.dotnetSdk } else { '' }
-        artifactName = if ($RunMetadata.ContainsKey('artifactName')) { [string]$RunMetadata.artifactName } else { '' }
-        retentionDays = if ($RunMetadata.ContainsKey('retentionDays')) { [int]$RunMetadata.retentionDays } else { 0 }
-        retentionLocation = if ($RunMetadata.ContainsKey('retentionLocation')) { [string]$RunMetadata.retentionLocation } else { 'local-output' }
+        repository = [string]$RunMetadata.repository
+        event = [string]$RunMetadata.event
+        headBranch = [string]$RunMetadata.headBranch
+        jobName = [string]$RunMetadata.jobName
+        currentTestOutcome = [string]$CurrentTestOutcome
+        sourceUrl = [string]$RunMetadata.sourceUrl
+        runnerOs = [string]$RunMetadata.runnerOs
+        runnerImage = [string]$RunMetadata.runnerImage
+        dotnetSdk = [string]$RunMetadata.dotnetSdk
+        artifactName = [string]$RunMetadata.artifactName
+        retentionDays = [int]$RunMetadata.retentionDays
+        retentionLocation = [string]$RunMetadata.retentionLocation
         passed = $passed
         failed = $failed
         skipped = $skipped
         executed = $passed + $failed
         total = $safeRecords.Count
         testDurationMilliseconds = if ($safeRecords.Count -gt 0) { [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum) } else { 0.0 }
-        trxElapsedMilliseconds = if ($RunMetadata.ContainsKey('trxElapsedMilliseconds')) { [double]$RunMetadata.trxElapsedMilliseconds } else { $null }
+        trxElapsedMilliseconds = if ($null -ne $TrxParseResult) { [double]$TrxParseResult.TrxElapsedMilliseconds } else { $null }
         assemblies = $assemblies
         # Ordinal tie-break (#1509 round 3): both rows are retained in summary.json, and the second
         # sort key here is an identifier, so Sort-Object's culture collation made the artifact's byte
