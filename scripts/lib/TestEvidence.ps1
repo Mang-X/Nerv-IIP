@@ -603,7 +603,7 @@ function Get-NervRetainedSkipReason {
 function Read-NervTrxResults {
     param(
         [Parameter(Mandatory)] [string[]] $Path,
-        [Parameter(Mandatory)] [hashtable] $RunMetadata
+        [Parameter(Mandatory)] [object] $RunMetadata
     )
 
     if (-not (Test-NervTestEvidenceLaneName ([string]$RunMetadata.lane))) {
@@ -801,9 +801,11 @@ function Read-NervTrxResults {
             })
         }
     }
-    $RunMetadata.trxElapsedMilliseconds = [double]$trxElapsedMilliseconds
-    $RunMetadata.trxRuns = @($trxRuns)
-    @($records)
+    return [pscustomobject][ordered]@{
+        Records = @($records)
+        TrxElapsedMilliseconds = [double]$trxElapsedMilliseconds
+        TrxRuns = @($trxRuns)
+    }
 }
 
 function Test-NervRuleApplies {
@@ -917,6 +919,7 @@ function New-NervTestEvidenceSummary {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Records,
         [Parameter(Mandatory)] [hashtable] $RunMetadata,
+        [AllowNull()] [object] $TrxParseResult,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Violations,
         [AllowNull()] [object] $Baseline,
         [AllowNull()] [string] $PriorAttemptOutcome,
@@ -959,7 +962,7 @@ function New-NervTestEvidenceSummary {
             gateResult = if ($zeroExecution) { 'zero-execution' } elseif ($invalidSelection) { 'invalid-selection' } else { 'pass' }
         }
     })
-    $trxRuns = if ($RunMetadata.ContainsKey('trxRuns')) { @($RunMetadata.trxRuns) } else { @() }
+    $trxRuns = if ($null -ne $TrxParseResult) { @($TrxParseResult.TrxRuns) } else { @() }
     # Ordinal grouping and ordinal membership (#1509): the group key is `lane|assembly`, both
     # identifiers, and `Group-Object lane, assembly` folds them. Two assemblies differing by an
     # ignorable character would report one merged timing row under one of the two names.
@@ -1107,7 +1110,7 @@ function New-NervTestEvidenceSummary {
         executed = $passed + $failed
         total = $safeRecords.Count
         testDurationMilliseconds = if ($safeRecords.Count -gt 0) { [double](($safeRecords | Measure-Object durationMilliseconds -Sum).Sum) } else { 0.0 }
-        trxElapsedMilliseconds = if ($RunMetadata.ContainsKey('trxElapsedMilliseconds')) { [double]$RunMetadata.trxElapsedMilliseconds } else { $null }
+        trxElapsedMilliseconds = if ($null -ne $TrxParseResult) { [double]$TrxParseResult.TrxElapsedMilliseconds } else { $null }
         assemblies = $assemblies
         # Ordinal tie-break (#1509 round 3): both rows are retained in summary.json, and the second
         # sort key here is an identifier, so Sort-Object's culture collation made the artifact's byte

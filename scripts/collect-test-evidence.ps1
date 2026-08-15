@@ -84,7 +84,8 @@ try {
     $baseline = if (Test-Path -LiteralPath $BaselinePath) { Get-Content -LiteralPath $BaselinePath -Raw | ConvertFrom-Json -Depth 100 } else { $null }
     $trxPaths = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse) -KeySelector { param($row) [string]$row.FullName } -Comparer ([StringComparer]::Ordinal) | ForEach-Object FullName)
     if ($trxPaths.Count -eq 0) { throw "No TRX files found under '$ResultsDirectory'." }
-    $records = @(Read-NervTrxResults -Path $trxPaths -RunMetadata $runMetadata)
+    $trxParseResult = Read-NervTrxResults -Path $trxPaths -RunMetadata $runMetadata
+    $records = @($trxParseResult.Records)
     $violations = @(Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
 
     $resolvedPriorOutcome = $null
@@ -107,7 +108,7 @@ try {
         }
         catch { Write-Diagnostic -Level 'WARN' -Message "Prior attempt lookup unavailable: $(Protect-ScriptAutomationText $_.Exception.Message)" }
     }
-    $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome -TopCount 10
+    $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -TrxParseResult $trxParseResult -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome -TopCount 10
     $summary | Add-Member -NotePropertyName collectionStatus -NotePropertyValue 'succeeded' -Force
     Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -OutputDirectory $OutputDirectory
     Write-NervEvidenceOutputPath -Path $OutputDirectory -ManifestPath $EvidencePathOutputFile

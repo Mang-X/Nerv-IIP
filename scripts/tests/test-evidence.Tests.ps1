@@ -439,6 +439,10 @@ Assert-Equal 'local-output' $metadataDefaults.retentionLocation 'Missing artifac
 foreach ($excludedField in @('currentTestOutcome', 'priorAttemptVerified')) {
     Assert-True ($metadataDefaults.PSObject.Properties.Match($excludedField).Count -eq 0) "Run metadata must not carry mutable '$excludedField' state."
 }
+$metadataDefaultsBeforeTrxRead = $metadataDefaults | ConvertTo-Json -Depth 100 -Compress
+$metadataDefaultsParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $metadataDefaults
+Assert-Equal $metadataDefaultsBeforeTrxRead ($metadataDefaults | ConvertTo-Json -Depth 100 -Compress) 'TRX reader must accept constructor-owned metadata without mutating it.'
+Assert-Equal 3 @($metadataDefaultsParseResult.Records).Count 'TRX reader must consume constructor-owned run metadata.'
 
 $metadataInvalidCases = @(
     @{ Name = 'lane'; Parameters = @{ Lane = 'backend/shard/1' }; Expected = "Invalid evidence lane 'backend/shard/1'." },
@@ -645,7 +649,10 @@ $run = @{
     testedSha = '89abcdef0123456789abcdef0123456789abcdef'
     lane = 'backend-shard-1'
 }
-$records = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
+$runBeforeTrxRead = $run | ConvertTo-Json -Depth 100 -Compress
+$parseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
+Assert-Equal $runBeforeTrxRead ($run | ConvertTo-Json -Depth 100 -Compress) 'Reading TRX must not add or modify run metadata.'
+$records = @($parseResult.Records)
 Assert-Equal 3 $records.Count 'TRX must yield one record per UnitTestResult.'
 Assert-Equal 1 @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Passed outcome mismatch.'
 Assert-Equal 1 @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Failed outcome mismatch.'
@@ -654,8 +661,16 @@ Assert-Equal 'backend-shard-1' $records[0].lane 'Shard lane must not alter schem
 Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $records[0].assembly 'Assembly must come from UnitTest storage.'
 Assert-Equal 1250.0 ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipReason 'Skip reason mismatch.'
-Assert-Equal 3000.0 $run.trxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
-Assert-Equal 3000.0 $run.trxRuns[0].elapsedMilliseconds 'Per-assembly TRX elapsed time must be retained.'
+Assert-Equal 3000.0 $parseResult.TrxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
+Assert-Equal 1 @($parseResult.TrxRuns).Count 'TRX parse result must retain one run for the fixture.'
+Assert-Equal 'backend-shard-1' $parseResult.TrxRuns[0].lane 'TRX run lane mismatch.'
+Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $parseResult.TrxRuns[0].assembly 'TRX run assembly mismatch.'
+Assert-Equal 3000.0 $parseResult.TrxRuns[0].elapsedMilliseconds 'Per-assembly TRX elapsed time must be retained.'
+Assert-Equal 3 $parseResult.TrxRuns[0].total 'TRX run total count mismatch.'
+Assert-Equal 2 $parseResult.TrxRuns[0].executed 'TRX run executed count mismatch.'
+Assert-Equal 1 $parseResult.TrxRuns[0].passed 'TRX run passed count mismatch.'
+Assert-Equal 1 $parseResult.TrxRuns[0].failed 'TRX run failed count mismatch.'
+Assert-Equal 1 $parseResult.TrxRuns[0].skipped 'TRX run skipped count mismatch.'
 Assert-Equal $run.headSha $records[0].headSha 'Branch-head provenance must be retained separately.'
 Assert-Equal $run.testedSha $records[0].testedSha 'Actually-tested checkout provenance must be retained separately.'
 Assert-True (-not ([Collections.Generic.HashSet[string]]::new([string[]]@($records[0].PSObject.Properties.Name), [StringComparer]::OrdinalIgnoreCase).Contains([string]('commitSha')))) 'Ambiguous commitSha must not remain in the retained record schema.'
@@ -675,7 +690,8 @@ try {
     $trxTemplate = Get-Content (Join-Path $fixtures 'backend-results.trx') -Raw
     $matchingProvenanceTrx = Join-Path $provenanceDirectory 'matching.trx'
     Set-Content -LiteralPath $matchingProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)`" testedSha=`"$($run.testedSha)`" id=`"")
-    Assert-Equal 3 (Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.Clone()).Count 'A normalized TRX whose persisted provenance matches the run must be readable.'
+    $matchingProvenanceParseResult = Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.Clone()
+    Assert-Equal 3 @($matchingProvenanceParseResult.Records).Count 'A normalized TRX whose persisted provenance matches the run must be readable.'
 
     $foldedProvenanceTrx = Join-Path $provenanceDirectory 'folded.trx'
     Set-Content -LiteralPath $foldedProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)$softHyphen`" testedSha=`"$($run.testedSha)`" id=`"")
@@ -688,13 +704,15 @@ finally {
     if (Test-Path -LiteralPath $provenanceDirectory) { Remove-Item -LiteralPath $provenanceDirectory -Recurse -Force }
 }
 
-$parameterized = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized-results.trx')) -RunMetadata $run
+$parameterizedParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'parameterized-results.trx')) -RunMetadata $run
+$parameterized = @($parameterizedParseResult.Records)
 Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterized.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized display names must remain distinct.'
 Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterized.testInstanceId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized instances need stable distinct identities.'
 Assert-Equal 1 @(Get-NervStringsSorted -Values @($parameterized.definitionId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized instances must share their method definition.'
 Assert-Equal '66666666-6666-6666-6666-666666666611' $parameterized[0].testInstanceId 'Persisted execution identity must survive case-sensitive parameter displays.'
 
-$displayPayload = Read-NervTrxResults -Path @((Join-Path $fixtures 'display-payload-results.trx')) -RunMetadata $run
+$displayPayloadParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'display-payload-results.trx')) -RunMetadata $run
+$displayPayload = @($displayPayloadParseResult.Records)
 Assert-Equal 3 $displayPayload.Count 'Display-payload fixture count mismatch.'
 Assert-Equal 3 @(Get-NervStringsSorted -Values @($displayPayload.testInstanceId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Persisted execution IDs must preserve parameterized instance identity.'
 Assert-Equal '77777777-7777-7777-7777-777777777701' $displayPayload[0].testInstanceId 'TRX executionId must be preferred over a derived identity.'
@@ -728,7 +746,7 @@ Assert-Equal 'environment-gated' ($records | Where-Object { [string]::Equals([st
 Assert-Equal 'postgres-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipPolicyId 'Matched skip policy entry must be retained for aggregation.'
 $summaryRun = $run.Clone()
 $summaryRun.selectedLanes = @('backend')
-$classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+$classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -TrxParseResult $parseResult -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 1 @($classifiedSummary.selectedLanes).Count 'Summary must retain the selected lane selectors.'
 Assert-Equal 'backend' $classifiedSummary.selectedLanes[0] 'Summary selected lane selector mismatch.'
 Assert-Equal 1 @($classifiedSummary.selectedLaneResults).Count 'Summary must emit one logical selected-lane result.'
@@ -741,6 +759,8 @@ Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' $classifiedSummary
 Assert-Equal 1 $classifiedSummary.skipReasons[0].count 'Summary skip reason count mismatch.'
 Assert-Equal 1 ($classifiedSummary.skipClassifications | Where-Object { [string]::Equals([string]$_.classification, [string]('environment-gated'), [StringComparison]::OrdinalIgnoreCase) }).count 'Summary must aggregate matched skip classifications.'
 Assert-Equal 1 ($classifiedSummary.skipPolicies | Where-Object { [string]::Equals([string]$_.policyId, [string]('postgres-gated'), [StringComparison]::OrdinalIgnoreCase) }).count 'Summary must aggregate matched skip policy entries.'
+Assert-Equal 3000.0 $classifiedSummary.trxElapsedMilliseconds 'Summary must consume total TRX elapsed time only from the parse result.'
+Assert-Equal 3000.0 $classifiedSummary.assemblies[0].elapsedMilliseconds 'Summary must join assembly timing only from the parse result.'
 
 # Exercise the real summary grouping call site. Restoring the old [string] casts in its composite
 # key selector folds null into empty before the wrapper sees it, merging these two records.
@@ -749,15 +769,19 @@ $nullAndEmptyAssemblyRecords = @(
     [pscustomobject]@{ lane = 'backend-shard-1'; assembly = ''; outcome = 'passed'; durationMilliseconds = 2.0; testName = 'Fixture.EmptyAssembly'; displayName = 'Fixture.EmptyAssembly'; redactionCount = 0 }
 )
 $nullAndEmptyAssemblySummary = New-NervTestEvidenceSummary -Records $nullAndEmptyAssemblyRecords -RunMetadata $summaryRun -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+Assert-Equal $null $nullAndEmptyAssemblySummary.trxElapsedMilliseconds 'Summary without a parse result must report null total TRX elapsed time.'
+Assert-True (@($nullAndEmptyAssemblySummary.assemblies | Where-Object { ([double]$_.elapsedMilliseconds) -eq 0.0 }).Count -eq 2) `
+    'Summary without a parse result must use empty TRX runs for assembly timing joins.'
 Assert-Equal 2 @($nullAndEmptyAssemblySummary.assemblies).Count `
     'Summary grouping must not merge a null assembly identifier with an empty assembly identifier.'
 Assert-True (@($nullAndEmptyAssemblySummary.assemblies | Where-Object { ([int]$_.total) -eq 1 }).Count -eq 2) `
     'Null and empty assembly summary groups must each retain exactly their own record.'
 
-$combined = Read-NervTrxResults -Path @(
+$combinedParseResult = Read-NervTrxResults -Path @(
     (Join-Path $fixtures 'backend-results.trx'),
     (Join-Path $fixtures 'connector-results.trx')
 ) -RunMetadata $run
+$combined = @($combinedParseResult.Records)
 Assert-Equal 4 $combined.Count 'Multiple TRX files must aggregate.'
 Assert-Equal 2 @(Get-NervStringsSorted -Values @($combined.assembly) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Assemblies must remain distinct.'
 
@@ -770,7 +794,8 @@ catch {
 }
 Assert-True $malformedFailed 'Malformed TRX must fail parsing.'
 
-$unregisteredRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'unregistered-skip.trx')) -RunMetadata $run
+$unregisteredParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'unregistered-skip.trx')) -RunMetadata $run
+$unregisteredRecords = @($unregisteredParseResult.Records)
 $violations = Get-NervTestEvidenceViolations -Records $unregisteredRecords -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-ViolationSet $violations 'unregistered-skip'
 $futureSharedFact = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = 'Fixture.Postgres.New_ninth_method'; skipReason = 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' })
@@ -783,13 +808,15 @@ Assert-ViolationSet $postgresSelected @('unregistered-skip', 'zero-execution')
 
 $postgresRun = $run.Clone()
 $postgresRun.lane = 'postgres'
-$allSkipped = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-all-skipped.trx')) -RunMetadata $postgresRun
+$allSkippedParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-all-skipped.trx')) -RunMetadata $postgresRun
+$allSkipped = @($allSkippedParseResult.Records)
 $violations = Get-NervTestEvidenceViolations -Records $allSkipped -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
 # Every postgres test skipped: the lane executed nothing *and* the fixture skip reason is not in the
 # committed live policy. Both are expected here; only the empty-result fixture below is single-code.
 Assert-ViolationSet $violations @('unregistered-skip', 'zero-execution')
 
-$empty = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-zero-results.trx')) -RunMetadata $postgresRun
+$emptyParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-zero-results.trx')) -RunMetadata $postgresRun
+$empty = @($emptyParseResult.Records)
 $violations = Get-NervTestEvidenceViolations -Records $empty -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
 Assert-ViolationSet $violations 'zero-execution'
 
@@ -902,7 +929,8 @@ $parameterArtifactRoot = "$artifactRoot-parameters"
 $displayPayloadArtifactRoot = "$artifactRoot-display-payload"
 $classifiedArtifactRoot = "$artifactRoot-classified"
 try {
-    $sensitiveRecords = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
+    $sensitiveParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
+    $sensitiveRecords = @($sensitiveParseResult.Records)
     $summary = New-NervTestEvidenceSummary -Records $sensitiveRecords -RunMetadata $run -Violations @() -Baseline (Get-Content (Join-Path $fixtures 'baseline-report-only.json') -Raw | ConvertFrom-Json) -PriorAttemptOutcome 'failure' -TopCount 5
     Write-NervTestEvidenceArtifacts -Records $sensitiveRecords -Summary $summary -OutputDirectory $artifactRoot
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) {
@@ -919,7 +947,8 @@ try {
     }
     Assert-True ($summary.redactionCount -gt 0) 'Summary must count privacy redactions.'
     $roundTripRun = $run.Clone()
-    $roundTrip = Read-NervTrxResults -Path @($normalizedTrx.FullName) -RunMetadata $roundTripRun
+    $roundTripParseResult = Read-NervTrxResults -Path @($normalizedTrx.FullName) -RunMetadata $roundTripRun
+    $roundTrip = @($roundTripParseResult.Records)
     Assert-Equal $sensitiveRecords.Count $roundTrip.Count 'Normalized TRX must round-trip through the parser.'
     Assert-Equal @($sensitiveRecords | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count @($roundTrip | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Round-trip counters must remain valid.'
     $recoveryRun = $run.Clone(); $recoveryRun.currentTestOutcome = 'success'; $recoveryRun.priorAttemptVerified = $true
@@ -932,7 +961,8 @@ try {
     Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $unverifiedPriorRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'Unverified prior-attempt provenance must never be called recovered.'
     Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -OutputDirectory $parameterArtifactRoot
     $parameterRoundTripRun = $recoveryRun.Clone()
-    $parameterRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
+    $parameterRoundTripParseResult = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
+    $parameterRoundTrip = @($parameterRoundTripParseResult.Records)
     Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterRoundTrip.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
     Assert-Equal 1 @(Get-NervStringsSorted -Values @($parameterRoundTrip.definitionId) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized definition identity must survive round-trip.'
     foreach ($expectedRecord in $parameterized) {
@@ -945,7 +975,8 @@ try {
         Assert-True (-not $displayRetainedText.Contains($sentinel)) "Retained display evidence leaked '$sentinel'."
     }
     $displayRoundTripRun = $run.Clone()
-    $displayRoundTrip = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $displayPayloadArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $displayRoundTripRun
+    $displayRoundTripParseResult = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $displayPayloadArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $displayRoundTripRun
+    $displayRoundTrip = @($displayRoundTripParseResult.Records)
     foreach ($expectedRecord in $displayPayload) {
         $actualRecord = @($displayRoundTrip | Where-Object { [string]::Equals([string]$_.testInstanceId, [string]($expectedRecord.testInstanceId), [StringComparison]::Ordinal) })
         Assert-Equal 1 $actualRecord.Count 'Normalized TRX must preserve persisted execution IDs exactly.'
@@ -1048,14 +1079,15 @@ Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.unavailableReason 'Incompatible baseline must expose a structured unavailable reason.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.assemblies[0].unavailableReason 'Each unavailable assembly comparison must expose its reason.'
 $compatibleRun = @{ workflowRunId = '1001'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; lane = 'backend-shard-1'; selectedLanes = @('backend-shard-1') }
-$compatibleRecords = @(Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $compatibleRun)
+$compatibleParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $compatibleRun
+$compatibleRecords = @($compatibleParseResult.Records)
 $compatibleMetadata = $metadata.Clone(); $compatibleMetadata.laneProvenance = New-NervLaneProvenanceFor -Lanes @([string]$compatibleRecords[0].lane)
 $compatibleBaseline = New-NervTestEvidenceBaseline -Summaries @(
     [pscustomobject]@{ granularity = 'test'; assemblies = @([pscustomobject]@{ lane = [string]$compatibleRecords[0].lane; assembly = [string]$compatibleRecords[0].assembly; passed = 1; failed = 0; skipped = 0; executed = 1; total = 1; elapsedMilliseconds = 6000.0 }) }
 ) -SourceMetadata $compatibleMetadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-05T11:06:53Z')
 Assert-Equal 'test' $compatibleBaseline.granularity 'A TRX-sourced baseline must stay test-granularity.'
 Assert-Equal 'trx-elapsed' $compatibleBaseline.durationMetric 'A test-granularity baseline must expose the trx-elapsed metric.'
-$compatibleBaselineSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
+$compatibleBaselineSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json) -PriorAttemptOutcome $null -TopCount 5
 Assert-True ([bool]$compatibleBaselineSummary.baseline.available) 'A test-granularity trx-elapsed baseline must produce an available comparison.'
 Assert-Equal $null $compatibleBaselineSummary.baseline.unavailableReason 'An available baseline comparison must not carry an unavailable reason.'
 Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 'Available comparison must report the exact signed delta percent.'
@@ -1068,7 +1100,7 @@ Assert-Equal -50 $compatibleBaselineSummary.baseline.assemblies[0].deltaPercent 
 $rehomedBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
 Assert-True (-not [string]::Equals([string]$rehomedBaseline.assemblies[0].lane, 'backend-shard-4', [StringComparison]::Ordinal)) 'The re-homing fixture must actually move the assembly to a different lane.'
 $rehomedBaseline.assemblies[0].lane = 'backend-shard-4'
-$rehomedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $rehomedBaseline -PriorAttemptOutcome $null -TopCount 5
+$rehomedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $rehomedBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-True ([bool]$rehomedSummary.baseline.available) 'An assembly re-homed to another shard must keep its timing comparison key.'
 Assert-Equal $null $rehomedSummary.baseline.assemblies[0].unavailableReason 'A re-homed assembly must not report an unavailable comparison reason.'
 Assert-Equal -50 $rehomedSummary.baseline.assemblies[0].deltaPercent 'A re-homed assembly must report the same signed delta as before the move.'
@@ -1077,7 +1109,7 @@ Assert-Equal -50 $rehomedSummary.baseline.assemblies[0].deltaPercent 'A re-homed
 # name changed with the key, and nothing about this path fails a gate.
 $absentBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
 $absentBaseline.assemblies[0].assembly = 'never.observed.tests.dll'
-$absentSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $absentBaseline -PriorAttemptOutcome $null -TopCount 5
+$absentSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $absentBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-True (-not [bool]$absentSummary.baseline.available) 'An assembly with no snapshot row must not produce a comparison.'
 Assert-Equal 'assembly-not-in-baseline' $absentSummary.baseline.assemblies[0].unavailableReason 'A missing assembly must report the assembly-keyed unavailable reason.'
 Assert-Equal 'no-compatible-assembly' $absentSummary.baseline.unavailableReason 'A summary with no comparable assembly must report the assembly-keyed summary reason.'
@@ -1091,13 +1123,13 @@ $duplicateRow.lane = 'backend-shard-4'
 $duplicateRow.elapsedMilliseconds = 99000.0
 $sameLaneBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
 $sameLaneBaseline.assemblies = @($sameLaneBaseline.assemblies[0], $duplicateRow)
-$sameLaneSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $sameLaneBaseline -PriorAttemptOutcome $null -TopCount 5
+$sameLaneSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $sameLaneBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-True ([bool]$sameLaneSummary.baseline.available) "A duplicated assembly must still compare when this lane ('$currentLane') has its own row."
 Assert-Equal 6000.0 ([double]$sameLaneSummary.baseline.assemblies[0].baselineDurationMilliseconds) 'A duplicated assembly must resolve to this lane row, not to an arbitrary sibling.'
 $ambiguousBaseline = ($compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
 $ambiguousBaseline.assemblies[0].lane = 'backend-shard-3'
 $ambiguousBaseline.assemblies = @($ambiguousBaseline.assemblies[0], $duplicateRow)
-$ambiguousSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $ambiguousBaseline -PriorAttemptOutcome $null -TopCount 5
+$ambiguousSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $ambiguousBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-True (-not [bool]$ambiguousSummary.baseline.available) 'An assembly recorded under two foreign lanes must not silently pick one.'
 Assert-Equal 'ambiguous-assembly-in-baseline' $ambiguousSummary.baseline.assemblies[0].unavailableReason 'An ambiguous duplicated assembly must report its own reason.'
 
@@ -1112,12 +1144,12 @@ foreach ($schemaCase in @(
 )) {
     $schemaBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json
     $schemaBaseline.schemaVersion = [int]$schemaCase.Version
-    $schemaSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemaBaseline -PriorAttemptOutcome $null -TopCount 5
+    $schemaSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $schemaBaseline -PriorAttemptOutcome $null -TopCount 5
     Assert-Equal $schemaCase.Expected $schemaSummary.baseline.unavailableReason "Baseline schema case '$($schemaCase.Name)' must report the exact unavailable reason."
     Assert-Equal ([bool]$schemaCase.Available) ([bool]$schemaSummary.baseline.available) "Baseline schema case '$($schemaCase.Name)' availability mismatch."
 }
 $schemalessBaseline = $compatibleBaseline | ConvertTo-Json -Depth 100 | ConvertFrom-Json | Select-Object -ExcludeProperty schemaVersion
-$schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
+$schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $schemalessBaseline -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
 # Non-integer `schemaVersion` shapes a hand-edited baseline can hold. Why the guard uses TryParse is in
@@ -1141,7 +1173,7 @@ foreach ($malformedSchemaCase in @(
     $malformedSummary = $null
     $malformedError = $null
     try {
-        $malformedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -Violations @() -Baseline $malformedBaseline -PriorAttemptOutcome $null -TopCount 5
+        $malformedSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -RunMetadata $compatibleRun -TrxParseResult $compatibleParseResult -Violations @() -Baseline $malformedBaseline -PriorAttemptOutcome $null -TopCount 5
     }
     catch { $malformedError = [string]$_.Exception.Message }
     Assert-Equal $null $malformedError "Baseline schemaVersion case '$($malformedSchemaCase.Name)' must be reported as an unavailable reason, never thrown."
