@@ -97,6 +97,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/DeviceAssetReferenceConcurrencyPostgresTests.cs",
+      "sourceSha256": "30314d0e145955bd58953aa9a27ba77b501dc726dde2d3d9f4a8f4bd34f8d25e",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "Ordinary MasterData reference concurrency tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs",
       "sourceSha256": "97cd9bcdcef31403369d9111030f5dbdfd8566183b21998d787002cc85158f77",
       "factoryCallCount": 1,

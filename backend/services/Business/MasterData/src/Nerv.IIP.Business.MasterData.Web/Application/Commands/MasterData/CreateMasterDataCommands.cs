@@ -1029,13 +1029,62 @@ public sealed record RegisterDeviceAssetCommand(
     DateOnly? RetiredOn = null,
     IReadOnlyCollection<DeviceAssetComponentDraft>? Components = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository repository, MasterDataCodingService? codingService = null)
+public sealed class RegisterDeviceAssetCommandHandler
     : ICommandHandler<RegisterDeviceAssetCommand, MasterDataResourceResult>
 {
-    public async Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
+    private readonly IDeviceAssetRepository repository;
+    private readonly IDeviceAssetReferenceValidator? referenceValidator;
+    private readonly IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator;
+    private readonly MasterDataCodingService? codingService;
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.codingService = codingService;
+    }
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        IDeviceAssetReferenceValidator referenceValidator,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.referenceValidator = referenceValidator;
+        this.codingService = codingService;
+    }
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        IDeviceAssetReferenceValidator referenceValidator,
+        IMasterDataReferenceScopeCoordinator referenceScopeCoordinator,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.referenceValidator = referenceValidator;
+        this.referenceScopeCoordinator = referenceScopeCoordinator;
+        this.codingService = codingService;
+    }
+
+    public Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
+    {
+        return referenceScopeCoordinator is null
+            ? HandleCoreAsync(request, cancellationToken)
+            : referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, token),
+                cancellationToken);
+    }
+
+    private async Task<MasterDataResourceResult> HandleCoreAsync(
+        RegisterDeviceAssetCommand request,
+        CancellationToken cancellationToken)
     {
         var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode);
         DeviceAssetCommandValidator.EnsureValidComponents(request.Components);
+        var references = await ValidateReferencesAsync(request, cancellationToken);
 
         var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
@@ -1062,11 +1111,11 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.PurchaseCost,
                 purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
-                request.SupplierPartnerCode,
+                references.SupplierPartnerCode,
                 request.SiteCode,
                 request.WorkshopCode,
                 request.StationCode,
-                request.ParentDeviceId,
+                references.ParentDeviceId,
                 request.RetiredOn,
                 request.Components?.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.Critical}") ?? []),
             cancellationToken);
@@ -1103,16 +1152,39 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.PurchaseCost,
                 purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
-                request.SupplierPartnerCode ?? string.Empty,
+                references.SupplierPartnerCode,
                 request.SiteCode ?? string.Empty,
                 request.WorkshopCode ?? string.Empty,
                 request.LineCode,
                 request.StationCode ?? string.Empty,
-                request.ParentDeviceId,
+                references.ParentDeviceId,
                 request.RetiredOn)
             .ReplaceComponents(request.Components ?? []);
         await repository.AddAsync(asset, cancellationToken);
         return new MasterDataResourceResult("device-asset", asset.Code, asset.Model);
+    }
+
+    private Task<DeviceAssetReferenceValidationResult> ValidateReferencesAsync(
+        RegisterDeviceAssetCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (referenceValidator is not null)
+        {
+            return referenceValidator.ValidateForCreateAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SupplierPartnerCode,
+                request.ParentDeviceId,
+                cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SupplierPartnerCode) ||
+            !string.IsNullOrWhiteSpace(request.ParentDeviceId))
+        {
+            throw new KnownException("校验设备资产引用需要 MasterData 持久化上下文。");
+        }
+
+        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty));
     }
 }
 

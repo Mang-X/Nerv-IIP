@@ -1287,12 +1287,12 @@ public sealed class MasterDataApiContractTests
         var supplierReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "business-partner", "SUP-ACME", false, "test:actor", "op-partner", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active device asset", supplierReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("设备资产", supplierReference.Message, StringComparison.OrdinalIgnoreCase);
 
         var parentReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "device-asset", "DEV-PARENT", false, "test:actor", "op-device", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active child device asset", parentReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("子设备", parentReference.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

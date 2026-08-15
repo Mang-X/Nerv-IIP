@@ -49,6 +49,8 @@ public static class MasterDataPersistenceServiceCollectionExtensions
         services.AddScoped<IWorkCalendarRepository, WorkCalendarRepository>();
         services.AddScoped<IDeviceAssetRepository, DeviceAssetRepository>();
         services.AddScoped<IReferenceDataCodeRepository, ReferenceDataCodeRepository>();
+        services.AddScoped<IDeviceAssetReferenceValidator, DeviceAssetReferenceValidator>();
+        services.AddScoped<IMasterDataReferenceScopeCoordinator, PostgreSqlMasterDataReferenceScopeCoordinator>();
         return services;
     }
 }
