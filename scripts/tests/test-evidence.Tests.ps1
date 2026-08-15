@@ -37,6 +37,39 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+$outcomePairs = @(
+    [pscustomobject]@{ Trx = 'Passed'; Normalized = 'passed' },
+    [pscustomobject]@{ Trx = 'Failed'; Normalized = 'failed' },
+    [pscustomobject]@{ Trx = 'NotExecuted'; Normalized = 'skipped' }
+)
+$resolvedTrxOutcomes = [Collections.Generic.List[string]]::new()
+$resolvedNormalizedOutcomes = [Collections.Generic.List[string]]::new()
+foreach ($pair in $outcomePairs) {
+    $fromTrx = Resolve-NervTrxOutcomeMapping -TrxOutcome $pair.Trx
+    Assert-Equal $pair.Normalized $fromTrx.NormalizedOutcome "TRX outcome '$($pair.Trx)' must normalize through the shared table."
+    $toTrx = Resolve-NervTrxOutcomeMapping -NormalizedOutcome $pair.Normalized
+    Assert-Equal $pair.Trx $toTrx.TrxOutcome "Normalized outcome '$($pair.Normalized)' must map back through the shared table."
+    Assert-Equal $pair.Trx (Resolve-NervTrxOutcomeMapping -NormalizedOutcome $fromTrx.NormalizedOutcome).TrxOutcome "Canonical TRX outcome '$($pair.Trx)' must round-trip exactly."
+    Assert-Equal $pair.Normalized (Resolve-NervTrxOutcomeMapping -TrxOutcome $toTrx.TrxOutcome).NormalizedOutcome "Canonical normalized outcome '$($pair.Normalized)' must round-trip exactly."
+    $resolvedTrxOutcomes.Add([string]$fromTrx.TrxOutcome)
+    $resolvedNormalizedOutcomes.Add([string]$toTrx.NormalizedOutcome)
+}
+Assert-Equal 3 ([Collections.Generic.HashSet[string]]::new([string[]]$resolvedTrxOutcomes.ToArray(), [StringComparer]::Ordinal)).Count 'TRX outcome mappings must be ordinally unique.'
+Assert-Equal 3 ([Collections.Generic.HashSet[string]]::new([string[]]$resolvedNormalizedOutcomes.ToArray(), [StringComparer]::Ordinal)).Count 'Normalized outcome mappings must be ordinally unique.'
+
+$outcomeFallback = Resolve-NervTrxOutcomeMapping -WriteFallback
+Assert-Equal 'NotExecuted' $outcomeFallback.TrxOutcome 'The shared table must expose NotExecuted as its only write fallback.'
+Assert-Equal 'skipped' $outcomeFallback.NormalizedOutcome 'The write fallback must remain paired with skipped.'
+Assert-True ([bool]$outcomeFallback.IsWriteFallback) 'The write fallback descriptor must identify itself explicitly.'
+
+$outcomeSoftHyphen = [string][char]0x00AD
+foreach ($nonCanonicalTrxOutcome in @('PASSED', "Passed$outcomeSoftHyphen")) {
+    Assert-True ($null -eq (Resolve-NervTrxOutcomeMapping -TrxOutcome $nonCanonicalTrxOutcome)) "Non-canonical TRX outcome '$nonCanonicalTrxOutcome' must not match the shared table."
+}
+foreach ($nonCanonicalNormalizedOutcome in @('PASSED', "passed$outcomeSoftHyphen")) {
+    Assert-True ($null -eq (Resolve-NervTrxOutcomeMapping -NormalizedOutcome $nonCanonicalNormalizedOutcome)) "Non-canonical normalized outcome '$nonCanonicalNormalizedOutcome' must not match the shared table."
+}
+
 $quotedTextBoundaryCases = @(
     [pscustomobject]@{ Name = 'escaped double quote'; Text = '"a\"b";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
     [pscustomobject]@{ Name = 'even backslashes before double quote'; Text = '"a\\";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 5 },
@@ -111,6 +144,40 @@ $sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
         [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
 }, $true))
 Assert-Equal 1 $sourceScannerSharedCalls.Count 'Source Skip scanning must delegate quote boundaries to the shared helper exactly once.'
+
+$trxReaderFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Read-NervTrxResults', [StringComparison]::Ordinal)
+}, $true)
+$trxReaderOutcomeMappingCalls = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Resolve-NervTrxOutcomeMapping', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $trxReaderOutcomeMappingCalls.Count 'TRX reading must resolve each result outcome through the shared mapping exactly once.'
+$trxReaderOutcomeMapAssignments = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcomeMap', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 0 $trxReaderOutcomeMapAssignments.Count 'TRX reading must not retain a private outcome map beside the shared descriptor table.'
+
+$trxReaderCounterThrows = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.ThrowStatementAst] -and
+        $node.Extent.Text.Contains('TRX ResultSummary/Counters do not match Results', [StringComparison]::Ordinal)
+}, $true))
+$trxReaderUnsupportedOutcomeThrows = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.ThrowStatementAst] -and
+        $node.Extent.Text.Contains('Unsupported TRX outcome', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $trxReaderCounterThrows.Count 'TRX reading must retain one counter-mismatch throw.'
+Assert-Equal 1 $trxReaderUnsupportedOutcomeThrows.Count 'TRX reading must retain one unsupported-outcome defensive throw.'
+Assert-True ($trxReaderCounterThrows[0].Extent.StartOffset -lt $trxReaderUnsupportedOutcomeThrows[0].Extent.StartOffset) 'Counter validation must remain before the unreachable unsupported-outcome defense.'
+Assert-True ($trxReaderUnsupportedOutcomeThrows[0].Extent.Text.Contains('[IO.InvalidDataException]::new', [StringComparison]::Ordinal)) 'The unsupported-outcome defense must retain InvalidDataException.'
 
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
@@ -798,6 +865,24 @@ try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) 
 catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters', [StringComparison]::Ordinal) }
 Assert-True $counterMismatchFailed 'TRX counter/result mismatches must fail closed.'
 
+$outcomeCounterFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-trx-outcome-counter-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($outcomeCounterFixtureRoot) | Out-Null
+    $canonicalOutcomeTrx = [IO.File]::ReadAllText((Join-Path $fixtures 'backend-results.trx'))
+    foreach ($outcomeVariant in @('PASSED', "Passed$softHyphen")) {
+        $variantPath = Join-Path $outcomeCounterFixtureRoot "variant-$([Guid]::NewGuid().ToString('N')).trx"
+        [IO.File]::WriteAllText($variantPath, $canonicalOutcomeTrx.Replace('outcome="Passed"', "outcome=`"$outcomeVariant`""), [Text.UTF8Encoding]::new($false))
+        $variantError = $null
+        try { Read-NervTrxResults -Path @($variantPath) -RunMetadata $run | Out-Null }
+        catch { $variantError = $_.Exception }
+        Assert-True ($variantError -is [IO.InvalidDataException]) "Non-canonical TRX outcome '$outcomeVariant' must fail closed with InvalidDataException."
+        Assert-True ($variantError.Message.Contains('Counters', [StringComparison]::Ordinal)) "Non-canonical TRX outcome '$outcomeVariant' must remain blocked by counter validation before projection."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $outcomeCounterFixtureRoot) { Remove-Item -LiteralPath $outcomeCounterFixtureRoot -Recurse -Force }
+}
+
 # Normalized-TRX provenance is an identifier comparison too (#1509). A rewritten TRX carries the head
 # and tested SHAs it was produced under, and this guard is what stops it from being re-read under
 # someone else's run metadata. `-cne` folds an ignorable character into the SHA, so a mismatched
@@ -1149,6 +1234,93 @@ finally {
     if (Test-Path $displayPayloadArtifactRoot) { Remove-Item $displayPayloadArtifactRoot -Recurse -Force }
     if (Test-Path $classifiedArtifactRoot) { Remove-Item $classifiedArtifactRoot -Recurse -Force }
 }
+
+$outcomeWriterArtifactRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-trx-outcome-writer-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($outcomeWriterArtifactRoot) | Out-Null
+    $passedOutcomeRecord = @($records | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'passed' })[0]
+    $failedOutcomeRecord = @($records | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'failed' })[0]
+    $skippedOutcomeRecord = @($records | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'skipped' })[0]
+    $emptyOutcomeRecord = $passedOutcomeRecord.PSObject.Copy()
+    $emptyOutcomeRecord.outcome = ''
+    $unknownOutcomeRecord = $passedOutcomeRecord.PSObject.Copy()
+    $unknownOutcomeRecord.outcome = 'unknown'
+    $foldedOutcomeRecord = $passedOutcomeRecord.PSObject.Copy()
+    $foldedOutcomeRecord.outcome = "passed$softHyphen"
+    $writerOutcomeCases = @(
+        [pscustomobject]@{ Name = 'passed'; Record = $passedOutcomeRecord; ExpectedTrx = 'Passed'; ExpectOutput = $false },
+        [pscustomobject]@{ Name = 'failed'; Record = $failedOutcomeRecord; ExpectedTrx = 'Failed'; ExpectOutput = $true },
+        [pscustomobject]@{ Name = 'skipped'; Record = $skippedOutcomeRecord; ExpectedTrx = 'NotExecuted'; ExpectOutput = $true },
+        [pscustomobject]@{ Name = 'empty'; Record = $emptyOutcomeRecord; ExpectedTrx = 'NotExecuted'; ExpectOutput = $false },
+        [pscustomobject]@{ Name = 'unknown'; Record = $unknownOutcomeRecord; ExpectedTrx = 'NotExecuted'; ExpectOutput = $false },
+        [pscustomobject]@{ Name = 'ordinal-near-match'; Record = $foldedOutcomeRecord; ExpectedTrx = 'NotExecuted'; ExpectOutput = $false }
+    )
+    foreach ($writerCase in $writerOutcomeCases) {
+        $caseOutput = Join-Path $outcomeWriterArtifactRoot $writerCase.Name
+        $caseSummary = New-NervTestEvidenceSummary -Records @($writerCase.Record) -RunMetadata $run -Violations @() -Baseline $null -PriorAttemptOutcome $null
+        Write-NervTestEvidenceArtifacts -Records @($writerCase.Record) -Summary $caseSummary -OutputDirectory $caseOutput
+        $caseTrx = @(Get-ChildItem (Join-Path $caseOutput 'trx') -Filter '*.trx' -File)
+        Assert-Equal 1 $caseTrx.Count "Writer outcome case '$($writerCase.Name)' must retain one normalized TRX."
+        $caseDocument = [Xml.XmlDocument]::new()
+        $caseDocument.Load($caseTrx[0].FullName)
+        $caseResult = $caseDocument.SelectSingleNode("//*[local-name()='Results']/*[local-name()='UnitTestResult']")
+        Assert-Equal $writerCase.ExpectedTrx ([string]$caseResult.outcome) "Writer outcome case '$($writerCase.Name)' changed its TRX fallback behavior."
+        $caseOutputNode = $caseResult.SelectSingleNode("./*[local-name()='Output']")
+        Assert-Equal $writerCase.ExpectOutput ($null -ne $caseOutputNode) "Writer outcome case '$($writerCase.Name)' changed its retained message behavior."
+    }
+
+    $canonicalOutcomeOutput = Join-Path $outcomeWriterArtifactRoot 'canonical-roundtrip'
+    Write-NervTestEvidenceArtifacts -Records $records -Summary $classifiedSummary -OutputDirectory $canonicalOutcomeOutput
+    $canonicalOutcomeTrx = @(Get-ChildItem (Join-Path $canonicalOutcomeOutput 'trx') -Filter '*.trx' -File)
+    Assert-Equal 1 $canonicalOutcomeTrx.Count 'Canonical outcome roundtrip must retain one normalized TRX.'
+    $canonicalOutcomeRoundTrip = Read-NervTrxResults -Path @($canonicalOutcomeTrx.FullName) -RunMetadata $run.PSObject.Copy()
+    Assert-Equal 3 @($canonicalOutcomeRoundTrip.Records).Count 'Canonical outcome roundtrip must retain all three records.'
+    foreach ($pair in $outcomePairs) {
+        Assert-Equal 1 @($canonicalOutcomeRoundTrip.Records | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) $pair.Normalized }).Count "Canonical outcome '$($pair.Normalized)' must survive writer/reader roundtrip."
+    }
+    Assert-Equal 3 $canonicalOutcomeRoundTrip.TrxRuns[0].total 'Canonical outcome roundtrip total changed.'
+    Assert-Equal 2 $canonicalOutcomeRoundTrip.TrxRuns[0].executed 'Canonical outcome roundtrip executed count changed.'
+    Assert-Equal 1 $canonicalOutcomeRoundTrip.TrxRuns[0].passed 'Canonical outcome roundtrip passed count changed.'
+    Assert-Equal 1 $canonicalOutcomeRoundTrip.TrxRuns[0].failed 'Canonical outcome roundtrip failed count changed.'
+    Assert-Equal 1 $canonicalOutcomeRoundTrip.TrxRuns[0].skipped 'Canonical outcome roundtrip skipped count changed.'
+    Assert-Equal 'diagnostics.log,summary.json,summary.md,tests.jsonl' (@(Get-NervStringsSorted -Values @(Get-ChildItem $canonicalOutcomeOutput -File | ForEach-Object Name) -Comparer ([StringComparer]::Ordinal) -Unique) -join ',') 'Canonical outcome roundtrip changed the root artifact allowlist.'
+}
+finally {
+    if (Test-Path -LiteralPath $outcomeWriterArtifactRoot) { Remove-Item -LiteralPath $outcomeWriterArtifactRoot -Recurse -Force }
+}
+
+$trxWriterFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Write-NervTestEvidenceArtifacts', [StringComparison]::Ordinal)
+}, $true)
+$trxWriterOutcomeMappingCalls = @($trxWriterFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Resolve-NervTrxOutcomeMapping', [StringComparison]::Ordinal)
+}, $true))
+$trxWriterNormalizedCalls = @($trxWriterOutcomeMappingCalls | Where-Object {
+    @($_.CommandElements | Where-Object {
+        $_ -is [Management.Automation.Language.CommandParameterAst] -and
+            [string]::Equals([string]$_.ParameterName, 'NormalizedOutcome', [StringComparison]::Ordinal)
+    }).Count -eq 1
+})
+$trxWriterFallbackCalls = @($trxWriterOutcomeMappingCalls | Where-Object {
+    @($_.CommandElements | Where-Object {
+        $_ -is [Management.Automation.Language.CommandParameterAst] -and
+            [string]::Equals([string]$_.ParameterName, 'WriteFallback', [StringComparison]::Ordinal)
+    }).Count -eq 1
+})
+Assert-Equal 1 $trxWriterNormalizedCalls.Count 'Normalized TRX writing must query the shared outcome mapping exactly once per record.'
+Assert-Equal 1 $trxWriterFallbackCalls.Count 'Normalized TRX writing must query the shared fallback exactly once when a record outcome is unknown.'
+$trxWriterOutcomeAssignments = @($trxWriterFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcome', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $trxWriterOutcomeAssignments.Count 'Normalized TRX writing must retain one outcome projection assignment.'
+Assert-True (-not $trxWriterOutcomeAssignments[0].Extent.Text.Contains('Test-NervOrdinalEquals', [StringComparison]::Ordinal)) 'Normalized TRX outcome projection must not retain the handwritten reverse mapping branch.'
 
 $metadata = Get-Content (Join-Path $fixtures 'github-run-metadata.json') -Raw | ConvertFrom-Json -AsHashtable
 $runnerLogBase = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-sdk=10.0.302"

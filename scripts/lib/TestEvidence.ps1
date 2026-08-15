@@ -42,6 +42,46 @@ function Test-NervOrdinalEquals {
     return [string]::Equals([string]$Left, [string]$Right, [StringComparison]::Ordinal)
 }
 
+function Resolve-NervTrxOutcomeMapping {
+    [CmdletBinding(DefaultParameterSetName = 'TrxOutcome')]
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'TrxOutcome')]
+        [AllowEmptyString()]
+        [string] $TrxOutcome,
+
+        [Parameter(Mandatory, ParameterSetName = 'NormalizedOutcome')]
+        [AllowEmptyString()]
+        [string] $NormalizedOutcome,
+
+        [Parameter(Mandatory, ParameterSetName = 'WriteFallback')]
+        [switch] $WriteFallback
+    )
+
+    $mappings = @(
+        [pscustomobject][ordered]@{ TrxOutcome = 'Passed'; NormalizedOutcome = 'passed'; IsWriteFallback = $false },
+        [pscustomobject][ordered]@{ TrxOutcome = 'Failed'; NormalizedOutcome = 'failed'; IsWriteFallback = $false },
+        [pscustomobject][ordered]@{ TrxOutcome = 'NotExecuted'; NormalizedOutcome = 'skipped'; IsWriteFallback = $true }
+    )
+
+    if ($WriteFallback) {
+        $fallbacks = @($mappings | Where-Object { [bool]$_.IsWriteFallback })
+        if ($fallbacks.Count -ne 1) {
+            throw [InvalidOperationException]::new('TRX outcome mappings must declare exactly one write fallback.')
+        }
+        return $fallbacks[0]
+    }
+
+    foreach ($mapping in $mappings) {
+        if ((Test-NervOrdinalEquals $PSCmdlet.ParameterSetName 'TrxOutcome') -and (Test-NervOrdinalEquals $mapping.TrxOutcome $TrxOutcome)) {
+            return $mapping
+        }
+        if ((Test-NervOrdinalEquals $PSCmdlet.ParameterSetName 'NormalizedOutcome') -and (Test-NervOrdinalEquals $mapping.NormalizedOutcome $NormalizedOutcome)) {
+            return $mapping
+        }
+    }
+    return $null
+}
+
 function Get-NervOrdinalCompositeKey {
     <#
         Encodes a sequence of identity components into one injective ordinal key.
@@ -625,7 +665,6 @@ function Read-NervTrxResults {
     if (-not (Test-NervTestEvidenceLaneName ([string]$RunMetadata.lane))) {
         throw "Invalid evidence lane '$($RunMetadata.lane)'."
     }
-    $outcomeMap = @{ Passed = 'passed'; Failed = 'failed'; NotExecuted = 'skipped' }
     $records = [Collections.Generic.List[object]]::new()
     $trxElapsedMilliseconds = 0.0
     $trxRuns = [Collections.Generic.List[object]]::new()
@@ -766,7 +805,8 @@ function Read-NervTrxResults {
         $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         foreach ($result in $results) {
             $rawOutcome = [string]$result.outcome
-            if (-not $outcomeMap.ContainsKey($rawOutcome)) {
+            $outcomeMapping = Resolve-NervTrxOutcomeMapping -TrxOutcome $rawOutcome
+            if ($null -eq $outcomeMapping) {
                 throw [IO.InvalidDataException]::new("Unsupported TRX outcome '$rawOutcome' in '$([IO.Path]::GetFullPath($trxPath))'.")
             }
             $definition = $definitions[[string]$result.testId]
@@ -810,7 +850,7 @@ function Read-NervTrxResults {
                 testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }
                 durationTicks = [long]$duration.Ticks
                 durationMilliseconds = [double]$duration.TotalMilliseconds
-                outcome = [string]$outcomeMap[$rawOutcome]
+                outcome = [string]$outcomeMapping.NormalizedOutcome
                 skipReason = if (Test-NervOrdinalEquals $rawOutcome 'NotExecuted') { Get-NervTrxSkipReason -UnitTestResult $result } else { $null }
                 errorMessage = ConvertTo-NervRetainedFailureText $rawError
                 redactionCount = if ($hasPersistedRedactionCount) { $persistedRedactionCount } else { [int]$retainedDisplay.redactionCount + $(if ([string]::IsNullOrWhiteSpace($rawError)) { 0 } else { 1 }) }
@@ -1421,14 +1461,13 @@ function Write-NervTestEvidenceArtifacts {
             $fileName = [string]$resolvedFileNames[[string]$normalizedGroup.Identity]
             $xmlRows = foreach ($record in $groupRecords) {
                 $name = [Security.SecurityElement]::Escape([string]$record.displayName)
-                # Explicit ordinal comparisons rather than `switch` (#1509 round 3): PowerShell's
-                # switch matches culture-aware, and `-CaseSensitive` does not change that — measured,
-                # `switch ("failed$([char]0x00AD)")` still takes the 'failed' branch. Here that wrote a
-                # `Failed` outcome into a *retained* TRX for a record whose outcome token was not
-                # `failed`, i.e. the artifact stopped agreeing with the record it was built from.
-                $outcome = if (Test-NervOrdinalEquals ([string]$record.outcome) 'passed') { 'Passed' }
-                    elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { 'Failed' }
-                    else { 'NotExecuted' }
+                # The shared lookup keeps the reader and writer inverse mappings in one descriptor
+                # table. Unknown values retain the historical writer-only NotExecuted fallback.
+                $outcomeMapping = Resolve-NervTrxOutcomeMapping -NormalizedOutcome ([string]$record.outcome)
+                if ($null -eq $outcomeMapping) {
+                    $outcomeMapping = Resolve-NervTrxOutcomeMapping -WriteFallback
+                }
+                $outcome = [string]$outcomeMapping.TrxOutcome
                 $duration = [TimeSpan]::FromTicks([long]$record.durationTicks).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
                 $message = if (Test-NervOrdinalEquals ([string]$record.outcome) 'skipped') { Get-NervRetainedSkipReason $record } elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { ConvertTo-NervRetainedFailureText ([string]$record.errorMessage) } else { $null }
                 $output = if ([string]::IsNullOrWhiteSpace($message)) { '' } else { "<Output><ErrorInfo><Message>$([Security.SecurityElement]::Escape($message))</Message></ErrorInfo></Output>" }
