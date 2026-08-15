@@ -565,29 +565,16 @@ function ConvertTo-NervRetainedDisplayName {
         $valueStart = $match.Index + $match.Length
         $valueEnd = $valueStart
         if ($valueStart -lt $source.Length -and ($source[$valueStart] -eq [char]'"' -or $source[$valueStart] -eq [char]"'")) {
-            $quote = $source[$valueStart]
-            $valueEnd++
-            while ($valueEnd -lt $source.Length) {
-                if ($source[$valueEnd] -eq $quote) {
-                    $slashes = 0
-                    for ($lookBehind = $valueEnd - 1; $lookBehind -ge $valueStart -and $source[$lookBehind] -eq [char]'\'; $lookBehind--) { $slashes++ }
-                    if (($slashes % 2) -eq 0) { $valueEnd++; break }
-                }
-                $valueEnd++
-            }
+            $valueEnd = Find-NervQuotedTextEnd -Text $source -QuoteStart $valueStart
         }
         else {
             $depth = 0
-            $quote = [char]0
-            $escaped = $false
             while ($valueEnd -lt $source.Length) {
                 $character = $source[$valueEnd]
-                if ($quote -ne [char]0) {
-                    if ($character -eq [char]'\' -and -not $escaped) { $escaped = $true; $valueEnd++; continue }
-                    if ($character -eq $quote -and -not $escaped) { $quote = [char]0 }
-                    $escaped = $false
+                if ($character -eq [char]'"' -or $character -eq [char]"'") {
+                    $valueEnd = Find-NervQuotedTextEnd -Text $source -QuoteStart $valueEnd
+                    continue
                 }
-                elseif ($character -eq [char]'"' -or $character -eq [char]"'") { $quote = $character }
                 # `[char]` casts, not `-in` over string literals: `-in` compares as *strings*, which is
                 # culture-aware. Char equality is numeric and is what a brace matcher wants.
                 elseif ($character -eq [char]'{' -or $character -eq [char]'[' -or $character -eq [char]'(') { $depth++ }

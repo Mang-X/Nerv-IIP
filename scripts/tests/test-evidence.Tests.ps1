@@ -841,6 +841,29 @@ $sensitiveBodyA = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerNam
 $sensitiveBodyB = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Bob\",\"password\":\"second\"}")'
 Assert-True (-not [string]::Equals([string]($sensitiveBodyA.text), [string]($sensitiveBodyB.text), [StringComparison]::Ordinal)) 'Body digests must preserve instance distinction even when generic text redaction would collapse the raw values.'
 
+$nestedEscapedDisplay = ConvertTo-NervRetainedDisplayName 'sends(body: {"items":[{"text":"secret-\"quoted,comma\""}]}, responseBody: ''second,secret'', mode: True)'
+$expectedNestedEscapedDisplay = 'sends(body: "<redacted-body:b96851c96708a3cc>", responseBody: "<redacted-body:0c5ff808cbccc4af>", mode: True)'
+Assert-Equal 2 $nestedEscapedDisplay.redactionCount 'Nested escaped and separately quoted body parameters must both be redacted.'
+Assert-Equal $expectedNestedEscapedDisplay $nestedEscapedDisplay.text 'Nested escaped display redaction must retain the exact digest and trailing safe parameter output.'
+foreach ($sentinel in @('secret-', 'quoted,comma', 'second,secret')) {
+    Assert-True (-not $nestedEscapedDisplay.text.Contains($sentinel, [StringComparison]::Ordinal)) "Nested escaped display redaction leaked '$sentinel'."
+}
+$nestedEscapedDisplayAgain = ConvertTo-NervRetainedDisplayName $nestedEscapedDisplay.text
+Assert-Equal 0 $nestedEscapedDisplayAgain.redactionCount 'Already-redacted body markers must remain idempotent after shared quote scanning.'
+Assert-Equal $expectedNestedEscapedDisplay $nestedEscapedDisplayAgain.text 'Already-redacted body markers must retain byte-stable display text.'
+
+$displayScannerFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal)
+}, $true)
+$displayScannerSharedCalls = @($displayScannerFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 2 $displayScannerSharedCalls.Count 'Display-name scanning must delegate both quoted paths to the shared helper.'
+
 $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
 Assert-Equal 'environment-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipClassification 'Matched skip classification must be retained for aggregation.'
