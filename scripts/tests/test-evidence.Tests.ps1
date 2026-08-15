@@ -145,6 +145,40 @@ $sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
 }, $true))
 Assert-Equal 1 $sourceScannerSharedCalls.Count 'Source Skip scanning must delegate quote boundaries to the shared helper exactly once.'
 
+$trxReaderFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Read-NervTrxResults', [StringComparison]::Ordinal)
+}, $true)
+$trxReaderOutcomeMappingCalls = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Resolve-NervTrxOutcomeMapping', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $trxReaderOutcomeMappingCalls.Count 'TRX reading must resolve each result outcome through the shared mapping exactly once.'
+$trxReaderOutcomeMapAssignments = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcomeMap', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 0 $trxReaderOutcomeMapAssignments.Count 'TRX reading must not retain a private outcome map beside the shared descriptor table.'
+
+$trxReaderCounterThrows = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.ThrowStatementAst] -and
+        $node.Extent.Text.Contains('TRX ResultSummary/Counters do not match Results', [StringComparison]::Ordinal)
+}, $true))
+$trxReaderUnsupportedOutcomeThrows = @($trxReaderFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.ThrowStatementAst] -and
+        $node.Extent.Text.Contains('Unsupported TRX outcome', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $trxReaderCounterThrows.Count 'TRX reading must retain one counter-mismatch throw.'
+Assert-Equal 1 $trxReaderUnsupportedOutcomeThrows.Count 'TRX reading must retain one unsupported-outcome defensive throw.'
+Assert-True ($trxReaderCounterThrows[0].Extent.StartOffset -lt $trxReaderUnsupportedOutcomeThrows[0].Extent.StartOffset) 'Counter validation must remain before the unreachable unsupported-outcome defense.'
+Assert-True ($trxReaderUnsupportedOutcomeThrows[0].Extent.Text.Contains('[IO.InvalidDataException]::new', [StringComparison]::Ordinal)) 'The unsupported-outcome defense must retain InvalidDataException.'
+
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
 function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
@@ -830,6 +864,24 @@ $counterMismatchFailed = $false
 try { Read-NervTrxResults -Path @((Join-Path $fixtures 'counter-mismatch.trx')) -RunMetadata $run | Out-Null }
 catch { $counterMismatchFailed = $_.Exception.Message.Contains('Counters', [StringComparison]::Ordinal) }
 Assert-True $counterMismatchFailed 'TRX counter/result mismatches must fail closed.'
+
+$outcomeCounterFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-trx-outcome-counter-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($outcomeCounterFixtureRoot) | Out-Null
+    $canonicalOutcomeTrx = [IO.File]::ReadAllText((Join-Path $fixtures 'backend-results.trx'))
+    foreach ($outcomeVariant in @('PASSED', "Passed$softHyphen")) {
+        $variantPath = Join-Path $outcomeCounterFixtureRoot "variant-$([Guid]::NewGuid().ToString('N')).trx"
+        [IO.File]::WriteAllText($variantPath, $canonicalOutcomeTrx.Replace('outcome="Passed"', "outcome=`"$outcomeVariant`""), [Text.UTF8Encoding]::new($false))
+        $variantError = $null
+        try { Read-NervTrxResults -Path @($variantPath) -RunMetadata $run | Out-Null }
+        catch { $variantError = $_.Exception }
+        Assert-True ($variantError -is [IO.InvalidDataException]) "Non-canonical TRX outcome '$outcomeVariant' must fail closed with InvalidDataException."
+        Assert-True ($variantError.Message.Contains('Counters', [StringComparison]::Ordinal)) "Non-canonical TRX outcome '$outcomeVariant' must remain blocked by counter validation before projection."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $outcomeCounterFixtureRoot) { Remove-Item -LiteralPath $outcomeCounterFixtureRoot -Recurse -Force }
+}
 
 # Normalized-TRX provenance is an identifier comparison too (#1509). A rewritten TRX carries the head
 # and tested SHAs it was produced under, and this guard is what stops it from being re-read under

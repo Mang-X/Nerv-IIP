@@ -665,7 +665,6 @@ function Read-NervTrxResults {
     if (-not (Test-NervTestEvidenceLaneName ([string]$RunMetadata.lane))) {
         throw "Invalid evidence lane '$($RunMetadata.lane)'."
     }
-    $outcomeMap = @{ Passed = 'passed'; Failed = 'failed'; NotExecuted = 'skipped' }
     $records = [Collections.Generic.List[object]]::new()
     $trxElapsedMilliseconds = 0.0
     $trxRuns = [Collections.Generic.List[object]]::new()
@@ -806,7 +805,8 @@ function Read-NervTrxResults {
         $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
         foreach ($result in $results) {
             $rawOutcome = [string]$result.outcome
-            if (-not $outcomeMap.ContainsKey($rawOutcome)) {
+            $outcomeMapping = Resolve-NervTrxOutcomeMapping -TrxOutcome $rawOutcome
+            if ($null -eq $outcomeMapping) {
                 throw [IO.InvalidDataException]::new("Unsupported TRX outcome '$rawOutcome' in '$([IO.Path]::GetFullPath($trxPath))'.")
             }
             $definition = $definitions[[string]$result.testId]
@@ -850,7 +850,7 @@ function Read-NervTrxResults {
                 testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }
                 durationTicks = [long]$duration.Ticks
                 durationMilliseconds = [double]$duration.TotalMilliseconds
-                outcome = [string]$outcomeMap[$rawOutcome]
+                outcome = [string]$outcomeMapping.NormalizedOutcome
                 skipReason = if (Test-NervOrdinalEquals $rawOutcome 'NotExecuted') { Get-NervTrxSkipReason -UnitTestResult $result } else { $null }
                 errorMessage = ConvertTo-NervRetainedFailureText $rawError
                 redactionCount = if ($hasPersistedRedactionCount) { $persistedRedactionCount } else { [int]$retainedDisplay.redactionCount + $(if ([string]::IsNullOrWhiteSpace($rawError)) { 0 } else { 1 }) }
