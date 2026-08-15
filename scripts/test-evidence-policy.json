@@ -951,7 +951,7 @@
       "id": "masterdata-postgres",
       "sourceId": "masterdata-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.(?:MasterDataPostgresProfileTests|MasterDataWorldBibleSeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.(?:DeviceAssetReferenceConcurrencyPostgresTests|MasterDataPostgresProfileTests|MasterDataWorldBibleSeedPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -962,6 +962,14 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.JoinedTransaction_CancellationPropagatesWithoutOwningCallerTransaction",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.JoinedTransaction_SavesBeforeReturnRetainsLockAndCallerRollbackRemovesMutation",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.OpposingParentAssignments_CannotBothCommit",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.ParentAssignmentRacingDisable_CannotLeaveActiveChildWithInactiveParent",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.ParentDisableRacingChildReEnable_CannotCommitInvalidReference",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierAssignmentRacingDisable_CannotLeaveActiveDeviceWithInactiveSupplier",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierAssignmentRacingRoleRemoval_CannotCommitInvalidReference",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierDisableRacingChildReEnable_CannotCommitInvalidReference",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity",
@@ -969,7 +977,7 @@
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests.Postgres_work_calendar_update_replaces_owned_details_after_reload",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests.World_bible_seed_persists_the_full_l0_master_data_within_the_startup_budget"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 14
     },
     {
       "id": "mes-world-history",

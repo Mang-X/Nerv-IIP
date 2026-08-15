@@ -1147,7 +1147,8 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (referencedByDevice)
         {
-            throw new KnownException($"Business partner '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+            throw new KnownException(
+                $"业务伙伴 '{request.Code}' 仍被启用的设备资产作为供应商引用，不能停用。请先清除相关设备资产的供应商引用。");
         }
     }
 
@@ -1167,7 +1168,8 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             (Guid.TryParse(stored.Trim(), out var parsed) && parsed == parentPublicId));
         if (referencedByChildDevice)
         {
-            throw new KnownException($"Device asset '{request.Code}' cannot be disabled because it is referenced by active child device asset records.");
+            throw new KnownException(
+                $"设备资产 '{request.Code}' 仍被启用的子设备引用，不能停用。请先调整相关子设备的父设备引用。");
         }
     }
 }

@@ -1181,7 +1181,7 @@ public sealed class RegisterDeviceAssetCommandHandler
         if (!string.IsNullOrWhiteSpace(request.SupplierPartnerCode) ||
             !string.IsNullOrWhiteSpace(request.ParentDeviceId))
         {
-            throw new KnownException("Device asset reference validation requires master data persistence context.");
+            throw new KnownException("校验设备资产引用需要 MasterData 持久化上下文。");
         }
 
         return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty));

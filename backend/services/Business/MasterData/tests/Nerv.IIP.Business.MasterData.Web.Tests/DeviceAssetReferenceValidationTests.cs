@@ -84,7 +84,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 CreateCommand($"DEV-{scenario}", supplierPartnerCode: referencedCode),
                 CancellationToken.None));
 
-        Assert.Contains("supplier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("供应商", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -122,7 +122,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 CreateCommand($"DEV-{scenario}", parentDeviceId: parentId.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("父设备", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 CreateCommand("DEV-MALFORMED", parentDeviceId: "DEV-EXISTING"),
                 CancellationToken.None));
 
-        Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("父设备", exception.Message, StringComparison.Ordinal);
         Assert.Contains("GUID", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -218,7 +218,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(device.Code, model: "must-not-apply", supplierPartnerCode: referencedCode),
                 CancellationToken.None));
 
-        Assert.Contains("supplier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("供应商", exception.Message, StringComparison.Ordinal);
         Assert.Equal("Test device", device.Model);
         Assert.Empty(device.SupplierPartnerCode);
     }
@@ -270,7 +270,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(device.Code, model: "must-not-apply", parentDeviceId: proposedParentId),
                 CancellationToken.None));
 
-        Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("父设备", exception.Message, StringComparison.Ordinal);
         Assert.Equal("Test device", device.Model);
         Assert.Empty(device.ParentDeviceId);
     }
@@ -331,7 +331,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(device.Code, parentDeviceId: device.Id.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("itself", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("自身", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -354,7 +354,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(second.Code, parentDeviceId: first.Id.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("cycle", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("环路", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -381,7 +381,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(root.Code, parentDeviceId: grandchild.Id.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("cycle", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("环路", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -403,7 +403,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(device.Code, parentDeviceId: parent.Id.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("malformed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("格式错误", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -430,7 +430,7 @@ public sealed class DeviceAssetReferenceValidationTests
                 UpdateCommand(device.Code, parentDeviceId: first.Id.ToString()),
                 CancellationToken.None));
 
-        Assert.Contains("cycle", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("环路", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

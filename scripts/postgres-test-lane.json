@@ -40,6 +40,30 @@
       ]
     },
     {
+      "id": "masterdata-device-reference-concurrency",
+      "service": "MasterData",
+      "tier": "core",
+      "status": "active",
+      "databaseOwnership": "test-owned",
+      "project": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/Nerv.IIP.Business.MasterData.Web.Tests.csproj",
+      "filter": "FullyQualifiedName~Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests",
+      "databasePrefix": "nerv_iip_masterdata_device_reference",
+      "diagnosticSchemas": [
+        "business_masterdata",
+        "cap"
+      ],
+      "expectedTestIdentities": [
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.JoinedTransaction_CancellationPropagatesWithoutOwningCallerTransaction",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.JoinedTransaction_SavesBeforeReturnRetainsLockAndCallerRollbackRemovesMutation",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.OpposingParentAssignments_CannotBothCommit",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.ParentAssignmentRacingDisable_CannotLeaveActiveChildWithInactiveParent",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.ParentDisableRacingChildReEnable_CannotCommitInvalidReference",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierAssignmentRacingDisable_CannotLeaveActiveDeviceWithInactiveSupplier",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierAssignmentRacingRoleRemoval_CannotCommitInvalidReference",
+        "Nerv.IIP.Business.MasterData.Web.Tests.DeviceAssetReferenceConcurrencyPostgresTests.SupplierDisableRacingChildReEnable_CannotCommitInvalidReference"
+      ]
+    },
+    {
       "id": "scheduling-postgres-profile",
       "service": "Scheduling",
       "tier": "core",

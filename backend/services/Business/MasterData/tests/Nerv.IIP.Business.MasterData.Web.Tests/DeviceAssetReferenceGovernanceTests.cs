@@ -49,7 +49,7 @@ public sealed class DeviceAssetReferenceGovernanceTests
                 EnableDevice(device.Code, "reenable-inactive-supplier"),
                 CancellationToken.None));
 
-        Assert.Contains("supplier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("供应商", exception.Message, StringComparison.Ordinal);
         Assert.True(device.Disabled);
     }
 
@@ -86,7 +86,7 @@ public sealed class DeviceAssetReferenceGovernanceTests
                 EnableDevice(child.Code, "reenable-inactive-parent"),
                 CancellationToken.None));
 
-        Assert.Contains("parent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("父设备", exception.Message, StringComparison.Ordinal);
         Assert.True(child.Disabled);
     }
 
@@ -134,7 +134,7 @@ public sealed class DeviceAssetReferenceGovernanceTests
                 EnableDevice(child.Code, "reenable-malformed-ancestry"),
                 CancellationToken.None));
 
-        Assert.Contains("malformed", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("格式错误", exception.Message, StringComparison.Ordinal);
         Assert.True(child.Disabled);
     }
 
@@ -183,7 +183,7 @@ public sealed class DeviceAssetReferenceGovernanceTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             UpdateHandler(dbContext).Handle(command, CancellationToken.None));
 
-        Assert.Contains("supplier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("供应商", exception.Message, StringComparison.Ordinal);
         Assert.Contains(
             partner.PartnerRoles,
             role => string.Equals(role, "supplier", StringComparison.OrdinalIgnoreCase));
@@ -292,7 +292,7 @@ public sealed class DeviceAssetReferenceGovernanceTests
                     Reason: "review regression"),
                 CancellationToken.None));
 
-        Assert.Contains("child", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("子设备", exception.Message, StringComparison.Ordinal);
         Assert.False(parent.Disabled);
     }
 

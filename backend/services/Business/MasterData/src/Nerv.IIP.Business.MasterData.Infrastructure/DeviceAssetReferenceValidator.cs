@@ -118,7 +118,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
         if (referenced)
         {
             throw new KnownException(
-                $"Business partner '{partner.Code}' cannot remove the supplier role because it is referenced by active device asset records.");
+                $"业务伙伴 '{partner.Code}' 仍被启用的设备资产引用，不能移除供应商角色。请先清除相关设备资产的供应商引用。");
         }
     }
 
@@ -144,7 +144,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
             !supplier.PartnerRoles.Any(IsSupplierRole))
         {
             throw new KnownException(
-                $"Device asset supplier '{normalizedSupplierCode}' must reference an active supplier partner in the same organization and environment.");
+                $"设备资产供应商 '{normalizedSupplierCode}' 必须引用同组织、同环境内已启用且具有供应商角色的业务伙伴。");
         }
 
         return normalizedSupplierCode;
@@ -165,13 +165,13 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
 
         if (!Guid.TryParse(candidate, out var publicId))
         {
-            throw new KnownException("Device asset parentDeviceId must be a valid DeviceAsset public GUID.");
+            throw new KnownException("父设备 parentDeviceId 必须是有效的 DeviceAsset 公共 GUID。");
         }
 
         var parentId = new DeviceAssetId(publicId);
         if (currentDeviceId is not null && parentId == currentDeviceId)
         {
-            throw new KnownException("Device asset cannot reference itself as its parent.");
+            throw new KnownException("设备资产不能将自身设置为父设备。");
         }
 
         var parent = await dbContext.DeviceAssets.SingleOrDefaultAsync(
@@ -183,7 +183,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
         if (parent is null)
         {
             throw new KnownException(
-                $"Device asset parent '{publicId}' must reference an active device in the same organization and environment.");
+                $"父设备 '{publicId}' 必须引用同组织、同环境内已启用的设备资产。");
         }
 
         var visited = new HashSet<Guid>();
@@ -192,12 +192,12 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
             var ancestorPublicId = parent.Id.Id;
             if (currentDeviceId is not null && parent.Id == currentDeviceId)
             {
-                throw new KnownException("Device asset parent hierarchy would create a cycle.");
+                throw new KnownException("父设备层级将形成环路，请选择其他父设备。");
             }
 
             if (!visited.Add(ancestorPublicId))
             {
-                throw new KnownException("Device asset parent hierarchy contains a pre-existing cycle.");
+                throw new KnownException("父设备层级已存在环路，请先修复既有层级。");
             }
 
             var storedParentId = parent.ParentDeviceId.Trim();
@@ -209,13 +209,13 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
             if (!Guid.TryParse(storedParentId, out var nextPublicId))
             {
                 throw new KnownException(
-                    $"Device asset parent hierarchy contains malformed stored ancestry at '{ancestorPublicId}'.");
+                    $"父设备层级在 '{ancestorPublicId}' 处包含格式错误的既有父设备引用。");
             }
 
             var nextId = new DeviceAssetId(nextPublicId);
             if (currentDeviceId is not null && nextId == currentDeviceId)
             {
-                throw new KnownException("Device asset parent hierarchy would create a cycle.");
+                throw new KnownException("父设备层级将形成环路，请选择其他父设备。");
             }
 
             parent = await dbContext.DeviceAssets.SingleOrDefaultAsync(
@@ -225,10 +225,10 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
                     !x.Disabled,
                 cancellationToken)
                 ?? throw new KnownException(
-                    $"Device asset parent hierarchy references missing, inactive, or wrong-scope ancestor '{nextPublicId}'.");
+                    $"父设备层级引用了缺失、已停用或不在当前范围内的祖先设备 '{nextPublicId}'。请先修复父设备层级。");
         }
 
-        throw new KnownException("Device asset parent hierarchy exceeds the supported depth.");
+        throw new KnownException("父设备层级超过支持的最大深度 256，请检查层级是否异常。");
     }
 
     private static bool IsSupplierRole(string role) =>
