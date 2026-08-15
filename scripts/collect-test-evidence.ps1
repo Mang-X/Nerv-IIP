@@ -102,7 +102,7 @@ try {
     if ($violations.Count -gt 0) { foreach ($violation in $violations) { Write-Error "$($violation.code): $($violation.id): $($violation.message)" -ErrorAction Continue }; exit 1 }
 }
 catch {
-    $safeFailure = Protect-NervTestEvidenceText $_.Exception.Message
+    $safeFailure = Protect-ScriptAutomationText $_.Exception.Message
     $failureOutput = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $OutputDirectory -RunMetadata $failureMetadata -Diagnostic $safeFailure
     Write-NervEvidenceOutputPath -Path $failureOutput -ManifestPath $EvidencePathOutputFile
     if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $failureOutput 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }

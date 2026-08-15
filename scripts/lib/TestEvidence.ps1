@@ -585,7 +585,7 @@ function ConvertTo-NervRetainedDisplayName {
 
     $source = if ($null -eq $Text) { '' } else { $Text }
     if ([string]::IsNullOrWhiteSpace($source)) {
-        return [pscustomobject]@{ text = (Protect-NervTestEvidenceText $source); redactionCount = 0 }
+        return [pscustomobject]@{ text = (Protect-ScriptAutomationText $source); redactionCount = 0 }
     }
 
     $pattern = [regex]::new('(?i)(?<prefix>(?:^|[(,]\s*))(?<label>(?:body|requestBody|responseBody)\s*:\s*)')
@@ -637,7 +637,7 @@ function ConvertTo-NervRetainedDisplayName {
         $redactionCount++
         $position = $valueEnd
     }
-    [pscustomobject]@{ text = (Protect-NervTestEvidenceText $builder.ToString()); redactionCount = $redactionCount }
+    [pscustomobject]@{ text = (Protect-ScriptAutomationText $builder.ToString()); redactionCount = $redactionCount }
 }
 
 function ConvertTo-NervRetainedFailureText {
@@ -651,7 +651,7 @@ function Get-NervRetainedSkipReason {
     if (-not (Test-NervHasProperty -Object $Record -Name 'skipPolicyId') -or [string]::IsNullOrWhiteSpace([string]$Record.skipPolicyId)) {
         return 'Skipped; raw reason omitted because no approved policy matched.'
     }
-    $safe = Protect-NervTestEvidenceText ([string]$Record.skipReason)
+    $safe = Protect-ScriptAutomationText ([string]$Record.skipReason)
     if ($safe.Length -gt 512) { return $safe.Substring(0, 512) }
     return $safe
 }
@@ -966,11 +966,6 @@ function Get-NervTestEvidenceViolations {
     @($violations)
 }
 
-function Protect-NervTestEvidenceText {
-    param([AllowNull()] [string] $Text)
-    Protect-ScriptAutomationText -Text $Text
-}
-
 function New-NervTestEvidenceSummary {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Records,
@@ -1217,7 +1212,7 @@ function ConvertTo-NervEvidenceIdentity {
         [Parameter(Mandatory)] [string] $Fallback,
         [ValidateRange(1, 256)] [int] $MaximumLength = 128
     )
-    $safe = Protect-NervTestEvidenceText $Text
+    $safe = Protect-ScriptAutomationText $Text
     if ([string]::IsNullOrWhiteSpace($safe) -or $safe.Length -gt $MaximumLength -or $safe -cnotmatch $Pattern) { return $Fallback }
     return $safe
 }
@@ -1349,7 +1344,7 @@ function Write-NervTestEvidenceArtifacts {
             $safeRecord | ConvertTo-Json -Compress -Depth 20
         }
         Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ([string]::Join("`n", @($recordLines)) + $(if (@($recordLines).Count -gt 0) { "`n" } else { '' }))
-        $safeSummaryJson = Protect-NervTestEvidenceText ($Summary | ConvertTo-Json -Depth 100)
+        $safeSummaryJson = Protect-ScriptAutomationText ($Summary | ConvertTo-Json -Depth 100)
         Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') ($safeSummaryJson + "`n")
         $baselineSource = if ($null -ne $Summary.baseline.source) { [string]$Summary.baseline.source.sourceUrl } else { 'unavailable' }
         $markdown = @(
@@ -1438,7 +1433,7 @@ function Write-NervTestEvidenceArtifacts {
                 $markdown += "- $($delta.assembly): current=$($delta.currentDurationMilliseconds)ms, unavailable ($($delta.unavailableReason))"
             }
         }
-        Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') ((Protect-NervTestEvidenceText ([string]::Join("`n", $markdown))) + "`n")
+        Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') ((Protect-ScriptAutomationText ([string]::Join("`n", $markdown))) + "`n")
         Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ''
 
         $sha8 = ([string]$Summary.testedSha).Substring(0, [Math]::Min(8, ([string]$Summary.testedSha).Length))
@@ -1509,7 +1504,7 @@ function Write-NervTestEvidenceArtifacts {
     }
     catch {
         if (Test-Path -LiteralPath $temporary) {
-            Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ((Protect-NervTestEvidenceText $_.Exception.Message) + "`n")
+            Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ((Protect-ScriptAutomationText $_.Exception.Message) + "`n")
         }
         throw
     }
@@ -1535,7 +1530,7 @@ function Write-NervTestEvidenceFailureArtifacts {
     $temporary = "$target.tmp-$([Guid]::NewGuid().ToString('N'))"
     [IO.Directory]::CreateDirectory($temporary) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $temporary 'trx')) | Out-Null
-    $safeDiagnostic = Protect-NervTestEvidenceText $Diagnostic
+    $safeDiagnostic = Protect-ScriptAutomationText $Diagnostic
     if ($safeDiagnostic.Length -gt 1024) { $safeDiagnostic = $safeDiagnostic.Substring(0, 1024) }
     $safeLane = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.lane) '^[a-z0-9]+(?:-[a-z0-9]+)*(?:-shard-[1-9][0-9]*)?$' 'invalid-lane' 64
     $safeRun = ConvertTo-NervEvidenceIdentity ([string]$RunMetadata.workflowRunId) '^[A-Za-z0-9._-]+$' 'invalid-run' 64
@@ -1559,7 +1554,7 @@ function Write-NervTestEvidenceFailureArtifacts {
     Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ''
     Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') (($failure | ConvertTo-Json -Depth 20) + "`n")
     $safeMarkdown = "# Test evidence collection failed`n`n- run: $safeRun`n- lane: $safeLane`n- repository: $safeRepository`n- job: $safeJob`n- evidence-collection-failed: $safeDiagnostic`n"
-    Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') (Protect-NervTestEvidenceText $safeMarkdown)
+    Write-NervUtf8NoBom (Join-Path $temporary 'summary.md') (Protect-ScriptAutomationText $safeMarkdown)
     Write-NervUtf8NoBom (Join-Path $temporary 'diagnostics.log') ($safeDiagnostic + "`n")
     [IO.Directory]::Move($temporary, $target)
     return $target
