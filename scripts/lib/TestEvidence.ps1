@@ -215,6 +215,67 @@ function Test-NervTestEvidenceLaneName {
     return $Lane -cmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$'
 }
 
+function New-NervTestEvidenceRunMetadata {
+    param(
+        [Parameter(Mandatory)] [string] $WorkflowRunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $HeadSha,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $Lane,
+        [AllowNull()] [string[]] $SelectedLanes,
+        [string] $Repository = '',
+        [string] $Event = '',
+        [string] $HeadBranch = '',
+        [string] $JobName = '',
+        [string] $SourceUrl = '',
+        [string] $RunnerOs = '',
+        [string] $RunnerImage = '',
+        [string] $DotnetSdk = '',
+        [string] $ArtifactName = '',
+        [int] $RetentionDays = 0
+    )
+
+    if (-not (Test-NervTestEvidenceLaneName $Lane)) { throw "Invalid evidence lane '$Lane'." }
+    [string[]] $resolvedSelectedLanes = @()
+    if ($null -ne $SelectedLanes) { $resolvedSelectedLanes = @($SelectedLanes) }
+    if ($resolvedSelectedLanes.Count -eq 0) { $resolvedSelectedLanes = @($Lane) }
+    foreach ($selected in $resolvedSelectedLanes) {
+        if (-not (Test-NervTestEvidenceLaneName $selected)) { throw "Invalid selected lane '$selected'." }
+    }
+    if ($RunAttempt -lt 1) { throw 'RunAttempt must be positive.' }
+    if ($HeadSha -notmatch '^[0-9a-f]{40}$') { throw 'HeadSha must be a lowercase 40-character SHA.' }
+    if ($TestedSha -notmatch '^[0-9a-f]{40}$') { throw 'TestedSha must be a lowercase 40-character SHA.' }
+    $allowedEvents = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('push', 'pull_request'),
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Event) -and (-not $allowedEvents.Contains($Event))) { throw "Unsupported evidence event '$Event'." }
+    if ([string]::Equals([string]$Event, 'push', [StringComparison]::OrdinalIgnoreCase) -and
+        (-not [string]::Equals($HeadSha, $TestedSha, [StringComparison]::Ordinal))) {
+        throw 'Push evidence requires HeadSha and TestedSha to be identical.'
+    }
+
+    return [pscustomobject][ordered]@{
+        workflowRunId = $WorkflowRunId
+        runAttempt = $RunAttempt
+        headSha = $HeadSha
+        testedSha = $TestedSha
+        lane = $Lane
+        selectedLanes = $resolvedSelectedLanes
+        repository = $Repository
+        event = $Event
+        headBranch = $HeadBranch
+        jobName = $JobName
+        sourceUrl = $SourceUrl
+        runnerOs = $RunnerOs
+        runnerImage = $RunnerImage
+        dotnetSdk = $DotnetSdk
+        artifactName = $ArtifactName
+        retentionDays = $RetentionDays
+        retentionLocation = if ([string]::IsNullOrWhiteSpace($ArtifactName)) { 'local-output' } else { "artifact://$ArtifactName/" }
+    }
+}
+
 function Import-NervTestEvidencePolicy {
     param([Parameter(Mandatory)] [string] $Path)
     $policy = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 100

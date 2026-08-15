@@ -420,6 +420,50 @@ Assert-True (Test-NervTestEvidenceLaneName 'backend') 'backend must be valid.'
 Assert-True (Test-NervTestEvidenceLaneName 'backend-shard-1') 'backend-shard-1 must use schema v1.'
 Assert-True (-not (Test-NervTestEvidenceLaneName 'backend/shard/1')) 'slash lane must be rejected.'
 
+# Run metadata owns the stable defaults consumed by later evidence stages. If this constructor is
+# removed or callers resume hand-building hashtables, these assertions fail before a reader or
+# summary can silently choose different defaults.
+$metadataDefaults = New-NervTestEvidenceRunMetadata -WorkflowRunId '123' -RunAttempt 1 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+    -Lane 'backend'
+Assert-Equal '123' $metadataDefaults.workflowRunId 'Run metadata must retain the workflow run ID.'
+Assert-Equal 1 $metadataDefaults.runAttempt 'Run metadata must retain the run attempt.'
+Assert-Equal 'backend' $metadataDefaults.lane 'Run metadata must retain the evidence lane.'
+Assert-Equal 'backend' $metadataDefaults.selectedLanes[0] 'Missing selected lanes must freeze to the physical lane.'
+Assert-Equal 1 @($metadataDefaults.selectedLanes).Count 'Missing selected lanes must produce exactly one selector.'
+foreach ($field in @('repository', 'event', 'headBranch', 'jobName', 'sourceUrl', 'runnerOs', 'runnerImage', 'dotnetSdk', 'artifactName')) {
+    Assert-Equal '' ([string]$metadataDefaults.$field) "Missing '$field' must use the stable empty-string default."
+}
+Assert-Equal 0 $metadataDefaults.retentionDays 'Missing retention days must use the stable zero default.'
+Assert-Equal 'local-output' $metadataDefaults.retentionLocation 'Missing artifact name must use the local-output retention location.'
+foreach ($excludedField in @('currentTestOutcome', 'priorAttemptVerified')) {
+    Assert-True ($metadataDefaults.PSObject.Properties.Match($excludedField).Count -eq 0) "Run metadata must not carry mutable '$excludedField' state."
+}
+
+$metadataInvalidCases = @(
+    @{ Name = 'lane'; Parameters = @{ Lane = 'backend/shard/1' }; Expected = "Invalid evidence lane 'backend/shard/1'." },
+    @{ Name = 'selected lane'; Parameters = @{ SelectedLanes = @('backend/shard/1') }; Expected = "Invalid selected lane 'backend/shard/1'." },
+    @{ Name = 'run attempt'; Parameters = @{ RunAttempt = 0 }; Expected = 'RunAttempt must be positive.' },
+    @{ Name = 'head SHA'; Parameters = @{ HeadSha = 'not-a-sha' }; Expected = 'HeadSha must be a lowercase 40-character SHA.' },
+    @{ Name = 'tested SHA'; Parameters = @{ TestedSha = 'not-a-sha' }; Expected = 'TestedSha must be a lowercase 40-character SHA.' },
+    @{ Name = 'event'; Parameters = @{ Event = 'workflow_dispatch' }; Expected = "Unsupported evidence event 'workflow_dispatch'." },
+    @{ Name = 'push provenance'; Parameters = @{ Event = 'push'; TestedSha = '89abcdef0123456789abcdef0123456789abcdef' }; Expected = 'Push evidence requires HeadSha and TestedSha to be identical.' }
+)
+foreach ($case in $metadataInvalidCases) {
+    $parameters = @{
+        WorkflowRunId = '123'
+        RunAttempt = 1
+        HeadSha = '0123456789abcdef0123456789abcdef01234567'
+        TestedSha = '0123456789abcdef0123456789abcdef01234567'
+        Lane = 'backend'
+    }
+    foreach ($key in $case.Parameters.Keys) { $parameters[$key] = $case.Parameters[$key] }
+    $metadataError = $null
+    try { New-NervTestEvidenceRunMetadata @parameters | Out-Null }
+    catch { $metadataError = [string]$_.Exception.Message }
+    Assert-Equal $case.Expected $metadataError "Invalid $($case.Name) metadata must retain its fail-closed error text."
+}
+
 $policy = Import-NervTestEvidencePolicy -Path (Join-Path $fixtures 'policy-valid.json')
 Assert-Equal 1 $policy.schemaVersion 'Policy schema version must be one.'
 
