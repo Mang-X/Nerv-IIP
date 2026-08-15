@@ -383,30 +383,11 @@ function Get-NervSourceSkipAssignments {
         for ($index = 0; $index -lt $starts.Count; $index++) {
             $start = [int]$starts[$index]
             $position = $start
-            $quote = [char]0
-            $escaped = $false
-            $verbatim = $false
             while ($position -lt $content.Length) {
                 $character = $content[$position]
-                if ($quote -ne [char]0) {
-                    if ($verbatim -and $character -eq [char]'"' -and $position + 1 -lt $content.Length -and $content[$position + 1] -eq [char]'"') {
-                        $position += 2
-                        continue
-                    }
-                    if (-not $verbatim -and $character -eq [char]'\' -and -not $escaped) {
-                        $escaped = $true
-                        $position++
-                        continue
-                    }
-                    if ($character -eq $quote -and -not $escaped) {
-                        $quote = [char]0
-                        $verbatim = $false
-                    }
-                    $escaped = $false
-                }
-                elseif ($character -eq [char]'"' -or $character -eq [char]"'") {
-                    $quote = $character
-                    $verbatim = $character -eq [char]'"' -and $position -gt 0 -and $content[$position - 1] -eq [char]'@'
+                if ($character -eq [char]'"' -or $character -eq [char]"'") {
+                    $position = Find-NervQuotedTextEnd -Text $content -QuoteStart $position -AllowCSharpVerbatim
+                    continue
                 }
                 elseif ($character -eq [char]';') {
                     break

@@ -13,8 +13,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
+$testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-. (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
+. $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
 
 $repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
@@ -59,6 +60,57 @@ $quoteStartNotQuoteError = $null
 try { Find-NervQuotedTextEnd -Text 'safe' -QuoteStart 0 | Out-Null }
 catch { $quoteStartNotQuoteError = $_.Exception }
 Assert-True ($quoteStartNotQuoteError -is [ArgumentException]) 'A QuoteStart that does not identify a quote must fail closed with ArgumentException.'
+
+$sourceQuoteFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-source-quote-scanner-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $sourceQuoteFixtureDirectory = Join-Path $sourceQuoteFixtureRoot 'backend/tests'
+    [IO.Directory]::CreateDirectory($sourceQuoteFixtureDirectory) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $sourceQuoteFixtureDirectory 'QuoteScannerFixture.cs'), @'
+internal sealed class QuoteScannerFixture
+{
+    private void Scan()
+    {
+        Skip = "semi; escaped \"quote\" stays";
+        Skip = @"C:\";
+        Skip = @"semi; doubled ""quote"" stays";
+        Skip = 'x';
+    }
+}
+'@, [Text.UTF8Encoding]::new($false))
+
+    $sourceQuoteAssignments = @(Get-NervSourceSkipAssignments -RepoRoot $sourceQuoteFixtureRoot)
+    $expectedSourceTexts = @(
+        'Skip = "semi; escaped \"quote\" stays";',
+        'Skip = @"C:\";',
+        'Skip = @"semi; doubled ""quote"" stays";',
+        'Skip = ''x'';'
+    )
+    Assert-Equal 4 $sourceQuoteAssignments.Count 'The isolated source quote fixture must retain all four assignments.'
+    for ($index = 0; $index -lt $expectedSourceTexts.Count; $index++) {
+        Assert-Equal 'backend/tests/QuoteScannerFixture.cs' $sourceQuoteAssignments[$index].sourcePath 'The isolated source quote fixture path must remain stable.'
+        Assert-Equal ($index + 1) $sourceQuoteAssignments[$index].sourceOrdinal 'The isolated source quote fixture ordinal must remain stable.'
+        Assert-Equal $expectedSourceTexts[$index] $sourceQuoteAssignments[$index].sourceText 'The isolated source quote fixture text must remain byte-stable after whitespace normalization.'
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $sourceQuoteFixtureRoot) { Remove-Item -LiteralPath $sourceQuoteFixtureRoot -Recurse -Force }
+}
+
+$testEvidenceTokens = $null
+$testEvidenceParseErrors = $null
+$testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
+Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
+$sourceScannerFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Get-NervSourceSkipAssignments', [StringComparison]::Ordinal)
+}, $true)
+$sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $sourceScannerSharedCalls.Count 'Source Skip scanning must delegate quote boundaries to the shared helper exactly once.'
 
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
