@@ -304,6 +304,54 @@ function Test-NervQuarantineRuleMetadata {
         $expiry.Date -ge $AsOfUtc.UtcDateTime.Date
 }
 
+function Find-NervQuotedTextEnd {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [Parameter(Mandatory)] [int] $QuoteStart,
+        [switch] $AllowCSharpVerbatim
+    )
+
+    if ($QuoteStart -lt 0 -or $QuoteStart -ge $Text.Length) {
+        throw [ArgumentOutOfRangeException]::new('QuoteStart', $QuoteStart, 'QuoteStart must identify a character within Text.')
+    }
+
+    $quote = $Text[$QuoteStart]
+    if ($quote -ne [char]'"' -and $quote -ne [char]"'") {
+        throw [ArgumentException]::new('QuoteStart must identify a single or double quote.', 'QuoteStart')
+    }
+
+    $isCSharpVerbatim = $AllowCSharpVerbatim -and
+        $quote -eq [char]'"' -and
+        $QuoteStart -gt 0 -and
+        $Text[$QuoteStart - 1] -eq [char]'@'
+    $position = $QuoteStart + 1
+    while ($position -lt $Text.Length) {
+        if ($Text[$position] -ne $quote) {
+            $position++
+            continue
+        }
+
+        if ($isCSharpVerbatim) {
+            if ($position + 1 -lt $Text.Length -and $Text[$position + 1] -eq $quote) {
+                $position += 2
+                continue
+            }
+            return $position + 1
+        }
+
+        $slashes = 0
+        for ($lookBehind = $position - 1; $lookBehind -ge $QuoteStart -and $Text[$lookBehind] -eq [char]'\'; $lookBehind--) {
+            $slashes++
+        }
+        if (($slashes % 2) -eq 0) {
+            return $position + 1
+        }
+        $position++
+    }
+
+    return $Text.Length
+}
+
 function Get-NervSourceSkipAssignments {
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
@@ -335,30 +383,11 @@ function Get-NervSourceSkipAssignments {
         for ($index = 0; $index -lt $starts.Count; $index++) {
             $start = [int]$starts[$index]
             $position = $start
-            $quote = [char]0
-            $escaped = $false
-            $verbatim = $false
             while ($position -lt $content.Length) {
                 $character = $content[$position]
-                if ($quote -ne [char]0) {
-                    if ($verbatim -and $character -eq [char]'"' -and $position + 1 -lt $content.Length -and $content[$position + 1] -eq [char]'"') {
-                        $position += 2
-                        continue
-                    }
-                    if (-not $verbatim -and $character -eq [char]'\' -and -not $escaped) {
-                        $escaped = $true
-                        $position++
-                        continue
-                    }
-                    if ($character -eq $quote -and -not $escaped) {
-                        $quote = [char]0
-                        $verbatim = $false
-                    }
-                    $escaped = $false
-                }
-                elseif ($character -eq [char]'"' -or $character -eq [char]"'") {
-                    $quote = $character
-                    $verbatim = $character -eq [char]'"' -and $position -gt 0 -and $content[$position - 1] -eq [char]'@'
+                if ($character -eq [char]'"' -or $character -eq [char]"'") {
+                    $position = Find-NervQuotedTextEnd -Text $content -QuoteStart $position -AllowCSharpVerbatim
+                    continue
                 }
                 elseif ($character -eq [char]';') {
                     break
@@ -536,29 +565,16 @@ function ConvertTo-NervRetainedDisplayName {
         $valueStart = $match.Index + $match.Length
         $valueEnd = $valueStart
         if ($valueStart -lt $source.Length -and ($source[$valueStart] -eq [char]'"' -or $source[$valueStart] -eq [char]"'")) {
-            $quote = $source[$valueStart]
-            $valueEnd++
-            while ($valueEnd -lt $source.Length) {
-                if ($source[$valueEnd] -eq $quote) {
-                    $slashes = 0
-                    for ($lookBehind = $valueEnd - 1; $lookBehind -ge $valueStart -and $source[$lookBehind] -eq [char]'\'; $lookBehind--) { $slashes++ }
-                    if (($slashes % 2) -eq 0) { $valueEnd++; break }
-                }
-                $valueEnd++
-            }
+            $valueEnd = Find-NervQuotedTextEnd -Text $source -QuoteStart $valueStart
         }
         else {
             $depth = 0
-            $quote = [char]0
-            $escaped = $false
             while ($valueEnd -lt $source.Length) {
                 $character = $source[$valueEnd]
-                if ($quote -ne [char]0) {
-                    if ($character -eq [char]'\' -and -not $escaped) { $escaped = $true; $valueEnd++; continue }
-                    if ($character -eq $quote -and -not $escaped) { $quote = [char]0 }
-                    $escaped = $false
+                if ($character -eq [char]'"' -or $character -eq [char]"'") {
+                    $valueEnd = Find-NervQuotedTextEnd -Text $source -QuoteStart $valueEnd
+                    continue
                 }
-                elseif ($character -eq [char]'"' -or $character -eq [char]"'") { $quote = $character }
                 # `[char]` casts, not `-in` over string literals: `-in` compares as *strings*, which is
                 # culture-aware. Char equality is numeric and is what a brace matcher wants.
                 elseif ($character -eq [char]'{' -or $character -eq [char]'[' -or $character -eq [char]'(') { $depth++ }

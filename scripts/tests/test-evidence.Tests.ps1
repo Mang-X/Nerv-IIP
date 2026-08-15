@@ -13,8 +13,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
+$testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-. (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
+. $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
 
 $repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
@@ -35,6 +36,81 @@ function Assert-True([bool] $Condition, [string] $Message) {
 function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
+
+$quotedTextBoundaryCases = @(
+    [pscustomobject]@{ Name = 'escaped double quote'; Text = '"a\"b";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
+    [pscustomobject]@{ Name = 'even backslashes before double quote'; Text = '"a\\";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 5 },
+    [pscustomobject]@{ Name = 'escaped single quote'; Text = "'a\'b';tail"; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
+    [pscustomobject]@{ Name = 'verbatim backslash before closing quote'; Text = '@"C:\";tail'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 6 },
+    [pscustomobject]@{ Name = 'terminal verbatim doubled quote after text'; Text = '@"a""'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 5 },
+    [pscustomobject]@{ Name = 'terminal verbatim doubled quote'; Text = '@"""'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 4 },
+    [pscustomobject]@{ Name = 'unterminated ordinary quote'; Text = '"unterminated'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 13 }
+)
+foreach ($case in $quotedTextBoundaryCases) {
+    $actualEnd = Find-NervQuotedTextEnd -Text $case.Text -QuoteStart $case.QuoteStart -AllowCSharpVerbatim:$case.AllowCSharpVerbatim
+    Assert-Equal $case.Expected $actualEnd "Quoted text boundary mismatch for $($case.Name)."
+}
+
+$quoteStartOutOfRangeError = $null
+try { Find-NervQuotedTextEnd -Text '"safe"' -QuoteStart 6 | Out-Null }
+catch { $quoteStartOutOfRangeError = $_.Exception }
+Assert-True ($quoteStartOutOfRangeError -is [ArgumentOutOfRangeException]) 'An out-of-range QuoteStart must fail closed with ArgumentOutOfRangeException.'
+
+$quoteStartNotQuoteError = $null
+try { Find-NervQuotedTextEnd -Text 'safe' -QuoteStart 0 | Out-Null }
+catch { $quoteStartNotQuoteError = $_.Exception }
+Assert-True ($quoteStartNotQuoteError -is [ArgumentException]) 'A QuoteStart that does not identify a quote must fail closed with ArgumentException.'
+
+$sourceQuoteFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-source-quote-scanner-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $sourceQuoteFixtureDirectory = Join-Path $sourceQuoteFixtureRoot 'backend/tests'
+    [IO.Directory]::CreateDirectory($sourceQuoteFixtureDirectory) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $sourceQuoteFixtureDirectory 'QuoteScannerFixture.cs'), @'
+internal sealed class QuoteScannerFixture
+{
+    private void Scan()
+    {
+        Skip = "semi; escaped \"quote\" stays";
+        Skip = @"C:\";
+        Skip = @"semi; doubled ""quote"" stays";
+        Skip = 'x';
+    }
+}
+'@, [Text.UTF8Encoding]::new($false))
+
+    $sourceQuoteAssignments = @(Get-NervSourceSkipAssignments -RepoRoot $sourceQuoteFixtureRoot)
+    $expectedSourceTexts = @(
+        'Skip = "semi; escaped \"quote\" stays";',
+        'Skip = @"C:\";',
+        'Skip = @"semi; doubled ""quote"" stays";',
+        'Skip = ''x'';'
+    )
+    Assert-Equal 4 $sourceQuoteAssignments.Count 'The isolated source quote fixture must retain all four assignments.'
+    for ($index = 0; $index -lt $expectedSourceTexts.Count; $index++) {
+        Assert-Equal 'backend/tests/QuoteScannerFixture.cs' $sourceQuoteAssignments[$index].sourcePath 'The isolated source quote fixture path must remain stable.'
+        Assert-Equal ($index + 1) $sourceQuoteAssignments[$index].sourceOrdinal 'The isolated source quote fixture ordinal must remain stable.'
+        Assert-Equal $expectedSourceTexts[$index] $sourceQuoteAssignments[$index].sourceText 'The isolated source quote fixture text must remain byte-stable after whitespace normalization.'
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $sourceQuoteFixtureRoot) { Remove-Item -LiteralPath $sourceQuoteFixtureRoot -Recurse -Force }
+}
+
+$testEvidenceTokens = $null
+$testEvidenceParseErrors = $null
+$testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
+Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
+$sourceScannerFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Get-NervSourceSkipAssignments', [StringComparison]::Ordinal)
+}, $true)
+$sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $sourceScannerSharedCalls.Count 'Source Skip scanning must delegate quote boundaries to the shared helper exactly once.'
 
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
@@ -781,6 +857,29 @@ Assert-True (-not $nestedDisplay.text.Contains('plain-secret', [StringComparison
 $sensitiveBodyA = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Alice\",\"password\":\"first\"}")'
 $sensitiveBodyB = ConvertTo-NervRetainedDisplayName 'sends(body: "{\"customerName\":\"Bob\",\"password\":\"second\"}")'
 Assert-True (-not [string]::Equals([string]($sensitiveBodyA.text), [string]($sensitiveBodyB.text), [StringComparison]::Ordinal)) 'Body digests must preserve instance distinction even when generic text redaction would collapse the raw values.'
+
+$nestedEscapedDisplay = ConvertTo-NervRetainedDisplayName 'sends(body: {"items":[{"text":"secret-\"quoted,comma\""}]}, responseBody: ''second,secret'', mode: True)'
+$expectedNestedEscapedDisplay = 'sends(body: "<redacted-body:b96851c96708a3cc>", responseBody: "<redacted-body:0c5ff808cbccc4af>", mode: True)'
+Assert-Equal 2 $nestedEscapedDisplay.redactionCount 'Nested escaped and separately quoted body parameters must both be redacted.'
+Assert-Equal $expectedNestedEscapedDisplay $nestedEscapedDisplay.text 'Nested escaped display redaction must retain the exact digest and trailing safe parameter output.'
+foreach ($sentinel in @('secret-', 'quoted,comma', 'second,secret')) {
+    Assert-True (-not $nestedEscapedDisplay.text.Contains($sentinel, [StringComparison]::Ordinal)) "Nested escaped display redaction leaked '$sentinel'."
+}
+$nestedEscapedDisplayAgain = ConvertTo-NervRetainedDisplayName $nestedEscapedDisplay.text
+Assert-Equal 0 $nestedEscapedDisplayAgain.redactionCount 'Already-redacted body markers must remain idempotent after shared quote scanning.'
+Assert-Equal $expectedNestedEscapedDisplay $nestedEscapedDisplayAgain.text 'Already-redacted body markers must retain byte-stable display text.'
+
+$displayScannerFunction = $testEvidenceAst.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal)
+}, $true)
+$displayScannerSharedCalls = @($displayScannerFunction.Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 2 $displayScannerSharedCalls.Count 'Display-name scanning must delegate both quoted paths to the shared helper.'
 
 $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
