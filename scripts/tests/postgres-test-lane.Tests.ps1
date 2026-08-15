@@ -36,8 +36,86 @@ $script:GovernedPostgresMemberIds = @(
     'quality-postgres-profile',
     'mes-postgres-profile',
     'wms-postgres-profile',
+    'erp-postgres-profile',
+    'demandplanning-postgres-profile',
+    'acceptance-postgres-profile',
     'maintenance-device-pause-postgres'
 )
+function Get-NervCSharpMethodBody([string]$Source, [string]$MethodName) {
+    $signatureIndex = $Source.IndexOf(" $MethodName(", [StringComparison]::Ordinal)
+    if ($signatureIndex -lt 0) { return $null }
+    $openIndex = $Source.IndexOf('{', $signatureIndex, [StringComparison]::Ordinal)
+    if ($openIndex -lt 0) { return $null }
+    $depth = 0
+    for ($cursor = $openIndex; $cursor -lt $Source.Length; $cursor++) {
+        if ($Source[$cursor] -eq '{') { $depth++ }
+        elseif ($Source[$cursor] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { return $Source.Substring($openIndex, $cursor - $openIndex + 1) }
+        }
+    }
+    return $null
+}
+# 每条冻结用例都必须先把自己的 schema 删掉再迁移：成员数据库在成员内跨用例共享，
+# 漏掉重置不会假绿，但会以"上一条用例的残留"形式产生难排查的失败。此前这只是约定。
+function Assert-FrozenIdentityResetsSchema([string]$SourcePath, [string]$MethodName) {
+    $source = [IO.File]::ReadAllText($SourcePath)
+    $body = Get-NervCSharpMethodBody -Source $source -MethodName $MethodName
+    if ($null -eq $body) { throw "Frozen identity '$MethodName' was not found in '$([IO.Path]::GetFileName($SourcePath))'." }
+    if ($body -cnotmatch '(?:Reset|Drop)[A-Za-z]*SchemaAsync\s*\(') {
+        throw "Frozen identity '$MethodName' must reset its schema before migrating; the shared member database is reused across the member's tests."
+    }
+}
+# 重置必须是 DROP SCHEMA ... CASCADE：漏掉 CASCADE 会在存在外键/视图时静默失败成"删不掉"。
+function Assert-LaneResetDropsCascade([string]$SourcePath) {
+    $source = [IO.File]::ReadAllText($SourcePath)
+    if ($source -cnotmatch 'DROP SCHEMA IF EXISTS \{[A-Za-z]+\} CASCADE') {
+        throw "Lane reset in '$([IO.Path]::GetFileName($SourcePath))' must drop the governed schema with IF EXISTS and CASCADE."
+    }
+}
+# 穷举已知的内层库工厂习语，而不是逐成员点名自己历史上用过的那一个：按成员点名时，
+# 有人顺手改用共享库里现成的另一个工厂就不会被拒（#1510 的教训——漏拼写要从类型集穷举）。
+# 内层库工厂清单从**行为**穷举，而不是手维护点名：扫测试树里所有含 `CREATE DATABASE` 的源文件，
+# 取其中声明的数据库工厂类型名。手维护清单每接一个服务就要靠人记得补一次，实测漏掉了
+# DisposablePostgresDatabase / WorldHistoryTemporaryDatabase / IndustrialTelemetryPostgresTestDatabase 三项
+# （#1510 的教训：漏拼写要从类型集穷举，不从审核点名补特例）。
+function Get-NervInnerDatabaseFactories([string]$RepositoryRoot) {
+    $discovered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($sourceFile in @(Get-ChildItem -LiteralPath (Join-Path $RepositoryRoot 'backend') -Filter '*.cs' -File -Recurse)) {
+        $sourceText = [IO.File]::ReadAllText($sourceFile.FullName)
+        if (-not $sourceText.Contains('CREATE DATABASE', [StringComparison]::Ordinal)) { continue }
+        foreach ($declaration in [regex]::Matches($sourceText, 'class\s+(?<name>[A-Za-z0-9_]*(?:Database|TestSettings))\b')) {
+            $factoryType = $declaration.Groups['name'].Value
+            if ($factoryType.EndsWith('Name', [StringComparison]::Ordinal)) { continue }
+            $discovered.Add("$factoryType.CreateAsync(") | Out-Null
+            $discovered.Add("$factoryType.CreateDatabaseAsync(") | Out-Null
+        }
+    }
+    return @($discovered)
+}
+$script:InnerDatabaseFactories = @(Get-NervInnerDatabaseFactories -RepositoryRoot $repoRoot | ForEach-Object { $_.TrimEnd('(') })
+# 能力串兜底只认**字符串字面量**里的建库语句：帮助类的注释里会解释"为什么不许 CREATE DATABASE"，
+# 裸子串扫描会把这句解释本身判红。
+function Assert-NoDatabaseCreationStatement([string]$SourcePath) {
+    $source = [IO.File]::ReadAllText($SourcePath)
+    if ($source -cmatch '"[^"\r\n]*CREATE DATABASE') {
+        throw "Lane source '$([IO.Path]::GetFileName($SourcePath))' must not issue CREATE DATABASE; the runner owns the member database."
+    }
+}
+function Assert-MethodScopedFilter([object]$Member) {
+    $segments = @(([string]$Member.filter) -split '\|')
+    $frozen = [Collections.Generic.HashSet[string]]::new([string[]]@($Member.expectedTestIdentities), [StringComparer]::Ordinal)
+    $selectedIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($segment in $segments) {
+        if (-not $segment.StartsWith('FullyQualifiedName~', [StringComparison]::Ordinal)) { throw "Member '$($Member.id)' filter segment '$segment' must be a FullyQualifiedName selector." }
+        $selected = $segment.Substring('FullyQualifiedName~'.Length)
+        if (-not $frozen.Contains($selected)) { throw "Member '$($Member.id)' filter segment must name a frozen identity, not the enclosing class." }
+        # 段数相等 + 每段合法仍允许"两段重复同一身份、另一身份漏选"：必须要求段集合与冻结集合相等。
+        if (-not $selectedIdentities.Add($selected)) { throw "Member '$($Member.id)' filter repeats identity '$selected'; a repeated segment can hide a missing one." }
+    }
+    if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
+}
+
 function Assert-LaneOwnedDatabase([string]$SourcePath, [string]$InnerDatabaseFactory) {
     $source = [IO.File]::ReadAllText($SourcePath)
     if ($source.Contains($InnerDatabaseFactory, [StringComparison]::Ordinal)) {
@@ -107,8 +185,32 @@ function Assert-PostgresWorkflowMemberBatch([string]$WorkflowPath) {
 }
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    # 对账用**第二条独立推导路径**：从调用点反推（`X.CreateAsync(` 的类型名，且其声明文件含 CREATE DATABASE），
+    # 要求声明侧穷举必须覆盖它。冻结一份已知名单会随工厂增删而过期——DisposablePostgresDatabase 就是在
+    # NERV-822 后续与 MES 批次里被删掉的，快照名单只会制造假红。
+    $discoveredFactories = [Collections.Generic.HashSet[string]]::new([string[]]@($script:InnerDatabaseFactories), [StringComparer]::Ordinal)
+    $databaseDeclaringTypes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $callSiteTypes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($backendSource in @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'backend') -Filter '*.cs' -File -Recurse)) {
+        $backendSourceText = [IO.File]::ReadAllText($backendSource.FullName)
+        if ($backendSourceText.Contains('CREATE DATABASE', [StringComparison]::Ordinal)) {
+            foreach ($declaration in [regex]::Matches($backendSourceText, 'class\s+(?<name>[A-Za-z0-9_]+)')) { $databaseDeclaringTypes.Add($declaration.Groups['name'].Value) | Out-Null }
+        }
+        foreach ($callSite in [regex]::Matches($backendSourceText, '(?<name>[A-Za-z0-9_]+)\.CreateAsync\(')) { $callSiteTypes.Add($callSite.Groups['name'].Value) | Out-Null }
+    }
+    foreach ($callSiteType in $callSiteTypes) {
+        if (-not $databaseDeclaringTypes.Contains($callSiteType)) { continue }
+        $expectedFactory = "$callSiteType.CreateAsync"
+        Assert-Contract ($discoveredFactories.Contains($expectedFactory)) "Inner-database factory discovery missed '$expectedFactory', which the test tree actually calls; the declaration scan and the call-site scan must agree."
+    }
+    $sharedGovernedFactory = 'PostgreSqlTestDatabase.CreateAsync'
+    Assert-Contract ($discoveredFactories.Contains($sharedGovernedFactory)) 'Discovery must always find the shared governed PostgreSqlTestDatabase helper.'
+    Assert-Contract ($discoveredFactories.Count -ge 5) 'Inner-database factory discovery must enumerate the test tree, not a hand-maintained list.'
     $member = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'inventory-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($member.expectedTestIdentities).Count -eq 1) 'The second-layer pilot must freeze exactly one Inventory test.'
+    # 拆解②的单条试点在 #1561 之后扩为两条：InventoryDirectory 的 external 用例形态与成员一致，已并入本成员；
+    # 同类的 Docker 夹具用例仍留在 deferred 条目里。
+    Assert-Contract (@($member.expectedTestIdentities).Count -eq 2) 'The Inventory member must freeze its profile test and the external directory test.'
+    Assert-MethodScopedFilter -Member $member
     Assert-Contract (@($member.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$member.diagnosticSchemas[0], 'inventory', [StringComparison]::Ordinal)) 'The pilot member must own its restricted diagnostic schema declaration.'
     $masterDataMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'masterdata-postgres-profile' -RepositoryRoot $repoRoot
     $masterDataIdentities = @(
@@ -233,19 +335,6 @@ try {
     Assert-Contract (($testOwnedCount + $runnerOwnedCount) -eq $activeMembers.Count) 'Every active member must declare one of the two governed ownership forms.'
     # IndustrialTelemetry 的四个类里 47 条用例只有 7 条是真实 PostgreSQL 证明，类级 filter 会让 TRX
     # 身份集合不等于冻结身份而红；因此该成员的 filter 必须逐条精确到方法。
-    function Assert-MethodScopedFilter([object]$Member) {
-        $segments = @(([string]$Member.filter) -split '\|')
-        $frozen = [Collections.Generic.HashSet[string]]::new([string[]]@($Member.expectedTestIdentities), [StringComparer]::Ordinal)
-        $selectedIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach ($segment in $segments) {
-            if (-not $segment.StartsWith('FullyQualifiedName~', [StringComparison]::Ordinal)) { throw "Member '$($Member.id)' filter segment '$segment' must be a FullyQualifiedName selector." }
-            $selected = $segment.Substring('FullyQualifiedName~'.Length)
-            if (-not $frozen.Contains($selected)) { throw "Member '$($Member.id)' filter segment must name a frozen identity, not the enclosing class." }
-            # 段数相等 + 每段合法仍允许"两段重复同一身份、另一身份漏选"：必须要求段集合与冻结集合相等。
-            if (-not $selectedIdentities.Add($selected)) { throw "Member '$($Member.id)' filter repeats identity '$selected'; a repeated segment can hide a missing one." }
-        }
-        if (-not $selectedIdentities.SetEquals($frozen)) { throw "Member '$($Member.id)' filter must select exactly its frozen identity set." }
-    }
     # Quality 同理：五个类共 21 条用例，只有 8 条是真实 PostgreSQL 证明。
     $qualityMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'quality-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($qualityMember.expectedTestIdentities).Count -eq 8) 'The Quality member must freeze exactly its eight governed PostgreSQL identities.'
@@ -370,7 +459,11 @@ try {
     function Assert-PendingServiceListExcludesLaneMembers([string]$ReadinessPath, [object[]]$ActiveMembers) {
         $readiness = [IO.File]::ReadAllText($ReadinessPath)
         $sentence = [regex]::Match($readiness, '其余服务（(?<list>[^）]*)）仍属于拆解③后续批次')
-        if (-not $sentence.Success) { throw 'The readiness narrative must keep naming which services are still pending, so the gate has something to check.' }
+        if (-not $sentence.Success) {
+            # 全部接入后该句合法消失，但必须换成同样可核的收尾表述，否则"没有待接入服务"就无从证伪。
+            if ($readiness.Contains('拆解③登记的服务至此全部接入', [StringComparison]::Ordinal)) { return }
+            throw 'The readiness narrative must either name the pending services or state that none remain, so the gate has something to check.'
+        }
         $pendingServices = @($sentence.Groups['list'].Value -split '、' | ForEach-Object { $_.Replace(' 等', '').Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
         foreach ($activeMember in $ActiveMembers) {
             foreach ($pendingService in $pendingServices) {
@@ -390,6 +483,129 @@ try {
     # 钉住它，"runner 半边契约仍被行使"才不是一句空话。
     $masterDataOwnership = @($activeMembers | Where-Object { [string]::Equals([string]$_.id, 'masterdata-postgres-profile', [StringComparison]::Ordinal) })
     Assert-Contract ($masterDataOwnership.Count -eq 1 -and [string]::Equals([string]$masterDataOwnership[0].databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'MasterData must stay runner-owned; it is the decision''s worked example for keeping failure diagnostics.'
+
+    # 第八批三成员：DemandPlanning 走 2026-08-13 裁决的默认归属（test-owned，NERV-822 的 #1565 已把
+    # 该文件三条用例与 redis-cap 用例一并收敛到共享 PostgreSqlTestDatabase）；ERP 与跨业务 Acceptance
+    # 按裁决的例外判据保持 runner——判据是失败诊断价值：Acceptance 的终局跨四个 schema，必须能在成员
+    # 数据库里看到。ERP 本就没有手写建库；Acceptance 的手写建库（内嵌 TemporaryPostgresDatabase）由本批删除。
+    $demandPlanningMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'demandplanning-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($demandPlanningMember.expectedTestIdentities).Count -eq 3) 'The DemandPlanning member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract ([string]::Equals([string]$demandPlanningMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'DemandPlanning runs on governed temporary databases, so the member must be test-owned.'
+    Assert-MethodScopedFilter -Member $demandPlanningMember
+    $demandPlanningSourcePath = Join-Path $repoRoot 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'
+    $demandPlanningSource = [IO.File]::ReadAllText($demandPlanningSourcePath)
+    Assert-Contract ($demandPlanningSource.Contains('PostgreSqlTestDatabase.CreateAsync', [StringComparison]::Ordinal)) 'DemandPlanning lane tests must build their databases through the governed shared helper.'
+    Assert-Contract ($demandPlanningSource -cnotmatch '"[^"\r\n]*CREATE DATABASE') 'DemandPlanning lane tests must not hand-roll CREATE DATABASE.'
+    foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
+        Assert-Contract (-not ([string]$frozenDemandPlanningIdentity).Contains('.Redis_cap_', [StringComparison]::Ordinal)) 'The Redis/CAP transport identities stay owned by the redis-cap lane, not by postgres.'
+    }
+    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
+    $redisCapIdentities = [Collections.Generic.HashSet[string]]::new([string[]]@($redisCapManifest.members | ForEach-Object { @($_.expectedTestIdentities) }), [StringComparer]::Ordinal)
+    foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
+        $frozenIdentityKey = [string]$frozenDemandPlanningIdentity
+        Assert-Contract (-not $redisCapIdentities.Contains($frozenIdentityKey)) 'No identity may be owned by both the postgres and redis-cap lanes.'
+    }
+    $erpMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'erp-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 4) 'The ERP member must freeze exactly its four PostgreSQL identities.'
+    Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
+    $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
+    Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 3) 'The cross-service acceptance member must freeze exactly its three PostgreSQL identities.'
+    Assert-Contract ([string]::Equals((@($acceptanceMember.diagnosticSchemas) -join ','), 'industrial_telemetry,inventory,maintenance,wms', [StringComparison]::Ordinal)) 'The cross-service acceptance member must declare every schema its scenarios migrate.'
+    Assert-Contract ([string]::Equals([string]$acceptanceMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'The cross-service acceptance member keeps runner-owned databases so its four-schema end state stays diagnosable.'
+    Assert-MethodScopedFilter -Member $acceptanceMember
+    foreach ($runnerOwnedSource in @(
+            'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/BusinessPartnerChangedPostgresAcceptanceTests.cs',
+            'backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpCostAccountingPostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs',
+            'backend/tests/Nerv.IIP.Business.Acceptance.Tests/WmsInventoryRpcIdempotencyAcceptanceTests.cs')) {
+        $runnerOwnedSourcePath = Join-Path $repoRoot $runnerOwnedSource
+        Assert-Contract (Test-Path -LiteralPath $runnerOwnedSourcePath -PathType Leaf) "Lane source '$runnerOwnedSource' must exist."
+        $runnerOwnedSourceText = [IO.File]::ReadAllText($runnerOwnedSourcePath)
+        Assert-Contract ($runnerOwnedSourceText -cnotmatch '"[^"\r\n]*CREATE DATABASE') "Lane source '$runnerOwnedSource' must not hand-roll CREATE DATABASE; the runner owns the member database."
+        Assert-LaneOwnedDatabase -SourcePath $runnerOwnedSourcePath -InnerDatabaseFactory 'PostgreSqlTestDatabase.CreateAsync'
+    }
+    # 跨业务 acceptance 用 EnsureCreatedAsync 会在共享成员库上直接跳过建表（库已存在），必须走迁移。
+    $runtimeHoursSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'backend/tests/Nerv.IIP.Business.Acceptance.Tests/RuntimeHoursMaintenancePostgresAcceptanceTests.cs'))
+    Assert-Contract (-not $runtimeHoursSource.Contains('EnsureCreatedAsync(', [StringComparison]::Ordinal)) 'Lane members must migrate rather than EnsureCreated, which silently skips schema creation on an existing member database.'
+    Assert-Contract ($runtimeHoursSource.Contains('MigrateAsync(', [StringComparison]::Ordinal)) 'The cross-service acceptance member must create its schemas through migrations.'
+
+    # 逐成员、逐冻结身份地把"先重置再迁移"和"重置用 CASCADE"变成门禁，而不是靠每个作者自觉。
+    $resetDeclaringSources = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($governedMemberId in $script:GovernedPostgresMemberIds) {
+        $governedMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $governedMemberId -RepositoryRoot $repoRoot
+        $projectDirectory = Split-Path -Parent (Join-Path $repoRoot ([string]$governedMember.project))
+        # 重置不变量只适用于 runner 归属：test-owned 成员每条用例自建临时库，本来就从零开始，
+        # 它的对应不变量是"必须断言跑在自有库里"，由上面的 AppHub 断言覆盖。
+        if (-not [string]::Equals([string]$governedMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) { continue }
+        foreach ($frozenIdentity in @($governedMember.expectedTestIdentities)) {
+            $methodSeparator = ([string]$frozenIdentity).LastIndexOf('.', [StringComparison]::Ordinal)
+            $frozenClass = ([string]$frozenIdentity).Substring(0, $methodSeparator)
+            $frozenMethod = ([string]$frozenIdentity).Substring($methodSeparator + 1)
+            $frozenSourcePath = Join-Path $projectDirectory ("$($frozenClass.Substring($frozenClass.LastIndexOf('.', [StringComparison]::Ordinal) + 1)).cs")
+            Assert-Contract (Test-Path -LiteralPath $frozenSourcePath -PathType Leaf) "Frozen identity '$frozenIdentity' must live in '$frozenSourcePath'."
+            Assert-FrozenIdentityResetsSchema -SourcePath $frozenSourcePath -MethodName $frozenMethod
+            # 冻结用例的方法体里不得出现任何已穷举的内层库工厂：换一个工厂名就绕过去的漏洞，
+            # 由"从行为穷举工厂清单 + 逐方法体检查"两条一起堵死。
+            $frozenBody = Get-NervCSharpMethodBody -Source ([IO.File]::ReadAllText($frozenSourcePath)) -MethodName $frozenMethod
+            foreach ($innerDatabaseFactory in $script:InnerDatabaseFactories) {
+                if ($frozenBody.Contains($innerDatabaseFactory, [StringComparison]::Ordinal)) {
+                    throw "Frozen identity '$frozenMethod' must not create an inner database ('$innerDatabaseFactory') the lane cannot diagnose or clean."
+                }
+            }
+            # 能力串兜底：最可能的回潮路径是从 git 历史把刚删掉的 helper 抄回本文件，那样工厂名可以是任何
+            # 新名字，但建库能力本身逃不掉 CREATE DATABASE，而 lane 用例没有任何合法理由自己建库。
+            if ($frozenBody -cmatch '"[^"\r\n]*CREATE DATABASE') {
+                throw "Frozen identity '$frozenMethod' must not issue CREATE DATABASE; the runner owns the member database."
+            }
+        }
+        # 只扫本 lane 拥有的文件：冻结身份所在的类，以及该成员的 *PostgresLaneDatabase 帮助类。
+        # 同目录下的规模种子文件（归 NERV-677）有自己的生命周期，不受本契约约束。
+        $memberOwnedSources = @(
+            @($governedMember.expectedTestIdentities | ForEach-Object {
+                $ownedClass = ([string]$_).Substring(0, ([string]$_).LastIndexOf('.', [StringComparison]::Ordinal))
+                Join-Path $projectDirectory ("$($ownedClass.Substring($ownedClass.LastIndexOf('.', [StringComparison]::Ordinal) + 1)).cs")
+            })
+            @(Get-ChildItem -LiteralPath $projectDirectory -Filter '*PostgresLaneDatabase.cs' -File | ForEach-Object { $_.FullName })
+        )
+        foreach ($memberSource in $memberOwnedSources) {
+            $memberSourceText = [IO.File]::ReadAllText($memberSource)
+            if ($memberSourceText -cmatch 'Task (?:Reset|Drop)[A-Za-z]*SchemaAsync\s*\(') { $resetDeclaringSources.Add($memberSource) | Out-Null }
+            # 帮助类文件整体属于 lane，可以整文件扫；测试类文件不行——例如
+            # ErpSalesOrderDemandConsumerTests.cs 同文件里住着 redis-cap lane 的两条用例，
+            # 它们合法使用内层库。测试类的禁用范围因此落在冻结用例的方法体上（见下）。
+            if ($memberSource.EndsWith('PostgresLaneDatabase.cs', [StringComparison]::Ordinal)) {
+                foreach ($innerDatabaseFactory in $script:InnerDatabaseFactories) {
+                    Assert-LaneOwnedDatabase -SourcePath $memberSource -InnerDatabaseFactory $innerDatabaseFactory
+                }
+                Assert-NoDatabaseCreationStatement -SourcePath $memberSource
+            }
+        }
+    }
+    Assert-Contract ($resetDeclaringSources.Count -ge 10) 'Every governed member must own a schema-reset implementation that this contract can inspect.'
+    # 逐成员闭合：总量下界挡不住"某成员的重置实现藏在既非冻结身份类、也非 *PostgresLaneDatabase.cs 的文件里"，
+    # 那种情况下它会逃过 CASCADE 形态检查而总数仍然达标。
+    foreach ($runnerMemberId in @($script:GovernedPostgresMemberIds)) {
+        $runnerMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId $runnerMemberId -RepositoryRoot $repoRoot
+        if (-not [string]::Equals([string]$runnerMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) { continue }
+        $runnerProjectDirectory = Split-Path -Parent (Join-Path $repoRoot ([string]$runnerMember.project))
+        $memberResetSources = @($resetDeclaringSources | Where-Object { $_.StartsWith($runnerProjectDirectory, [StringComparison]::Ordinal) })
+        Assert-Contract ($memberResetSources.Count -ge 1) "Member '$runnerMemberId' must own at least one inspectable schema-reset implementation."
+    }
+    foreach ($resetDeclaringSource in $resetDeclaringSources) { Assert-LaneResetDropsCascade -SourcePath $resetDeclaringSource }
+
+    $missingResetSourcePath = Join-Path $fixtureRoot 'missing-reset-source.cs'
+    [IO.File]::WriteAllText($missingResetSourcePath, "public async Task Postgres_forgets_to_reset()`n{`n    await dbContext.Database.MigrateAsync();`n}`n", [Text.UTF8Encoding]::new($false))
+    $missingResetRejected = $false
+    try { Assert-FrozenIdentityResetsSchema -SourcePath $missingResetSourcePath -MethodName 'Postgres_forgets_to_reset' } catch { $missingResetRejected = $_.Exception.Message.Contains('must reset its schema before migrating', [StringComparison]::Ordinal) }
+    Assert-Contract $missingResetRejected 'A frozen identity that skips the schema reset must fail closed.'
+    $presentResetSourcePath = Join-Path $fixtureRoot 'present-reset-source.cs'
+    [IO.File]::WriteAllText($presentResetSourcePath, "public async Task Postgres_resets()`n{`n    await ResetSchemaAsync();`n    await dbContext.Database.MigrateAsync();`n}`n", [Text.UTF8Encoding]::new($false))
+    Assert-FrozenIdentityResetsSchema -SourcePath $presentResetSourcePath -MethodName 'Postgres_resets'
+    $noCascadeSourcePath = Join-Path $fixtureRoot 'no-cascade-reset-source.cs'
+    [IO.File]::WriteAllText($noCascadeSourcePath, "internal static async Task ResetSchemaAsync()`n{`n    command.CommandText = `$`"DROP SCHEMA IF EXISTS {quotedSchema}`";`n}`n", [Text.UTF8Encoding]::new($false))
+    $noCascadeRejected = $false
+    try { Assert-LaneResetDropsCascade -SourcePath $noCascadeSourcePath } catch { $noCascadeRejected = $_.Exception.Message.Contains('IF EXISTS and CASCADE', [StringComparison]::Ordinal) }
+    Assert-Contract $noCascadeRejected 'A schema reset without CASCADE must fail closed.'
 
     $selectedMemberIds = @($script:GovernedPostgresMemberIds)
     $validMemberSummaries = @(
@@ -427,6 +643,54 @@ try {
         $summaryRejected = $false
         try { Assert-NervPostgresTestLaneSummary -SelectedMemberIds $selectedMemberIds -MemberSummaries @($case.members) } catch { $summaryRejected = $_.Exception.Message.Contains([string]$case.diagnostic, [StringComparison]::Ordinal) }
         Assert-Contract $summaryRejected "PostgreSQL aggregate case '$($case.name)' must fail closed with its governed diagnostic."
+    }
+
+    # 闭合契约：政策里每一条 requiredLane: postgres 的身份，都必须落在 manifest 的成员身份（active 或
+    # deferred）或显式的规模种子豁免里。穷举从政策的类型集来，不从审核点名来——否则第三个"漏网"类
+    # 可以无声出现（#1510 的教训）。
+    $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
+    $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
+    $manifestIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($manifestMember in @($manifestDocument.members)) {
+        foreach ($manifestIdentity in @($manifestMember.expectedTestIdentities)) { $manifestIdentities.Add([string]$manifestIdentity) | Out-Null }
+    }
+    $exemptions = @($manifestDocument.scaleSeedExemptions)
+    $exemptIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($exemption in $exemptions) {
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$exemption.owner) -and -not [string]::IsNullOrWhiteSpace([string]$exemption.reason)) 'Every scale-seed exemption must name its owner and reason.'
+        Assert-Contract (-not $manifestIdentities.Contains([string]$exemption.identity)) "Identity '$($exemption.identity)' cannot be both a lane member identity and an exemption."
+        $exemptIdentities.Add([string]$exemption.identity) | Out-Null
+    }
+    $uncoveredIdentities = @(
+        foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
+            foreach ($policyIdentity in @($policyRule.testIdentities)) {
+                if (-not $manifestIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+            }
+        }
+    )
+    Assert-Contract ($uncoveredIdentities.Count -eq 0) "Every policy identity with requiredLane 'postgres' must be a manifest member identity or a declared scale-seed exemption; uncovered: $($uncoveredIdentities -join ', ')."
+    # 变异对照：把一条已覆盖身份从 manifest 与豁免里同时摘掉，闭合检查必须点名它。
+    $mutatedIdentity = 'Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests.Concurrent_wcs_claim_inserts_keep_one_owner_and_classify_the_loser'
+    Assert-Contract ($manifestIdentities.Contains($mutatedIdentity)) 'The closure mutation fixture must start from a covered identity.'
+    $mutatedIdentities = [Collections.Generic.HashSet[string]]::new([string[]]@($manifestIdentities), [StringComparer]::Ordinal)
+    $mutatedIdentities.Remove($mutatedIdentity) | Out-Null
+    $mutatedUncovered = @(
+        foreach ($policyRule in @($policyDocument.rules | Where-Object { [string]::Equals([string]$_.requiredLane, 'postgres', [StringComparison]::Ordinal) })) {
+            foreach ($policyIdentity in @($policyRule.testIdentities)) {
+                if (-not $mutatedIdentities.Contains([string]$policyIdentity) -and -not $exemptIdentities.Contains([string]$policyIdentity)) { [string]$policyIdentity }
+            }
+        }
+    )
+    Assert-Contract ($mutatedUncovered.Count -eq 1 -and [string]::Equals($mutatedUncovered[0], $mutatedIdentity, [StringComparison]::Ordinal)) 'Dropping a governed identity must be reported by the closure contract.'
+    # deferred 登记必须写明理由，且不得被 runner 选中执行。
+    foreach ($deferredMember in @($manifestDocument.members | Where-Object { [string]::Equals([string]$_.status, 'deferred', [StringComparison]::Ordinal) })) {
+        Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$deferredMember.deferredReason)) "Deferred member '$($deferredMember.id)' must record why it cannot join the lane."
+        $selectedMemberIdSet = [Collections.Generic.HashSet[string]]::new([string[]]@($script:GovernedPostgresMemberIds), [StringComparer]::Ordinal)
+        Assert-Contract (-not $selectedMemberIdSet.Contains([string]$deferredMember.id)) "Deferred member '$($deferredMember.id)' must not be selected by the hosted job."
+        $deferredRejected = $false
+        try { Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId ([string]$deferredMember.id) -RepositoryRoot $repoRoot | Out-Null }
+        catch { $deferredRejected = $_.Exception.Message.Contains('is not active', [StringComparison]::Ordinal) }
+        Assert-Contract $deferredRejected "The runner must refuse to execute deferred member '$($deferredMember.id)'."
     }
 
     $runnerPath = Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1'
@@ -472,4 +736,5 @@ try {
     Assert-Contract ($workflow.Contains('-JobName "PostgreSQL Provider Tests"', [StringComparison]::Ordinal)) 'Normalized evidence must bind to the authoritative PostgreSQL job.'
 }
 finally { if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force } }
+& (Join-Path $PSScriptRoot 'postgres-test-database-consumers.Tests.ps1')
 Write-Output 'PostgreSQL test lane contract tests passed.'

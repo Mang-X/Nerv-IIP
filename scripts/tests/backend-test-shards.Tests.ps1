@@ -671,7 +671,8 @@ $excludedSelectors = @(
 # NERV-688 拆解③把混合类（同时含真实 PostgreSQL 与普通用例）的排除从类级收窄到方法级，
 # 因此选择器总数上升：IndustrialTelemetry 4 个类 → 7 条方法（54 → 57），
 # MES 的 MesCapSubscriptionTests / SkuDisabledConsumerTests 2 个类 → 6 条方法（57 → 61），
-# WMS 的三个混合类 → 5 条方法（61 → 63）。
+# WMS 的三个混合类 → 5 条方法（61 → 63）。#1561 把 InventoryDirectory 的 external 用例并入 lane，
+# 但该类含 Docker CLI 原语、必须整类排除，因此选择器总数不变。
 Assert-Contract ($excludedSelectors.Count -eq 63) 'Every currently excluded real-dependency test selector must be explicitly classified.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests'))) 'The Inventory directory PostgreSQL test class must be excluded from its fast shard.'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::OrdinalIgnoreCase).Contains([string]('Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests.Parallel_databases_are_isolated_initialized_and_removed'))) 'The PostgreSQL test database real selector must remain method-scoped.'
@@ -1308,7 +1309,10 @@ try {
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
     $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
-    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) })
+    # #1561 之后该类的两条身份分属两条规则（Docker 夹具 → inventory-directory-postgres，
+    # external → inventory-directory-external）。只删其一，类选择器仍能经另一条解析成功，
+    # 变异就失去鉴别力；因此这里把覆盖该类的两条规则一并删掉，验证"选择器无处解析"这条不变量。
+    $directoryPolicy.rules = @($directoryPolicy.rules | Where-Object { -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-postgres'), [StringComparison]::Ordinal) -and -not [string]::Equals([string]([string] $_.id), [string]('inventory-directory-external'), [StringComparison]::Ordinal) })
     Set-Content -LiteralPath $temporaryPolicyPath -Value ($directoryPolicy | ConvertTo-Json -Depth 100) -NoNewline
     $missingDirectoryPolicy = Invoke-GovernedScript -ScriptPath $validatorPath -Name 'backend-test-shard-inventory-directory-policy-contract' -Arguments @('-PolicyPath', $temporaryPolicyPath)
     Assert-Contract (-not $missingDirectoryPolicy.Passed) 'Removing the Inventory directory PostgreSQL policy rule must fail shard governance.'

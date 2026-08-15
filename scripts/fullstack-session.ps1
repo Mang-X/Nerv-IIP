@@ -139,6 +139,15 @@ function Invoke-NervMan528MesInventoryAcceptance {
     $redisPort = "$($redis[0].NetworkSettings.Ports.'6379/tcp'[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-528 acceptance could not resolve the session Redis host port.' }
 
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_mes' `
+        -Relations @('mes.work_orders', 'mes.finished_goods_receipt_requests', 'mes.cap_published_messages') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_inventory' `
+        -Relations @('inventory.stock_movements', 'inventory.cap_received_messages', 'inventory.integration_event_dead_letters') | Out-Null
+
     $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
     $probeEnvironment = @{
         NERV_IIP_TEST_MES_POSTGRES = $connectionPrefix + 'Database=nerv_iip_mes'
@@ -149,15 +158,25 @@ function Invoke-NervMan528MesInventoryAcceptance {
     }
     try {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
-            Invoke-DotNet `
-                -Arguments @(
+            $testArguments = @(
                     'test',
-                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MesInventoryProducedLotPostgresRedisAcceptanceTests',
                     '--nologo'
-                ) `
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-DotNet `
+                -Arguments $testArguments `
                 -WorkingDirectory "$($Manifest.worktreeRoot)" `
                 -TimeoutSeconds 600 `
                 -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
@@ -235,6 +254,15 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     $redisPort = "$($redisPortBindings[0].HostPort)"
     if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-440 acceptance could not resolve the session Redis host port.' }
 
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_maintenance' `
+        -Relations @('maintenance.maintenance_plans', 'maintenance.maintenance_work_orders') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_industrial_telemetry' `
+        -Relations @('industrial_telemetry.device_state_snapshots') | Out-Null
+
     $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
     $probeEnvironment = @{
         NERV_IIP_TEST_MAINTENANCE_POSTGRES = $connectionPrefix + 'Database=nerv_iip_maintenance'
@@ -245,15 +273,25 @@ function Invoke-NervMan440RuntimeHoursAcceptance {
     }
     try {
         Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
-            Invoke-DotNet `
-                -Arguments @(
+            $testArguments = @(
                     'test',
-                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
                     '--no-restore',
                     '--no-build',
                     '--filter', 'FullyQualifiedName~MaintenanceRuntimeHoursPostgresRedisAcceptanceTests',
                     '--nologo'
-                ) `
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-DotNet `
+                -Arguments $testArguments `
                 -WorkingDirectory "$($Manifest.worktreeRoot)" `
                 -TimeoutSeconds 600 `
                 -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null
@@ -601,7 +639,8 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
             $runProcess = Get-Process -Id $PID
             $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
             try {
-                $runResult = Invoke-NervManagedFullStackRun `
+                $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
+                    Invoke-NervManagedFullStackRun `
                     -StartAction {
                         Start-NervFullStackSession `
                             -GuardianMode Automated `
@@ -693,6 +732,7 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                         param($InputManifest)
                         Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)"
                     }
+                }
                 $manifest = $runResult.Manifest
             }
             finally {

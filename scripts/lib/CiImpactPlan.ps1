@@ -312,8 +312,18 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
+            if ([string]::Equals($path, 'scripts/run-full-chain-test-lane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/lib/FullChainTestLane.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/full-chain-test-lane.json', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/tests/full-chain-test-lane.Tests.ps1', [StringComparison]::Ordinal)) {
+                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+                continue
+            }
             if ([string]::Equals($path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
-                Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
+                foreach ($flag in @('backend', 'full_chain', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+            }
+            if ([string]::Equals($path, 'scripts/verify-erp-wms-delivery-completion.ps1', [StringComparison]::Ordinal)) {
+                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
             if ([string]::Equals($path, 'scripts/export-gateway-openapi.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/verify-openapi-client-drift.ps1', [StringComparison]::Ordinal)) {

@@ -43,6 +43,14 @@
 该回收不用 `WITH (FORCE)`，避免清扫器杀死竞态接入的活跃测试。具体配置与操作步骤见
 `docs/architecture/local-dev-troubleshooting.md`。性能基线仍使用独占实例，不复用该共享资源。
 
+本地 Redis/CAP 会话使用 `nerv:n822:<UUIDv7>:` 作为统一根命名空间：stream/topic 由
+`Cap:TopicNamePrefix` 派生，consumer group 由会话唯一 `Cap:Version` 派生，分布式锁把
+`DistributedLocking:RedisKeyPrefix` 放在既有服务名锁前缀之外。真实 Redis 对照必须让两个会话在同一
+Redis 上同时持有相同逻辑锁并各自消费相同逻辑 topic，证明跨会话互不竞争，同时证明同一会话内第二个
+锁持有者仍被拒绝。正常测试清理只删除自己的根命名空间；崩溃残留由
+`scripts/cleanup-stale-redis-test-keys.ps1` 按 UUIDv7 年龄与 `__owner` 租约双条件预览/清理，禁止
+`FLUSHALL`，也不处理 hosted runner 自己负责的 `nerv:n688:*`。
+
 失败时先保留脱敏的 PostgreSQL、Redis stream、consumer group pending（`XPENDING`）、CAP inbox/outbox/DLQ 与业务状态诊断，再由 `always()` 路径清理动态数据库、Redis 命名空间和子进程，并把清理结果写入证据；不得保存连接串、凭据、header 或业务正文。
 
 ## 执行与跳过证据

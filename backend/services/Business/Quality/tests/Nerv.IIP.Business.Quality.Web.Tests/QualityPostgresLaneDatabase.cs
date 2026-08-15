@@ -35,7 +35,11 @@ internal static class QualityPostgresLaneDatabase
     internal static void AssertUsesGovernedDatabase(DbContext dbContext)
     {
         var governed = new NpgsqlConnectionStringBuilder(ConnectionString);
-        Assert.Equal(governed.Database, dbContext.Database.GetDbConnection().Database);
+        var observed = new NpgsqlConnectionStringBuilder(dbContext.Database.GetDbConnection().ConnectionString);
+        // 只比库名不足以证明"跑在受治理的成员库上"：同名库可能在另一台主机或另一个端口。
+        Assert.Equal(
+            (governed.Host, governed.Port, governed.Database),
+            (observed.Host, observed.Port, observed.Database));
     }
 }
 

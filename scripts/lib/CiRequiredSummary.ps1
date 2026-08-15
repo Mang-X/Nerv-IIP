@@ -50,6 +50,7 @@ function Get-NervCiRequiredSummaryFindings {
         'backend-tests',
         'postgres-provider-tests',
         'redis-cap-transport-tests',
+        'business-full-chain-acceptance',
         'erp-sales-order-demand-acceptance',
         'connector-host-tests',
         'frontend-unit-tests',
@@ -80,7 +81,7 @@ function Get-NervCiRequiredSummaryFindings {
         $unexpectedNeeds = @($actualNeeds | Where-Object { -not $expectedNeedSet.Contains([string] $_) })
         $missingJobs = @($expectedNeeds | Where-Object { $null -eq $jobs.PSObject.Properties[$_] })
         if ($actualNeeds.Count -ne $expectedNeeds.Count -or $missingNeeds.Count -gt 0 -or $unexpectedNeeds.Count -gt 0 -or $missingJobs.Count -gt 0) {
-            $findings.Add('CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, and Redis/CAP Transport Tests exactly.')
+            $findings.Add('CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.')
         }
 
         $name = Get-NervCiRequiredSummaryStringValue -Object $summary -PropertyName 'name'
@@ -131,6 +132,7 @@ script_governance_result="${{ needs.script-governance.result }}"
 openapi_result="${{ needs.openapi-client-drift.result }}"
 postgres_result="${{ needs.postgres-provider-tests.result }}"
 redis_cap_result="${{ needs.redis-cap-transport-tests.result }}"
+full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
 backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
 erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
 connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
@@ -138,6 +140,7 @@ script_governance_selected="${{ github.event_name != 'pull_request' || needs.imp
 openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
 postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
 redis_cap_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false' }}"
+full_chain_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false' }}"
 
 if [[ "$backend_selected" = "true" ]]; then
   backend_policy="selected"
@@ -174,6 +177,11 @@ if [[ "$redis_cap_selected" = "true" ]]; then
 else
   redis_cap_policy="skipped by policy"
 fi
+if [[ "$full_chain_selected" = "true" ]]; then
+  full_chain_policy="selected"
+else
+  full_chain_policy="skipped by policy"
+fi
 
 {
   echo "## CI lane decisions"
@@ -187,6 +195,7 @@ fi
   echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
   echo "| PostgreSQL Provider Tests | $postgres_policy | $postgres_result |"
   echo "| Redis/CAP Transport Tests | $redis_cap_policy | $redis_cap_result |"
+  echo "| Business FullChain Acceptance | $full_chain_policy | $full_chain_result |"
 } >> "$GITHUB_STEP_SUMMARY"
 
 test "$impact_result" = "success"
@@ -212,6 +221,11 @@ if [[ "$redis_cap_selected" = "true" ]]; then
   test "$redis_cap_result" = "success"
 else
   test "$redis_cap_result" = "skipped"
+fi
+if [[ "$full_chain_selected" = "true" ]]; then
+  test "$full_chain_result" = "success"
+else
+  test "$full_chain_result" = "skipped"
 fi
 if [[ "$script_governance_selected" = "true" ]]; then
   test "$script_governance_result" = "success"

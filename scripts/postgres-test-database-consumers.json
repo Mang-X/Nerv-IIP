@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "consumers": [
+    {
+      "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs",
+      "sourceSha256": "5acc6a61ad98757928e08591335504deb73eb6119b7c1beadbdd80cc273caf5d",
+      "factoryCallCount": 3,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 3,
+          "reason": "Ordinary profile tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs",
+      "sourceSha256": "3552d3c8309074df2013e65d9139139a684c7c04083893b5c63a9f51260f9ca7",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The BarcodeLabel world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
+      "sourceSha256": "45e84b218a6c2b13d3632a811c072da400e9f5c755cb554c60e2eff518f5ebd9",
+      "factoryCallCount": 4,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 3,
+          "ownerVariable": "database",
+          "reason": "The real PostgreSQL demand proofs must surface cleanup failure after every direct-owner exit."
+        },
+        {
+          "strategy": "encapsulated-explicit-drop",
+          "factoryCallCount": 1,
+          "wrapperType": "RedisCapTestDatabase",
+          "ownerField": "ownedDatabase",
+          "reason": "Redis/CAP tests legitimately encapsulate optional database ownership, and the wrapper propagates DropAsync failure."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
+      "sourceSha256": "089aab2ca4a4790bb3a60dd473fbb018479791afa4bdb63ee3dbbe357f35d5d4",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "This pre-existing scale test is inventoried without changing its cleanup contract in NERV-822 follow-up issue 1569."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorldHistorySeedPostgresTests.cs",
+      "sourceSha256": "62122176b3fd8d2f08344f46b9ec42fae773d3aa32dee6dab5edcecc30c62d75",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 2,
+          "reason": "These pre-existing ERP history tests are inventoried without widening the two-domain cleanup regression scope."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/WorldHistoryDeviceSeedPostgresTests.cs",
+      "sourceSha256": "48d93489e15ba91aad7c3279863bb4e744753f68c5de1561d02a42a8aee50dd5",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The IndustrialTelemetry world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
+      "sourceSha256": "1863ff8da3ed832182f3368bcbf1afb080ca3ba0915011b877120e9fc08c562f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The Maintenance world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs",
+      "sourceSha256": "97cd9bcdcef31403369d9111030f5dbdfd8566183b21998d787002cc85158f77",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MasterData world-bible budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
+      "sourceSha256": "31730e88d1836c0204d7c7bfc834650ba2f3669240a93c50fd24d722a35a03f0",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MES leader-demo scale-seed budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs",
+      "sourceSha256": "90b045ba8ed1efcf97024d4721835fe67085e54c302ba304653f3e7af7fe069f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The MES world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
+      "sourceSha256": "61b0bd316736c677eae0b2d0b0dac1f97465ded78b400143ab747febfe8f8ce2",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The ProductEngineering budget proof is the existing reference implementation for explicit cleanup evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/WorldHistoryQualitySeedPostgresTests.cs",
+      "sourceSha256": "061cb61459b7aa62a5d7f44305f361bb67791fd37cbc03d021167ae22fc0465a",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The Quality world-history budget proof must surface cleanup failure after every exit."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/SchedulingListPlansPostgresProfileTests.cs",
+      "sourceSha256": "f6bff4348b4536c9d4d6b3407e47972b6e3abf5fb30d0af1909bd69f3eafb12f",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 2,
+          "reason": "Ordinary Scheduling profile tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseTaskActionConcurrencyPostgresTests.cs",
+      "sourceSha256": "828cfac25a1b62a76e3a9a62ed46efcc5365f765ca164b1e871c9418c3053ec6",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 2,
+          "reason": "Ordinary WMS concurrency tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsDispatchConcurrencyPostgresTests.cs",
+      "sourceSha256": "f60631c878ca30816c1a0fc7a452573ec2acdf1934f61370b6dc37b2c7eb330c",
+      "factoryCallCount": 2,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 2,
+          "reason": "Ordinary WCS concurrency tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
+      "sourceSha256": "f6080721e4358b149899b010547e76b2ddfed78c6d6364d1533e27e8fd13330f",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The WMS quality-gate proof is inventoried without widening the two-domain cleanup regression scope."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsShortPickBackorderTests.cs",
+      "sourceSha256": "18bec8aa9201808a5e81f59637077d412e86a0bceffbf31a2809fc8cdba955c6",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The WMS short-pick proof is inventoried without widening the two-domain cleanup regression scope."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsWorkAssignmentMigrationPostgresTests.cs",
+      "sourceSha256": "75e50851c347d928fd7d2988373366e6b62f234f0daf35544ea5f42fe0d8bf8c",
+      "factoryCallCount": 3,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 3,
+          "reason": "Ordinary WMS migration tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs",
+      "sourceSha256": "3c2d99279823b66e3ba8239ebbfd2e6ef1c392901ef5b95d215bc5be54f2cbd3",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "factory-forwarder",
+          "factoryCallCount": 1,
+          "wrapperMethod": "CreateTemporaryDatabaseAsync",
+          "reason": "IAM centralizes factory selection in one method while returning ownership to await-using callers."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationCapOutboxAcceptanceTests.cs",
+      "sourceSha256": "a55111757bb20ca1e66887ba5a1e612f6f48abb35b4ce5148874d5ccb9866f14",
+      "factoryCallCount": 3,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 3,
+          "reason": "Ordinary Notification CAP acceptance tests use the shared helper lifecycle and do not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationPostgresProfileTests.cs",
+      "sourceSha256": "d0d0142ed59bb7972de977fc21daf70580a41666b13d87280e335b14b7a9d6de",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The Notification profile test uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs",
+      "sourceSha256": "eb7773c889021afc98aa12bfc5b3c33fb2beaff3a0cb561cd77676f5dd505753",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "The Ops profile test uses the shared helper lifecycle and does not claim explicit DROP-failure evidence."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
+      "sourceSha256": "157b77582cfdbd6140210c500614059022dcb5069df132dee1c790d2158b940a",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed."
+        }
+      ]
+    },
+    {
+      "sourcePath": "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs",
+      "sourceSha256": "274b5b681223c18d0d69f841e35432ae8e02d9cf5f7e7584e84df857608986a1",
+      "factoryCallCount": 6,
+      "ownerships": [
+        {
+          "strategy": "helper-self-test",
+          "factoryCallCount": 6,
+          "reason": "The shared helper's own lifecycle tests intentionally exercise create, retry, cancellation, disposal and explicit drop paths."
+        }
+      ]
+    }
+  ]
+}

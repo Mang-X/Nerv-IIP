@@ -281,7 +281,9 @@ $cleanupErrors = [System.Collections.Generic.List[string]]::new()
 $scenarioError = $null
 $businessEvidence = $null
 $evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
-$evidencePath = Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json'
+$injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
+$evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
+$evidenceDirectory = Split-Path -Parent $evidencePath
 $cleanupEvidence = [ordered]@{
     managedProcessIds = @()
     managedProcessRemaining = $null
@@ -516,9 +518,9 @@ try {
         NERV_IIP_TEST_CAP_VERSION = $capVersion
         NERV_IIP_TEST_DELIVERY_ORDER_NO = $deliveryOrderNo
     } -ScriptBlock {
-        $probeResultsDirectory = Join-Path $root 'artifacts/acceptance/man527'
+        $probeResultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) { Join-Path $root 'artifacts/acceptance/man527' } else { $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY }
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
-        $probeResultsFile = "replay-$([Guid]::NewGuid().ToString('N')).trx"
+        $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "replay-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
         Invoke-DotNet -Arguments @('test', $probeProject, '--no-build', '--filter', 'FullyQualifiedName~External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts', '--results-directory', $probeResultsDirectory, '--logger', "trx;LogFileName=$probeResultsFile") -WorkingDirectory $root -TimeoutSeconds 180 -Name 'man527-replay-probe' | Out-Null
         if (-not (Test-Path -LiteralPath $probeResults)) {

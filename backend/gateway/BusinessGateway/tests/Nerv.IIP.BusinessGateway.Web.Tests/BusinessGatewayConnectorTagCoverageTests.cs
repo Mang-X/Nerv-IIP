@@ -44,7 +44,7 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
         };
         await using var lease = LeaseHost(auth, telemetry);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/telemetry/connectors/opc-main/tag-coverage?organizationId=org-001&environmentId=env-dev");
@@ -90,7 +90,7 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
         };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), telemetry);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/telemetry/connectors/connector-empty/tag-coverage?organizationId=org-001&environmentId=env-dev");

@@ -73,6 +73,17 @@ try {
     Assert-Contract (Test-Path -LiteralPath $verifierPath -PathType Leaf) 'The CI required-summary verifier is missing.'
 
     $workflow = [IO.File]::ReadAllText($workflowPath)
+    foreach ($fullChainSummaryFragment in @(
+        '      - business-full-chain-acceptance',
+        'full_chain_result="${{ needs.business-full-chain-acceptance.result }}"',
+        'full_chain_selected="${{ github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.full_chain != ''false'' }}"',
+        '            full_chain_policy="skipped by policy"',
+        '            echo "| Business FullChain Acceptance | $full_chain_policy | $full_chain_result |"',
+        '            test "$full_chain_result" = "success"',
+        '            test "$full_chain_result" = "skipped"'
+    )) {
+        Assert-Contract ($workflow.Contains($fullChainSummaryFragment, [StringComparison]::Ordinal)) "CI Summary is missing FullChain contract fragment '$fullChainSummaryFragment'."
+    }
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
 
@@ -83,7 +94,7 @@ try {
     $crlfFindings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $workflowPath -RepositoryRoot $repoRoot)
     Assert-Contract ($crlfFindings.Count -eq 0) "Required-summary governance must be independent of the library checkout line endings: $($crlfFindings -join '; ')"
 
-    $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, and Redis/CAP Transport Tests exactly.'
+    $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
 
     $needLine = '      - impact-plan'
@@ -160,6 +171,18 @@ try {
 
     Invoke-Mutation -Name 'ci-summary-hides-redis-cap-skipped-by-policy-audit' -Workflow $workflow `
         -Original '            redis_cap_policy="skipped by policy"' -Replacement '            redis_cap_policy="skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-full-chain-selected-allows-skip' -Workflow $workflow `
+        -Original '            test "$full_chain_result" = "success"' -Replacement '            test "$full_chain_result" = "skipped"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-full-chain-unselected-allows-success' -Workflow $workflow `
+        -Original '            test "$full_chain_result" = "skipped"' -Replacement '            test "$full_chain_result" = "success"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-hides-full-chain-skipped-by-policy-audit' -Workflow $workflow `
+        -Original '            full_chain_policy="skipped by policy"' -Replacement '            full_chain_policy="skipped"' `
         -ExpectedDiagnostic $policyDiagnostic
 
     $impactAssertion = '          test "$impact_result" = "success"'

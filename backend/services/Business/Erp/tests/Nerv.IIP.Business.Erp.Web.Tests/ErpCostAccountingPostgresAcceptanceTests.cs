@@ -21,24 +21,18 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision()
     {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
         var applicationName = $"erp-rate-concurrency-{Guid.CreateVersion7():N}";
-        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"))
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
         {
             ApplicationName = applicationName,
         };
         var connectionString = connectionStringBuilder.ConnectionString;
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString, x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connectionString);
 
         await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
         {
-            await setupDb.Database.OpenConnectionAsync();
-            var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-            await using var drop = setupDb.Database.GetDbConnection().CreateCommand();
-            drop.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await drop.ExecuteNonQueryAsync();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(setupDb);
             await setupDb.Database.MigrateAsync();
         }
 
@@ -134,17 +128,12 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact]
     public async Task PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"), x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
         await using var db = new ApplicationDbContext(options, new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.OpenConnectionAsync();
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using (var drop = db.Database.GetDbConnection().CreateCommand())
-        {
-            drop.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await drop.ExecuteNonQueryAsync();
-        }
 
         var migrator = db.GetService<IMigrator>();
         await migrator.MigrateAsync("20260720014936_AddDeliveryOrderConcurrencyToken");
@@ -196,17 +185,10 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact]
     public async Task PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"), x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        await db.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using (var command = db.Database.GetDbConnection().CreateCommand())
-        {
-            command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await command.ExecuteNonQueryAsync();
-        }
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.MigrateAsync();
 
         db.GLAccounts.AddRange(

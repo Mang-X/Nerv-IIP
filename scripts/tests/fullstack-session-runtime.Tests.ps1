@@ -1358,6 +1358,15 @@ finally {
 
 $script:managedCollectCalls = 0
 $script:managedStopCalls = 0
+$script:managedRunSessionId = $null
+Use-ScopedEnvironmentVariable -Name 'NERV_IIP_SESSION_ID' -Value 'nerv-other-654321' -ScriptBlock {
+    Invoke-NervFullStackSessionEnvironment -SessionId 'nerv-dead-000002' -ScriptBlock {
+        $script:managedRunSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    }
+    Assert-True ([string]::Equals([string]([Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')), 'nerv-other-654321', [StringComparison]::Ordinal)) 'Managed run scope must restore the caller session environment.'
+}
+Assert-True ([string]::Equals([string]$script:managedRunSessionId, 'nerv-dead-000002', [StringComparison]::Ordinal)) 'Managed run scope must expose the exact session identity to scenario, diagnostics, and stop actions.'
+Assert-True ($fullStackSessionText.Contains("Invoke-NervFullStackSessionEnvironment -SessionId `$SessionId", [StringComparison]::Ordinal)) 'The fullstack run action must keep the exact session identity across scenario, diagnostics, and stop.'
 $managedScenarioFailure = $null
 try {
     Invoke-NervManagedFullStackRun `
@@ -1446,21 +1455,63 @@ Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringC
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
 
+$script:relationProbeAttempts = 0
+$relationReadiness = Wait-NervFullStackPostgresRelations `
+    -ContainerId 'postgres-owned' `
+    -Database 'nerv_iip_industrial_telemetry' `
+    -Relations @('industrial_telemetry.device_state_snapshots') `
+    -TimeoutSeconds 5 `
+    -QueryAction {
+        param($ContainerId, $Database, $Relations)
+        $script:relationProbeAttempts++
+        if ($script:relationProbeAttempts -ge 2) { return $Relations.Count }
+        return 0
+    } `
+    -DelayAction { param($Seconds) }
+Assert-True ($relationReadiness.Attempts -eq 2) 'PostgreSQL relation readiness must retry until every frozen table exists.'
+Assert-True ($relationReadiness.RelationCount -eq 1) 'PostgreSQL relation readiness must report the complete frozen table count.'
+
 $script:worktreeStoppedPids = [System.Collections.Generic.List[int]]::new()
 $worktreeProcessResult = Stop-NervWorktreeProcesses `
     -WorktreeRoot 'C:\nfs\fullstack-worktrees\abcd1234\s2' `
+    -SessionId 'nerv-abcd-123456' `
     -ExcludedProcessIds @(102) `
     -ProcessQueryAction {
         @(
             [pscustomobject]@{ ProcessId = 101; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\nfs\fullstack-worktrees\abcd1234\s2\backend\service.csproj' },
             [pscustomobject]@{ ProcessId = 102; Name = 'node.exe'; CommandLine = 'node C:\nfs\fullstack-worktrees\abcd1234\s2\frontend\vite.js' },
             [pscustomobject]@{ ProcessId = 103; Name = 'dotnet.exe'; CommandLine = 'dotnet run --project C:\other\service.csproj' },
-            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' }
+            [pscustomobject]@{ ProcessId = 104; Name = 'pwsh.exe'; CommandLine = 'pwsh -File C:\nfs\fullstack-worktrees\abcd1234\s2\scripts\operator.ps1' },
+            [pscustomobject]@{ ProcessId = 105; Name = 'aspire-managed'; CommandLine = 'aspire-managed run'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 106; Name = 'Nerv.IIP.Business.Mes.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Mes.Web'; SessionId = 'nerv-abcd-123456' },
+            [pscustomobject]@{ ProcessId = 107; Name = 'Nerv.IIP.Business.Wms.Web'; CommandLine = '/tmp/Nerv.IIP.Business.Wms.Web'; SessionId = 'nerv-other-654321' }
         )
     } `
-    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) }
-Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 1) 'Worktree cleanup must select only exact owned process command lines.'
-Assert-True ($script:worktreeStoppedPids[0] -eq 101) 'Worktree cleanup stopped the wrong process.'
+    -StopAction { param($ProcessId, $Reason) $script:worktreeStoppedPids.Add($ProcessId) } `
+    -ProcessAliveAction { param($ProcessId) $false }
+Assert-True ($worktreeProcessResult.StoppedProcessIds.Count -eq 3) 'Worktree cleanup must select exact worktree and session-environment owned processes.'
+Assert-True ([string]::Equals([string]($script:worktreeStoppedPids -join ','), '101,105,106', [StringComparison]::Ordinal)) 'Worktree cleanup stopped the wrong process.'
+
+$runtimeSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
+Assert-True ($runtimeSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux cleanup must inspect /proc rather than silently returning no processes.'
+Assert-True ($runtimeSource.Contains("NERV_IIP_SESSION_ID=", [StringComparison]::Ordinal)) 'Linux cleanup must bind detached processes to the exact session environment.'
+$missingProcessCleanup = Stop-ProcessTree -ProcessId 2147483646 -Reason 'missing-process-return-contract'
+$hasRemainingProcessIdsProperty = $false
+foreach ($propertyName in @($missingProcessCleanup.PSObject.Properties.Name)) {
+    if ([string]::Equals([string]$propertyName, 'RemainingProcessIds', [StringComparison]::Ordinal)) {
+        $hasRemainingProcessIdsProperty = $true
+    }
+}
+Assert-True (
+    -not $hasRemainingProcessIdsProperty
+) 'Managed-process tree cleanup must not expose an always-empty remaining-process success field.'
+$scriptAutomationSource = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Raw
+Assert-True ($scriptAutomationSource.Contains("EnumerateDirectories('/proc')", [StringComparison]::Ordinal)) 'Linux managed-process cleanup must enumerate the exact descendant process tree from /proc.'
+Assert-True ($scriptAutomationSource.Contains('ParentProcessId', [StringComparison]::Ordinal)) 'Linux managed-process cleanup must retain parent-process identity for recursive tree selection.'
+Assert-True ($scriptAutomationSource.Contains('foreach ($id in $ids)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must read back every frozen descendant PID.'
+Assert-True ($scriptAutomationSource.Contains('Get-Process -Id $id -ErrorAction SilentlyContinue', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must test every frozen PID for liveness.'
+Assert-True ($scriptAutomationSource.Contains('if ($remaining.Count -ne 0)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must detect a non-empty readback set.'
+Assert-True ($scriptAutomationSource.Contains('Exact managed process tree cleanup left PID(s)', [StringComparison]::Ordinal)) 'Managed-process tree cleanup must fail closed when any frozen PID remains.'
 
 $stopStateRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-stop-$([guid]::NewGuid().ToString('N'))"
 try {
@@ -1474,9 +1525,16 @@ try {
     $stopManifest = Move-NervFullStackSessionState -Manifest $stopManifest -State Running
     Write-NervFullStackManifest -Manifest $stopManifest -StateRoot $stopStateRoot
     $script:aspireStopCalls = 0
+    $script:aspireStopSessionId = $null
     $script:processStopCalls = 0
     $script:dockerStopCalls = 0
-    $aspireStop = { param($Manifest) $script:aspireStopCalls++ }
+    $ambientSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', 'nerv-other-654321', 'Process')
+    $aspireStop = {
+        param($Manifest)
+        $script:aspireStopCalls++
+        $script:aspireStopSessionId = [Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')
+    }
     $processStop = { param($Manifest) $script:processStopCalls++ }
     $dockerStop = {
         param($Manifest)
@@ -1489,6 +1547,8 @@ try {
     Assert-True $firstStop.Complete 'The first exact stop must complete.'
     Assert-True $secondStop.Complete 'A repeated exact stop must remain complete.'
     Assert-True ($script:aspireStopCalls -eq 1) 'A stopped session must not invoke Aspire stop twice.'
+    Assert-True ([string]::Equals([string]$script:aspireStopSessionId, $stopSessionId, [StringComparison]::Ordinal)) 'Aspire stop must pass the exact session identity to its managed helper processes.'
+    Assert-True ([string]::Equals([string]([Environment]::GetEnvironmentVariable('NERV_IIP_SESSION_ID', 'Process')), 'nerv-other-654321', [StringComparison]::Ordinal)) 'Aspire stop must restore the caller session environment.'
     Assert-True ($script:processStopCalls -eq 1) 'A stopped session must not stop recorded processes twice.'
     Assert-True ($script:dockerStopCalls -eq 2) 'Repeated stop must still verify exact recorded Docker resources.'
     $stoppedManifest = Read-NervFullStackManifest -SessionId $stopSessionId -StateRoot $stopStateRoot
@@ -1518,6 +1578,7 @@ try {
     Assert-True ($remainingFailures.Contains($processStopFailure)) 'Process cleanup failure must be explicit.'
 }
 finally {
+    [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', $ambientSessionId, 'Process')
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 

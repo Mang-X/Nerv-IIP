@@ -28,7 +28,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
         await using var lease = LeaseHost(auth, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/me/work-context?organizationId=org-001&environmentId=env-dev&permissionCode={PermissionCode}&scopeKind=team&scopeId=TEAM-A&userId=forged-user");
@@ -70,7 +70,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
         await using var lease = LeaseHost(auth, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/me/work-context?organizationId=org-001&environmentId=env-dev&permissionCode={PermissionCode}");
@@ -93,7 +93,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
         await using var lease = LeaseHost(auth, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/me/work-context?organizationId=org-001&environmentId=env-dev&permissionCode=business.unknown.read");
@@ -114,7 +114,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
         await using var lease = LeaseHost(auth, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/me/work-context?organizationId=org-001&environmentId=env-dev&permissionCode={PermissionCode}&scopeKind=work-center&scopeId=WC-A");
@@ -139,7 +139,7 @@ public sealed class BusinessGatewayPrincipalWorkContextEndpointTests
         var masterData = new RecordingMasterDataClient { PrincipalWorkContext = Context() };
         await using var lease = LeaseHost(auth, masterData);
         var client = lease.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             $"/api/business-console/v1/me/work-context?organizationId=org-001&environmentId=env-dev&permissionCode={PermissionCode}");
