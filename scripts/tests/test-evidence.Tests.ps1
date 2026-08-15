@@ -37,6 +37,98 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+function Get-NervDotSourceCommands {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
+    Assert-Equal 0 @($parseErrors).Count "'$Path' must parse before its TestEvidence dependency order is inspected."
+    return @($ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and
+            $node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Dot
+    }, $true))
+}
+
+$testEvidenceConsumers = @(
+    'scripts/collect-test-evidence.ps1',
+    'scripts/generate-test-evidence-baseline.ps1',
+    'scripts/tests/test-evidence.Tests.ps1',
+    'scripts/tests/backend-test-shards.Tests.ps1',
+    'scripts/tests/fixtures/test-evidence/composite-key-production-fixture.ps1'
+)
+foreach ($consumerPath in $testEvidenceConsumers) {
+    $absoluteConsumerPath = Join-Path $repoRoot $consumerPath
+    $dotSourceCommands = @(Get-NervDotSourceCommands -Path $absoluteConsumerPath)
+    $scriptAutomationImports = @($dotSourceCommands | Where-Object {
+        $_.Extent.Text.Contains('ScriptAutomation.ps1', [StringComparison]::Ordinal)
+    })
+    $testEvidenceImports = @($dotSourceCommands | Where-Object {
+        $_.Extent.Text.Contains('TestEvidence.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals([string]$_.Extent.Text.Trim(), '. $testEvidenceLibraryPath', [StringComparison]::Ordinal) -or
+            [string]::Equals([string]$_.Extent.Text.Trim(), '. $TestEvidenceLibraryPath', [StringComparison]::Ordinal)
+    })
+    Assert-Equal 1 $scriptAutomationImports.Count "'$consumerPath' must dot-source ScriptAutomation.ps1 exactly once."
+    Assert-Equal 1 $testEvidenceImports.Count "'$consumerPath' must dot-source TestEvidence.ps1 exactly once."
+    Assert-True ($scriptAutomationImports[0].Extent.StartOffset -lt $testEvidenceImports[0].Extent.StartOffset) `
+        "'$consumerPath' must load ScriptAutomation.ps1 before TestEvidence.ps1."
+}
+
+$testEvidenceLibraryImports = @(Get-NervDotSourceCommands -Path $testEvidenceLibraryPath)
+Assert-Equal 0 @($testEvidenceLibraryImports | Where-Object {
+    $_.Extent.Text.Contains('ScriptAutomation.ps1', [StringComparison]::Ordinal)
+}).Count 'TestEvidence.ps1 must not hide its caller-owned ScriptAutomation dependency with a self-import.'
+
+$redactionContractCases = @(
+    [pscustomobject]@{ Name = 'null'; Input = $null; Expected = ''; Secrets = @() },
+    [pscustomobject]@{ Name = 'empty'; Input = ''; Expected = ''; Secrets = @() },
+    [pscustomobject]@{ Name = 'safe'; Input = 'safe evidence text'; Expected = 'safe evidence text'; Secrets = @() },
+    [pscustomobject]@{ Name = 'bearer'; Input = 'Authorization=Bearer top-secret-token'; Expected = 'Authorization=Bearer <redacted>'; Secrets = @('top-secret-token') },
+    [pscustomobject]@{ Name = 'json secret'; Input = '{"password":"json-secret","value":"safe"}'; Expected = '{"password":"<redacted>","value":"safe"}'; Secrets = @('json-secret') },
+    [pscustomobject]@{ Name = 'connection string'; Input = 'Server=db;User Id=app;Password=connection-secret;'; Expected = 'Server=db;User Id=app;Password=<redacted>;'; Secrets = @('connection-secret') }
+)
+foreach ($case in $redactionContractCases) {
+    $sharedResult = Protect-ScriptAutomationText $case.Input
+    $displayResult = ConvertTo-NervRetainedDisplayName $case.Input
+    Assert-Equal $case.Expected $sharedResult "Shared redaction output changed for '$($case.Name)'."
+    Assert-Equal $case.Expected $displayResult.text "TestEvidence display redaction changed for '$($case.Name)'."
+    Assert-Equal 0 $displayResult.redactionCount "Generic text redaction must not be counted as a body-field redaction for '$($case.Name)'."
+    foreach ($secret in @($case.Secrets)) {
+        Assert-True (-not $displayResult.text.Contains($secret, [StringComparison]::Ordinal)) `
+            "TestEvidence display redaction leaked '$secret' for '$($case.Name)'."
+    }
+}
+
+$approvedSkipReason = Get-NervRetainedSkipReason ([pscustomobject]@{
+    skipPolicyId = 'approved-fixture'
+    skipReason = 'Authorization=Bearer skip-secret'
+})
+Assert-Equal 'Authorization=Bearer <redacted>' $approvedSkipReason 'Approved skip reasons must use the shared redactor output.'
+
+$redactionFailureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-redaction-contract-$([Guid]::NewGuid().ToString('N'))"
+try {
+    $failurePath = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $redactionFailureRoot -RunMetadata @{
+        workflowRunId = 'redaction-contract'
+        runAttempt = 1
+        headSha = '0123456789abcdef0123456789abcdef01234567'
+        testedSha = '0123456789abcdef0123456789abcdef01234567'
+        lane = 'backend'
+        repository = 'Mang-X/Nerv-IIP'
+        jobName = 'Backend Tests'
+    } -Diagnostic 'Authorization=Bearer failure-secret {"password":"failure-json-secret"} Server=db;Password=failure-connection-secret;'
+    $failureText = [string]::Join("`n", @(Get-ChildItem -LiteralPath $failurePath -File -Recurse | ForEach-Object {
+        [IO.File]::ReadAllText($_.FullName)
+    }))
+    foreach ($secret in @('failure-secret', 'failure-json-secret', 'failure-connection-secret')) {
+        Assert-True (-not $failureText.Contains($secret, [StringComparison]::Ordinal)) "Failure artifacts leaked '$secret'."
+    }
+    Assert-True ($failureText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Failure artifacts must retain the shared redaction marker.'
+}
+finally {
+    if (Test-Path -LiteralPath $redactionFailureRoot) { Remove-Item -LiteralPath $redactionFailureRoot -Recurse -Force }
+}
+
 $outcomePairs = @(
     [pscustomobject]@{ Trx = 'Passed'; Normalized = 'passed' },
     [pscustomobject]@{ Trx = 'Failed'; Normalized = 'failed' },
@@ -133,6 +225,69 @@ $testEvidenceTokens = $null
 $testEvidenceParseErrors = $null
 $testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
 Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
+$collectorTokens = $null
+$collectorParseErrors = $null
+$collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
+$collectorAst = [Management.Automation.Language.Parser]::ParseFile($collectorPath, [ref]$collectorTokens, [ref]$collectorParseErrors)
+Assert-Equal 0 @($collectorParseErrors).Count 'collect-test-evidence.ps1 must parse before redaction ownership is inspected.'
+
+$middleManDefinitions = @($testEvidenceAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
+}, $true))
+$middleManCalls = @(
+    @($testEvidenceAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and
+            [string]::Equals([string]$node.GetCommandName(), 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
+    }, $true)) +
+    @($collectorAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and
+            [string]::Equals([string]$node.GetCommandName(), 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
+    }, $true))
+)
+Assert-True ($middleManDefinitions.Count -eq 0 -and $middleManCalls.Count -eq 0) `
+    "Protect-NervTestEvidenceText must be removed completely. ActualDefinitions=$($middleManDefinitions.Count) ActualCalls=$($middleManCalls.Count)"
+
+$sharedRedactionOwners = @(
+    [pscustomobject]@{ FunctionName = 'ConvertTo-NervRetainedDisplayName'; ExpectedCalls = 2 },
+    [pscustomobject]@{ FunctionName = 'Get-NervRetainedSkipReason'; ExpectedCalls = 1 },
+    [pscustomobject]@{ FunctionName = 'ConvertTo-NervEvidenceIdentity'; ExpectedCalls = 1 },
+    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceArtifacts'; ExpectedCalls = 3 },
+    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceFailureArtifacts'; ExpectedCalls = 2 }
+)
+foreach ($owner in $sharedRedactionOwners) {
+    $ownerFunctions = @($testEvidenceAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+            [string]::Equals([string]$node.Name, [string]$owner.FunctionName, [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Equal 1 $ownerFunctions.Count "TestEvidence must define '$($owner.FunctionName)' exactly once before redaction calls are counted."
+    $sharedCalls = @($ownerFunctions[0].Body.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and
+            [string]::Equals([string]$node.GetCommandName(), 'Protect-ScriptAutomationText', [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Equal $owner.ExpectedCalls $sharedCalls.Count `
+        "'$($owner.FunctionName)' must own exactly $($owner.ExpectedCalls) direct shared-redactor call(s)."
+}
+
+$safeFailureAssignments = @($collectorAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'safeFailure', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $safeFailureAssignments.Count 'Collector catch must assign $safeFailure exactly once.'
+$safeFailureSharedCalls = @($safeFailureAssignments[0].Right.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Protect-ScriptAutomationText', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $safeFailureSharedCalls.Count 'Collector $safeFailure assignment must call Protect-ScriptAutomationText directly exactly once.'
+
 $sourceScannerFunction = $testEvidenceAst.Find({
     param($node)
     $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
