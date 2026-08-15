@@ -36,6 +36,30 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+$quotedTextBoundaryCases = @(
+    [pscustomobject]@{ Name = 'escaped double quote'; Text = '"a\"b";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
+    [pscustomobject]@{ Name = 'even backslashes before double quote'; Text = '"a\\";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 5 },
+    [pscustomobject]@{ Name = 'escaped single quote'; Text = "'a\'b';tail"; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
+    [pscustomobject]@{ Name = 'verbatim backslash before closing quote'; Text = '@"C:\";tail'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 6 },
+    [pscustomobject]@{ Name = 'terminal verbatim doubled quote after text'; Text = '@"a""'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 5 },
+    [pscustomobject]@{ Name = 'terminal verbatim doubled quote'; Text = '@"""'; QuoteStart = 1; AllowCSharpVerbatim = $true; Expected = 4 },
+    [pscustomobject]@{ Name = 'unterminated ordinary quote'; Text = '"unterminated'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 13 }
+)
+foreach ($case in $quotedTextBoundaryCases) {
+    $actualEnd = Find-NervQuotedTextEnd -Text $case.Text -QuoteStart $case.QuoteStart -AllowCSharpVerbatim:$case.AllowCSharpVerbatim
+    Assert-Equal $case.Expected $actualEnd "Quoted text boundary mismatch for $($case.Name)."
+}
+
+$quoteStartOutOfRangeError = $null
+try { Find-NervQuotedTextEnd -Text '"safe"' -QuoteStart 6 | Out-Null }
+catch { $quoteStartOutOfRangeError = $_.Exception }
+Assert-True ($quoteStartOutOfRangeError -is [ArgumentOutOfRangeException]) 'An out-of-range QuoteStart must fail closed with ArgumentOutOfRangeException.'
+
+$quoteStartNotQuoteError = $null
+try { Find-NervQuotedTextEnd -Text 'safe' -QuoteStart 0 | Out-Null }
+catch { $quoteStartNotQuoteError = $_.Exception }
+Assert-True ($quoteStartNotQuoteError -is [ArgumentException]) 'A QuoteStart that does not identify a quote must fail closed with ArgumentException.'
+
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.
 function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {

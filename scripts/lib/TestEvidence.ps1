@@ -304,6 +304,54 @@ function Test-NervQuarantineRuleMetadata {
         $expiry.Date -ge $AsOfUtc.UtcDateTime.Date
 }
 
+function Find-NervQuotedTextEnd {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Text,
+        [Parameter(Mandatory)] [int] $QuoteStart,
+        [switch] $AllowCSharpVerbatim
+    )
+
+    if ($QuoteStart -lt 0 -or $QuoteStart -ge $Text.Length) {
+        throw [ArgumentOutOfRangeException]::new('QuoteStart', $QuoteStart, 'QuoteStart must identify a character within Text.')
+    }
+
+    $quote = $Text[$QuoteStart]
+    if ($quote -ne [char]'"' -and $quote -ne [char]"'") {
+        throw [ArgumentException]::new('QuoteStart must identify a single or double quote.', 'QuoteStart')
+    }
+
+    $isCSharpVerbatim = $AllowCSharpVerbatim -and
+        $quote -eq [char]'"' -and
+        $QuoteStart -gt 0 -and
+        $Text[$QuoteStart - 1] -eq [char]'@'
+    $position = $QuoteStart + 1
+    while ($position -lt $Text.Length) {
+        if ($Text[$position] -ne $quote) {
+            $position++
+            continue
+        }
+
+        if ($isCSharpVerbatim) {
+            if ($position + 1 -lt $Text.Length -and $Text[$position + 1] -eq $quote) {
+                $position += 2
+                continue
+            }
+            return $position + 1
+        }
+
+        $slashes = 0
+        for ($lookBehind = $position - 1; $lookBehind -ge $QuoteStart -and $Text[$lookBehind] -eq [char]'\'; $lookBehind--) {
+            $slashes++
+        }
+        if (($slashes % 2) -eq 0) {
+            return $position + 1
+        }
+        $position++
+    }
+
+    return $Text.Length
+}
+
 function Get-NervSourceSkipAssignments {
     param([Parameter(Mandatory)] [string] $RepoRoot)
 
