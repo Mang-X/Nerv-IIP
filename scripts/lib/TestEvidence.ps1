@@ -1461,14 +1461,13 @@ function Write-NervTestEvidenceArtifacts {
             $fileName = [string]$resolvedFileNames[[string]$normalizedGroup.Identity]
             $xmlRows = foreach ($record in $groupRecords) {
                 $name = [Security.SecurityElement]::Escape([string]$record.displayName)
-                # Explicit ordinal comparisons rather than `switch` (#1509 round 3): PowerShell's
-                # switch matches culture-aware, and `-CaseSensitive` does not change that — measured,
-                # `switch ("failed$([char]0x00AD)")` still takes the 'failed' branch. Here that wrote a
-                # `Failed` outcome into a *retained* TRX for a record whose outcome token was not
-                # `failed`, i.e. the artifact stopped agreeing with the record it was built from.
-                $outcome = if (Test-NervOrdinalEquals ([string]$record.outcome) 'passed') { 'Passed' }
-                    elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { 'Failed' }
-                    else { 'NotExecuted' }
+                # The shared lookup keeps the reader and writer inverse mappings in one descriptor
+                # table. Unknown values retain the historical writer-only NotExecuted fallback.
+                $outcomeMapping = Resolve-NervTrxOutcomeMapping -NormalizedOutcome ([string]$record.outcome)
+                if ($null -eq $outcomeMapping) {
+                    $outcomeMapping = Resolve-NervTrxOutcomeMapping -WriteFallback
+                }
+                $outcome = [string]$outcomeMapping.TrxOutcome
                 $duration = [TimeSpan]::FromTicks([long]$record.durationTicks).ToString('c', [Globalization.CultureInfo]::InvariantCulture)
                 $message = if (Test-NervOrdinalEquals ([string]$record.outcome) 'skipped') { Get-NervRetainedSkipReason $record } elseif (Test-NervOrdinalEquals ([string]$record.outcome) 'failed') { ConvertTo-NervRetainedFailureText ([string]$record.errorMessage) } else { $null }
                 $output = if ([string]::IsNullOrWhiteSpace($message)) { '' } else { "<Output><ErrorInfo><Message>$([Security.SecurityElement]::Escape($message))</Message></ErrorInfo></Output>" }
