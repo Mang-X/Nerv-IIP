@@ -21,6 +21,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.OeeProduction
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Auth;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
@@ -30,12 +31,14 @@ using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class IndustrialTelemetryEndpointContractTests
 {
     [Fact]
@@ -159,6 +162,24 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm && x.SourceType == EquipmentRuntimeSourceType.Alarm);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceStale && x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+
+        // 「来源引用」必须给人读标识：报警回外部报警号，设备状态/采集过期回设备编码。
+        // 此前这三路都只回 AlarmEventId / DeviceStateSnapshotId 这类 GUID，界面只能把 GUID 原样上屏。
+        var alarmWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.Alarm);
+        Assert.Equal("alarm-oil-001", alarmWindow.SourceReferenceLabel);
+
+        var stateWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.DeviceState);
+        Assert.Equal("DEV-OIL-01", stateWindow.SourceReferenceLabel);
+
+        var staleWindow = Assert.Single(response.Data.Items, x => x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+        Assert.Equal("DEV-OIL-01", staleWindow.SourceReferenceLabel);
+
+        // 没有任何一条窗口应把 GUID 当作人读标识。
+        Assert.All(
+            response.Data.Items,
+            x => Assert.False(
+                x.SourceReferenceLabel is not null && Guid.TryParse(x.SourceReferenceLabel, out _),
+                $"来源引用标签仍是 GUID：reasonCode={x.ReasonCode}, label={x.SourceReferenceLabel}"));
     }
 
     [Fact]
@@ -267,6 +288,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
             durationMinutes = 20,
             shelvedBy = "operator-001",
             reason = "maintenance check",
+            idempotencyKey = "shelve-life-alarm-001",
         });
         await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
         {
@@ -1043,6 +1065,44 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task List_alarm_events_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var dbContext = CreateDbContext(nameof(List_alarm_events_exact_id_filter_precedes_paging_and_keeps_tenant_scope));
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var target = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-01", "OIL_TEMP_HIGH", "warning", raisedAtUtc, "alarm-oil-target");
+        var newer = AlarmEvent.Raise("org-001", "env-dev", "DEV-OIL-02", "OIL_TEMP_HIGH", "warning", raisedAtUtc.AddMinutes(1), "alarm-oil-newer");
+        dbContext.AlarmEvents.AddRange(target, newer);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ListAlarmEventsQueryHandler(dbContext);
+        var response = await handler.Handle(
+            new ListAlarmEventsQuery(
+                "org-001",
+                "env-dev",
+                null,
+                null,
+                Skip: 0,
+                Take: 1,
+                AlarmEventId: target.Id),
+            CancellationToken.None);
+        var wrongOrganization = await handler.Handle(
+            new ListAlarmEventsQuery(
+                "org-002",
+                "env-dev",
+                null,
+                null,
+                Skip: 0,
+                Take: 1,
+                AlarmEventId: target.Id),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        Assert.Equal(target.Id, Assert.Single(response.Items).AlarmEventId);
+        Assert.Equal(0, wrongOrganization.Total);
+        Assert.Empty(wrongOrganization.Items);
+    }
+
+    [Fact]
     public async Task List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination()
     {
         await using var dbContext = CreateDbContext(nameof(List_alarm_events_orders_unacknowledged_before_handled_and_keeps_priority_across_pagination));
@@ -1151,12 +1211,11 @@ public sealed class IndustrialTelemetryEndpointContractTests
         await dbContext.SaveChangesAsync();
 
         // same key, different duration => different fingerprint => conflicting reuse, rejected
-        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        await Assert.ThrowsAsync<IndustrialTelemetryIdempotencyConflictException>(async () =>
         {
             await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 60, "op", null, "key-X"), CancellationToken.None);
             await dbContext.SaveChangesAsync();
         });
-        Assert.Contains("different payload", ex.Message);
     }
 
     [Fact]
@@ -1175,12 +1234,11 @@ public sealed class IndustrialTelemetryEndpointContractTests
         await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a|b", "c", "key-sep"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        var ex = await Assert.ThrowsAsync<KnownException>(async () =>
+        await Assert.ThrowsAsync<IndustrialTelemetryIdempotencyConflictException>(async () =>
         {
             await handler.Handle(new ShelveAlarmCommand(alarm.Id, "org-001", "env-dev", t0.AddMinutes(2), 30, "a", "b|c", "key-sep"), CancellationToken.None);
             await dbContext.SaveChangesAsync();
         });
-        Assert.Contains("different payload", ex.Message);
     }
 
     [Fact]
@@ -1278,14 +1336,23 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .ConfigureServices(services =>
             {
                 services.AddSingleton(TimeProvider.System);
-                services.AddHostedService<AlarmEscalationScheduler>();
+                services.AddSingleton<AlarmEscalationScheduler>();
+                services.AddSingleton<IHostedService>(serviceProvider =>
+                    serviceProvider.GetRequiredService<AlarmEscalationScheduler>());
             })
             .Build();
 
         await host.StartAsync(CancellationToken.None);
 
+        var scheduler = host.Services.GetRequiredService<AlarmEscalationScheduler>();
+        var executeTask = scheduler.ExecuteTask;
+        Assert.NotNull(executeTask);
+        await TestTimeout.RunAsync(
+            "alarm escalation scheduler completes invalid enabled configuration",
+            cancellationToken => new ValueTask(executeTask.WaitAsync(cancellationToken)),
+            TimeSpan.FromSeconds(1));
+
         var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-        await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
         Assert.False(lifetime.ApplicationStopping.IsCancellationRequested);
 
         await host.StopAsync(CancellationToken.None);

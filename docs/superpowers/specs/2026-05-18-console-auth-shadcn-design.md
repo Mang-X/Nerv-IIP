@@ -1,26 +1,26 @@
-# Console Auth And Shadcn-Vue Design
+# Console 认证与 shadcn-vue 设计
 
-## Purpose
+## 目的
 
-This spec restarts frontend product work after the IAM persistent auth foundation and Gateway-wide permission enforcement stages. It adds the smallest production-shaped Console authentication loop and freezes the first shadcn-vue design-system decision so future UI work has one component source of truth.
+本 spec 在 IAM 持久化认证基础和 Gateway 全局权限 enforcement 阶段之后重新启动前端产品工作。它增加最小的生产形态 Console 认证闭环，并冻结首个 shadcn-vue design-system 决策，使未来 UI 工作具备唯一组件事实源。
 
-The first user-facing outcome is simple: a platform administrator can open the Console, sign in through the Gateway, land on the existing instance workspace, keep API calls authorized with bearer tokens, refresh a saved session on app startup, and sign out.
+首个面向用户的结果很简单：平台管理员可以打开 Console、通过 Gateway 登录、进入现有实例工作区、使用 bearer token 保持 API 调用已授权、在应用启动时刷新已保存会话，并退出登录。
 
-## Current Context
+## 当前背景
 
-1. IAM already owns persisted user/session facts, seed admin credentials, JWT access tokens, refresh token rotation, logout/session revoke, `/api/iam/v1/me`, and permission checks.
-2. PlatformGateway already protects existing Console APIs by forwarding bearer tokens and permission context to IAM.
-3. The Console frontend currently has a Vite/Vue app, Pinia, Pinia Colada, generated Gateway api-client, a minimal app shell, and local `UiButton`, `UiPanel`, and `UiBadge` primitives.
-4. `docs/architecture/frontend-design-system-planning.md` blocks new frontend product work until an explicit design-system spec selects registry strategy, token model, icon policy, density, accessibility, theme, migration, and tests.
-5. Current `shadcn-vue` project inspection reports Vite + TypeScript, but no `components.json`, Tailwind CSS file, Tailwind config, or initialized shadcn-vue config.
+1. IAM 已拥有持久化用户/会话事实、seed 管理员凭据、JWT access token、refresh token rotation、退出/会话撤销、`/api/iam/v1/me` 和权限检查。
+2. PlatformGateway 已通过向 IAM 转发 bearer token 和权限上下文来保护现有 Console APIs。
+3. Console 前端当前具有 Vite/Vue app、Pinia、Pinia Colada、生成的 Gateway api-client、最小 app shell，以及本地 `UiButton`、`UiPanel` 和 `UiBadge` primitives。
+4. `docs/architecture/frontend-design-system-planning.md` 阻止新的前端产品工作，直到显式 design-system spec 选定 registry strategy、token model、icon policy、density、accessibility、theme、migration 和 tests。
+5. 当前 `shadcn-vue` 项目检查报告 Vite + TypeScript，但没有 `components.json`、Tailwind CSS 文件、Tailwind config 或已初始化的 shadcn-vue config。
 
-## Decisions
+## 决策
 
-### Architecture
+### 架构
 
-Use a PlatformGateway Console Auth facade.
+使用 PlatformGateway Console Auth facade。
 
-The frontend calls only PlatformGateway:
+前端只调用 PlatformGateway：
 
 ```text
 POST /api/console/v1/auth/login
@@ -29,30 +29,30 @@ POST /api/console/v1/auth/logout
 GET  /api/console/v1/auth/me
 ```
 
-Gateway forwards those calls to IAM and does not store or reinterpret identity facts. IAM remains the source of truth for users, sessions, security stamps, permission versions, organization scope, environment scope, and permission codes.
+Gateway 将这些调用转发给 IAM，且不存储或重新解释身份事实。IAM 仍是用户、会话、security stamps、permission versions、organization scope、environment scope 和 permission codes 的事实源。
 
-This keeps the Console deployment model simple: one generated OpenAPI contract, one base URL, and one browser-facing API surface.
+这使 Console 部署模型保持简单：一份生成的 OpenAPI contract、一个 base URL 和一个面向浏览器的 API surface。
 
-### Design System
+### 设计系统
 
-Initialize shadcn-vue directly in the existing frontend workspace.
+直接在现有 frontend workspace 中初始化 shadcn-vue。
 
-Use:
+使用：
 
-1. Official shadcn-vue registry.
-2. `nova` preset.
-3. Vite template.
-4. Reka base components.
-5. shadcn-vue semantic tokens and Tailwind integration.
-6. `lucide-vue-next` as the icon library unless the CLI-generated project context selects a different icon library during initialization.
+1. 官方 shadcn-vue registry。
+2. `nova` preset。
+3. Vite 模板。
+4. Reka 基础组件。
+5. shadcn-vue semantic tokens 和 Tailwind integration。
+6. 使用 `lucide-vue-next` 作为 icon library，除非 CLI 生成的项目上下文在初始化期间选择了其他 icon library。
 
-The registry source files belong under `frontend/packages/ui`. Console app pages and feature components consume UI through stable package exports instead of scattering registry imports across the app.
+registry 源文件归属 `frontend/packages/ui`。Console app pages 和 feature components 通过稳定 package exports 消费 UI，而不是在整个 app 中散布 registry imports。
 
-### Package Boundaries
+### Package 边界
 
-Implement this phase without creating `frontend/packages/auth`.
+本阶段实现不得创建 `frontend/packages/auth`。
 
-Auth is currently used by one app, so the first implementation stays in `frontend/apps/console/src`:
+Auth 当前仅由一个 app 使用，因此首个实现保留在 `frontend/apps/console/src`：
 
 ```text
 frontend/apps/console/src/
@@ -64,71 +64,71 @@ frontend/apps/console/src/
   pages/login.vue
 ```
 
-If a second app or package needs the same auth behavior later, extract the stable pieces into `frontend/packages/auth`. That future package should own auth DTO mapping, storage strategy, token refresh orchestration, and app-agnostic route helpers. It should not be created in this phase.
+如果后续第二个 app 或 package 需要相同 auth 行为，则将稳定部分提取到 `frontend/packages/auth`。该未来 package 应拥有 auth DTO mapping、storage strategy、token refresh orchestration 和 app-agnostic route helpers。本阶段不得创建该 package。
 
-### Old UI Primitives
+### 旧 UI Primitives
 
-The local `UiButton`, `UiPanel`, and `UiBadge` primitives are migration scaffolding, not a parallel design system. Once shadcn-vue components are installed and current consumers are migrated, delete unused old primitive files and exports.
+本地 `UiButton`、`UiPanel` 和 `UiBadge` primitives 是 migration scaffolding，而不是平行 design system。安装 shadcn-vue components 并迁移当前 consumers 后，删除未使用的旧 primitive 文件和 exports。
 
-## Scope
+## 范围
 
-### In Scope
+### 范围内
 
-1. Gateway Console Auth facade for login, refresh, logout, and me.
-2. Generated OpenAPI/api-client updates for the new Gateway auth endpoints.
-3. shadcn-vue initialization and first component set in `frontend/packages/ui`.
-4. Login route and login form.
-5. Pinia auth store with session persistence, principal state, pending/error state, and logout cleanup.
-6. API transport bearer injection for generated Gateway requests.
-7. App startup session restoration using the saved refresh token and `/me` confirmation.
-8. Router guards for authenticated and guest-only routes.
-9. Existing Console instance and operation pages gated behind authentication.
-10. App shell user menu with principal display and sign-out command.
-11. Frontend and backend tests for the authentication loop.
-12. Documentation updates for frontend design-system status and current implementation readiness.
-13. Cleanup of stale documentation discovered during status audit: README worktree wording and schema catalog Gateway permission status.
+1. 用于 login、refresh、logout 和 me 的 Gateway Console Auth facade。
+2. 针对新 Gateway auth endpoints 更新生成的 OpenAPI/api-client。
+3. 在 `frontend/packages/ui` 中初始化 shadcn-vue 并加入首批 component set。
+4. Login route 和 login form。
+5. 具备 session persistence、principal state、pending/error state 和 logout cleanup 的 Pinia auth store。
+6. 为生成的 Gateway requests 注入 API transport bearer。
+7. 应用启动时使用保存的 refresh token 和 `/me` 确认恢复会话。
+8. 用于已认证和 guest-only routes 的 Router guards。
+9. 将现有 Console 实例和 operation pages 置于认证门禁之后。
+10. 具备 principal display 和 sign-out command 的 App shell user menu。
+11. 认证闭环的前端和后端测试。
+12. 更新 frontend design-system 状态和当前 implementation readiness 文档。
+13. 清理状态审计时发现的过时文档：README worktree 措辞和 schema catalog Gateway 权限状态。
 
-### Out Of Scope
+### 范围外
 
-1. OAuth2/OIDC, SSO, MFA, WebAuthn, enterprise IdP federation, consent pages, and third-party app marketplace.
-2. User, role, session, and permission management UI.
-3. ABAC rule authoring or runtime policy editor.
-4. High-risk Ops approval flows or notification integration.
-5. Cookie-based browser auth, CSRF, DPoP, token binding, or mTLS.
-6. Multi-tenant branding.
-7. Creating `frontend/packages/auth`.
-8. Reworking existing instance and operation workflows beyond auth gating and shadcn-vue component migration needed for consistency.
+1. OAuth2/OIDC、SSO、MFA、WebAuthn、enterprise IdP federation、consent pages 和第三方应用市场。
+2. 用户、角色、会话和权限管理 UI。
+3. ABAC rule authoring 或 runtime policy editor。
+4. 高风险 Ops approval flows 或 notification integration。
+5. Cookie-based browser auth、CSRF、DPoP、token binding 或 mTLS。
+6. 多租户品牌化。
+7. 创建 `frontend/packages/auth`。
+8. 超出认证门禁和一致性所需 shadcn-vue component migration 的现有实例与 operation workflows 重做。
 
-## Backend Design
+## 后端设计
 
-### Gateway Facade
+### Gateway 门面
 
-Add a Gateway auth client that calls IAM:
+增加调用 IAM 的 Gateway auth client：
 
 ```text
 Console browser -> PlatformGateway /api/console/v1/auth/* -> IAM /api/iam/v1/*
 ```
 
-The Gateway facade forwards request and response payloads with stable Console operation IDs:
+Gateway facade 使用稳定的 Console operation IDs 转发请求和响应 payload：
 
 1. `loginConsoleUser`
 2. `refreshConsoleSession`
 3. `logoutConsoleSession`
 4. `getConsolePrincipal`
 
-The facade maps IAM status codes without hiding important auth semantics:
+facade 映射 IAM status codes，但不隐藏重要 auth 语义：
 
-1. Invalid login or refresh token returns `401`.
-2. Revoked or expired session returns `401`.
-3. IAM unavailable returns `503` from Gateway with a small problem response.
-4. Unexpected IAM error returns `502`.
-5. Logout returns success if IAM revokes the session; frontend still clears local state if the logout request fails.
+1. login 或 refresh token 无效时返回 `401`。
+2. 会话已撤销或过期时返回 `401`。
+3. IAM 不可用时，Gateway 返回带小型 problem response 的 `503`。
+4. 意外 IAM error 返回 `502`。
+5. 如果 IAM 撤销会话，Logout 返回成功；如果 logout request 失败，前端仍清除本地状态。
 
-Gateway does not reference IAM Domain or Infrastructure. It uses HTTP and shared public DTOs only.
+Gateway 不引用 IAM Domain 或 Infrastructure。它只使用 HTTP 和共享 public DTOs。
 
-### Contract Shape
+### 契约形态
 
-Console auth responses expose only what the SPA needs:
+Console auth responses 只公开 SPA 所需内容：
 
 ```text
 accessToken
@@ -138,7 +138,7 @@ expiresAtUtc
 principal
 ```
 
-The principal contains:
+principal 包含：
 
 ```text
 principalId
@@ -149,15 +149,15 @@ environmentId
 permissionVersion
 ```
 
-The contract can map from existing IAM responses; it does not require a new IAM persistence model.
+该 contract 可从现有 IAM responses 映射；不需要新的 IAM persistence model。
 
-## Frontend Design
+## 前端设计
 
-### shadcn-vue Initialization
+### shadcn-vue 初始化
 
-Initialize shadcn-vue from `frontend` with `pnpm dlx shadcn-vue@latest`.
+在 `frontend` 中使用 `pnpm dlx shadcn-vue@latest` 初始化 shadcn-vue。
 
-The implementation plan must inspect the generated `components.json` and record:
+implementation plan 必须检查生成的 `components.json` 并记录：
 
 1. `aliases`
 2. `tailwindVersion`
@@ -167,7 +167,7 @@ The implementation plan must inspect the generated `components.json` and record:
 6. `iconLibrary`
 7. `resolvedPaths`
 
-Initial components:
+初始组件：
 
 1. `button`
 2. `card`
@@ -181,34 +181,34 @@ Initial components:
 10. `avatar`
 11. `sonner`
 12. `spinner`
-13. `sidebar` if the `AppShell` migration uses the shadcn-vue sidebar primitive; otherwise keep the first app shell as a focused local composition over shadcn tokens.
+13. `sidebar`：如果 `AppShell` migration 使用 shadcn-vue sidebar primitive；否则将首个 app shell 保持为基于 shadcn tokens 的聚焦本地组合。
 
-Use shadcn-vue rules:
+使用 shadcn-vue 规则：
 
-1. Forms use `FieldGroup` and `Field`.
-2. Card layouts use `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, and `CardFooter`.
-3. Loading buttons compose `Spinner` with `disabled`; no fake `isLoading` prop.
-4. Status chips use `Badge`; no custom status spans.
-5. Alerts use `Alert`; no custom callout markup.
-6. Icons in buttons use `data-icon`; no manual icon size classes inside shadcn components.
-7. Layout uses `gap-*`; no `space-x-*` or `space-y-*`.
-8. Component styling uses semantic tokens and variants, not raw Tailwind color overrides.
+1. 表单使用 `FieldGroup` 和 `Field`。
+2. Card layouts 使用 `CardHeader`、`CardTitle`、`CardDescription`、`CardContent` 和 `CardFooter`。
+3. Loading button 将 `Spinner` 与 `disabled` 组合；不使用虚假的 `isLoading` prop。
+4. Status chips 使用 `Badge`；不使用自定义 status spans。
+5. Alerts 使用 `Alert`；不使用自定义 callout markup。
+6. button 中的 icon 使用 `data-icon`；不在 shadcn components 内手写 icon size classes。
+7. 布局使用 `gap-*`；不使用 `space-x-*` 或 `space-y-*`。
+8. Component styling 使用 semantic tokens 和 variants，而不是原始 Tailwind color overrides。
 
-### Visual Direction
+### 视觉方向
 
-The Console is an operations-heavy platform surface, not a marketing page. The visual direction is restrained industrial clarity:
+Console 是重运营的平台界面，不是营销页面。视觉方向是克制的工业清晰度：
 
-1. Dense but readable workspace.
-2. Neutral surfaces with high-contrast action states.
-3. Small radius, predictable spacing, and clear focus rings.
-4. Minimal motion, honoring reduced-motion preferences.
-5. Login screen uses the actual product identity and operational context, but avoids oversized hero marketing composition.
+1. 紧凑但可读的工作区。
+2. 中性表面与高对比度 action states。
+3. 小圆角、可预测间距和清晰 focus rings。
+4. 最少 motion，并尊重 reduced-motion preferences。
+5. 登录界面使用真实产品身份和运营上下文，但避免超大 hero marketing composition。
 
-The login page should feel like an operator entry point into a control plane: direct, calm, and trustworthy. It should not introduce decorative illustrations, gradient blobs, or large brand storytelling.
+登录页面应让人感到它是操作员进入 control plane 的入口：直接、平静且可信。不得引入装饰性插图、gradient blobs 或大型品牌叙事。
 
-### Auth Store
+### 认证 Store
 
-`stores/auth.ts` owns client auth state:
+`stores/auth.ts` 拥有 client auth state：
 
 1. `accessToken`
 2. `refreshToken`
@@ -218,13 +218,13 @@ The login page should feel like an operator entry point into a control plane: di
 6. `restoreStatus`
 7. `authError`
 
-Derived state:
+派生状态：
 
 1. `isAuthenticated`
 2. `isRestoring`
 3. `displayName`
 
-Actions:
+动作：
 
 1. `login(loginName, password)`
 2. `restoreSession()`
@@ -233,31 +233,31 @@ Actions:
 5. `logout()`
 6. `clearSession(reason)`
 
-The store is the only source of truth for bearer token state. Components do not read local storage directly.
+该 store 是 bearer token state 的唯一事实源。组件不直接读取 local storage。
 
-### Storage Strategy
+### 存储策略
 
-Use local browser storage for `refreshToken`, `sessionId`, and the latest principal snapshot so a browser refresh can restore the SPA. Keep `accessToken` in Pinia state and refresh it during startup.
+使用浏览器 local storage 保存 `refreshToken`、`sessionId` 和最新 principal snapshot，使浏览器刷新可以恢复 SPA。将 `accessToken` 保存在 Pinia state 中，并在启动时刷新。
 
-This is an explicit SPA bearer-token tradeoff. A future cookie-based auth design must cover CSRF, same-site settings, refresh token rotation semantics, and deployment topology separately.
+这是显式的 SPA bearer-token 权衡。未来的 cookie-based auth 设计必须独立覆盖 CSRF、same-site settings、refresh token rotation semantics 和 deployment topology。
 
-### API Transport
+### API 传输
 
-`frontend/packages/api-client/src/transport/client-config.ts` should accept a dynamic auth token provider instead of static headers only.
+`frontend/packages/api-client/src/transport/client-config.ts` 应接受 dynamic auth token provider，而不是只接受 static headers。
 
-Generated Gateway requests attach:
+生成的 Gateway requests 附加：
 
 ```text
 Authorization: Bearer <accessToken>
 ```
 
-when the auth store has an access token. Requests without an access token stay anonymous so login and health endpoints remain usable.
+当 auth store 具有 access token 时附加上述内容。没有 access token 的请求保持匿名，使 login 和 health endpoints 仍可用。
 
-On `401` from protected Console APIs, the frontend clears local auth state and redirects to `/login?redirect=<current path>`. This phase handles startup restore and request-time unauthorized cleanup, not background silent refresh timers.
+受保护 Console APIs 返回 `401` 时，前端清除本地 auth state 并重定向到 `/login?redirect=<current path>`。本阶段处理 startup restore 和 request-time unauthorized cleanup，不处理后台 silent refresh timers。
 
-### Router
+### 路由
 
-Routes use meta:
+Routes 使用 meta：
 
 ```text
 requiresAuth: true
@@ -265,96 +265,96 @@ guestOnly: true
 title: string
 ```
 
-Rules:
+规则：
 
-1. `/login` is guest-only.
-2. Existing instance list and operation detail routes require auth.
-3. Unknown route can remain public or use the app shell only after auth; the implementation plan should pick one behavior and test it.
-4. If a user opens a protected route while unauthenticated, redirect to login with the intended path.
-5. If an authenticated user opens login, redirect to the saved redirect target or `/`.
+1. `/login` 仅限 guest。
+2. 现有 instance list 和 operation detail routes 需要 auth。
+3. 未知 route 可以保持公开，或只在 auth 后使用 app shell；implementation plan 应选择一种行为并测试。
+4. 如果用户在未认证时打开受保护 route，则携带预期路径重定向到 login。
+5. 如果已认证用户打开 login，则重定向到已保存的 redirect target 或 `/`。
 
-### Components
+### 组件
 
-`pages/login.vue` remains a thin route composition surface.
+`pages/login.vue` 保持为轻量 route composition surface。
 
-`components/auth/LoginForm.vue` owns form presentation:
+`components/auth/LoginForm.vue` 拥有表单呈现：
 
-1. login name input
-2. password input
-3. submit button
-4. inline error alert
-5. pending state
-6. accessible labels
-7. disabled state while submitting
+1. 登录名输入框
+2. 密码输入框
+3. 提交按钮
+4. 行内错误提示
+5. 等待状态
+6. 可访问标签
+7. 提交期间的 disabled state
 
-`DefaultLayout.vue` and `AppShell.vue` show authenticated context:
+`DefaultLayout.vue` 和 `AppShell.vue` 展示已认证上下文：
 
-1. brand
-2. navigation
-3. principal display
-4. sign-out menu
+1. 品牌
+2. 导航
+3. principal 展示
+4. 退出菜单
 
-The route page coordinates navigation after successful login. The form emits typed events and receives state through props.
+route page 协调成功登录后的导航。表单发出 typed events，并通过 props 接收状态。
 
-## Error Handling
+## 错误处理
 
-1. Invalid credentials show an inline form error.
-2. Missing credentials use client validation and `aria-invalid`.
-3. Gateway/IAM unavailable shows a connection error inside the form.
-4. Session restore failure clears local session and leaves the user on login.
-5. Logout failure still clears local session and shows a toast.
-6. Protected API `401` clears local session and redirects to login.
-7. Protected API `403` remains a permission error in the current page and does not clear auth state.
+1. 凭据无效时显示 inline form error。
+2. 凭据缺失时使用 client validation 和 `aria-invalid`。
+3. Gateway/IAM 不可用时在表单内显示连接错误。
+4. Session restore 失败时清除本地会话，并让用户停留在 login。
+5. Logout 失败时仍清除本地会话并显示 toast。
+6. 受保护 API 返回 `401` 时清除本地会话并重定向到 login。
+7. 受保护 API 返回 `403` 时在当前页面保留为权限错误，且不清除 auth state。
 
-## Accessibility
+## 可访问性
 
-1. Login form fields have explicit labels.
-2. Invalid fields use `data-invalid` on `Field` and `aria-invalid` on controls.
-3. Submit button is keyboard reachable and disabled while pending.
-4. Focus moves predictably after login failure.
-5. Navigation and user menu have accessible names.
-6. Toasts are supplementary; critical errors remain visible inline.
-7. Color contrast follows shadcn-vue semantic token defaults and is verified in screenshots.
-8. Motion is minimal and respects reduced-motion preferences.
+1. Login form fields 具有显式 labels。
+2. 无效字段使用 `data-invalid`：用于 `Field`；并在 controls 上使用 `aria-invalid`。
+3. Submit button 可通过键盘到达，并在 pending 时禁用。
+4. 登录失败后，focus 以可预测方式移动。
+5. Navigation 和 user menu 具有可访问名称。
+6. Toasts 仅作补充；关键错误继续在 inline 保持可见。
+7. Color contrast 遵循 shadcn-vue semantic token 默认值，并通过截图验证。
+8. Motion 保持最少，并尊重 reduced-motion preferences。
 
-## Testing Strategy
+## 测试策略
 
-### Backend
+### 后端
 
-Add Gateway tests for:
+增加 Gateway tests，覆盖：
 
-1. login forwards to IAM and returns auth payload.
-2. invalid login returns `401`.
-3. refresh forwards refresh token and returns rotated tokens.
-4. logout forwards bearer/session and returns no content.
-5. me forwards bearer and returns principal.
-6. IAM unavailable maps to `503`.
-7. OpenAPI exposes stable operation IDs.
+1. login 转发到 IAM 并返回 auth payload。
+2. 无效 login 返回 `401`。
+3. refresh 转发 refresh token 并返回 rotated tokens。
+4. logout 转发 bearer/session 并返回 no content。
+5. me 转发 bearer 并返回 principal。
+6. IAM 不可用映射为 `503`。
+7. OpenAPI 公开稳定 operation IDs。
 
-### API Client
+### API Client 客户端
 
-Add or update tests for:
+增加或更新测试，覆盖：
 
-1. generated auth operations are exported through stable package entry points.
-2. client transport injects bearer token from the configured provider.
-3. anonymous requests do not include stale auth headers after logout.
+1. 生成的 auth operations 通过稳定 package entry points 导出。
+2. client transport 从已配置 provider 注入 bearer token。
+3. logout 后匿名请求不包含 stale auth headers。
 
-### Frontend Unit And Component
+### 前端单元与组件
 
-Add tests for:
+增加测试，覆盖：
 
-1. auth store login success.
-2. auth store login failure.
-3. session restore with valid refresh token.
-4. session restore failure clears storage.
-5. router guard redirects unauthenticated users.
-6. router guard redirects authenticated users away from login.
-7. LoginForm disabled/pending/error states.
-8. AppShell sign-out command calls logout.
+1. auth store login 成功。
+2. auth store login 失败。
+3. 使用有效 refresh token 恢复 session。
+4. session restore 失败会清除 storage。
+5. router guard 重定向未认证用户。
+6. router guard 将已认证用户从 login 重定向离开。
+7. LoginForm 的禁用/等待/错误状态。
+8. AppShell sign-out command 调用 logout。
 
-### Frontend Quality Gate
+### 前端质量门禁
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend check
@@ -365,62 +365,62 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-### Visual Verification
+### 视觉验证
 
-Start the Console dev server and verify with a browser:
+启动 Console dev server 并使用浏览器验证：
 
-1. desktop login page
-2. mobile login page
-3. authenticated app shell
-4. sign-out menu
-5. protected route redirect
+1. 桌面端登录页
+2. 移动端登录页
+3. 已认证的 app shell
+4. 退出登录菜单
+5. 受保护 route 的重定向
 
-Screenshots must show no overlapping text, no truncated button labels, visible focus states, and nonblank shadcn-vue styles.
+截图必须证明没有文字重叠、没有被截断的 button labels、focus states 可见，且 shadcn-vue styles 非空白。
 
-## Documentation Updates
+## 文档更新
 
-Update:
+更新：
 
-1. `docs/architecture/frontend-design-system-planning.md` to record shadcn-vue official registry + `nova` preset as the selected baseline for this phase.
-2. `docs/architecture/frontend-structure.md` to document auth store, guards, and shadcn-vue UI package ownership.
-3. `docs/architecture/iam-authentication-baseline.md` to note that Console login uses Gateway facade over IAM.
-4. `docs/architecture/implementation-readiness.md` to mark Console login UI as completed only after verification passes.
-5. `README.md` to remove stale current-worktree wording.
-6. `docs/architecture/database-schema-catalog.md` to remove the stale statement that Gateway-wide permission enforcement is not connected.
+1. `docs/architecture/frontend-design-system-planning.md`：记录 shadcn-vue official registry + `nova` preset 是本阶段所选基线。
+2. `docs/architecture/frontend-structure.md`：记录 auth store、guards 和 shadcn-vue UI package 归属。
+3. `docs/architecture/iam-authentication-baseline.md`：说明 Console login 使用构建于 IAM 之上的 Gateway facade。
+4. `docs/architecture/implementation-readiness.md`：仅在验证通过后将 Console login UI 标记为已完成。
+5. `README.md`：删除过时的 current-worktree 措辞。
+6. `docs/architecture/database-schema-catalog.md`：删除声称 Gateway 全局 permission enforcement 尚未连接的过时表述。
 
-## Rollout And Migration
+## 落地与迁移
 
-1. Implement Gateway facade first so the generated OpenAPI is the single frontend contract.
-2. Initialize shadcn-vue and migrate UI package exports before building LoginForm.
-3. Add transport bearer injection before protecting routes so existing pages continue to load after login.
-4. Add route guards after store restoration works.
-5. Migrate current visible local primitives to shadcn-vue components.
-6. Delete old UI primitive files and exports once `rg "UiButton|UiPanel|UiBadge"` shows no consumers.
-7. Keep `packages/auth` as a future extraction note only.
+1. 先实现 Gateway facade，使生成的 OpenAPI 成为唯一前端 contract。
+2. 在构建 LoginForm 之前初始化 shadcn-vue 并迁移 UI package exports。
+3. 在保护 routes 前增加 transport bearer injection，使现有页面在登录后继续加载。
+4. 在 store restoration 工作后增加 route guards。
+5. 将当前可见的本地 primitives 迁移到 shadcn-vue components。
+6. 一旦 `rg "UiButton|UiPanel|UiBadge"` 显示没有 consumers，就删除旧 UI primitive 文件和 exports。
+7. 将 `packages/auth` 仅保留为未来提取说明。
 
-## Acceptance Criteria
+## 验收标准
 
-1. A seeded admin can log in through the Console UI.
-2. Browser refresh restores the session and keeps protected pages accessible.
-3. Existing instance list, instance detail, restart action, and operation detail requests include bearer tokens.
-4. Missing or invalid auth redirects to login.
-5. Logout clears local session and returns to login.
-6. shadcn-vue is initialized and used for the login form and migrated visible UI components.
-7. Old local UI primitives are deleted if unused.
-8. Backend and frontend tests pass.
-9. Frontend quality gate passes.
-10. Browser screenshots verify desktop and mobile login/app shell states.
+1. 已 seed 的 admin 可以通过 Console UI 登录。
+2. 浏览器刷新会恢复会话，并保持受保护页面可访问。
+3. 现有 instance list、instance detail、restart action 和 operation detail 请求包含 bearer tokens。
+4. auth 缺失或无效时重定向到 login。
+5. Logout 清除本地会话并返回 login。
+6. shadcn-vue 已初始化，并用于 login form 和已迁移的可见 UI components。
+7. 未使用的旧本地 UI primitives 已删除。
+8. Backend 和 frontend tests 通过。
+9. Frontend quality gate 通过。
+10. 浏览器截图验证 desktop 和 mobile login/app shell states。
 
-## Future `packages/auth` Extraction Note
+## 未来 `packages/auth` 提取说明
 
-Create `frontend/packages/auth` only when auth behavior needs to be consumed by more than one frontend app or package. That package should own reusable auth client adapters, storage abstractions, token lifecycle helpers, and app-agnostic route contracts. App-specific pages, layouts, and navigation decisions should remain in the consuming app.
+只有当 auth 行为需要由多个 frontend app 或 package 消费时，才创建 `frontend/packages/auth`。该 package 应拥有可复用的 auth client adapters、storage abstractions、token lifecycle helpers 和 app-agnostic route contracts。App-specific pages、layouts 和 navigation decisions 应保留在消费 app 中。
 
-## Self Review
+## 自我审查
 
-Placeholder scan: no placeholder sections remain.
+Placeholder 扫描：没有剩余 placeholder sections。
 
-Internal consistency: Gateway is the only browser-facing API surface; IAM remains the auth fact owner; shadcn-vue is the selected UI baseline; `packages/auth` is explicitly future-only.
+内部一致性：Gateway 是唯一面向浏览器的 API surface；IAM 仍是 auth 事实所有者；shadcn-vue 是所选 UI baseline；`packages/auth` 被显式限定为未来内容。
 
-Scope check: this is one implementation plan because it delivers one user workflow: authenticated Console entry. OAuth, admin management UI, high-risk Ops approval, notifications, and FileStorage remain out of scope.
+范围检查：这是一个 implementation plan，因为它交付一条用户工作流：认证后的 Console 入口。OAuth、admin management UI、高风险 Ops approval、notifications 和 FileStorage 仍在范围外。
 
-Ambiguity check: storage, route guards, component ownership, cleanup behavior, and verification gates are explicitly defined.
+歧义检查：已显式定义 storage、route guards、component ownership、cleanup behavior 和 verification gates。

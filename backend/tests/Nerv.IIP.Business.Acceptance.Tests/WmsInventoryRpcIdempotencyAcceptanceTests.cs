@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
@@ -16,6 +17,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
 using InventoryDbContext = Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext;
@@ -23,6 +25,7 @@ using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
+[Collection(AcceptancePostgresLaneDatabase.CollectionName)]
 public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
 {
     [Fact]
@@ -91,15 +94,16 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
     [RealPostgresFact]
     public async Task Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var wmsDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "wms_rpc");
-        await using var inventoryDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "inv_rpc");
-        await using var inventoryProvider = CreateInventoryPostgresProvider(inventoryDatabase.ConnectionString);
-        await using var wmsDb = CreatePostgresWmsContext(wmsDatabase.ConnectionString);
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync(WmsFacts.Schema, InventoryFacts.Schema);
+        var connectionString = AcceptancePostgresLaneDatabase.ConnectionString;
+        await using var inventoryProvider = CreateInventoryPostgresProvider(connectionString);
+        await using var wmsDb = CreatePostgresWmsContext(connectionString);
+        AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(wmsDb);
         await wmsDb.Database.MigrateAsync();
         await using (var scope = inventoryProvider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
         }
 
@@ -114,6 +118,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             new CreateCountExecutionCommandHandler(wmsDb, client).Handle(command, CancellationToken.None));
 
         Assert.Empty(wmsDb.CountExecutions);
+        string committedIdempotencyKey;
+        await using (var committedScope = inventoryProvider.CreateAsyncScope())
+        {
+            var committedInventoryDb = committedScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            committedIdempotencyKey = (await committedInventoryDb.StockCountTasks.SingleAsync()).IdempotencyKey;
+        }
+
         var inventoryRequest = new WmsInventoryCountTaskRequest(
             "org-001",
             "env-dev",
@@ -127,7 +138,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             "qualified",
             "company",
             null,
-            "wms-count-freeze:postgres-concurrent");
+            committedIdempotencyKey);
         var concurrentResults = await Task.WhenAll(
             client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None),
             client.CreateCountTaskAsync(inventoryRequest, CancellationToken.None));
@@ -149,13 +160,13 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
     public async Task Postgres_count_task_same_code_different_key_unique_conflict_reruns_as_domain_conflict()
     {
         const string countTaskCode = "COUNT-RPC-PG-CONFLICT";
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var inventoryDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "inv_rpc_conflict");
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync(InventoryFacts.Schema);
         var saveRace = new StockCountTaskSaveRaceInterceptor(countTaskCode, 2);
-        await using var inventoryProvider = CreateInventoryPostgresProvider(inventoryDatabase.ConnectionString, saveRace);
+        await using var inventoryProvider = CreateInventoryPostgresProvider(AcceptancePostgresLaneDatabase.ConnectionString, saveRace);
         await using (var scope = inventoryProvider.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+            AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
         }
 
@@ -269,8 +280,11 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             .AddKnownExceptionValidationBehavior()
             .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
+        services.AddIntegrationEvents(typeof(StockAvailabilityChangedIntegrationEventConverter));
         services.AddInventoryPostgreSqlPersistence(connectionString, interceptors: interceptors);
         services.AddInMemoryDistributedLock();
+        services.AddSingleton<IInventoryIntegrationEventContextAccessor, FixedInventoryIntegrationEventContextAccessor>();
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
         services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
         return services.BuildServiceProvider();
     }
@@ -410,6 +424,24 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException("This test does not confirm count adjustments.");
+        }
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FixedInventoryIntegrationEventContextAccessor : IInventoryIntegrationEventContextAccessor
+    {
+        public InventoryIntegrationEventContext GetContext()
+        {
+            return new InventoryIntegrationEventContext("corr-man629-acceptance", "cause-man629-acceptance", "system:test");
         }
     }
 
@@ -561,57 +593,6 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
             return context?.ChangeTracker.Entries<StockCountTask>().Any(entry =>
                 entry.State == EntityState.Added &&
                 string.Equals(entry.Entity.CountTaskCode, countTaskCode, StringComparison.Ordinal)) is true;
-        }
-    }
-
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-            };
-            var databaseName = $"nerv_iip_{prefix}_{Guid.NewGuid():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", databaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
         }
     }
 

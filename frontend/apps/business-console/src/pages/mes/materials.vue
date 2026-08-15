@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
-import { mesMaterialIssueStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesMaterialIssueStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -18,9 +21,10 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ArrowUpRightIcon, RefreshCwIcon } from '@lucide/vue'
+import { ArrowUpRightIcon, ClipboardListIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -40,6 +44,7 @@ const {
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
+const { statusLabel } = useMesReferenceLabels()
 const router = useRouter()
 const statusFilter = shallowRef('all')
 
@@ -94,7 +99,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -119,26 +124,34 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="alert"
-      label="待收料的领料申请"
-      :value="awaitingReceiptCount"
-      unit="单"
-      :tone="awaitingReceiptCount > 0 ? 'warning' : 'neutral'"
-      :status="
-        awaitingReceiptCount > 0
-          ? { label: '缺料风险', tone: 'warning' }
-          : { label: '已收齐', tone: 'success' }
-      "
-      :foot-start="
-        awaitingReceiptCount > 0
-          ? '已发起但仓库尚未发齐，缺料会直接卡开工。'
-          : '所有已发起的领料都已收齐，可按计划开工。'
-      "
-      :action="awaitingReceiptCount > 0 ? { label: '去仓库跟催' } : undefined"
-      @action="router.push({ path: '/wms/outbound' })"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="icon"
+        label="领料申请"
+        :value="materialIssueRequestsTotal"
+        unit="条"
+        :icon="ClipboardListIcon"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="待收料的领料申请"
+        :value="awaitingReceiptCount"
+        unit="单"
+        :tone="awaitingReceiptCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          awaitingReceiptCount > 0
+            ? { label: '缺料风险', tone: 'warning' }
+            : { label: '已收齐', tone: 'success' }
+        "
+        :foot-start="
+          awaitingReceiptCount > 0
+            ? '已发起但仓库尚未发齐，缺料会直接卡开工。'
+            : '所有已发起的领料都已收齐，可按计划开工。'
+        "
+        :action="awaitingReceiptCount > 0 ? { label: '去仓库跟催' } : undefined"
+        @action="router.push({ path: '/wms/outbound' })"
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -190,7 +203,9 @@ function formatError(error: unknown) {
           </div>
         </div>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-wmsRequestId="{ row }">
         <RouterLink
           v-if="row.wmsRequestId"

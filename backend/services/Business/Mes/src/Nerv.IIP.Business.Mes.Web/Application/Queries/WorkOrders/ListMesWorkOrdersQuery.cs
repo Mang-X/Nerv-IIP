@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -14,7 +15,11 @@ public sealed record ListMesWorkOrdersQuery(
     string? ShiftId = null,
     string? DeviceAssetId = null,
     string? WorkCenterIds = null,
-    string? DeviceAssetIds = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? DeviceAssetIds = null,
+    string? Statuses = null,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkOrderId = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -49,9 +54,18 @@ public sealed record MesOperationTaskExecutionFact(
     DateTimeOffset? ExistingEndUtc,
     string? OperationTaskNo = null,
     string? WorkCenterCode = null,
-    string? WorkCenterName = null);
+    string? WorkCenterName = null)
+{
+    public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
-public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext)
+    public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
+
+    public DateTimeOffset EvaluatedAtUtc { get; init; }
+}
+
+public sealed class ListMesWorkOrdersQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider? timeProvider = null)
     : IQueryHandler<ListMesWorkOrdersQuery, ListMesWorkOrdersResponse>
 {
     public async Task<ListMesWorkOrdersResponse> Handle(ListMesWorkOrdersQuery request, CancellationToken cancellationToken)
@@ -62,10 +76,25 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
+        if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
+        {
+            var workOrderId = request.WorkOrderId.Trim();
+            workOrdersQuery = workOrdersQuery.Where(x => x.WorkOrderIdValue == workOrderId);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
             workOrdersQuery = workOrdersQuery.Where(x => x.Status.ToLower() == status);
+        }
+
+        // 多状态过滤(CSV,与 WorkCenterIds/DeviceAssetIds 同一约定)。排产工作台等消费方需要
+        // 一次取回全部非终态工单;单值 Status 只能取一种,而默认排序按 DueUtc 升序会把交期最早的
+        // 历史关单排在前面,分页窗口内全是终态、真正可排的工单永远取不到。
+        var statuses = SplitCsv(request.Statuses).Select(x => x.ToLowerInvariant()).ToArray();
+        if (statuses.Length > 0)
+        {
+            workOrdersQuery = workOrdersQuery.Where(x => statuses.Contains(x.Status.ToLower()));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -77,26 +106,36 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
                 (x.ProductionVersionId != null && x.ProductionVersionId.ToLower().Contains(keyword)));
         }
 
-        if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
-            !string.IsNullOrWhiteSpace(request.WorkCenterIds) ||
+        var workCenterId = request.WorkCenterId?.Trim();
+        var workCenterIds = SplitCsv(request.WorkCenterIds);
+        var hasWorkCenterScope = request.WorkCenterIds is not null;
+        var shiftId = request.ShiftId?.Trim();
+        var deviceAssetId = request.DeviceAssetId?.Trim();
+        var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
+        var assignedUserIds = SplitCsv(request.AssignedUserIds);
+        var hasAssignedUserScope = request.AssignedUserIds is not null;
+        var teamIds = SplitCsv(request.TeamIds);
+        var hasTeamScope = request.TeamIds is not null;
+        var hasTaskFilters = !string.IsNullOrWhiteSpace(request.WorkCenterId) ||
+            request.WorkCenterIds is not null ||
             !string.IsNullOrWhiteSpace(request.ShiftId) ||
             !string.IsNullOrWhiteSpace(request.DeviceAssetId) ||
-            !string.IsNullOrWhiteSpace(request.DeviceAssetIds))
+            !string.IsNullOrWhiteSpace(request.DeviceAssetIds) ||
+            request.AssignedUserIds is not null ||
+            request.TeamIds is not null;
+        if (hasTaskFilters)
         {
-            var workCenterId = request.WorkCenterId?.Trim();
-            var workCenterIds = SplitCsv(request.WorkCenterIds);
-            var shiftId = request.ShiftId?.Trim();
-            var deviceAssetId = request.DeviceAssetId?.Trim();
-            var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
             workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
                 task.OrganizationId == request.OrganizationId &&
                 task.EnvironmentId == request.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderIdValue &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
-                (workCenterIds.Count == 0 || workCenterIds.Contains(task.WorkCenterId)) &&
+                (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
                 (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
-                (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId))));
+                (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
+                (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
+                (!hasTeamScope || teamIds.Contains(task.TeamId))));
         }
 
         var total = await workOrdersQuery.CountAsync(cancellationToken);
@@ -127,23 +166,21 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
+                workOrderIds.Contains(x.WorkOrderId) &&
+                (!hasTaskFilters ||
+                    ((workCenterId == null || x.WorkCenterId == workCenterId) &&
+                     (!hasWorkCenterScope || workCenterIds.Contains(x.WorkCenterId)) &&
+                     (shiftId == null || x.ShiftId == shiftId) &&
+                     (deviceAssetId == null || x.DeviceAssetId == deviceAssetId) &&
+                     (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId)) &&
+                     (!hasAssignedUserScope || assignedUserIds.Contains(x.AssignedUserId)) &&
+                     (!hasTeamScope || teamIds.Contains(x.TeamId)))))
             .OrderBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
-            .Select(x => new
-            {
-                x.WorkOrderId,
-                x.OperationTaskIdValue,
-                x.Status,
-                x.OperationSequence,
-                x.WorkCenterId,
-                x.AlternativeWorkCenterIds,
-                x.EarliestStartUtc,
-                x.DurationTicks,
-                x.ExistingStartUtc,
-                x.ExistingEndUtc,
-            })
             .ToListAsync(cancellationToken);
+        var evaluatedAtUtc = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        var taskReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
+            .EvaluateManyAsync(tasks, evaluatedAtUtc, cancellationToken);
 
         // 活跃质量保留的工单集合(锁定图标)。质量保留按 WorkOrderId 去规范化,只需该批工单是否命中,
         // 故用 EXISTS 语义投影出集合,避免逐行子查询。
@@ -163,19 +200,28 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             .GroupBy(x => x.WorkOrderId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
                 x => x.Key,
-                x => x.Select(task => new MesOperationTaskExecutionFact(
-                    task.OperationTaskIdValue,
-                    task.Status.ToString(),
-                    task.OperationSequence,
-                    task.WorkCenterId,
-                    SplitAlternatives(task.AlternativeWorkCenterIds),
-                    task.EarliestStartUtc,
-                    task.DurationTicks,
-                    task.ExistingStartUtc,
-                    task.ExistingEndUtc,
-                    task.OperationTaskIdValue,
-                    task.WorkCenterId,
-                    null)).ToArray(),
+                x => x.Select(task =>
+                {
+                    var readiness = taskReadiness[task.OperationTaskIdValue];
+                    return new MesOperationTaskExecutionFact(
+                        task.OperationTaskIdValue,
+                        task.Status.ToString(),
+                        task.OperationSequence,
+                        task.WorkCenterId,
+                        SplitAlternatives(task.AlternativeWorkCenterIds),
+                        task.EarliestStartUtc,
+                        task.DurationTicks,
+                        task.ExistingStartUtc,
+                        task.ExistingEndUtc,
+                        task.OperationTaskIdValue,
+                        task.WorkCenterId,
+                        null)
+                    {
+                        AllowedActions = readiness.AllowedActions,
+                        BlockReasons = readiness.BlockReasons,
+                        EvaluatedAtUtc = readiness.EvaluatedAtUtc,
+                    };
+                }).ToArray(),
                 StringComparer.OrdinalIgnoreCase);
         var items = workOrders.Select(x => new MesWorkOrderExecutionFact(
             x.WorkOrderIdValue,

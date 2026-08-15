@@ -7,10 +7,15 @@ import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/u
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import { useEngineeringMboms, usePublishedEboms } from '@/composables/useProductEngineering'
+import {
+  useBomRevisionSuggestions,
+  useEngineeringMboms,
+  usePublishedEboms,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvDatePicker,
   NvDialog,
@@ -26,6 +31,7 @@ import {
   NvInput,
   NvMetricCard,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -43,7 +49,12 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -244,9 +255,23 @@ function parseNumber(value: string | number | null | undefined): number | undefi
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+// 修订号是本次新建的值，不能做成只读选择器；改为「已占用修订」建议 + 重复校验。
+const { takenRevisions, takenRevisionsPending, isTaken } = useBomRevisionSuggestions(
+  'manufacturing',
+  () => form.skuCode,
+)
+const revisionTaken = computed(() => isTaken(form.revision))
+// 换了产出物料，已填修订号对新物料未必可用 —— 清空下游。
+watch(
+  () => form.skuCode,
+  () => {
+    form.revision = ''
+  },
+)
+
 const ebomValid = computed(() => form.ebomKey.trim().length > 0)
 const skuValid = computed(() => form.skuCode.trim().length > 0)
-const revisionValid = computed(() => form.revision.trim().length > 0)
+const revisionValid = computed(() => form.revision.trim().length > 0 && !revisionTaken.value)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function materialLineValid(line: MaterialLine) {
   return (
@@ -351,7 +376,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布制造 BOM 失败', error, '发布制造 BOM 失败，请稍后重试。')
   }
 }
 
@@ -379,7 +404,7 @@ async function openView(row: BusinessConsoleManufacturingBomItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function formatScrap(rate?: number | null) {
   if (rate == null) return '—'
@@ -416,7 +441,8 @@ function uomLabel(code?: string | null) {
               发布新版本
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-3xl">
+          <!-- 组件行数不定，弹框高度会超出视口：内部滚动，别让「发布」按钮被挤到屏幕外（GH#1292 第 7 项）。 -->
+          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布制造 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -491,7 +517,20 @@ function uomLabel(code?: string | null) {
                   <NvFieldLabel for="mbom-rev"
                     >修订号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="mbom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <NvCombobox
+                    id="mbom-rev"
+                    v-model="form.revision"
+                    :suggestions="takenRevisions"
+                    :disabled="!form.skuCode || takenRevisionsPending"
+                    :placeholder="form.skuCode ? '填写新修订号，如 A、B、001' : '请先选产出物料'"
+                    empty-text="该物料还没有历史修订"
+                  />
+                  <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
+                    修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                  </p>
+                  <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
+                    已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                  </p>
                 </NvField>
                 <NvField :data-invalid="showErrors && !effectiveValid">
                   <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
@@ -621,10 +660,13 @@ function uomLabel(code?: string | null) {
                   </NvField>
                   <NvField>
                     <NvFieldLabel :for="`mbom-runit-${index}`">单位</NvFieldLabel>
-                    <NvInput
+                    <NvSearchSelect
                       :id="`mbom-runit-${index}`"
                       v-model="line.unitOfMeasureCode"
-                      placeholder="如 ℃"
+                      :options="uomOptions"
+                      placeholder="选择单位"
+                      empty-text="暂无计量单位，请先在基础数据维护"
+                      aria-label="工艺参数单位"
                     />
                   </NvField>
                   <NvButton
@@ -652,14 +694,30 @@ function uomLabel(code?: string | null) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="制造 BOM 版本"
-      :value="mbomsTotal"
-      unit="个"
-      :segments="mbomSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="制造 BOM 版本"
+        :value="mbomsTotal"
+        unit="个"
+        :segments="mbomSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          draftCount > 0 ? '确认用料与损耗后发布，供生产版本引用。' : '当前没有待发布的制造 BOM。'
+        "
+      />
+    </div>
 
     <NvToolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>

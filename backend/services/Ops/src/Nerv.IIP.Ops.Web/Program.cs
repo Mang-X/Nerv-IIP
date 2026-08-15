@@ -15,6 +15,7 @@ using Nerv.IIP.Ops.Web.Application.IntegrationEvents;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using NetCorePal.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -71,14 +72,31 @@ else
 builder.Services.AddOpsPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.Configure<OpsConnectorCredentialOptions>(
     builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
+builder.Services
+    .AddOptions<OpsIamClientOptions>()
+    .Bind(builder.Configuration.GetSection(OpsIamClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Ops:IamClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Ops:IamClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
 builder.Services.Configure<OperationLeaseReaperOptions>(
     builder.Configuration.GetSection("Ops:LeaseReaper"));
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
-var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
-builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
-{
-    client.BaseAddress = iamBaseAddress;
-});
+var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+builder.Services
+    .AddHttpClient<IamOpsConnectorCredentialValidator>((services, client) =>
+    {
+        var options = services.GetRequiredService<IOptions<OpsIamClientOptions>>().Value;
+        client.BaseAddress = iamBaseAddress;
+        client.Timeout = options.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<OpsIamClientOptions>>().Value.ConnectTimeout
+    });
 builder.Services.AddTransient<IOpsConnectorCredentialValidator, OpsConnectorCredentialValidator>();
 if (usePostgreSql)
 {
@@ -117,26 +135,6 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = ctx => ToLowerCamelEndpointName(ctx.EndpointType.Name);
 }).UseSwaggerGen();
 app.Run();
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
-}
 
 static string ToLowerCamelEndpointName(string endpointTypeName)
 {

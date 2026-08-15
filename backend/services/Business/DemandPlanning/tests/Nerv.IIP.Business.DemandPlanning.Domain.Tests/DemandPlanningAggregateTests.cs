@@ -104,6 +104,48 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Mrp_run_mark_running_commits_state_before_snapshot_and_rejects_out_of_order_transitions()
+    {
+        var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        // 快照元数据只能写在运行中状态上（worker 两跳时序：先 Running 后计算）。
+        Assert.Throws<InvalidOperationException>(() =>
+            run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2)));
+
+        run.MarkRunning();
+        Assert.Equal(MrpRunStatus.Running, run.Status);
+        Assert.NotNull(run.StartedAtUtc);
+        Assert.Throws<InvalidOperationException>(run.MarkRunning);
+
+        run.RecordInputSnapshot(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        run.Complete(suggestionCount: 0);
+        Assert.Equal(MrpRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
+    public void Mrp_run_fails_from_queued_or_running_with_clamped_reason_and_terminal_states_reject_failure()
+    {
+        var queued = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        queued.Fail("MRP 计算因服务重启被中断，请重新运行。");
+        Assert.Equal(MrpRunStatus.Failed, queued.Status);
+        Assert.Equal("MRP 计算因服务重启被中断，请重新运行。", queued.FailureReason);
+        Assert.NotNull(queued.CompletedAtUtc);
+
+        var running = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        running.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        running.Fail(new string('异', MrpRun.FailureReasonMaxLength + 100));
+        Assert.Equal(MrpRunStatus.Failed, running.Status);
+        Assert.Equal(MrpRun.FailureReasonMaxLength, running.FailureReason!.Length);
+
+        // 终态（已完成/已失败）不可再置失败。
+        Assert.Throws<InvalidOperationException>(() => running.Fail("again"));
+        var completed = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+        completed.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        completed.Complete(suggestionCount: 0);
+        Assert.Throws<InvalidOperationException>(() => completed.Fail("late"));
+    }
+
+    [Fact]
     public void Mrp_run_exposes_input_degradation_sources_from_snapshot_metadata()
     {
         var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
@@ -212,6 +254,38 @@ public sealed class DemandPlanningAggregateTests
         Assert.Equal("DEMAND-001", link.DemandSourceReference);
         Assert.Equal("PV-001", link.ProductionVersionReference);
         Assert.Equal("MBOM-001", link.ManufacturingBomReference);
+    }
+
+    // 「主引用 + 回退」原本在集成事件转换器 / 下游桥接 / 验收测试三处各抄一遍。
+    // 收敛到聚合后，这三条用例是该规则的唯一权威定义。
+    [Fact]
+    public void Primary_demand_source_reference_takes_the_first_demand_pegging()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-9", "SKU-FG-1000", "SKU-RM-1000", 5m, null, null, null);
+        suggestion.AddPeggingLink("demand", "DEMAND-002", "SKU-FG-1000", "SKU-RM-1000", 7m, null, null, null);
+        suggestion.AddPeggingLink("demand", "DEMAND-003", "SKU-FG-1000", "SKU-RM-1000", 7m, null, null, null);
+
+        // scheduled-receipt 排在最前也不能被当成需求源。
+        Assert.Equal("DEMAND-002", suggestion.GetPrimaryDemandSourceReference());
+        Assert.Equal(new[] { "DEMAND-002", "DEMAND-003" }, suggestion.GetDemandSourceReferences());
+    }
+
+    [Fact]
+    public void Primary_demand_source_reference_falls_back_to_any_pegging_when_no_demand_link_exists()
+    {
+        var suggestion = NewSuggestion();
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-9", "SKU-FG-1000", "SKU-RM-1000", 5m, null, null, null);
+
+        // 历史数据没有 demand 类型 pegging；回退到任意非空引用，避免整条追溯链断掉。
+        Assert.Empty(suggestion.GetDemandSourceReferences());
+        Assert.Equal("erp:purchase-order:PO-9", suggestion.GetPrimaryDemandSourceReference());
+    }
+
+    [Fact]
+    public void Primary_demand_source_reference_is_null_without_any_pegging()
+    {
+        Assert.Null(NewSuggestion().GetPrimaryDemandSourceReference());
     }
 
     private static DemandSource NewDemand()

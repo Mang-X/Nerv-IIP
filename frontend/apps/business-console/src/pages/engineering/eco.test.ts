@@ -21,7 +21,13 @@ const changeRow = {
   affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'VER-1' }],
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 const impactPreview = shallowRef()
 
 vi.mock('@/composables/useProductEngineering', () => ({
@@ -44,6 +50,22 @@ vi.mock('@/composables/useProductEngineering', () => ({
     },
     fetchChangeDetail: stub.fetchChangeDetail,
   }),
+  // 受影响版本里「生产版本」改成只选，页面新引入了生产版本目录读面。
+  useEngineeringProductionVersions: () => ({
+    filters: reactive({ skip: 0, take: 500 }),
+    productionVersions: computed(() => [
+      {
+        productionVersionId: 'PV-1',
+        skuCode: 'SKU-1',
+        validFrom: '2026-01-01T00:00:00Z',
+        isDefault: true,
+      },
+    ]),
+    productionVersionsError: shallowRef(undefined),
+    productionVersionsPending: shallowRef(false),
+    productionVersionsTotal: computed(() => 1),
+    refresh: vi.fn(),
+  }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -55,9 +77,9 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
   DialogRoot: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  NvDialogContent: { template: '<div><slot /></div>' },
+  NvDialogContent: { template: '<div data-testid="eco-dialog-content"><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
-  NvDialogFooter: { template: '<div><slot /></div>' },
+  NvDialogFooter: { template: '<div data-testid="eco-dialog-footer"><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
@@ -72,14 +94,16 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
@@ -92,13 +116,29 @@ const routerLinkStubs = {
 
 const approvalPanelStub = {
   BusinessDocumentApprovalPanel: {
-    props: ['modelValue'],
+    props: [
+      'modelValue',
+      'allowStart',
+      'documentId',
+      'sourceService',
+      'documentType',
+      'preferredTemplateCode',
+    ],
     emits: ['update:modelValue'],
-    template: '<section data-testid="approval-panel"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><span>{{ modelValue }}</span></section>',
+    template:
+      '<section data-testid="approval-panel" :data-allow-start="String(allowStart)" :data-document-id="documentId" :data-source-service="sourceService" :data-document-type="documentType" :data-preferred-template-code="preferredTemplateCode"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><button v-if="allowStart && documentId" type="button" @click="$emit(\'update:modelValue\', \'CHAIN-NEW\')">发起审批</button><span>{{ modelValue }}</span></section>',
   },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs, ...approvalPanelStub }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+  ...routerLinkStubs,
+  ...approvalPanelStub,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -181,6 +221,7 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '发布变更')!.trigger('click')
     await flushPromises()
 
+    await wrapper.find('#eco-change-number').setValue('ECO-20260801-000001')
     await wrapper.find('#eco-reason').setValue('工艺优化')
     await findButton(wrapper, '关联审批链')!.trigger('click')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
@@ -194,6 +235,7 @@ describe('engineering eco page', () => {
 
     expect(stub.releaseChange).toHaveBeenCalledTimes(1)
     const body = stub.releaseChange.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.changeNumber).toBe('ECO-20260801-000001')
     expect(body.reason).toBe('工艺优化')
     expect(body.approvalReferenceId).toBe('APR-9')
     expect(body.effectiveDate).toBe('2026-03-01')
@@ -202,6 +244,60 @@ describe('engineering eco page', () => {
     expect(affected[0]!.versionKind).toBe('Routing')
     expect(affected[0]!.versionId).toBe('ROUTING-VER-1')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('工程变更可用同一 ECO 号发起审批，审批链入口不是静默禁用', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('#eco-change-number').setValue('ECO-20260801-000001')
+    await flushPromises()
+
+    const panel = wrapper.find('[data-testid="approval-panel"]')
+    expect(panel.attributes('data-allow-start')).toBe('true')
+    expect(panel.attributes('data-document-id')).toBe('ECO-20260801-000001')
+    expect(panel.attributes('data-source-service')).toBe('product-engineering')
+    expect(panel.attributes('data-document-type')).toBe('engineering-change-order')
+    expect(panel.attributes('data-preferred-template-code')).toBe('APT-WB-ECO-001')
+    expect(findButton(wrapper, '发起审批')).toBeDefined()
+
+    await findButton(wrapper, '发起审批')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="approval-panel"]').text()).toContain('CHAIN-NEW')
+  })
+
+  it('发布失败时保留弹框并给出明确提示', async () => {
+    stub.releaseChange.mockRejectedValueOnce(new Error('审批链未通过'))
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('#eco-change-number').setValue('ECO-20260801-000001')
+    await wrapper.find('#eco-reason').setValue('工艺优化')
+    await findButton(wrapper, '关联审批链')!.trigger('click')
+    await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
+    await wrapper.findAll('select')[0]!.setValue('Routing')
+    await wrapper.find('#eco-vid-0').setValue('ROUTING-VER-1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.releaseChange).toHaveBeenCalledTimes(1)
+    expect(stub.toastError).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="eco-dialog-content"]').exists()).toBe(true)
+  })
+
+  it('使用 NvDialogContent 与 NvDialogFooter，底部操作仍在弹框结构内', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="eco-dialog-content"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="eco-dialog-footer"]').text()).toContain('发布变更')
   })
 
   it('发布前可预览工程变更影响链且不触发发布', async () => {
@@ -219,12 +315,14 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '预览影响')!.trigger('click')
     await flushPromises()
 
-    expect(stub.previewImpact).toHaveBeenCalledWith(expect.objectContaining({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      effectiveDate: '2026-03-01',
-      affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-FG:A' }],
-    }))
+    expect(stub.previewImpact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        effectiveDate: '2026-03-01',
+        affectedVersions: [{ versionKind: 'EngineeringBom', versionId: 'EBOM-FG:A' }],
+      }),
+    )
     expect(stub.releaseChange).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('MBOM MBOM-1 / B')
     expect(wrapper.text()).toContain('MRP 候选')
@@ -264,9 +362,7 @@ describe('engineering eco page', () => {
       changeNumber: 'ECO-1',
       reason: '更换供应商物料',
       status: 'Released',
-      affectedVersions: [
-        { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
-      ],
+      affectedVersions: [{ versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' }],
     })
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()

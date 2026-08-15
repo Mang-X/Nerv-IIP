@@ -1,18 +1,18 @@
-# Business Console MVP Implementation Plan
+# Business Console MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Build the #166 to #169 Business Console MVP with a dedicated BusinessGateway, generated api-client entry, and `frontend/apps/business-console`.
+**目标：**构建 #166 至 #169 的 Business Console MVP，包括专用 BusinessGateway、生成的 api-client 入口和 `frontend/apps/business-console`。
 
-**Architecture:** `frontend/apps/business-console` consumes generated `@nerv-iip/api-client` business-console exports. `backend/gateway/BusinessGateway` exposes `/api/business-console/v1/**`, checks IAM permissions with the user bearer token, and calls BusinessMasterData, Inventory, Quality, and MES with the internal service token. PlatformGateway and `frontend/apps/console` remain platform-control-plane only.
+**架构：**`frontend/apps/business-console` 使用生成的 `@nerv-iip/api-client` business-console 导出。`backend/gateway/BusinessGateway` 暴露 `/api/business-console/v1/**`，使用用户 bearer token 检查 IAM 权限，并使用内部服务 token 调用 BusinessMasterData、Inventory、Quality 和 MES。PlatformGateway 与 `frontend/apps/console` 仍仅用于平台控制平面。
 
-**Tech Stack:** .NET 10, FastEndpoints, FastEndpoints.Swagger, Microsoft.AspNetCore.Mvc.Testing, Vue 3, Vite, Vue Router file routes, Pinia, Pinia Colada, Hey API, shadcn-vue through `@nerv-iip/ui`.
+**技术栈：**.NET 10、FastEndpoints、FastEndpoints.Swagger、Microsoft.AspNetCore.Mvc.Testing、Vue 3、Vite、Vue Router 文件路由、Pinia、Pinia Colada、Hey API，以及通过 `@nerv-iip/ui` 使用的 shadcn-vue。
 
 ---
 
-## Source Documents
+## 来源文档
 
-Read these before implementation:
+实施前阅读以下文档：
 
 1. `docs/architecture/implementation-readiness.md`
 2. `docs/adr/0012-business-platform-domain-layering.md`
@@ -21,9 +21,9 @@ Read these before implementation:
 5. `docs/architecture/frontend-structure.md`
 6. `docs/superpowers/specs/2026-05-24-business-console-mvp-design.md`
 
-## File Structure
+## 文件结构
 
-Create these backend files:
+创建以下后端文件：
 
 ```text
 backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/
@@ -54,7 +54,7 @@ backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/
   BusinessGatewayProxyTests.cs
 ```
 
-Modify these backend and infrastructure files:
+修改以下后端和基础设施文件：
 
 ```text
 backend/Nerv.IIP.sln
@@ -64,7 +64,7 @@ nerv.ps1
 scripts/export-gateway-openapi.ps1
 ```
 
-Create and modify these frontend files:
+创建和修改以下前端文件：
 
 ```text
 frontend/apps/business-console/
@@ -107,7 +107,7 @@ frontend/apps/business-console/
   e2e/business-console.spec.ts
 ```
 
-Modify these frontend package and workspace files:
+修改以下前端 package 和 workspace 文件：
 
 ```text
 frontend/package.json
@@ -121,7 +121,7 @@ frontend/packages/api-client/src/index.ts
 frontend/packages/api-client/openapi/business-gateway-console.v1.json
 ```
 
-Modify these docs after code is real:
+代码实际落地后修改以下文档：
 
 ```text
 docs/architecture/api-contract-and-codegen.md
@@ -129,23 +129,23 @@ docs/architecture/frontend-structure.md
 docs/architecture/implementation-readiness.md
 ```
 
-## Task 1: Create BusinessGateway Skeleton And Failing Contract Tests
+## Task 1：创建 BusinessGateway 骨架和失败的契约测试
 
-**Files:**
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/ResponseDataEndpointResults.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Health/HealthEndpoint.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Properties/launchSettings.json`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/appsettings.json`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/appsettings.Development.json`
-- Create: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj`
-- Create: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
-- Modify: `backend/Nerv.IIP.sln`
+**文件：**
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/ResponseDataEndpointResults.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Health/HealthEndpoint.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Properties/launchSettings.json`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/appsettings.json`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/appsettings.Development.json`
+- 创建：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj`
+- 创建：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create project directories and SDK projects**
+- [ ] **步骤 1：创建项目目录和 SDK 项目**
 
-Run:
+运行：
 
 ```powershell
 New-Item -ItemType Directory -Force backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web | Out-Null
@@ -156,11 +156,11 @@ dotnet sln backend/Nerv.IIP.sln add backend/gateway/BusinessGateway/src/Nerv.IIP
 dotnet sln backend/Nerv.IIP.sln add backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj
 ```
 
-Expected: the two projects are created and added to the backend solution.
+预期：两个项目均已创建并加入后端解决方案。
 
-- [ ] **Step 2: Replace the BusinessGateway web csproj**
+- [ ] **步骤 2：替换 BusinessGateway Web csproj**
 
-Use this content:
+使用以下内容：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk.Web">
@@ -188,9 +188,9 @@ Use this content:
 </Project>
 ```
 
-- [ ] **Step 3: Replace the BusinessGateway test csproj**
+- [ ] **步骤 3：替换 BusinessGateway 测试 csproj**
 
-Use this content:
+使用以下内容：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -221,9 +221,9 @@ Use this content:
 </Project>
 ```
 
-- [ ] **Step 4: Write the first failing OpenAPI test**
+- [ ] **步骤 4：编写第一个失败的 OpenAPI 测试**
 
-Create `BusinessGatewayOpenApiTests.cs`:
+创建 `BusinessGatewayOpenApiTests.cs`：
 
 ```csharp
 using System.Text.Json;
@@ -298,19 +298,19 @@ public sealed class BusinessGatewayOpenApiTests
 }
 ```
 
-- [ ] **Step 5: Run the failing OpenAPI test**
+- [ ] **步骤 5：运行失败的 OpenAPI 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids
 ```
 
-Expected: FAIL because `/swagger/v1/swagger.json` or the business-console paths are not implemented.
+预期：失败，因为尚未实现 `/swagger/v1/swagger.json` 或 business-console 路径。
 
-- [ ] **Step 6: Add minimal Program, response writer and health endpoint**
+- [ ] **步骤 6：添加最小化 Program、响应写入器和健康检查 endpoint**
 
-Use this `Program.cs`:
+使用以下 `Program.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -353,7 +353,7 @@ app.Run();
 public partial class Program;
 ```
 
-Use this `ResponseDataEndpointResults.cs`:
+使用以下 `ResponseDataEndpointResults.cs`：
 
 ```csharp
 using NetCorePal.Extensions.Dto;
@@ -384,7 +384,7 @@ public static class ResponseDataEndpointResults
 }
 ```
 
-Use this `HealthEndpoint.cs`:
+使用以下 `HealthEndpoint.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -403,7 +403,7 @@ public sealed class HealthEndpoint : EndpointWithoutRequest<string>
 }
 ```
 
-Use this `BusinessGatewayOperationIdAttribute.cs`:
+使用以下 `BusinessGatewayOperationIdAttribute.cs`：
 
 ```csharp
 namespace Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
@@ -415,7 +415,7 @@ public sealed class BusinessGatewayOperationIdAttribute(string operationId) : At
 }
 ```
 
-Use this `BusinessGatewayOperationIdConvention.cs`:
+使用以下 `BusinessGatewayOperationIdConvention.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -440,11 +440,11 @@ public static class BusinessGatewayOperationIdConvention
 }
 ```
 
-- [ ] **Step 7: Add temporary endpoint stubs that return 501**
+- [ ] **步骤 7：添加返回 501 的临时 endpoint stub**
 
-Create endpoint classes for every operation ID asserted in the test. Each class should use `[HttpGet]` or `[HttpPost]`, `[AllowAnonymous]` only for this skeleton task, and `ThrowError("not-implemented", StatusCodes.Status501NotImplemented)`. This keeps OpenAPI stable before auth/proxy behavior lands.
+为测试中断言的每个 operation ID 创建 endpoint 类。每个类应使用 `[HttpGet]` 或 `[HttpPost]`；`[AllowAnonymous]` 仅可用于本骨架任务；并调用 `ThrowError("not-implemented", StatusCodes.Status501NotImplemented)`。这样可在 auth/proxy 行为落地前保持 OpenAPI 稳定。
 
-Example for `ListBusinessConsoleSkusEndpoint`:
+以下是 `ListBusinessConsoleSkusEndpoint` 示例：
 
 ```csharp
 using FastEndpoints;
@@ -466,7 +466,7 @@ public sealed class ListBusinessConsoleSkusEndpoint : EndpointWithoutRequest<obj
 }
 ```
 
-Create concrete endpoint classes with the same attributes, route shape and `Send.ErrorsAsync(StatusCodes.Status501NotImplemented, ct)` body for:
+为以下操作创建具体 endpoint 类，并使用相同的 attribute、路由形状和 `Send.ErrorsAsync(StatusCodes.Status501NotImplemented, ct)` 方法体：
 
 ```text
 CreateBusinessConsoleSkuEndpoint
@@ -485,39 +485,39 @@ RunBusinessConsoleMesScheduleEndpoint
 RecordBusinessConsoleMesProductionReportEndpoint
 ```
 
-- [ ] **Step 8: Run the OpenAPI test again**
+- [ ] **步骤 8：再次运行 OpenAPI 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter Business_gateway_exports_openapi_document_with_stable_business_console_operation_ids
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 9: Commit the backend skeleton**
+- [ ] **步骤 9：提交后端骨架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/BusinessGateway backend/Nerv.IIP.sln
 git commit -m "feat: add business gateway skeleton"
 ```
 
-## Task 2: Add BusinessGateway Auth, IAM Authorization And Internal Proxy Foundation
+## Task 2：添加 BusinessGateway 认证、IAM 授权和内部代理基础
 
-**Files:**
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthentication.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Http/AcceptLanguageForwardingHandler.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
-- Create: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayTestTokens.cs`
-- Create: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayAuthorizationTests.cs`
+**文件：**
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthentication.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/BusinessGatewayAuthorization.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Auth/AuthorizedBusinessProxyEndpoint.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/Http/AcceptLanguageForwardingHandler.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
+- 创建：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayTestTokens.cs`
+- 创建：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayAuthorizationTests.cs`
 
-- [ ] **Step 1: Write failing authorization tests**
+- [ ] **步骤 1：编写失败的授权测试**
 
-Create `BusinessGatewayAuthorizationTests.cs`:
+创建 `BusinessGatewayAuthorizationTests.cs`：
 
 ```csharp
 using System.Net;
@@ -588,9 +588,9 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(bool allowed) : IBu
 }
 ```
 
-- [ ] **Step 2: Write test token helper**
+- [ ] **步骤 2：编写测试 token helper**
 
-Create `BusinessGatewayTestTokens.cs`:
+创建 `BusinessGatewayTestTokens.cs`：
 
 ```csharp
 using System.IdentityModel.Tokens.Jwt;
@@ -629,19 +629,19 @@ internal static class BusinessGatewayTestTokens
 }
 ```
 
-- [ ] **Step 3: Run tests to verify failure**
+- [ ] **步骤 3：运行测试以验证失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter Business_console_endpoint
 ```
 
-Expected: FAIL because BusinessGateway auth types and policies do not exist.
+预期：失败，因为 BusinessGateway auth 类型和 policy 尚不存在。
 
-- [ ] **Step 4: Implement authentication and permission types**
+- [ ] **步骤 4：实现认证和权限类型**
 
-Create `BusinessGatewayAuthentication.cs`:
+创建 `BusinessGatewayAuthentication.cs`：
 
 ```csharp
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -703,7 +703,7 @@ public static class BusinessGatewayAuthentication
 }
 ```
 
-Create `BusinessGatewayAuthorization.cs` with permission constants:
+创建包含权限常量的 `BusinessGatewayAuthorization.cs`：
 
 ```csharp
 using Microsoft.AspNetCore.Authentication;
@@ -837,9 +837,9 @@ public static class BusinessGatewayAuthorization
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 ```
 
-- [ ] **Step 5: Implement authorized proxy base class**
+- [ ] **步骤 5：实现授权代理基类**
 
-Create `AuthorizedBusinessProxyEndpoint.cs`:
+创建 `AuthorizedBusinessProxyEndpoint.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -882,9 +882,9 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
 }
 ```
 
-- [ ] **Step 6: Add HTTP forwarding handler**
+- [ ] **步骤 6：添加 HTTP 转发 handler**
 
-Create `AcceptLanguageForwardingHandler.cs`:
+创建 `AcceptLanguageForwardingHandler.cs`：
 
 ```csharp
 namespace Nerv.IIP.BusinessGateway.Web.Application.Http;
@@ -904,9 +904,9 @@ public sealed class AcceptLanguageForwardingHandler(IHttpContextAccessor httpCon
 }
 ```
 
-- [ ] **Step 7: Wire Program authentication and IAM client**
+- [ ] **步骤 7：在 Program 中接入认证和 IAM client**
 
-Update `Program.cs` to add:
+更新 `Program.cs`，添加：
 
 ```csharp
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -914,7 +914,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Microsoft.Extensions.Http.Resilience;
 ```
 
-Add services before `builder.Build()`:
+在 `builder.Build()` 前添加服务：
 
 ```csharp
 builder.Services.AddHttpContextAccessor();
@@ -926,16 +926,16 @@ builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusiness
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 ```
 
-Add middleware before `UseFastEndpoints`:
+在 `UseFastEndpoints` 前添加 middleware：
 
 ```csharp
 app.UseAuthentication();
 app.UseAuthorization();
 ```
 
-- [ ] **Step 8: Replace stub endpoint auth attributes**
+- [ ] **步骤 8：替换 stub endpoint 的 auth attribute**
 
-Remove `[AllowAnonymous]` from business-console endpoint stubs and inherit from `AuthorizedBusinessProxyEndpoint<TRequest, TResponse>` with a request record containing `OrganizationId` and `EnvironmentId`. For the first test target, use:
+从 business-console endpoint stub 中移除 `[AllowAnonymous]`，改为继承 `AuthorizedBusinessProxyEndpoint<TRequest, TResponse>`，并使用包含 `OrganizationId` 和 `EnvironmentId` 的请求 record。首个测试目标使用：
 
 ```csharp
 public sealed record BusinessConsoleListSkusRequest(string OrganizationId, string EnvironmentId, bool IncludeDisabled = false, int Take = 100);
@@ -961,36 +961,36 @@ public sealed class ListBusinessConsoleSkusEndpoint(IBusinessGatewayAuthorizatio
 }
 ```
 
-- [ ] **Step 9: Run authorization tests**
+- [ ] **步骤 9：运行授权测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter Business_console_endpoint
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 10: Commit auth foundation**
+- [ ] **步骤 10：提交认证基础**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/BusinessGateway
 git commit -m "feat: add business gateway authorization foundation"
 ```
 
-## Task 3: Implement Business Service Clients And Proxy Tests
+## Task 3：实现业务服务 client 和代理测试
 
-**Files:**
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
-- Create: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
-- Create: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+**文件：**
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleModels.cs`
+- 创建：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessServiceClients.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs`
+- 创建：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
 
-- [ ] **Step 1: Write failing proxy test for internal token forwarding**
+- [ ] **步骤 1：为内部 token 转发编写失败的代理测试**
 
-Create `BusinessGatewayProxyTests.cs`:
+创建 `BusinessGatewayProxyTests.cs`：
 
 ```csharp
 using System.Net;
@@ -1057,19 +1057,19 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 }
 ```
 
-- [ ] **Step 2: Run proxy test to verify failure**
+- [ ] **步骤 2：运行代理测试以验证失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter List_skus_uses_internal_service_token_for_downstream_business_service
 ```
 
-Expected: FAIL because the business service client abstractions do not exist or the endpoint still returns an empty response.
+预期：失败，因为业务服务 client 抽象尚不存在，或 endpoint 仍返回空响应。
 
-- [ ] **Step 3: Add business-console DTOs**
+- [ ] **步骤 3：添加 business-console DTO**
 
-Create `BusinessConsoleModels.cs` containing these records:
+创建 `BusinessConsoleModels.cs`，其中包含以下 record：
 
 ```csharp
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -1217,9 +1217,9 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
 public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId);
 ```
 
-- [ ] **Step 4: Add client interfaces and HTTP implementation**
+- [ ] **步骤 4：添加 client 接口和 HTTP 实现**
 
-Create `BusinessServiceClients.cs`. Use one helper to send `ResponseData` and add internal bearer:
+创建 `BusinessServiceClients.cs`。使用一个 helper 发送 `ResponseData` 并添加内部 bearer：
 
 ```csharp
 using System.Net.Http.Headers;
@@ -1312,7 +1312,7 @@ public sealed class BusinessServiceProxyException(int statusCode, string reason,
 }
 ```
 
-Then add concrete clients in the same file. The endpoint paths must match existing service routes:
+然后在同一文件中添加具体 client。endpoint 路径必须与现有服务路由一致：
 
 ```csharp
 public sealed class HttpBusinessMasterDataClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessMasterDataClient
@@ -1330,9 +1330,9 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient) : Busine
 }
 ```
 
-- [ ] **Step 5: Register client interfaces**
+- [ ] **步骤 5：注册 client 接口**
 
-In `Program.cs`, register each downstream client:
+在 `Program.cs` 中注册每个下游 client：
 
 ```csharp
 builder.Services.AddHttpClient<IBusinessMasterDataClient, HttpBusinessMasterDataClient>(client =>
@@ -1356,9 +1356,9 @@ builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 ```
 
-- [ ] **Step 6: Update List SKUs endpoint to use the client**
+- [ ] **步骤 6：更新 SKU 列表 endpoint 以使用 client**
 
-Inject `IBusinessMasterDataClient` and `IInternalServiceTokenProvider`:
+注入 `IBusinessMasterDataClient` 和 `IInternalServiceTokenProvider`：
 
 ```csharp
 public sealed class ListBusinessConsoleSkusEndpoint(
@@ -1388,39 +1388,39 @@ public sealed class ListBusinessConsoleSkusEndpoint(
 }
 ```
 
-- [ ] **Step 7: Run proxy tests**
+- [ ] **步骤 7：运行代理测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter List_skus_uses_internal_service_token_for_downstream_business_service
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 8: Commit client foundation**
+- [ ] **步骤 8：提交 client 基础**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/BusinessGateway
 git commit -m "feat: add business gateway service clients"
 ```
 
-## Task 4: Implement MVP BusinessGateway Facade Endpoints
+## Task 4：实现 MVP BusinessGateway facade endpoint
 
-**Files:**
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/MasterData/BusinessConsoleMasterDataEndpoints.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Inventory/BusinessConsoleInventoryEndpoints.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Quality/BusinessConsoleQualityEndpoints.cs`
-- Modify: `backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
-- Modify: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayAuthorizationTests.cs`
-- Modify: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
-- Modify: `backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
+**文件：**
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/MasterData/BusinessConsoleMasterDataEndpoints.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Inventory/BusinessConsoleInventoryEndpoints.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Quality/BusinessConsoleQualityEndpoints.cs`
+- 修改：`backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Mes/BusinessConsoleMesEndpoints.cs`
+- 修改：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayAuthorizationTests.cs`
+- 修改：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayProxyTests.cs`
+- 修改：`backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/BusinessGatewayOpenApiTests.cs`
 
-- [ ] **Step 1: Extend authorization tests for every permission**
+- [ ] **步骤 1：扩展授权测试以覆盖每项权限**
 
-Add one assertion row per endpoint in `BusinessGatewayAuthorizationTests.cs`. Use this table in a `[Theory]`:
+在 `BusinessGatewayAuthorizationTests.cs` 中为每个 endpoint 添加一行断言。在 `[Theory]` 中使用此表：
 
 ```csharp
 public static TheoryData<string, string> PermissionCases => new()
@@ -1433,7 +1433,7 @@ public static TheoryData<string, string> PermissionCases => new()
 };
 ```
 
-The test method:
+测试方法：
 
 ```csharp
 [Theory]
@@ -1452,19 +1452,19 @@ public async Task Business_console_get_endpoints_check_expected_permissions(stri
 }
 ```
 
-- [ ] **Step 2: Run authorization test to verify failure**
+- [ ] **步骤 2：运行授权测试以验证失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj --filter Business_console_get_endpoints_check_expected_permissions
 ```
 
-Expected: FAIL until every endpoint is wired with the expected permission.
+预期：失败，直到每个 endpoint 都接入预期权限。
 
-- [ ] **Step 3: Implement MasterData endpoints**
+- [ ] **步骤 3：实现 MasterData endpoint**
 
-`BusinessConsoleMasterDataEndpoints.cs` must include:
+`BusinessConsoleMasterDataEndpoints.cs` 必须包含：
 
 ```csharp
 using FastEndpoints;
@@ -1535,9 +1535,9 @@ public sealed class ListBusinessConsoleMasterDataResourcesEndpoint(
 }
 ```
 
-- [ ] **Step 4: Implement Inventory endpoints**
+- [ ] **步骤 4：实现 Inventory endpoint**
 
-`BusinessConsoleInventoryEndpoints.cs` must include GET availability, POST movement, POST count task and POST adjustment endpoints. Each class inherits `AuthorizedBusinessProxyEndpoint`, uses the matching `IBusinessInventoryClient` method, and maps permissions:
+`BusinessConsoleInventoryEndpoints.cs` 必须包含 GET 可用量、POST 移动、POST 盘点任务和 POST 调整 endpoint。每个类均继承 `AuthorizedBusinessProxyEndpoint`，使用匹配的 `IBusinessInventoryClient` 方法并映射权限：
 
 ```text
 getBusinessConsoleInventoryAvailability -> InventoryLedgerRead
@@ -1546,7 +1546,7 @@ createBusinessConsoleInventoryCountTask -> InventoryCountsManage
 confirmBusinessConsoleInventoryCountAdjustment -> InventoryCountsManage
 ```
 
-The adjustment endpoint must read `countTaskId` from the route:
+调整 endpoint 必须从路由读取 `countTaskId`：
 
 ```csharp
 protected override Task<BusinessConsoleConfirmStockCountAdjustmentResponse> ForwardAsync(
@@ -1555,9 +1555,9 @@ protected override Task<BusinessConsoleConfirmStockCountAdjustmentResponse> Forw
     inventory.ConfirmCountAdjustmentAsync(tokenProvider.BearerToken, Route<string>("countTaskId")!, request, cancellationToken);
 ```
 
-- [ ] **Step 5: Implement Quality endpoints**
+- [ ] **步骤 5：实现 Quality endpoint**
 
-`BusinessConsoleQualityEndpoints.cs` must include:
+`BusinessConsoleQualityEndpoints.cs` 必须包含：
 
 ```text
 GET /api/business-console/v1/quality/inspection-plans -> listBusinessConsoleQualityInspectionPlans -> QualityInspectionRecordsRead
@@ -1567,11 +1567,11 @@ POST /api/business-console/v1/quality/ncrs/{ncrId}/disposition -> submitBusiness
 POST /api/business-console/v1/quality/ncrs/{ncrId}/close -> closeBusinessConsoleQualityNcr -> QualityNcrManage
 ```
 
-Route endpoints must pass `Route<string>("ncrId")!` to `IBusinessQualityClient`.
+路由 endpoint 必须将 `Route<string>("ncrId")!` 传给 `IBusinessQualityClient`。
 
-- [ ] **Step 6: Implement MES endpoints**
+- [ ] **步骤 6：实现 MES endpoint**
 
-`BusinessConsoleMesEndpoints.cs` must include:
+`BusinessConsoleMesEndpoints.cs` 必须包含：
 
 ```text
 GET /api/business-console/v1/mes/work-orders -> listBusinessConsoleMesWorkOrders -> MesWorkOrdersRead
@@ -1580,45 +1580,45 @@ POST /api/business-console/v1/mes/schedules/run -> runBusinessConsoleMesSchedule
 POST /api/business-console/v1/mes/production-reports -> recordBusinessConsoleMesProductionReport -> MesReportingWrite
 ```
 
-- [ ] **Step 7: Run BusinessGateway tests**
+- [ ] **步骤 7：运行 BusinessGateway 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 8: Commit facade endpoints**
+- [ ] **步骤 8：提交 facade endpoint**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/BusinessGateway
 git commit -m "feat: expose business console facade endpoints"
 ```
 
-## Task 5: Register BusinessGateway In Aspire, Ports And OpenAPI Export
+## Task 5：在 Aspire、端口和 OpenAPI 导出中注册 BusinessGateway
 
-**Files:**
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs`
-- Modify: `nerv.ps1`
-- Modify: `scripts/export-gateway-openapi.ps1`
-- Modify: `docs/architecture/implementation-readiness.md`
+**文件：**
+- 修改：`infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`
+- 修改：`infra/aspire/Nerv.IIP.AppHost/Program.cs`
+- 修改：`nerv.ps1`
+- 修改：`scripts/export-gateway-openapi.ps1`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Add AppHost project reference**
+- [ ] **步骤 1：添加 AppHost 项目引用**
 
-Add to AppHost csproj:
+添加到 AppHost csproj：
 
 ```xml
 <ProjectReference Include="..\..\..\backend\gateway\BusinessGateway\src\Nerv.IIP.BusinessGateway.Web\Nerv.IIP.BusinessGateway.Web.csproj" />
 ```
 
-- [ ] **Step 2: Register BusinessGateway on port 5119**
+- [ ] **步骤 2：在端口 5119 注册 BusinessGateway**
 
-In AppHost `Program.cs`, add after PlatformGateway:
+在 AppHost `Program.cs` 的 PlatformGateway 之后添加：
 
 ```csharp
 var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")
@@ -1645,9 +1645,9 @@ var businessGateway = builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>(
     .WaitFor(redis);
 ```
 
-- [ ] **Step 3: Add business-console Vite app registration in AppHost**
+- [ ] **步骤 3：在 AppHost 中添加 business-console Vite app 注册**
 
-After the console Vite app, add:
+在 console Vite app 之后添加：
 
 ```csharp
 builder.AddViteApp("business-console", "../../../frontend/apps/business-console")
@@ -1661,9 +1661,9 @@ builder.AddViteApp("business-console", "../../../frontend/apps/business-console"
     .WaitFor(businessGateway);
 ```
 
-- [ ] **Step 4: Update port matrix**
+- [ ] **步骤 4：更新端口矩阵**
 
-In `nerv.ps1`, add:
+在 `nerv.ps1` 中添加：
 
 ```text
   5118 BusinessERP
@@ -1671,9 +1671,9 @@ In `nerv.ps1`, add:
   5125 BusinessConsole
 ```
 
-- [ ] **Step 5: Extend OpenAPI export script**
+- [ ] **步骤 5：扩展 OpenAPI 导出脚本**
 
-Update `scripts/export-gateway-openapi.ps1` to export both gateway documents. Preserve the existing `platform-gateway.v1.json` behavior and add:
+更新 `scripts/export-gateway-openapi.ps1` 以导出两个 Gateway 文档。保留现有 `platform-gateway.v1.json` 行为，并添加：
 
 ```powershell
 $businessGatewayUrl = "http://127.0.0.1:58205"
@@ -1681,7 +1681,7 @@ $businessGatewayProject = Join-Path $root "backend/gateway/BusinessGateway/src/N
 $businessOutput = Join-Path $root "frontend/packages/api-client/openapi/business-gateway-console.v1.json"
 ```
 
-Build and run BusinessGateway in its own job:
+在独立 job 中构建并运行 BusinessGateway：
 
 ```powershell
 dotnet build $businessGatewayProject
@@ -1698,7 +1698,7 @@ $businessOpenApiJson = ($businessOpenApiDocument | ConvertTo-Json -Depth 100) + 
 Write-Host "Business Gateway OpenAPI exported to $businessOutput"
 ```
 
-Ensure `finally` stops both jobs:
+确保 `finally` 停止两个 job：
 
 ```powershell
 foreach ($job in @($gatewayJob, $businessGatewayJob)) {
@@ -1709,63 +1709,63 @@ foreach ($job in @($gatewayJob, $businessGatewayJob)) {
 }
 ```
 
-- [ ] **Step 6: Run script governance check**
+- [ ] **步骤 6：运行脚本治理检查**
 
-Run:
+运行：
 
 ```powershell
 scripts/check-script-governance.ps1
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Run AppHost build**
+- [ ] **步骤 7：运行 AppHost 构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 8: Commit registration and export**
+- [ ] **步骤 8：提交注册和导出变更**
 
-Run:
+运行：
 
 ```powershell
 git add infra/aspire/Nerv.IIP.AppHost nerv.ps1 scripts/export-gateway-openapi.ps1 docs/architecture/implementation-readiness.md
 git commit -m "feat: register business gateway and console ports"
 ```
 
-## Task 6: Add Multi-Input API Client Generation
+## Task 6：添加多输入 API client 生成
 
-**Files:**
-- Modify: `frontend/packages/api-client/openapi-ts.config.ts`
-- Modify: `frontend/packages/api-client/src/transport/client-config.ts`
-- Create: `frontend/packages/api-client/src/business-console.ts`
-- Modify: `frontend/packages/api-client/src/index.ts`
-- Modify: `frontend/packages/api-client/src/generated-contract.test.ts`
-- Modify: `frontend/vite.config.ts`
+**文件：**
+- 修改：`frontend/packages/api-client/openapi-ts.config.ts`
+- 修改：`frontend/packages/api-client/src/transport/client-config.ts`
+- 创建：`frontend/packages/api-client/src/business-console.ts`
+- 修改：`frontend/packages/api-client/src/index.ts`
+- 修改：`frontend/packages/api-client/src/generated-contract.test.ts`
+- 修改：`frontend/vite.config.ts`
 
-- [ ] **Step 1: Export OpenAPI snapshots**
+- [ ] **步骤 1：导出 OpenAPI snapshot**
 
-Run:
+运行：
 
 ```powershell
 scripts/export-gateway-openapi.ps1
 ```
 
-Expected: writes:
+预期：写入：
 
 ```text
 frontend/packages/api-client/openapi/platform-gateway.v1.json
 frontend/packages/api-client/openapi/business-gateway-console.v1.json
 ```
 
-- [ ] **Step 2: Update Hey API config for two generation jobs**
+- [ ] **步骤 2：更新 Hey API 配置以支持两个生成 job**
 
-Replace `openapi-ts.config.ts` with an array config:
+将 `openapi-ts.config.ts` 替换为数组配置：
 
 ```ts
 const plugins = [
@@ -1795,36 +1795,36 @@ export default [
 ]
 ```
 
-- [ ] **Step 3: Run generation**
+- [ ] **步骤 3：运行生成任务**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend generate:api
 ```
 
-Expected: generated files appear in `frontend/packages/api-client/src/generated/business-console/`.
+预期：生成的文件出现在 `frontend/packages/api-client/src/generated/business-console/` 中。
 
-- [ ] **Step 4: Configure both generated clients**
+- [ ] **步骤 4：配置两个生成的 client**
 
-Modify `client-config.ts` so it imports both generated clients:
+修改 `client-config.ts`，使其导入两个生成的 client：
 
 ```ts
 import { client as platformClient } from '../generated/client.gen'
 import { client as businessConsoleClient } from '../generated/business-console/client.gen'
 ```
 
-Change `configureApiClient` to configure both clients with the same interceptors. Keep the public `ConfigureApiClientOptions` interface unchanged, and use a helper:
+修改 `configureApiClient`，使用相同的 interceptor 配置两个 client。保持公开 `ConfigureApiClientOptions` 接口不变，并使用 helper：
 
 ```ts
 const clients = [platformClient, businessConsoleClient]
 ```
 
-Apply base URL, request interceptors and response interceptors to each generated client. Use arrays for interceptor IDs so repeated calls eject previous interceptors on both clients.
+为每个生成的 client 应用 base URL、请求 interceptor 和响应 interceptor。使用 interceptor ID 数组，使重复调用可从两个 client 中移除之前的 interceptor。
 
-- [ ] **Step 5: Add stable business-console export**
+- [ ] **步骤 5：添加稳定的 business-console 导出**
 
-Create `business-console.ts`:
+创建 `business-console.ts`：
 
 ```ts
 export {
@@ -1883,19 +1883,19 @@ export type {
 } from './generated/business-console/types.gen'
 ```
 
-If generated type names include namespace prefixes, create alias exports with the exact generated names and keep the public aliases above.
+如果生成的类型名称包含 namespace 前缀，请使用准确的生成名称创建别名导出，并保留上面的公开别名。
 
-- [ ] **Step 6: Re-export from index**
+- [ ] **步骤 6：从 index 重新导出**
 
-Add:
+添加：
 
 ```ts
 export * from './business-console'
 ```
 
-- [ ] **Step 7: Add generated contract tests**
+- [ ] **步骤 7：添加生成契约测试**
 
-In `generated-contract.test.ts`, add:
+在 `generated-contract.test.ts` 中添加：
 
 ```ts
 import {
@@ -1917,9 +1917,9 @@ it('exports Business Console generated operations through stable api-client entr
 })
 ```
 
-- [ ] **Step 8: Update frontend workspace generation task inputs**
+- [ ] **步骤 8：更新前端 workspace 生成任务的输入**
 
-In `frontend/vite.config.ts`, add the new OpenAPI file to `workspace:generate-api` input and output:
+在 `frontend/vite.config.ts` 中，将新的 OpenAPI 文件添加到 `workspace:generate-api` 的输入和输出：
 
 ```ts
 input: [
@@ -1930,37 +1930,37 @@ input: [
 output: ['packages/api-client/src/generated/**'],
 ```
 
-- [ ] **Step 9: Run api-client tests**
+- [ ] **步骤 9：运行 api-client 测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test
 pnpm -C frontend --filter @nerv-iip/api-client typecheck
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 10: Commit api-client generation**
+- [ ] **步骤 10：提交 api-client 生成变更**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/packages/api-client frontend/vite.config.ts
 git commit -m "feat: generate business console api client"
 ```
 
-## Task 7: Create Business Console App Shell And Auth
+## Task 7：创建 Business Console app shell 和认证
 
-**Files:**
-- Create: all base files under `frontend/apps/business-console`
-- Modify: `frontend/package.json`
-- Modify: `frontend/vite.config.ts`
-- Modify: `infra/aspire/Nerv.IIP.AppHost/Program.cs` when the Task 5 app registration is kept in the same implementation branch
+**文件：**
+- 创建：`frontend/apps/business-console` 下的所有基础文件
+- 修改：`frontend/package.json`
+- 修改：`frontend/vite.config.ts`
+- 修改：当 Task 5 的 app 注册保留在同一实施分支中时，修改 `infra/aspire/Nerv.IIP.AppHost/Program.cs`
 
-- [ ] **Step 1: Create business-console package**
+- [ ] **步骤 1：创建 business-console package**
 
-Create `frontend/apps/business-console/package.json`:
+创建 `frontend/apps/business-console/package.json`：
 
 ```json
 {
@@ -1993,19 +1993,19 @@ Create `frontend/apps/business-console/package.json`:
 }
 ```
 
-- [ ] **Step 2: Add app config files**
+- [ ] **步骤 2：添加 app 配置文件**
 
-Create `tsconfig.json`, `index.html`, `vite.config.ts`, `src/App.vue`, `src/main.ts` and `src/assets/main.css` by copying the console app files, then make these changes:
+通过复制 console app 文件创建 `tsconfig.json`、`index.html`、`vite.config.ts`、`src/App.vue`、`src/main.ts` 和 `src/assets/main.css`，然后进行以下修改：
 
-1. Package name and document title use `Nerv-IIP Business Console`.
-2. Vite dev server port is `5125`.
-3. Proxy `/api/business-console` to `process.env.NERV_IIP_BUSINESS_GATEWAY_URL ?? 'http://127.0.0.1:5119'`.
-4. Proxy `/api/console` to `process.env.NERV_IIP_PLATFORM_GATEWAY_URL ?? 'http://127.0.0.1:5100'`.
-5. Local storage key in auth store is `nerv-iip.business-console.auth`.
+1. Package 名称和文档标题使用 `Nerv-IIP Business Console`。
+2. Vite 开发服务器端口为 `5125`。
+3. 将 `/api/business-console` 代理到 `process.env.NERV_IIP_BUSINESS_GATEWAY_URL ?? 'http://127.0.0.1:5119'`。
+4. 将 `/api/console` 代理到 `process.env.NERV_IIP_PLATFORM_GATEWAY_URL ?? 'http://127.0.0.1:5100'`。
+5. auth store 中的本地存储 key 为 `nerv-iip.business-console.auth`。
 
-- [ ] **Step 3: Add router and auth files**
+- [ ] **步骤 3：添加 router 和 auth 文件**
 
-Copy these from `frontend/apps/console/src` and adjust imports only:
+从 `frontend/apps/console/src` 复制以下内容，并且只调整 import：
 
 ```text
 api/auth.ts
@@ -2020,11 +2020,11 @@ pages/login.vue
 test/setup.ts
 ```
 
-The copied auth still uses PlatformGateway Console Auth generated operations from `@nerv-iip/api-client`.
+复制的 auth 仍使用来自 `@nerv-iip/api-client` 的 PlatformGateway Console Auth 生成操作。
 
-- [ ] **Step 4: Add BusinessLayout navigation**
+- [ ] **步骤 4：添加 BusinessLayout 导航**
 
-Create `BusinessLayout.vue` using `AppShell` with business nav:
+使用带业务导航的 `AppShell` 创建 `BusinessLayout.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2093,19 +2093,19 @@ async function signOut() {
 </template>
 ```
 
-- [ ] **Step 5: Add dashboard page**
+- [ ] **步骤 5：添加 dashboard 页面**
 
-Create `pages/index.vue` with links to the eight MVP pages and `requiresAuth: true`.
+创建 `pages/index.vue`，其中包含指向 8 个 MVP 页面的链接，并设置 `requiresAuth: true`。
 
-- [ ] **Step 6: Update root workspace tasks**
+- [ ] **步骤 6：更新根 workspace 任务**
 
-In `frontend/package.json`, change test script to:
+在 `frontend/package.json` 中，将测试脚本改为：
 
 ```json
 "test": "vp run -w workspace:test"
 ```
 
-In `frontend/vite.config.ts`, add:
+在 `frontend/vite.config.ts` 中添加：
 
 ```ts
 'workspace:test': {
@@ -2120,49 +2120,49 @@ In `frontend/vite.config.ts`, add:
 }
 ```
 
-Update `workspace:build` command:
+更新 `workspace:build` 命令：
 
 ```ts
 command: 'pnpm --filter @nerv-iip/console build && pnpm --filter @nerv-iip/business-console build',
 ```
 
-Add `apps/business-console/dist/**` and `apps/business-console/typed-router.d.ts` to fmt/lint ignores.
+将 `apps/business-console/dist/**` 和 `apps/business-console/typed-router.d.ts` 添加到 fmt/lint 忽略项。
 
-- [ ] **Step 7: Run app typecheck**
+- [ ] **步骤 7：运行 app typecheck**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 8: Commit app shell**
+- [ ] **步骤 8：提交 app shell**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/business-console frontend/package.json frontend/vite.config.ts infra/aspire/Nerv.IIP.AppHost/Program.cs
 git commit -m "feat: add business console app shell"
 ```
 
-## Task 8: Add Business Console Composables
+## Task 8：添加 Business Console composable
 
-**Files:**
-- Create: `frontend/apps/business-console/src/composables/useBusinessMasterData.ts`
-- Create: `frontend/apps/business-console/src/composables/useBusinessInventory.ts`
-- Create: `frontend/apps/business-console/src/composables/useBusinessQuality.ts`
-- Create: `frontend/apps/business-console/src/composables/useBusinessMes.ts`
-- Create: matching `*.test.ts` files
+**文件：**
+- 创建：`frontend/apps/business-console/src/composables/useBusinessMasterData.ts`
+- 创建：`frontend/apps/business-console/src/composables/useBusinessInventory.ts`
+- 创建：`frontend/apps/business-console/src/composables/useBusinessQuality.ts`
+- 创建：`frontend/apps/business-console/src/composables/useBusinessMes.ts`
+- 创建：匹配的 `*.test.ts` 文件
 
-- [ ] **Step 1: Write composable test for MasterData**
+- [ ] **步骤 1：为 MasterData 编写 composable 测试**
 
-Create `useBusinessMasterData.test.ts` with a mocked `@nerv-iip/api-client`. Assert that `useBusinessSkus()` calls `listBusinessConsoleSkusQueryOptions({ query: { organizationId, environmentId, take: 100 } })` and exposes `skus`.
+创建使用模拟 `@nerv-iip/api-client` 的 `useBusinessMasterData.test.ts`。断言 `useBusinessSkus()` 调用 `listBusinessConsoleSkusQueryOptions({ query: { organizationId, environmentId, take: 100 } })` 并公开 `skus`。
 
-- [ ] **Step 2: Implement `useBusinessMasterData.ts`**
+- [ ] **步骤 2：实现 `useBusinessMasterData.ts`**
 
-Use Pinia Colada:
+使用 Pinia Colada：
 
 ```ts
 import {
@@ -2232,9 +2232,9 @@ export function useBusinessMasterDataResources(resourceType: string) {
 }
 ```
 
-- [ ] **Step 3: Add focused tests and implementation for Inventory**
+- [ ] **步骤 3：为 Inventory 添加聚焦测试和实现**
 
-`useBusinessInventory.ts` exposes:
+`useBusinessInventory.ts` 公开：
 
 ```text
 useInventoryAvailability()
@@ -2242,9 +2242,9 @@ useInventoryMovement()
 useInventoryCounts()
 ```
 
-Each function wraps the generated query or mutation options and returns pending/error state plus submit functions.
+每个函数封装生成的 query 或 mutation option，并返回 pending/error 状态和提交函数。
 
-Use this core implementation shape:
+使用以下核心实现结构：
 
 ```ts
 import {
@@ -2298,20 +2298,20 @@ export function useInventoryCounts() {
 }
 ```
 
-The test must mock the three generated option functions and assert that availability query defaults include `organizationId: 'org-001'` and `environmentId: 'env-dev'`.
+测试必须模拟 3 个生成的 option 函数，并断言可用量 query 默认值包含 `organizationId: 'org-001'` 和 `environmentId: 'env-dev'`。
 
-- [ ] **Step 4: Add focused tests and implementation for Quality**
+- [ ] **步骤 4：为 Quality 添加聚焦测试和实现**
 
-`useBusinessQuality.ts` exposes:
+`useBusinessQuality.ts` 公开：
 
 ```text
 useQualityInspectionPlans()
 useQualityNcrs()
 ```
 
-The NCR composable includes `submitDisposition` and `closeNcr` mutations and invalidates `listBusinessConsoleQualityNcrs`.
+NCR composable 包含 `submitDisposition` 和 `closeNcr` mutation，并使 `listBusinessConsoleQualityNcrs` 失效。
 
-Use this core implementation shape:
+使用以下核心实现结构：
 
 ```ts
 import {
@@ -2365,20 +2365,20 @@ export function useQualityNcrs() {
 }
 ```
 
-The test must assert that unsuccessful envelopes expose empty arrays and that the NCR query option receives `take: 100`.
+测试必须断言未成功的 envelope 公开空数组，并且 NCR query option 收到 `take: 100`。
 
-- [ ] **Step 5: Add focused tests and implementation for MES**
+- [ ] **步骤 5：为 MES 添加聚焦测试和实现**
 
-`useBusinessMes.ts` exposes:
+`useBusinessMes.ts` 公开：
 
 ```text
 useMesWorkOrders()
 useMesSchedules()
 ```
 
-The work-order composable includes `createRushWorkOrder` and `recordProductionReport`. The schedule composable includes `runSchedule`.
+工单 composable 包含 `createRushWorkOrder` 和 `recordProductionReport`。排程 composable 包含 `runSchedule`。
 
-Use this core implementation shape:
+使用以下核心实现结构：
 
 ```ts
 import {
@@ -2420,99 +2420,99 @@ export function useMesSchedules() {
 }
 ```
 
-The test must assert that work orders default to an empty array when the generated query returns `{ success: false }`.
+测试必须断言：生成的 query 返回 `{ success: false }` 时，工单默认值为空数组。
 
-- [ ] **Step 6: Run composable tests**
+- [ ] **步骤 6：运行 composable 测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console test -- src/composables
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Commit composables**
+- [ ] **步骤 7：提交 composable**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/business-console/src/composables
 git commit -m "feat: add business console data composables"
 ```
 
-## Task 9: Build MasterData And Inventory Pages
+## Task 9：构建 MasterData 和 Inventory 页面
 
-**Files:**
-- Create: `frontend/apps/business-console/src/pages/master-data/skus/index.vue`
-- Create: `frontend/apps/business-console/src/pages/inventory/availability/index.vue`
-- Create: `frontend/apps/business-console/src/pages/inventory/movements/index.vue`
-- Create: `frontend/apps/business-console/src/pages/inventory/counts/index.vue`
+**文件：**
+- 创建：`frontend/apps/business-console/src/pages/master-data/skus/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/inventory/availability/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/inventory/movements/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/inventory/counts/index.vue`
 
-- [ ] **Step 1: Create SKU page**
+- [ ] **步骤 1：创建 SKU 页面**
 
-Use `BusinessLayout`, `Table`, `Button`, `Input`, `Dialog`, `Select`, `Checkbox`, `Badge` and `Empty` from `@nerv-iip/ui`. The page lists `skus`, opens a create dialog and calls `createSku`.
+使用来自 `@nerv-iip/ui` 的 `BusinessLayout`、`Table`、`Button`、`Input`、`Dialog`、`Select`、`Checkbox`、`Badge` 和 `Empty`。该页面列出 `skus`，打开创建 dialog，并调用 `createSku`。
 
-- [ ] **Step 2: Create availability page**
+- [ ] **步骤 2：创建可用量页面**
 
-The page has compact filters for organization, environment, SKU, UOM, site, location, lot and serial, then shows `onHandQuantity`, `availableQuantity` and `frozenQuantity` in dense metric cells.
+该页面提供紧凑的 organization、environment、SKU、UOM、site、location、lot 和 serial 筛选项，然后在紧凑的指标单元格中显示 `onHandQuantity`、`availableQuantity` 和 `frozenQuantity`。
 
-- [ ] **Step 3: Create movements page**
+- [ ] **步骤 3：创建移动页面**
 
-The page has a form for movement type, source service, source document, idempotency key, SKU, UOM, site, location, quality status, owner and quantity. Submit calls `postBusinessConsoleInventoryMovement`.
+该页面包含 movement type、source service、source document、idempotency key、SKU、UOM、site、location、quality status、owner 和 quantity 表单。提交时调用 `postBusinessConsoleInventoryMovement`。
 
-- [ ] **Step 4: Create counts page**
+- [ ] **步骤 4：创建盘点页面**
 
-The page has two sections: count task creation and adjustment confirmation. Adjustment form requires count task ID, counted quantity and idempotency key.
+该页面包含两个部分：创建盘点任务和确认调整。调整表单要求填写盘点任务 ID、盘点数量和 idempotency key。
 
-- [ ] **Step 5: Run focused frontend checks**
+- [ ] **步骤 5：运行聚焦的前端检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
 pnpm -C frontend --filter @nerv-iip/business-console test
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 6: Commit MasterData and Inventory pages**
+- [ ] **步骤 6：提交 MasterData 和 Inventory 页面**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/business-console/src/pages/master-data frontend/apps/business-console/src/pages/inventory
 git commit -m "feat: add business master data and inventory pages"
 ```
 
-## Task 10: Build Quality And MES Pages
+## Task 10：构建 Quality 和 MES 页面
 
-**Files:**
-- Create: `frontend/apps/business-console/src/pages/quality/inspections/index.vue`
-- Create: `frontend/apps/business-console/src/pages/quality/ncrs/index.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/work-orders/index.vue`
-- Create: `frontend/apps/business-console/src/pages/mes/schedules/index.vue`
-- Create: `frontend/apps/business-console/e2e/business-console.spec.ts`
+**文件：**
+- 创建：`frontend/apps/business-console/src/pages/quality/inspections/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/quality/ncrs/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/work-orders/index.vue`
+- 创建：`frontend/apps/business-console/src/pages/mes/schedules/index.vue`
+- 创建：`frontend/apps/business-console/e2e/business-console.spec.ts`
 
-- [ ] **Step 1: Create Quality inspections page**
+- [ ] **步骤 1：创建 Quality 检验页面**
 
-List inspection plans and provide a create inspection record form. Keep characteristic entry to a compact repeated row with characteristic code, result and measured value.
+列出检验计划，并提供创建检验记录的表单。特性录入使用紧凑的重复行，包含特性代码、结果和测量值。
 
-- [ ] **Step 2: Create Quality NCR page**
+- [ ] **步骤 2：创建 Quality NCR 页面**
 
-List NCRs, open selected NCR in a `Sheet`, and provide disposition and close actions with confirmation. Do not directly mutate inventory or WMS state from this page.
+列出 NCR，在 `Sheet` 中打开选中的 NCR，并提供带确认的处置和关闭操作。不得从该页面直接修改 Inventory 或 WMS 状态。
 
-- [ ] **Step 3: Create MES work-orders page**
+- [ ] **步骤 3：创建 MES 工单页面**
 
-List work orders, create rush work order, and record production report. Keep finished-goods receipt request as read-only visibility when generated data is available through the BFF.
+列出工单、创建急单并记录生产报工。当可通过 BFF 获取生成数据时，成品入库请求仅作为只读信息显示。
 
-- [ ] **Step 4: Create MES schedules page**
+- [ ] **步骤 4：创建 MES 排程页面**
 
-Provide rule schedule run controls for schedule date and work center. Show results as table/list state. Do not render a Gantt view.
+为排程日期和工作中心提供规则排程运行控件。以表格/列表状态展示结果。不得渲染 Gantt 视图。
 
-- [ ] **Step 5: Add Playwright smoke test**
+- [ ] **步骤 5：添加 Playwright 冒烟测试**
 
-Create `business-console.spec.ts` that mocks auth and `/api/business-console/v1/**` responses, then visits:
+创建 `business-console.spec.ts`，模拟 auth 和 `/api/business-console/v1/**` 响应，然后访问：
 
 ```text
 /master-data/skus
@@ -2521,11 +2521,11 @@ Create `business-console.spec.ts` that mocks auth and `/api/business-console/v1/
 /mes/work-orders
 ```
 
-Assert the page heading is visible at desktop `1366x900` and mobile `390x844`.
+断言页面标题在桌面端 `1366x900` 和移动端 `390x844` 下可见。
 
-- [ ] **Step 6: Run focused checks**
+- [ ] **步骤 6：运行聚焦检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
@@ -2533,49 +2533,49 @@ pnpm -C frontend --filter @nerv-iip/business-console test
 pnpm -C frontend --filter @nerv-iip/business-console build
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 7: Run Playwright smoke when browser executable is available**
+- [ ] **步骤 7：浏览器可执行文件可用时运行 Playwright 冒烟测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console e2e -- business-console.spec.ts
 ```
 
-Expected: PASS. If Playwright browser executable is unavailable, record the exact missing executable message and set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to an installed Chromium before rerunning.
+预期：通过。如果 Playwright 浏览器可执行文件不可用，请记录缺少可执行文件的准确消息，并在重新运行前将 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 设置为已安装的 Chromium。
 
-- [ ] **Step 8: Commit Quality and MES pages**
+- [ ] **步骤 8：提交 Quality 和 MES 页面**
 
-Run:
+运行：
 
 ```powershell
 git add frontend/apps/business-console/src/pages/quality frontend/apps/business-console/src/pages/mes frontend/apps/business-console/e2e
 git commit -m "feat: add business quality and mes pages"
 ```
 
-## Task 11: Final Verification And Documentation
+## Task 11：最终验证和文档更新
 
-**Files:**
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/architecture/frontend-structure.md`
-- Modify: `docs/architecture/repo-layout.md` if final paths differ from this plan
+**文件：**
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/architecture/frontend-structure.md`
+- 修改：如果最终路径与本计划不同，则修改 `docs/architecture/repo-layout.md`
 
-- [ ] **Step 1: Run backend focused verification**
+- [ ] **步骤 1：运行后端聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/Nerv.IIP.BusinessGateway.Web.Tests.csproj
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 2: Run frontend generation and checks**
+- [ ] **步骤 2：运行前端生成和检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend generate:api
@@ -2584,37 +2584,37 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 3: Run script governance**
+- [ ] **步骤 3：运行脚本治理**
 
-Run:
+运行：
 
 ```powershell
 scripts/check-script-governance.ps1
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 4: Run full backend tests when time permits**
+- [ ] **步骤 4：时间允许时运行完整后端测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln --no-restore
 ```
 
-Expected: PASS. If this is too slow or blocked by a local environment issue, run the focused BusinessGateway and affected business service tests and report the exact command not run.
+预期：通过。如果速度过慢或受本地环境问题阻塞，请运行聚焦的 BusinessGateway 测试和受影响业务服务测试，并报告未运行的准确命令。
 
-- [ ] **Step 5: Update readiness docs from actual diff**
+- [ ] **步骤 5：依据实际差异更新就绪文档**
 
-Update `implementation-readiness.md` only after reading `git diff`. Add:
+仅在读取 `git diff` 后更新 `implementation-readiness.md`。添加：
 
 ```text
 BusinessGateway is available on local port 5119 and exposes Business Console OpenAPI for MasterData, Inventory, Quality and MES facade routes. Business Console is available on local port 5125 and consumes generated api-client business-console exports. #166 to #169 have first MVP pages for SKU, inventory availability/movement/counts, inspection/NCR and MES work orders/schedules without Gantt.
 ```
 
-Also update the command list with:
+同时在命令列表中添加：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
@@ -2622,9 +2622,9 @@ pnpm -C frontend --filter @nerv-iip/business-console test
 pnpm -C frontend --filter @nerv-iip/business-console build
 ```
 
-- [ ] **Step 6: Self-review generated artifacts**
+- [ ] **步骤 6：自行审核生成产物**
 
-Run:
+运行：
 
 ```powershell
 git diff --stat
@@ -2632,45 +2632,45 @@ git diff --check
 git status --short
 ```
 
-Expected:
+预期：
 
-1. No whitespace errors.
-2. Generated files changed only because OpenAPI changed.
-3. No direct references from BusinessGateway to `backend/services/Business/*` projects.
-4. Existing unrelated `skills-lock.json` remains untouched unless the user explicitly asks to handle it.
+1. 不存在空白错误。
+2. 生成文件仅因 OpenAPI 发生变化而变化。
+3. BusinessGateway 不直接引用 `backend/services/Business/*` 项目。
+4. 除非用户明确要求处理，否则现有无关的 `skills-lock.json` 保持不变。
 
-- [ ] **Step 7: Final commit**
+- [ ] **步骤 7：最终提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/BusinessGateway backend/Nerv.IIP.sln infra/aspire/Nerv.IIP.AppHost nerv.ps1 scripts/export-gateway-openapi.ps1 frontend docs/architecture/implementation-readiness.md docs/architecture/api-contract-and-codegen.md docs/architecture/frontend-structure.md
 git commit -m "feat: deliver business console mvp"
 ```
 
-## Self-Review
+## 自查
 
-Spec coverage:
+规格覆盖：
 
-1. Dedicated `frontend/apps/business-console`: Tasks 7 to 10.
-2. Dedicated `backend/gateway/BusinessGateway`: Tasks 1 to 5.
-3. `/api/business-console/v1/**` facade and OpenAPI: Tasks 1, 4, 5 and 6.
-4. Generated api-client stable export: Task 6.
-5. #166 MasterData pages: Task 9.
-6. #167 Inventory pages: Task 9.
-7. #168 Quality pages: Task 10.
-8. #169 MES pages without Gantt: Task 10.
-9. Verification and docs: Task 11.
+1. 专用 `frontend/apps/business-console`：Task 7 至 10。
+2. 专用 `backend/gateway/BusinessGateway`：Task 1 至 5。
+3. `/api/business-console/v1/**` facade 和 OpenAPI：Task 1、4、5 和 6。
+4. 生成的 api-client 稳定导出：Task 6。
+5. #166 MasterData 页面：Task 9。
+6. #167 Inventory 页面：Task 9。
+7. #168 Quality 页面：Task 10。
+8. #169 不含 Gantt 的 MES 页面：Task 10。
+9. 验证和文档：Task 11。
 
-Type consistency:
+类型一致性：
 
-1. Operation IDs use the `BusinessConsole` prefix throughout backend docs, OpenAPI tests and api-client exports.
-2. BusinessGateway uses `BusinessGatewayPermissions` constants matching `docs/architecture/authorization-matrix.md`.
-3. BusinessGateway downstream calls use `IInternalServiceTokenProvider.BearerToken`; user bearer tokens stay at the BFF/IAM boundary.
-4. Business console app consumes `@nerv-iip/api-client` stable exports and does not deep import generated files.
+1. 后端文档、OpenAPI 测试和 api-client 导出中的 operation ID 均使用 `BusinessConsole` 前缀。
+2. BusinessGateway 使用与 `docs/architecture/authorization-matrix.md` 匹配的 `BusinessGatewayPermissions` 常量。
+3. BusinessGateway 下游调用使用 `IInternalServiceTokenProvider.BearerToken`；用户 bearer token 保持在 BFF/IAM 边界。
+4. Business console app 使用 `@nerv-iip/api-client` 的稳定导出，不对生成文件进行 deep import。
 
-Boundary checks:
+边界检查：
 
-1. BusinessGateway does not reference business service Web, Domain or Infrastructure projects.
-2. PlatformGateway is not modified to expose business facade routes.
-3. `frontend/apps/console` is not modified to host business CRUD pages.
+1. BusinessGateway 不引用业务服务的 Web、Domain 或 Infrastructure 项目。
+2. 不修改 PlatformGateway 以暴露业务 facade 路由。
+3. 不修改 `frontend/apps/console` 以承载业务 CRUD 页面。

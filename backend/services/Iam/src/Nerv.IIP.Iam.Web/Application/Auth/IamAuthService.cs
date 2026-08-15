@@ -102,39 +102,52 @@ public sealed class PostgreSqlIamAuthService(
     {
         var now = DateTimeOffset.UtcNow;
         var refreshTokenHash = tokenService.HashSecret(refreshToken);
-        var session = await userSessionRepository.ConsumeActiveRefreshTokenAsync(
+        var previousSession = await userSessionRepository.GetActiveByRefreshTokenHashAsync(
+            refreshTokenHash,
+            now,
+            cancellationToken);
+        if (previousSession is null)
+        {
+            await RevokeRefreshTokenFamilyOnReplayAsync(refreshTokenHash, now, cancellationToken);
+            throw Unauthorized();
+        }
+
+        var user = await userRepository.GetByIdAsync(previousSession.UserId, cancellationToken);
+        if (user is null || !user.Enabled || user.IsAccountExpired(now))
+        {
+            await userSessionRepository.RevokeFamilyAsync(
+                previousSession.TokenFamilyId,
+                now,
+                "refresh-user-invalid",
+                cancellationToken);
+            throw Unauthorized();
+        }
+
+        var rotatedRefreshToken = tokenService.CreateRefreshToken();
+        var rotatedSession = CreateSession(
+            user,
+            rotatedRefreshToken,
+            DateTimeOffset.UtcNow,
+            clientInfo,
+            ipAddress,
+            previousSession: previousSession);
+        var rotated = await userSessionRepository.RotateActiveRefreshTokenAsync(
             refreshTokenHash,
             now,
             "refresh-rotated",
+            rotatedSession,
             cancellationToken);
-        if (session is null)
+        if (!rotated)
         {
-            var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(refreshTokenHash, cancellationToken);
-            if (replayedSession is not null && replayedSession.RevokedAtUtc is not null)
-            {
-                var revokedCount = await userSessionRepository.RevokeFamilyAsync(
-                    replayedSession.TokenFamilyId,
-                    now,
-                    "refresh-reuse-detected",
-                    cancellationToken);
-                logger.LogWarning(
-                    "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
-                    replayedSession.UserId.Id,
-                    replayedSession.TokenFamilyId,
-                    replayedSession.Id.Id,
-                    revokedCount);
-            }
-
+            await RevokeRefreshTokenFamilyOnReplayAsync(refreshTokenHash, now, cancellationToken);
             throw Unauthorized();
         }
 
-        var user = await userRepository.GetByIdAsync(session.UserId, cancellationToken);
-        if (user is null || !user.Enabled || user.IsAccountExpired(now))
-        {
-            throw Unauthorized();
-        }
-
-        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken, previousSession: session);
+        return await CreateAuthResponseAsync(
+            user,
+            rotatedSession,
+            rotatedRefreshToken,
+            cancellationToken);
     }
 
     public async Task RevokeSessionAsync(
@@ -393,15 +406,25 @@ public sealed class PostgreSqlIamAuthService(
             return new IamAuthorizationCheckResult(false);
         }
 
-        var scopes = await membershipRepository.ListEffectiveDataScopesAsync(
+        var permissionScopeGrants = await membershipRepository.ListPermissionDataScopeGrantsAsync(
             new UserId(principal.UserId),
             new OrganizationId(organizationId),
             new IamEnvironmentId(environmentId),
+            permissionCode,
             cancellationToken);
-        var dataScope = ToAuthorizationDataScope(scopes);
-        if (dataScope is { HasRestrictions: true })
+        var scopeGrants = permissionScopeGrants
+            .Select(x => new AuthorizationScopeGrant(
+                x.SourceKind,
+                x.SourceId,
+                x.ScopeKind,
+                x.ScopeId,
+                x.ApplicablePermissionCodes,
+                x.OrganizationWide))
+            .ToArray();
+        var dataScope = ToAuthorizationDataScope(scopeGrants, organizationId);
+        if (scopeGrants.Length > 0)
         {
-            await securityAudit.RecordAsync(
+            await securityAudit.RecordAndSaveAsync(
                 new SecurityAuditContext(
                     $"user:{principal.UserId}",
                     Guid.CreateVersion7().ToString("N"),
@@ -418,24 +441,25 @@ public sealed class PostgreSqlIamAuthService(
                     resourceType,
                     resourceId,
                     dataScope,
+                    scopeGrants,
                 },
                 DateTimeOffset.UtcNow,
                 cancellationToken);
         }
 
-        return new IamAuthorizationCheckResult(true, dataScope);
+        return new IamAuthorizationCheckResult(true, dataScope, scopeGrants);
     }
 
-    private static AuthorizationDataScope? ToAuthorizationDataScope(IReadOnlyCollection<DataScopeBinding> scopes)
+    private static AuthorizationDataScope? ToAuthorizationDataScope(
+        IReadOnlyCollection<AuthorizationScopeGrant> scopeGrants,
+        string organizationId)
     {
-        if (scopes.Count == 0)
-        {
-            return null;
-        }
-
-        var unknownTypes = scopes
-            .Select(x => x.ScopeType.Trim().ToLowerInvariant())
-            .Where(x => !DataScopeBinding.KnownScopeTypes.Contains(x, StringComparer.Ordinal))
+        var unknownTypes = scopeGrants
+            .Where(x =>
+                x.OrganizationWide
+                    ? !string.Equals(x.ScopeKind.Trim(), "organization", StringComparison.OrdinalIgnoreCase)
+                    : !DataScopeBinding.KnownScopeTypes.Contains(x.ScopeKind.Trim().ToLowerInvariant(), StringComparer.Ordinal))
+            .Select(x => x.ScopeKind.Trim().ToLowerInvariant())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (unknownTypes.Length > 0)
@@ -443,19 +467,55 @@ public sealed class PostgreSqlIamAuthService(
             return new AuthorizationDataScope([], [], [], DenyAll: true);
         }
 
+        if (scopeGrants.Any(x =>
+                string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Organization, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(x.ScopeId.Trim(), organizationId, StringComparison.Ordinal)))
+        {
+            return new AuthorizationDataScope([], [], [], DenyAll: true);
+        }
+
+        if (scopeGrants.Any(x => x.OrganizationWide))
+        {
+            return null;
+        }
+
         return new AuthorizationDataScope(
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Site, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray(),
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Workshop, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray(),
-            scopes.Where(x => string.Equals(x.ScopeType.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
-                .Select(x => x.ScopeCode.Trim())
+            scopeGrants.Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.ProductionLine, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            SelfIds: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Self, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            TeamCodes: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Team, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            WorkCenterCodes: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.WorkCenter, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray(),
+            OrganizationIds: scopeGrants
+                .Where(x => string.Equals(x.ScopeKind.Trim(), DataScopeBinding.Organization, StringComparison.OrdinalIgnoreCase))
+                .Select(x => x.ScopeId.Trim())
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
                 .ToArray());
@@ -579,12 +639,40 @@ public sealed class PostgreSqlIamAuthService(
             }
         }
 
-        var session = new UserSession(
+        var session = CreateSession(
+            user,
+            refreshToken,
+            now,
+            clientInfo,
+            ipAddress,
+            authenticationMethod,
+            externalProvider,
+            externalSubject,
+            mfaVerifiedAtUtc,
+            previousSession);
+
+        await userSessionRepository.AddAsync(session, cancellationToken);
+        return await CreateAuthResponseAsync(user, session, refreshToken, cancellationToken);
+    }
+
+    private UserSession CreateSession(
+        User user,
+        string refreshToken,
+        DateTimeOffset issuedAtUtc,
+        string? clientInfo,
+        string? ipAddress,
+        string authenticationMethod = "password",
+        string? externalProvider = null,
+        string? externalSubject = null,
+        DateTimeOffset? mfaVerifiedAtUtc = null,
+        UserSession? previousSession = null)
+    {
+        return new UserSession(
             new UserSessionId($"session-{Guid.CreateVersion7():N}"),
             user.Id,
             tokenService.HashSecret(refreshToken),
-            now,
-            now.AddDays(14),
+            issuedAtUtc,
+            issuedAtUtc.AddDays(14),
             user.PermissionVersion,
             clientInfo,
             ipAddress,
@@ -594,8 +682,14 @@ public sealed class PostgreSqlIamAuthService(
             mfaVerifiedAtUtc,
             previousSession?.TokenFamilyId,
             previousSession?.Id.Id);
+    }
 
-        await userSessionRepository.AddAsync(session, cancellationToken);
+    private async Task<AuthResponse> CreateAuthResponseAsync(
+        User user,
+        UserSession session,
+        string refreshToken,
+        CancellationToken cancellationToken)
+    {
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
         var issuedAtUtc = DateTimeOffset.UtcNow;
         var accessToken = membership is null
@@ -613,6 +707,32 @@ public sealed class PostgreSqlIamAuthService(
             session.Id.Id,
             expiresAtUtc,
             user.PasswordChangeRequired || (user.PasswordExpiresAtUtc is not null && user.PasswordExpiresAtUtc <= issuedAtUtc));
+    }
+
+    private async Task RevokeRefreshTokenFamilyOnReplayAsync(
+        string refreshTokenHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(
+            refreshTokenHash,
+            cancellationToken);
+        if (replayedSession is null || replayedSession.RevokedAtUtc is null)
+        {
+            return;
+        }
+
+        var revokedCount = await userSessionRepository.RevokeFamilyAsync(
+            replayedSession.TokenFamilyId,
+            now,
+            "refresh-reuse-detected",
+            cancellationToken);
+        logger.LogWarning(
+            "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
+            replayedSession.UserId.Id,
+            replayedSession.TokenFamilyId,
+            replayedSession.Id.Id,
+            revokedCount);
     }
 
     private static UnauthorizedAccessException Unauthorized()

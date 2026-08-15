@@ -10,7 +10,9 @@ import {
   type QualityCharacteristicDraftRow,
 } from './qualityResults'
 
-function measured(over: Partial<QualityCharacteristicDraftRow> = {}): QualityCharacteristicDraftRow {
+function measured(
+  over: Partial<QualityCharacteristicDraftRow> = {},
+): QualityCharacteristicDraftRow {
   return { ...createQualityCharacteristicDraft('measured'), ...over }
 }
 function count(over: Partial<QualityCharacteristicDraftRow> = {}): QualityCharacteristicDraftRow {
@@ -29,7 +31,12 @@ describe('characteristicRowOutOfTolerance (measured)', () => {
   it('flags a value below the lower limit', () => {
     expect(
       characteristicRowOutOfTolerance(
-        measured({ characteristicCode: '外径', measuredValue: '9.8', uomCode: 'mm', lowerSpecLimit: '10' }),
+        measured({
+          characteristicCode: '外径',
+          measuredValue: '9.8',
+          uomCode: 'mm',
+          lowerSpecLimit: '10',
+        }),
       ),
     ).toBe(true)
   })
@@ -37,7 +44,12 @@ describe('characteristicRowOutOfTolerance (measured)', () => {
   it('flags a value above the upper limit', () => {
     expect(
       characteristicRowOutOfTolerance(
-        measured({ characteristicCode: '外径', measuredValue: '10.5', uomCode: 'mm', upperSpecLimit: '10' }),
+        measured({
+          characteristicCode: '外径',
+          measuredValue: '10.5',
+          uomCode: 'mm',
+          upperSpecLimit: '10',
+        }),
       ),
     ).toBe(true)
   })
@@ -61,8 +73,12 @@ describe('characteristicRowOutOfTolerance (measured)', () => {
 
 describe('characteristicRowResult', () => {
   it('derives pass/fail from tolerance for measured rows', () => {
-    expect(characteristicRowResult(measured({ measuredValue: '10', upperSpecLimit: '9' }))).toBe('fail')
-    expect(characteristicRowResult(measured({ measuredValue: '10', upperSpecLimit: '11' }))).toBe('pass')
+    expect(characteristicRowResult(measured({ measuredValue: '10', upperSpecLimit: '9' }))).toBe(
+      'fail',
+    )
+    expect(characteristicRowResult(measured({ measuredValue: '10', upperSpecLimit: '11' }))).toBe(
+      'pass',
+    )
   })
 
   it('returns null for a measured row without a parseable value (undetermined)', () => {
@@ -82,30 +98,65 @@ describe('characteristicRowResult', () => {
 
 describe('isQualityCharacteristicRowValid', () => {
   it('requires a characteristic code', () => {
-    expect(isQualityCharacteristicRowValid(measured({ characteristicCode: '', measuredValue: '1', uomCode: 'mm' }))).toBe(false)
+    expect(
+      isQualityCharacteristicRowValid(
+        measured({ characteristicCode: '', measuredValue: '1', uomCode: 'mm' }),
+      ),
+    ).toBe(false)
   })
 
   it('measured: needs value + uom; limits optional but lower<=upper when both set', () => {
-    expect(isQualityCharacteristicRowValid(measured({ characteristicCode: '外径', measuredValue: '1', uomCode: 'mm' }))).toBe(true)
-    expect(isQualityCharacteristicRowValid(measured({ characteristicCode: '外径', measuredValue: '', uomCode: 'mm' }))).toBe(false)
-    expect(isQualityCharacteristicRowValid(measured({ characteristicCode: '外径', measuredValue: '1', uomCode: '' }))).toBe(false)
     expect(
       isQualityCharacteristicRowValid(
-        measured({ characteristicCode: '外径', measuredValue: '1', uomCode: 'mm', lowerSpecLimit: '5', upperSpecLimit: '1' }),
+        measured({ characteristicCode: '外径', measuredValue: '1', uomCode: 'mm' }),
+      ),
+    ).toBe(true)
+    expect(
+      isQualityCharacteristicRowValid(
+        measured({ characteristicCode: '外径', measuredValue: '', uomCode: 'mm' }),
+      ),
+    ).toBe(false)
+    expect(
+      isQualityCharacteristicRowValid(
+        measured({ characteristicCode: '外径', measuredValue: '1', uomCode: '' }),
+      ),
+    ).toBe(false)
+    expect(
+      isQualityCharacteristicRowValid(
+        measured({
+          characteristicCode: '外径',
+          measuredValue: '1',
+          uomCode: 'mm',
+          lowerSpecLimit: '5',
+          upperSpecLimit: '1',
+        }),
       ),
     ).toBe(false)
   })
 
   it('count: requires pass/fail; fail requires a defect reason; defect qty non-negative when set', () => {
-    expect(isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: 'pass' }))).toBe(true)
-    expect(isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: '' }))).toBe(false)
-    expect(isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: 'fail' }))).toBe(false)
     expect(
-      isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: 'fail', defectReason: 'SCRATCH' })),
+      isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: 'pass' })),
+    ).toBe(true)
+    expect(
+      isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: '' })),
+    ).toBe(false)
+    expect(
+      isQualityCharacteristicRowValid(count({ characteristicCode: '外观', countResult: 'fail' })),
+    ).toBe(false)
+    expect(
+      isQualityCharacteristicRowValid(
+        count({ characteristicCode: '外观', countResult: 'fail', defectReason: 'SCRATCH' }),
+      ),
     ).toBe(true)
     expect(
       isQualityCharacteristicRowValid(
-        count({ characteristicCode: '外观', countResult: 'fail', defectReason: 'SCRATCH', defectQuantity: '-1' }),
+        count({
+          characteristicCode: '外观',
+          countResult: 'fail',
+          defectReason: 'SCRATCH',
+          defectQuantity: '-1',
+        }),
       ),
     ).toBe(false)
   })
@@ -126,9 +177,23 @@ describe('qualityCharacteristicRowsValid', () => {
 
 describe('qualityInspectionOverallVerdict', () => {
   it('is fail if any row is fail, else pass', () => {
-    const pass = measured({ characteristicCode: '外径', measuredValue: '10', uomCode: 'mm', upperSpecLimit: '11' })
-    const failMeasured = measured({ characteristicCode: '外径', measuredValue: '12', uomCode: 'mm', upperSpecLimit: '11' })
-    const failCount = count({ characteristicCode: '外观', countResult: 'fail', defectReason: 'SCRATCH' })
+    const pass = measured({
+      characteristicCode: '外径',
+      measuredValue: '10',
+      uomCode: 'mm',
+      upperSpecLimit: '11',
+    })
+    const failMeasured = measured({
+      characteristicCode: '外径',
+      measuredValue: '12',
+      uomCode: 'mm',
+      upperSpecLimit: '11',
+    })
+    const failCount = count({
+      characteristicCode: '外观',
+      countResult: 'fail',
+      defectReason: 'SCRATCH',
+    })
     expect(qualityInspectionOverallVerdict([pass])).toBe('pass')
     expect(qualityInspectionOverallVerdict([pass, failMeasured])).toBe('fail')
     expect(qualityInspectionOverallVerdict([pass, failCount])).toBe('fail')
@@ -138,7 +203,12 @@ describe('qualityInspectionOverallVerdict', () => {
 describe('toQualityCharacteristicResultLines', () => {
   it('maps a measured row to observed/measured value + derived result, no defect fields', () => {
     const [line] = toQualityCharacteristicResultLines([
-      measured({ characteristicCode: '外径', measuredValue: '10.5', uomCode: 'mm', upperSpecLimit: '10' }),
+      measured({
+        characteristicCode: '外径',
+        measuredValue: '10.5',
+        uomCode: 'mm',
+        upperSpecLimit: '10',
+      }),
     ])
     expect(line).toEqual({
       characteristicCode: '外径',
@@ -167,7 +237,12 @@ describe('toQualityCharacteristicResultLines', () => {
 
   it('maps a failing count row carrying reason code + defect quantity', () => {
     const [line] = toQualityCharacteristicResultLines([
-      count({ characteristicCode: '外观', countResult: 'fail', defectReason: 'SCRATCH', defectQuantity: '3' }),
+      count({
+        characteristicCode: '外观',
+        countResult: 'fail',
+        defectReason: 'SCRATCH',
+        defectQuantity: '3',
+      }),
     ])
     expect(line).toMatchObject({
       characteristicCode: '外观',

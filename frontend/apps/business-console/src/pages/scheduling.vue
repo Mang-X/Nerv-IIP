@@ -8,6 +8,7 @@ import type {
   BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { formatDateTime } from '@/utils/format'
 import { useBusinessScheduling } from '@/composables/useBusinessScheduling'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -24,15 +25,31 @@ import {
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
+import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
+import {
+  createSchedulingHorizonInput,
+  describeSchedulingHorizon,
+  resolveSchedulingHorizon,
+} from '@/composables/schedulingHorizon'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
 import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
 import { useAuthStore } from '@/stores/auth'
+import { notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
+  NvAlertDialog,
+  NvAlertDialogAction,
+  NvAlertDialogCancel,
+  NvAlertDialogContent,
+  NvAlertDialogDescription,
+  NvAlertDialogFooter,
+  NvAlertDialogHeader,
+  NvAlertDialogTitle,
   NvButton,
   NvDataTable,
   NvPageHeader,
@@ -54,8 +71,8 @@ import {
   NvTabsTrigger,
   toast,
 } from '@nerv-iip/ui'
-import { EyeIcon, RefreshCwIcon, SendIcon } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { EyeIcon, RefreshCwIcon, SendIcon, Undo2Icon } from '@lucide/vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 definePage({
@@ -73,10 +90,15 @@ const {
   planDetailError,
   planDetailPending,
   plans,
+  plansError,
   plansPending,
   refreshPlans,
   releasePlan,
   releasePlanPending,
+  revokePlan,
+  revokePlanPending,
+  upsertOperationOverride,
+  upsertOperationOverridePending,
 } = useBusinessScheduling()
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
@@ -112,6 +134,15 @@ const targetedOrderReference = computed(() => {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
 })
 const routeLookupVisited = new Set<string>()
+// 单单排产（MAN-694 / #1262）落点：带 planId 直接定位到刚生成的方案，不必在列表里翻。
+const targetedPlanId = computed(() => {
+  const value = route.query.planId
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? ''
+})
+// 排程窗口由用户指定（不再写死 7 天）；与单单排产弹窗共用同一份解析口径。
+const horizonInput = ref(createSchedulingHorizonInput())
+// 解析结果既进「生成首版」的禁用原因表，也是真正发给后端的窗口——只算一次，不会两处漂移。
+const resolvedWorkbenchHorizon = computed(() => resolveSchedulingHorizon(horizonInput.value))
 
 watch(workbench.schedulableCandidates, (candidates) => draft.setOrders(candidates), {
   immediate: true,
@@ -122,6 +153,18 @@ const actionablePlans = computed(() =>
       Boolean(plan.planId),
   ),
 )
+
+/**
+ * 页头读数说的是**历史排程方案**（与「排程总览」里的 MES 待排工单是两个集合，
+ * 两边数字不同是设计上成立的）。但方案列表本身可能读取失败——那时不能显 0，
+ * 否则"没有方案"和"取不到方案"没法区分。
+ */
+const plansFailed = computed(() => !plansPending.value && plansError.value != null)
+const planHeaderCount = computed(() => {
+  if (plansFailed.value) return '方案数取不到'
+  if (plansPending.value && actionablePlans.value.length === 0) return undefined
+  return `${actionablePlans.value.length} 个方案`
+})
 
 watch([activeView, actionablePlans], ([view, availablePlans]) => {
   if (view !== 'gantt' || detailSelection.planId || availablePlans.length === 0) return
@@ -175,10 +218,21 @@ const targetedAssignmentFound = computed(() =>
 )
 
 watch(targetedOrderReference, () => routeLookupVisited.clear())
+// 已经点名了具体方案（单单排产刚生成的那份）就直接打开，不再走「逐个方案找订单」的兜底。
+watch(
+  targetedPlanId,
+  (planId) => {
+    if (!planId) return
+    detailSelection.planId = planId
+    detailOpen.value = true
+  },
+  { immediate: true },
+)
 watch(
   [targetedOrderReference, actionablePlans, planDetail, planDetailPending],
   ([target, availablePlans, detail, pending]) => {
     if (!target || availablePlans.length === 0 || pending) return
+    if (targetedPlanId.value) return
     if (!detailSelection.planId) {
       detailSelection.planId = availablePlans[0]?.planId ?? ''
       detailOpen.value = Boolean(detailSelection.planId)
@@ -223,11 +277,8 @@ function conflictSummary(row: BusinessConsoleSchedulingPlanSummaryResponse) {
     .join('，')
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
+// 本地日期一律走 `@/utils/format` 的「YYYY-MM-DD HH:mm」。裸 `toLocaleString()` 跟的是
+// **浏览器 UI 语言**，装英文系统的机器上排程明细里满屏 `1/5/2026, 8:00:00 AM`（#1418）。
 
 function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]) {
   const timestamps = assignments
@@ -239,7 +290,7 @@ function rangeFromAssignments(assignments: BusinessConsoleSchedulingAssignment[]
 
   if (timestamps.length === 0) return '无'
 
-  return `${timestamps[0]!.toLocaleString()} 至 ${timestamps[timestamps.length - 1]!.toLocaleString()}`
+  return `${formatDateTime(timestamps[0]!.toISOString())} 至 ${formatDateTime(timestamps[timestamps.length - 1]!.toISOString())}`
 }
 
 function openDetail(planId: string | undefined) {
@@ -256,23 +307,27 @@ async function publish(planId: string | undefined) {
   try {
     await releasePlan(planId)
     toast.success('排程方案已发布')
-  } catch {
-    toast.error('发布失败，请稍后重试')
+  } catch (error) {
+    notifyOperationFailure('发布失败', error, '发布失败，请稍后重试')
   }
 }
 
+// TODO(MAN-674 / #1241): 「生成首版」前的真实预览待后端补 workbench 级 dry-run facade
+// （勿用 POST /scheduling/plans/preview——其契约要求前端提交完整 SchedulingProblemContract，
+// 而 problem 只能由后端 SchedulingWorkbenchSourceProvider 从工单选择组装）。
 async function generateWorkbenchPlan() {
-  if (!canManage.value || draft.includedOrders.value.length === 0) return
-  const horizonStart = new Date()
-  horizonStart.setMinutes(0, 0, 0)
-  const horizonEnd = new Date(horizonStart)
-  horizonEnd.setDate(horizonEnd.getDate() + 7)
+  // 与按钮 disabled 同一处事实：命中任一禁用原因就不发请求。
+  // 「排程窗口非法」也是其中一条原因，所以这里不再单独 toast——按钮本身就是灰的。
+  if (generateBlockedReason.value) return
+  const resolvedHorizon = resolvedWorkbenchHorizon.value
+  // 类型收窄；能走到这里说明窗口原因没有命中。
+  if (!resolvedHorizon.ok) return
   try {
     const plan = await workbench.generatePlan({
       organizationId: schedulingFilters.organizationId,
       environmentId: schedulingFilters.environmentId,
-      horizonStartUtc: horizonStart.toISOString(),
-      horizonEndUtc: horizonEnd.toISOString(),
+      horizonStartUtc: resolvedHorizon.horizonStartUtc,
+      horizonEndUtc: resolvedHorizon.horizonEndUtc,
       orders: draft.includedOrders.value.map((order) => ({
         workOrderId: order.workOrderId,
         priority: order.priority,
@@ -283,18 +338,15 @@ async function generateWorkbenchPlan() {
     detailSelection.planId = plan.planId ?? ''
     revisionResult.value = undefined
     toast.success('首版排程方案已生成')
-  } catch {
-    toast.error('生成失败，请检查工单生产版本与排程基础数据')
+  } catch (error) {
+    notifyOperationFailure('生成失败', error, '生成失败，请检查工单生产版本与排程基础数据')
   }
 }
 
 async function repreviewLockedDraft() {
   const planId = draft.model.value?.meta.planId
-  if (!canManage.value || !planId || draft.includedOrders.value.length === 0) return
-  if (draft.modifiedUnlockedTaskIds.value.length > 0) {
-    toast.error('有未锁定的人工修改；请先锁定全部修改再重预览')
-    return
-  }
+  // 未锁定的人工修改也是禁用原因之一（按钮灰 + title 说明 + 旁边就有「锁定全部修改」）。
+  if (repreviewBlockedReason.value || !planId || draft.includedOrders.value.length === 0) return
   try {
     const revision = await workbench.revisePlan(planId, {
       organizationId: schedulingFilters.organizationId,
@@ -308,8 +360,8 @@ async function repreviewLockedDraft() {
       detailSelection.planId = revision.candidate.planId ?? ''
     }
     toast.success('已生成锁定约束下的新版本')
-  } catch {
-    toast.error('重预览失败，请检查锁定资源与时间窗口')
+  } catch (error) {
+    notifyOperationFailure('重预览失败', error, '重预览失败，请检查锁定资源与时间窗口')
   }
 }
 
@@ -319,13 +371,75 @@ function onLockedDragAttempt() {
 
 async function publishCandidate() {
   const planId = draft.model.value?.meta.planId
-  if (!canPublish.value || !planId) return
+  if (publishCandidateBlockedReason.value || !planId) return
   detailSelection.planId = planId
   try {
     await releasePlan(planId)
     toast.success('新版排程已发布')
-  } catch {
-    toast.error('发布失败；失效或终态方案不能发布')
+  } catch (error) {
+    notifyOperationFailure('发布失败', error, '发布失败；失效或终态方案不能发布')
+  }
+}
+
+// 撤销发布：只对已发布方案开放，二次确认说明后果（MES 侧回流撤销对应工序排程）。
+// 权限沿用发布权限——后端 revoke 端点同样挂在 PlansRelease 权限码下。
+const revokeTargetPlanId = shallowRef('')
+const revokeConfirmOpen = shallowRef(false)
+
+function canRevoke(row: BusinessConsoleSchedulingPlanSummaryResponse | undefined) {
+  return Boolean(row && canPublish.value && row.status === 'released')
+}
+
+function requestRevoke(planId: string | undefined) {
+  if (!planId) return
+  if (!canRevoke(actionablePlans.value.find((plan) => plan.planId === planId))) return
+  revokeTargetPlanId.value = planId
+  revokeConfirmOpen.value = true
+}
+
+async function confirmRevoke() {
+  const planId = revokeTargetPlanId.value
+  if (!planId) return
+  try {
+    await revokePlan(planId)
+    revokeConfirmOpen.value = false
+    toast.success('排程方案已撤销发布，MES 侧将回流撤销对应工序排程')
+  } catch (error) {
+    notifyOperationFailure('撤销失败', error, '撤销失败，请稍后重试')
+  }
+}
+
+// 单工序持久化 override：把资源/起止落库为跨方案 override，后端建方案路径自动叠加继承。
+const persistedOperationKeys = shallowRef<string[]>([])
+
+async function persistOperationOverride(taskId: string) {
+  const planId = draft.model.value?.meta.planId
+  const task = draft.model.value?.tasks.find((candidate) => candidate.id === taskId)
+  if (!canManage.value || !task || task.type !== 'operation') return
+  if (!planId) {
+    // 草案模型存在但缺方案标识（异常数据）：显式提示，而不是静默吞掉点击。
+    toast.error('当前草案未关联排程方案，无法持久锁定；请重新生成方案')
+    return
+  }
+  if (!task.resourceId) {
+    toast.error('该工序未分配资源，请先指定资源再持久锁定')
+    return
+  }
+  try {
+    await upsertOperationOverride({
+      planId,
+      operationId: task.operationId,
+      resourceId: task.resourceId,
+      startUtc: task.startUtc,
+      endUtc: task.endUtc,
+    })
+    const key = `${task.orderId}:${task.operationId}`
+    if (!persistedOperationKeys.value.includes(key)) {
+      persistedOperationKeys.value = [...persistedOperationKeys.value, key]
+    }
+    toast.success('工序 override 已持久化，重排程自动继承')
+  } catch (error) {
+    notifyOperationFailure('持久化失败', error, '持久化失败，请稍后重试')
   }
 }
 
@@ -342,6 +456,70 @@ function releaseDisabledReason(row: BusinessConsoleSchedulingPlanSummaryResponse
     return `方案已失效（${describeScheduleInvalidationReason(row.latestInvalidationReasonCode)}），请重排后再发布`
   return '发布该排程方案'
 }
+
+/**
+ * 草案工作区主操作的**禁用原因表**：按钮灰掉时必须能 hover 看到为什么灰（MAN-691 / #1259）。
+ *
+ * 写成「原因列表」而不是长布尔链，是为了 disabled 与 title 出自**同一处事实**
+ * （disabled = 有命中的原因），也方便后续往列表里并入新原因（如排程窗口非法），
+ * 不用再同时改两处判断。口径与历史方案表的 `releaseDisabledReason` 一致：
+ * 不可用时说明缺什么，可用时说明这一步会做什么。
+ */
+type ActionBlocker = { blocked: boolean; reason: string }
+
+function firstBlockingReason(blockers: ActionBlocker[]) {
+  return blockers.find((blocker) => blocker.blocked)?.reason
+}
+
+const generateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能生成排程方案' },
+    {
+      blocked: draft.includedOrders.value.length === 0,
+      reason: '还没有选中工单：先在待排工单池里勾选要排的工单',
+    },
+    // 窗口非法（起止倒置 / 缺值 / 跨度超上限）按 #1278 的口径并进原因表：
+    // 按钮直接灰掉并说明改哪里，而不是点下去才弹一句 toast（MAN-694 / #1262）。
+    {
+      blocked: !resolvedWorkbenchHorizon.value.ok,
+      reason: resolvedWorkbenchHorizon.value.ok
+        ? ''
+        : `排程窗口不可用：${resolvedWorkbenchHorizon.value.message}`,
+    },
+    { blocked: workbench.generatePending.value, reason: '正在生成首版方案，请稍候' },
+  ]),
+)
+const generateDisabledReason = computed(
+  () =>
+    generateBlockedReason.value ??
+    `按当前勾选的工单生成首版排程方案（${describeSchedulingHorizon(resolvedWorkbenchHorizon.value)}）`,
+)
+
+const repreviewBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canManage.value, reason: '当前账号没有排产管理权限，不能重预览' },
+    { blocked: !draft.model.value, reason: '还没有草案方案：先生成首版方案，再做锁定重预览' },
+    { blocked: workbench.revisionPending.value, reason: '正在按锁定约束重预览，请稍候' },
+    {
+      blocked: draft.modifiedUnlockedTaskIds.value.length > 0,
+      reason: '有未锁定的人工修改：先锁定全部修改再重预览，否则会被候选方案覆盖',
+    },
+  ]),
+)
+const repreviewDisabledReason = computed(
+  () => repreviewBlockedReason.value ?? '保持已锁定工序不动，重排其余工序生成新版本',
+)
+
+const publishCandidateBlockedReason = computed(() =>
+  firstBlockingReason([
+    { blocked: !canPublish.value, reason: '当前账号没有排程发布权限' },
+    { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+    { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
+  ]),
+)
+const publishCandidateDisabledReason = computed(
+  () => publishCandidateBlockedReason.value ?? '把当前草案版本发布给车间执行',
+)
 
 function loadText(load: BusinessConsoleSchedulingResourceLoad) {
   const assigned = load.assignedMinutes ?? 0
@@ -411,7 +589,7 @@ function reasonLabel(reason?: string | null) {
     <NvPageHeader
       title="排产工作台"
       :breadcrumbs="[{ label: '需求与计划' }]"
-      :count="`${actionablePlans.length} 个方案`"
+      :count="planHeaderCount"
     >
       <template #actions>
         <NvButton size="sm" variant="outline" type="button" @click="refreshPlans">
@@ -429,64 +607,72 @@ function reasonLabel(reason?: string | null) {
       </NvTabsList>
 
       <NvTabsContent value="workbench" class="grid gap-4">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
-        >
-          <div>
-            <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
-            <p class="text-sm text-muted-foreground">
-              已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
-              {{ draft.lockedAssignments.value.length }} 道工序。
-            </p>
+        <div class="grid gap-4 rounded-lg border bg-card p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p class="font-semibold">批量待排 → 编辑锁定 → 重预览 → 对比发布</p>
+              <p class="text-sm text-muted-foreground">
+                已选择 {{ draft.includedOrders.value.length }} 个工单，锁定
+                {{ draft.lockedAssignments.value.length }} 道工序。
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canUndo.value"
+                :title="draft.canUndo.value ? '撤销上一步草案修改' : '没有可撤销的草案修改'"
+                @click="draft.undo"
+                >撤销</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="ghost"
+                type="button"
+                :disabled="!draft.canRedo.value"
+                :title="draft.canRedo.value ? '重做刚撤销的草案修改' : '没有可重做的草案修改'"
+                @click="draft.redo"
+                >重做</NvButton
+              >
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(generateBlockedReason)"
+                :title="generateDisabledReason"
+                @click="generateWorkbenchPlan"
+              >
+                <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
+              </NvButton>
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :disabled="Boolean(repreviewBlockedReason)"
+                :title="repreviewDisabledReason"
+                @click="repreviewLockedDraft"
+              >
+                <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
+              </NvButton>
+              <NvButton
+                size="sm"
+                type="button"
+                :disabled="Boolean(publishCandidateBlockedReason)"
+                :title="publishCandidateDisabledReason"
+                @click="publishCandidate"
+              >
+                <SendIcon aria-hidden="true" />发布新版
+              </NvButton>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canUndo.value"
-              @click="draft.undo"
-              >撤销</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="ghost"
-              type="button"
-              :disabled="!draft.canRedo.value"
-              @click="draft.redo"
-              >重做</NvButton
-            >
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="
-                !canManage ||
-                draft.includedOrders.value.length === 0 ||
-                workbench.generatePending.value
-              "
-              @click="generateWorkbenchPlan"
-            >
-              <Spinner v-if="workbench.generatePending.value" aria-hidden="true" />生成首版
-            </NvButton>
-            <NvButton
-              size="sm"
-              variant="outline"
-              type="button"
-              :disabled="!canManage || !draft.model.value || workbench.revisionPending.value"
-              @click="repreviewLockedDraft"
-            >
-              <Spinner v-if="workbench.revisionPending.value" aria-hidden="true" />锁定重预览
-            </NvButton>
-            <NvButton
-              size="sm"
-              type="button"
-              :disabled="!canPublish || !draft.model.value || releasePlanPending"
-              @click="publishCandidate"
-            >
-              <SendIcon aria-hidden="true" />发布新版
-            </NvButton>
-          </div>
+
+          <!-- 排程窗口由排产员指定（MAN-694 / #1262）；「生成首版」按这个窗口求解。 -->
+          <SchedulingHorizonFields
+            v-model="horizonInput"
+            id-prefix="workbench-horizon"
+            :disabled="!canManage"
+          />
         </div>
 
         <p
@@ -510,6 +696,11 @@ function reasonLabel(reason?: string | null) {
             variant="outline"
             type="button"
             :disabled="!canManage"
+            :title="
+              canManage
+                ? '把这些人工修改锁定为约束，重预览时不会被覆盖'
+                : '当前账号没有排产管理权限，不能锁定修改'
+            "
             @click="draft.lockModifiedTasks"
             >锁定全部修改</NvButton
           >
@@ -518,14 +709,25 @@ function reasonLabel(reason?: string | null) {
           :candidates="workbench.schedulableCandidates.value"
           :draft-orders="draft.orders.value"
           :loading="workbench.candidatesPending.value"
+          :error="workbench.candidatesError.value"
+          :scope-ready="workbench.candidatesScopeReady.value"
+          :scope-message="workbench.candidatesScopeMessage.value"
           :read-only="!canManage"
           @include="draft.setIncluded"
           @update="draft.updateOrder"
-        />
+          @retry="workbench.refreshCandidates"
+        >
+          <template #scope>
+            <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+          </template>
+        </SchedulingOrderPool>
         <SchedulingDraftBoard
           :model="draft.model.value"
           :pending-operations="draft.pendingOperations.value"
           :read-only="!canManage"
+          :persisted-operation-keys="persistedOperationKeys"
+          :persist-pending="upsertOperationOverridePending"
+          @persist-override="persistOperationOverride"
           @move="draft.moveTask"
           @update="draft.updateTask"
           @lock="draft.setLocked"
@@ -537,6 +739,29 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
 
       <NvTabsContent value="table" class="grid gap-4">
+        <!-- 只读边界要自解释：历史方案是已生成结果的查阅面，改排程只能回草案工作区。
+             不写这句，用户会在表里反复点、以为"表格坏了"（MAN-691 / #1259）。 -->
+        <div
+          data-testid="plan-table-readonly-notice"
+          class="flex flex-wrap items-start justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+        >
+          <div class="grid gap-1">
+            <p class="text-sm font-medium text-foreground">历史方案：只读查阅</p>
+            <p class="max-w-2xl text-sm text-muted-foreground">
+              这里列的是已生成的排程方案，只能查看明细、发布或撤销发布；工序的资源与时间不能在这张表上改。
+              要调整排程，回草案工作区改完再重预览生成新版本。
+            </p>
+          </div>
+          <NvButton
+            size="sm"
+            variant="outline"
+            type="button"
+            title="回到草案工作区调整工序资源与时间，再重预览生成新版本"
+            @click="activeView = 'workbench'"
+          >
+            去草案工作区修改
+          </NvButton>
+        </div>
         <NvDataTable
           :pagination="false"
           :columns="columns"
@@ -546,6 +771,9 @@ function reasonLabel(reason?: string | null) {
           :searchable="false"
           :column-settings="false"
           empty-message="还没有排程方案"
+          :error="plansError"
+          error-message="没有取到排程方案列表，当前无法判断已有哪些方案。请重试，或稍后再看。"
+          @retry="refreshPlans"
         >
           <template #empty>
             <p class="text-sm font-medium text-foreground">还没有排程方案</p>
@@ -591,6 +819,18 @@ function reasonLabel(reason?: string | null) {
                 <SendIcon v-else aria-hidden="true" />
                 发布
               </NvButton>
+              <NvButton
+                v-if="canRevoke(row)"
+                size="sm"
+                variant="destructive"
+                type="button"
+                :disabled="revokePlanPending"
+                title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
+                @click="requestRevoke(row.planId)"
+              >
+                <Undo2Icon aria-hidden="true" />
+                撤销发布
+              </NvButton>
             </div>
           </template>
         </NvDataTable>
@@ -615,10 +855,23 @@ function reasonLabel(reason?: string | null) {
               </NvSelectItem>
             </NvSelectContent>
           </NvSelect>
+          <NvButton
+            v-if="canRevoke(selectedPlanSummary)"
+            size="sm"
+            variant="destructive"
+            type="button"
+            :disabled="revokePlanPending"
+            title="撤销该已发布方案，MES 侧回流撤销对应工序排程"
+            @click="requestRevoke(detailSelection.planId)"
+          >
+            <Undo2Icon aria-hidden="true" />
+            撤销发布
+          </NvButton>
         </div>
         <SchedulingPlanGantt
           :plan="planDetail"
           :summary="selectedPlanSummary"
+          :work-orders="workbench.candidates.value"
           :loading="planDetailPending"
           :error="planDetailError"
           :release-pending="releasePlanPending"
@@ -628,12 +881,38 @@ function reasonLabel(reason?: string | null) {
       </NvTabsContent>
     </NvTabs>
 
+    <!-- 撤销发布二次确认：说明 MES 侧后果，避免误触。
+         v-if 按需挂载：关闭时完全不渲染 reka AlertDialog 树，也避免与页面测试针对
+         NvSheet 的全局 DialogRoot stub 相互干扰（stub 会剥掉 AlertDialog 的注入上下文）。 -->
+    <NvAlertDialog v-if="revokeConfirmOpen" v-model:open="revokeConfirmOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>确认撤销发布该排程方案？</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            方案 {{ revokeTargetPlanId }} 撤销后将进入「已撤销」终态，MES
+            侧会回流撤销由它下达的工序排程；需要重新下达时须生成并发布新方案。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+          <NvAlertDialogAction
+            variant="destructive"
+            :disabled="revokePlanPending"
+            @click="confirmRevoke"
+          >
+            <Spinner v-if="revokePlanPending" aria-hidden="true" />
+            确认撤销
+          </NvAlertDialogAction>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
     <NvSheet v-model:open="detailOpen">
       <NvSheetContent side="right" class="w-full overflow-y-auto sm:max-w-3xl">
         <NvSheetHeader>
           <NvSheetTitle>排程方案明细</NvSheetTitle>
           <NvSheetDescription>
-            {{ detailSelection.planId || '未选择方案' }}
+            {{ detailSelection.planId || '未选择方案' }} · 只读查阅，调整排程请回草案工作区
           </NvSheetDescription>
         </NvSheetHeader>
 
@@ -669,7 +948,10 @@ function reasonLabel(reason?: string | null) {
                 :tone="schedulingPlanStatusTone(planDetail.status)"
               />
             </div>
-            <div class="grid gap-3 sm:grid-cols-4">
+            <!-- 6 个指标塞进 5 列：第 6 个「负荷分钟」必然孤悬到第二行独占一格，而 1/5 的
+                 列宽又装不下「设备状态未知工序」这种 7 字标签，只能断行并贴到格子边缘
+                 （#1418）。改 3 列 × 2 行：列宽翻倍，长标签一行放得下，也不再有落单格子。 -->
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <div>
                 <p class="text-xs text-muted-foreground">资源数</p>
                 <p class="text-sm font-medium text-foreground">{{ selectedResourceCount }}</p>
@@ -690,6 +972,26 @@ function reasonLabel(reason?: string | null) {
                   {{
                     planDetail.metrics?.unscheduledOperationCount ??
                     planDetail.unscheduledOperations?.length ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">物料风险工序</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.materialRiskOperationCount ??
+                    planDetail.materialRisks?.length ??
+                    0
+                  }}
+                </p>
+              </div>
+              <div>
+                <p class="text-xs text-muted-foreground">设备状态未知工序</p>
+                <p class="text-sm font-medium text-foreground">
+                  {{
+                    planDetail.metrics?.equipmentRiskOperationCount ??
+                    planDetail.equipmentRisks?.length ??
                     0
                   }}
                 </p>
@@ -732,6 +1034,7 @@ function reasonLabel(reason?: string | null) {
                         ? orderUrgencies.byReference.value.get(assignment.orderId)
                         : undefined
                     "
+                    :source-unavailable="orderUrgencies.error?.value != null"
                     @refresh="refreshUrgency"
                   />
                 </div>
@@ -763,6 +1066,61 @@ function reasonLabel(reason?: string | null) {
             <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
               暂无资源负荷。
             </p>
+          </section>
+
+          <!--
+            物料风险（软约束）：齐套是开工门槛不是排产门槛 —— 缺料工序照排进方案，
+            这里告诉规划员开工前必须补齐哪些物料，缺口多少。
+          -->
+          <section v-if="planDetail.materialRisks?.length" class="grid gap-3">
+            <h3 class="text-sm font-semibold text-foreground">物料风险 · 需在开工前完成备料</h3>
+            <div class="grid gap-2">
+              <div
+                v-for="risk in planDetail.materialRisks"
+                :key="`${risk.orderId}:${risk.operationId}`"
+                class="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+                data-testid="plan-material-risk"
+              >
+                <p class="font-medium">{{ risk.orderId }} · {{ risk.operationId }}</p>
+                <ul v-if="risk.shortages?.length" class="mt-1 grid gap-0.5 text-xs">
+                  <li
+                    v-for="shortage in risk.shortages"
+                    :key="`${shortage.materialId}-${shortage.materialLotId ?? ''}`"
+                    class="flex justify-between gap-3 tabular-nums"
+                  >
+                    <span>{{ shortage.materialId }}</span>
+                    <span
+                      >缺 {{ shortage.shortageQuantity }}（需
+                      {{ shortage.requiredQuantity }}）</span
+                    >
+                  </li>
+                </ul>
+                <p class="mt-1 text-xs">{{ risk.message }}</p>
+              </div>
+            </div>
+          </section>
+
+          <!--
+            设备数据风险（软约束）：无快照 / 快照过期 / 采集源不可达 —— 这是数据盲区，
+            不是设备不可用。工序照排，但开工前要人工确认设备状态。
+          -->
+          <section v-if="planDetail.equipmentRisks?.length" class="grid gap-3">
+            <h3 class="text-sm font-semibold text-foreground">
+              设备状态未知 · 开工前请人工确认设备可用
+            </h3>
+            <div class="grid gap-2">
+              <div
+                v-for="risk in planDetail.equipmentRisks"
+                :key="`${risk.orderId}:${risk.operationId}`"
+                class="rounded-md border border-border bg-muted/40 p-3 text-sm"
+                data-testid="plan-equipment-risk"
+              >
+                <p class="font-medium">
+                  {{ risk.orderId }} · {{ risk.operationId }} · {{ risk.resourceId }}
+                </p>
+                <p class="mt-1 text-xs text-muted-foreground">{{ risk.message }}</p>
+              </div>
+            </div>
           </section>
 
           <section class="grid gap-3">

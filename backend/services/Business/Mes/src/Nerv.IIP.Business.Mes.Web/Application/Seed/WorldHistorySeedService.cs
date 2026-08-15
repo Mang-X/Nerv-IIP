@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
@@ -16,7 +17,8 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 ///
 /// 与 ERP 侧的一致性靠 <see cref="WorldHistorySpec.BuildOrderPlans"/> 与
 /// <see cref="WorldHistoryTimeline"/> 两个确定性纯函数达成：两侧不通信、不跨库查询、不建跨 schema 外键，
-/// 仅以业务编码 <c>SO-2026-#####</c> ↔ <c>WO-2026-#####</c> 相互引用。
+/// 订单工单同时以稳定的 DemandPlanning <c>PlanningSuggestion</c> ID 和
+/// <c>SO-2026-#####</c> pegging 引用计划域；返工工单仍只引用被补工单。
 ///
 /// 关键数量不变量：**好品产出 == 销售订单数量**。工单投料量按报废量放大
 /// （<see cref="WorldHistoryWorkOrderPlan.WorkOrderQuantity"/>），于是「报工 → 完工入库 → 发货」
@@ -73,6 +75,12 @@ public sealed class WorldHistorySeedService(
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
+        // 齐套缺口档位按「已下达待开工」队列的序号成块分配（#1408）。队列序号必须从**完整计划表**
+        // 推导，不能从本批或库内已有行推导：种子是幂等的，第二次跑只补差集，按写入顺序编号会让
+        // 同一张单在两次跑之间换档。
+        var releasedCohortOrdinals = BuildReleasedCohortOrdinals(plans);
+        // 排产优先级铺到「已下达 + 在制」整池，见 BuildSchedulableCohortOrdinals。
+        var schedulableCohortOrdinals = BuildSchedulableCohortOrdinals(plans);
         var written = 0;
         for (var batchStart = 0; batchStart < plans.Count; batchStart += BatchSize)
         {
@@ -85,15 +93,25 @@ public sealed class WorldHistorySeedService(
             {
                 var timeline = WorldHistoryTimeline.For(plan, asOfDate);
                 var workOrderPlan = WorldHistoryMesSpec.BuildWorkOrderPlan(plan.WorkOrderNo, plan.SkuCode, plan.Quantity);
+                var execution = ResolveExecution(plan.Stage);
+                var releasedCohortOrdinal = releasedCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo);
+                var schedulableCohortOrdinal = schedulableCohortOrdinals.GetValueOrDefault(plan.WorkOrderNo);
+                // 已下达待开工的那批按配额跨 asOfDate 铺开交期（四逾期六未到期）；其余档位仍用
+                // 订单前置期推出来的历史交期——在制/完工单的交期是既成事实，不该被改写。
+                var dueDate =
+                    WorldHistoryMesSpec.ReleasedDueDate(execution, releasedCohortOrdinal, asOfDate)
+                    ?? plan.RequiredDate;
                 WriteWorkOrderChain(
                     organizationId,
                     environmentId,
                     workOrderPlan,
                     productionVersions.GetValueOrDefault(plan.SkuCode),
                     timeline,
-                    ResolveExecution(plan.Stage),
-                    plan.SalesOrderNo,
-                    plan.RequiredDate);
+                    execution,
+                    sourcePlanReference: CreatePlanningSuggestionSourceReference(plan),
+                    dueDate: dueDate,
+                    releasedCohortOrdinal: releasedCohortOrdinal,
+                    schedulableCohortOrdinal: schedulableCohortOrdinal);
                 added++;
             }
 
@@ -109,10 +127,58 @@ public sealed class WorldHistorySeedService(
         return written;
     }
 
+    /// <summary>
+    /// 「已下达待开工」工单在自己队列里的序号（从 1 起）——齐套缺口配额块的分配下标（#1408）。
+    /// </summary>
+    private static Dictionary<string, int> BuildReleasedCohortOrdinals(IReadOnlyList<WorldHistoryOrderPlan> plans)
+    {
+        var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var plan in plans.Where(plan => ResolveExecution(plan.Stage) == WorldHistoryExecution.ReleasedOnly))
+        {
+            ordinals[plan.WorkOrderNo] = ordinals.Count + 1;
+        }
+
+        return ordinals;
+    }
+
+    /// <summary>
+    /// 「可排产」队列序号：已下达待开工 **与在制** 都算——待排工单池装的正是这两档
+    /// （MES 已下达且未完工），排产优先级要在整池上都有区分度。
+    ///
+    /// <para>
+    /// 与 <see cref="BuildReleasedCohortOrdinals"/> 分开，因为两者语义不同：齐套缺口只对
+    /// 「下达时刻尚未领料」的单成立（在制单领料已过账，缺口恒被 clamp 回 0）；而
+    /// **优先级是排产输入、不是执行事实**，在制单的剩余工序照样要排。
+    /// </para>
+    /// <para>
+    /// 第五轮走查实测：只按已下达档铺优先级时，待排池里在制那批仍是整片 <c>10</c>——
+    /// 首屏看着有轻重，往下滚两屏就全一样了，等于没改。
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, int> BuildSchedulableCohortOrdinals(IReadOnlyList<WorldHistoryOrderPlan> plans)
+    {
+        var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var plan in plans)
+        {
+            var execution = ResolveExecution(plan.Stage);
+            if (execution is not (WorldHistoryExecution.ReleasedOnly or WorldHistoryExecution.Partial))
+            {
+                continue;
+            }
+
+            ordinals[plan.WorkOrderNo] = ordinals.Count + 1;
+        }
+
+        return ordinals;
+    }
+
     /// <summary>销售订单阶段 → 工单执行深度。</summary>
     private static WorldHistoryExecution ResolveExecution(WorldHistoryOrderStage stage) => stage switch
     {
-        WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped => WorldHistoryExecution.Closed,
+        // #1374：待发货档的工单同样已完工入库，绝不能掉进 `_` 落成 ReleasedOnly。
+        WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment => WorldHistoryExecution.Closed,
         WorldHistoryOrderStage.InProgress => WorldHistoryExecution.Partial,
         _ => WorldHistoryExecution.ReleasedOnly,
     };
@@ -129,8 +195,14 @@ public sealed class WorldHistorySeedService(
         DateOnly asOfDate,
         CancellationToken cancellationToken)
     {
-        // 补产只挂在已结案/已发货的订单后面：补的是已交付批次里的不良件。
-        var candidates = plans.Where(plan => plan.HasDelivery).ToArray();
+        // 补产只挂在已完工入库的订单后面：补的是已产出批次里的不良件。
+        //
+        // #1374 · 判据必须与四份 `WorldHistoryPhase2Spec` 的候选池**逐字一致**（同为 IsProductionClosed）。
+        // 挑选公式 `candidates[(seq-1) * candidates.Length / reworkCount]` 是按下标切片的：
+        // 两侧 candidates.Length 只要差一个，从某个 seq 起下标就整体错位，同一个 WO-2026-R####
+        // 会在 MES 与 Inventory/Wms/Quality/BarcodeLabel 之间取到**不同的来源订单**，
+        // SKU、数量、时间线全不一致——而两侧测试都只断言条数，谁也发现不了（审计 T2 复制圈外零保障）。
+        var candidates = plans.Where(plan => plan.IsProductionClosed).ToArray();
         var reworkCount = (int)Math.Round(plans.Count * WorldHistoryMesSpec.ReworkWorkOrderRatio, MidpointRounding.AwayFromZero);
         if (candidates.Length == 0 || reworkCount == 0)
         {
@@ -171,8 +243,15 @@ public sealed class WorldHistorySeedService(
                     timeline,
                     WorldHistoryExecution.Closed,
                     // 补产工单的来源单据是被补的工单，不是销售订单。
-                    sourceDocumentId: source.WorkOrderNo,
+                    sourcePlanReference: new SourcePlanReference(
+                        sourceSystem: "mes",
+                        sourceDocumentType: "rework-work-order",
+                        sourceDocumentId: source.WorkOrderNo,
+                        sourceDemandReference: null),
                     dueDate: source.RequiredDate,
+                    releasedCohortOrdinal: null,
+                    // 补产工单恒定 90（返修优先），不参与可排产配额。
+                    schedulableCohortOrdinal: null,
                     isRework: true);
                 added++;
             }
@@ -212,13 +291,29 @@ public sealed class WorldHistorySeedService(
         string? productionVersionId,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
-        string sourceDocumentId,
+        SourcePlanReference sourcePlanReference,
         DateOnly dueDate,
+        int? releasedCohortOrdinal,
+        int? schedulableCohortOrdinal,
         bool isRework = false)
     {
         var dueUtc = new DateTimeOffset(dueDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var createdAtUtc = MomentOn(timeline.OrderDate, plan.WorkOrderNo, "workorder-created");
         var releasedAtUtc = MomentOn(timeline.WorkOrderReleaseDate, plan.WorkOrderNo, "workorder-released");
+
+        // 时间线贴近 asOfDate 时（尾部单），OrderDate/ReleaseDate/ProductionStartDate 被压到同一天，
+        // 班次内随机时刻可能倒挂出「报工早于工单创建」（asOfDate=2026-07-27 实翻车，校验器
+        // fail-closed 拦停 MES 启动）。夹取保证 创建 ≤ 下达 ≤ 首个工序窗口开始。
+        var productionFloorUtc = WorldHistoryCalendar.ShiftMoment(timeline.ProductionStartDate, 0, 0);
+        if (releasedAtUtc >= productionFloorUtc)
+        {
+            releasedAtUtc = productionFloorUtc.AddHours(-1);
+        }
+
+        if (createdAtUtc >= releasedAtUtc)
+        {
+            createdAtUtc = releasedAtUtc.AddHours(-1);
+        }
 
         var workOrder = WorkOrder.Create(
             organizationId,
@@ -227,20 +322,23 @@ public sealed class WorldHistorySeedService(
             plan.SkuCode,
             productionVersionId,
             plan.WorkOrderQuantity,
-            priority: isRework ? 90 : 10,
+            // 返修单恒定 90；已下达待开工的那批按配额铺开（重点单少、常规单多），
+            // 其余档位沿用 10——历史单的优先级不影响排产，铺开只会给读面添噪。
+            // 返修单恒定 90；可排产的（已下达 + 在制）按配额铺开，重点单少常规单多；
+            // 已完工档回落 10——它们不进待排池，铺开只是给读面添噪。
+            priority: isRework
+                ? 90
+                : WorldHistoryMesSpec.SchedulablePriority(execution, schedulableCohortOrdinal) ?? 10,
             dueUtc,
             WorldHistorySpec.UomCode,
-            new SourcePlanReference(
-                sourceSystem: isRework ? "mes" : "erp",
-                sourceDocumentType: isRework ? "rework-work-order" : "sales-order",
-                sourceDocumentId: sourceDocumentId,
-                sourceDemandReference: isRework ? null : $"{sourceDocumentId}:10"));
+            sourcePlanReference);
         workOrder.MarkReleased();
         dbContext.WorkOrders.Add(workOrder);
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
 
         var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
-        WriteMaterialFacts(organizationId, environmentId, plan, timeline, execution, tasks);
+        WriteMaterialFacts(
+            organizationId, environmentId, plan, workOrder, timeline, execution, tasks, releasedCohortOrdinal);
 
         if (execution == WorldHistoryExecution.ReleasedOnly)
         {
@@ -258,6 +356,17 @@ public sealed class WorldHistorySeedService(
         WriteFinishedGoodsReceipt(organizationId, environmentId, plan, timeline, completedAtUtc);
         workOrder.Close(completedAtUtc.AddMinutes(30));
     }
+
+    /// <summary>
+    /// 订单工单只引用跨服务事实流中确实会由 DemandPlanning 写入的销售订单建议。
+    /// 返工工单走独立的 rework 来源，不进入 MRP 建议链。
+    /// </summary>
+    private static SourcePlanReference CreatePlanningSuggestionSourceReference(WorldHistoryOrderPlan plan) =>
+        new(
+            sourceSystem: DemandPlanningSourceReferences.DemandPlanning,
+            sourceDocumentType: DemandPlanningSourceReferences.PlanningSuggestion,
+            sourceDocumentId: WorldHistorySpec.PlanningSuggestionIdForSalesOrder(plan.SalesOrderNo).ToString(),
+            sourceDemandReference: plan.SalesOrderNo);
 
     #region 工序任务
 
@@ -323,8 +432,31 @@ public sealed class WorldHistorySeedService(
             var isInProgress = execution == WorldHistoryExecution.Partial && position == completedThrough;
             if (isCompleted || isInProgress)
             {
-                // deviceAssetId 留空：设备绑定属于二期设备域，这里只落人员与班次。
-                task.Assign(assignee.UserId, deviceAssetId: null, shiftId: assignee.TeamCode, assignedAtUtc: startUtc, DispatchActor);
+                // 历史上真实发生过的工序必须带完整排程与派工痕迹：
+                // 先按周版排程方案落 Scheduled 事实（SP-2026-W## 段，不侵占 SCALE/L2 排程），
+                // 再按设定集 §3 的设备段派到人 + 设备（派工看板据此显示排程状态与派工人）。
+                var deviceAssetId = WorldHistoryMesSpec.DeviceAssetCode(sequence, random);
+                task.ApplyScheduleAssignment(
+                    WorldHistoryMesSpec.WorkCenterCode(plan.SkuCode, sequence),
+                    deviceAssetId,
+                    plannedStartUtc: startUtc,
+                    plannedEndUtc: endUtc,
+                    assignedAtUtc: releasedAtUtc,
+                    operationCode: operation.OperationCode,
+                    schedulePlanId: WorldHistoryMesSpec.SchedulePlanId(workingDay),
+                    scheduleReleaseRevision: 1);
+                // 班次与班组是两个维度：shiftId 落 L0 主数据的班次编码（EARLY/MIDDLE），班组另走
+                // teamId/teamName。历史上这里把 TeamCode 写进了 shiftId，导致派工看板「班次」列
+                // 直接吐出 TEAM-WB-MC-A。
+                task.Assign(
+                    assignee.UserId,
+                    deviceAssetId,
+                    shiftId: WorldHistoryCalendar.ShiftCode(assignee.ShiftIndex),
+                    assignedAtUtc: startUtc,
+                    DispatchActor,
+                    assignedUserName: assignee.Name,
+                    teamId: assignee.TeamCode,
+                    teamName: assignee.TeamName);
                 task.Start(startUtc);
             }
 
@@ -363,36 +495,85 @@ public sealed class WorldHistorySeedService(
 
     #region 齐套需求与领料
 
+    /// <summary>
+    /// 齐套需求 + 领料 + **开工门禁的证明位**。
+    ///
+    /// <para>
+    /// 本引擎直写聚合、不走命令也不派发领域事件（见类型头注释），因此运行时挂在
+    /// 「工单下达」命令上的齐套副作用在种子世界里一次都不会发生 ——
+    /// <c>MaterialReadinessGuards.EnsureRequirementSnapshotsAsync</c> 会在下达时
+    /// 写需求行**并**在工单上盖下证明位，而这里必须原样补上后半截，否则
+    /// <c>MaterialRequirementSnapshotStatus</c> 恒为 null，
+    /// <c>MesOperationTaskActionReadinessEvaluator</c> 对全世界工单
+    /// 一律加 <c>MATERIAL_REQUIREMENT_SNAPSHOT_MISSING</c>，逐工序「开工」按钮全被拦
+    /// （总览的缺料计数走纯数量口径，于是出现「缺料 0 却开不了工」的矛盾观感，#1373）。
+    /// </para>
+    /// <para>
+    /// 需求行挂 <c>OperationTaskId = null</c>（工单级齐套），与运行时快照提供方
+    /// （<c>MesMaterialRequirementSnapshotProvider</c> 的行一律不带工序）逐字一致。
+    /// 挂在首序任务上会让门禁在 OP-20 及之后取不到任何需求行，把期望证明位翻成
+    /// <c>no-requirements</c>，与工单上的 <c>captured</c> 对不上——照样全拦。
+    /// </para>
+    /// <para>
+    /// **缺口分布（#1408）**：#1384 把可用/已备料一律写满需求量，顺带把全世界的齐套状态
+    /// 压成了单值，「缺料 → MRP 采购建议 → 请购 → 采购 → 收货 → 入库 → 齐套转绿 → 开工」
+    /// 这条链因此没有起点。现在由 <c>WorldHistoryMesSpec.MaterialShortageTier</c> 按配额块
+    /// 给「已下达待开工」档留出四档缺口，其余执行档一律齐套——两条演示路径同时成立。
+    /// </para>
+    /// </summary>
     private void WriteMaterialFacts(
         string organizationId,
         string environmentId,
         WorldHistoryWorkOrderPlan plan,
+        WorkOrder workOrder,
         WorldHistoryTimeline timeline,
         WorldHistoryExecution execution,
-        IReadOnlyList<OperationTaskWindow> tasks)
+        IReadOnlyList<OperationTaskWindow> tasks,
+        int? releasedCohortOrdinal)
     {
         var components = WorldHistoryMesSpec.Components(plan.SkuCode);
         var kittingTask = tasks[0];
         var capturedAtUtc = MomentOn(timeline.WorkOrderReleaseDate, plan.WorkOrderNo, "kitting");
+        var tier = WorldHistoryMesSpec.MaterialShortageTier(execution, releasedCohortOrdinal);
+        var coverageRatios = WorldHistoryMesSpec.MaterialCoverageRatios(plan.WorkOrderNo, tier, components.Count);
 
-        foreach (var component in components)
+        for (var componentIndex = 0; componentIndex < components.Count; componentIndex++)
         {
+            var component = components[componentIndex];
             var required = component.QuantityPer * plan.WorkOrderQuantity;
+            // 覆盖量拆成「线边可用 + 已备料」两笔，两笔之和 = 覆盖量。齐套档覆盖量 == 需求量、
+            // 缺口恰好为 0；缺料档留出的差额就是读面与开工门禁看到的缺口。
+            var (available, staged) = WorldHistoryMesSpec.SplitCoverage(
+                plan.WorkOrderNo,
+                component.SkuCode,
+                required,
+                coverageRatios[componentIndex]);
             var requirement = MaterialRequirement.Capture(
                 organizationId,
                 environmentId,
                 plan.WorkOrderNo,
-                kittingTask.Task.OperationTaskId,
+                // 工单级齐套：全部工序共用同一份需求快照（与运行时快照提供方同形）。
+                operationTaskId: null,
                 component.SkuCode,
                 materialLotId: $"LOT-{component.SkuCode}-{plan.WorkOrderNo}",
                 requiredQuantity: required,
-                // 齐套检查通过：可用与已备料都覆盖需求（未齐套的场景属于二期库存域）。
-                availableQuantity: required,
-                stagedQuantity: required,
+                availableQuantity: available,
+                stagedQuantity: staged,
                 sourceSystem: SourceSystem,
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
                 capturedAtUtc: capturedAtUtc);
             dbContext.MaterialRequirements.Add(requirement);
+        }
+
+        // 证明位与工单的生产版本绑定（聚合内部即以 ProductionVersionId 落章）：
+        // 工艺版本解析失败时本引擎会整体抛错停机，这里的空值分支只对离线夹具成立。
+        if (!string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        {
+            workOrder.RecordMaterialRequirementSnapshot(
+                components.Count == 0
+                    ? WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus
+                    : WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+                capturedAtUtc);
         }
 
         if (execution == WorldHistoryExecution.ReleasedOnly)
@@ -427,7 +608,10 @@ public sealed class WorldHistorySeedService(
                     component.UomCode,
                     portions[portionIndex],
                     requestedAtUtc);
-                request.ConfirmLineSideReceipt(
+                // 历史领料是「已过账」的既成事实：确认收料后按两条腿补齐库存回执，
+                // 否则单据会停在 ReceiptPosting，齐套快照与历史事实对不上（#1322）。
+                request.ConfirmAndPostLineSideReceipt(
+                    WorldHistoryMesSpec.TransferLocationsFor(component.SkuCode),
                     requestedAtUtc.AddMinutes(25),
                     portions[portionIndex],
                     $"LOT-{component.SkuCode}-{plan.WorkOrderNo}");

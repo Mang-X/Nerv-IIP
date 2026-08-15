@@ -32,6 +32,13 @@ public sealed class ManualDispatchConcurrencyRetryBehavior<TRequest, TResponse>(
             {
                 dbContext.ChangeTracker.Clear();
             }
+            catch (DbUpdateException exception)
+                when (IsSupportedCommand(request) &&
+                    attempt < MaxAttempts &&
+                    IsUniqueConstraintConflict(exception))
+            {
+                dbContext.ChangeTracker.Clear();
+            }
         }
     }
 
@@ -43,5 +50,24 @@ public sealed class ManualDispatchConcurrencyRetryBehavior<TRequest, TResponse>(
         return exception.Entries.Count > 0 && exception.Entries.All(entry =>
             entry.Entity is OperationTask &&
             entry.Metadata.FindProperty(nameof(OperationTask.ManualDispatchRevision))?.IsConcurrencyToken == true);
+    }
+
+    private static bool IsUniqueConstraintConflict(DbUpdateException exception)
+    {
+        var providerException = exception.InnerException;
+        if (providerException is null)
+        {
+            return false;
+        }
+
+        var exceptionType = providerException.GetType();
+        var sqlState = exceptionType.GetProperty("SqlState")?.GetValue(providerException) as string;
+        if (string.Equals(sqlState, "23505", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var sqliteErrorCode = exceptionType.GetProperty("SqliteErrorCode")?.GetValue(providerException);
+        return sqliteErrorCode is int errorCode && errorCode == 19;
     }
 }

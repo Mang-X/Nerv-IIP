@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 using System.Globalization;
 using System.Text;
 
@@ -23,6 +25,9 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
     private const decimal QuantityTolerance = 0.005m;
 
+    /// <summary>低于该条数的样本不做分布类断言（极小 <c>scale</c> 下总量可能只有个位数）。</summary>
+    private const int MinimumDistributionSample = 10;
+
     public async Task<WorldHistoryMesValidationReport> ValidateAsync(
         string organizationId,
         string environmentId,
@@ -40,6 +45,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         var reports = await LoadReportTotalsAsync(organizationId, environmentId, cancellationToken);
         var receipts = await LoadReceiptsAsync(organizationId, environmentId, cancellationToken);
         var kitting = await LoadKittingCountsAsync(organizationId, environmentId, cancellationToken);
+        var kittingGaps = await LoadKittingGapsAsync(organizationId, environmentId, cancellationToken);
 
         var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(-1);
         var upperBound = new DateTimeOffset(asOfDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero).AddDays(1);
@@ -58,6 +64,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             CheckWorkOrder(workOrderId, workOrder, taskCounts, reports, receipts, kitting, lowerBound, upperBound, failures);
         }
 
+        CheckMaterialShortageDistribution(workOrders, kittingGaps, failures);
+
         if (failures.Count > 0)
         {
             throw new WorldHistoryConsistencyException(failures);
@@ -70,6 +78,299 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             FinishedGoodsReceiptsChecked: receipts.Count,
             Sample: BuildSample(workOrders, taskCounts, reports, receipts));
     }
+
+    #region 现场异常与协同（停机 / 班次交接 / 车间不良）
+
+    /// <summary>
+    /// 《工厂世界观设定集》L1「异常与协同」块的 fail-closed 校验。
+    ///
+    /// 只校验本引擎号段（<c>DT-2026-*</c> / <c>HO-2026-*</c> / <c>DEF-2026-*</c>）内的行，
+    /// 不干涉 L2 固定案例与演示当场操作产生的事实。
+    ///
+    /// 逐行内容不与规格逐字段比对：同一环境在不同 <c>asOfDate</c> 上重复启动时，先前落库的行
+    /// 保留当时的时间戳（幂等按单号跳过），因此这里校验的是**不变量**——条数、号段格式、
+    /// 时间边界、引用完整性、状态分布下限。
+    /// </summary>
+    public async Task<WorldHistoryFloorEventsValidationReport> ValidateFloorEventsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+        var lowerBound = new DateTimeOffset(WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero).AddDays(-1);
+        var upperBound = WorldHistoryFloorEventsSpec.UpperBound(asOfDate).AddDays(1);
+
+        var downtimeChecked = await CheckDowntimeEventsAsync(
+            organizationId, environmentId, asOfDate, scale, lowerBound, upperBound, failures, cancellationToken);
+        var handoversChecked = await CheckShiftHandoversAsync(
+            organizationId, environmentId, asOfDate, scale, lowerBound, upperBound, failures, cancellationToken);
+        var defectsChecked = await CheckDefectRecordsAsync(
+            organizationId, environmentId, asOfDate, scale, lowerBound, upperBound, failures, cancellationToken);
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryFloorEventsValidationReport(downtimeChecked, handoversChecked, defectsChecked);
+    }
+
+    private async Task<int> CheckDowntimeEventsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        DateTimeOffset lowerBound,
+        DateTimeOffset upperBound,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var expected = WorldHistoryFloorEventsSpec.DowntimeEventCount(asOfDate, scale);
+        var rows = await dbContext.WorkCenterUnavailabilities
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.DowntimeEventNo.StartsWith("DT-2026-"))
+            .Select(x => new DowntimeProjection(x.DowntimeEventNo, x.WorkCenterId, x.DeviceAssetId, x.Reason, x.FromUtc, x.ToUtc))
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length != expected)
+        {
+            failures.Add($"停机事件条数 {rows.Length} 与设定集预期 {expected} 不符。");
+        }
+
+        var reasons = WorldHistoryFloorEventsSpec.DowntimeReasons.Select(x => x.Reason).ToHashSet(StringComparer.Ordinal);
+        var workCenters = WorldHistoryFloorEventsSpec.WorkCenterIds.ToHashSet(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            if (!workCenters.Contains(row.WorkCenterId))
+            {
+                failures.Add($"停机 {row.DowntimeEventNo} 落在非 L0 工作中心 {row.WorkCenterId} 上。");
+            }
+
+            if (string.IsNullOrWhiteSpace(row.DeviceAssetId))
+            {
+                failures.Add($"停机 {row.DowntimeEventNo} 未绑定设备。");
+            }
+
+            if (!reasons.Contains(row.Reason))
+            {
+                failures.Add($"停机 {row.DowntimeEventNo} 的原因 '{row.Reason}' 不在设定集口径内。");
+            }
+
+            if (row.FromUtc < lowerBound || row.FromUtc > upperBound)
+            {
+                failures.Add($"停机 {row.DowntimeEventNo} 起始时间 {row.FromUtc:O} 落在历史区间之外。");
+            }
+
+            if (row.ToUtc is { } restoredAtUtc && (restoredAtUtc < row.FromUtc || restoredAtUtc > upperBound))
+            {
+                failures.Add($"停机 {row.DowntimeEventNo} 恢复时间 {restoredAtUtc:O} 不合法。");
+            }
+        }
+
+        if (rows.Length > 0 && rows.Count(x => x.ToUtc is null) == 0)
+        {
+            failures.Add("停机事件全部已恢复，「当前停机」将为空——设定集要求最近若干起保持进行中。");
+        }
+
+        return rows.Length;
+    }
+
+    private async Task<int> CheckShiftHandoversAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        DateTimeOffset lowerBound,
+        DateTimeOffset upperBound,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var expected = WorldHistoryFloorEventsSpec.BuildShiftHandovers(asOfDate, scale).Count;
+        var rows = await dbContext.ShiftHandovers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.HandoverNo.StartsWith("HO-2026-"))
+            .Select(x => new HandoverProjection(x.HandoverNo, x.ShiftId, x.TeamId, x.HandoverStatus, x.OpenIssueCount, x.CreatedAtUtc, x.AcceptedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length != expected)
+        {
+            failures.Add($"班次交接条数 {rows.Length} 与设定集预期 {expected} 不符。");
+        }
+
+        // 班次与班组是两个维度，各自校验各自的取值域：班次只能是 L0 的 EARLY/MIDDLE，班组只能是
+        // 6 个 TEAM-WB-*。旧实现把两者混为一谈（班次域里放 TeamCode、班组域里放班组**名称**），
+        // 反而把「字段装错东西」固化成了断言。
+        var shiftCodes = WorldHistoryFloorEventsSpec.Teams
+            .Select(x => WorldHistoryCalendar.ShiftCode(x.ShiftIndex))
+            .ToHashSet(StringComparer.Ordinal);
+        var teamCodes = WorldHistoryFloorEventsSpec.Teams.Select(x => x.TeamCode).ToHashSet(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            if (!shiftCodes.Contains(row.ShiftId))
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 的班次 {row.ShiftId} 不是 L0 班次编码（应为 EARLY / MIDDLE）。");
+            }
+
+            if (!teamCodes.Contains(row.TeamId))
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 的班组 {row.TeamId} 不在 L0 的 6 个班组编码内。");
+            }
+
+            if (row.OpenIssueCount < 0)
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 的未闭环问题数为负。");
+            }
+
+            if (row.CreatedAtUtc < lowerBound || row.CreatedAtUtc > upperBound)
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 创建时间 {row.CreatedAtUtc:O} 落在历史区间之外。");
+            }
+
+            if (row.AcceptedAtUtc is { } acceptedAtUtc && acceptedAtUtc < row.CreatedAtUtc)
+            {
+                failures.Add($"班次交接 {row.HandoverNo} 接班时间早于交班时间。");
+            }
+        }
+
+        if (rows.Length > 0 && rows.Count(x => x.AcceptedAtUtc is null) == 0)
+        {
+            failures.Add("班次交接全部已接班，「待接班」将为空——设定集要求最近一班保持未接班。");
+        }
+
+        return rows.Length;
+    }
+
+    private async Task<int> CheckDefectRecordsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        DateTimeOffset lowerBound,
+        DateTimeOffset upperBound,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var anchorCount = await dbContext.OperationTasks
+            .AsNoTracking()
+            .CountAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    x.WorkOrderId.StartsWith("WO-2026-") &&
+                    x.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed &&
+                    x.ExistingEndUtc != null,
+                cancellationToken);
+        var expected = Math.Min(WorldHistoryFloorEventsSpec.DefectSlotCount(asOfDate, scale), anchorCount);
+
+        var rows = await dbContext.DefectRecords
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.DefectNo.StartsWith("DEF-2026-"))
+            .Select(x => new DefectProjection(x.DefectNo, x.WorkOrderId, x.OperationTaskId, x.DefectCode, x.Status, x.RecordedAtUtc, x.ClosedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        if (rows.Length != expected)
+        {
+            failures.Add($"车间不良条数 {rows.Length} 与设定集预期 {expected} 不符。");
+        }
+
+        var defectCodes = WorldHistoryFloorEventsSpec.DefectCodes.ToHashSet(StringComparer.Ordinal);
+        var orphanWorkOrders = await dbContext.DefectRecords
+            .AsNoTracking()
+            .CountAsync(
+                defect => defect.OrganizationId == organizationId && defect.EnvironmentId == environmentId &&
+                    defect.DefectNo.StartsWith("DEF-2026-") &&
+                    !dbContext.WorkOrders.Any(workOrder =>
+                        workOrder.OrganizationId == organizationId &&
+                        workOrder.EnvironmentId == environmentId &&
+                        workOrder.WorkOrderIdValue == defect.WorkOrderId),
+                cancellationToken);
+        if (orphanWorkOrders > 0)
+        {
+            failures.Add($"有 {orphanWorkOrders} 条车间不良挂在不存在的工单上。");
+        }
+
+        var orphanTasks = await dbContext.DefectRecords
+            .AsNoTracking()
+            .CountAsync(
+                defect => defect.OrganizationId == organizationId && defect.EnvironmentId == environmentId &&
+                    defect.DefectNo.StartsWith("DEF-2026-") &&
+                    defect.OperationTaskId != null &&
+                    !dbContext.OperationTasks.Any(task =>
+                        task.OrganizationId == organizationId &&
+                        task.EnvironmentId == environmentId &&
+                        task.OperationTaskIdValue == defect.OperationTaskId),
+                cancellationToken);
+        if (orphanTasks > 0)
+        {
+            failures.Add($"有 {orphanTasks} 条车间不良挂在不存在的工序任务上。");
+        }
+
+        foreach (var row in rows)
+        {
+            if (!defectCodes.Contains(row.DefectCode))
+            {
+                failures.Add($"车间不良 {row.DefectNo} 的不良代码 '{row.DefectCode}' 不在设定集口径内。");
+            }
+
+            if (row.RecordedAtUtc < lowerBound || row.RecordedAtUtc > upperBound)
+            {
+                failures.Add($"车间不良 {row.DefectNo} 记录时间 {row.RecordedAtUtc:O} 落在历史区间之外。");
+            }
+
+            if (row.ClosedAtUtc is { } closedAtUtc && closedAtUtc < row.RecordedAtUtc)
+            {
+                failures.Add($"车间不良 {row.DefectNo} 的处置时间早于记录时间。");
+            }
+        }
+
+        // 极小缩放（如 scale=0.02 且只有一两个生产日）下总量可能只有个位数，此时分布无意义，
+        // 只在样本足够大时才把「必须两种状态都有」当成硬约束。
+        if (rows.Length >= MinimumDistributionSample)
+        {
+            if (rows.Count(x => x.Status == DefectRecord.OpenStatus) == 0)
+            {
+                failures.Add("车间不良全部已处置，「待处置不良」将为空——设定集要求保留未处置的现场待办。");
+            }
+
+            if (rows.Count(x => x.Status != DefectRecord.OpenStatus) == 0)
+            {
+                failures.Add("车间不良全部未处置，处置分布（返工/让步/报废）将为空。");
+            }
+        }
+
+        return rows.Length;
+    }
+
+    private sealed record DowntimeProjection(
+        string DowntimeEventNo,
+        string WorkCenterId,
+        string? DeviceAssetId,
+        string Reason,
+        DateTimeOffset FromUtc,
+        DateTimeOffset? ToUtc);
+
+    private sealed record HandoverProjection(
+        string HandoverNo,
+        string ShiftId,
+        string TeamId,
+        string Status,
+        int OpenIssueCount,
+        DateTimeOffset CreatedAtUtc,
+        DateTimeOffset? AcceptedAtUtc);
+
+    private sealed record DefectProjection(
+        string DefectNo,
+        string WorkOrderId,
+        string? OperationTaskId,
+        string DefectCode,
+        string Status,
+        DateTimeOffset RecordedAtUtc,
+        DateTimeOffset? ClosedAtUtc);
+
+    #endregion
 
     #region 校验项
 
@@ -112,9 +413,42 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"{workOrderId} 工序任务数 {tasks.Total} 超出设定集 §7 的 6–8 道。");
         }
 
+        if (tasks.DispatchGaps > 0)
+        {
+            failures.Add($"{workOrderId} 有 {tasks.DispatchGaps} 道已开工/完工工序缺排程或派工痕迹（排程时间/方案、派工人及姓名、设备绑定必须齐全）。");
+        }
+
         if (!kitting.TryGetValue(workOrderId, out var kittingCount) || kittingCount == 0)
         {
             failures.Add($"{workOrderId} 缺少齐套需求快照。");
+        }
+
+        // 齐套需求行本身不构成开工资格：开工门禁认的是**工单上的证明位**
+        // （状态 + 与工单生产版本一致的版本印章）。种子直写聚合、绕过下达命令，
+        // 这一位曾经全世界恒 null，读面显示「缺料 0」而逐工序开工按钮全被拦（#1373）。
+        // 数一数需求行数只能证明「造了数据」，证明不了「开得了工」，故这里连证明位一起校验。
+        var expectedSnapshotStatus = kittingCount > 0
+            ? WorkOrder.MaterialRequirementSnapshotCapturedStatus
+            : WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus;
+        if (!string.Equals(workOrder.MaterialRequirementSnapshotStatus, expectedSnapshotStatus, StringComparison.Ordinal))
+        {
+            failures.Add(
+                $"{workOrderId} 齐套证明位为 '{workOrder.MaterialRequirementSnapshotStatus ?? "<null>"}'，" +
+                $"按 {kittingCount} 条齐套需求应为 '{expectedSnapshotStatus}'（开工门禁据此放行）。");
+        }
+
+        if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        {
+            failures.Add($"{workOrderId} 缺少生产版本，齐套证明位无从落章。");
+        }
+        else if (!string.Equals(
+            workOrder.MaterialRequirementSnapshotProductionVersionId,
+            workOrder.ProductionVersionId,
+            StringComparison.Ordinal))
+        {
+            failures.Add(
+                $"{workOrderId} 齐套证明位的生产版本 '{workOrder.MaterialRequirementSnapshotProductionVersionId ?? "<null>"}' " +
+                $"与工单生产版本 '{workOrder.ProductionVersionId}' 不一致（开工门禁要求逐字相等）。");
         }
 
         reports.TryGetValue(workOrderId, out var reported);
@@ -250,7 +584,10 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 x.CompletedQuantity,
                 x.ScrapQuantity,
                 x.CreatedAtUtc,
-                x.ClosedAtUtc))
+                x.ClosedAtUtc,
+                x.ProductionVersionId,
+                x.MaterialRequirementSnapshotStatus,
+                x.MaterialRequirementSnapshotProductionVersionId))
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
 
@@ -264,7 +601,12 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .Select(group => new TaskCounts(
                 group.Key,
                 group.Count(),
-                group.Count(task => task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed)))
+                group.Count(task => task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed),
+                group.Count(task =>
+                    (task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed ||
+                        task.Status == Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.InProgress) &&
+                    (task.AssignedUserId == null || task.AssignedUserName == null ||
+                        task.ScheduledAtUtc == null || task.DeviceAssetId == null || task.SchedulePlanId == null))))
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, StringComparer.Ordinal);
 
@@ -311,6 +653,126 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             .Select(group => new { WorkOrderId = group.Key, Count = group.Count() })
             .ToArrayAsync(cancellationToken))
         .ToDictionary(x => x.WorkOrderId, x => x.Count, StringComparer.Ordinal);
+
+    private async Task<KittingGap[]> LoadKittingGapsAsync(
+        string organizationId, string environmentId, CancellationToken cancellationToken) =>
+        await dbContext.MaterialRequirements
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.WorkOrderId.StartsWith("WO-2026-"))
+            .Select(x => new KittingGap(
+                x.WorkOrderId,
+                x.MaterialId,
+                x.RequiredQuantity,
+                x.AvailableQuantity,
+                x.StagedQuantity))
+            .ToArrayAsync(cancellationToken);
+
+    #endregion
+
+    #region 齐套缺口分布（#1408）
+
+    /// <summary>
+    /// 齐套缺口分布的 fail-closed 校验。
+    ///
+    /// <para>
+    /// #1384 解开开工门禁时把可用/已备料一律写满需求量，全世界零缺口——「缺料 → MRP 采购建议
+    /// → 请购 → 采购订单 → 收货 → 入库 → 齐套转绿 → 开工」这条链因此没有起点（#1408）。
+    /// 现在两条演示路径**必须同时成立**，这里就把两条都钉死：
+    /// </para>
+    /// <list type="number">
+    /// <item>缺口只许出现在「已下达待开工」档。在制 / 已完工的工单一旦缺料，
+    ///       逐工序开工会被物料门禁拦死，#1384 的成果当场丢失。</item>
+    /// <item>已下达档必须**同时**有齐套单与缺料单，且缺料里必须有一张「整料没有」的严重档——
+    ///       演示配方点名的三类对象缺一个，配方就落空。</item>
+    /// </list>
+    /// <para>
+    /// 只数条数（旧断言）证明不了任何一条：条数恰恰是这两种翻车都不改变的量。
+    /// </para>
+    /// </summary>
+    private static void CheckMaterialShortageDistribution(
+        Dictionary<string, WorkOrderProjection> workOrders,
+        KittingGap[] gaps,
+        List<string> failures)
+    {
+        var shortageByWorkOrder = gaps
+            .GroupBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => new
+                {
+                    Shortage = group.Sum(x => Math.Max(0m, x.RequiredQuantity - x.AvailableQuantity - x.StagedQuantity)),
+                    HasWholeMaterialGap = group.Any(x => x.AvailableQuantity + x.StagedQuantity <= 0m),
+                },
+                StringComparer.Ordinal);
+
+        var releasedShortage = 0;
+        var releasedKitted = 0;
+        var releasedWholeMaterialGap = 0;
+        var executedShortage = new List<string>();
+
+        foreach (var (workOrderId, workOrder) in workOrders)
+        {
+            if (!shortageByWorkOrder.TryGetValue(workOrderId, out var gap))
+            {
+                continue;
+            }
+
+            var isReleasedOnly = string.Equals(workOrder.Status, WorkOrder.ReleasedStatus, StringComparison.Ordinal);
+            if (!isReleasedOnly)
+            {
+                if (gap.Shortage > QuantityTolerance)
+                {
+                    executedShortage.Add(workOrderId);
+                }
+
+                continue;
+            }
+
+            if (gap.Shortage > QuantityTolerance)
+            {
+                releasedShortage++;
+                if (gap.HasWholeMaterialGap)
+                {
+                    releasedWholeMaterialGap++;
+                }
+            }
+            else
+            {
+                releasedKitted++;
+            }
+        }
+
+        if (executedShortage.Count > 0)
+        {
+            failures.Add(
+                $"{executedShortage.Count} 张已开工/已完工工单带齐套缺口" +
+                $"（{string.Join('、', executedShortage.Order(StringComparer.Ordinal).Take(5))}…）——" +
+                "缺口只许留在「已下达待开工」档，否则逐工序开工演示会被物料门禁拦死（#1384）。");
+        }
+
+        // 配额块保证的是「每个完整块里四档齐全」。已下达队列不足一个整块时（<c>Scale</c> 极小的
+        // 快速验证），块内洗牌完全可能连着抽到同一档——那是纵深不足，不是分布错误，不追究。
+        // 演示用的全量 <c>Scale=1.0</c> 有近百张已下达单，必然跨多个整块。
+        if (releasedShortage + releasedKitted < WorldHistoryMesSpec.MaterialShortageQuotaBlockSize)
+        {
+            return;
+        }
+
+        if (releasedKitted == 0)
+        {
+            failures.Add("已下达待开工的工单全部缺料——「齐套即可开工」这条演示路径没有对象（#1408）。");
+        }
+
+        if (releasedShortage == 0)
+        {
+            failures.Add("已下达待开工的工单一张缺料都没有——采购链演示失去起点（#1408）。");
+        }
+        else if (releasedWholeMaterialGap == 0)
+        {
+            failures.Add("缺料工单里没有一张「整料没有」的严重档——完整采购历程演示缺对象（#1408）。");
+        }
+    }
 
     #endregion
 
@@ -365,9 +827,20 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         decimal CompletedQuantity,
         decimal ScrapQuantity,
         DateTimeOffset CreatedAtUtc,
-        DateTimeOffset? ClosedAtUtc);
+        DateTimeOffset? ClosedAtUtc,
+        string? ProductionVersionId,
+        string? MaterialRequirementSnapshotStatus,
+        string? MaterialRequirementSnapshotProductionVersionId);
 
-    private sealed record TaskCounts(string WorkOrderId, int Total, int Completed);
+    private sealed record TaskCounts(string WorkOrderId, int Total, int Completed, int DispatchGaps);
+
+    /// <summary>一条齐套需求行的缺口原料（缺口 = 需求 − 线边可用 − 已备料，见 #1408）。</summary>
+    private sealed record KittingGap(
+        string WorkOrderId,
+        string MaterialId,
+        decimal RequiredQuantity,
+        decimal AvailableQuantity,
+        decimal StagedQuantity);
 
     private sealed record ReportTotals(
         string WorkOrderId,
@@ -384,6 +857,212 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         decimal Quantity,
         decimal PostedQuantity,
         DateTimeOffset? PostedAtUtc);
+
+    #region 追溯断点（产出批次谱系 / 报工物料消耗）
+
+    /// <summary>
+    /// 追溯断点块的 fail-closed 校验：谱系与消耗必须挂在**真实报工**上、批号与领料批一致、
+    /// 谱系数量与该工单的报工好品累计相等（追溯页上的数量链就是靠这条对得起来的）。
+    /// </summary>
+    public async Task<WorldHistoryGenealogyValidationReport> ValidateGenealogyAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+
+        var reportIndex = (await dbContext.ProductionReports
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    x.ReportNo.StartsWith(WorldHistoryGenealogySpec.ProductionReportNoPrefix))
+                .Select(x => new { x.ReportNo, x.WorkOrderId, x.GoodQuantity })
+                .ToArrayAsync(cancellationToken))
+            .ToArray();
+        var reportNos = reportIndex.Select(x => x.ReportNo).ToHashSet(StringComparer.Ordinal);
+        var goodByWorkOrder = reportIndex
+            .GroupBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(x => x.GoodQuantity), StringComparer.Ordinal);
+
+        var genealogies = await dbContext.OutputLotGenealogies
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new GenealogyProjection(x.WorkOrderId, x.ReportNo, x.ProducedLotNo, x.Quantity, x.CreatedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var row in genealogies)
+        {
+            if (!reportNos.Contains(row.ReportNo))
+            {
+                failures.Add($"产出批次谱系 {row.ProducedLotNo} 引用了不存在的报工 {row.ReportNo}。");
+            }
+
+            var expectedLotNo = WorldHistoryGenealogySpec.ProducedLotNo(row.WorkOrderId);
+            if (!string.Equals(row.ProducedLotNo, expectedLotNo, StringComparison.Ordinal))
+            {
+                failures.Add($"工单 {row.WorkOrderId} 的产出批号 {row.ProducedLotNo} 与设定集号段 {expectedLotNo} 不符。");
+            }
+
+            if (goodByWorkOrder.TryGetValue(row.WorkOrderId, out var expectedQuantity) &&
+                Math.Abs(expectedQuantity - row.Quantity) > QuantityTolerance)
+            {
+                failures.Add($"工单 {row.WorkOrderId} 的谱系数量 {row.Quantity} 与报工好品累计 {expectedQuantity} 不符。");
+            }
+        }
+
+        var consumptions = await dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new ConsumptionProjection(x.ReportNo, x.WorkOrderId, x.MaterialId, x.MaterialLotId, x.ConsumedQuantity))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var row in consumptions)
+        {
+            if (!reportNos.Contains(row.ReportNo))
+            {
+                failures.Add($"物料消耗 {row.MaterialLotId} 引用了不存在的报工 {row.ReportNo}。");
+            }
+
+            var expectedLotId = WorldHistoryGenealogySpec.MaterialLotNo(row.MaterialId, row.WorkOrderId);
+            if (!string.Equals(row.MaterialLotId, expectedLotId, StringComparison.Ordinal))
+            {
+                failures.Add($"物料消耗批次 {row.MaterialLotId} 与领料批号 {expectedLotId} 对不上（追溯断链）。");
+            }
+
+            if (row.ConsumedQuantity <= 0m)
+            {
+                failures.Add($"物料消耗 {row.MaterialLotId} 的消耗量 {row.ConsumedQuantity} 非正。");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryGenealogyValidationReport(genealogies.Length, consumptions.Length);
+    }
+
+    private sealed record GenealogyProjection(
+        string WorkOrderId,
+        string ReportNo,
+        string ProducedLotNo,
+        decimal Quantity,
+        DateTimeOffset CreatedAtUtc);
+
+    private sealed record ConsumptionProjection(
+        string ReportNo,
+        string WorkOrderId,
+        string MaterialId,
+        string MaterialLotId,
+        decimal ConsumedQuantity);
+
+    #endregion
+
+    #region 生产准备底座（设备映射 / SKU 停用）
+
+    /// <summary>
+    /// 底座块的 fail-closed 校验。最关键的一条：**停用清单不得命中演示主链**——
+    /// 任何一个成品或用料被写成 disabled，该 SKU 的建单能力当场作废。
+    /// </summary>
+    public async Task<WorldHistoryFoundationValidationReport> ValidateFoundationAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+
+        var mappings = await dbContext.DeviceAssetWorkCenterMappings
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .Select(x => new { x.DeviceAssetId, x.WorkCenterId })
+            .ToArrayAsync(cancellationToken);
+        var workCenters = WorldHistoryFloorEventsSpec.WorkCenterIds.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var mapping in mappings)
+        {
+            if (!workCenters.Contains(mapping.WorkCenterId))
+            {
+                failures.Add($"设备 {mapping.DeviceAssetId} 映射到非 L0 工作中心 {mapping.WorkCenterId}。");
+            }
+
+            if (mapping.DeviceAssetId.StartsWith(WorldHistoryFoundationSpec.UnmappedAuxiliaryDevicePrefix, StringComparison.Ordinal))
+            {
+                failures.Add($"辅助设备 {mapping.DeviceAssetId} 不应绑定工作中心（其遥测会被误记为产量）。");
+            }
+        }
+
+        if (mappings.Length != mappings.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).Count())
+        {
+            failures.Add("设备 ↔ 工作中心映射存在重复设备编码。");
+        }
+
+        var disabled = await dbContext.MesSkuAvailabilities
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.Status == MesSkuAvailabilityStatuses.Disabled)
+            .Select(x => x.SkuCode)
+            .ToArrayAsync(cancellationToken);
+
+        var demandChainSkus = WorldHistorySpec.FinishedGoodSkus
+            .Concat(WorldHistorySpec.FinishedGoodSkus.SelectMany(sku =>
+                WorldHistoryMesSpec.Components(sku).Select(component => component.SkuCode)))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var skuCode in disabled.Where(demandChainSkus.Contains))
+        {
+            failures.Add($"SKU {skuCode} 被停用，但它在演示主链上（成品或用料），会挡住建工单。");
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryFoundationValidationReport(mappings.Length, disabled.Length);
+    }
+
+    #endregion
+
+    #region 规则排程
+
+    /// <summary>排程结果的 fail-closed 校验：版本号唯一且连续、分配非空、时间窗口合法。</summary>
+    public async Task<WorldHistoryScheduleResultValidationReport> ValidateScheduleResultsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var failures = new List<string>();
+        var results = await dbContext.ScheduleResults
+            .AsNoTracking()
+            .OrderBy(x => x.ScheduleVersion)
+            .ToArrayAsync(cancellationToken);
+
+        var versions = results.Select(x => x.ScheduleVersion).ToArray();
+        if (versions.Length != versions.Distinct().Count())
+        {
+            failures.Add("排程结果的版本号存在重复。");
+        }
+
+        foreach (var result in results)
+        {
+            if (result.Assignments.Count == 0)
+            {
+                failures.Add($"排程结果 v{result.ScheduleVersion} 没有任何工序分配。");
+            }
+
+            foreach (var assignment in result.Assignments.Where(x => x.EndUtc < x.StartUtc))
+            {
+                failures.Add($"排程结果 v{result.ScheduleVersion} 的工序 {assignment.OperationTaskId} 结束早于开始。");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new WorldHistoryConsistencyException(failures);
+        }
+
+        return new WorldHistoryScheduleResultValidationReport(results.Length);
+    }
+
+    #endregion
 }
 
 /// <summary>MES 侧一致性校验器的产出摘要。</summary>
@@ -393,6 +1072,25 @@ public sealed record WorldHistoryMesValidationReport(
     int ProductionReportsChecked,
     int FinishedGoodsReceiptsChecked,
     IReadOnlyList<string> Sample);
+
+/// <summary>「异常与协同」块（停机 / 班次交接 / 车间不良）的校验产出摘要。</summary>
+public sealed record WorldHistoryFloorEventsValidationReport(
+    int DowntimeEventsChecked,
+    int ShiftHandoversChecked,
+    int DefectRecordsChecked);
+
+/// <summary>「追溯断点」块（产出批次谱系 / 报工物料消耗）的校验产出摘要。</summary>
+public sealed record WorldHistoryGenealogyValidationReport(
+    int OutputLotGenealogiesChecked,
+    int MaterialConsumptionsChecked);
+
+/// <summary>「生产准备底座」块（设备映射 / SKU 停用）的校验产出摘要。</summary>
+public sealed record WorldHistoryFoundationValidationReport(
+    int DeviceAssetMappingsChecked,
+    int DisabledSkusChecked);
+
+/// <summary>「规则排程」块的校验产出摘要。</summary>
+public sealed record WorldHistoryScheduleResultValidationReport(int ScheduleResultsChecked);
 
 /// <summary>一致性校验失败。抛出即代表 seed 失败（fail-closed）。</summary>
 public sealed class WorldHistoryConsistencyException : InvalidOperationException

@@ -42,7 +42,7 @@ public sealed class GetNonconformanceReportQueryHandler(ApplicationDbContext dbC
         }
 
         var ncr = await query.FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+            ?? throw new KnownException($"找不到不合格报告 {request.NcrId}，请在不合格报告页刷新并确认单据编号后重试。");
         return ListNonconformanceReportsQueryHandler.ToResponse(ncr);
     }
 }

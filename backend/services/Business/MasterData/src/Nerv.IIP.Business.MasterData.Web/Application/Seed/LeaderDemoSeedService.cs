@@ -107,14 +107,22 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-001", "汽车减振器总成", "finished-goods", cancellationToken);
         await SeedSkuAsync(organizationId, environmentId, "SKU-DEMO-RM-001", "活塞杆棒料", "raw-material", cancellationToken);
 
+        // #1290：主力演示客户信用额度 2000 万（CNY），与其世界史订单体量（权重 8/46 摊 4413 单）匹配；只补缺失。
+        const decimal demoCustomerCreditLimit = 20_000_000m;
         var customer = await dbContext.BusinessPartners.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "CUST-DEMO-001", cancellationToken);
         if (customer is null)
         {
-            dbContext.BusinessPartners.Add(BusinessPartner.Create(organizationId, environmentId, "CUST-DEMO-001", "customer", "华东汽车零部件采购中心"));
+            dbContext.BusinessPartners.Add(BusinessPartner.Create(
+                organizationId, environmentId, "CUST-DEMO-001", "customer", "华东汽车零部件采购中心",
+                ["customer"], taxId: null, creditLimit: demoCustomerCreditLimit, creditCurrencyCode: "CNY"));
         }
         else if (customer.Name != "华东汽车零部件采购中心" || customer.PartnerType != "customer" || customer.Disabled)
         {
             throw Collision("CUST-DEMO-001");
+        }
+        else if (customer.CreditLimit is null)
+        {
+            customer.UpdateCreditLimit(demoCustomerCreditLimit, "CNY");
         }
 
         var device = await dbContext.DeviceAssets.SingleOrDefaultAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == "DEV-CNC-DEMO", cancellationToken);

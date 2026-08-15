@@ -20,6 +20,7 @@ public sealed class MrpRunEntityTypeConfiguration : IEntityTypeConfiguration<Mrp
         builder.Ignore(x => x.InputSources);
         builder.Property(x => x.InputCoverageStart).HasColumnName("input_coverage_start").HasComment("Earliest input demand date included in this run.");
         builder.Property(x => x.InputCoverageEnd).HasColumnName("input_coverage_end").HasComment("Latest input demand date included in this run.");
+        builder.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(512).HasComment("Human-readable failure reason when the asynchronous MRP run fails.");
         builder.Ignore(x => x.HasInputDegradation);
         builder.Ignore(x => x.InputDegradationSources);
         builder.Property(x => x.DemandCount).HasColumnName("demand_count").HasComment("Number of demand source snapshots included in the run.");

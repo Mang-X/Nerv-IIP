@@ -193,7 +193,9 @@ public sealed class BusinessPartnerChangedConsumerTests
         var replayedSalesOrderId = await new CreateSalesOrderCommandHandler(dbContext, new StaticCreditProfileReader(), codingService).Handle(salesCommand, CancellationToken.None);
 
         Assert.Equal(purchaseOrderId, replayedPurchaseOrderId);
-        Assert.Equal(salesOrderId, replayedSalesOrderId);
+        Assert.Equal(salesOrderId.SalesOrderId, replayedSalesOrderId.SalesOrderId);
+        Assert.False(salesOrderId.ReusedExistingOrder);
+        Assert.True(replayedSalesOrderId.ReusedExistingOrder);
         Assert.Single(dbContext.PurchaseOrders);
         Assert.Single(dbContext.SalesOrders);
     }

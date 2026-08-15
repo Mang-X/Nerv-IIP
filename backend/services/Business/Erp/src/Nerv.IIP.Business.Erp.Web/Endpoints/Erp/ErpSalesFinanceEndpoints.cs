@@ -23,9 +23,11 @@ public sealed record CreateQuotationRequest(string OrganizationId, string Enviro
 public sealed record CreateQuotationResponse(QuotationId QuotationId);
 public sealed record ApproveQuotationRequest(string OrganizationId, string EnvironmentId, string QuotationNo);
 public sealed record CreateSalesOrderRequest(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string SiteCode, string? IdempotencyKey = null);
-public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId);
+/// <summary>报价转订单响应：<paramref name="ReusedExistingOrder"/> 为 true 表示报价已转出，本次幂等返回既有订单而未新建。</summary>
+public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId, string SalesOrderNo, bool ReusedExistingOrder);
 public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string LineNo, decimal OrderedQuantity, decimal UnitPrice, DateOnly RequiredDate, string Reason);
 public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
+public sealed record ReleaseSalesOrderCreditHoldRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string StartedBy = "system:erp");
 public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
 public sealed record CreateSalesReturnAuthorizationRequest(string OrganizationId, string EnvironmentId, string? RmaNo, string SalesOrderNo, string AccountReceivableNo, string SiteCode, IReadOnlyCollection<SalesReturnAuthorizationCommandLine> Lines, string? IdempotencyKey = null);
@@ -178,8 +180,8 @@ public sealed class CreateSalesOrderEndpoint(ISender sender, IErpIntegrationEven
             req.QuotationNo,
             req.SiteCode,
             req.IdempotencyKey));
-        var id = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreateSalesOrderResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new CreateSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.QuotationNo, req.SiteCode, req.IdempotencyKey), ct);
+        await Send.OkAsync(new CreateSalesOrderResponse(result.SalesOrderId, result.SalesOrderNo, result.ReusedExistingOrder).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -218,6 +220,28 @@ public sealed class CancelSalesOrderEndpoint(ISender sender, IErpIntegrationEven
             req.Reason));
         await sender.Send(new CancelSalesOrderCommand(req.OrganizationId, req.EnvironmentId, req.SalesOrderNo, req.Reason), ct);
         await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
+    }
+}
+
+/// <summary>
+/// 信用冻结（credit-held）销售订单的解冻入口：发起「信用解冻」审批链，审批通过后订单恢复为 released。
+/// 返回 <c>credit-release-approval-started</c>（已提交审批）或 <c>released</c>（订单已是 released 的幂等回执）。
+/// </summary>
+public sealed class ReleaseSalesOrderCreditHoldEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ReleaseSalesOrderCreditHoldRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ReleaseSalesOrderCreditHoldEndpoint>());
+
+    public override async Task HandleAsync(ReleaseSalesOrderCreditHoldRequest req, CancellationToken ct)
+    {
+        var salesOrderNo = Route<string>("salesOrderNo") ?? req.SalesOrderNo;
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "release-sales-order-credit-hold",
+            req.OrganizationId,
+            req.EnvironmentId,
+            salesOrderNo,
+            req.StartedBy));
+        var result = await sender.Send(new ReleaseSalesOrderCreditHoldCommand(req.OrganizationId, req.EnvironmentId, salesOrderNo, req.StartedBy), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -534,6 +558,7 @@ public static class ErpSalesEndpointContracts
         new(typeof(CreateSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesOrder"),
         new(typeof(ChangeSalesOrderLineEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "changeErpSalesOrderLine"),
         new(typeof(CancelSalesOrderEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "cancelErpSalesOrder"),
+        new(typeof(ReleaseSalesOrderCreditHoldEndpoint), "POST", "/api/business/v1/erp/sales-orders/{salesOrderNo}/release-credit-hold", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "releaseErpSalesOrderCreditHold"),
         new(typeof(ReleaseDeliveryOrderEndpoint), "POST", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "releaseErpDeliveryOrder"),
         new(typeof(CreateSalesReturnAuthorizationEndpoint), "POST", "/api/business/v1/erp/sales-return-authorizations", ErpPermissionCodes.SalesManage, InternalServiceAuthorizationPolicy.Name, "createErpSalesReturnAuthorization"),
         new(typeof(ListDeliveryOrdersEndpoint), "GET", "/api/business/v1/erp/delivery-orders", ErpPermissionCodes.SalesRead, InternalServiceAuthorizationPolicy.Name, "listErpDeliveryOrders"),

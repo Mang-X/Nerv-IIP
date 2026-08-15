@@ -68,17 +68,22 @@ if (-not $SkipRegenerate) {
         -TimeoutSeconds 900 `
         -Name 'openapi-drift-export-gateway-openapi' | Out-Null
 
+    # pnpm 以 frontend/ 为工作目录调用（corepack 按“进程 cwd 就近 package.json 的
+    # packageManager 字段”解析 pnpm 版本；Invoke-Pnpm 的 Resolve-PnpmInvocation 已在
+    # helper 层统一兜底，这里显式传入保持自文档化）。
+    $frontendDirectory = Join-Path $root 'frontend'
+
     if (-not $SkipFrontendInstall) {
         Invoke-Pnpm `
-            -Arguments @('-C', 'frontend', 'install', '--frozen-lockfile', '--config.confirmModulesPurge=false') `
-            -WorkingDirectory $root `
+            -Arguments @('install', '--frozen-lockfile', '--config.confirmModulesPurge=false') `
+            -WorkingDirectory $frontendDirectory `
             -TimeoutSeconds 900 `
             -Name 'openapi-drift-frontend-install' | Out-Null
     }
 
     Invoke-Pnpm `
-        -Arguments @('-C', 'frontend', 'generate:api') `
-        -WorkingDirectory $root `
+        -Arguments @('generate:api') `
+        -WorkingDirectory $frontendDirectory `
         -TimeoutSeconds 600 `
         -Name 'openapi-drift-frontend-generate-api' | Out-Null
 }

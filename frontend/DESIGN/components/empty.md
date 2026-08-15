@@ -1,24 +1,22 @@
-# Empty
+# 空状态（Empty）
 
-Full empty state for a section or page area when there is no data to display.
+区块或页面区域没有数据可展示时使用的完整空状态。
 
-> NvUI status: there is no `NvEmpty` on the PC layer — the `Empty*` family is
-> the current canonical export from `@nerv-iip/ui` (原版 primitives kept as the
-> app-facing name until a brand rebuild exists). Mobile uses `NvMobileEmpty`
-> from `@nerv-iip/ui-mobile`.
+> NvUI 状态：PC 层目前没有 `NvEmpty`；`Empty*` 系列是当前从
+> `@nerv-iip/ui` 导出的规范名称（在品牌层重建前，原版 primitives 继续作为
+> 应用侧名称）。移动端使用 `NvMobileEmpty`，它从 `@nerv-iip/ui-mobile` 导出。
 
-## When to use which empty state
+## 何时使用哪种空状态
 
-| Use `Empty`                                               | Use `NvDataTable`'s `emptyMessage` |
-| --------------------------------------------------------- | ---------------------------------- |
-| Full section/page with no data (first-use, zero state)    | A table query returning 0 rows     |
-| After filtering produces zero results in a non-table view | After filtering in a table         |
+| 使用 `Empty`                                | 使用 `NvDataTable` 的 `emptyMessage` |
+| ------------------------------------------- | ------------------------------------ |
+| 没有数据的完整区块/页面（首次使用、零状态） | 表格查询返回 0 行                    |
+| 筛选后非表格视图产生零结果                  | 在表格中筛选后                       |
 
-(The 原版 `TableEmpty` row belongs to hand-composed 原版 tables, which app code
-no longer builds — `NvDataTable` renders its own empty row from
-`emptyMessage`.)
+（原版 `TableEmpty` 行属于手动组合的原版表格，应用代码已不再构建；
+`NvDataTable` 会根据 `emptyMessage` 渲染自己的空行。）
 
-## Usage
+## 用法
 
 ```vue
 <!-- Full section empty state -->
@@ -41,14 +39,14 @@ no longer builds — `NvDataTable` renders its own empty row from
 <NvDataTable :rows="items" empty-message="No users match the current filters." … />
 ```
 
-## Copy Guidelines
+## 文案指引
 
-- `EmptyTitle`: declarative, e.g. "No users found", "No active sessions".
-- `EmptyDescription`: explain why and what to do, e.g. "Create a user to get started."
-- `EmptyContent`: optional CTA button — only include if there's an obvious next action.
+- `EmptyTitle`：陈述式，例如“未找到用户”“没有活动会话”。
+- `EmptyDescription`：说明原因和可采取的操作，例如“创建用户即可开始”。
+- `EmptyContent`：可选 CTA 按钮，仅在存在明确的下一步操作时提供。
 
-## Do NOT
+## 禁止
 
-- Do not show Empty during loading — show Skeleton (or `NvDataTable`'s built-in `loading`) instead.
-- Do not use a generic "No data" message — be specific about what is empty and why.
-- Do not leave a zero-result area visually blank — every data surface needs an explicit empty state.
+- 加载期间不得显示 Empty；应改为显示 Skeleton（或 `NvDataTable` 内置的 `loading`）。
+- 不得使用笼统的“无数据”消息；应明确说明何处为空及其原因。
+- 不得让零结果区域在视觉上留白；每个数据界面都需要明确的空状态。

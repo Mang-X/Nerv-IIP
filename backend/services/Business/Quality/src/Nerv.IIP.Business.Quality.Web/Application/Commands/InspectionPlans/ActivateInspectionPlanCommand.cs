@@ -19,7 +19,7 @@ public sealed class ActivateInspectionPlanCommandHandler(IInspectionPlanReposito
     public async Task Handle(ActivateInspectionPlanCommand request, CancellationToken cancellationToken)
     {
         var plan = await repository.GetWithCharacteristicsByIdAsync(request.InspectionPlanId, cancellationToken)
-            ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
+            ?? throw new KnownException($"找不到检验方案 {request.InspectionPlanId}，请在检验方案页刷新并确认方案编号后重试。");
         plan.Activate();
     }
 }

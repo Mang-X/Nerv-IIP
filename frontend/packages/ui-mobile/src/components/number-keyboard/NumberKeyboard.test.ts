@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { isPriorityMobileOverlayTarget, MOBILE_OVERLAY_LAYER } from '../../lib/overlay-target'
 import NumberKeyboard from './NumberKeyboard.vue'
 
 function keyboardButtons(): HTMLButtonElement[] {
@@ -10,6 +11,27 @@ const buttonTexts = () => keyboardButtons().map((b) => b.textContent?.trim())
 const settle = () => new Promise((r) => setTimeout(r, 0))
 
 describe('NumberKeyboard', () => {
+  it('uses the priority input overlay layers above modal surfaces', async () => {
+    const wrapper = mount(NumberKeyboard, { props: { show: true }, attachTo: document.body })
+    await settle()
+
+    const backdrop = document.querySelector<HTMLElement>(
+      '[data-mobile-overlay-layer="input-backdrop"]',
+    )
+    const keyboard = document.querySelector<HTMLElement>(
+      '[data-mobile-overlay-layer="input-surface"]',
+    )
+
+    expect(MOBILE_OVERLAY_LAYER.inputBackdrop).toBeGreaterThan(MOBILE_OVERLAY_LAYER.surface)
+    expect(MOBILE_OVERLAY_LAYER.inputSurface).toBeGreaterThan(MOBILE_OVERLAY_LAYER.inputBackdrop)
+    expect(backdrop?.style.zIndex).toBe(String(MOBILE_OVERLAY_LAYER.inputBackdrop))
+    expect(keyboard?.style.zIndex).toBe(String(MOBILE_OVERLAY_LAYER.inputSurface))
+    expect(keyboard?.className).toContain('pointer-events-auto')
+    expect(isPriorityMobileOverlayTarget(keyboard)).toBe(true)
+    expect(isPriorityMobileOverlayTarget(document.body)).toBe(false)
+    wrapper.unmount()
+  })
+
   it('renders a single 完成 confirm (no duplicate sub-touch header button)', async () => {
     const wrapper = mount(NumberKeyboard, { props: { show: true }, attachTo: document.body })
     await settle()

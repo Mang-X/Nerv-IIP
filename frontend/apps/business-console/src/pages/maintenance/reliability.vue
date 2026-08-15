@@ -13,19 +13,18 @@ import {
   useMaintenanceReliability,
   useMaintenanceReliabilitySummary,
 } from '@/composables/useBusinessMaintenance'
-import {
-  useBusinessWorkers,
-  useBusinessMasterDataResources,
-} from '@/composables/useBusinessMasterData'
+import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { COMMON_INSPECTION_CHARACTERISTICS } from '@nerv-iip/business-core'
 import {
   NvButton,
+  NvCascadePicker,
   NvCombobox,
   NvDataTable,
   NvDateRangePicker,
   NvField,
-  NvFieldGroup,
   NvFieldLabel,
   NvLineChart,
   NvMetricCard,
@@ -36,6 +35,7 @@ import {
 import { ActivityIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -57,12 +57,16 @@ const { filters, reliability, reliabilityError, reliabilityPending, refreshRelia
 const trend = useMaintenanceMeasurementTrend({ deviceAssetId: initialDeviceAssetId })
 const summary = useMaintenanceReliabilitySummary({ deviceAssetId: initialDeviceAssetId })
 const { workers } = useBusinessWorkers()
-// 设备编号联想建议（master-data device-asset）。
-const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
-const deviceSuggestions = computed(() =>
-  deviceResources.value
-    .map((r) => ({ value: (r.code ?? '').trim(), label: r.displayName ?? r.code ?? '' }))
-    .filter((s) => s.value.length > 0),
+// 车间 → 产线 → 设备 级联范围：MTBF/MTTR 等后端指标按单台设备计算，
+// 未下钻时展示范围设备总览引导下钻。深链 query 初始化下钻设备。
+const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
+  device: initialDeviceAssetId,
+})
+watch(
+  () => scope.value.device,
+  (device) => {
+    if (filters.deviceAssetId !== device) filters.deviceAssetId = device
+  },
 )
 // 趋势查询是筛选面，用输入联想框（NvCombobox）：允许输入**任意**特性查趋势（含分页外/较早的
 // PDA 自定义特性），下方建议 = 常用特性 + 已加载点检历史里真实出现过的特性（后端同源）去重，仅作快填。
@@ -115,18 +119,6 @@ const windowRange = computed<DateRange>({
     if (range.start) filters.windowStartUtc = fromDateInput(range.start, 0)
     if (range.end) filters.windowEndUtc = fromDateInput(range.end, 1)
   },
-})
-
-// 路由没带设备时，落到设备台账的第一台，页面直接出数而不是停在空态；用户一旦自行改过就不再接管。
-let deviceAutoSelected = initialDeviceAssetId.trim().length > 0
-watch(deviceSuggestions, (suggestions) => {
-  if (deviceAutoSelected || !suggestions.length) return
-  if (filters.deviceAssetId.trim().length > 0) {
-    deviceAutoSelected = true
-    return
-  }
-  deviceAutoSelected = true
-  filters.deviceAssetId = suggestions[0].value
 })
 
 // 无运行样本时后端仍会给出一个窗口兜底值（如 720 小时＝整窗口无故障的名义值）。
@@ -272,7 +264,7 @@ function fromDateInput(value: string, dayOffset: number) {
   return new Date(y, m - 1, d + dayOffset).toISOString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function refreshAll() {
@@ -287,7 +279,7 @@ function refreshAll() {
     <NvPageHeader
       title="可靠性指标"
       :breadcrumbs="[{ label: '设备监控' }]"
-      :count="hasDeviceScope ? filters.deviceAssetId : '选择设备后查询'"
+      :count="hasDeviceScope ? filters.deviceAssetId : scopeLabel"
     >
       <template #actions>
         <NvButton v-if="hasDeviceScope" size="sm" type="button" variant="outline" as-child>
@@ -313,32 +305,25 @@ function refreshAll() {
       </template>
     </NvPageHeader>
 
-    <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(220px,1fr)_auto]"
-    >
-      <NvField>
-        <NvFieldLabel for="rel-device">设备</NvFieldLabel>
-        <NvCombobox
-          id="rel-device"
-          v-model="filters.deviceAssetId"
-          :suggestions="deviceSuggestions"
-          placeholder="搜索设备台账或直接输入，如 DEV-PRESS-01"
-        />
-      </NvField>
+    <div class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto]">
+      <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
       <NvField>
         <NvFieldLabel for="rel-window">统计窗口</NvFieldLabel>
         <NvDateRangePicker id="rel-window" v-model="windowRange" placeholder="选择统计窗口" />
       </NvField>
-    </NvFieldGroup>
+    </div>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <div
+    <EquipmentScopeOverviewCard
       v-if="!hasDeviceScope"
-      class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-    >
-      请选择设备后查看 MTBF、MTTR、故障次数、测量趋势与工时费用聚合。
-    </div>
+      :devices="devicesInScope"
+      :scope-label="scopeLabel"
+      :pending="scopePending"
+      action-label="查看指标"
+      description="MTBF、MTTR、测量趋势与工时费用按单台设备统计：选中一台设备即可查看它的可靠性指标。"
+      @select="(code) => (scope = { ...scope, device: code })"
+    />
 
     <template v-else>
       <NvSectionCards :columns="2">

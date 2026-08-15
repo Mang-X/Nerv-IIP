@@ -1,9 +1,9 @@
-# ADR 0014: APS 与设备 IIoT 排程边界
+# ADR 0014：APS 与设备 IIoT 排程边界
 
-- Status: Accepted
-- Date: 2026-05-27
+- 状态：已接受
+- 日期：2026-05-27
 
-## Context
+## 背景
 
 ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。这在业务平台 MVP 阶段是合理的，因为当时主数据、工程资料、MRP、ERP、WMS、MES、IndustrialTelemetry 和 Maintenance 都还需要先落地事实源。
 
@@ -13,7 +13,7 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 
 #207 进一步暴露了设备运行事实的第二个边界风险：如果 APS 和 MES 各自从报警列表、维修工单或页面状态中拼接可用性，系统会出现同一台设备在排程、派工和开工检查中给出不同结论的问题。设备 IIoT P0 必须把外部采集事实、报警生命周期、维护窗口、停机占用和 readiness reason code 先标准化，再供 APS/MES 消费。
 
-## Decision
+## 决策
 
 1. APS 不再完全后置。Nerv-IIP 将 `BusinessScheduling` / APS lite 纳入 P0 业务平台主线，先冻结排程输入输出契约和可测试的有限产能调度内核。
 2. `BusinessScheduling` 是业务平台行业能力，不属于主平台控制面。主平台仍只提供 IAM、AppHub、Ops、FileStorage、Notification、Connector Host、PlatformGateway 和通用 SDK 能力。
@@ -44,7 +44,7 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 27. BusinessGateway 可以聚合设备/IIoT 页面 facade，展示设备状态、活动报警、停机/维护占用、tag 映射和工单/排程影响入口；Gateway 不持久化运行事实，不计算可用性，不实现报警合并规则。
 28. Business Console 设备/IIoT 页面必须使用中文业务文案表达状态、阻断原因和下一步处理，不展示 source sequence、内部 event envelope、算法版本、组织/环境上下文或 connector 调试元数据。
 
-## Rationale
+## 理由
 
 1. 没有 APS lite，MES PC 很难解释为什么某个工单可以派、应该派到哪台设备、何时开工、急单会影响哪些任务。
 2. 把 APS 放进 MES 会让执行事实和计划推算耦合，后续难以支持独立排程工作台、方案对比和模拟。
@@ -53,7 +53,7 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 5. 先做 APS lite 而不是完整优化器，可以支持 P0 交付，同时控制算法、数据量和运维复杂度。
 6. 对设备可用性采用统一 reason code，可以让 APS 的不可排解释、MES 的开工阻断和 Console 的设备异常页面使用同一事实语言。
 
-## Consequences
+## 后果
 
 1. `docs/architecture/business-platform-domain-architecture.md` 中 “APS 后置” 的旧判断必须改为 “APS lite 进入 P0，高级优化后置”。
 2. P0 issue roadmap 增加 #206 APS 调度内核与排程数据契约，以及 #207 设备 IIoT/IndustrialTelemetry 运行事实与 APS/MES 联动基线。
@@ -68,16 +68,16 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 11. #207 落地后，MES readiness 和 BusinessScheduling availability adapter 必须回归到同一设备 reason code catalog。任何新设备阻断原因都要同时覆盖 contracts、服务测试、Gateway facade 和前端文案。
 12. 设备运行事实不成为主平台能力。主平台 Console、PlatformGateway、AppHub、Ops 或 IAM 不得承载 IndustrialTelemetry、Maintenance、APS 或 MES 的行业规则。
 
-## Addendum 2026-07-03: 现场能力范围转向
+## 2026-07-03 补遗：现场能力范围转向
 
-MAN-419 / #737 对本 ADR 做追加更正，不删除 2026-05-27 的原始判断。原 Decision 8、Decision 10、Decision 23 和 Consequence 6 中“PLC/DCS/SCADA 仍是外部系统或 Connector 来源”“不下发控制命令”“高频 historian 后置”“现场控制闭环仍是后续专题”等表述，保留为当时 P0 交付边界；从 2026-07-03 起，它们不再表示 Nerv-IIP 永久放弃现场采集、控制或 historian 能力。
+MAN-419 / #737 对本 ADR 做追加更正，不删除 2026-05-27 的原始判断。原决策第 8、10、23 条和后果第 6 条中“PLC/DCS/SCADA 仍是外部系统或 Connector 来源”“不下发控制命令”“高频 historian 后置”“现场控制闭环仍是后续专题”等表述，保留为当时 P0 交付边界；从 2026-07-03 起，它们不再表示 Nerv-IIP 永久放弃现场采集、控制或 historian 能力。
 
 1. 现场采集进入平台自有路线：#683 先以 OPC UA Connector 打通真实设备到 IndustrialTelemetry HTTP 采样入库的第一条通道，#684 在该框架上补 Modbus TCP 与 MQTT。采集连接、节点/寄存器/topic 映射、断线重连、bucket 聚合、source sequence 幂等和状态快照都属于 Connector Host + IndustrialTelemetry 的能力边界。
 2. 设备控制进入分阶段路线：#687 复用 Ops operation task、approval gate 和 Connector Host claim/result 机制，下发 write-tag、start-stop 和 parameter-set 等命令；值域校验、审计、审批和回执必须可追踪。主平台控制面只提供通用任务/审批/审计骨架，控制语义仍属于 IndustrialTelemetry/Connector 业务边界。
 3. Historian 与报警深化进入后续能力路线：#689 负责 raw/hourly/daily 分层存储、降采样和保留策略；#685、#686、#690 分别补报警通知联动、ack/shelve/escalation 和 DeviceStateChanged 下游消费。当前已交付代码仍只证明 tag mapping、bucket summary、device state snapshot、alarm raise/clear、runtime availability 和 Maintenance/MES/Scheduling 的现有消费者。
-4. 本 addendum 不把完整行业套件一次性改为已交付。README 和 readiness 必须继续按“已交付 / 进行中 / 规划中”标注现场能力，避免把 open issue、设计方向或路线图写成当前代码事实。
+4. 本补遗不会将完整行业套件一次性标为已交付。README 和就绪性文档必须继续按“已交付 / 进行中 / 规划中”标注现场能力，避免把未完成的 Issue、设计方向或路线图写成当前代码事实。
 
-## Implementation Notes
+## 实施说明
 
 1. #206 是 APS lite 的执行入口，先定义 `SchedulingProblem`、`SchedulePlan`、资源负载、冲突项和不可排原因契约，再实现确定性启发式内核。
 2. #207 是设备 IIoT 运行事实的执行入口，负责设备主数据到 tag、状态、报警、停机、维护窗口、APS 可用性查询和 MES readiness 的链路。

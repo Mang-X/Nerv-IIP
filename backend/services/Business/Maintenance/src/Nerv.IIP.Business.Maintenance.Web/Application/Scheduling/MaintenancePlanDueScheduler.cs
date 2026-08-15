@@ -28,7 +28,7 @@ public sealed class MaintenancePlanDueScheduler(
 
         var interval = configuration.GetValue("Maintenance:PmGeneration:Interval", DefaultInterval);
         var businessTimeZone = ResolveBusinessTimeZone();
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, timeProvider);
         await TryGenerateAsync(organizationId, environmentId, businessTimeZone, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {

@@ -40,7 +40,10 @@ public sealed record CurrentPrincipalResponse(
     IReadOnlyList<string> PermissionCodes,
     IReadOnlyList<string> RoleIds);
 public sealed record ConnectorPrincipalResponse(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
-public sealed record IamAuthorizationCheckResult(bool Allowed, AuthorizationDataScope? DataScope = null);
+public sealed record IamAuthorizationCheckResult(
+    bool Allowed,
+    AuthorizationDataScope? DataScope = null,
+    IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null);
 
 public interface IIamAuthService
 {

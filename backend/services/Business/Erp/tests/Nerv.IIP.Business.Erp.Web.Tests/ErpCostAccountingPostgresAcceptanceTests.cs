@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.WorkOrderCostAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -20,24 +21,18 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_second_concurrent_rate_command_blocks_then_observes_committed_revision()
     {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
         var applicationName = $"erp-rate-concurrency-{Guid.CreateVersion7():N}";
-        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"))
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
         {
             ApplicationName = applicationName,
         };
         var connectionString = connectionStringBuilder.ConnectionString;
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString, x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connectionString);
 
         await using (var setupDb = new ApplicationDbContext(options, new NoopMediator()))
         {
-            await setupDb.Database.OpenConnectionAsync();
-            var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-            await using var drop = setupDb.Database.GetDbConnection().CreateCommand();
-            drop.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await drop.ExecuteNonQueryAsync();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(setupDb);
             await setupDb.Database.MigrateAsync();
         }
 
@@ -133,17 +128,12 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact]
     public async Task PostgreSQL_migration_backfills_legacy_rate_and_enforces_revision_indexes()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"), x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
         await using var db = new ApplicationDbContext(options, new NoopMediator());
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.OpenConnectionAsync();
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using (var drop = db.Database.GetDbConnection().CreateCommand())
-        {
-            drop.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await drop.ExecuteNonQueryAsync();
-        }
 
         var migrator = db.GetService<IMigrator>();
         await migrator.MigrateAsync("20260720014936_AddDeliveryOrderConcurrencyToken");
@@ -195,17 +185,10 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     [ErpCostPostgresFact]
     public async Task PostgreSQL_migration_enforces_gl_link_and_persists_reconciled_cost()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES"), x => x.MigrationsHistoryTable("__EFMigrationsHistory", ErpFacts.Schema))
-            .Options;
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var options = ErpPostgresLaneDatabase.CreateOptions();
         await using var db = new ApplicationDbContext(options, new NoopMediator());
-        await db.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using (var command = db.Database.GetDbConnection().CreateCommand())
-        {
-            command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
-            await command.ExecuteNonQueryAsync();
-        }
+        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.MigrateAsync();
 
         db.GLAccounts.AddRange(
@@ -243,11 +226,19 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     private static async Task WaitForAdvisoryLockWaitersAsync(
         string connectionString,
         string applicationName,
-        int expectedCount)
+        int expectedCount,
+        CancellationToken cancellationToken = default)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(timeout.Token);
+        // Opening the probe connection is a single operation that can hang, so it keeps its own explicit
+        // budget instead of falling back to Npgsql's 15 s default. Caller cancellation propagates as-is;
+        // only this helper's own budget turns into a TestTimeoutException.
+        await TestTimeout.RunAsync(
+            operation: $"open the advisory-lock probe connection for {applicationName}",
+            action: async token => await connection.OpenAsync(token),
+            timeout: TimeSpan.FromSeconds(10),
+            cancellationToken,
+            sensitiveValues: [connectionString]);
         await using var command = new NpgsqlCommand("""
             SELECT count(*)
             FROM pg_stat_activity
@@ -257,18 +248,17 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             """, connection);
         command.Parameters.AddWithValue("application_name", applicationName);
 
-        while (!timeout.IsCancellationRequested)
-        {
-            var waitingCount = Convert.ToInt32(await command.ExecuteScalarAsync(timeout.Token));
-            if (waitingCount >= expectedCount)
-            {
-                return;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
-        }
-
-        throw new TimeoutException($"Expected {expectedCount} PostgreSQL advisory-lock waiters for {applicationName}.");
+        // Real PostgreSQL: the only observable fact is pg_stat_activity, so poll it on a bounded budget.
+        await Eventually.WaitAsync(
+            condition: $"{expectedCount} PostgreSQL advisory-lock waiters for {applicationName}",
+            observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
+            isSatisfied: waitingCount => waitingCount >= expectedCount,
+            describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(10),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: [connectionString]),
+            cancellationToken);
     }
 }
 

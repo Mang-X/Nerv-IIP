@@ -60,6 +60,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
     opacity: 1;
     transition-duration: 0s;
   }
+  .nv-m-tabbar-btn:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
   @media (prefers-reduced-motion: reduce) {
     .nv-m-tabbar-hit {
       transition: none;

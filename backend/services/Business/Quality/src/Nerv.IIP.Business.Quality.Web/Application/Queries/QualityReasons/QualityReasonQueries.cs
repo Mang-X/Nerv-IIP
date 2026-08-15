@@ -21,7 +21,8 @@ public sealed record ListQualityReasonsQuery(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100) : IQuery<QualityReasonListResponse>;
+    int Take = 100,
+    string? DefaultDisposition = null) : IQuery<QualityReasonListResponse>;
 
 public sealed record GetQualityReasonQuery(
     string OrganizationId,
@@ -36,6 +37,7 @@ public sealed class ListQualityReasonsQueryValidator : AbstractValidator<ListQua
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Search).MaximumLength(200);
         RuleFor(x => x.GroupName).MaximumLength(100);
+        RuleFor(x => x.DefaultDisposition).MaximumLength(100);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
     }
@@ -62,6 +64,7 @@ public sealed class ListQualityReasonsQueryHandler(ApplicationDbContext dbContex
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .Where(x => !request.Enabled.HasValue || x.Enabled == request.Enabled.Value)
             .Where(x => string.IsNullOrWhiteSpace(request.GroupName) || x.GroupName == request.GroupName)
+            .Where(x => string.IsNullOrWhiteSpace(request.DefaultDisposition) || x.DefaultDisposition == request.DefaultDisposition)
             .Where(x => keyword == null || x.ReasonCode.ToLower().Contains(keyword) || x.ReasonName.ToLower().Contains(keyword));
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -90,7 +93,7 @@ public sealed class GetQualityReasonQueryHandler(ApplicationDbContext dbContext)
             x.EnvironmentId == request.EnvironmentId &&
             x.ReasonCode == request.ReasonCode,
             cancellationToken)
-            ?? throw new KnownException($"Quality reason '{request.ReasonCode}' was not found.");
+            ?? throw new KnownException($"找不到质量原因 {request.ReasonCode}，请在质量原因页面刷新列表并确认编码后重试。");
         return QualityReasonMapper.ToItem(reason);
     }
 }

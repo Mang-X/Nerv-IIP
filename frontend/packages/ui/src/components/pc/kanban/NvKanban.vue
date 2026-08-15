@@ -35,15 +35,8 @@ function resolveKey(item: T, index: number): string | number {
 </script>
 
 <template>
-  <div
-    data-slot="nv-kanban"
-    :class="cn('flex gap-4 overflow-x-auto pb-2', props.class)"
-  >
-    <section
-      v-for="column in columns"
-      :key="column.key"
-      class="flex w-72 shrink-0 flex-col gap-3"
-    >
+  <div data-slot="nv-kanban" :class="cn('flex gap-4 overflow-x-auto pb-2', props.class)">
+    <section v-for="column in columns" :key="column.key" class="flex w-72 shrink-0 flex-col gap-3">
       <header class="flex items-center justify-between gap-2">
         <h3 class="truncate text-sm font-medium text-foreground">{{ column.title }}</h3>
         <NvBadge :variant="column.tone ?? 'neutral'" class="tabular-nums">

@@ -29,7 +29,14 @@ const pvRow = {
   status: 'active',
 }
 
-const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skuCode: undefined as string | undefined, status: undefined as string | undefined, skip: 0, take: 10 })
+const filters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  skuCode: undefined as string | undefined,
+  status: undefined as string | undefined,
+  skip: 0,
+  take: 10,
+})
 const resolved = shallowRef<Record<string, unknown> | undefined>(undefined)
 const resolvedOnce = ref(false)
 
@@ -53,21 +60,28 @@ vi.mock('@/composables/useProductEngineering', () => ({
   }),
   usePublishedMboms: () => ({
     filters: reactive({}),
-    mboms: computed(() => [{ bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' }]),
+    mboms: computed(() => [
+      { bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
+    ]),
     mbomsError: shallowRef(undefined),
     mbomsPending: shallowRef(false),
     refreshMboms: vi.fn(),
   }),
   usePublishedRoutings: () => ({
     filters: reactive({}),
-    routings: computed(() => [{ routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' }]),
+    routings: computed(() => [
+      { routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
+    ]),
     routingsError: shallowRef(undefined),
     routingsPending: shallowRef(false),
     refreshRoutings: vi.fn(),
   }),
   useProductionVersionResolve: () => ({
     resolve: stub.resolve,
-    clear: vi.fn(() => { resolvedOnce.value = false; resolved.value = undefined }),
+    clear: vi.fn(() => {
+      resolvedOnce.value = false
+      resolved.value = undefined
+    }),
     resolved,
     resolvePending: shallowRef(false),
     resolvedOnce,
@@ -99,14 +113,16 @@ const datePickerStub = {
   NvDatePicker: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
@@ -123,17 +139,30 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>' },
+  NvAlertDialogAction: {
+    emits: ['click'],
+    template:
+      '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>',
+  },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...datePickerStub,
+  ...formSelectStubs,
+  ...alertDialogStubs,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
 }
 
 async function openCreateAndFill(wrapper: ReturnType<typeof mount>) {
-  await wrapper.findAll('button').find((b) => b.text().includes('新建生产版本'))!.trigger('click')
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text().includes('新建生产版本'))!
+    .trigger('click')
   await flushPromises()
   const selects = wrapper.findAll('select')
   // 顺序：物料、MBOM、工艺路线、状态筛选、resolve 物料……取表单内前三个。
@@ -206,7 +235,10 @@ describe('engineering production-versions page', () => {
   it('新建：有效期起 validFrom 默认今天', async () => {
     const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('新建生产版本'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建生产版本'))!
+      .trigger('click')
     await flushPromises()
 
     const d = new Date()
@@ -218,7 +250,10 @@ describe('engineering production-versions page', () => {
   it('校验拦截：必填未填点保存出现汇总提示且不发创建请求', async () => {
     const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text().includes('新建生产版本'))!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建生产版本'))!
+      .trigger('click')
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')
@@ -255,7 +290,10 @@ describe('engineering production-versions page', () => {
     await flushPromises()
 
     expect(stub.updateProductionVersion).toHaveBeenCalledTimes(1)
-    const [id, body] = stub.updateProductionVersion.mock.calls[0]! as [string, Record<string, unknown>]
+    const [id, body] = stub.updateProductionVersion.mock.calls[0]! as [
+      string,
+      Record<string, unknown>,
+    ]
     expect(id).toBe('pv-1')
     expect(body.mbomVersionId).toBe('MBOM-1')
     expect(stub.toastSuccess).toHaveBeenCalled()
@@ -282,7 +320,12 @@ describe('engineering production-versions page', () => {
 
   it('resolve：填条件点解析调用 resolve；命中后展示绑定', async () => {
     stub.resolve.mockImplementation(async () => {
-      resolved.value = { skuCode: 'SKU-1', mbomVersionId: 'MBOM-1', routingVersionId: 'RT-1', status: 'active' }
+      resolved.value = {
+        skuCode: 'SKU-1',
+        mbomVersionId: 'MBOM-1',
+        routingVersionId: 'RT-1',
+        status: 'active',
+      }
       resolvedOnce.value = true
     })
     const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
@@ -293,7 +336,10 @@ describe('engineering production-versions page', () => {
     await selects[3]!.setValue('SKU-1')
     await flushPromises()
 
-    await wrapper.findAll('button').find((b) => b.text().trim() === '解析')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '解析')!
+      .trigger('click')
     await flushPromises()
 
     expect(stub.resolve).toHaveBeenCalledTimes(1)

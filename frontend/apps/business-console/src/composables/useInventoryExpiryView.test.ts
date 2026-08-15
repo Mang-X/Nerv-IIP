@@ -50,7 +50,10 @@ vi.mock('./useBusinessInventory', async () => {
   }
 })
 
-vi.mock('@/utils/notify', () => ({ notifyError: state.notifyError }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifyError: state.notifyError,
+}))
 
 describe('useInventoryExpiryView', () => {
   let scope: EffectScope

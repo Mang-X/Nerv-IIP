@@ -10,10 +10,7 @@ describe('LoginForm', () => {
       ...options,
       global: {
         ...(options.global ?? {}),
-        plugins: [
-          createConsoleI18n(),
-          ...(options.global?.plugins ?? []),
-        ],
+        plugins: [createConsoleI18n(), ...(options.global?.plugins ?? [])],
       },
     })
   }

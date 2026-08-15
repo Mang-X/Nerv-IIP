@@ -48,9 +48,10 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         var productionVersion = suggestion.PeggingLinks
             .Select(x => x.ProductionVersionReference)
             .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
-        var demandReference = suggestion.PeggingLinks
-            .Select(x => x.DemandSourceReference)
-            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+        // 合批建议 peg 到多个需求源：完整携带 demand 类型引用，MES 才能为每张订单持久化可追溯关联键；
+        // 无 demand 类型 pegging 时回退旧行为（任意非空引用），避免历史数据丢链。
+        var demandReferences = suggestion.GetDemandSourceReferences();
+        var demandReference = suggestion.GetPrimaryDemandSourceReference();
         var dueUtc = new DateTimeOffset(suggestion.RequiredDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var body = new MesConvertPlanToWorkOrderRequest(
             suggestion.OrganizationId,
@@ -68,7 +69,8 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
             DemandPlanningSourceReferences.PlanningSuggestion,
             suggestion.Id.ToString(),
             demandReference,
-            request.IdempotencyKey);
+            request.IdempotencyKey,
+            demandReferences);
 
         using var httpRequest = new HttpRequestMessage(
             HttpMethod.Post,
@@ -222,7 +224,8 @@ internal sealed record MesConvertPlanToWorkOrderRequest(
     string SourceDocumentType,
     string SourceDocumentId,
     string? SourceDemandReference,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    IReadOnlyCollection<string>? SourceDemandReferences = null);
 
 internal sealed record MesAcceptedResponse(string Status, string ReferenceId, DateTimeOffset AcceptedAtUtc);
 

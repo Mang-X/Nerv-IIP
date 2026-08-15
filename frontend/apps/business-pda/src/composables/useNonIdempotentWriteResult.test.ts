@@ -32,6 +32,47 @@ describe('useNonIdempotentWriteResult', () => {
     expect(write.errorDescription.value).toContain('核实是否已创建')
   })
 
+  it('server-idempotent write keeps timeout retry safe', async () => {
+    const write = useNonIdempotentWriteResult({
+      failureTitle: '报修提交失败',
+      verifyListLabel: '近期维修工单',
+      verifyVerb: '创建',
+      onVerify: vi.fn(),
+      idempotent: true,
+    })
+
+    await write.run(async () => {
+      throw new RequestTimeoutError()
+    })
+
+    expect(write.canRetry.value).toBe(true)
+    expect(write.errorTitle.value).toBe('提交结果未知')
+    expect(write.errorDescription.value).toContain('相同操作编号')
+  })
+
+  it('HTTP 5xx is indeterminate at the PDA edge; only a persisted idempotency key makes retry safe', async () => {
+    const nonIdempotent = make()
+    await nonIdempotent.run(async () => {
+      throw { status: 503, message: 'Service Unavailable' }
+    })
+    expect(nonIdempotent.errorTitle.value).toBe('提交结果未知')
+    expect(nonIdempotent.canRetry.value).toBe(false)
+
+    const idempotent = useNonIdempotentWriteResult({
+      failureTitle: '报修提交失败',
+      verifyListLabel: '近期维修工单',
+      verifyVerb: '创建',
+      onVerify: vi.fn(),
+      idempotent: true,
+    })
+    await idempotent.run(async () => {
+      throw { status: 500, message: 'Internal Server Error' }
+    })
+    expect(idempotent.errorTitle.value).toBe('提交结果未知')
+    expect(idempotent.canRetry.value).toBe(true)
+    expect(idempotent.errorDescription.value).toContain('相同操作编号')
+  })
+
   it('OFFLINE pre-check (never dispatched) → safe to retry', async () => {
     const write = make()
     await write.run(async () => {

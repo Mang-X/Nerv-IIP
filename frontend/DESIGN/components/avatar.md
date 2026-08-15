@@ -1,13 +1,13 @@
-# Avatar
+# 头像（Avatar）
 
-User identity display with image, fallback initials, and optional status badge.
+展示用户身份，包括头像图片、回退首字母和可选状态徽标。
 
-> NvUI status: the PC layer has no `NvAvatar` — `Avatar` / `AvatarImage` /
-> `AvatarFallback` are the current canonical exports from `@nerv-iip/ui`
-> (原版 primitives kept as the app-facing name until a brand rebuild exists).
-> On the mobile surface use `NvMobileAvatar` from `@nerv-iip/ui-mobile`.
+> NvUI 状态：PC 层目前没有 `NvAvatar`；`Avatar` / `AvatarImage` /
+> `AvatarFallback` 是当前从 `@nerv-iip/ui` 导出的规范名称
+> （在品牌层重建前，原版 primitive 继续作为应用侧名称）。
+> 在移动端界面请使用 `NvMobileAvatar`，它从 `@nerv-iip/ui-mobile` 导出。
 
-## Usage
+## 用法
 
 ```vue
 <!-- Basic with initials fallback (most common in this project) -->
@@ -22,7 +22,7 @@ User identity display with image, fallback initials, and optional status badge.
 </Avatar>
 ```
 
-## Initials Helper
+## 首字母辅助函数
 
 ```ts
 function initials(name: string): string {
@@ -34,15 +34,15 @@ function initials(name: string): string {
 }
 ```
 
-## Sizes
+## 尺寸
 
-| Context              | Class              |
-| -------------------- | ------------------ |
-| Topbar user menu     | `size-8` (default) |
-| User list/table      | `size-7`           |
-| Large profile header | `size-12`          |
+| 场景               | 类名             |
+| ------------------ | ---------------- |
+| 顶栏用户菜单       | `size-8`（默认） |
+| 用户列表/表格      | `size-7`         |
+| 大型个人资料页头部 | `size-12`        |
 
-## Do NOT
+## 禁止
 
-- Do not show Avatar for system/service accounts — use a generic icon instead.
-- Do not use `AvatarImage` without a fallback — the image may fail to load.
+- 不得为系统或服务账号显示 Avatar；应改用通用图标。
+- 不得在没有回退内容时使用 `AvatarImage`；图片可能加载失败。

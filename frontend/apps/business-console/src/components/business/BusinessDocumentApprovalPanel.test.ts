@@ -8,6 +8,7 @@ const approvalState = vi.hoisted(() => ({
   startChain: vi.fn(async () => ({ success: true, data: { chainId: 'chain-new-1' } })),
   refreshAll: vi.fn(),
   toastError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
   toastSuccess: vi.fn(),
   templates: [
     { templateCode: 'ncr-disposition-default', documentType: 'quality-ncr', isActive: true },
@@ -20,21 +21,42 @@ const approvalState = vi.hoisted(() => ({
       sourceService: 'quality',
       status: 'Running',
       templateCode: 'ncr-disposition-default',
+      // mock 对象的类型由首个字面量推断，字段不在基线夹具里就写不进去。
+      templateVersion: 1,
       startedBy: 'qa-lead',
     },
   ],
   decisions: [
-    { decisionId: 'decision-1', chainId: 'chain-1', stepNo: 10, actorRef: 'quality-manager', decision: 'Approve', comment: '同意返工' },
+    {
+      decisionId: 'decision-1',
+      chainId: 'chain-1',
+      stepNo: 10,
+      actorRef: 'quality-manager',
+      decision: 'approve',
+      comment: '同意返工',
+    },
   ],
   chainDetail: {
     chainId: 'chain-1',
     status: 'Running',
     documentId: 'NCR-260701-001',
     steps: [
-      { stepNo: 10, stepName: '质量经理复核', approverType: 'role', approverRef: 'quality-manager', status: 'Pending' },
+      {
+        stepNo: 10,
+        stepName: '质量经理复核',
+        approverType: 'role',
+        approverRef: 'quality-manager',
+        status: 'Pending',
+      },
     ],
     decisions: [
-      { decisionId: 'decision-1', stepNo: 10, actorRef: 'quality-manager', decision: 'Approve', comment: '同意返工' },
+      {
+        decisionId: 'decision-1',
+        stepNo: 10,
+        actorRef: 'quality-manager',
+        decision: 'approve',
+        comment: '同意返工',
+      },
     ],
   },
 }))
@@ -45,12 +67,24 @@ vi.mock('@/composables/useBusinessApproval', () => ({
     chainDetailError: shallowRef(),
     chainDetailPending: shallowRef(false),
     chainDetailSelection: reactive({ chainId: '' }),
-    chainFilters: reactive({ sourceService: undefined, documentType: undefined, documentId: undefined, skip: 0, take: 10 }),
+    chainFilters: reactive({
+      sourceService: undefined,
+      documentType: undefined,
+      documentId: undefined,
+      skip: 0,
+      take: 10,
+    }),
     chains: computed(() => approvalState.chains),
     chainsError: shallowRef(),
     chainsPending: shallowRef(false),
     decisions: computed(() => approvalState.decisions),
-    decisionFilters: reactive({ chainId: undefined, documentType: undefined, documentId: undefined, skip: 0, take: 10 }),
+    decisionFilters: reactive({
+      chainId: undefined,
+      documentType: undefined,
+      documentId: undefined,
+      skip: 0,
+      take: 10,
+    }),
     decisionsError: shallowRef(),
     decisionsPending: shallowRef(false),
     refreshAll: approvalState.refreshAll,
@@ -74,8 +108,10 @@ vi.mock('@/stores/auth', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifyError: approvalState.toastError,
+  notifyOperationFailure: approvalState.notifyOperationFailure,
   notifySuccess: approvalState.toastSuccess,
 }))
 
@@ -94,7 +130,8 @@ const uiStubs = {
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
@@ -125,21 +162,41 @@ describe('business document approval panel', () => {
         sourceService: 'quality',
         status: 'Running',
         templateCode: 'ncr-disposition-default',
+        templateVersion: 1,
         startedBy: 'qa-lead',
       },
     ]
     approvalState.decisions = [
-      { decisionId: 'decision-1', chainId: 'chain-1', stepNo: 10, actorRef: 'quality-manager', decision: 'Approve', comment: '同意返工' },
+      {
+        decisionId: 'decision-1',
+        chainId: 'chain-1',
+        stepNo: 10,
+        actorRef: 'quality-manager',
+        decision: 'approve',
+        comment: '同意返工',
+      },
     ]
     approvalState.chainDetail = {
       chainId: 'chain-1',
       status: 'Running',
       documentId: 'NCR-260701-001',
       steps: [
-        { stepNo: 10, stepName: '质量经理复核', approverType: 'role', approverRef: 'quality-manager', status: 'Pending' },
+        {
+          stepNo: 10,
+          stepName: '质量经理复核',
+          approverType: 'role',
+          approverRef: 'quality-manager',
+          status: 'Pending',
+        },
       ],
       decisions: [
-        { decisionId: 'decision-1', stepNo: 10, actorRef: 'quality-manager', decision: 'Approve', comment: '同意返工' },
+        {
+          decisionId: 'decision-1',
+          stepNo: 10,
+          actorRef: 'quality-manager',
+          decision: 'approve',
+          comment: '同意返工',
+        },
       ],
     }
   })
@@ -162,6 +219,53 @@ describe('business document approval panel', () => {
     expect(wrapper.text()).toContain('同意返工')
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.find('[data-router-link]').exists()).toBe(true)
+  })
+
+  /**
+   * 第六轮走查在 NCR 处置抽屉里拍到：「当前链路」那行摆着一串
+   * `019fc117-357d-7120-a0d1-63a7a37ef7f6`——而同一个面板的下拉项早就在显示
+   * 「NCR-260701-001 · 运行中」，一个面板两套口径。
+   *
+   * 契约里审批链没有业务编号，所以断言的不是"显示某个编号"，而是**GUID 不上屏**
+   * 且换上了人能念的身份。完整 id 仍留在 title 里，排障能复制——这也一并钉住，
+   * 免得后来者为了"干净"把它删掉。
+   */
+  it('当前链路显示可读身份而不是裸 GUID，完整 id 退到 title', async () => {
+    const rawChainId = '019fc117-357d-7120-a0d1-63a7a37ef7f6'
+    approvalState.chains = [
+      {
+        chainId: rawChainId,
+        documentType: 'quality-ncr',
+        documentId: 'NCR-260701-001',
+        sourceService: 'quality',
+        status: 'Approved',
+        templateCode: 'ncr-disposition-default',
+        templateVersion: 2,
+        startedBy: 'qa-lead',
+      },
+    ]
+    approvalState.chainDetail = {
+      chainId: rawChainId,
+      status: 'Approved',
+      documentId: 'NCR-260701-001',
+      steps: [],
+      decisions: [],
+    }
+
+    const wrapper = mount(BusinessDocumentApprovalPanel, {
+      props: {
+        modelValue: rawChainId,
+        sourceService: 'quality',
+        documentType: 'quality-ncr',
+        documentId: 'NCR-260701-001',
+      },
+      global: { stubs: uiStubs },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ncr-disposition-default v2')
+    expect(wrapper.text()).not.toContain(rawChainId)
+    expect(wrapper.html()).toContain(`title="${rawChainId}"`)
   })
 
   it('starts a real approval chain for the business document and emits the returned chain id', async () => {
@@ -188,6 +292,37 @@ describe('business document approval panel', () => {
     expect(approvalState.toastSuccess).toHaveBeenCalledWith('审批链已发起')
   })
 
+  it('prefers the canonical engineering change template when starting a new chain', async () => {
+    approvalState.templates = [
+      {
+        templateCode: 'fallback-template',
+        documentType: 'engineering-change-order',
+        isActive: true,
+      },
+      { templateCode: 'APT-WB-ECO-001', documentType: 'engineering-change-order', isActive: true },
+    ]
+    const wrapper = mount(BusinessDocumentApprovalPanel, {
+      props: {
+        modelValue: '',
+        sourceService: 'product-engineering',
+        documentType: 'engineering-change-order',
+        documentId: 'ECO-20260801-000001',
+        preferredTemplateCode: 'APT-WB-ECO-001',
+      },
+      global: { stubs: uiStubs },
+    })
+
+    await findButton(wrapper, '发起审批')!.trigger('click')
+    await flushPromises()
+
+    expect(approvalState.startChain).toHaveBeenCalledWith({
+      templateCode: 'APT-WB-ECO-001',
+      sourceService: 'product-engineering',
+      documentType: 'engineering-change-order',
+      documentId: 'ECO-20260801-000001',
+    })
+  })
+
   it('shows an explicit failure when the approval facade returns a soft-failed envelope', async () => {
     approvalState.startChain.mockResolvedValueOnce({ success: false, data: null } as any)
     const wrapper = mount(BusinessDocumentApprovalPanel, {
@@ -205,7 +340,8 @@ describe('business document approval panel', () => {
 
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(approvalState.toastSuccess).not.toHaveBeenCalled()
-    expect(approvalState.toastError).toHaveBeenCalledWith(
+    expect(approvalState.notifyOperationFailure).toHaveBeenCalledWith(
+      '发起审批链失败',
       { success: false, data: null },
       '审批链发起未成功，请确认模板与单据状态。',
     )

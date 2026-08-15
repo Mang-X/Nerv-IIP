@@ -169,6 +169,42 @@ public sealed class CreateBusinessConsoleErpSalesOrderEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/sales/sales-orders/{salesOrderNo}/release-credit-hold")]
+[BusinessGatewayOperationId("releaseBusinessConsoleErpSalesOrderCreditHold")]
+public sealed class ReleaseBusinessConsoleErpSalesOrderCreditHoldEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseErpSalesOrderCreditHoldRequest, string>(
+        auth,
+        BusinessGatewayPermissions.ErpSalesManage)
+{
+    protected override string OrganizationId(BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request) => "erp-sales-order";
+
+    protected override string? ResourceId(BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request) =>
+        Route<string>("salesOrderNo") ?? request.SalesOrderNo;
+
+    protected override Task<string> ForwardAsync(
+        BusinessConsoleReleaseErpSalesOrderCreditHoldRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        // 审计身份不信任请求体：StartedBy 一律取已认证 principal（谁提交解冻复核记谁）。
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        var downstreamRequest = request with
+        {
+            SalesOrderNo = Route<string>("salesOrderNo") ?? request.SalesOrderNo,
+            StartedBy = actorRef,
+        };
+        return erp.ReleaseSalesOrderCreditHoldAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+    }
+}
+
+[Tags("Business Console ERP")]
 [HttpGet("/api/business-console/v1/erp/sales/delivery-orders")]
 [BusinessGatewayOperationId("listBusinessConsoleErpDeliveryOrders")]
 public sealed class ListBusinessConsoleErpDeliveryOrdersEndpoint(

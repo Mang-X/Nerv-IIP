@@ -5,6 +5,12 @@ import {
   useBusinessTelemetryAlarmRules,
   type SaveTelemetryAlarmRuleInput,
 } from '@/composables/useBusinessTelemetry'
+import {
+  useEquipmentDeviceCatalog,
+  useEquipmentUomCatalog,
+  useTelemetryTagCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -19,6 +25,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -35,10 +42,10 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -58,7 +65,9 @@ const {
   saveAlarmRule,
   saveAlarmRulePending,
 } = useBusinessTelemetryAlarmRules()
-const { page, pageSize } = usePagedList(filters)
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 
 const formOpen = shallowRef(false)
 const formEditing = shallowRef(false)
@@ -73,6 +82,32 @@ const form = reactive<SaveTelemetryAlarmRuleInput>({
   thresholdValue: undefined,
   unitCode: '',
   isEnabled: true,
+})
+
+// 弹窗里的采集标签跟随所选设备：换设备就只列那台设备的测点，旧测点同时清空。
+const { tagOptions, tagsPending, unitByTagKey } = useTelemetryTagCatalog(() => form.deviceAssetId)
+watch(
+  () => form.deviceAssetId,
+  () => {
+    if (!formEditing.value) form.tagKey = ''
+  },
+)
+// 选完测点自动带出它标注的单位，省掉一次手输；已填单位不覆盖。
+watch(
+  () => form.tagKey,
+  (tagKey) => {
+    const unitCode = unitByTagKey.value.get(tagKey.trim())
+    if (unitCode && !form.unitCode?.trim()) form.unitCode = unitCode
+  },
+)
+
+// 测点标注的单位不一定登记在计量单位主数据里；已生效的值照样显示出来，不让选择器看着是空的。
+const unitPickerOptions = computed(() => {
+  const unitCode = form.unitCode?.trim() ?? ''
+  if (!unitCode || uomOptions.value.some((option) => option.value === unitCode)) {
+    return uomOptions.value
+  }
+  return [...uomOptions.value, { value: unitCode, label: unitCode, hint: '来自采集标签标注' }]
 })
 
 const errorMessage = computed(() => formatError(alarmRulesError.value))
@@ -92,6 +127,14 @@ const formEnabledValue = computed({
   },
 })
 
+// 规则读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
   {
     key: 'ruleCode',
@@ -99,7 +142,14 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryAlarmRuleItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.ruleCode ?? '无规则',
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'tagKey', header: '采集标签', accessor: (r) => r.tagKey ?? '无标签' },
   { key: 'condition', header: '触发条件', accessor: (r) => conditionLabel(r) },
   { key: 'severity', header: '级别', width: 'w-24' },
@@ -182,11 +232,12 @@ async function submitRule() {
     formOpen.value = false
     notifySuccess('报警规则已保存')
   } catch (error) {
-    notifyError(error, '报警规则保存失败，请稍后重试。')
+    notifyOperationFailure('报警规则保存失败', error, '报警规则保存失败，请稍后重试。')
   }
 }
 function severityLabel(value?: string | null) {
-  return severityOptions.find((o) => o.value === value)?.label ?? value ?? '未知'
+  // 选项里没有的级别就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (severityOptions.find((o) => o.value === value)?.label ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -213,7 +264,7 @@ function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
   return row.alarmRuleId ?? `${row.deviceAssetId}-${row.ruleCode}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -244,11 +295,17 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
+        <NvEntityPicker
           v-model="filters.deviceAssetId"
-          class="h-9 w-64"
-          placeholder="按设备编号筛选"
-          aria-label="设备编号"
+          class="w-64"
+          :options="deviceOptions"
+          title="选择设备"
+          placeholder="全部设备"
+          source-text="数据来自基础数据设备资产"
+          empty-text="暂无设备资产，请先在基础数据登记设备"
+          :loading="devicesPending"
+          clearable
+          aria-label="设备"
         />
         <NvSelect v-model="filters.isEnabled">
           <NvSelectTrigger class="h-9 w-36" aria-label="规则状态"
@@ -283,9 +340,12 @@ function formatError(error: unknown) {
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
           :to="`/equipment/${row.deviceAssetId}`"
-          class="text-brand underline-offset-4 hover:underline"
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
-          {{ row.deviceAssetId ?? '无设备' }}
+          <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
         </RouterLink>
       </template>
       <template #cell-severity="{ row }">
@@ -335,20 +395,31 @@ function formatError(error: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-device">设备</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="rule-device"
                 v-model="form.deviceAssetId"
-                autocomplete="off"
-                placeholder="如 DEV-CNC-01"
+                :options="deviceOptions"
+                title="选择设备"
+                placeholder="选择设备"
+                source-text="数据来自基础数据设备资产"
+                empty-text="暂无设备资产，请先在基础数据登记设备"
+                :loading="devicesPending"
+                aria-label="设备"
               />
             </NvField>
             <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-tag">采集标签</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="rule-tag"
                 v-model="form.tagKey"
-                autocomplete="off"
-                placeholder="如 temperature"
+                :options="tagOptions"
+                title="选择采集标签"
+                :placeholder="form.deviceAssetId ? '选择采集标签' : '请先选择设备'"
+                :disabled="!form.deviceAssetId"
+                source-text="数据来自该设备已配置的采集标签"
+                empty-text="该设备还没有配置采集标签，请先完成采集映射"
+                :loading="tagsPending"
+                aria-label="采集标签"
               />
             </NvField>
             <NvField v-if="!formEditing">
@@ -412,11 +483,16 @@ function formatError(error: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="rule-unit">单位</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="rule-unit"
                 v-model="form.unitCode"
-                autocomplete="off"
-                placeholder="如 CEL"
+                :options="unitPickerOptions"
+                title="选择单位"
+                placeholder="选择单位"
+                source-text="数据来自基础数据计量单位"
+                empty-text="暂无计量单位，请先在基础数据维护单位"
+                :loading="uomsPending"
+                aria-label="单位"
               />
             </NvField>
             <NvField>

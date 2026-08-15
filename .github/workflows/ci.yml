@@ -7,22 +7,297 @@ on:
       - main
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # 超时策略（MAN-799，针对 MAN-669 分片拓扑重新推导）。每个 job 均声明
+  # `timeout-minutes`，每个显式 step 也声明一个。除此之外分为两个层级，因为
+  # “保护证据”仅适用于有证据可保护的地方：
+  #
+  #   A) 带 `if: always()` 证据 step 的 job——四个 backend 分片，以及
+  #      erp-sales-order-demand-acceptance、connector-host-tests 和
+  #      frontend-unit-test-shards：
+  #          sum(step timeout-minutes) < job timeout-minutes.
+  #      job 级超时会取消*整个* job，包括 `if: always()` step，并会
+  #      连同 MAN-661 test-evidence 产物一起中断；step 级超时只会使该
+  #      step 失败，因此 job 会继续进入 `Collect …` / `Upload …`。严格不等式
+  #      保证某个 step 预算先触发。仅当*每个*显式 step 都有
+  #      预算（包括证据收集/上传）时，它才成立。剩余余量（job − sum）还必须
+  #      吸收 GitHub 隐式的 `Set up job` 和 post step；它们不在 `steps:` 中，也不能
+  #      设置 `timeout-minutes`；post step 在 Upload *之后*运行，因此会消耗预算，但
+  #      永远不会让证据丢失。在此新增 step 意味着增加该 step 的预算，*同时*提高 job
+  #      预算。以下每个分片 job 正是为此保留 6 分钟余量。
+  #
+  #   B) 不含失败后仍可运行 step 的 job——`Backend Tests` 聚合、
+  #      backend-test-shard-governance、frontend 聚合/validation、openapi-client-drift、script-governance：不会有任何内容
+  #      在 job 预算触发时丢失，因此预算*不会*为了超过 step 总和而抬高。
+  #      此处 **job** 预算是根据观测运行时长确定的快速失败界限。step 预算
+  #      仅为逐 step 上限：当一个 job 含多个 step 时，靠后的 step 无法
+  #      分别触达，对此明确接受，而非作出相反声明。唯一
+  #      强制的是在任何调度下都不可能生效的情形——step 预算大于或等于
+  #      整个 job 预算。
+  #
+  # 四个 backend 快速分片采用同一份共享测试 step 预算，按最大值的 ~2x 确定，该最大值
+  # 从全部四个分片整体观测得出（而非逐分片）。短时固定成本 step（checkout、SDK setup、cache
+  # restore、evidence collect/upload）设置 3–8 分钟下限，健康 run 远不会接近该值。
+  #
+  # MAN-669 PR-A 重新归置了分片内容，因此四个分片不再具有四种不同的
+  # 形态，也不再采用四种不同预算。旧的差异（8m / 10m / 15m / 12m）
+  # 按重平衡前的拆分确定：一个分片的 TRX elapsed 为 357s，另一个为 23s；
+  # 该拓扑已不存在，而跨拓扑变更继承的预算
+  # 不代表任何含义。**每个分片拥有的 project 仅由 scripts/backend-test-shards.json 定义**——
+  # 这些注释有意不复述该列表，因为下次
+  # 重新平衡分片时，复述的列表就会漂移。
+  #
+  # 此次重平衡的一项权重输入并未保留下来。记录于此，确保下次调整
+  # 不会继承它：business-core-b（backend-shard-4）被赋予最低 TRX 份额，因为它
+  # 在重平衡前的 run 30999368607 中拥有最差的 step-to-TRX 比率——265s step 对 191.7s TRX，
+  # 比率为 1.38，而 business-core-a 为 372s/357.5s = 1.04。该比率描述的 project 集合
+  # 已不存在：重平衡移出了该分片 9 个 project 中的 7 个，而 step-minus-TRX
+  # 是依赖闭包的 restore/build 成本，它随 project 移动，而不随
+  # lane 标签移动。重平衡后，在两个分片均产生读数的三次 run 中
+  # （31114441118、31115903098、31118427925），business-core-b 是四者中*最快*的分片
+  # （144s / 196s / 142s test step），而 business-core-a 是 critical path（249s / 252s / 234s）——
+  # 该分片被过度减轻，而非正确减轻。差距落在 runner 方差范围内，因此
+  # PR-A 不重新切分；但下一次重平衡（MAN-664）必须根据
+  # 重平衡后的测量重新推导权重，且绝不能继续沿用 1.38。
+  #
+  # 根据本分支三次 run（31114441118、31115903098、31116998822）重新推导。每个分片的
+  # test step 依次为 3.5m / 3.0m / 4.2m / 2.4m，然后为 4.5m / 3.0m / 4.2m / 3.3m，然后为 4.7m / 3.1m /
+  # (setup-failed) / 3.1m；TRX elapsed 为 129.8s / 150.6s / 164.5s / 112.9s，然后为 215.5 / 144.5 /
+  # 139.6 / 130.2，然后为 177.4 / 133.6 / — / 129.1。由此得出两点。Hosted-runner 在
+  # *同一 commit* 上的方差达到数十个百分点，并会改变哪个分片居首，因此逐分片预算
+  # 只会编码噪声——四者采用同一预算。该界限按观测范围内的最大值确定，而观测范围是
+  # 这三次 run，最大值为 4.7m。因此，对全部四个分片同样有：
+  #
+  #     checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3
+  #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
+  #
+  # 该算术是上述层级 A 的义务；变更任何一个数字都需要重新检查这项算术。
+  #
+  # 注意共享预算*不*允许你做什么。这对全部四个分片同样成立——
+  # 它们的 step 向量均为 3 / 5 / 8 / 3 / 10 / 5 / 5——所以只在此处声明，而
+  # 不在任一 job 中声明：六个非 test step 已带有强制的 29m shared-convention
+  # 预算，因此层级 A 的严格 job > step-sum 要求使 45m 成为
+  # 该不变量留下的结构下限，而非对任一分片运行时的声明。实际会触发的预算
+  # 在挂起的 run 上是 10m test step。若它接近 10m，应同时提高两项预算，而不是
+  # 只提高 step 预算，否则严格不等式将不再保护证据 step。
+  #
+  # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
+  # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
+  #
+  # ---------------------------------------------------------------------------------------------
+  # 构建策略（MAN-669 PR-B / PR-C）。此主题与上述超时策略分开；两个 PR
+  # 都未变更预算，因此这里的任何内容都不参与 Test-NervCiWorkflowBudgets 强制的算术。
+  # 这里只保留结论——每项测量、run id、样本限制和重新开启条件仅位于唯一的
+  # 位置：docs/architecture/backend-ci-build-strategy.md。不得在此复述数字：MAN-664
+  # 将重新测量，而复制到四个文件中的数字会在其中三个文件中漂移。
+  #
+  #   * 每个分片继续只 restore 和 build 自己的 .slnf。build-once（一个串行 build job，
+  #     向各分片提供预构建输出）已在四次 hosted-runner run 上测量，其中两次热缓存、
+  #     两次冷缓存；在两种核算口径下均更慢——仅 whole-solution build 本身
+  #     就比任何单个分片自身的 restore+build 成本更高，因此将它置于 critical path
+  #     即使尚未在 job 间传输数 GB 输出，也得不偿失。把一个分片拆分为
+  #     restore / build --no-restore / test 也更慢。
+  #   * 对三个专业 job（erp-sales-order-demand-acceptance、connector-host-tests、
+  #     openapi-client-drift）也按相同的重复问题做了清点，其 build
+  #     命令均未改变：没有一个会 build 整个 solution，且三者都远低于 critical
+  #     path，因此即使将它们的 build 时间降为零，也不会缩短 CI wall clock。
+  #
+  # 仅在该文档列出的可执行条件出现时重新开启任一决定（最慢
+  # 分片的 build 接近 whole-solution build、runner 规格变化、出现一个数量级的
+  # artifact-transfer 提升、总 test 时间再次大幅下降，或某个专业 job
+  # 到达 critical path）——并应重新测量，而非靠推理。否则引用该文档。
+  #
+  # 还有一项定义无论如何都不得重新推导：“critical path”指最大的 job，其判定范围是
+  # 该次 run，而不是最慢的分片。二者已不再相同——已有一个 frontend job
+  # 超过最慢的分片——因此依据“最慢分片”估算任何内容都会低估
+  # run 的 wall clock。
+  impact-plan:
+    name: CI Impact Plan
+    # NERV-668 拆解③让 Backend Tests、Script Governance、OpenAPI Drift、Connector Host Tests 与 ERP acceptance 消费这些 outputs；
+    # NERV-688 的 PostgreSQL Provider Tests 消费 postgresql，NERV-685 PR②让 frontend jobs 消费 workspace 选择。
+    # 计划失败时受管条件 job 保守运行，frontend 聚合则失败关闭。
+    # 层级 B：失败后没有 evidence step；job 的 15m 是快速失败界限，各 step
+    # 预算只表达逐 step 上限。
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.plan.outputs.backend }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      scripts: ${{ steps.plan.outputs.scripts }}
+      docs: ${{ steps.plan.outputs.docs }}
+      connector_hosts: ${{ steps.plan.outputs.connector_hosts }}
+      workflows: ${{ steps.plan.outputs.workflows }}
+      infra: ${{ steps.plan.outputs.infra }}
+      backend_contracts: ${{ steps.plan.outputs.backend_contracts }}
+      backend_testing: ${{ steps.plan.outputs.backend_testing }}
+      backend_persistence: ${{ steps.plan.outputs.backend_persistence }}
+      backend_messaging: ${{ steps.plan.outputs.backend_messaging }}
+      business_gateway: ${{ steps.plan.outputs.business_gateway }}
+      openapi_codegen: ${{ steps.plan.outputs.openapi_codegen }}
+      frontend_apps: ${{ steps.plan.outputs.frontend_apps }}
+      frontend_packages: ${{ steps.plan.outputs.frontend_packages }}
+      frontend_design_system: ${{ steps.plan.outputs.frontend_design_system }}
+      frontend_docs: ${{ steps.plan.outputs.frontend_docs }}
+      postgresql: ${{ steps.plan.outputs.postgresql }}
+      redis_cap: ${{ steps.plan.outputs.redis_cap }}
+      full_chain: ${{ steps.plan.outputs.full_chain }}
+      erp_sales_order_demand: ${{ steps.plan.outputs.erp_sales_order_demand }}
+      business_services: ${{ steps.plan.outputs.business_services }}
+      plan_path: ${{ steps.plan.outputs.plan_path }}
+      frontend_selected: ${{ steps.frontend-plan.outputs.frontend_selected }}
+      frontend_tests_selected: ${{ steps.frontend-plan.outputs.frontend_tests_selected }}
+      frontend_test_matrix: ${{ steps.frontend-plan.outputs.frontend_test_matrix }}
+      frontend_validation_matrix: ${{ steps.frontend-plan.outputs.frontend_validation_matrix }}
+      frontend_plan_path: ${{ steps.frontend-plan.outputs.frontend_plan_path }}
+      frontend_inventory_path: ${{ steps.frontend-plan.outputs.frontend_inventory_path }}
+    steps:
+      - name: Checkout full history for impact observation
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build observed impact plan
+        id: plan
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          DIFF_MODE: ${{ github.event_name == 'pull_request' && 'MergeBase' || 'Range' }}
+        run: >-
+          ./scripts/get-ci-impact-plan.ps1
+          -BaseSha $env:BASE_SHA
+          -HeadSha $env:HEAD_SHA
+          -DiffMode $env:DIFF_MODE
+          -OutputPath artifacts/ci-impact-plan/impact-plan.json
+
+      - name: Build frontend workspace plan
+        id: frontend-plan
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          FRONTEND_MODE: ${{ github.event_name == 'push' && 'Full' || 'Affected' }}
+        run: >-
+          ./scripts/get-frontend-workspace-plan.ps1
+          -ImpactPlanPath artifacts/ci-impact-plan/impact-plan.json
+          -Mode $env:FRONTEND_MODE
+
+      - name: Upload CI impact plans
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/ci-impact-plan/impact-plan.json
+            artifacts/ci-impact-plan/frontend-workspace-plan.json
+            artifacts/ci-impact-plan/frontend-test-inventory.json
+          if-no-files-found: error
+          retention-days: 14
+
   backend-tests:
     name: Backend Tests
+    # 层级 B。稳定聚合：按 backend 选择政策严格接受五个执行 job 的 success/skipped，观测值为 ~2s。
+    timeout-minutes: 5
     runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - impact-plan
+      - backend-test-shard-governance
+      - backend-tests-business-gateway
+      - backend-tests-platform
+      - backend-tests-business-core-a
+      - backend-tests-business-core-b
+    steps:
+      - name: Require all backend fast shards
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
+          expected_result="skipped"
+          backend_policy="skipped by design"
+          if [[ "$backend_selected" = "true" ]]; then
+            expected_result="success"
+            backend_policy="selected"
+          fi
+
+          test "${{ needs.backend-test-shard-governance.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-gateway.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-platform.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-core-a.result }}" = "$expected_result"
+          test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
+
+          {
+            echo "## Backend fast lane decision"
+            echo
+            echo "Policy: $backend_policy"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  backend-test-shard-governance:
+    name: Backend Test Shard Governance
+    # 层级 B（失败后没有 step 运行）。契约测试会多轮运行真实 validator 变异；
+    # 15m job 预算仍是快速失败界限，step 预算合计为 23m 且仅为逐 step 上限。
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup Ruby for structured workflow validation
+        timeout-minutes: 5
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+
+      # 每个 step 只运行一个 script，不在一个 `run:` 块中串联：两个 script 都会在 stdout 报告发现的问题
+      # 并以 1 退出；若串联，第二个 script 的 `$LASTEXITCODE` 会覆盖第一个的值，
+      # 使真实失败变绿（已测量）。原因：
+      # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+      - name: Validate backend test shard classification
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-backend-test-shards.ps1
+
+      - name: Test backend test shard governance
+        timeout-minutes: 10
+        shell: pwsh
+        run: ./scripts/tests/backend-test-shards.Tests.ps1
+
+  backend-tests-business-gateway:
+    name: Backend Tests - BusinessGateway
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结，因为 MAN-661 将证据 lane backend-shard-1 映射到它，映射定义在
+    # scripts/lib/TestEvidence.ps1 中——该名称标识 lane，而非分片内容；这些内容
+    # 仅存在于 scripts/backend-test-shards.json 中。
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -30,25 +305,788 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test backend solution
-        run: dotnet test backend/Nerv.IIP.sln --configuration Release
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-  erp-sales-order-demand-acceptance:
-    name: ERP Sales Order Demand Acceptance
+      - name: Test BusinessGateway shard
+        timeout-minutes: 10
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-gateway
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -TrxFilePrefix backend-tests-business-gateway
+
+      - name: Collect BusinessGateway shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-1
+          -SelectedLanes backend-shard-1
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - BusinessGateway"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload BusinessGateway shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-platform:
+    name: Backend Tests - Platform
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-2 映射到它。
+    timeout-minutes: 45
     runs-on: ubuntu-latest
-    env:
-      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
-      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test platform shard
+        timeout-minutes: 10
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId platform
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -TrxFilePrefix backend-tests-platform
+
+      - name: Collect platform shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-2
+          -SelectedLanes backend-shard-2
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Platform"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload platform shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-business-core-a:
+    name: Backend Tests - Business Core A
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-3 映射到它。
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test business core A shard
+        timeout-minutes: 10
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-a
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -TrxFilePrefix backend-tests-business-core-a
+
+      - name: Collect business core A shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-3
+          -SelectedLanes backend-shard-3
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core A"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core A shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-tests-business-core-b:
+    name: Backend Tests - Business Core B
+    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
+    # `jobs:` 顶部。job 名称已冻结：MAN-661 将证据 lane backend-shard-4 映射到它。MAN-669 PR-A 为
+    # 此分片赋予最低 TRX 份额；该权重依赖于重平衡前的 step-to-TRX 比率，
+    # 而重平衡本身已将该比率证伪——参见 `jobs:` 顶部的超时策略。
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: shard-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Test business core B shard
+        timeout-minutes: 10
+        id: shard-tests
+        shell: pwsh
+        run: >-
+          ./scripts/run-backend-test-shard.ps1
+          -ShardId business-core-b
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -TrxFilePrefix backend-tests-business-core-b
+
+      - name: Collect business core B shard evidence
+        timeout-minutes: 5
+        id: collect-shard-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane backend-shard-4
+          -SelectedLanes backend-shard-4
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.shard-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Backend Tests - Business Core B"
+          -CurrentTestOutcome ${{ steps.shard-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.shard-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.shard-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload business core B shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  postgres-provider-tests:
+    name: PostgreSQL Provider Tests
+    # NERV-688 拆解③第八批（收尾）：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
+    # + FileStorage + IndustrialTelemetry + Quality + MES + WMS + ERP + DemandPlanning
+    # + 跨业务 Acceptance + Maintenance。层级 A；显式 step 预算合计 94m，
+    # 小于 101m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 101
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: nerv
+          POSTGRES_PASSWORD: nerv
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nerv -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Install PostgreSQL client
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Resolve PostgreSQL evidence environment
+        timeout-minutes: 3
+        id: postgres-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Run governed PostgreSQL profile members
+        timeout-minutes: 55
+        id: postgres-tests
+        shell: pwsh
+        run: |
+          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-postgres-profile', 'wms-postgres-profile', 'erp-postgres-profile', 'demandplanning-postgres-profile', 'acceptance-postgres-profile', 'maintenance-device-pause-postgres')
+          ./scripts/run-postgres-test-lane.ps1 `
+            -MemberId $members `
+            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
+            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
+            -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+
+      - name: Collect PostgreSQL profile evidence
+        timeout-minutes: 5
+        id: collect-postgres-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane postgres
+          -SelectedLanes postgres
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.postgres-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "PostgreSQL Provider Tests"
+          -CurrentTestOutcome ${{ steps.postgres-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.postgres-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.postgres-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload PostgreSQL normalized evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-postgres-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload PostgreSQL dependency summary
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  redis-cap-transport-tests:
+    name: Redis/CAP Transport Tests
+    # NERV-688 拆解④：DemandPlanning 的两条真实 Redis Streams/CAP 传输证明。
+    # 层级 A；显式 step 预算合计 59m，小于 66m job 预算，为 service setup 和 action post steps 保留 7m。
+    timeout-minutes: 66
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false') }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
+      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: nerv
+          POSTGRES_PASSWORD: nerv
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nerv -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Install PostgreSQL and Redis clients
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client redis-tools
+
+      - name: Resolve Redis/CAP evidence environment
+        timeout-minutes: 3
+        id: redis-cap-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Run DemandPlanning Redis/CAP transport profiles
+        timeout-minutes: 20
+        id: redis-cap-tests
+        shell: pwsh
+        run: |
+          ./scripts/run-redis-cap-test-lane.ps1 `
+            -MemberId demandplanning-sales-order-redis-cap `
+            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
+            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
+            -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+
+      - name: Collect Redis/CAP transport evidence
+        timeout-minutes: 5
+        id: collect-redis-cap-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane redis-cap
+          -SelectedLanes redis-cap
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.redis-cap-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Redis/CAP Transport Tests"
+          -CurrentTestOutcome ${{ steps.redis-cap-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.redis-cap-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.redis-cap-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload Redis/CAP normalized evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-redis-cap-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Redis/CAP dependency summary
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-cap-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  business-full-chain-acceptance:
+    name: Business FullChain Acceptance
+    # NERV-767：五条 active/core 跨服务真实依赖场景。层级 A；显式 step
+    # 预算合计 214m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
+    # steps 保留 11m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
+    timeout-minutes: 225
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=postgres;Username=nerv;Password=nerv
+      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+      COMPOSE_PROJECT_NAME: nerv_full_chain_${{ github.run_id }}_${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup Aspire CLI
+        timeout-minutes: 10
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          aspire_install_path="${RUNNER_TEMP}/aspire/bin"
+          curl --fail --silent --show-error --location https://aspire.dev/install.sh --output "${RUNNER_TEMP}/aspire-install.sh"
+          bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6 --install-path "$aspire_install_path"
+          "$aspire_install_path/aspire" --version | grep -E '^13\.4\.6\+'
+          echo "$aspire_install_path" >> "$GITHUB_PATH"
+
+      - name: Setup pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Setup Node.js
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        timeout-minutes: 12
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        timeout-minutes: 15
+        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright install --with-deps chromium
+
+      - name: Prepare FullChain dependency images
+        timeout-minutes: 10
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          docker pull postgres:18
+          docker pull redis:8
+
+      - name: Resolve FullChain evidence environment
+        timeout-minutes: 3
+        id: full-chain-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
+
+      - name: Run governed FullChain scenarios
+        timeout-minutes: 120
+        id: full-chain-tests
+        shell: pwsh
+        run: |
+          ./scripts/run-full-chain-test-lane.ps1 `
+            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
+            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+
+      - name: Collect FullChain evidence
+        timeout-minutes: 5
+        id: collect-full-chain-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane full-chain
+          -SelectedLanes full-chain
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.full-chain-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Business FullChain Acceptance"
+          -CurrentTestOutcome ${{ steps.full-chain-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.full-chain-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.full-chain-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload FullChain normalized evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-full-chain-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload FullChain dependency summary
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-chain-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload FullChain failure diagnostics
+        timeout-minutes: 5
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-chain-failure-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/acceptance/**
+            artifacts/fullstack/**
+            artifacts/script-logs/**
+          if-no-files-found: error
+          retention-days: 14
+
+  erp-sales-order-demand-acceptance:
+    name: ERP Sales Order Demand Acceptance
+    # 层级 A（证据 step）。观测最大值为 4.2m / 平均值为 3.9m；为 Docker image
+    # 拉取预留额外余量。step 预算合计为 46m，为隐式 setup/post step 留下 9m 余量。
+    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
+      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -57,15 +1095,18 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Prepare PostgreSQL and Redis images
+        timeout-minutes: 10
         run: |
           docker pull postgres:18
           docker pull redis:8
 
       - name: Verify ERP sales-order demand bridge
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/verify-erp-sales-order-demand-planning.ps1
 
       - name: Upload ERP sales-order demand diagnostics
+        timeout-minutes: 5
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -78,17 +1119,26 @@ jobs:
 
   connector-host-tests:
     name: Connector Host Tests
+    # 层级 A（证据 step）。观测最大值为 1.9m / 平均值为 1.6m。这就是挂起 28m 的那个 job，
+    # 该事件发生在 MAN-799 中。step 预算合计为 41m，为隐式 setup/post step 留下 9m 余量。
+    timeout-minutes: 50
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -96,22 +1146,91 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Test connector host solution
-        run: dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln --configuration Release
+      - name: Resolve test evidence environment
+        timeout-minutes: 3
+        id: connector-evidence-environment
+        shell: pwsh
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
+          "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
+          Write-Host "tested-sha=$testedSha"
 
-  frontend:
-    name: Frontend Typecheck and Build
+      - name: Test connector host solution
+        timeout-minutes: 12
+        id: connector-host-tests
+        run: >-
+          dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
+          --configuration Release
+          --logger trx
+          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+
+      - name: Collect connector host test evidence
+        timeout-minutes: 5
+        id: collect-connector-host-evidence
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: >-
+          ./scripts/collect-test-evidence.ps1
+          -Lane connector-host
+          -SelectedLanes connector-host
+          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -WorkflowRunId ${{ github.run_id }}
+          -RunAttempt ${{ github.run_attempt }}
+          -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
+          -TestedSha ${{ steps.connector-evidence-environment.outputs.tested-sha }}
+          -RunnerOs ${{ runner.os }}
+          -Repository ${{ github.repository }}
+          -JobName "Connector Host Tests"
+          -CurrentTestOutcome ${{ steps.connector-host-tests.outcome }}
+          -Event ${{ github.event_name }}
+          -HeadBranch $env:HEAD_BRANCH
+          -SourceUrl ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          -RunnerImage ${{ steps.connector-evidence-environment.outputs.runner-image }}
+          -DotnetSdk ${{ steps.connector-evidence-environment.outputs.dotnet-sdk }}
+          -ArtifactName test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          -RetentionDays 14
+          -StepSummaryPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload connector host test evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.collect-connector-host-evidence.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 14
+
+  frontend-unit-test-shards:
+    name: Frontend Unit Test (${{ matrix.name }})
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_tests_selected == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_test_matrix) }}
+    # 层级 A。每个受影响 workspace 独立产出 JUnit/JSON；测试失败后仍上传该 shard
+    # 已生成的证据。3 + 3 + 5 + 12 + 20 + 5 = 48m < 55m。
+    timeout-minutes: 55
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
+        timeout-minutes: 5
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -119,27 +1238,185 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install frontend dependencies
+        timeout-minutes: 12
         run: pnpm -C frontend install --frozen-lockfile
 
-      - name: Typecheck frontend
-        run: pnpm -C frontend typecheck
+      - name: Test affected frontend workspace
+        timeout-minutes: 20
+        run: >-
+          pnpm -C frontend --filter "${{ matrix.name }}" test
+          --reporter=default
+          --reporter=junit
+          --reporter=json
+          --outputFile.junit=artifacts/test-results/junit.xml
+          --outputFile.json=artifacts/test-results/results.json
+          --slowTestThreshold=1000
 
-      - name: Build frontend
-        run: pnpm -C frontend build
+      - name: Upload frontend unit test shard evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-test-evidence-${{ matrix.slug }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            frontend/apps/*/artifacts/test-results/*.xml
+            frontend/apps/*/artifacts/test-results/*.json
+            frontend/packages/*/artifacts/test-results/*.xml
+            frontend/packages/*/artifacts/test-results/*.json
+          if-no-files-found: error
+          retention-days: 14
 
-  openapi-client-drift:
-    name: OpenAPI/api-client Drift
+  frontend-unit-tests:
+    name: Frontend Unit Tests
+    if: always()
+    needs:
+      - impact-plan
+      - frontend-unit-test-shards
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate frontend unit test shards
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          IMPACT_RESULT: ${{ needs.impact-plan.result }}
+          FRONTEND_TESTS_SELECTED: ${{ needs.impact-plan.outputs.frontend_tests_selected }}
+          SHARD_RESULT: ${{ needs.frontend-unit-test-shards.result }}
+        run: |
+          test "$IMPACT_RESULT" = "success"
+          if test "$FRONTEND_TESTS_SELECTED" = "true"; then
+            test "$SHARD_RESULT" = "success"
+          else
+            test "$FRONTEND_TESTS_SELECTED" = "false"
+            test "$SHARD_RESULT" = "skipped"
+          fi
+
+  frontend-check:
+    name: Frontend Check (Affected)
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_selected == 'true'
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Setup Node.js
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        timeout-minutes: 12
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Check frontend format and lint
+        timeout-minutes: 10
+        run: pnpm -C frontend check
+
+  frontend-validation-shards:
+    name: Frontend Validation (${{ matrix.name }})
+    needs: impact-plan
+    if: needs.impact-plan.outputs.frontend_selected == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Setup Node.js
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        timeout-minutes: 12
+        run: pnpm -C frontend install --frozen-lockfile
+
+      - name: Typecheck affected frontend workspace
+        if: matrix.run_typecheck
+        timeout-minutes: 10
+        run: pnpm -C frontend --filter "${{ matrix.name }}" typecheck
+
+      - name: Build affected frontend app
+        if: matrix.run_build
+        timeout-minutes: 20
+        run: pnpm -C frontend --filter "${{ matrix.name }}" build
+
+  frontend:
+    name: Frontend Typecheck and Build
+    if: always()
+    needs:
+      - impact-plan
+      - frontend-check
+      - frontend-validation-shards
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate frontend validation shards
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          IMPACT_RESULT: ${{ needs.impact-plan.result }}
+          FRONTEND_SELECTED: ${{ needs.impact-plan.outputs.frontend_selected }}
+          CHECK_RESULT: ${{ needs.frontend-check.result }}
+          VALIDATION_RESULT: ${{ needs.frontend-validation-shards.result }}
+        run: |
+          test "$IMPACT_RESULT" = "success"
+          if test "$FRONTEND_SELECTED" = "true"; then
+            test "$CHECK_RESULT" = "success"
+            test "$VALIDATION_RESULT" = "success"
+          else
+            test "$FRONTEND_SELECTED" = "false"
+            test "$CHECK_RESULT" = "skipped"
+            test "$VALIDATION_RESULT" = "skipped"
+          fi
+
+  openapi-client-drift:
+    name: OpenAPI/api-client Drift
+    # 层级 B（失败后没有 step 运行）。观测最大值为 2.0m / 平均值为 1.8m；20m job 预算是
+    # 快速失败界限。step 预算合计为 39m，且仅为逐 step 上限。
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
       - name: Setup .NET
+        timeout-minutes: 5
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
       - name: Cache NuGet packages
+        timeout-minutes: 8
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -148,11 +1425,13 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Setup pnpm
+        timeout-minutes: 3
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
+        timeout-minutes: 5
         uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
@@ -160,16 +1439,276 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Verify OpenAPI/api-client drift
+        timeout-minutes: 15
         shell: pwsh
         run: ./scripts/verify-openapi-client-drift.ps1
 
   script-governance:
     name: Script Governance
+    # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
+    # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
+    # 10m job 预算是快速失败界限；step 预算合计为 98m（20 个 step：3m
+    # checkout + 19 × 5m），且仅为逐 step 上限。合计超过 job 预算
+    # 对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
+    # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
+    # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
+    # 此类 step，因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
+    # MAN-669 PR-C 添加了两个 solution-configuration-membership step；两者
+    # 在本地均于 5s 内完成（checker 为 0.8s，其 contract test 为 3.6s），因此 job 预算保持不变。
+    # #1509 添加了扫描边界契约 step（本地 5.2s）；基于同一理由，job 预算保持不变，
+    # step 预算合计由 43m 调整为 48m。#1512 保留 ordinal-string 的内存对象边界合同，
+    # 并增加独立的 ordinal comparison layers 合同；二者各有 5m step，合计为 58m。
+    # 本 job 没有 `if: always()` 证据步骤，故仍属于层级 B，job 预算保持不变。
+    timeout-minutes: 10
     runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}
     steps:
       - name: Checkout
+        timeout-minutes: 3
         uses: actions/checkout@v4
 
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
       - name: Run script governance check
+        timeout-minutes: 5
         shell: pwsh
         run: ./scripts/check-script-governance.ps1
+
+      - name: Verify CI required summary
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-ci-required-summary.ps1
+
+      - name: Test CI required summary
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ci-required-summary.Tests.ps1
+
+      - name: Test CI impact plan
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ci-impact-plan.Tests.ps1
+
+      - name: Test PostgreSQL lane contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/postgres-test-lane.Tests.ps1
+
+      - name: Test Redis/CAP lane contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/redis-cap-test-lane.Tests.ps1
+
+      - name: Test FullChain lane contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/full-chain-test-lane.Tests.ps1
+
+      - name: Test frontend workspace plan
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/frontend-workspace-plan.Tests.ps1
+
+      - name: Test nightly business performance workflow
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/nightly-business-performance-workflow.Tests.ps1
+
+      - name: Test business performance metric completeness
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/business-performance-metrics-completeness.Tests.ps1
+
+      - name: Test ordinal string primitives
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ordinal-string.Tests.ps1
+
+      # The checker above only reports on the files it decides to scan; this step is what holds that
+      # decision still. #1509 narrowed the exclusion list to three entries and put scripts/lib under
+      # a declared library scope, and a boundary nobody re-checks drifts back — so the exclusion list
+      # and the library rule set are asserted here, in CI, not only in the local gate. Deliberately
+      # split out of scripts/tests/check-script-governance.Tests.ps1, which also drives the
+      # ScriptAutomation stream-drain and detached-process fixtures; this file is 4.7s of checker
+      # runs against small fixtures. Ruling: docs/architecture/script-automation-governance.md.
+      - name: Test script governance scan boundary
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/script-governance-scan-boundary.Tests.ps1
+
+      - name: Test ordinal comparison layers
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/ordinal-comparison-layers.Tests.ps1
+
+      - name: Test backend determinism checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
+
+      - name: Test backend determinism verifier
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/verify-backend-test-determinism.Tests.ps1
+
+      - name: Run backend determinism checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/check-backend-test-determinism.ps1
+
+      - name: Run test evidence contract tests
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/test-evidence.Tests.ps1
+
+      - name: Test solution configuration membership checker
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/solution-configuration-membership.Tests.ps1
+
+      - name: Run solution configuration membership check
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/verify-solution-configuration-membership.ps1
+
+  ci-summary:
+    name: CI Summary
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - impact-plan
+      - backend-tests
+      - postgres-provider-tests
+      - redis-cap-transport-tests
+      - business-full-chain-acceptance
+      - erp-sales-order-demand-acceptance
+      - connector-host-tests
+      - frontend-unit-tests
+      - frontend
+      - openapi-client-drift
+      - script-governance
+    steps:
+      - name: Require all CI lanes
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          impact_result="${{ needs.impact-plan.result }}"
+          backend_result="${{ needs.backend-tests.result }}"
+          erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
+          connector_result="${{ needs.connector-host-tests.result }}"
+          script_governance_result="${{ needs.script-governance.result }}"
+          openapi_result="${{ needs.openapi-client-drift.result }}"
+          postgres_result="${{ needs.postgres-provider-tests.result }}"
+          redis_cap_result="${{ needs.redis-cap-transport-tests.result }}"
+          full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
+          backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
+          erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
+          connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
+          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
+          openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
+          postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
+          redis_cap_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false' }}"
+          full_chain_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false' }}"
+
+          if [[ "$backend_selected" = "true" ]]; then
+            backend_policy="selected"
+          else
+            backend_policy="skipped by design"
+          fi
+          if [[ "$erp_selected" = "true" ]]; then
+            erp_policy="selected"
+          else
+            erp_policy="skipped by design"
+          fi
+          if [[ "$connector_selected" = "true" ]]; then
+            connector_policy="selected"
+          else
+            connector_policy="skipped by design"
+          fi
+          if [[ "$script_governance_selected" = "true" ]]; then
+            script_governance_policy="selected"
+          else
+            script_governance_policy="skipped by design"
+          fi
+          if [[ "$openapi_selected" = "true" ]]; then
+            openapi_policy="selected"
+          else
+            openapi_policy="skipped by design"
+          fi
+          if [[ "$postgres_selected" = "true" ]]; then
+            postgres_policy="selected"
+          else
+            postgres_policy="skipped by policy"
+          fi
+          if [[ "$redis_cap_selected" = "true" ]]; then
+            redis_cap_policy="selected"
+          else
+            redis_cap_policy="skipped by policy"
+          fi
+          if [[ "$full_chain_selected" = "true" ]]; then
+            full_chain_policy="selected"
+          else
+            full_chain_policy="skipped by policy"
+          fi
+
+          {
+            echo "## CI lane decisions"
+            echo
+            echo "| Lane | Policy | Result |"
+            echo "| --- | --- | --- |"
+            echo "| Backend Tests | $backend_policy | $backend_result |"
+            echo "| ERP Sales Order Demand Acceptance | $erp_policy | $erp_result |"
+            echo "| Connector Host Tests | $connector_policy | $connector_result |"
+            echo "| Script Governance | $script_governance_policy | $script_governance_result |"
+            echo "| OpenAPI/api-client Drift | $openapi_policy | $openapi_result |"
+            echo "| PostgreSQL Provider Tests | $postgres_policy | $postgres_result |"
+            echo "| Redis/CAP Transport Tests | $redis_cap_policy | $redis_cap_result |"
+            echo "| Business FullChain Acceptance | $full_chain_policy | $full_chain_result |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          test "$impact_result" = "success"
+          test "$backend_result" = "success"
+          test "${{ needs.frontend-unit-tests.result }}" = "success"
+          test "${{ needs.frontend.result }}" = "success"
+          if [[ "$erp_selected" = "true" ]]; then
+            test "$erp_result" = "success"
+          else
+            test "$erp_result" = "skipped"
+          fi
+          if [[ "$connector_selected" = "true" ]]; then
+            test "$connector_result" = "success"
+          else
+            test "$connector_result" = "skipped"
+          fi
+          if [[ "$postgres_selected" = "true" ]]; then
+            test "$postgres_result" = "success"
+          else
+            test "$postgres_result" = "skipped"
+          fi
+          if [[ "$redis_cap_selected" = "true" ]]; then
+            test "$redis_cap_result" = "success"
+          else
+            test "$redis_cap_result" = "skipped"
+          fi
+          if [[ "$full_chain_selected" = "true" ]]; then
+            test "$full_chain_result" = "success"
+          else
+            test "$full_chain_result" = "skipped"
+          fi
+          if [[ "$script_governance_selected" = "true" ]]; then
+            test "$script_governance_result" = "success"
+          else
+            test "$script_governance_result" = "skipped"
+          fi
+          if [[ "$openapi_selected" = "true" ]]; then
+            test "$openapi_result" = "success"
+          else
+            test "$openapi_result" = "skipped"
+          fi

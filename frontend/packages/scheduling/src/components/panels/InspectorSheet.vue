@@ -46,7 +46,10 @@ function fmt(iso?: string) {
         <template v-if="!isOrder">
           <dt class="text-muted-foreground">锁定</dt>
           <dd>
-            <NvStatusBadge :tone="task.locked ? 'info' : 'neutral'" :label="task.locked ? '已锁定' : '未锁定'" />
+            <NvStatusBadge
+              :tone="task.locked ? 'info' : 'neutral'"
+              :label="task.locked ? '已锁定' : '未锁定'"
+            />
           </dd>
         </template>
         <template v-if="task.hasConflict && task.conflictReason">

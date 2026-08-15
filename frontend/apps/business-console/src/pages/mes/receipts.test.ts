@@ -6,6 +6,67 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import ReceiptsPage from './receipts.vue'
 
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      // 登记单位来自成品物料主档的基本单位；这里给两个不同单位的成品做稳定桩。
+      baseUomBySku: computed(
+        () =>
+          new Map([
+            ['FG-1', 'pcs'],
+            ['FG-2', 'kg'],
+          ]),
+      ),
+      resolveBaseUom: (code?: string | null) =>
+        code ? { 'FG-1': 'pcs', 'FG-2': 'kg' }[code.trim()] : undefined,
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const routerState = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
 
@@ -15,13 +76,23 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
-  useMesDisplayNames: () => ({ resolveSku: (v?: string | null) => v ?? '无' }),
+  useMesDisplayNames: () => ({
+    resolveSku: (v?: string | null) => v ?? '无',
+    // 完工入库弹窗改用 resolveSkuLabel 显示成品（查不到只显编码，不编物料名）。
+    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
+  }),
 }))
 
-const notifySpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
-vi.mock('@/utils/notify', () => ({
+const notifySpies = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  operationFailure: vi.fn(),
+}))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: notifySpies.success,
   notifyError: notifySpies.error,
+  notifyOperationFailure: notifySpies.operationFailure,
 }))
 
 const receiptState = vi.hoisted(() => ({
@@ -72,10 +143,15 @@ vi.mock('@/composables/useBusinessMes', () => {
 
 // NvDataTable 桩:逐行渲染入库状态与操作两个插槽，便于断言失败徽章/原因/重试按钮。
 const tableStub = {
-  props: ['rows'],
+  props: ['columns', 'rows'],
   template: `
     <section data-testid="table">
       <div v-for="row in rows" :key="row.receiptRequestId" data-testid="row">
+        <span v-for="column in columns" :key="column.key">
+          {{ column.accessor ? column.accessor(row) : '' }}
+        </span>
+        <slot name="cell-requestNo" :row="row" />
+        <slot name="cell-workOrderId" :row="row" />
         <slot name="cell-receiptStatus" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
@@ -144,6 +220,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     routerState.replace.mockReset()
     notifySpies.success.mockReset()
     notifySpies.error.mockReset()
+    notifySpies.operationFailure.mockReset()
     receiptState.createReceiptRequest = vi.fn(async (_body: unknown) => undefined)
     receiptState.createReceiptRequestError = { value: undefined }
     receiptState.refreshReceiptRequests = vi.fn(async () => undefined)
@@ -233,6 +310,41 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(failedRetry!.attributes('disabled')).toBeDefined()
   })
 
+  it('read-face guard shows request and work-order numbers without exposing technical identifiers', () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: '019fbb41-1111-7111-8111-111111111111',
+        requestNo: 'FGR-20260801-001',
+        workOrderId: '019fbb41-2222-7222-8222-222222222222',
+        workOrderNo: 'WO-2026-08001',
+        skuId: 'FG-1',
+        receiptStatus: 'Posted',
+      },
+    ]
+    const visibleText = mountPage().text()
+
+    expect(visibleText).toContain('FGR-20260801-001')
+    expect(visibleText).toContain('WO-2026-08001')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('read-face guard shows placeholders when DTO display fields are missing', () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: '019fbb41-1111-7111-8111-111111111111',
+        workOrderId: '019fbb41-2222-7222-8222-222222222222',
+        skuId: 'FG-1',
+        receiptStatus: 'Posted',
+      },
+    ]
+    const visibleText = mountPage().text()
+
+    expect(visibleText).toContain('—')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
   // 工单/成品经 query 带入（工单详情发起），补齐必填单位成本后提交登记。
   async function fillCostAndSubmit(wrapper: ReturnType<typeof mountPage>, unitCost = '3.5') {
     await wrapper.get('#receipt-unit-cost').setValue(unitCost)
@@ -306,7 +418,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     // 数量超剩余 → 不发请求，内联标红提示（不是禁用按钮、不是 toast）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('不超过该批次剩余可入库量')
-    expect(notifySpies.error).not.toHaveBeenCalled()
+    expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
   it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
@@ -338,7 +450,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     expect(notifySpies.success).toHaveBeenCalledTimes(1)
     // 登记已成功：刷新失败不得再提示「登记失败」，避免矛盾反馈诱导重复提交。
-    expect(notifySpies.error).not.toHaveBeenCalled()
+    expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
   it('maps the over-quantity backend error to the business copy even for short work order ids', async () => {
@@ -346,7 +458,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     receiptState.createReceiptRequest = vi.fn(async () => {
       throw new Error('mutation rejected')
     })
-    // 短工单号：后端原文为 ≤60 字中文，notifyError 会优先透传原文；映射必须作为「实际错误消息」传入才生效。
+    // 短工单号：后端原文为 ≤60 字中文，分层透传会优先带出原文；映射必须作为「实际错误消息」传入才生效。
     receiptState.createReceiptRequestError = {
       value: new Error('累计完工入库申请数量超过工单完工数量，WorkOrderId = WO-1'),
     }
@@ -355,8 +467,8 @@ describe('MES receipts — failed inventory posting retry', () => {
 
     await fillCostAndSubmit(wrapper)
 
-    expect(notifySpies.error).toHaveBeenCalledTimes(1)
-    const [arg] = notifySpies.error.mock.calls[0]!
+    expect(notifySpies.operationFailure).toHaveBeenCalledTimes(1)
+    const [, arg] = notifySpies.operationFailure.mock.calls[0]!
     expect((arg as Error).message).toBe(
       '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。',
     )

@@ -316,9 +316,9 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         {
                             t.HasComment("Preventive maintenance plan schedule facts.");
 
-                            t.HasCheckConstraint("ck_maintenance_plans_has_trigger", "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
-
                             t.HasCheckConstraint("ck_maintenance_plans_calendar_trigger_paired", "(interval IS NULL) = (next_due_on IS NULL)");
+
+                            t.HasCheckConstraint("ck_maintenance_plans_has_trigger", "interval IS NOT NULL OR runtime_hour_interval IS NOT NULL");
 
                             t.HasCheckConstraint("ck_maintenance_plans_runtime_trigger_paired", "(runtime_hour_interval IS NULL) = (next_due_runtime_hours IS NULL)");
                         });
@@ -330,6 +330,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Maintenance work order id.");
+
+                    b.Property<DateTimeOffset?>("AcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at_utc")
+                        .HasComment("UTC time when the assigned technician accepted the work order.");
 
                     b.Property<int?>("ActualLaborMinutes")
                         .HasColumnType("integer")
@@ -368,11 +373,27 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("asset_unavailable_reason")
                         .HasComment("Reason published with maintenance.AssetUnavailable.");
 
+                    b.Property<string>("AssignedTeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_team_id")
+                        .HasComment("Assigned maintenance team reference owned by MasterData.");
+
                     b.Property<string>("AssignedTechnicianUserId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("assigned_technician_user_id")
                         .HasComment("Assigned technician user reference owned outside Maintenance.");
+
+                    b.Property<DateTimeOffset?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at_utc")
+                        .HasComment("UTC time when the work order was cancelled.");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when the verified work order was closed.");
 
                     b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -513,18 +534,154 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Maintenance work order lifecycle status.");
 
+                    b.Property<DateTimeOffset?>("VerifiedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at_utc")
+                        .HasComment("UTC time when repair outcome was verified.");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency version advanced by every state-changing work-order command.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceAlarmId")
                         .IsUnique();
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTeamId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTechnicianUserId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_device_opened");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceReferenceId")
                         .IsUnique()
                         .HasDatabaseName("ux_maintenance_work_orders_source_reference");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status", "OpenedAtUtc")
+                        .HasDatabaseName("ix_maintenance_work_orders_scope_status_opened");
+
                     b.ToTable("maintenance_work_orders", "maintenance", t =>
                         {
                             t.HasComment("Maintenance work orders, alarm references, asset availability and completion facts.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate.MaintenanceWorkOrderLifecycleEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Lifecycle event id.");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("action")
+                        .HasComment("Assignment or lifecycle action.");
+
+                    b.Property<string>("ActorPrincipalId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("actor_principal_id")
+                        .HasComment("Authenticated principal that performed the action.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("FromStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("from_status")
+                        .HasComment("Authoritative status before the action.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Intent-level idempotency key.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("Authoritative UTC action time.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("SHA-256 fingerprint used to reject same-key different-payload replays.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Business reason for the action.");
+
+                    b.Property<int>("ResultingVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("resulting_version")
+                        .HasComment("Work-order version after the action.");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("team_id")
+                        .HasComment("Maintenance team responsible at this action step.");
+
+                    b.Property<string>("TechnicianUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("technician_user_id")
+                        .HasComment("Technician responsible at this action step.");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("to_status")
+                        .HasComment("Authoritative status after the action.");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("maintenance_work_order_id")
+                        .HasComment("Owning maintenance work order id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "OccurredAtUtc")
+                        .HasDatabaseName("IX_maintenance_work_order_lifecycle_events_organization_id_en~1");
+
+                    b.ToTable("maintenance_work_order_lifecycle_events", "maintenance", t =>
+                        {
+                            t.HasComment("Append-only auditable maintenance assignment and lifecycle action receipts.");
                         });
                 });
 
@@ -1026,6 +1183,15 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .WithMany("Measurements")
                         .HasForeignKey("MaintenanceInspectionId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate.MaintenanceWorkOrderLifecycleEvent", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate.MaintenanceWorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

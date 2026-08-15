@@ -1,29 +1,29 @@
-# ADR 0016: VictoriaLogs Central Log Backend
+# ADR 0016：VictoriaLogs 中央日志后端
 
-- Status: Accepted
-- Date: 2026-06-10
+- 状态：已接受
+- 日期：2026-06-10
 
-## Context
+## 背景
 
-Nerv-IIP already emits structured JSON logs through Serilog Console, local rolling files and OpenTelemetry OTLP. Aspire Dashboard remains the local short-term diagnostics UI, but it is not a persistent log store. The platform needs a logs-only backend for centralized storage and controlled retrieval without introducing a metrics or traces backend in this slice.
+Nerv-IIP 已通过 Serilog Console、本地滚动文件和 OpenTelemetry OTLP 输出结构化 JSON 日志。Aspire Dashboard 仍是本地短期诊断界面，但它不是持久化日志存储。平台需要一个仅处理日志的后端，以提供集中存储和受控检索，同时不在本次范围内引入指标或追踪后端。
 
-VictoriaLogs is the selected backend for the first centralized log storage path. Official VictoriaMetrics documentation states that VictoriaLogs is provided under Apache License 2.0, supports OTLP log ingestion at `/insert/opentelemetry/v1/logs`, exposes LogsQL queries through `/select/logsql/query`, and uses `-retentionPeriod` for retention configuration. The current official VictoriaLogs release verified for this decision is `v1.50.0`.
+VictoriaLogs 被选为首条中央日志存储路径的后端。VictoriaMetrics 官方文档说明，VictoriaLogs 采用 Apache License 2.0，支持通过 `/insert/opentelemetry/v1/logs` 接收 OTLP 日志，通过 `/select/logsql/query` 提供 LogsQL 查询，并使用 `-retentionPeriod` 配置保留期。本决策核实的当前 VictoriaLogs 官方版本为 `v1.50.0`。
 
-## Decision
+## 决策
 
-1. Add VictoriaLogs as the default logs-only centralized backend for local AppHost and Compose-based deployments.
-2. Pin the runtime image to `victoriametrics/victoria-logs:v1.50.0`; do not use `latest`.
-3. Configure persistent storage through a dedicated volume and pass `-storageDataPath` and `-retentionPeriod` explicitly.
-4. Route service OTLP logs to VictoriaLogs with the OTLP/HTTP logs endpoint path `/insert/opentelemetry/v1/logs`.
-5. Keep metrics and traces on the existing OpenTelemetry/Aspire Dashboard path. Do not add a metrics or traces backend as part of this ADR.
-6. Expose log search only through PlatformGateway facade APIs. Frontend code must not call VictoriaLogs, LogsQL, Collector or Aspire Dashboard directly.
-7. Provide a small `Nerv.IIP.Observability` VictoriaLogs client and safe query builder that maps platform filters to LogsQL. The query facade supports service, correlationId, traceId, time range and level filters.
-8. Do not store log message bodies in AppHub, IAM, Ops, FileStorage, Notification or business PostgreSQL schemas. PostgreSQL may later hold observability indexes or metadata in a separate `observability` schema, but this slice stores searchable log bodies in VictoriaLogs.
+1. 将 VictoriaLogs 作为本地 AppHost 和基于 Compose 部署的默认中央日志专用后端。
+2. 将运行时镜像固定为 `victoriametrics/victoria-logs:v1.50.0`；不得使用 `latest`。
+3. 通过专用卷配置持久化存储，并显式传入 `-storageDataPath` 和 `-retentionPeriod`。
+4. 使用 OTLP/HTTP 日志端点路径 `/insert/opentelemetry/v1/logs`，将服务的 OTLP 日志路由至 VictoriaLogs。
+5. 指标和追踪继续沿用现有 OpenTelemetry/Aspire Dashboard 路径。本 ADR 不引入指标或追踪后端。
+6. 仅通过 PlatformGateway 门面 API 暴露日志搜索。前端代码不得直接调用 VictoriaLogs、LogsQL、Collector 或 Aspire Dashboard。
+7. 提供精简的 `Nerv.IIP.Observability` VictoriaLogs 客户端和安全查询构建器，将平台过滤条件映射为 LogsQL。查询门面支持 service、correlationId、traceId、时间范围和 level 过滤条件。
+8. 不得在 AppHub、IAM、Ops、FileStorage、Notification 或业务 PostgreSQL schema 中存储日志消息正文。PostgreSQL 后续可以在独立的 `observability` schema 中保存可观测性索引或元数据，但本次范围将可搜索的日志正文存储在 VictoriaLogs 中。
 
-## Consequences
+## 影响
 
-- AppHost is the topology source for the VictoriaLogs container. Legacy Compose files may include the same service for migration and release rehearsals, but must not become a second full platform topology.
-- `VictoriaLogs:BaseUrl` configures Gateway log query access; `OpenTelemetry:Logs:Endpoint` and `OpenTelemetry:Logs:Path` configure service log ingestion.
-- The first Gateway API is `POST /api/console/v1/logs/query` with `operationId=queryConsoleLogs` and permission `observability.logs.read`.
-- The backend API is available for UI integration. This ADR does not require a Console log viewer UI in the same slice.
-- Offline and air-gapped deployment preparation must include the pinned VictoriaLogs image, its Apache License 2.0 notice, the configured persistent volume and the selected retention period.
+- AppHost 是 VictoriaLogs 容器的拓扑来源。旧版 Compose 文件可为迁移和发布演练包含相同服务，但不得成为第二套完整平台拓扑。
+- `VictoriaLogs:BaseUrl` 配置 Gateway 的日志查询访问；`OpenTelemetry:Logs:Endpoint` 和 `OpenTelemetry:Logs:Path` 配置服务日志接收。
+- 首个 Gateway API 为 `POST /api/console/v1/logs/query`，其 `operationId=queryConsoleLogs`，权限为 `observability.logs.read`。
+- 后端 API 可供界面集成。本 ADR 不要求在同一范围内交付 Console 日志查看界面。
+- 离线和物理隔离部署准备必须包含固定版本的 VictoriaLogs 镜像、其 Apache License 2.0 声明、已配置的持久化卷和选定的保留期。

@@ -66,8 +66,11 @@ const bandCells = computed<BandCell[]>(() => {
   const k = ov.value?.kpis
   if (!k) return []
   return [
-    { label: '今日产量（件）', value: nf.format(k.todayOutput), icon: PackageCheck },
-    { label: '计划产量（件）', value: nf.format(k.todayPlan), icon: Target },
+    // 全厂口径 = 末道包装线的成品下线数。车间卡上的数字是各车间**向下游交付**的
+    // 件数（机加交付活塞杆+缸筒，一台成品要用好几个），所以车间数会大于全厂数 ——
+    // 加总三个车间会把同一个物件数三遍，见 data/mock/world.ts 的口径警告。
+    { label: '今日成品下线（件）', value: nf.format(k.todayOutput), icon: PackageCheck },
+    { label: '成品计划（件）', value: nf.format(k.todayPlan), icon: Target },
     { label: '在产工单', value: String(k.wipOrders), icon: ClipboardList },
     {
       label: '超期 / 风险工单',
@@ -152,9 +155,9 @@ const bandCells = computed<BandCell[]>(() => {
               <WorkshopHealthCard :cell="w" />
             </component>
             <div class="more-card">
-              <span class="more-t">更多指标接入中</span>
+              <span class="more-t">更多指标</span>
               <span class="more-d">不良率 · 设备在线率 · 产出良率趋势</span>
-              <NvScreenStatusTag tone="amber" label="待 #570" />
+              <NvScreenStatusTag tone="amber" label="当前窗口未提供" />
             </div>
           </div>
         </section>
@@ -165,9 +168,7 @@ const bandCells = computed<BandCell[]>(() => {
               <NvScreenStatusTag tone="amber" :label="FACTORY_OEE_PLACEHOLDER_BADGE" />
             </template>
             <p class="oee-note">请在设备详情查看由报工、运行时长和理论速率计算的真实单机 OEE。</p>
-            <p class="oee-note">
-              全厂聚合仍需批量 OEE 读面，当前不以可用率或演示数据冒充综合 OEE。
-            </p>
+            <p class="oee-note">当前数据窗口未提供全厂综合 OEE。</p>
           </NvScreenPanel>
 
           <NvScreenPanel title="实时告警" class="feed">
@@ -205,7 +206,10 @@ const bandCells = computed<BandCell[]>(() => {
 
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
-        <span>车间归并 / 达成为前端聚合推算 · 待 #570；点车间卡进入车间总览</span>
+        <span
+          >车间卡为该车间向下游交付的工序件数，全厂成品下线取末道包装线口径，
+          两者不可相加；点车间卡进入车间总览</span
+        >
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
@@ -392,7 +396,7 @@ const bandCells = computed<BandCell[]>(() => {
     flex: none;
     border-radius: 2px;
     transform: skewX(-16deg);
-    background: linear-gradient(180deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.25));
+    background: var(--nv-scr-cyan);
     box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
   }
   .sec-t {
@@ -407,12 +411,7 @@ const bandCells = computed<BandCell[]>(() => {
     flex: 1;
     height: 1px;
     margin: 0 6px;
-    background: linear-gradient(
-      90deg,
-      rgba(135, 208, 255, 0.28),
-      rgba(255, 255, 255, 0.05) 45%,
-      transparent
-    );
+    background: rgba(135, 208, 255, 0.2);
   }
   .legend {
     display: inline-flex;

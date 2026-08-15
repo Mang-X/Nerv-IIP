@@ -7,9 +7,10 @@ import type {
   BusinessConsoleApprovalTemplateItem,
 } from '@nerv-iip/api-client'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvField,
@@ -35,6 +36,7 @@ const props = withDefaults(
     documentId?: string
     title?: string
     allowStart?: boolean
+    preferredTemplateCode?: string
   }>(),
   {
     allowStart: true,
@@ -55,7 +57,13 @@ const approval = useBusinessApproval(actor)
 const selectedTemplateCode = shallowRef('')
 
 const activeTemplates = computed(() =>
-  approval.templates.value.filter((template) => template.isActive !== false),
+  [...approval.templates.value]
+    .filter((template) => template.isActive !== false)
+    .sort((left, right) => {
+      const preferred = props.preferredTemplateCode?.trim()
+      if (!preferred) return 0
+      return Number(right.templateCode === preferred) - Number(left.templateCode === preferred)
+    }),
 )
 const boundChainId = computed(() => props.modelValue?.trim() ?? '')
 const hasDurableDocumentId = computed(() => !!props.documentId?.trim())
@@ -85,6 +93,28 @@ const displayedDecisions = computed(() => {
   if (detailDecisions.length) return detailDecisions
   return approval.decisions.value
 })
+/**
+ * 「当前链路」上屏的可读身份。
+ *
+ * 契约里审批链**没有业务编号**（`ApprovalChainItem` 只有 chainId/templateCode/
+ * templateVersion/status/…），此前就直接把 chainId 摆上去，抽屉里赫然一串
+ * `019fc117-357d-7120-a0d1-63a7a37ef7f6`——而同一个面板的下拉项早就在显示
+ * 「NCR-2026-0078 · 已批准」，一个面板两套口径。
+ *
+ * 拿现有字段拼出人能念的身份：模板编码 + 版本；模板缺失时退到链号后 8 位
+ * （`链路 #63a7a37ef7f6`），仍比整串 GUID 可念、可口头对账。完整 GUID 移到
+ * title 里，排障要复制照样拿得到。
+ */
+const displayedChainLabel = computed(() => {
+  const chain = selectedChain.value
+  const template = chain?.templateCode?.trim()
+  if (template) {
+    return chain?.templateVersion != null ? `${template} v${chain.templateVersion}` : template
+  }
+  const id = displayedChainId.value
+  return id ? `链路 #${id.slice(-12)}` : ''
+})
+
 const legacyReferenceLabel = computed(() =>
   boundChainId.value && !selectedChain.value && !approval.chainDetailPending.value
     ? boundChainId.value
@@ -178,9 +208,13 @@ async function startApprovalChain() {
       notifySuccess('审批链已发起')
       return
     }
-    notifyError(result, '审批链发起未成功，请确认模板与单据状态。')
+    notifyOperationFailure('发起审批链失败', result, '审批链发起未成功，请确认模板与单据状态。')
   } catch (error) {
-    notifyError(error, '审批链发起失败，请确认模板、权限和单据状态后重试。')
+    notifyOperationFailure(
+      '发起审批链失败',
+      error,
+      '审批链发起失败，请确认模板、权限和单据状态后重试。',
+    )
   }
 }
 
@@ -220,7 +254,8 @@ function actorLabel(step: BusinessConsoleApprovalStepItem) {
  */
 function chainOptionLabel(chain: BusinessConsoleApprovalChainItem) {
   const statusLabel = resolveStatus(chain.status).label
-  const document = chain.documentId?.trim() || chain.documentType?.trim()
+  const document =
+    chain.documentId?.trim() || labelFor(DOCUMENT_TYPE_LABELS, chain.documentType?.trim(), '')
   return document ? `${document} · ${statusLabel}` : statusLabel
 }
 
@@ -256,8 +291,8 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="grid gap-1">
           <span class="text-xs text-muted-foreground">当前链路</span>
-          <span class="text-sm font-medium break-all">{{
-            displayedChainId || '尚未关联审批链'
+          <span class="text-sm font-medium break-all" :title="displayedChainId || undefined">{{
+            displayedChainLabel || '尚未关联审批链'
           }}</span>
           <span v-if="legacyReferenceLabel" class="text-xs text-muted-foreground">
             历史登记：<span class="font-medium break-all text-foreground">{{
@@ -332,7 +367,10 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         >
           <div class="flex items-center justify-between gap-2">
             <span>{{ decision.actorRef ?? '处理人' }}</span>
-            <NvStatusBadge :value="decision.decision" />
+            <NvStatusBadge
+              :value="decision.decision"
+              :label="labelFor(APPROVAL_DECISION_LABELS, decision.decision, '—')"
+            />
           </div>
           <p v-if="decision.comment" class="mt-1 text-xs text-muted-foreground">
             {{ decision.comment }}

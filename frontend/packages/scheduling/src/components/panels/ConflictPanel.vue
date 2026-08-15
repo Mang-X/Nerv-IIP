@@ -31,7 +31,10 @@ function onClick(c: ScheduleConflict) {
             @click="onClick(c)"
           >
             <span class="flex items-center gap-2">
-              <NvStatusBadge :tone="severityTone[c.severity]" :label="conflictReasonLabel[c.reason]" />
+              <NvStatusBadge
+                :tone="severityTone[c.severity]"
+                :label="conflictReasonLabel[c.reason]"
+              />
               <span class="truncate text-xs text-muted-foreground">{{ c.orderId }}</span>
             </span>
             <span class="text-sm text-foreground">{{ c.message }}</span>

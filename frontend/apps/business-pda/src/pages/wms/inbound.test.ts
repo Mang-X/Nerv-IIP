@@ -1,13 +1,40 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
 import { flushPromises, mount } from '@vue/test-utils'
+import { NvBottomSheet, NvMobileDropdownMenuItem, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 
 const push = vi.fn(() => Promise.resolve())
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      scanOverrides: shallowRef({}),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
+})
 
 type GateLine = Record<string, unknown> & { inboundOrderNo?: string }
 
@@ -38,13 +65,22 @@ const wmsState = vi.hoisted(() => ({
       isReleasedForPutaway: true,
     },
   ] as Array<Record<string, unknown>>,
-  completeInbound: vi.fn((_inboundOrderId: string, _idempotencyKey: string, _lines?: unknown[]) =>
-    Promise.resolve(),
+  completeInbound: vi.fn(
+    (
+      _inboundOrderId: string,
+      _idempotencyKey: string,
+      _lines?: unknown[],
+      options?: { attempt: 'initial' | 'retry'; onCommandAttempt?: () => void },
+    ) => {
+      options?.onCommandAttempt?.()
+      return Promise.resolve()
+    },
   ),
   completePending: false,
   error: null as unknown,
   pending: false,
   refresh: vi.fn(() => Promise.resolve()),
+  loadMore: vi.fn(() => Promise.resolve()),
   linesByOrderNo: {
     'IB-2026-0001': [
       {
@@ -79,19 +115,47 @@ const wmsState = vi.hoisted(() => ({
   linesTotal: null as number | null,
   linesRefresh: vi.fn(() => Promise.resolve()),
 }))
+const scopeKey = ref<string | undefined>('self:emp049')
+const scopeKind = computed(() => scopeKey.value?.split(':', 2)[0])
+const scopeId = computed(() => scopeKey.value?.split(':', 2)[1])
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
+    scopeKey,
+    scopeKind,
+    scopeId,
+    scopeOptions: computed(() => [
+      { label: '我的任务', value: 'self:emp049' },
+      { label: '一号仓收货作业池', value: 'work-pool:WMS-SITE-001-RECEIVING' },
+    ]),
+    selectedScopeLabel: computed(() =>
+      scopeKey.value === 'self:emp049' ? '我的任务' : '一号仓收货作业池',
+    ),
     orders: computed(() => wmsState.orders),
     total: computed(() => wmsState.orders.length),
+    organizationId: computed(() => 'org-001'),
+    environmentId: computed(() => 'env-dev'),
+    scopeReady: computed(() => true),
+    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
+    hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
+    hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
+    refreshing: computed(() => false),
+    loadingMore: computed(() => false),
     error: computed(() => wmsState.error),
     refresh: wmsState.refresh,
+    loadMore: wmsState.loadMore,
     completeInbound: wmsState.completeInbound,
     completePending: computed(() => wmsState.completePending),
   }),
-  useWmsReceivingLines: (orderNo: MaybeRefOrGetter<string>) => ({
+  useWmsReceivingLines: (
+    orderNo: MaybeRefOrGetter<string>,
+    selectedScope: {
+      scopeKind: MaybeRefOrGetter<string | undefined>
+      scopeId: MaybeRefOrGetter<string | undefined>
+    },
+  ) => ({
     lines: computed(() => wmsState.linesByOrderNo[toValue(orderNo)] ?? []),
     total: computed(
       () => wmsState.linesTotal ?? (wmsState.linesByOrderNo[toValue(orderNo)] ?? []).length,
@@ -103,6 +167,15 @@ vi.mock('@/composables/useBusinessWms', () => ({
     }),
     pending: computed(() => wmsState.linesPending),
     error: computed(() => wmsState.linesError),
+    hasSuccessfulResponse: computed(
+      () =>
+        Boolean(toValue(orderNo)) &&
+        Boolean(toValue(selectedScope.scopeKind)) &&
+        Boolean(toValue(selectedScope.scopeId)) &&
+        !wmsState.linesPending &&
+        !wmsState.linesError,
+    ),
+    hasFailedResponse: computed(() => false),
     refresh: wmsState.linesRefresh,
   }),
 }))
@@ -112,6 +185,7 @@ import InboundPage from './inbound.vue'
 function resetState() {
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
+  scopeKey.value = 'self:emp049'
   wmsState.orders = [
     {
       inboundOrderId: '11111111-1111-1111-1111-111111111111',
@@ -167,6 +241,8 @@ function resetState() {
   }
   wmsState.completeInbound.mockClear()
   wmsState.refresh.mockClear()
+  candidateState.refresh.mockClear()
+  wmsState.loadMore.mockClear()
   wmsState.linesRefresh.mockClear()
   push.mockClear()
 }
@@ -179,8 +255,8 @@ describe('WMS 收货入库', () => {
     const text = wrapper.text()
     expect(text).toContain('IB-2026-0001')
     expect(text).toContain('IB-2026-0002')
-    expect(text).toContain('待入库')
-    expect(text).toContain('已入库')
+    expect(text).toContain('待收货')
+    expect(text).toContain('已完成')
     expect(text).not.toContain('open')
     expect(text).not.toContain('11111111-1111-1111-1111-111111111111')
   })
@@ -200,6 +276,20 @@ describe('WMS 收货入库', () => {
     await input.setValue('IB-2026-0002')
     await input.trigger('keydown.enter')
     expect(wmsState.filters.keyword).toBe('IB-2026-0002')
+  })
+
+  it('可从 WMS 可信目录切换作业范围和状态，不要求手输筛选值', async () => {
+    const wrapper = mount(InboundPage)
+    const fields = wrapper.findAllComponents(NvMobileDropdownMenuItem)
+
+    expect(fields).toHaveLength(2)
+    fields[0]!.vm.$emit('update:modelValue', 'work-pool:WMS-SITE-001-RECEIVING')
+    fields[1]!.vm.$emit('update:modelValue', 'Completed')
+    await wrapper.vm.$nextTick()
+
+    expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-RECEIVING')
+    expect(wmsState.filters.status).toBe('Completed')
+    expect(wrapper.text()).toContain('WMS 收货作业范围目录')
   })
 
   it('点单 → 抽屉展示行级批号+质检门禁明细 + 后端效期三色（无需扫码）', async () => {
@@ -232,6 +322,8 @@ describe('WMS 收货入库', () => {
     const putaway = document.querySelector<HTMLButtonElement>('[data-testid="go-putaway"]')!
     expect(putaway).toBeTruthy()
     expect(document.querySelector('[data-quality-gate-notice]')).toBeNull()
+    expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(document.body.textContent).toContain('该单已结束，仅可查看明细或进入后续上架')
     putaway.click()
     expect(push).toHaveBeenCalledWith('/wms/putaway')
   })
@@ -250,6 +342,7 @@ describe('WMS 收货入库', () => {
     expect(lines).toEqual([
       { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
     ])
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
   })
 
   it('多行新批次：逐行批号手输 → 随 completeInbound 落库', async () => {
@@ -279,28 +372,122 @@ describe('WMS 收货入库', () => {
   })
 
   it('重试（不重新点单）复用同一 idempotencyKey；重新点单为新操作换新键', async () => {
-    wmsState.completeInbound.mockRejectedValueOnce(new Error('lost response'))
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
+    const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
+    batch.value = 'LOT-CHANGED'
+    batch.dispatchEvent(new Event('input'))
+    await flushPromises()
     confirm.click()
     await flushPromises()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(2)
     const firstKey = wmsState.completeInbound.mock.calls[0][1]
     expect(wmsState.completeInbound.mock.calls[1][1]).toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'retry' })
 
     const continueBtn = wrapper.findAll('button').find((b) => b.text() === '继续')!
     await continueBtn.trigger('click')
 
-    await wrapper.findAll('[data-row]')[1].trigger('click')
+    await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
     expect(wmsState.completeInbound).toHaveBeenCalledTimes(3)
     expect(wmsState.completeInbound.mock.calls[2][1]).not.toBe(firstKey)
+  })
+
+  it('确定性 422 后编辑采集批号会轮换 key，并按 initial 新意图提交', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '批号无效' })
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+    const firstKey = wmsState.completeInbound.mock.calls[0][1]
+    const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
+    batch.value = 'LOT-CORRECTED'
+    batch.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    confirm.click()
+    await flushPromises()
+
+    expect(wmsState.completeInbound.mock.calls[1][1]).not.toBe(firstKey)
+    expect(wmsState.completeInbound.mock.calls[1][2]).toEqual([
+      {
+        lineNo: '1',
+        lotNo: 'LOT-CORRECTED',
+        productionDate: undefined,
+        expiryDate: '2027-12-31',
+      },
+    ])
+    expect(wmsState.completeInbound.mock.calls[1][3]).toMatchObject({ attempt: 'initial' })
+  })
+
+  it('结果未知时锁定采集字段，只按冻结 lines/key 原样重放', async () => {
+    wmsState.completeInbound.mockImplementationOnce(
+      (
+        _id: string,
+        _key: string,
+        _lines?: unknown[],
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new RequestTimeoutError())
+      },
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
+    confirm.click()
+    await flushPromises()
+
+    const first = wmsState.completeInbound.mock.calls[0]
+    expect(document.querySelector<HTMLInputElement>('[data-batch-input]')!.disabled).toBe(true)
+    expect(document.body.textContent).toContain('原内容重试')
+    const sheet = wrapper.findAllComponents(NvBottomSheet).find((sheet) => sheet.props('open'))!
+    sheet.vm.$emit('update:open', false)
+    await wrapper.vm.$nextTick()
+    expect(sheet.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
+    confirm.click()
+    await flushPromises()
+
+    const second = wmsState.completeInbound.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toEqual(first[2])
+    expect(second[3]).toMatchObject({ attempt: 'retry' })
   })
 
   it('completePending 时确认按钮禁用（防重）', async () => {
@@ -434,6 +621,16 @@ describe('WMS 收货入库', () => {
     )
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('下拉刷新同时刷新单据与作业候选', async () => {
+    const wrapper = mount(InboundPage)
+    wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
+    await flushPromises()
+
+    expect(wmsState.refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
   })
 
   it('列表离线：显示"当前离线"文案（区分于业务错误）', () => {
@@ -447,7 +644,7 @@ describe('WMS 收货入库', () => {
   it('无单据且无错误时显示空态', () => {
     wmsState.orders = []
     const wrapper = mount(InboundPage)
-    expect(wrapper.text()).toContain('暂无待收货单据')
+    expect(wrapper.text()).toContain('暂无收货单据')
   })
 })
 

@@ -57,7 +57,7 @@ import {
 import { PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -371,7 +371,7 @@ async function submitForm() {
     editingId.value = null
     editingRow.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存生产版本失败', error, '保存生产版本失败，请稍后重试。')
   }
 }
 
@@ -395,7 +395,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('归档生产版本失败', error, '归档生产版本失败，请稍后重试。')
   }
 }
 
@@ -420,12 +420,12 @@ async function runResolve() {
       lotSize: parseNumber(resolveForm.lotSize) ?? 0,
     })
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('解析生产版本失败', error, '解析生产版本失败，请稍后重试。')
   }
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -502,7 +502,7 @@ function formatError(error: unknown) {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>同一物料生效期内的默认版本</span>
-                    <NvCheckbox id="pv-default" v-model:checked="form.isDefault" />
+                    <NvCheckbox id="pv-default" v-model="form.isDefault" />
                   </label>
                 </NvField>
                 <NvField :data-invalid="showErrors && !mbomValid">
@@ -602,46 +602,48 @@ function formatError(error: unknown) {
         <NvCardTitle class="text-base">版本解析</NvCardTitle>
         <p class="text-sm text-muted-foreground">选物料、生效日和批量，查此时投产该用哪个版本。</p>
       </NvCardHeader>
-      <NvCardContent class="grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-        <NvField>
-          <NvFieldLabel for="resolve-sku">物料</NvFieldLabel>
-          <NvSelect v-model="resolveForm.skuCode">
-            <NvSelectTrigger id="resolve-sku"
-              ><NvSelectValue placeholder="选择物料"
-            /></NvSelectTrigger>
-            <NvSelectContent>
-              <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                o.label
-              }}</NvSelectItem>
-            </NvSelectContent>
-          </NvSelect>
-        </NvField>
-        <NvField>
-          <NvFieldLabel>生效日</NvFieldLabel>
-          <NvDatePicker
-            v-model="resolveForm.effectiveDate"
-            placeholder="选择生效日"
-            class="w-full"
-          />
-        </NvField>
-        <NvField>
-          <NvFieldLabel for="resolve-lot">批量</NvFieldLabel>
-          <NvInput id="resolve-lot" v-model="resolveForm.lotSize" type="number" min="0" />
-        </NvField>
-        <div class="flex items-end gap-2">
-          <NvButton type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
-            <Spinner v-if="resolvePending" aria-hidden="true" />
-            <SearchIcon v-else aria-hidden="true" />
-            解析
-          </NvButton>
-          <NvButton v-if="resolvedOnce" type="button" variant="ghost" @click="clearResolve"
-            >清除</NvButton
-          >
-        </div>
+      <!-- 条件行与结果块分两层：条件走响应式网格（按钮列随断点对齐），结果块任何断点都通栏。 -->
+      <NvCardContent class="grid gap-4">
         <div
-          v-if="resolvedOnce"
-          class="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm lg:col-span-full"
+          class="grid items-end gap-3 md:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]"
         >
+          <NvField>
+            <NvFieldLabel for="resolve-sku">物料</NvFieldLabel>
+            <NvSelect v-model="resolveForm.skuCode">
+              <NvSelectTrigger id="resolve-sku"
+                ><NvSelectValue placeholder="选择物料"
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
+                  o.label
+                }}</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
+          <NvField>
+            <NvFieldLabel>生效日</NvFieldLabel>
+            <NvDatePicker
+              v-model="resolveForm.effectiveDate"
+              placeholder="选择生效日"
+              class="w-full"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="resolve-lot">批量</NvFieldLabel>
+            <NvInput id="resolve-lot" v-model="resolveForm.lotSize" type="number" min="0" />
+          </NvField>
+          <div class="flex flex-wrap items-center gap-2">
+            <NvButton type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
+              <Spinner v-if="resolvePending" aria-hidden="true" />
+              <SearchIcon v-else aria-hidden="true" />
+              解析
+            </NvButton>
+            <NvButton v-if="resolvedOnce" type="button" variant="ghost" @click="clearResolve"
+              >清除</NvButton
+            >
+          </div>
+        </div>
+        <div v-if="resolvedOnce" class="grid gap-2.5 rounded-md border bg-muted/30 p-4 text-sm">
           <template v-if="resolved">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">命中物料</span>

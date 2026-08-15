@@ -11,6 +11,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataStartupGovernanceTests
 {
     [Fact]

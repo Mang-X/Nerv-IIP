@@ -1,26 +1,26 @@
-# WMS Business Gap #413 Implementation Plan
+# WMS 业务缺口 #413 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close WMS posting-failure and task-execution loops for #413 while preserving the Inventory public-contract boundary.
+**目标：**在保留 Inventory 公开契约边界的同时，闭合 #413 的 WMS 过账失败和任务执行循环。
 
-**Architecture:** Inventory emits a public failed-posting integration event for valid movement requests that are rejected by Inventory business rules. WMS consumes that event to mark request/order status, and exposes task execution endpoints over existing WarehouseTask domain behavior. After rebasing onto #412, Inventory reservation APIs are available; WMS now reserves stock when creating outbound picking tasks and carries the reservation id into movement-requested so Inventory allocates during outbound posting. FEFO/FIFO, ASN strategy, directed putaway, LPN/HU and reservation release/cancel compensation remain documented public-contract follow-ups.
+**架构：**对于被 Inventory 业务规则拒绝的有效移动请求，Inventory 发出公开的过账失败集成事件。WMS 消费该事件以标记请求/订单状态，并基于现有 WarehouseTask 领域行为公开任务执行 endpoint。变基到 #412 后，Inventory 预留 API 已可用；WMS 现在创建出库拣选任务时预留库存，并将预留 ID 带入 movement-requested，使 Inventory 在出库过账期间分配库存。FEFO/FIFO、ASN 策略、定向上架、LPN/HU 以及预留释放/取消补偿仍作为已记录的公开契约后续事项。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, EF Core, CAP integration events, xUnit.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、EF Core、CAP 集成事件、xUnit。
 
 ---
 
-## Tasks
+## 任务
 
-- [x] Add `StockMovementPostingFailedIntegrationEvent` to `Nerv.IIP.Contracts.Inventory` and focused contract tests.
-- [x] Catch business posting rejection in `InventoryMovementRequestedIntegrationEventHandlerForPostingMovement`, publish the failed event, and keep envelope validation failures on the existing DLQ path.
-- [x] Add WMS command/consumer tests for `inventory.StockMovementPostingFailed`.
-- [x] Implement WMS failed-request command and consumer; move inbound/outbound orders to `InventoryPostingFailed` when the request references them.
-- [x] Add WMS task execution contract tests for progress and completion endpoints.
-- [x] Implement `RecordWarehouseTaskProgressCommand`, `CompleteWarehouseTaskCommand`, endpoints and operation IDs.
-- [x] Scope WCS complete/fail commands by organization and environment.
-- [x] Rebase onto the Inventory #412 reservation model and add WMS-to-Inventory reservation client coverage for outbound picking.
-- [x] Persist Inventory reservation id on WMS outbound lines and movement requests, and propagate it through `inventory.InventoryMovementRequested`.
-- [x] Add Inventory consumer coverage proving outbound movement requests allocate the supplied reservation id.
-- [x] Update readiness/docs to reflect the delivered slice and explicit deferred public contracts for reservation release/cancel compensation, FEFO, ASN, directed putaway and LPN/HU.
-- [x] Run focused Inventory/WMS tests and final repository checks before committing.
+- [x] 将 `StockMovementPostingFailedIntegrationEvent` 添加到 `Nerv.IIP.Contracts.Inventory`，并添加聚焦的契约测试。
+- [x] 在 `InventoryMovementRequestedIntegrationEventHandlerForPostingMovement` 中捕获业务过账拒绝并发布失败事件，同时让信封校验失败继续沿用现有 DLQ 路径。
+- [x] 为 `inventory.StockMovementPostingFailed` 添加 WMS 命令/消费者测试。
+- [x] 实现 WMS 失败请求命令和消费者；当请求引用入库/出库订单时，将其状态转为 `InventoryPostingFailed`。
+- [x] 为进度与完成 endpoint 添加 WMS 任务执行契约测试。
+- [x] 实现 `RecordWarehouseTaskProgressCommand`、`CompleteWarehouseTaskCommand`、endpoint 和 operation ID。
+- [x] 按组织和环境限定 WCS 完成/失败命令的范围。
+- [x] 变基到 Inventory #412 预留模型，并为出库拣选添加 WMS 到 Inventory 的预留客户端覆盖。
+- [x] 在 WMS 出库行和移动请求上持久化 Inventory 预留 ID，并通过 `inventory.InventoryMovementRequested` 传播该 ID。
+- [x] 添加 Inventory 消费者覆盖，证明出库移动请求会分配所提供的预留 ID。
+- [x] 更新就绪清单/文档，以反映已交付纵切，以及预留释放/取消补偿、FEFO、ASN、定向上架和 LPN/HU 的显式延后公开契约。
+- [x] 提交前运行聚焦的 Inventory/WMS 测试和最终仓库检查。

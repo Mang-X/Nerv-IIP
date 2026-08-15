@@ -1,4 +1,18 @@
+# Script-Governance:
+#   Category: library
+#   SideEffects:
+#     - Reads and rewrites the full-stack session state tree its callers own
+#     - Inspects processes through caller-injected lookup actions
+#   Writes:
+#     - The session state root the caller supplies; no repository-tracked file
+#   Cleanup:
+#     - Owns no long-lived process; file locks are released before returning
+#   Requires:
+#     - PowerShell 7
+
 Set-StrictMode -Version Latest
+
+. (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
 $script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
@@ -203,7 +217,7 @@ function Write-NervLeaderDemoSessionPointer {
         catch { throw "Invalid leader-demo reservation creation time '$CreatedAtUtc'." }
     }
     $ownerStartedAt = $null
-    if ($OwnershipState -eq 'Reserved') {
+    if ([string]::Equals($OwnershipState, 'Reserved', [StringComparison]::OrdinalIgnoreCase)) {
         if ($null -eq $OwnerPid -or [int] $OwnerPid -lt 1) {
             throw 'Reserved leader-demo ownership requires a positive owner PID.'
         }
@@ -223,7 +237,7 @@ function Write-NervLeaderDemoSessionPointer {
         sessionId = $SessionId
         worktreeRoot = [System.IO.Path]::GetFullPath($WorktreeRoot)
         ownershipState = $OwnershipState
-        ownerPid = if ($OwnershipState -eq 'Reserved') { [int] $OwnerPid } else { $null }
+        ownerPid = if ([string]::Equals($OwnershipState, 'Reserved', [StringComparison]::OrdinalIgnoreCase)) { [int] $OwnerPid } else { $null }
         ownerProcessStartTimeUtc = if ($null -ne $ownerStartedAt) { $ownerStartedAt.ToString('O') } else { $null }
         createdAtUtc = $createdAt.ToString('O')
         updatedAtUtc = $now.ToString('O')
@@ -271,14 +285,15 @@ function Read-NervLeaderDemoSessionPointer {
     if ([string]::IsNullOrWhiteSpace("$($pointer.worktreeRoot)")) {
         throw "Leader-demo session pointer at '$path' has no worktree root."
     }
-    if ($script:NervLeaderDemoOwnershipStates -cnotcontains "$($pointer.ownershipState)") {
+    if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($script:NervLeaderDemoOwnershipStates), [StringComparer]::Ordinal).Contains([string]$pointer.ownershipState)) {
         throw "Leader-demo session pointer at '$path' has invalid ownership state '$($pointer.ownershipState)'."
     }
-    if ("$($pointer.ownershipState)" -eq 'Reserved') {
+    if ([string]::Equals([string]$pointer.ownershipState, 'Reserved', [StringComparison]::OrdinalIgnoreCase)) {
         $propertyNames = @($pointer.PSObject.Properties.Name)
-        $hasCreatedAt = $propertyNames -ccontains 'createdAtUtc'
-        $hasOwnerPid = $propertyNames -ccontains 'ownerPid'
-        $hasOwnerStart = $propertyNames -ccontains 'ownerProcessStartTimeUtc'
+        $propertyNamesSet = [Collections.Generic.HashSet[string]]::new([string[]]@($propertyNames), [StringComparer]::Ordinal)
+        $hasCreatedAt = $propertyNamesSet.Contains('createdAtUtc')
+        $hasOwnerPid = $propertyNamesSet.Contains('ownerPid')
+        $hasOwnerStart = $propertyNamesSet.Contains('ownerProcessStartTimeUtc')
         $isLegacyReservation = -not $hasCreatedAt -and -not $hasOwnerPid -and -not $hasOwnerStart
         if ($isLegacyReservation) {
             $fallbackCreatedAt = (Get-Item -LiteralPath $path -ErrorAction Stop).LastWriteTimeUtc.ToString('O')
@@ -323,7 +338,7 @@ function Remove-NervLeaderDemoSessionPointer {
     $path = Get-NervLeaderDemoSessionPointerPath -StateRoot $StateRoot
     if (-not [string]::IsNullOrWhiteSpace($ExpectedSessionId) -and (Test-Path -LiteralPath $path -PathType Leaf)) {
         $pointer = Read-NervLeaderDemoSessionPointer -StateRoot $StateRoot
-        if ("$($pointer.sessionId)" -cne $ExpectedSessionId) {
+        if (-not [string]::Equals([string]$pointer.sessionId, $ExpectedSessionId, [StringComparison]::Ordinal)) {
             throw "Leader-demo pointer belongs to '$($pointer.sessionId)', not expected session '$ExpectedSessionId'."
         }
     }
@@ -436,8 +451,7 @@ function Get-NervFullStackManifests {
     }
 
     return @(
-        Get-ChildItem -LiteralPath $directory -Filter 'nerv-*.json' -File |
-            Sort-Object Name |
+        Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $directory -Filter 'nerv-*.json' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal) |
             ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json -Depth 30 }
     )
 }
@@ -494,7 +508,7 @@ function Renew-NervFullStackSessionLease {
 
     return Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
         $manifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
-        if ("$($manifest.state)" -eq 'Running') {
+        if ([string]::Equals([string]$manifest.state, 'Running', [StringComparison]::OrdinalIgnoreCase)) {
             $manifest = Renew-NervFullStackLease -Manifest $manifest -LeaseMinutes $LeaseMinutes
             Write-NervFullStackManifest -Manifest $manifest -StateRoot $StateRoot
         }
@@ -513,7 +527,7 @@ function Update-NervFullStackManifest {
 
     return Invoke-WithNervFullStackSessionLock -StateRoot $StateRoot -ScriptBlock {
         $manifest = Read-NervFullStackManifest -SessionId $SessionId -StateRoot $StateRoot
-        if ($AllowedStates -cnotcontains "$($manifest.state)") {
+        if (-not [Collections.Generic.HashSet[string]]::new([string[]]@($AllowedStates), [StringComparer]::Ordinal).Contains([string]$manifest.state)) {
             if ($ReturnUnchangedOnStateMismatch) { return $manifest }
             throw "Session '$SessionId' is '$($manifest.state)'; expected one of: $($AllowedStates -join ', ')."
         }
@@ -598,7 +612,7 @@ function Test-NervFullStackSessionStale {
         [DateTimeOffset] $Now = [DateTimeOffset]::UtcNow
     )
 
-    if ("$($Manifest.state)" -eq 'Stopped') {
+    if ([string]::Equals([string]$Manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) {
         return $false
     }
 
@@ -645,7 +659,7 @@ function Claim-NervStaleFullStackSessions {
             if (-not (Test-NervFullStackSessionStale -Manifest $manifest -Now $Now)) {
                 continue
             }
-            if ("$($manifest.state)" -eq 'Stopping') {
+            if ([string]::Equals([string]$manifest.state, 'Stopping', [StringComparison]::OrdinalIgnoreCase)) {
                 $claimed.Add("$($manifest.sessionId)")
                 continue
             }
@@ -692,7 +706,7 @@ function Test-NervFullStackAdmission {
     if ($maximum -lt 1) { throw 'MaximumSessions must be at least 1.' }
 
     $active = @(Get-NervFullStackManifests -StateRoot $StateRoot | Where-Object {
-        "$($_.state)" -ne 'Stopped' -and "$($_.sessionId)" -ne $ExcludeSessionId
+        -not [string]::Equals([string]$_.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase) -and -not [string]::Equals([string]$_.sessionId, $ExcludeSessionId, [StringComparison]::OrdinalIgnoreCase)
     })
 
     if (-not [string]::IsNullOrWhiteSpace($WorktreeRoot)) {

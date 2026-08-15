@@ -2,7 +2,6 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -16,6 +15,11 @@ using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+// 类里混合 InMemory 用例与一条 Postgres profile 用例。xUnit 的 [Collection] 只能挂在类上，
+// 不能只挂某个方法，因此整类都加入 QualityPostgresLaneCollection；对 InMemory 用例唯一的影响
+// 是与该 lane 里的其它类串行执行，不影响其正确性（InMemory 用例互不共享状态，各自随机库名）。
+// 冻结身份要求这条用例保持在本类下，不能拆到独立类里另起 FQN。
+[Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class QualitySpcAnalysisTests
 {
     [Fact]
@@ -245,12 +249,12 @@ public sealed class QualitySpcAnalysisTests
     [QualityPostgresFact]
     public async Task Postgres_spc_point_projection_materializes_latest_points_without_client_translation()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(connectionString, "quality_spc");
-        await using var provider = CreatePostgresProvider(database.ConnectionString);
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreatePostgresProvider(QualityPostgresLaneDatabase.ConnectionString);
         using (var scope = provider.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
             await dbContext.Database.MigrateAsync(CancellationToken.None);
             var plan = NewVariablePlan("IQP-SPC-PG-001", lowerSpecLimit: 9m, upperSpecLimit: 12m);
             dbContext.InspectionPlans.Add(plan);
@@ -464,59 +468,4 @@ public sealed class QualitySpcAnalysisTests
         public Task MarkIgnoredAsync(Guid id, string reason, DateTimeOffset ignoredAtUtc, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-                Pooling = false,
-            };
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-                Pooling = false,
-            };
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using (var terminate = new NpgsqlCommand(
-                """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName AND pid <> pg_backend_pid();
-                """,
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", databaseName);
-                await terminate.ExecuteNonQueryAsync(CancellationToken.None);
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-    }
 }

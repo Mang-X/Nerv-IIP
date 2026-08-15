@@ -9,11 +9,161 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIssue557ExecutionTests
 {
+    [Fact]
+    public async Task Operation_action_lock_is_scoped_to_tenant_and_operation_task()
+    {
+        var settings = await new ChangeOperationTaskStateCommandLock().GetLockKeysAsync(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "start",
+                Utc("2026-06-29T08:30:00Z"),
+                "operation-lock-intent"),
+            CancellationToken.None);
+
+        Assert.Equal("business-mes:operation-task-action:org-001:env-dev:OP-10", settings.LockKey);
+        Assert.Equal(TimeSpan.FromSeconds(30), settings.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Operation_action_replay_with_the_same_intent_returns_the_authoritative_state()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_replay_with_the_same_intent_returns_the_authoritative_state));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
+        var command = new ChangeOperationTaskStateCommand(
+            "org-001",
+            "env-dev",
+            "OP-10",
+            "start",
+            Utc("2026-06-29T08:30:00Z"),
+            "operation-intent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, (await dbContext.OperationTasks.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task Operation_action_rejects_reusing_the_same_key_for_a_different_payload()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_rejects_reusing_the_same_key_for_a_different_payload));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
+
+        await handler.Handle(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "start",
+                Utc("2026-06-29T08:30:00Z"),
+                "operation-intent-conflict"),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new ChangeOperationTaskStateCommand(
+                "org-001",
+                "env-dev",
+                "OP-10",
+                "pause",
+                Utc("2026-06-29T09:00:00Z"),
+                "operation-intent-conflict"),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Operation_action_replay_ignores_server_generated_changed_at()
+    {
+        await using var dbContext = CreateDbContext(nameof(Operation_action_replay_ignores_server_generated_changed_at));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
+        var first = new ChangeOperationTaskStateCommand(
+            "org-001",
+            "env-dev",
+            "OP-10",
+            "start",
+            DateTimeOffset.Parse("2026-06-29T08:30:00Z"),
+            "operation-time-intent");
+
+        var result = await handler.Handle(first, CancellationToken.None);
+        var equivalentOffsetReplay = await handler.Handle(
+            first with { ChangedAtUtc = DateTimeOffset.Parse("2026-06-29T16:30:00+08:00") },
+            CancellationToken.None);
+        var laterServerTimestampReplay = await handler.Handle(
+            first with { ChangedAtUtc = DateTimeOffset.Parse("2026-06-29T08:31:00Z") },
+            CancellationToken.None);
+
+        Assert.Equal(result, equivalentOffsetReplay);
+        Assert.Equal(result, laterServerTimestampReplay);
+    }
+
     [Fact]
     public async Task Operation_start_rejects_later_sequence_before_previous_operations_complete()
     {
@@ -21,7 +171,7 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.Queued);
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-20", "start", Utc("2026-06-29T09:00:00Z")),
@@ -31,11 +181,14 @@ public sealed class MesIssue557ExecutionTests
     }
 
     [Fact]
-    public async Task Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error()
+    public async Task Operation_pause_on_queued_task_surfaces_lifecycle_conflict()
     {
-        await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_domain_rule_as_business_error));
+        await using var dbContext = CreateDbContext(nameof(Operation_pause_on_queued_task_surfaces_lifecycle_conflict));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -52,15 +205,119 @@ public sealed class MesIssue557ExecutionTests
             null));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
-        // Pausing a queued (not in-progress) task trips OperationTask.Pause's InvalidOperationException. Before the
-        // domain-rule guard it escaped unwrapped as an unhandled HTTP 500; it must now surface as a KnownException.
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-30T09:00:00Z")),
             CancellationToken.None));
 
-        Assert.Contains("in-progress", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("pause", exception.Action);
+        Assert.Equal(nameof(OperationTaskLifecycleStatus.Queued), exception.CurrentStatus);
+    }
+
+    [Theory]
+    [InlineData("start", OperationTaskLifecycleStatus.Paused)]
+    [InlineData("pause", OperationTaskLifecycleStatus.Queued)]
+    [InlineData("resume", OperationTaskLifecycleStatus.InProgress)]
+    [InlineData("complete", OperationTaskLifecycleStatus.Paused)]
+    public async Task Operation_action_rejects_incompatible_persisted_status_as_lifecycle_conflict(
+        string action,
+        OperationTaskLifecycleStatus status)
+    {
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Operation_action_rejects_incompatible_persisted_status_as_lifecycle_conflict)}-{action}");
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-STATE",
+            "SKU-FG",
+            "PV-001",
+            10m,
+            1,
+            Utc("2026-06-30T08:00:00Z"),
+            "PCS");
+        workOrder.MarkReleased();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-STATE",
+            "OP-STATE",
+            status,
+            10,
+            "WC-10",
+            [],
+            Utc("2026-06-29T08:00:00Z"),
+            TimeSpan.FromHours(4),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+                new ChangeOperationTaskStateCommand(
+                    "org-001",
+                    "env-dev",
+                    "OP-STATE",
+                    action,
+                    Utc("2026-06-30T09:00:00Z")),
+                CancellationToken.None));
+
+        Assert.Equal(action, exception.Action);
+        Assert.Equal(status.ToString(), exception.CurrentStatus);
+    }
+
+    [Theory]
+    [InlineData(MaterialIssueRequest.ReceivedStatus)]
+    [InlineData(MaterialIssueRequest.CancelledStatus)]
+    [InlineData(MaterialIssueRequest.ReturnRequestedStatus)]
+    [InlineData(MaterialIssueRequest.ReservationExpiredStatus)]
+    public async Task Line_side_receipt_rejects_terminal_persisted_status_as_lifecycle_conflict(
+        string terminalStatus)
+    {
+        await using var dbContext = CreateDbContext(
+            $"{nameof(Line_side_receipt_rejects_terminal_persisted_status_as_lifecycle_conflict)}-{terminalStatus}");
+        var materialRequest = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-STATE",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-06-29T08:00:00Z"));
+        switch (terminalStatus)
+        {
+            case MaterialIssueRequest.ReceivedStatus:
+                materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 5m, "LOT-1");
+                break;
+            case MaterialIssueRequest.CancelledStatus:
+                materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:30:00Z"));
+                break;
+            case MaterialIssueRequest.ReturnRequestedStatus:
+                materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 2m, "LOT-1");
+                materialRequest.CancelForWorkOrderCancellation(Utc("2026-06-29T08:45:00Z"));
+                break;
+            case MaterialIssueRequest.ReservationExpiredStatus:
+                materialRequest.MarkInventoryReservationExpired(Utc("2026-06-29T08:30:00Z"));
+                break;
+        }
+        dbContext.MaterialIssueRequests.Add(materialRequest);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
+            new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver).Handle(
+                new ConfirmLineSideMaterialReceiptCommand(
+                    "org-001",
+                    "env-dev",
+                    "MIR-STATE",
+                    Utc("2026-06-29T09:00:00Z"),
+                    1m),
+                CancellationToken.None));
+
+        Assert.Equal("confirm-line-side-receipt", exception.Action);
+        Assert.Equal(terminalStatus, exception.CurrentStatus);
     }
 
     [Fact]
@@ -79,7 +336,7 @@ public sealed class MesIssue557ExecutionTests
             Utc("2026-06-29T08:00:00Z")));
         await dbContext.SaveChangesAsync();
 
-        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver);
 
         // Confirming more than requested trips ConfirmLineSideReceipt's ArgumentOutOfRangeException guard — a sibling
         // of InvalidOperationException that a catch(InvalidOperationException) would miss. It must still surface as a
@@ -103,13 +360,15 @@ public sealed class MesIssue557ExecutionTests
         SeedReleasedWorkOrderWithTwoOperations(dbContext, secondStatus: OperationTaskLifecycleStatus.InProgress);
         await dbContext.SaveChangesAsync();
 
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-20", "complete", Utc("2026-06-29T10:00:00Z")),
             CancellationToken.None));
 
-        Assert.Contains("前序工序", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("前序工序尚未完成：工序 10。", exception.Message);
+        Assert.DoesNotContain("OP-10", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("OP-20", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,6 +377,9 @@ public sealed class MesIssue557ExecutionTests
         await using var dbContext = CreateDbContext(nameof(Operation_pause_resume_completion_deducts_paused_time_from_labor_and_machine_hours));
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -133,7 +395,7 @@ public sealed class MesIssue557ExecutionTests
             null,
             null));
         await dbContext.SaveChangesAsync();
-        var handler = new ChangeOperationTaskStateCommandHandler(dbContext, new NoRequirementsProvider());
+        var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", Utc("2026-06-29T08:00:00Z")), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "pause", Utc("2026-06-29T09:00:00Z")), CancellationToken.None);
@@ -168,6 +430,56 @@ public sealed class MesIssue557ExecutionTests
 
         Assert.Contains("报废", exception.Message, StringComparison.Ordinal);
         Assert.Contains("耗料", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Non_output_operation_report_rejects_cumulative_good_quantity_above_twenty_percent()
+    {
+        await using var dbContext = CreateDbContext(nameof(Non_output_operation_report_rejects_cumulative_good_quantity_above_twenty_percent));
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-OVER-001",
+            "SKU-FG",
+            "PV-001",
+            100m,
+            1,
+            Utc("2026-06-30T08:00:00Z"),
+            "PCS",
+            overReceiptTolerancePercent: 50m);
+        workOrder.MarkReleased();
+        workOrder.Start(Utc("2026-06-29T08:00:00Z"));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(
+            OperationTask.Create(
+                "org-001", "env-dev", "WO-OVER-001", "OP-10",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-10", [],
+                Utc("2026-06-29T08:00:00Z"), TimeSpan.FromHours(1),
+                Utc("2026-06-29T08:00:00Z"), null),
+            OperationTask.Create(
+                "org-001", "env-dev", "WO-OVER-001", "OP-20",
+                OperationTaskLifecycleStatus.Queued, 20, "WC-20", [],
+                Utc("2026-06-29T09:00:00Z"), TimeSpan.FromHours(1), null, null));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "RPT-OVER-001", "WO-OVER-001", "OP-10",
+            100m, 0m, false, Utc("2026-06-29T09:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new RecordProductionReportCommandHandler(dbContext).Handle(
+                new RecordProductionReportCommand(
+                    "org-001", "env-dev", "WO-OVER-001", "OP-10",
+                    GoodQuantity: 20.000001m,
+                    ScrapQuantity: 0m,
+                    CompletesOperation: true,
+                    ReportedAtUtc: Utc("2026-06-29T10:00:00Z")),
+                CancellationToken.None));
+
+        Assert.Contains("生产工单 WO-OVER-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("工序 OP-10", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("累计合格数量", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整本次合格数量或工单计划量", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dbContext.ProductionReports);
     }
 
     [Fact]
@@ -333,7 +645,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-06-29T08:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), 5m, "LOT-MAT-001");
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), 5m, "LOT-MAT-001");
         materialRequest.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialRequest);
         await dbContext.SaveChangesAsync();
@@ -425,7 +737,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-07-03T07:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-07-03T07:30:00Z"), 5m);
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-07-03T07:30:00Z"), 5m);
         materialRequest.ClearDomainEvents();
         dbContext.WorkOrders.Add(workOrder);
         dbContext.MaterialIssueRequests.Add(materialRequest);
@@ -444,6 +756,9 @@ public sealed class MesIssue557ExecutionTests
     {
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
         workOrder.MarkReleased();
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus,
+            Utc("2026-06-29T08:00:00Z"));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
@@ -506,7 +821,7 @@ public sealed class MesIssue557ExecutionTests
             "PCS",
             5m,
             Utc("2026-06-29T08:00:00Z"));
-        materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), receivedQuantity, "LOT-MAT-001");
+        materialRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, Utc("2026-06-29T08:30:00Z"), receivedQuantity, "LOT-MAT-001");
         materialRequest.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialRequest);
         return materialRequest;
@@ -542,16 +857,6 @@ public sealed class MesIssue557ExecutionTests
             .UseSqlite(connection)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
-    }
-
-    private sealed class NoRequirementsProvider : IMesMaterialRequirementSnapshotProvider
-    {
-        public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
-            MesMaterialRequirementSnapshotRequest request,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(MesMaterialRequirementSnapshotResult.NoRequirements("test"));
-        }
     }
 
     private sealed class NoopMediator : IMediator

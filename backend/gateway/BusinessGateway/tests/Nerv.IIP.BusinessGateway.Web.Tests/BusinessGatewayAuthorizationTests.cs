@@ -18,9 +18,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_endpoint_requires_user_authentication()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
+        await using var lease = LeaseHost(auth);
 
-        var response = await factory.CreateClient().GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
+        var response = await lease.CreateClient().GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal("Bearer", response.Headers.WwwAuthenticate.Single().Scheme);
@@ -31,7 +31,7 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_gateway_authentication_requires_configured_jwt_settings()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        await using var factory = BusinessGatewayTestHost.CreateUnconfiguredFactory(builder =>
         {
             builder.UseEnvironment("Testing");
             BusinessGatewayTestServiceBaseUrls.Configure(builder);
@@ -50,9 +50,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_endpoint_returns_forbidden_when_iam_denies_permission()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -68,7 +68,7 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var masterData = new RecordingMasterDataClient();
-        await using var factory = CreateFactory(
+        await using var lease = LeaseHost(
             auth,
             services =>
             {
@@ -78,8 +78,8 @@ public sealed class BusinessGatewayAuthorizationTests
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
             },
             builder => builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJsonWithoutAlgorithm()));
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -92,8 +92,8 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_endpoint_rejects_hs256_token_with_rsa_key_id()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.Hs256AccessTokenWithRsaKid());
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
@@ -107,15 +107,15 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var masterData = new RecordingMasterDataClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
 
@@ -133,13 +133,13 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
         var engineering = new RecordingProductEngineeringClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessProductEngineeringClient>();
             services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
         });
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/manufacturing-boms/release", new
         {
@@ -166,15 +166,15 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
         var engineering = new RecordingProductEngineeringClient();
-        await using var factory = CreateFactory(auth, services =>
+        await using var lease = LeaseHost(auth, services =>
         {
             services.RemoveAll<IBusinessProductEngineeringClient>();
             services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/engineering/standard-operations",
@@ -190,9 +190,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Maintenance_plan_update_facade_authorizes_the_route_plan_resource()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/plans/plan-001", new
         {
@@ -218,9 +218,9 @@ public sealed class BusinessGatewayAuthorizationTests
         string expectedPermission)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(new HttpMethod(method), $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
             Content = method != "GET"
@@ -241,9 +241,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Device_control_read_facade_returns_forbidden_when_iam_denies(string path)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync($"{path}?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01");
 
@@ -260,9 +260,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Tag_current_value_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/tags/current-value?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&tagKey=spindle.speed");
 
@@ -278,9 +278,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Runtime_hours_facade_returns_forbidden_scoped_to_the_device_when_iam_denies()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/telemetry/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-CNC-01&windowStartUtc=2026-07-01T00:00:00Z&windowEndUtc=2026-07-02T00:00:00Z");
 
@@ -295,9 +295,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Equipment_health_facade_returns_forbidden_scoped_to_the_route_device_when_iam_denies()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync("/api/business-console/v1/equipment/devices/DEV-CNC-01/health?organizationId=org-001&environmentId=env-dev");
 
@@ -312,8 +312,8 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken(environmentId: "env-prod"));
 
         var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
@@ -326,9 +326,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_scheduling_endpoint_rejects_missing_problem_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/scheduling/plans/preview", new { });
 
@@ -340,9 +340,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/routings/release", new
         {
@@ -373,9 +373,9 @@ public sealed class BusinessGatewayAuthorizationTests
     public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/alarm-rules", new
         {
@@ -406,9 +406,9 @@ public sealed class BusinessGatewayAuthorizationTests
         string defaultDisposition)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(new HttpMethod(method), path)
         {
             Content = JsonContent.Create(new
@@ -437,9 +437,9 @@ public sealed class BusinessGatewayAuthorizationTests
         string expectedPermission)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(method, $"{path}{(path.Contains('?') ? '&' : '?')}organizationId=org-001&environmentId=env-dev")
         {
             Content = method != HttpMethod.Get
@@ -477,9 +477,9 @@ public sealed class BusinessGatewayAuthorizationTests
     {
         const string path = "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order";
         var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
-        await using var factory = CreateFactory(auth);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{path}?organizationId=org-001&environmentId=env-dev")
         {
             Content = JsonContent.Create(ValidPostBody(path))
@@ -504,6 +504,24 @@ public sealed class BusinessGatewayAuthorizationTests
         if (BusinessConsoleTestRequestBodies.IsEngineeringWritePath(path))
         {
             return BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody(path);
+        }
+
+        if ((path.Contains("/wms/putaway-tasks/", StringComparison.Ordinal)
+                || path.Contains("/wms/picking-tasks/", StringComparison.Ordinal))
+            && (path.EndsWith("/start", StringComparison.Ordinal)
+                || path.EndsWith("/progress", StringComparison.Ordinal)
+                || path.EndsWith("/exception", StringComparison.Ordinal)
+                || path.EndsWith("/complete", StringComparison.Ordinal)))
+        {
+            return new
+            {
+                idempotencyKey = "idem-wms-task-authz",
+                expectedVersion = 1,
+                executedQuantity = 1m,
+                exceptionCode = "LOCATION_BLOCKED",
+                reason = "Authorization test.",
+                differenceReason = "Authorization test.",
+            };
         }
 
         return path switch
@@ -627,6 +645,13 @@ public sealed class BusinessGatewayAuthorizationTests
             downstreamService = "mes",
             downstreamDocumentType = "work-order",
             downstreamDocumentId = "WO-001",
+        },
+        "/api/business-console/v1/planning/suggestions/suggestion-001/reject" => new
+        {
+            suggestionId = "suggestion-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "authorization test",
         },
         "/api/business-console/v1/planning/demands/demand-001/cancel" => new
         {
@@ -887,6 +912,15 @@ public sealed class BusinessGatewayAuthorizationTests
             purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
             purchaseOrderNo = "PO-REQ-001",
         },
+        // #1345：收货契约新增必填 qualityStatus，权限用例必须给合法请求体，否则测的是 400 而不是 403。
+        "/api/business-console/v1/erp/procurement/purchase-receipts" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            purchaseOrderNo = "PO-2026-0001",
+            lines = new[] { new { purchaseOrderLineNo = "1", receivedQuantity = 10m, qualityStatus = "quality" } },
+            idempotencyKey = "idem-receipt-authz",
+        },
         "/api/business-console/v1/erp/finance/work-center-cost-rates" => new
         {
             organizationId = "org-001",
@@ -927,9 +961,21 @@ public sealed class BusinessGatewayAuthorizationTests
             toLocationCode = "BIN-01",
             quantity = 1,
         },
+        "/api/business-console/v1/wms/inbound-orders/inbound-order-001/assignment" or
+        "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/assignment" or
+        "/api/business-console/v1/wms/outbound-orders/outbound-order-001/assignment" or
+        "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/assignment" or
+        "/api/business-console/v1/wms/count-executions/count-execution-001/assignment" => new
+        {
+            poolCode = "POOL-WAREHOUSE",
+            operatorPrincipalId = "user-emp-049",
+            idempotencyKey = "assign-wms-authz",
+            expectedVersion = 1,
+        },
         "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete" => new
         {
             idempotencyKey = "complete-in-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/outbound-orders" => new
         {
@@ -966,6 +1012,7 @@ public sealed class BusinessGatewayAuthorizationTests
             packReviewNo = "PACK-001",
             passed = true,
             idempotencyKey = "complete-out-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/count-executions" => new
         {
@@ -982,9 +1029,11 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             countedQuantity = 1,
             idempotencyKey = "complete-count-001",
+            expectedVersion = 1,
         },
         "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch" => new
         {
+            expectedVersion = 1,
             adapterType = "agv",
             externalTaskId = "EXT-001",
             payloadJson = "{}",
@@ -998,6 +1047,12 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             completionPayloadJson = "{}",
         },
+        "/api/business-console/v1/equipment/alarms/alarm-001/shelve" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            idempotencyKey = "alarm-shelve-authz",
+        },
         "/api/business-console/v1/maintenance/work-orders" => new
         {
             organizationId = "org-001",
@@ -1007,6 +1062,7 @@ public sealed class BusinessGatewayAuthorizationTests
             sourceAlarmId = "alarm-001",
             openedBy = "operator-001",
             assetUnavailableReason = "bearing temperature high",
+            idempotencyKey = "maintenance-create-authz",
         },
         "/api/business-console/v1/maintenance/work-orders/wo-maint-001/complete" => new
         {
@@ -1016,6 +1072,15 @@ public sealed class BusinessGatewayAuthorizationTests
             downtimeReasonCode = "planned-maintenance",
             downtimeMinutes = 30,
             spareParts = new[] { new { skuCode = "SPARE-001", quantity = 1, uomCode = "EA" } },
+            idempotencyKey = "maintenance-complete-authz",
+        },
+        "/api/business-console/v1/mes/production-reports" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            idempotencyKey = "mes-production-report-authz",
+            scopeKind = "organization",
+            scopeId = "org-001",
         },
         "/api/business-console/v1/maintenance/plans" => new
         {
@@ -1106,7 +1171,10 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionPlansManage);
@@ -1116,6 +1184,13 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/reinspections", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        // 三期读面：计量台账 / 校准记录 / SPC 控制图台账走检验记录读权限（与 reason-codes 同先例），
+        // CAPA 是 NCR 的下游闭环，走 NCR 读权限。
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/measuring-devices", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/calibration-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/spc/control-charts", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/capas/019f87d0-3f7f-7ad0-a829-7724ea91c222", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);
@@ -1175,6 +1250,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/reject", BusinessGatewayPermissions.PlanningSuggestionsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands/demand-001/cancel", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
@@ -1225,6 +1301,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/purchase-orders", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/erp/procurement/supplier-quotations", BusinessGatewayPermissions.ErpProcurementRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order", BusinessGatewayPermissions.ErpProcurementManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/erp/procurement/rfqs", BusinessGatewayPermissions.ErpProcurementManage);
@@ -1272,19 +1349,38 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/work-scopes/counts", BusinessGatewayPermissions.WmsCountsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/receipts", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/shipments", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/operational-candidates/counts", BusinessGatewayPermissions.WmsCountsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/assignment", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/putaway-tasks/warehouse-task-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/assignment", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/picking-tasks", BusinessGatewayPermissions.WmsShipmentsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/assignment", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/start", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/progress", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/exception", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/picking-tasks/warehouse-task-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/inventory-posting/retry", BusinessGatewayPermissions.WmsShipmentsManage);
-        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
-        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsRead);
-        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsCountsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/assignment", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/EXT-001/fail", BusinessGatewayPermissions.WmsAutomationManage);
@@ -1293,6 +1389,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/work-orders/rush", BusinessGatewayPermissions.MesWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/operation-sops/current?operationCode=STD-MIX", BusinessGatewayPermissions.MesOperationsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/schedules/run", BusinessGatewayPermissions.MesSchedulesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/schedules", BusinessGatewayPermissions.MesSchedulesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/mes/production-reports", BusinessGatewayPermissions.MesReportingWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/mes/production-reports/PR-001", BusinessGatewayPermissions.MesReportingRead);
         // 工单可入库产出批次读面与完工入库同域：受 receipts.read 门控（非 reporting.read），入库操作员无需报工权限即可选批次。
@@ -1320,31 +1417,22 @@ public sealed class BusinessGatewayAuthorizationTests
         lockedAssignments = Array.Empty<object>(),
     };
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
         Action<IServiceCollection>? configureServices = null,
         Action<IWebHostBuilder>? configureBuilder = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            configureBuilder?.Invoke(builder);
-            BusinessGatewayTestServiceBaseUrls.Configure(builder);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                configureServices?.Invoke(services);
-            });
-        });
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
+        BusinessGatewayTestHost.Lease(
+            auth,
+            configureServices,
+            BusinessGatewayTestHostProfile.ServiceBaseUrls,
+            configureBuilder);
 }
 
 internal sealed class FakeBusinessGatewayAuthorizationClient(
     Func<BusinessGatewayPermissionRequirement, bool> isAllowed,
-    AuthorizationDataScope? dataScope = null)
+    AuthorizationDataScope? dataScope = null,
+    IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
+    IReadOnlyCollection<AuthorizationRole>? roles = null)
     : IBusinessGatewayAuthorizationClient
 {
     public int CallCount { get; private set; }
@@ -1353,7 +1441,13 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
 
     public List<BusinessGatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeBusinessGatewayAuthorizationClient Allowed(AuthorizationDataScope? dataScope = null) => new(_ => true, dataScope);
+    public BusinessGatewayAuthorizationContinuityMode? LastContinuityMode { get; private set; }
+
+    public static FakeBusinessGatewayAuthorizationClient Allowed(
+        AuthorizationDataScope? dataScope = null,
+        IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
+        IReadOnlyCollection<AuthorizationRole>? roles = null) =>
+        new(_ => true, dataScope, scopeGrants, roles);
 
     public static FakeBusinessGatewayAuthorizationClient Forbidden() => new(_ => false);
 
@@ -1366,13 +1460,31 @@ internal sealed class FakeBusinessGatewayAuthorizationClient(
     public Task<BusinessGatewayAuthorizationResult> CheckAsync(
         string bearerToken,
         BusinessGatewayPermissionRequirement requirement,
+        CancellationToken cancellationToken) =>
+        CheckAsync(
+            bearerToken,
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            cancellationToken);
+
+    public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        BusinessGatewayPermissionRequirement requirement,
+        BusinessGatewayAuthorizationContinuityMode continuityMode,
         CancellationToken cancellationToken)
     {
         CallCount++;
         LastRequirement = requirement;
+        LastContinuityMode = continuityMode;
         Requirements.Add(requirement);
         return Task.FromResult(isAllowed(requirement)
-            ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin", dataScope)
+            ? BusinessGatewayAuthorizationResult.Allowed(
+                "user-admin",
+                "user",
+                "admin",
+                dataScope,
+                scopeGrants,
+                roles)
             : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
     }
 }

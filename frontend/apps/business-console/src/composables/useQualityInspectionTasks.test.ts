@@ -3,7 +3,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions,
+  assignBusinessConsoleQualityInspectionTask,
+  claimBusinessConsoleQualityInspectionTask,
+  createBusinessConsoleQualityInspectionRecordFromTask,
+  listBusinessConsoleQualityInspectionTasks,
   listBusinessConsoleQualityInspectionTasksQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
@@ -15,17 +18,46 @@ import {
 } from './useQualityInspectionTasks'
 
 const state = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
   data: undefined as unknown,
   invalidateQueries: vi.fn(async () => undefined),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  assignBusinessConsoleQualityInspectionTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  claimBusinessConsoleQualityInspectionTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  createBusinessConsoleQualityInspectionRecordFromTask: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  confirmBusinessConsoleOperation: (...args: unknown[]) => state.confirmOperation(...args),
   createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (variables) => ({ success: true, data: variables })),
   })),
   listBusinessConsoleQualityInspectionTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityInspectionTasks' }],
     query: vi.fn(),
+  })),
+  listBusinessConsoleQualityInspectionTasks: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [
+          {
+            inspectionTaskId: 'TASK-1',
+            status: 'in-progress',
+            allowedActions: ['submit-inspection'],
+          },
+        ],
+        total: 1,
+      },
+    },
   })),
 }))
 
@@ -55,6 +87,7 @@ describe('quality inspection task workbench', () => {
     state.data = undefined
     state.invalidateQueries.mockClear()
     vi.clearAllMocks()
+    state.confirmOperation.mockImplementation(async (value) => value)
   })
 
   it('passes context, source type and server pagination to the real task facade', () => {
@@ -96,6 +129,15 @@ describe('quality inspection task workbench', () => {
 
     expect(total.value).toBe(12)
     expect(tasks.value).toEqual([{ inspectionTaskId: 'TASK-1', status: 'pending' }])
+  })
+
+  it('exposes an unsuccessful task envelope as a business-response failure', () => {
+    state.data = { success: false }
+
+    const tasks = useQualityInspectionTasks()
+
+    expect(tasks.hasSuccessfulResponse.value).toBe(false)
+    expect(tasks.hasFailedResponse.value).toBe(true)
   })
 
   it('filters the visible page by平级来源类型 without inventing a second data source', () => {
@@ -213,19 +255,117 @@ describe('quality inspection task workbench', () => {
     const { startInspection, filters } = useQualityInspectionTasks()
 
     await startInspection('TASK-1', {
-      inspectorUserId: 'user-qa',
       resultLines: [],
     })
 
-    expect(createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(createBusinessConsoleQualityInspectionRecordFromTaskMutationOptions).mock.results[0]
-        ?.value.mutation,
-    ).toHaveBeenCalledWith({
+    expect(createBusinessConsoleQualityInspectionRecordFromTask).toHaveBeenCalledWith({
       path: { inspectionTaskId: 'TASK-1' },
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
-      body: { inspectorUserId: 'user-qa', resultLines: [] },
+      body: {
+        resultLines: [],
+        idempotencyKey: expect.stringMatching(/^quality-submit-/),
+      },
+      throwOnError: false,
     })
     expect(filters.organizationId).toBe('org-001')
+  })
+
+  it('claims an inspection task through the existing facade and invalidates the list', async () => {
+    const { claimInspectionTask } = useQualityInspectionTasks()
+
+    await claimInspectionTask('TASK-CLAIM', 7)
+
+    expect(claimBusinessConsoleQualityInspectionTask).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-CLAIM' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        expectedVersion: 7,
+        idempotencyKey: expect.stringMatching(/^quality-claim-/),
+      },
+      throwOnError: true,
+    })
+    expect(state.invalidateQueries).toHaveBeenCalled()
+  })
+
+  it('assigns an inspection task through the existing facade with a transfer reason', async () => {
+    const { assignInspectionTask } = useQualityInspectionTasks()
+
+    await assignInspectionTask('TASK-TRANSFER', 'user-emp-007', '调班改派', 9)
+
+    expect(assignBusinessConsoleQualityInspectionTask).toHaveBeenCalledWith({
+      path: { inspectionTaskId: 'TASK-TRANSFER' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        assignedInspectorUserId: 'user-emp-007',
+        reason: '调班改派',
+        expectedVersion: 9,
+        idempotencyKey: expect.stringMatching(/^quality-assignment-/),
+      },
+      throwOnError: true,
+    })
+    expect(state.invalidateQueries).toHaveBeenCalled()
+  })
+
+  it('does not submit a pending task when backend allowedActions only permits claim', async () => {
+    vi.mocked(listBusinessConsoleQualityInspectionTasks).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-PENDING',
+              status: 'pending',
+              allowedActions: ['claim'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const { startInspection } = useQualityInspectionTasks()
+
+    await expect(
+      startInspection('TASK-PENDING', {
+        resultLines: [],
+      }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(createBusinessConsoleQualityInspectionRecordFromTask).not.toHaveBeenCalled()
+  })
+
+  it('rotates the quality submission key after an explicit 422 rejection', async () => {
+    const { startInspection } = useQualityInspectionTasks()
+    vi.mocked(listBusinessConsoleQualityInspectionTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-422',
+              status: 'in-progress',
+              allowedActions: ['submit-inspection'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as never)
+    const intent = {
+      resultLines: [],
+    }
+    state.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      startInspection('TASK-422', { ...intent, idempotencyKey: 'quality-key-1' }),
+    ).rejects.toThrow('validation failed')
+    await startInspection('TASK-422', { ...intent, idempotencyKey: 'quality-key-2' })
+
+    expect(
+      vi
+        .mocked(createBusinessConsoleQualityInspectionRecordFromTask)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['quality-key-1', 'quality-key-2'])
   })
 })

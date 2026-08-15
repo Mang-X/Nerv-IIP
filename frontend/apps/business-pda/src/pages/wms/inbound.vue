@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import RetryableListError from '@/components/RetryableListError.vue'
+import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
+import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
+import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { PDA_INBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   useWmsInbound,
   useWmsReceivingLines,
   type InboundLineCapture,
   type ReceivingQualityGateLine,
 } from '@/composables/useBusinessWms'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import {
   expiryToneFromDate,
@@ -16,6 +25,7 @@ import {
   parseGs1,
   receivingQualityGateStatusLabel,
   RECEIVING_QUALITY_GATE_STATUS,
+  statusActionGate,
   type ExpiryTone,
   type ReceivingQualityGateStatus,
 } from '@nerv-iip/business-core'
@@ -27,10 +37,11 @@ import {
   NvMobileInput,
   NvMobileResult,
   NvMobileTag,
+  NvMobileToast,
   NvNoticeBar,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -43,8 +54,61 @@ definePage({
 type InboundOrder = BusinessConsoleWmsInboundOrderItem
 
 const router = useRouter()
-const { filters, orders, pending, error, refresh, completeInbound, completePending } =
-  useWmsInbound()
+const {
+  filters,
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  orders,
+  total,
+  pending,
+  refreshing,
+  loadingMore,
+  error,
+  loadMoreError,
+  refresh,
+  loadMore,
+  completeInbound,
+  completePending,
+  organizationId,
+  environmentId,
+  scopeKind,
+  scopeId,
+  scopeReady,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+} = useWmsInbound({ status: 'Open' })
+const candidates = useWmsOperationalCandidates('receipt', {
+  organizationId,
+  environmentId,
+  scopeKind,
+  scopeId,
+  scopeReady,
+  filters,
+})
+async function refreshAll() {
+  await Promise.all([refresh(), candidates.refresh()])
+}
+const inboundScope = computed(() =>
+  scopeReady.value ? selectedScopeLabel.value : 'WMS 作业范围未就绪',
+)
+const inboundTotal = computed(() => total.value)
+const inboundStatusOptions = PDA_INBOUND_ORDER_STATUS_OPTIONS
+const taskListFilterState = computed(() => ({
+  scopeKey: scopeKey.value,
+  status: filters.status ?? '',
+  keyword: filters.keyword ?? '',
+  locationCode: filters.locationCode ?? '',
+  lotNo: filters.lotNo ?? '',
+}))
+function restoreTaskListState(state: { filters: Record<string, unknown> }) {
+  scopeKey.value = String(state.filters.scopeKey ?? scopeKey.value)
+  filters.status = String(state.filters.status ?? '') || undefined
+  filters.keyword = String(state.filters.keyword ?? '') || undefined
+  filters.locationCode = String(state.filters.locationCode ?? '') || undefined
+  filters.lotNo = String(state.filters.lotNo ?? '') || undefined
+}
 
 // 选中的收货单（单据级质检状态/上架放行来自列表项派生字段，避免按分页门禁行跨页聚合）。
 const selectedOrder = ref<InboundOrder | null>(null)
@@ -59,8 +123,10 @@ const {
   complete: linesComplete,
   pending: linesPending,
   error: linesError,
+  hasSuccessfulResponse: linesHasSuccessfulResponse,
+  hasFailedResponse: linesHasFailedResponse,
   refresh: refreshLines,
-} = useWmsReceivingLines(selectedOrderNo)
+} = useWmsReceivingLines(selectedOrderNo, { scopeKind, scopeId })
 
 // 收货现场「当前作业行」：多行单先选行再扫码，GS1 采集落到选中行（新收货行上尚无
 // 批号时无法按 lotNo 匹配）。单行单自动选中；未选中时扫码回退 lotNo 匹配/单行兜底。
@@ -68,7 +134,12 @@ const activeLineId = ref('')
 
 // 每次用户发起操作（点单开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复入库；
 // 选新单/继续后再点单才换新键。绝不在重试时重新生成。
-const operationKey = ref('')
+const intent = useIdempotentWriteIntent<{
+  idempotencyKey: string
+  lines: InboundLineCapture[]
+}>(makeIdempotencyKey)
+const intentLocked = intent.locked
+usePendingWriteLeaveGuard(intentLocked)
 
 // 抽屉或结果展示时停止外层扫码焦点抢夺，避免破坏浮层 focus-trap。
 const scanActive = computed(() => !sheetOpen.value && !completed.value)
@@ -77,7 +148,14 @@ const submitError = ref('')
 const gs1Notice = ref('')
 
 // 空态仅在「无待收货单据且无加载/错误」时出现，避免与错误/加载态打架。
-const showEmpty = computed(() => !pending.value && !error.value && orders.value.length === 0)
+const showEmpty = computed(
+  () =>
+    !pending.value &&
+    !error.value &&
+    !hasFailedResponse.value &&
+    hasSuccessfulResponse.value &&
+    orders.value.length === 0,
+)
 
 // 收货现场按行采集的批号/效期（GS1 扫码、批号手输或日期滚轮），随 completeInbound 落库（#935 闭环）。
 // 采集值覆盖后端已有值；未采集则展示/提交后端投影的既有值。
@@ -88,6 +166,7 @@ interface LineCapture {
 }
 const capturedByLine = ref<Record<string, LineCapture>>({})
 function captureLine(lineId: string, patch: LineCapture) {
+  if (intentLocked.value) return
   capturedByLine.value = {
     ...capturedByLine.value,
     [lineId]: { ...capturedByLine.value[lineId], ...patch },
@@ -139,6 +218,14 @@ const hasNearExpiry = computed(() =>
 )
 // 上架门禁：单据级派生（后端聚合含免检行）。待检/不合格 → 不出现上架引导。
 const selectedCanPutaway = computed(() => selectedOrder.value?.isReleasedForPutaway === true)
+const selectedCanComplete = computed(
+  () =>
+    statusActionGate({
+      domain: 'wms-inbound',
+      action: 'complete',
+      facts: { status: selectedOrder.value?.status },
+    }).executable,
+)
 const selectedNeedsQuality = computed(
   () => Boolean(selectedOrder.value?.qualityGateStatus) && !selectedCanPutaway.value,
 )
@@ -148,7 +235,10 @@ const submitDisabled = computed(
     completePending.value ||
     linesPending.value ||
     Boolean(linesError.value) ||
-    !linesComplete.value,
+    linesHasFailedResponse.value ||
+    !linesHasSuccessfulResponse.value ||
+    !linesComplete.value ||
+    !selectedCanComplete.value,
 )
 
 // 当前作业行：显式选中优先，否则单行单自动落到唯一行。
@@ -158,6 +248,7 @@ const activeLine = computed<ReceivingQualityGateLine | undefined>(() => {
   return selectedLines.value.length === 1 ? selectedLines.value[0] : undefined
 })
 function selectLine(line: ReceivingQualityGateLine) {
+  if (intentLocked.value) return
   activeLineId.value = line.inboundOrderLineId ?? ''
 }
 
@@ -170,20 +261,32 @@ function selectOrder(order: InboundOrder) {
   if (!order.inboundOrderId) return
   selectedOrder.value = order
   // 新操作开始：换一把新幂等键。
-  operationKey.value = makeIdempotencyKey()
+  intent.start()
   submitError.value = ''
   gs1Notice.value = ''
   sheetOpen.value = true
 }
 
 function closeSheet() {
+  if (intentLocked.value) return
   sheetOpen.value = false
 }
+
+function onSheetOpenChange(open: boolean) {
+  if (!open && intentLocked.value) return
+  sheetOpen.value = open
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetFlow,
+  refresh,
+})
 
 // 扫 GS1 批次码：解析批号/效期/生产日期采集到目标行。目标优先级：
 // 当前作业行（选中/单行）> 按扫出 lotNo 匹配已有批号的行。新收货行上尚无批号时
 // 靠先选行绑定，满足多行单的「扫码自动带出批号效期」。采集随 completeInbound 落库。
 function onGs1Scan(value: string) {
+  if (intentLocked.value) return
   gs1Notice.value = ''
   const parsed = parseGs1(value)
   if (!parsed || (!parsed.lotNo && !parsed.expiryDate)) {
@@ -216,6 +319,7 @@ function onGs1Scan(value: string) {
 
 // 逐行批号手输兜底（多行新收货行上无批号时定位采集）。
 function onBatchInput(line: ReceivingQualityGateLine, value: string | number) {
+  if (intentLocked.value) return
   if (!line.inboundOrderLineId) return
   captureLine(line.inboundOrderLineId, { lotNo: String(value).trim() })
 }
@@ -236,6 +340,7 @@ const expiryPickerValue = computed<string>({
   },
 })
 function openExpiryPicker(line: ReceivingQualityGateLine) {
+  if (intentLocked.value) return
   if (!line.inboundOrderLineId) return
   expiryPickerLineId.value = line.inboundOrderLineId
   expiryPickerOpen.value = true
@@ -257,27 +362,47 @@ function buildCaptureLines(): InboundLineCapture[] {
   return out
 }
 
+watch(
+  () => JSON.stringify(buildCaptureLines()),
+  () => {
+    intent.inputChanged()
+    submitError.value = ''
+  },
+)
+
 async function confirmComplete() {
   // 防重 + #3：pending / 行数据未加载或失败时禁止提交（不以空 lines 完成丢采集）。
   if (submitDisabled.value) return
   submitError.value = ''
   try {
-    // 重试复用同一 operationKey（不重新生成），#188 客户端去重可识别为同一操作。
-    await completeInbound(selectedOrderId.value, operationKey.value, buildCaptureLines())
+    const payload = intent.payload((idempotencyKey) => ({
+      idempotencyKey,
+      lines: buildCaptureLines(),
+    }))
+    // 重试复用同一幂等键（不重新生成），#188 客户端去重可识别为同一操作。
+    await completeInbound(selectedOrderId.value, payload.idempotencyKey, payload.lines, {
+      attempt: intent.attempt.value,
+      onCommandAttempt: intent.markCommandAttempt,
+    })
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
     void refresh()
   } catch (e) {
-    submitError.value = e instanceof Error ? e.message : '完成收货入库失败'
+    if (await lifecycleRecovery.handle(e)) return
+    const info = intent.recordFailure(e, '完成收货入库失败')
+    submitError.value = intentLocked.value
+      ? `${info.message}。提交结果未知，仅可按原内容重试。`
+      : info.message
   }
 }
 
 function resetFlow() {
+  sheetOpen.value = false
   completed.value = false
   selectedOrder.value = null
   // 清空操作键：下次点单会铸新键，保证新操作 ≠ 旧键。
-  operationKey.value = ''
+  intent.reset()
   submitError.value = ''
   gs1Notice.value = ''
   capturedByLine.value = {}
@@ -322,57 +447,109 @@ function goPutaway() {
       </template>
     </NvMobileResult>
 
-    <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
-
-      <RetryableListError
-        v-if="error"
-        :error="error"
-        :pending="pending"
-        fallback="单据加载失败，请下拉重试或检查网络。"
-        test-id="error-banner"
-        @retry="() => refresh()"
-      />
-
-      <div
-        v-if="showEmpty"
-        class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-      >
-        暂无待收货单据
+    <div v-else class="flex h-full min-h-0 flex-col">
+      <div class="space-y-3 border-b border-border bg-card px-4 py-3">
+        <NvScanBar placeholder="扫描收货单号" :active="scanActive" @scan="onScan" />
+        <WmsScopeStatusFilter
+          v-model:scope-key="scopeKey"
+          v-model:status="filters.status"
+          :scope-options="scopeOptions"
+          :status-options="inboundStatusOptions"
+        />
+        <WmsOperationalCandidatePicker
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          v-model:search-keyword="candidates.searchKeyword.value"
+          :location-options="candidates.locationOptions.value"
+          :lot-options="candidates.lotOptions.value"
+          :ready="candidates.ready.value"
+          :source-label="candidates.sourceLabel.value"
+          :as-of-utc="candidates.asOfUtc.value"
+          :freshness-utc="candidates.freshnessUtc.value"
+          :truncated="candidates.truncated.value"
+          :pending="candidates.pending.value"
+          :error="candidates.error.value"
+          :scan-overrides="candidates.scanOverrides.value"
+          :show-scanner="false"
+          @scan-override-change="candidates.setScanOverride"
+          @retry="candidates.refresh"
+        />
+        <ListScopeMeta
+          :scope="inboundScope"
+          source="WMS 收货作业范围目录"
+          :loaded="orders.length"
+          :total="inboundTotal"
+          :updated-at="lastUpdatedAt"
+          :failed="hasFailedResponse"
+          failure-explanation="收货入库服务未成功返回，请刷新重试。"
+          :empty="!scopeReady || showEmpty"
+          :empty-explanation="
+            scopeReady
+              ? `“${inboundScope}”在当前状态下没有收货单据。`
+              : 'WMS 未返回可用作业范围，未发起列表查询。'
+          "
+        />
       </div>
 
-      <div v-else class="overflow-hidden rounded-lg border border-border">
-        <div
-          v-for="order in orders"
-          :key="order.inboundOrderId"
-          data-row
-          role="button"
-          tabindex="0"
-          class="min-h-row flex w-full items-center gap-3 border-b border-border bg-card px-4 py-3 text-left last:border-b-0 active:bg-accent"
-          @click="selectOrder(order)"
-          @keydown.enter="selectOrder(order)"
-        >
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-base font-medium text-foreground">
-              {{ order.inboundOrderNo ?? '' }}
-            </div>
-            <div class="truncate text-sm text-muted-foreground">
-              {{ inboundOrderStatusLabel(order.status) }}
+      <WmsPagedListFrame
+        state-key="wms-inbound-orders"
+        empty-description="暂无收货单据"
+        :filter-state="taskListFilterState"
+        :error="error ?? (hasFailedResponse ? '收货入库服务未成功返回' : undefined)"
+        :load-more-error="loadMoreError"
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :pending="pending"
+        :loaded="orders.length"
+        :total="inboundTotal"
+        @refresh="refreshAll"
+        @load-more="loadMore"
+        @restore="restoreTaskListState"
+        @retry="refreshAll"
+        @retry-load-more="loadMore"
+      >
+        <div class="space-y-4 px-4 py-3">
+          <div
+            v-if="showEmpty"
+            class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
+          >
+            “{{ inboundScope }}”在当前状态下暂无收货单据；数据来自 WMS 派工
+          </div>
+
+          <div v-else class="overflow-hidden rounded-lg border border-border">
+            <div
+              v-for="order in orders"
+              :key="order.inboundOrderId"
+              data-row
+              role="button"
+              tabindex="0"
+              class="min-h-row flex w-full items-center gap-3 border-b border-border bg-card px-4 py-3 text-left last:border-b-0 active:bg-accent"
+              @click="selectOrder(order)"
+              @keydown.enter="selectOrder(order)"
+            >
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-base font-medium text-foreground">
+                  {{ order.inboundOrderNo ?? '' }}
+                </div>
+                <div class="truncate text-sm text-muted-foreground">
+                  {{ inboundOrderStatusLabel(order.status) }}
+                </div>
+              </div>
+              <NvMobileTag
+                v-if="order.qualityGateStatus"
+                :variant="gateVariant(order.qualityGateStatus)"
+                size="sm"
+              >
+                {{ gateLabel(order.qualityGateStatus) }}
+              </NvMobileTag>
             </div>
           </div>
-          <NvMobileTag
-            v-if="order.qualityGateStatus"
-            :variant="gateVariant(order.qualityGateStatus)"
-            size="sm"
-          >
-            {{ gateLabel(order.qualityGateStatus) }}
-          </NvMobileTag>
         </div>
-      </div>
+      </WmsPagedListFrame>
     </div>
 
     <!-- 完成入库确认抽屉 -->
-    <NvBottomSheet :open="sheetOpen" title="完成收货入库" @update:open="(v) => (sheetOpen = v)">
+    <NvBottomSheet :open="sheetOpen" title="完成收货入库" @update:open="onSheetOpenChange">
       <div class="space-y-4">
         <p v-if="selectedOrderNo" class="text-sm text-muted-foreground">
           收货单 {{ selectedOrderNo }}
@@ -383,8 +560,8 @@ function goPutaway() {
           正在加载收货明细…
         </p>
         <RetryableListError
-          v-else-if="linesError"
-          :error="linesError"
+          v-else-if="linesError || linesHasFailedResponse"
+          :error="linesError ?? '收货明细服务未成功返回'"
           :pending="linesPending"
           fallback="收货明细加载失败，请重试。"
           test-id="lines-error"
@@ -447,6 +624,7 @@ function goPutaway() {
                   activeLine?.inboundOrderLineId === line.inboundOrderLineId ? 'primary' : 'outline'
                 "
                 data-select-line
+                :disabled="intentLocked"
                 @click="selectLine(line)"
               >
                 {{
@@ -458,12 +636,14 @@ function goPutaway() {
                 placeholder="批号"
                 class="flex-1"
                 data-batch-input
+                :disabled="intentLocked"
                 @update:model-value="(v) => onBatchInput(line, v)"
               />
               <NvMobileButton
                 variant="outline"
                 class="min-h-touch"
                 data-expiry-input
+                :disabled="intentLocked"
                 @click="openExpiryPicker(line)"
               >
                 {{ lineExpiry(line) ? '改效期' : '录效期' }}
@@ -487,7 +667,7 @@ function goPutaway() {
         <NvScanBar
           v-if="linesComplete && selectedLines.length"
           placeholder="扫描 GS1 批次码带出效期"
-          :active="sheetOpen && !completed"
+          :active="sheetOpen && !completed && !intentLocked"
           @scan="onGs1Scan"
         />
         <p v-if="gs1Notice" class="text-sm text-warning-strong" data-gs1-notice>{{ gs1Notice }}</p>
@@ -502,12 +682,14 @@ function goPutaway() {
           该单待质检，合格后方可上架
         </NvNoticeBar>
 
-        <p class="text-base text-foreground">确认完成收货入库？</p>
+        <p v-if="selectedCanComplete" class="text-base text-foreground">确认完成收货入库？</p>
+        <p v-else class="text-sm text-muted-foreground">该单已结束，仅可查看明细或进入后续上架</p>
 
         <p v-if="submitError" class="text-sm text-destructive">{{ submitError }}</p>
 
         <div class="space-y-2 pt-2">
           <NvMobileButton
+            v-if="selectedCanComplete"
             block
             variant="primary"
             class="min-h-touch"
@@ -515,7 +697,7 @@ function goPutaway() {
             :disabled="submitDisabled"
             @click="confirmComplete"
           >
-            {{ completePending ? '提交中…' : '确认完成' }}
+            {{ completePending ? '提交中…' : intentLocked ? '按原内容重试' : '确认完成' }}
           </NvMobileButton>
           <NvMobileButton
             v-if="selectedCanPutaway"
@@ -527,7 +709,13 @@ function goPutaway() {
           >
             去上架
           </NvMobileButton>
-          <NvMobileButton block variant="outline" class="min-h-touch" @click="closeSheet">
+          <NvMobileButton
+            block
+            variant="outline"
+            class="min-h-touch"
+            :disabled="intentLocked"
+            @click="closeSheet"
+          >
             取消
           </NvMobileButton>
         </div>
@@ -538,6 +726,13 @@ function goPutaway() {
       v-model:open="expiryPickerOpen"
       v-model="expiryPickerValue"
       title="选择效期"
+    />
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
     />
   </NvAppShellMobile>
 </template>

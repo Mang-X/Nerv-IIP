@@ -2,11 +2,32 @@
 
 export { default as GanttChart } from './components/GanttChart.vue'
 export { default as ResourceSchedulerBoard } from './components/ResourceSchedulerBoard.vue'
+export { default as SchedulingLegend } from './components/panels/SchedulingLegend.vue'
+// 甘特工具栏(刻度 / 缩放 / 定位到当前 / 适配窗口 / 撤销重做 / 搜索)。此前只被包内的
+// SchedulingWorkbench 引用而没导出,业务页因此各自手搓了一组残缺的缩放按钮(#1399 M4)。
+// 时间线相关控件一律从这里取,不要在应用层再造第二套。
+export { default as SchedulingToolbar } from './components/panels/SchedulingToolbar.vue'
+// 选中工序详情面板。业务侧的只读甘特与草案工作区共用同一份工序详情呈现,
+// 不要在应用层另写一份重复实现。
+export { default as TaskDetailPanel } from './components/panels/TaskDetailPanel.vue'
 
 export { useSchedulingPlan, type SchedulingContext } from './composables/useSchedulingPlan'
 export { useSchedulingEdits, type SchedulingEditsDeps } from './composables/useSchedulingEdits'
 
 export { toModel, toLockedAssignments } from './model/aps-mapper'
+export {
+  BLOCK_KINDS,
+  BLOCK_LABELS,
+  BLOCK_TOKENS,
+  toBlockKind,
+  type BlockKind,
+} from './model/blocks'
+export {
+  deriveLegendSemantics,
+  FULL_LEGEND_SEMANTICS,
+  type SchedulingLegendSemantics,
+} from './model/legend'
+export { resolveTimeScale, shiftBoundaryRendersAt, type ResolvedTimeScale } from './model/scale'
 export {
   conflictReasonLabel,
   changeTypeLabel,

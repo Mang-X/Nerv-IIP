@@ -19,7 +19,9 @@ const emit = defineEmits<{
     data-slot="file-preview-unsupported"
     class="flex h-full min-h-64 flex-col items-center justify-center gap-4 bg-muted/20 p-6 text-center"
   >
-    <div class="flex size-12 items-center justify-center rounded-lg border border-border bg-background shadow-xs">
+    <div
+      class="flex size-12 items-center justify-center rounded-lg border border-border bg-background shadow-xs"
+    >
       <FileQuestionIcon class="size-5 text-muted-foreground" aria-hidden="true" />
     </div>
     <div class="max-w-sm">

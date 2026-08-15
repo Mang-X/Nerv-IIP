@@ -11,19 +11,23 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
   type UrgencyDisplayMode,
 } from '@/composables/useUrgencyDisplayMode'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -35,6 +39,7 @@ import {
   NvDialogTitle,
   NvDropdownMenuItem,
   NvDropdownMenuSeparator,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -55,13 +60,11 @@ import {
   CalendarCheckIcon,
   CalendarCogIcon,
   ClipboardCheckIcon,
+  ExternalLinkIcon,
   EyeIcon,
   FactoryIcon,
   LockIcon,
-  PackageCheckIcon,
   RefreshCwIcon,
-  RouteIcon,
-  WrenchIcon,
 } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -84,8 +87,14 @@ const {
   refreshWorkOrders,
   workOrders,
   workOrdersError,
+  workOrdersHasFailedResponse,
+  workOrdersHasSuccessfulResponse,
+  workOrdersLastUpdatedAt,
   workOrdersPending,
   workOrdersTotal,
+  workOrderReadScope,
+  workOrderReadScopeMessage,
+  workOrderReadScopeReady,
 } = useMesWorkOrders()
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
@@ -103,6 +112,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 
 const rushSheetOpen = shallowRef(false)
 const reportSheetOpen = shallowRef(false)
+const sheetWorkOrderId = ref<string | null>(null)
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -142,9 +152,60 @@ const rushForm = reactive({
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+const workOrderScopeLabel = computed(() => {
+  const selectedScope = workOrderReadScope.value
+  if (!selectedScope) return '当前主体授权工单范围未就绪'
+  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
+  return `当前主体授权工单范围 · ${selectedScope.displayName || selectedScope.id}（${kind}）`
+})
+const workOrderEmptyExplanation = computed(() =>
+  workOrderReadScopeReady.value
+    ? '当前主体授权工单范围内暂无生产工单。'
+    : workOrderReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
+)
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const skuOptions = computed(() => toResourceOptions(skus.value))
+
+// ── 急单表单的四个选择器 ────────────────────────────────────────
+// 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
+const { productionVersionOptions, productionVersionsPending } = useMesMaterialVersionCatalog()
+const { operationTasks, operationTasksPending } = useMesOperationTasks()
+
+const rushVersionOptions = computed(() => productionVersionOptions(rushForm.skuId))
+const rushOperationTaskOptions = computed(() => {
+  const workCenter = rushForm.workCenterId.trim()
+  return operationTasks.value
+    .filter((task) => !!task.operationTaskId)
+    .filter((task) => !workCenter || task.workCenterCode === workCenter)
+    .map((task) => ({
+      value: task.operationTaskId as string,
+      label: task.operationTaskNo || task.operationCode || '未编号工序任务',
+      hint: [task.workOrderNo, task.workCenterName ?? task.workCenterCode]
+        .filter(Boolean)
+        .join(' · '),
+    }))
+})
+
+watch(
+  () => rushForm.skuId,
+  () => {
+    rushForm.productionVersionId = ''
+  },
+)
+watch(
+  () => rushForm.workCenterId,
+  () => {
+    rushForm.operationTaskId = ''
+  },
+)
 
 const visibleWorkOrders = computed(() => workOrders.value)
 
@@ -256,6 +317,7 @@ function openReport(order: Row) {
     operationTaskId: task.operationTaskId,
     operationTaskNo: task.operationTaskNo,
     operationSequence: task.operationSequence,
+    operationStatus: task.status,
     workCenterLabel:
       task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
     skuLabel: resolveSku(order.skuCode ?? order.skuId),
@@ -270,11 +332,30 @@ function openOrderDetail(order: Row) {
   if (!order.workOrderId) return
   void router.push({ path: `/mes/work-orders/${encodeURIComponent(order.workOrderId)}` })
 }
-function openRelatedPage(path: string, order: Row) {
-  void router.push({
-    path,
-    query: { workOrderId: order.workOrderId ?? undefined, skuId: order.skuId ?? undefined },
-  })
+// 行内抽屉：工单详情 / 工序 / 齐套 / 派工 / 状态流转一次看全，不跳页。
+function openOrderSheet(order: Row) {
+  if (!order.workOrderId) return
+  sheetWorkOrderId.value = order.workOrderId
+}
+// 抽屉里点「报工」把工序 id 抛回来，由本页共用的报工弹窗承接（抽屉不自己再开一个）。
+function openReportFromSheet(operationTaskId: string) {
+  const order = workOrders.value.find((item) => item.workOrderId === sheetWorkOrderId.value)
+  const task = (order?.operationTasks ?? []).find((t) => t.operationTaskId === operationTaskId)
+  if (!order?.workOrderId || !task?.operationTaskId) return
+  reportContext.value = {
+    workOrderId: order.workOrderId,
+    workOrderNo: order.workOrderNo,
+    operationTaskId: task.operationTaskId,
+    operationTaskNo: task.operationTaskNo,
+    operationSequence: task.operationSequence,
+    operationStatus: task.status,
+    workCenterLabel:
+      task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId),
+    skuLabel: resolveSku(order.skuCode ?? order.skuId),
+    plannedQuantity: order.quantity,
+  }
+  sheetWorkOrderId.value = null
+  reportSheetOpen.value = true
 }
 
 async function submitRushWorkOrder() {
@@ -303,7 +384,11 @@ async function submitRushWorkOrder() {
     rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
     rushSheetOpen.value = false
   } catch (error) {
-    notifyError(createRushWorkOrderError.value ?? error, '创建急单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建急单失败',
+      createRushWorkOrderError.value ?? error,
+      '创建急单失败，请稍后重试。',
+    )
   }
 }
 
@@ -366,7 +451,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
     }))
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -402,8 +487,32 @@ function isNonEmpty(value: string) {
       </template>
     </NvPageHeader>
 
+    <ListScopeMeta
+      :scope="workOrderScopeLabel"
+      source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
+      :loaded="workOrders.length"
+      :total="workOrdersTotal"
+      :updated-at="workOrdersLastUpdatedAt"
+      :empty="
+        !workOrderReadScopeReady ||
+        (workOrdersHasSuccessfulResponse && !workOrdersError && workOrders.length === 0)
+      "
+      :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
+      failure-explanation="生产工单服务未成功返回，请重试。"
+      :empty-explanation="workOrderEmptyExplanation"
+    />
+    <p
+      v-if="workOrderReadScopeMessage"
+      class="text-sm text-destructive"
+      role="alert"
+      data-testid="work-order-read-scope-message"
+    >
+      {{ workOrderReadScopeMessage }}
+    </p>
+
     <NvToolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
+        <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工单状态"
             ><NvSelectValue
@@ -498,6 +607,7 @@ function isNonEmpty(value: string) {
           :urgency="
             row.workOrderId ? orderUrgencies.byReference.value.get(row.workOrderId) : undefined
           "
+          :source-unavailable="orderUrgencies.error?.value != null"
           @refresh="refreshUrgency"
         />
       </template>
@@ -533,26 +643,19 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`工单操作 ${row.workOrderId ?? ''}`">
-          <NvDropdownMenuItem @click="openOrderDetail(row)">
+          <!-- 详情 / 工序 / 齐套 / 派工 / 状态流转全部收进行内抽屉，不再逐个跳页丢上下文。 -->
+          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderSheet(row)">
             <EyeIcon aria-hidden="true" />
-            查看详情
+            工单详情与工序
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/materials', row)">
-            <PackageCheckIcon aria-hidden="true" />
-            齐套检查
-          </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/operation-tasks', row)">
-            <RouteIcon aria-hidden="true" />
-            查看工序
-          </NvDropdownMenuItem>
-          <NvDropdownMenuSeparator />
           <NvDropdownMenuItem :disabled="!canReportOrder(row)" @click="openReport(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
-          <NvDropdownMenuItem @click="openRelatedPage('/mes/capacity', row)">
-            <WrenchIcon aria-hidden="true" />
-            异常与产能
+          <NvDropdownMenuSeparator />
+          <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderDetail(row)">
+            <ExternalLinkIcon aria-hidden="true" />
+            打开完整详情页
           </NvDropdownMenuItem>
         </NvRowActions>
       </template>
@@ -572,24 +675,33 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-sku"
                 >物料 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-if="skuOptions.length" v-model="rushForm.skuId">
-                <NvSelectTrigger id="rush-sku"
-                  ><NvSelectValue placeholder="选择物料"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in skuOptions"
-                    :key="option.value"
-                    :value="option.value"
-                    >{{ option.label }}</NvSelectItem
-                  >
-                </NvSelectContent>
-              </NvSelect>
-              <NvInput v-else id="rush-sku" v-model="rushForm.skuId" required />
+              <NvEntityPicker
+                id="rush-sku"
+                v-model="rushForm.skuId"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在基础数据维护"
+                aria-label="物料"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-version">生产版本</NvFieldLabel>
-              <NvInput id="rush-version" v-model="rushForm.productionVersionId" />
+              <NvEntityPicker
+                id="rush-version"
+                v-model="rushForm.productionVersionId"
+                :options="rushVersionOptions"
+                title="选择生产版本"
+                :placeholder="rushForm.skuId ? '可留空，按生效日自动解析' : '先选物料'"
+                :disabled="!rushForm.skuId"
+                source-text="仅列所选物料的生产版本"
+                empty-text="该物料暂无生产版本，请先在工程数据维护"
+                :loading="productionVersionsPending"
+                aria-label="生产版本"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-quantity"
@@ -613,24 +725,33 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-work-center"
                 >工作中心 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
-                <NvSelectTrigger id="rush-work-center"
-                  ><NvSelectValue placeholder="选择工作中心"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in workCenterOptions"
-                    :key="option.value"
-                    :value="option.value"
-                    >{{ option.label }}</NvSelectItem
-                  >
-                </NvSelectContent>
-              </NvSelect>
-              <NvInput v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
+              <NvEntityPicker
+                id="rush-work-center"
+                v-model="rushForm.workCenterId"
+                :options="workCenterOptions"
+                title="选择工作中心"
+                placeholder="选择工作中心"
+                source-text="数据来自基础数据工作中心主数据"
+                empty-text="暂无工作中心，请先在基础数据维护"
+                aria-label="工作中心"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-operation-task">工序任务</NvFieldLabel>
-              <NvInput id="rush-operation-task" v-model="rushForm.operationTaskId" />
+              <NvEntityPicker
+                id="rush-operation-task"
+                v-model="rushForm.operationTaskId"
+                :options="rushOperationTaskOptions"
+                title="选择工序任务"
+                :placeholder="rushForm.workCenterId ? '可留空' : '先选工作中心'"
+                :disabled="!rushForm.workCenterId"
+                source-text="仅列所选工作中心的在办工序任务"
+                empty-text="该工作中心暂无在办工序任务"
+                :loading="operationTasksPending"
+                aria-label="工序任务"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="rush-operation-sequence">工序序号</NvFieldLabel>
@@ -682,5 +803,7 @@ function isNonEmpty(value: string) {
       :context="reportContext"
       @reported="refreshWorkOrders"
     />
+
+    <WorkOrderDetailSheet v-model:work-order-id="sheetWorkOrderId" @report="openReportFromSheet" />
   </BusinessLayout>
 </template>

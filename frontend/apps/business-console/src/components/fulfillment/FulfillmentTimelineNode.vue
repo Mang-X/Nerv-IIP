@@ -4,7 +4,10 @@ import { NvButton, resolveStatus } from '@nerv-iip/ui'
 import { AlertTriangleIcon, LockIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { formatDateTime } from '@/pages/erp/shared'
+// 走 utils/format 而不是 pages/erp/shared：后者是 ERP 页面的局部工具（`toLocaleString('zh-CN')`
+// → `2026/8/1 14:58:37`），共享组件跨层去拿本身是层次味道，渲染出来还和抽屉里其余时间戳
+// （`2026-08-01 14:58`）两种写法并排。
+import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{ node: FulfillmentNode }>()
 const emit = defineEmits<{ retry: [] }>()
@@ -22,8 +25,11 @@ const failureText = computed(() => {
 })
 
 // 各来源单据回的是英文状态码，走全站状态字典映射成中文，不把原文直出成 chip。
-const detailStatusLabel = computed(() =>
-  props.node.detailStatus ? resolveStatus(props.node.detailStatus).label : '',
+// 节点可以给现成文案（如紧急度分级，词表不在共享 STATUS_LABELS 里），也可以给裸码值。
+const detailStatusLabel = computed(
+  () =>
+    props.node.detailStatusLabel ??
+    (props.node.detailStatus ? resolveStatus(props.node.detailStatus).label : ''),
 )
 </script>
 

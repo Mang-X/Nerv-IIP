@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
@@ -18,7 +19,11 @@ import {
 } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useBusinessPlanning } from './useBusinessPlanning'
+import {
+  MRP_RUN_POLL_INTERVAL_MS,
+  MRP_RUN_POLL_TIMEOUT_MS,
+  useBusinessPlanning,
+} from './useBusinessPlanning'
 
 const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
@@ -39,8 +44,18 @@ vi.mock('@nerv-iip/api-client', () => ({
       },
     })),
   })),
+  rejectBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) =>
+      vars.body.reason === 'trigger-soft-failure'
+        ? { success: false, message: '建议已被其他计划员处理。' }
+        : { success: true, data: { rejected: true } },
+    ),
+  })),
   createBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: 'mps-created', ...vars.body, status: 'Draft' } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: 'mps-created', ...vars.body, status: 'Draft' },
+    })),
   })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
@@ -65,17 +80,30 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsolePlanningSuggestions' }],
     query: vi.fn(),
   })),
+  // #1306 异步受理回执：只回 runId + 排队状态（与 BusinessConsoleRunMrpResponse 契约一致）。
   runBusinessConsolePlanningMrpMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { runId: 'run-1', suggestionCount: 2, vars } })),
+    mutation: vi.fn(async () => ({
+      success: true,
+      data: { runId: 'run-1', status: 'Created' },
+    })),
   })),
   updateBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, ...vars.body } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, ...vars.body },
+    })),
   })),
   reviewBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: vars.body.reviewedBy } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: vars.body.reviewedBy },
+    })),
   })),
   releaseBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: vars.body.releasedBy } })),
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: vars.body.releasedBy },
+    })),
   })),
 }))
 
@@ -95,11 +123,15 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
 
-    const refetch = vi.fn()
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    // refetch 时从 map 重新取数，模拟轮询期间服务端状态推进（#1306 MRP 运行跟踪用）。
+    const refetch = vi.fn(async () => {
+      data.value = coladaState.queryDataById.get(id)
+    })
     coladaState.refetchById.set(id, refetch)
 
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch,
@@ -131,50 +163,67 @@ describe('business planning composable', () => {
     coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
       success: true,
       data: {
-        items: [{
-          runId: 'run-1',
-          suggestionCount: 2,
-          inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
-          hasInputDegradation: true,
-          inputDegradationSources: ['scheduled-receipts'],
-          inputSources: ['mps', 'sales-order', 'forecast', 'safety-stock'],
-          inputCoverageStart: '2026-06-01',
-          inputCoverageEnd: '2026-06-30',
-        }],
+        items: [
+          {
+            runId: 'run-1',
+            suggestionCount: 2,
+            inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
+            hasInputDegradation: true,
+            inputDegradationSources: ['scheduled-receipts'],
+            inputSources: ['mps', 'sales-order', 'forecast', 'safety-stock'],
+            inputCoverageStart: '2026-06-01',
+            inputCoverageEnd: '2026-06-30',
+          },
+        ],
       },
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningMpsBuckets', {
       success: true,
       data: {
-        items: [{
-          mpsId: 'mps-1',
-          skuCode: 'FG-SHOCK',
-          quantity: 120,
-          status: 'Released',
-          bucketDate: '2026-06-15',
-        }],
+        items: [
+          {
+            mpsId: 'mps-1',
+            skuCode: 'FG-SHOCK',
+            quantity: 120,
+            status: 'Released',
+            bucketDate: '2026-06-15',
+          },
+        ],
       },
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
       success: true,
-      data: { items: [{ suggestionId: 'suggestion-1', suggestionType: 'planned-work-order', status: 'Open' }] },
+      data: {
+        items: [
+          { suggestionId: 'suggestion-1', suggestionType: 'planned-work-order', status: 'Open' },
+        ],
+      },
     })
     coladaState.queryDataById.set('getBusinessConsolePlanningMrpPegging', {
       success: true,
       data: {
-        items: [{
-          suggestionId: 'suggestion-1',
-          demandSourceReference: 'SO-1001',
-          sourceType: 'sales',
-          grossDemandQuantity: 10,
-        }],
+        items: [
+          {
+            suggestionId: 'suggestion-1',
+            demandSourceReference: 'SO-1001',
+            sourceType: 'sales',
+            grossDemandQuantity: 10,
+          },
+        ],
       },
     })
 
-    const { demands, mpsBuckets, mrpRuns, pegging, runSelection, suggestions } = useBusinessPlanning()
+    const { demands, mpsBuckets, mrpRuns, pegging, runSelection, suggestions } =
+      useBusinessPlanning()
 
     expect(listBusinessConsolePlanningMpsBucketsQueryOptions).toHaveBeenCalledWith({
-      query: { organizationId: 'org-002', environmentId: 'prod', skuCode: undefined, siteCode: undefined, status: undefined },
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        skuCode: undefined,
+        siteCode: undefined,
+        status: undefined,
+      },
     })
     expect(listBusinessConsolePlanningDemandsQueryOptions).toHaveBeenCalledWith({
       query: { organizationId: 'org-002', environmentId: 'prod' },
@@ -189,14 +238,23 @@ describe('business planning composable', () => {
       path: { runId: '' },
       query: { organizationId: 'org-002', environmentId: 'prod' },
     })
-    expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(false)
+    expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(
+      false,
+    )
     expect(runSelection.runId).toBe('')
     expect(demands.value).toHaveLength(1)
     expect(mpsBuckets.value[0]?.status).toBe('Released')
-    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2;scheduled-receipts:error')
+    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe(
+      'inventory-http:2;scheduled-receipts:error',
+    )
     expect(mrpRuns.value[0]?.hasInputDegradation).toBe(true)
     expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
-    expect(mrpRuns.value[0]?.inputSources).toEqual(['mps', 'sales-order', 'forecast', 'safety-stock'])
+    expect(mrpRuns.value[0]?.inputSources).toEqual([
+      'mps',
+      'sales-order',
+      'forecast',
+      'safety-stock',
+    ])
     expect(mrpRuns.value[0]?.inputCoverageStart).toBe('2026-06-01')
     expect(mrpRuns.value[0]?.inputCoverageEnd).toBe('2026-06-30')
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
@@ -217,13 +275,8 @@ describe('business planning composable', () => {
         permissionCodes: [],
       },
     })
-    const {
-      createMpsBucket,
-      mpsForm,
-      releaseMpsBucket,
-      reviewMpsBucket,
-      updateMpsBucket,
-    } = useBusinessPlanning()
+    const { createMpsBucket, mpsForm, releaseMpsBucket, reviewMpsBucket, updateMpsBucket } =
+      useBusinessPlanning()
 
     mpsForm.skuCode = 'FG-SHOCK'
     mpsForm.uomCode = 'pcs'
@@ -237,34 +290,42 @@ describe('business planning composable', () => {
     await releaseMpsBucket('mps-1')
 
     expect(createBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
-    expect(vi.mocked(createBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        body: expect.objectContaining({
-          skuCode: 'FG-SHOCK',
-          bucketDate: '2026-06-15',
-          quantity: 120,
-        }),
-      })
+    expect(
+      vi.mocked(createBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        skuCode: 'FG-SHOCK',
+        bucketDate: '2026-06-15',
+        quantity: 120,
+      }),
+    })
     expect(updateBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
-    expect(vi.mocked(updateBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        path: { mpsId: 'mps-1' },
-        body: expect.objectContaining({ quantity: 132 }),
-      })
+    expect(
+      vi.mocked(updateBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      body: expect.objectContaining({ quantity: 132 }),
+    })
     expect(reviewBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
-    expect(vi.mocked(reviewBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        path: { mpsId: 'mps-1' },
-        query: { organizationId: 'org-001', environmentId: 'env-dev' },
-        body: { reviewedBy: 'planner.li' },
-      })
+    expect(
+      vi.mocked(reviewBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reviewedBy: 'planner.li' },
+    })
     expect(releaseBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
-    expect(vi.mocked(releaseBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        path: { mpsId: 'mps-1' },
-        query: { organizationId: 'org-001', environmentId: 'env-dev' },
-        body: { releasedBy: 'planner.li' },
-      })
+    expect(
+      vi.mocked(releaseBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { releasedBy: 'planner.li' },
+    })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 
@@ -303,14 +364,106 @@ describe('business planning composable', () => {
       }),
     })
     expect(runBusinessConsolePlanningMrpMutationOptions).toHaveBeenCalled()
-    expect(vi.mocked(runBusinessConsolePlanningMrpMutationOptions).mock.results[0]?.value.mutation)
-      .toHaveBeenCalledWith({
-        body: expect.objectContaining({
-          horizonStart: '2026-06-01',
-          horizonEnd: '2026-06-30',
-        }),
-      })
+    expect(
+      vi.mocked(runBusinessConsolePlanningMrpMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      }),
+    })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('tracks the accepted MRP run through queued/running to completed and stops polling', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+
+      // 受理即回执：runId + 排队态，不含任何计算结果。
+      expect(activeMrpRun.runId).toBe('run-1')
+      expect(activeMrpRun.status).toBe('queued')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('running')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Completed', suggestionCount: 5 }] },
+      })
+      coladaState.invalidateQueries.mockClear()
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('completed')
+      expect(activeMrpRun.suggestionCount).toBe(5)
+      // 完成后建议/KPI 读面统一失效重取。
+      expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
+        predicate: expect.any(Function),
+      })
+
+      // 终态后停止轮询。
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('exposes the failure reason when the tracked MRP run fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: {
+          items: [
+            {
+              runId: 'run-1',
+              status: 'Failed',
+              failureReason: 'MRP 计算失败：上游库存快照不可用。',
+            },
+          ],
+        },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+
+      expect(activeMrpRun.status).toBe('failed')
+      expect(activeMrpRun.failureReason).toBe('MRP 计算失败：上游库存快照不可用。')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks the tracked MRP run as polling-timeout when no terminal status arrives in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_TIMEOUT_MS + MRP_RUN_POLL_INTERVAL_MS)
+
+      // 轮询超时 ≠ 失败：后台可能仍在计算，只提示去运行列表回看。
+      expect(activeMrpRun.status).toBe('polling-timeout')
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('accepts a planning suggestion through generated mutation and refreshes planning queries', async () => {
@@ -341,6 +494,55 @@ describe('business planning composable', () => {
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 
+  it('rejects a planning suggestion with a trimmed reason and refreshes planning queries', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    const result = await rejectSuggestion({
+      suggestionId: 'suggestion-1',
+      reason: '  库存已另行调拨  ',
+    })
+
+    expect(rejectBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(rejectBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { suggestionId: 'suggestion-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+      // actor 由网关注入，body 只带 reason（且已 trim）。
+      body: { reason: '库存已另行调拨' },
+    })
+    expect(result.data?.rejected).toBe(true)
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('requires a non-empty reason within 128 chars before calling the reject endpoint', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    await expect(rejectSuggestion({ suggestionId: 'suggestion-1', reason: '   ' })).rejects.toThrow(
+      '请填写拒绝原因。',
+    )
+    await expect(
+      rejectSuggestion({ suggestionId: 'suggestion-1', reason: 'x'.repeat(129) }),
+    ).rejects.toThrow('拒绝原因不能超过 128 字。')
+
+    const optionsResult = vi.mocked(rejectBusinessConsolePlanningSuggestionMutationOptions).mock
+      .results[0]?.value
+    expect(optionsResult?.mutation).not.toHaveBeenCalled()
+    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('surfaces the server message when the reject envelope reports a soft failure', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    await expect(
+      rejectSuggestion({ suggestionId: 'suggestion-1', reason: 'trigger-soft-failure' }),
+    ).rejects.toThrow('建议已被其他计划员处理。')
+  })
+
   it('does not refresh planning queries when business context is empty', async () => {
     useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
     const planning = useBusinessPlanning()
@@ -349,9 +551,15 @@ describe('business planning composable', () => {
     await planning.refreshPlanning()
 
     expect(coladaState.refetchById.get('listBusinessConsolePlanningDemands')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('listBusinessConsolePlanningMpsBuckets')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsolePlanningMpsBuckets'),
+    ).not.toHaveBeenCalled()
     expect(coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('listBusinessConsolePlanningSuggestions')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('getBusinessConsolePlanningMrpPegging')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsolePlanningSuggestions'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('getBusinessConsolePlanningMrpPegging'),
+    ).not.toHaveBeenCalled()
   })
 })

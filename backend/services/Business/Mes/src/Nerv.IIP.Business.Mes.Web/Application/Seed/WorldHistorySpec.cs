@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 /// <summary>
@@ -30,6 +33,20 @@ public static class WorldHistorySpec
     public static string CollectionVoucherNo(int index) => $"JV-2026-C{index:D5}";
     public static string PurchaseOrderNo(int index) => $"PO-2026-{index:D4}";
     public static string PurchaseReceiptNo(int index) => $"PR-2026-{index:D4}";
+
+    /// <summary>
+    /// 与 DemandPlanning 世界历史规格逐字一致的销售订单计划建议公共 ID。
+    /// DemandPlanning 种子会实际落库该建议；MES 只引用这个已由同一事实流保证的 ID。
+    /// </summary>
+    public static Guid PlanningSuggestionIdForSalesOrder(string salesOrderNo)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(salesOrderNo);
+        var bytes = SHA256.HashData(
+            Encoding.UTF8.GetBytes($"nerv-iip:world-history:planning-suggestion:{salesOrderNo}"));
+        bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
+        bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
+        return new Guid(bytes.AsSpan(0, 16));
+    }
 
     /// <summary>本引擎产出的全部单据号前缀，供隔离性回归测试断言不与固定演示事实/规模块相交。</summary>
     public static readonly string[] NumberSegmentPrefixes =
@@ -130,6 +147,18 @@ public static class WorldHistorySpec
     public const double ShippedPositionThreshold = 0.878;
     public const double InProgressPositionThreshold = 0.969;
 
+    /// <summary>
+    /// 「已完工待发货」的订单条数（#1374）。
+    ///
+    /// 取自**已发货档的最末几张**——按时间轴排布下，那正是最近才完工的一批：
+    /// 工单已完工入库、成品在成品库、发货单已开，但仓库还没拣货复核发运。
+    /// 修复前全世界 2933 张出库单一律 <c>Completed</c>，演示走到「销售发货 → 拣货 → 复核 → 发运」
+    /// 这条最核心的仓储链路时**一个可点的对象都没有**。
+    ///
+    /// 数量刻意保持个位数：它只是给演示留几个可操作对象，不是要改写 §7 的状态分布。
+    /// </summary>
+    public const int PendingShipmentOrderCount = 3;
+
     #endregion
 
     /// <summary>本次生成覆盖的总订单数（跨 ERP/MES 必须一致）。</summary>
@@ -167,6 +196,39 @@ public static class WorldHistorySpec
                 var orderDate = ResolveOrderDate(weekStart, slot, volume, asOfDate);
                 plans.Add(BuildOrderPlan(index, total, orderDate));
             }
+        }
+
+        return PromotePendingShipments(plans);
+    }
+
+    /// <summary>
+    /// 把已发货档最末几张改判「已完工待发货」（#1374，条数见 <see cref="PendingShipmentOrderCount"/>）。
+    ///
+    /// <para>
+    /// 裁决点一 · **改判必须是后置遍历，不能塞进 <c>ResolveStage</c>**。
+    /// <c>BuildOrderPlan</c> 里 <c>ResolveStage</c> 之后还要抽 <c>leadTimeDays</c>；
+    /// 在阶段判定里多消费或少消费一次抽样，会把全世界每张订单的交期整体挪位。
+    /// 本方法只重写已建好计划的 <c>Stage</c> 字段，**零抽样消费**，其余字段逐字不变。
+    /// </para>
+    /// <para>
+    /// 裁决点二 · **取已发货档而不是最新订单**。待发货的前提是工单已完工入库；
+    /// 在制 / 已下达档的成品根本还没进库，挂发货单是假事实。已发货档的末尾在时间轴上
+    /// 紧邻在制档，正是「最近完工、交期就在眼前」的那几张。
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<WorldHistoryOrderPlan> PromotePendingShipments(
+        List<WorldHistoryOrderPlan> plans)
+    {
+        var promoted = 0;
+        for (var cursor = plans.Count - 1; cursor >= 0 && promoted < PendingShipmentOrderCount; cursor--)
+        {
+            if (plans[cursor].Stage != WorldHistoryOrderStage.Shipped)
+            {
+                continue;
+            }
+
+            plans[cursor] = plans[cursor] with { Stage = WorldHistoryOrderStage.PendingShipment };
+            promoted++;
         }
 
         return plans;
@@ -264,6 +326,12 @@ public enum WorldHistoryOrderStage
     /// <summary>已发货待收款：全量发货 + 应收挂账未收款 + 仅收入凭证。</summary>
     Shipped,
 
+    /// <summary>
+    /// 已完工待发货（#1374）：工单已完工入库、成品在成品库、发货单已开但**未发运**，
+    /// 因而没有发货出库流水、没有应收、没有凭证。仓储侧留一张可拣可复核可发运的出库单。
+    /// </summary>
+    PendingShipment,
+
     /// <summary>在制：工单已开工并有部分报工，未发货、无应收。</summary>
     InProgress,
 
@@ -294,8 +362,25 @@ public sealed record WorldHistoryOrderPlan(
     /// <summary>该阶段是否应产生工单（MES 侧据此决定是否写 <c>WO-2026-#####</c>）。</summary>
     public bool HasWorkOrder => Stage != WorldHistoryOrderStage.Cancelled;
 
-    /// <summary>该阶段是否应发货。</summary>
+    /// <summary>该阶段是否**已发运**（发货出库流水、应收与收入凭证都由它驱动）。</summary>
     public bool HasDelivery => Stage is WorldHistoryOrderStage.Settled or WorldHistoryOrderStage.Shipped;
+
+    /// <summary>
+    /// 该阶段是否有一张**已开未发运**的发货单（#1374）——演示当天由仓库拣货、复核、发运。
+    /// </summary>
+    public bool HasPendingShipment => Stage == WorldHistoryOrderStage.PendingShipment;
+
+    /// <summary>
+    /// 该阶段的工单是否已完工入库（成品已在成品库）。
+    ///
+    /// 与 <see cref="HasDelivery"/> 的区别只在**发没发运**：待发货档的成品同样在库，
+    /// 因此出货检验、装箱标签、补产工单挑选这些「完工即成立」的事实一律用本谓词，
+    /// 而不是用发运与否去判定——否则 #1374 抽走三张单会连带挪动补产工单的挑选下标。
+    /// </summary>
+    public bool IsProductionClosed =>
+        Stage is WorldHistoryOrderStage.Settled
+            or WorldHistoryOrderStage.Shipped
+            or WorldHistoryOrderStage.PendingShipment;
 
     /// <summary>该阶段是否应收款结案。</summary>
     public bool IsCollected => Stage == WorldHistoryOrderStage.Settled;

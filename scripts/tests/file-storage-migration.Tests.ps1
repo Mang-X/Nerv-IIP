@@ -83,6 +83,12 @@ try {
         -TimeoutSeconds 60 `
         -Name 'file-storage-migration-valid-config'
     $validText = @($validResult.Stdout, $validResult.Stderr) -join [Environment]::NewLine
+    $migrationText = Get-Content -LiteralPath $migrationScript -Raw
+    $connectionResolutionIndex = $migrationText.IndexOf('$connectionArgumentIndex = -1', [StringComparison]::Ordinal)
+    $validateOnlyIndex = $migrationText.IndexOf('if ($ValidateOnly)', [StringComparison]::Ordinal)
+    if ($connectionResolutionIndex -lt 0 -or $validateOnlyIndex -lt 0 -or $connectionResolutionIndex -gt $validateOnlyIndex) {
+        throw 'The valid ValidateOnly path must execute exact sensitive-argument resolution before it exits without restore or database access.'
+    }
     foreach ($expected in @('release-man-533-test', 'service=file-storage', 'targetDatabase=nerv_iip_filestorage_release')) {
         if (-not $validText.Contains($expected)) {
             throw "FileStorage migration validation output must contain '$expected'. Output: $validText"

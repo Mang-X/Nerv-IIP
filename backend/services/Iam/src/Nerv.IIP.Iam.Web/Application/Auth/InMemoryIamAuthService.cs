@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
@@ -163,8 +164,23 @@ public sealed class InMemoryIamAuthService(
                 resourceId)));
         }
 
-        return Task.FromResult(new IamAuthorizationCheckResult(
-            store.UserHasPermission(principal.UserId, organizationId, environmentId, permissionCode)));
+        var allowed = store.UserHasPermission(principal.UserId, organizationId, environmentId, permissionCode);
+        var scopeGrants = allowed
+            ? store.ListPermissionDataScopeGrants(
+                    principal.UserId,
+                    organizationId,
+                    environmentId,
+                    permissionCode)
+                .Select(x => new AuthorizationScopeGrant(
+                    x.SourceKind,
+                    x.SourceId,
+                    x.ScopeKind,
+                    x.ScopeId,
+                    x.ApplicablePermissionCodes,
+                    x.OrganizationWide))
+                .ToArray()
+            : [];
+        return Task.FromResult(new IamAuthorizationCheckResult(allowed, ScopeGrants: scopeGrants));
     }
 
     public Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(

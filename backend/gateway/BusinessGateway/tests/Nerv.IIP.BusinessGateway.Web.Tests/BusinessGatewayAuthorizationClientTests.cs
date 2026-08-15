@@ -28,10 +28,18 @@ public sealed class BusinessGatewayAuthorizationClientTests
                 "org-001",
                 "env-dev",
                 "sku",
-                "SKU-001"),
+                "SKU-001",
+                IncludePrincipalContext: true),
             CancellationToken.None);
 
         Assert.True(result.IsAllowed);
+        var grant = Assert.Single(result.ScopeGrants!);
+        Assert.Equal("role-worker", grant.SourceId);
+        Assert.Equal("workshop", grant.ScopeKind);
+        Assert.Equal("WS-MC", grant.ScopeId);
+        var role = Assert.Single(result.Roles!);
+        Assert.Equal("role-worker", role.Id);
+        Assert.Equal("一线操作工", role.DisplayName);
         Assert.Equal(HttpMethod.Post, handler.Requests.Single().Method);
         Assert.Equal("/custom/iam/check", handler.Requests.Single().RequestUri!.PathAndQuery);
         Assert.Equal("Bearer", handler.Requests.Single().Headers.Authorization!.Scheme);
@@ -43,6 +51,32 @@ public sealed class BusinessGatewayAuthorizationClientTests
         Assert.Equal("env-dev", payload.RootElement.GetProperty("environmentId").GetString());
         Assert.Equal("sku", payload.RootElement.GetProperty("resourceType").GetString());
         Assert.Equal("SKU-001", payload.RootElement.GetProperty("resourceId").GetString());
+        Assert.True(payload.RootElement.GetProperty("includePrincipalContext").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Http_authorization_client_accepts_legacy_three_field_data_scope_payload()
+    {
+        var handler = new RecordingHandler(_ => LegacyDataScopeAuthorizationResponse());
+        var client = CreateClient(handler);
+
+        var result = await client.CheckAsync(
+            "access-token-001",
+            new BusinessGatewayPermissionRequirement(
+                BusinessGatewayPermissions.MasterDataProductsRead,
+                "org-001",
+                "env-dev",
+                null,
+                null),
+            CancellationToken.None);
+
+        Assert.True(result.IsAllowed);
+        Assert.Equal(["WS-A"], result.DataScope!.WorkshopCodes);
+        Assert.True(result.DataScope.HasRestrictions);
+        Assert.Null(result.DataScope.SelfIds);
+        Assert.Null(result.DataScope.TeamCodes);
+        Assert.Null(result.DataScope.WorkCenterCodes);
+        Assert.Null(result.DataScope.OrganizationIds);
     }
 
     [Theory]
@@ -194,6 +228,23 @@ public sealed class BusinessGatewayAuthorizationClientTests
                 principalType = allowed ? "user" : null,
                 loginName = allowed ? "admin" : null,
                 denialReason = allowed ? null : "forbidden",
+                scopeGrants = allowed
+                    ? new[]
+                    {
+                        new
+                        {
+                            sourceKind = "role",
+                            sourceId = "role-worker",
+                            scopeKind = "workshop",
+                            scopeId = "WS-MC",
+                            applicablePermissionCodes = new[] { BusinessGatewayPermissions.MasterDataProductsRead },
+                            organizationWide = false,
+                        },
+                    }
+                    : null,
+                roles = allowed
+                    ? new[] { new { id = "role-worker", displayName = "一线操作工" } }
+                    : null,
             },
             success = true,
             message = string.Empty,
@@ -203,6 +254,33 @@ public sealed class BusinessGatewayAuthorizationClientTests
         return new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(content, System.Text.Encoding.UTF8, "application/json"),
+        };
+    }
+
+    private static HttpResponseMessage LegacyDataScopeAuthorizationResponse()
+    {
+        const string Content = """
+            {
+              "data": {
+                "allowed": true,
+                "principalId": "user-admin",
+                "principalType": "user",
+                "loginName": "admin",
+                "dataScope": {
+                  "siteCodes": [],
+                  "workshopCodes": ["WS-A"],
+                  "productionLineCodes": [],
+                  "denyAll": false
+                }
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """;
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(Content, System.Text.Encoding.UTF8, "application/json"),
         };
     }
 

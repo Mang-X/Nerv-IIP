@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -96,20 +97,40 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
             x.ReasonCode == HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode);
     }
 
+    /// <summary>
+    /// The fan-out limit is observed through a gate the test controls rather than a per-request hold time:
+    /// wait for the in-flight count to reach the limit (a real edge), then assert it <em>stays</em> there
+    /// while all 20 downstream requests are outstanding — that is what proves the 9th one is blocked.
+    /// Holding each response for 50 ms instead only ever supported an upper bound, which a machine slow
+    /// enough to serialize the requests satisfied vacuously. The barrier is the shared
+    /// <see cref="ConcurrencyFanOutGate"/>, so this test and the MasterData SKU-detail fan-out test cannot
+    /// drift apart again on cancellation handling or on the diagnostic they report.
+    /// </summary>
     [Fact]
     public async Task QueryAsync_LargeResourceSet_LimitsConcurrentDownstreamRequests()
     {
-        var tracker = new ConcurrentRequestTracker();
+        const int expectedTotalRequests = 20;
+        const int limit = HttpSchedulingEquipmentAvailabilityProvider.MaxConcurrentAvailabilityQueries;
+        var gate = new ConcurrencyFanOutGate("downstream availability");
         var provider = new HttpSchedulingEquipmentAvailabilityProvider(
-            new ConcurrentHttpClientFactory(tracker),
+            new ConcurrentHttpClientFactory(gate),
             null,
             NullLogger<HttpSchedulingEquipmentAvailabilityProvider>.Instance);
         var problem = CreateProblem(451);
 
-        await provider.QueryAsync(problem, CancellationToken.None);
+        var pending = provider.QueryAsync(problem, CancellationToken.None);
 
-        Assert.Equal(20, tracker.TotalRequests);
-        Assert.InRange(tracker.MaxInFlight, 1, HttpSchedulingEquipmentAvailabilityProvider.MaxConcurrentAvailabilityQueries);
+        await gate.WaitForInFlightAsync(limit, TimeSpan.FromSeconds(10));
+        await gate.StaysWithinAsync(
+            limit,
+            TimeSpan.FromMilliseconds(250),
+            scope: $"all {expectedTotalRequests} batches are outstanding");
+
+        gate.Release();
+        await pending;
+
+        Assert.Equal(expectedTotalRequests, gate.TotalEntries);
+        Assert.Equal(limit, gate.MaxInFlight);
     }
 
     [Fact]
@@ -264,74 +285,29 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
 
     private sealed record CapturedRequest(string ClientName, HttpRequestMessage Request);
 
-    private sealed class ConcurrentHttpClientFactory(ConcurrentRequestTracker tracker) : IHttpClientFactory
+    private sealed class ConcurrentHttpClientFactory(ConcurrencyFanOutGate gate) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) =>
-            new(new ConcurrentAvailabilityHandler(tracker, name))
+            new(new ConcurrentAvailabilityHandler(gate, name))
             {
                 BaseAddress = new Uri("http://localhost")
             };
     }
 
     private sealed class ConcurrentAvailabilityHandler(
-        ConcurrentRequestTracker tracker,
+        ConcurrencyFanOutGate gate,
         string clientName) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
-            CancellationToken cancellationToken) =>
-            tracker.SendAsync(request, clientName, cancellationToken);
-    }
-
-    private sealed class ConcurrentRequestTracker
-    {
-        private int currentInFlight;
-        private int maxInFlight;
-        private int totalRequests;
-
-        public int MaxInFlight => maxInFlight;
-
-        public int TotalRequests => totalRequests;
-
-        public async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            string clientName,
             CancellationToken cancellationToken)
         {
-            Interlocked.Increment(ref totalRequests);
-            var current = Interlocked.Increment(ref currentInFlight);
-            TrackMax(current);
-
-            try
-            {
-                await Task.Delay(50, cancellationToken);
-                var deviceAssetId = QueryList(request, "deviceAssetIds").First();
-                var reasonCode = clientName == HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName
-                    ? EquipmentRuntimeReasonCodes.ActiveAlarm
-                    : EquipmentRuntimeReasonCodes.MaintenanceWindow;
-                return AvailabilityResponse(deviceAssetId, reasonCode);
-            }
-            finally
-            {
-                Interlocked.Decrement(ref currentInFlight);
-            }
-        }
-
-        private void TrackMax(int current)
-        {
-            while (true)
-            {
-                var snapshot = maxInFlight;
-                if (current <= snapshot)
-                {
-                    return;
-                }
-
-                if (Interlocked.CompareExchange(ref maxInFlight, current, snapshot) == snapshot)
-                {
-                    return;
-                }
-            }
+            await gate.PassAsync(cancellationToken);
+            var deviceAssetId = QueryList(request, "deviceAssetIds").First();
+            var reasonCode = clientName == HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName
+                ? EquipmentRuntimeReasonCodes.ActiveAlarm
+                : EquipmentRuntimeReasonCodes.MaintenanceWindow;
+            return AvailabilityResponse(deviceAssetId, reasonCode);
         }
     }
 }

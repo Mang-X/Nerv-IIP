@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -7,12 +8,13 @@ using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
 using Npgsql;
+using RedisMaintenanceDistributedLock = Nerv.IIP.DistributedLocking.RedisCommandDistributedLock;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -119,10 +121,10 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     [MaintenanceRealPostgresFact]
     public async Task Device_disabled_consumer_durably_blocks_pm_generation_on_postgres()
     {
-        var baseConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(baseConnectionString, "maintenance_device_pause");
-        await using (var dbContext = CreatePostgresDbContext(database.ConnectionString))
+        await ResetMaintenanceSchemaAsync();
+        await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
         {
+            AssertUsesGovernedDatabase(dbContext);
             await dbContext.Database.MigrateAsync();
             dbContext.MaintenancePlans.Add(MaintenancePlan.Create(
                 "org-001", "env-dev", "DEV-CNC-01", "PM-POSTGRES", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
@@ -137,7 +139,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             await handler.HandleAsync(disabled, CancellationToken.None);
         }
 
-        await using var assertionContext = CreatePostgresDbContext(database.ConnectionString);
+        await using var assertionContext = CreatePostgresDbContext(LaneConnectionString);
         var persistedPlan = await assertionContext.MaintenancePlans.SingleAsync();
         Assert.True(persistedPlan.Paused);
         Assert.Equal(1, await assertionContext.ProcessedIntegrationEvents.CountAsync());
@@ -162,7 +164,9 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var generateLock = await new GenerateDueMaintenanceWorkOrdersCommandLock().GetLockKeysAsync(generateCommand, CancellationToken.None);
         var sharedLockKey = applyLock.LockKey ?? throw new InvalidOperationException("Device-state command lock key is required.");
         Assert.Equal(sharedLockKey, generateLock.LockKey);
-        var distributedLock = new RedisMaintenanceDistributedLock(new InMemoryRedisCommandLockStore(), TimeProvider.System);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            new InMemoryRedisCommandLockStore(TimeProvider.System),
+            TimeProvider.System);
         var applyHasLock = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowApplyCommit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var generationAttempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -172,7 +176,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             await using var handle = await distributedLock.AcquireAsync(sharedLockKey, TimeSpan.FromSeconds(5), CancellationToken.None);
             applyHasLock.SetResult();
             await allowApplyCommit.Task;
-            await using var applyContext = CreatePostgresDbContext(database.ConnectionString);
+            await using var applyContext = CreatePostgresDbContext(LaneConnectionString);
             await new ApplyMaintenanceDeviceStateCommandHandler(applyContext).Handle(applyCommand, CancellationToken.None);
             await applyContext.SaveChangesAsync();
         });
@@ -182,7 +186,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         {
             generationAttempted.SetResult();
             await using var handle = await distributedLock.AcquireAsync(sharedLockKey, TimeSpan.FromSeconds(5), CancellationToken.None);
-            await using var generationContext = CreatePostgresDbContext(database.ConnectionString);
+            await using var generationContext = CreatePostgresDbContext(LaneConnectionString);
             var result = await new GenerateDueMaintenanceWorkOrdersCommandHandler(generationContext).Handle(generateCommand, CancellationToken.None);
             await generationContext.SaveChangesAsync();
             return result;
@@ -198,7 +202,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var concurrentGeneration = await generateTask;
 
         Assert.Equal(0, concurrentGeneration.GeneratedCount);
-        await using var raceAssertionContext = CreatePostgresDbContext(database.ConnectionString);
+        await using var raceAssertionContext = CreatePostgresDbContext(LaneConnectionString);
         Assert.True((await raceAssertionContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-POSTGRES-RACE")).Paused);
         Assert.True((await raceAssertionContext.MaintenanceDeviceStates.SingleAsync(x => x.DeviceAssetId == "DEV-CNC-02")).Disabled);
         Assert.Empty(await raceAssertionContext.MaintenanceWorkOrders.ToArrayAsync());
@@ -624,56 +628,31 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         }
     }
 
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
+    // NERV-688 拆解③：Maintenance 的设备停机 PostgreSQL 验收用例使用 lane runner 注入的成员数据库
+    // （NERV_IIP_TEST_POSTGRES），不再自建内层数据库——内层数据库外层既读不到失败诊断，也证明不了清理。
+    private static string LaneConnectionString =>
+        Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)
+        ?? throw new InvalidOperationException(
+            $"{PostgresConnectionStringEnvironmentVariable} must be set for the Maintenance device-pause acceptance test.");
+
+    private static async Task ResetMaintenanceSchemaAsync()
     {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
+        await using var connection = new NpgsqlConnection(LaneConnectionString);
+        await connection.OpenAsync();
+        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MaintenanceFacts.Schema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
 
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-            };
-            var databaseName = $"nerv_iip_{prefix}_{Guid.CreateVersion7():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            NpgsqlConnection.ClearAllPools();
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", databaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
-        }
+    private static void AssertUsesGovernedDatabase(ApplicationDbContext dbContext)
+    {
+        var governed = new NpgsqlConnectionStringBuilder(LaneConnectionString);
+        var observed = new NpgsqlConnectionStringBuilder(dbContext.Database.GetDbConnection().ConnectionString);
+        // 只比库名不足以证明"跑在受治理的成员库上"：同名库可能在另一台主机或另一个端口。
+        Assert.Equal(
+            (governed.Host, governed.Port, governed.Database),
+            (observed.Host, observed.Port, observed.Database));
     }
 
     private sealed class MaintenanceRealPostgresFactAttribute : FactAttribute

@@ -7,9 +7,14 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import {
+  useEquipmentUomCatalog,
+  useMaintenanceDocumentCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   COMMON_INSPECTION_CHARACTERISTICS,
@@ -22,6 +27,7 @@ import {
 import {
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -95,6 +101,11 @@ function personLabel(userId: string) {
   )
 }
 
+// 关联单据与测量单位都从既有读面选，不手输 ID / 单位码。
+const { planOptions, plansPending, workOrderOptions, workOrdersPending } =
+  useMaintenanceDocumentCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
+
 const resultOptions = [
   { label: '通过', value: 'passed' },
   { label: '异常', value: 'failed' },
@@ -150,26 +161,35 @@ const listErrorMessage = computed(() => formatError(inspectionsError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const recordErrorMessage = computed(() => recordError.value)
 
+// 测量值只回单位编码（mm / EA），中文名在主数据计量单位里。
+const { formatUom } = useMasterDataDisplayNames({ uoms: true })
+
 type InspectionRow = BusinessConsoleMaintenanceInspectionItem
 type MeasurementItem = BusinessConsoleMaintenanceInspectionMeasurementItem
 const columns: NvDataTableColumn<InspectionRow>[] = [
+  // 点检记录没有人读单号（inspectionId 是 GUID），以「点检时间」作主列。
   {
-    key: 'inspectionId',
-    header: '点检记录',
+    key: 'inspectedAt',
+    header: '点检时间',
     cellClass: 'font-medium',
-    accessor: (r) => inspectionNo(r),
+    accessor: (r) => formatDateTime(r.inspectedAtUtc),
   },
-  { key: 'planId', header: '保养计划', accessor: (r) => r.planId ?? '未关联' },
-  { key: 'workOrderId', header: '维修工单', accessor: (r) => r.workOrderId ?? '未关联' },
+  // planId / workOrderId 都只有 GUID（读面缺 planCode / workOrderNo）——GUID 不上屏，
+  // 先如实留白，跳转由「操作」列承载；已登记为后端缺口。
+  { key: 'planId', header: '保养计划', accessor: (r) => (r.planId ? '—' : '未关联') },
+  { key: 'workOrderId', header: '维修工单', accessor: (r) => (r.workOrderId ? '—' : '未关联') },
   { key: 'inspector', header: '点检人', accessor: (r) => r.inspector ?? '未记录' },
   { key: 'result', header: '结果', width: 'w-24' },
   { key: 'measurements', header: '测量值', width: 'w-40' },
-  { key: 'inspectedAtUtc', header: '点检时间', accessor: (r) => formatDateTime(r.inspectedAtUtc) },
 ]
 
+/**
+ * 点检记录的抬头说法。以前拿 inspectionId（GUID）尾 8 位拼 `INSP-XXXXXXXX` 冒充记录号——
+ * 那是编造出来的号，改用「点检人 + 点检时间」这组真实事实指认这条记录。
+ */
 function inspectionNo(row: InspectionRow) {
-  const id = row.inspectionId ?? ''
-  return id ? `INSP-${id.slice(-8).toUpperCase()}` : '点检记录'
+  const parts = [row.inspector, formatDateTime(row.inspectedAtUtc)].filter(Boolean)
+  return parts.length ? `点检 · ${parts.join(' · ')}` : '点检详情'
 }
 function rowKey(row: InspectionRow) {
   return (
@@ -177,9 +197,9 @@ function rowKey(row: InspectionRow) {
   )
 }
 function resultLabel(value?: string | null) {
-  return (
-    resultOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '未知'
-  )
+  // 选项里没有的结果就说「未知结果」，绝不把后端英文码回吐到界面上。
+  if (!value) return '未知'
+  return resultOptions.find((o) => o.value === value.toLowerCase())?.label ?? '未知结果'
 }
 // 后端已算 isWithinSpec：超差 = 明确 false（未判定的 undefined 不当作超差）。
 function measurementOutOfSpec(m: MeasurementItem) {
@@ -262,7 +282,7 @@ async function submitRecord() {
     recordOpen.value = false
     notifySuccess('点检记录已提交')
   } catch (error) {
-    notifyError(error, '点检记录提交失败，请稍后重试。')
+    notifyOperationFailure('点检记录提交失败', error, '点检记录提交失败，请稍后重试。')
   }
 }
 
@@ -272,7 +292,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -320,7 +340,9 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="暂无点检记录。可从保养计划或维修工单补录点检结果。"
     >
-      <template #cell-result="{ row }"><NvStatusBadge :value="resultLabel(row.result)" /></template>
+      <template #cell-result="{ row }"
+        ><NvStatusBadge :value="row.result" :label="resultLabel(row.result)"
+      /></template>
       <template #cell-measurements="{ row }">
         <button
           v-if="(row.measurements?.length ?? 0) > 0"
@@ -355,20 +377,32 @@ function formatError(error: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="insp-plan">保养计划</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="insp-plan"
                 v-model="recordForm.planId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="planOptions"
+                title="选择保养计划"
+                placeholder="可选，选择保养计划"
+                source-text="数据来自保养计划"
+                empty-text="暂无保养计划，可先在保养计划登记周期保养"
+                :loading="plansPending"
+                clearable
+                aria-label="保养计划"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="insp-work-order">维修工单</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="insp-work-order"
                 v-model="recordForm.workOrderId"
-                autocomplete="off"
-                placeholder="可选"
+                :options="workOrderOptions"
+                title="选择维修工单"
+                placeholder="可选，选择维修工单"
+                source-text="数据来自维护工单"
+                empty-text="暂无维护工单"
+                :loading="workOrdersPending"
+                clearable
+                aria-label="维修工单"
               />
             </NvField>
             <NvField>
@@ -445,11 +479,17 @@ function formatError(error: unknown) {
                 </NvField>
                 <NvField>
                   <NvFieldLabel :for="`m-uom-${row.id}`">单位</NvFieldLabel>
-                  <NvInput
+                  <NvEntityPicker
                     :id="`m-uom-${row.id}`"
                     v-model="row.uomCode"
-                    autocomplete="off"
-                    placeholder="如 ℃"
+                    :options="uomOptions"
+                    title="选择单位"
+                    placeholder="选择单位"
+                    source-text="数据来自基础数据计量单位"
+                    empty-text="暂无计量单位，请先在基础数据维护单位"
+                    :loading="uomsPending"
+                    clearable
+                    aria-label="测量单位"
                   />
                 </NvField>
               </div>
@@ -553,7 +593,7 @@ function formatError(error: unknown) {
             </div>
             <div class="text-sm text-muted-foreground">
               测量 <span class="tabular-nums text-foreground">{{ m.measuredValue ?? '—' }}</span>
-              {{ m.uomCode ?? '' }} · 规格 {{ measurementRange(m) }}
+              {{ formatUom(m.uomCode, '') }} · 规格 {{ measurementRange(m) }}
             </div>
           </div>
 

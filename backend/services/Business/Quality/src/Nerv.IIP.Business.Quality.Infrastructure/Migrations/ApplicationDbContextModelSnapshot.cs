@@ -724,11 +724,17 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Inspection task aggregate id.");
 
+                    b.Property<string>("AssignedTeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_team_id")
+                        .HasComment("Optional trusted team id that owns the inspection work pool.");
+
                     b.Property<string>("AssignedUserId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("assigned_user_id")
-                        .HasComment("Optional inspector user id that started the task.");
+                        .HasComment("Optional currently assigned inspector principal id.");
 
                     b.Property<string>("BatchNo")
                         .HasMaxLength(100)
@@ -857,6 +863,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the task was last changed.");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic version advanced for assignment and lifecycle changes.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "TriggerIdempotencyKey")
@@ -866,6 +878,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "Status", "DueAtUtc")
                         .HasDatabaseName("ix_inspection_tasks_scope_status_due");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTeamId", "Status", "DueAtUtc", "Id")
+                        .HasDatabaseName("ix_inspection_tasks_team_scope");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "AssignedUserId", "Status", "DueAtUtc", "Id")
+                        .HasDatabaseName("ix_inspection_tasks_inspector_scope");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SourceDocumentLineId", "SkuCode")
                         .IsUnique()
                         .HasDatabaseName("ux_inspection_tasks_scope_source_sku");
@@ -873,6 +891,115 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("inspection_tasks", "quality", t =>
                         {
                             t.HasComment("Quality pending inspection task facts generated from upstream receipt and production events.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate.InspectionTaskAssignmentReceipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Assignment receipt id.");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("action")
+                        .HasComment("Assignment action: assign, claim or transfer.");
+
+                    b.Property<string>("ActorPrincipalId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("actor_principal_id")
+                        .HasComment("Trusted authenticated actor principal id.");
+
+                    b.Property<string>("AssignedInspectorUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_inspector_user_id")
+                        .HasComment("Inspector assignment after the action.");
+
+                    b.Property<string>("AssignedTeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("assigned_team_id")
+                        .HasComment("Team assignment after the action.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the receipt was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Stable action intent key.");
+
+                    b.Property<Guid>("InspectionTaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("inspection_task_id")
+                        .HasComment("Inspection task id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("Canonical action payload fingerprint.");
+
+                    b.Property<string>("PreviousInspectorUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("previous_inspector_user_id")
+                        .HasComment("Inspector assignment before the action.");
+
+                    b.Property<string>("PreviousTeamId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("previous_team_id")
+                        .HasComment("Team assignment before the action.");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason")
+                        .HasComment("Required transfer reason or optional assignment note.");
+
+                    b.Property<long>("ResultVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("result_version")
+                        .HasComment("Authoritative task version after the action.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InspectionTaskId", "CreatedAtUtc")
+                        .HasDatabaseName("ix_inspection_task_assignment_receipts_task");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InspectionTaskId", "Action", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_inspection_task_assignment_receipts_key");
+
+                    b.ToTable("inspection_task_assignment_receipts", "quality", t =>
+                        {
+                            t.HasComment("Durable idempotency and audit receipts for inspection task assignment, claim and transfer.");
                         });
                 });
 

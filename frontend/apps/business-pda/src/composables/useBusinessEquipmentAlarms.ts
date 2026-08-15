@@ -1,16 +1,31 @@
 import {
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
+  listBusinessConsoleEquipmentAlarms,
+  confirmBusinessConsoleOperation,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
   shelveBusinessConsoleEquipmentAlarmMutationOptions,
   type BusinessConsoleEquipmentAlarmListEnvelope,
   type BusinessConsoleTelemetryAlarmEventItem,
 } from '@nerv-iip/api-client'
-import { alarmLifecycleSortWeight } from '@nerv-iip/business-core'
+import {
+  acquirePendingBusinessIntent,
+  alarmLifecycleSortWeight,
+  clearPendingBusinessIntent,
+  completePendingBusinessIntent,
+  peekPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import {
+  useListFreshness,
+  useListResponseState,
+  useScopeBoundListResponse,
+} from '@/composables/useListFreshness'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import { useTaskListPagination, type TaskListPage } from '@/composables/useTaskListPagination'
 
-const DEFAULT_TAKE = 100
+const DEFAULT_TAKE = 20
 
 /** 搁置时长档位（分钟）——交互稿固定三档：30 分钟 / 2 小时 / 8 小时。 */
 export const ALARM_SHELVE_DURATIONS_MINUTES = [30, 120, 480] as const
@@ -23,6 +38,7 @@ export interface EquipmentAlarmFilters {
   skip: number
   take: number
   deviceAssetId?: string
+  status?: string
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -64,8 +80,12 @@ function authScope() {
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const actor = computed(() => auth.principal?.loginName ?? '')
+  const principalId = computed(
+    () => auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+  )
   const scopeReady = computed(() => Boolean(organizationId.value && environmentId.value))
-  return { organizationId, environmentId, actor, scopeReady }
+  const scopeKey = computed(() => `${organizationId.value.trim()}:${environmentId.value.trim()}`)
+  return { organizationId, environmentId, actor, principalId, scopeReady, scopeKey }
 }
 
 /**
@@ -73,8 +93,9 @@ function authScope() {
  * 全量口径，不受列表首页 take 上限影响（>100 时也不会把角标算成 0）。`take:1` 只为省流量，
  * `total` 仍是符合条件的全部条数。
  */
-export function useUnacknowledgedAlarmCount() {
-  const { organizationId, environmentId, scopeReady } = authScope()
+export function useUnacknowledgedAlarmCount(enabled: MaybeRefOrGetter<boolean> = true) {
+  const { organizationId, environmentId, scopeReady, scopeKey } = authScope()
+  const queryEnabled = computed(() => scopeReady.value && toValue(enabled))
   const raisedQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
       query: {
@@ -85,14 +106,27 @@ export function useUnacknowledgedAlarmCount() {
         take: 1,
       },
     }),
-    enabled: scopeReady.value,
+    // 调用方可再按权限门（如首页仅报警读权限主体才查询）。
+    enabled: queryEnabled.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => raisedQuery.data.value,
+    scopeKey,
+    queryEnabled,
+  )
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    queryEnabled,
+    raisedQuery.isLoading,
+  )
 
   return {
     unacknowledgedCount: computed(() =>
-      listTotal(raisedQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
+      listTotal(currentResponse.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
     ),
     pending: raisedQuery.isLoading,
+    hasSuccessfulResponse,
+    hasFailedResponse,
   }
 }
 
@@ -105,14 +139,13 @@ export function useUnacknowledgedAlarmCount() {
  * 全部未确认在前，已处理项不会插到未确认之前；前端再做一次同口径排序仅为兜底。角标另用
  * {@link useUnacknowledgedAlarmCount} 的 `status=raised` total（全量准确）。
  *
- * **幂等（断网/延迟重投不重复）**：`shelve` 携带调用方铸造的**持久幂等键** `idempotencyKey`，
- * 后端 `AlarmEvent.ShelveIdempotencyKey` 记录最后一次已应用的搁置操作键，**同键的延迟重复投递
- * 一律 no-op**（即便原窗口已过期/解除回到 raised），这是稳定时间戳单独做不到的。`acknowledge`
- * 领域侧 `AcknowledgedAtUtc is not null` 即 first-write-wins，天然幂等，无需额外键。页面对
- * 「已发出但结果未知」的失败不盲目重试（交给 verify）。
+ * **幂等（断网/延迟重投不重复）**：`acknowledge` 与 `shelve` 都携带意图级**持久幂等键**
+ * `idempotencyKey`。结果未知时保留同一键和时间戳，后端以报警生命周期资源锁与持久回执收敛
+ * 重复投递；同键更换报警、动作或载荷会 fail closed。页面对「已发出但结果未知」的失败先回读，
+ * 不创建新意图盲重放。
  */
 export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlarmFilters> = {}) {
-  const { organizationId, environmentId, actor, scopeReady } = authScope()
+  const { organizationId, environmentId, actor, principalId, scopeReady, scopeKey } = authScope()
   const queryCache = useQueryCache()
   const filters = reactive<EquipmentAlarmFilters>({
     skip: 0,
@@ -128,10 +161,22 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
         skip: filters.skip,
         take: filters.take,
         ...optionalQuery('deviceAssetId', filters.deviceAssetId),
+        ...optionalQuery('status', filters.status),
       },
     }),
     enabled: scopeReady.value,
   }))
+  const currentResponse = useScopeBoundListResponse(
+    () => listQuery.data.value,
+    scopeKey,
+    scopeReady,
+  )
+  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
+  const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
+    currentResponse,
+    scopeReady,
+    listQuery.isLoading,
+  )
 
   const invalidate = () =>
     void queryCache.invalidateQueries({ predicate: isAlarmsQuery }).catch(ignoreBackgroundError)
@@ -150,16 +195,78 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     environmentId: environmentId.value,
   })
 
-  /** 确认。`atUtc` 由调用方铸造并跨重试复用；领域 first-write-wins 保证重复确认为 no-op。 */
-  async function acknowledge(alarmEventId: string, atUtc: string) {
-    return acknowledgeMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...contextBody(),
-        acknowledgedAtUtc: atUtc,
-        acknowledgedBy: actor.value,
+  async function readExactAlarm(alarmEventId: string) {
+    const { data } = await listBusinessConsoleEquipmentAlarms({
+      query: {
+        organizationId: organizationId.value,
+        environmentId: environmentId.value,
+        alarmEventId,
+        skip: 0,
+        take: 2,
       },
+      throwOnError: true,
     })
+    const matches = listItems<BusinessConsoleTelemetryAlarmEventItem>(
+      data as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
+    ).filter((alarm) => alarm.alarmEventId === alarmEventId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  /** 确认。意图键与 `atUtc` 都跨结果未知的重试复用，直到回执确认后才清除。 */
+  async function acknowledge(alarmEventId: string, atUtc: string) {
+    const intentScope = {
+      principalId: principalId.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'iiot.alarm.acknowledge',
+      payloadFingerprint: JSON.stringify({ alarmEventId }),
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(intentScope))
+    const pending = acquirePendingBusinessIntent(
+      intentScope,
+      () => globalThis.crypto?.randomUUID?.() ?? `alarm-acknowledge-${Date.now()}-${Math.random()}`,
+      { acknowledgedAtUtc: atUtc },
+    )
+    try {
+      const authoritative = await readExactAlarm(alarmEventId)
+      assertLifecycleActionExecutable({
+        domain: 'iiot-alarm',
+        action: 'acknowledge',
+        facts: {
+          status: authoritative?.status,
+          acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+          idempotentReplay: isReplay,
+        },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(intentScope)
+      throw error
+    }
+    const acknowledgedAtUtcSnapshot = (
+      pending.payloadSnapshot as { acknowledgedAtUtc?: unknown } | undefined
+    )?.acknowledgedAtUtc
+    const acknowledgedAtUtc =
+      typeof acknowledgedAtUtcSnapshot === 'string' && acknowledgedAtUtcSnapshot.trim()
+        ? acknowledgedAtUtcSnapshot
+        : atUtc
+    return completePendingBusinessIntent(intentScope, async () =>
+      confirmBusinessConsoleOperation(
+        await acknowledgeMutation.mutateAsync({
+          path: { alarmEventId },
+          body: {
+            ...contextBody(),
+            acknowledgedAtUtc,
+            acknowledgedBy: actor.value,
+            idempotencyKey: pending.idempotencyKey,
+          },
+        }),
+        {
+          expectedOperationType: 'iiot.alarm.acknowledge',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: alarmEventId,
+        },
+      ),
+    )
   }
 
   /**
@@ -173,25 +280,109 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     idempotencyKey: string,
     reason?: string,
   ) {
-    return shelveMutation.mutateAsync({
-      path: { alarmEventId },
-      body: {
-        ...contextBody(),
+    const intentScope = {
+      principalId: principalId.value,
+      organizationId: organizationId.value,
+      environmentId: environmentId.value,
+      operationType: 'iiot.alarm.shelve',
+      payloadFingerprint: JSON.stringify({
+        alarmEventId,
         durationMinutes,
-        shelvedAtUtc: atUtc,
-        shelvedBy: actor.value,
-        idempotencyKey,
-        ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
-      },
+        reason: reason?.trim() ?? '',
+      }),
+    }
+    const isReplay = Boolean(peekPendingBusinessIntent(intentScope))
+    const pending = acquirePendingBusinessIntent(intentScope, () => idempotencyKey, {
+      shelvedAtUtc: atUtc,
     })
+    try {
+      const authoritative = await readExactAlarm(alarmEventId)
+      assertLifecycleActionExecutable({
+        domain: 'iiot-alarm',
+        action: 'shelve',
+        facts: {
+          status: authoritative?.status,
+          acknowledgedAtUtc: authoritative?.acknowledgedAtUtc,
+          shelvedAtUtc: authoritative?.shelvedAtUtc,
+          shelvedUntilUtc: authoritative?.shelvedUntilUtc,
+          evaluatedAtUtc: atUtc,
+          idempotentReplay: isReplay,
+        },
+      })
+    } catch (error) {
+      if (!isReplay) clearPendingBusinessIntent(intentScope)
+      throw error
+    }
+    const shelvedAtUtcSnapshot = (pending.payloadSnapshot as { shelvedAtUtc?: unknown } | undefined)
+      ?.shelvedAtUtc
+    const shelvedAtUtc =
+      typeof shelvedAtUtcSnapshot === 'string' && shelvedAtUtcSnapshot.trim()
+        ? shelvedAtUtcSnapshot
+        : atUtc
+    return completePendingBusinessIntent(intentScope, async () =>
+      confirmBusinessConsoleOperation(
+        await shelveMutation.mutateAsync({
+          path: { alarmEventId },
+          body: {
+            ...contextBody(),
+            durationMinutes,
+            shelvedAtUtc,
+            shelvedBy: actor.value,
+            idempotencyKey: pending.idempotencyKey,
+            ...(reason && reason.trim() ? { reason: reason.trim() } : {}),
+          },
+        }),
+        {
+          expectedOperationType: 'iiot.alarm.shelve',
+          expectedIdempotencyKey: pending.idempotencyKey,
+          expectedResourceId: alarmEventId,
+        },
+      ),
+    )
   }
 
+  const firstPage = computed<TaskListPage<BusinessConsoleTelemetryAlarmEventItem> | undefined>(
+    () => {
+      const envelope = currentResponse.value as
+        | BusinessConsoleEquipmentAlarmListEnvelope
+        | undefined
+      if (envelope?.success !== true) return undefined
+      return {
+        items: envelope.data?.items ?? [],
+        total: envelope.data?.total ?? 0,
+      }
+    },
+  )
+  const listIdentity = computed(
+    () => `${scopeKey.value}:${filters.deviceAssetId ?? ''}:${filters.status ?? ''}`,
+  )
+  const pager = useTaskListPagination({
+    identity: listIdentity,
+    firstPage,
+    pageSize: DEFAULT_TAKE,
+    itemKey: (item) => item.alarmEventId ?? '',
+    fetchPage: async ({ skip, take }) => {
+      const { data } = await listBusinessConsoleEquipmentAlarms({
+        query: {
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
+          skip,
+          take,
+          ...optionalQuery('deviceAssetId', filters.deviceAssetId),
+          ...optionalQuery('status', filters.status),
+        },
+        throwOnError: true,
+      })
+      const envelope = data as BusinessConsoleEquipmentAlarmListEnvelope | undefined
+      if (envelope?.success !== true) throw new Error('报警下一页加载失败，请重试。')
+      return { items: envelope.data?.items ?? [], total: envelope.data?.total ?? 0 }
+    },
+    refreshFirstPage: listQuery.refetch,
+  })
+
   const alarms = computed<BusinessConsoleTelemetryAlarmEventItem[]>(() => {
-    const items = listItems<BusinessConsoleTelemetryAlarmEventItem>(
-      listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined,
-    )
     // 服务端已按生命周期排好；前端同口径再排一次兜底（稳定副本，不改原数组）。
-    return [...items].sort((a, b) => {
+    return [...pager.items.value].sort((a, b) => {
       const weightDiff = alarmLifecycleSortWeight(a.status) - alarmLifecycleSortWeight(b.status)
       if (weightDiff !== 0) return weightDiff
       return (b.raisedAtUtc ?? '').localeCompare(a.raisedAtUtc ?? '')
@@ -201,9 +392,18 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
   return {
     filters,
     alarms,
-    total: computed(() =>
-      listTotal(listQuery.data.value as BusinessConsoleEquipmentAlarmListEnvelope | undefined),
-    ),
+    total: pager.total,
+    loaded: pager.loaded,
+    hasMore: pager.hasMore,
+    loadingMore: pager.loadingMore,
+    refreshing: pager.refreshing,
+    loadMoreError: pager.loadMoreError,
+    organizationId,
+    environmentId,
+    scopeReady,
+    lastUpdatedAt,
+    hasSuccessfulResponse,
+    hasFailedResponse,
     pending: listQuery.isLoading,
     error: listQuery.error,
     actionPending: computed(
@@ -211,6 +411,7 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     ),
     acknowledge,
     shelve,
-    refresh: () => (scopeReady.value ? listQuery.refetch() : Promise.resolve()),
+    loadMore: pager.loadMore,
+    refresh: () => (scopeReady.value ? pager.refresh() : Promise.resolve()),
   }
 }

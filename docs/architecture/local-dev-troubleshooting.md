@@ -1,132 +1,149 @@
-# Local Dev & Aspire Troubleshooting
+# 本地开发与 Aspire 排障
 
-Operational lessons for running the platform locally. Extracted from the root
-`AGENTS.md` "Common Mistakes" list so the agent instruction file stays lean;
-consult this file when local startup, Aspire, infra containers, or deployment
-artifacts misbehave. The hard invariants (use `nerv.ps1`/Aspire CLI, AppHost is
-the topology source, pinned infra images) remain in `AGENTS.md`.
+本文承载本地启动、Aspire、基础设施容器和部署产物的排障规则。部署拓扑由
+`docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与
+`docs/architecture/deployment-baseline.md` 承载。
 
-## Startup & lifecycle
+## 启动与生命周期
 
-1. **Never start AppHost with `dotnet run`.** The platform AppHost must be
-   managed by Aspire CLI: `.\nerv.ps1 dev` / `aspire start`, `.\nerv.ps1 stop` /
-   `aspire stop`, `.\nerv.ps1 wait <resource>`, `.\nerv.ps1 logs <resource>`.
-   In linked worktrees, startup must use Aspire isolated mode; `scripts/dev.ps1`
-   handles this. Direct `dotnet run` leaves stale DCP/backchannel state and makes
-   later `aspire add`, deploy, and diagnostics unreliable.
+1. **绝不得使用 `dotnet run` 启动 AppHost。** 平台 AppHost 必须由 Aspire CLI 管理：
+   `.\nerv.ps1 dev` / `aspire start`、`.\nerv.ps1 stop` /
+   `aspire stop`、`.\nerv.ps1 wait <resource>`、`.\nerv.ps1 logs <resource>`。
+   链接工作树（linked worktree）中启动必须使用 Aspire 隔离模式（isolated mode）；由 `scripts/dev.ps1` 处理。
+   直接使用 `dotnet run` 会遗留过期 DCP/backchannel 状态，使后续 `aspire add`、部署和
+   诊断不可靠。
 
-2. **Aspire `Finished` is not a dashboard problem.** A project resource shown as
-   `Finished` usually means the process exited during startup. Inspect the latest
-   DCP stderr log under `%TEMP%\aspire-dcp*` before changing code or restarting
-   blindly. The real error is usually in the resource process log, not Aspire
-   itself.
+2. **Aspire `Finished` 不是 Dashboard 问题。** 项目资源显示为 `Finished` 通常表示进程在
+   启动期间已退出。修改代码或盲目重启前，先检查 `%TEMP%\aspire-dcp*` 下最新的 DCP stderr
+   日志。真实错误通常位于资源进程日志，而不在 Aspire 本身。
 
-3. **Blank machines go through bootstrap first.** For a fresh online Windows
-   machine, run `.\nerv.ps1 bootstrap -InstallMissing`, then `.\nerv.ps1 dev`.
-   The bootstrap entry owns prerequisite checks, optional tool installation,
-   local AppHost user-secrets initialization, package restore and AppHost build.
-   Do not debug broad request failures until this path has passed and Docker
-   Desktop is actually running.
+3. **空白机器必须先完成 bootstrap。** 对新接入网络的 Windows 机器，先运行
+   `.\nerv.ps1 bootstrap -InstallMissing`，再运行 `.\nerv.ps1 dev`。bootstrap 入口负责前置
+   条件检查、可选工具安装、本地 AppHost 用户机密（user-secrets）初始化、依赖还原和 AppHost 构建。
+   在该路径通过且 Docker Desktop 确实运行前，不得排查范围宽泛的请求失败。
 
-4. **Local HTTPS certificates.** Aspire Dashboard/DCP and local HTTPS endpoints
-   require a trusted developer certificate. On blank machines or after Aspire
-   certificate cache changes, run `.\nerv.ps1 bootstrap -InstallMissing` or
-   verify with `dotnet dev-certs https --check --trust`. If AppHost logs show a
-   certificate name mismatch, reset with `aspire certs clean`,
-   `aspire certs trust`, and `dotnet dev-certs https --trust`.
+4. **本地 HTTPS 证书。** Aspire Dashboard/DCP 和本地 HTTPS endpoint 需要受信任的开发证书。
+   空白机器或 Aspire 证书缓存变更后，运行 `.\nerv.ps1 bootstrap -InstallMissing`，或用
+   `dotnet dev-certs https --check --trust` 验证。若 AppHost 日志显示证书名称不匹配，使用
+   `aspire certs clean`、`aspire certs trust` 和 `dotnet dev-certs https --trust` 重置。
 
-5. **Startup/stop scripts need bounded feedback.** `.\nerv.ps1 dev` and
-   `.\nerv.ps1 stop` must show phase diagnostics and use bounded helper calls.
-   A failed certificate check, exited container, Aspire/DCP hang, or successful
-   startup must not all look like "still waiting". Stop must run fallback cleanup
-   for current-repo AppHost processes and Aspire usvc-dev containers when Aspire
-   CLI stop times out.
+5. **启动/停止脚本必须提供有界反馈。** `.\nerv.ps1 dev` 和 `.\nerv.ps1 stop` 必须显示阶段
+   诊断并调用有界辅助函数。证书检查失败、容器退出、Aspire/DCP 卡死或启动成功都不得表现为
+   “仍在等待”。Aspire CLI stop 超时时，stop 必须对当前仓库的 AppHost 进程和 Aspire
+   usvc-dev 容器执行兜底清理。
 
-## AppHost configuration
+## AppHost 配置
 
-6. **New project resources run as Development locally.** Platform AppHost is the
-   canonical dev launcher. New project resources must run with
-   `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development`
-   unless there is an explicit test/deployment reason not to. Otherwise services
-   may select production-like persistence or messaging branches and fail
-   differently from local expectations.
+6. **新项目资源在本地以 Development 运行。** 平台 AppHost 是规范的开发启动器。除非有明确的
+   测试/部署理由，新项目资源必须设置
+   `ASPNETCORE_ENVIRONMENT=Development` 和 `DOTNET_ENVIRONMENT=Development` 运行。否则服务可能
+   选择近似生产的持久化或消息分支，导致与本地预期不同的失败。
 
-7. **PostgreSQL services need local migration enablement.** If a local
-   Development service relies on PostgreSQL migrations, verify whether AppHost
-   must pass `Persistence__AutoMigrate=true` for that resource. Missing migration
-   enablement can surface as broad Console request failures, downstream 500s, or
-   gateway circuit breakers; the root cause may be a missing table such as
-   `relation "...table..." does not exist`. Observed local failures include
-   AppHub `apphub.registration_idempotency`, MES execution tables, Maintenance
-   readiness tables, and Notification `notification_messages` /
-   `notification_tasks`.
+7. **PostgreSQL 服务需要启用本地 migration。** 若本地 Development 服务依赖 PostgreSQL
+   migration，核实 AppHost 是否必须为该资源传入 `Persistence__AutoMigrate=true`。未启用 migration
+   可能表现为范围宽泛的 Console 请求失败、下游 500s 或 Gateway circuit breaker；根因可能是缺少表，
+   例如 `relation "...table..." does not exist`。已观察到的本地失败包括 AppHub
+   `apphub.registration_idempotency`、MES 执行表、Maintenance readiness 表，以及 Notification 的
+   `notification_messages` / `notification_tasks`。
 
-8. **Pinned infrastructure image tags.** Persistent local resources must be
-   explicitly pinned in AppHost. PostgreSQL is currently `18` and Redis is
-   currently `8`; do not use `latest` or unpinned Aspire provider defaults.
-   PostgreSQL 18+ uses a different major-version data directory than the old
-   pre-18 `/var/lib/postgresql/data` layout, so local dev uses
-   `nerv-iip-postgres-18` and must not point PostgreSQL 18 back at the old
-   `nerv-iip-postgres` volume without an explicit `pg_upgrade` or dump/restore.
-   Do not switch major versions without a tracked upgrade plan, clean-volume
-   test, preserved-volume migration test where applicable, AppHost build,
-   Compose publish verification, and smoke startup. If Redis reports an RDB/AOF
-   format error, stop Aspire and remove only the local `nerv-iip-redis` cache
-   volume.
+8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL
+   为 `18`、Redis 为 `8`；不得使用 `latest` 或未固定的 Aspire provider 默认值。PostgreSQL 18+ 的
+   主版本数据目录布局与旧版（18 前）`/var/lib/postgresql/data` 不同，因此本地开发使用
+   `nerv-iip-postgres-18`，绝不得让 PostgreSQL 18 指向旧
+   `nerv-iip-postgres` 卷，除非已显式执行 `pg_upgrade` 或 dump/restore。没有受跟踪的升级计划、空卷测试、适用时的保留卷 migration 测试、AppHost
+   build、Compose publish 验证和 smoke 启动，不得切换主版本。若 Redis 报告 RDB/AOF 格式错误，停止
+   Aspire 后只移除本地 `nerv-iip-redis` cache 卷。
 
-9. **Bootstrap seed passwords are never hardcoded.** Connected-machine bootstrap
-   may create local Development user-secrets, but it must not keep a fixed IAM
-   admin password in source. Generate a random local value by default, or
-   require the operator to pass a value explicitly through a non-logged path.
-   Secret-setting commands must mark sensitive arguments for script log
-   redaction.
+### 并行 worktree 共用真实依赖
 
-10. **Connector disconnect acceptance is an opt-in real-infrastructure gate.**
-    Run `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`; do not
-    enable `ConnectorHealthAcceptance:Enabled` for normal `nerv.ps1 dev` or a
-    customer profile. The acceptance profile injects its session-scoped internal
-    token, IndustrialTelemetry endpoint and loopback Modbus mappings into the
-    Connector Host, then writes evidence under
-    `artifacts/script-logs/connector-health-disconnect/<timestamp>/`. A Docker
-    daemon/runtime health failure means no real run occurred (for example 0/3),
-    even when the simulator, script contract and AppHost build gates pass. Repair
-    Docker Desktop and rerun; never widen the fixed ten-second deadline.
+普通开发只允许一个非 ephemeral AppHost 持有共享基础设施：从主 checkout 运行 `./nerv.ps1 dev`，
+PostgreSQL 18 与 Redis 8 分别固定暴露在 `127.0.0.1:15432`、`127.0.0.1:6379`。其他 worktree
+只作为测试客户端连接这两个 endpoint，不再各自启动 `./nerv.ps1 dev`；`fullstack run/start` 仍是一次性
+隔离会话并使用动态端口和 session 专属卷，不能把其 endpoint 写入长期 profile。若固定端口已被占用，先用
+`./nerv.ps1 status` 与 Docker 资源列表确认所有者，不得另起第二套共享 AppHost 或随意终止未知容器。
 
-## Service startup failure patterns
+真实依赖测试沿用 CI 同名入口变量。PostgreSQL 变量是能够 `CREATE DATABASE` / `DROP DATABASE` 的
+管理员基础连接串，必须指向 `postgres` 管理库；Redis 变量使用 StackExchange.Redis endpoint 格式。
+密码来自本机 AppHost user-secrets，下面的占位符必须在本机替换，绝不得提交到仓库：
 
-11. **CAP PostgreSQL profile without integration event publisher registration.**
-    Services with domain-event-to-integration-event converters must register the
-    NetCorePal integration event publisher in the active CAP profile, including
-    PostgreSQL. If startup fails with unresolved
-    `NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher`,
-    compare the service's CAP registration with a known working service before
-    changing handlers.
+```bash
+export NERV_IIP_TEST_POSTGRES='Host=127.0.0.1;Port=15432;Database=postgres;Username=postgres;Password=<本机 Parameters:postgres-password>'
+export NERV_IIP_TEST_REDIS='127.0.0.1:6379,password=<本机 Parameters:redis-password>,abortConnect=false'
+```
 
-12. **Redis-backed services aborting startup on first connect attempt.** Local
-    Aspire startup can race Redis readiness. When a service constructs a
-    `ConnectionMultiplexer`, parse options with `AbortOnConnectFail=false` so
-    the service can start and reconnect instead of turning one transient Redis
-    race into a failed resource.
+需要长期复用时，建议把这两行放进权限为 `0600`、不在仓库内的本机环境文件，再由 shell profile
+`source`；不要把明文凭据散落到各 worktree。测试使用 `PostgreSqlTestDatabase` 为每个用例创建
+`nerv_*_<UUIDv7>` 临时库，并在 factory 构建、AutoMigrate 或 seed 前验证连接目标属于该用例。
 
-## Deployment artifacts
+测试运行期间不得执行 `./nerv.ps1 stop` 或 `./nerv.ps1 stop -All`。停止共享 AppHost 会中断连接并可能
+留下临时库；普通 dev 的 `nerv-iip-postgres-18` 与 `nerv-iip-redis` 都是持久卷，stop/restart 不会清空
+残留。崩溃或 Ctrl-C 后先预览至少存活 24 小时且没有活动连接的标准临时库，再显式清扫：
 
-13. **Aspire AppHost is the only topology source.** For container deployment,
-    add/maintain Aspire deployment targets and generate Docker Compose artifacts
-    with `.\nerv.ps1 publish-compose` or deploy with `.\nerv.ps1 deploy-compose`.
-    Existing hand-written Compose files may remain for dependencies, smoke
-    tests, or legacy overlay validation, but must not become a competing service
-    graph.
+```bash
+pwsh scripts/cleanup-stale-postgres-test-databases.ps1
+pwsh scripts/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
+```
 
-14. **Vite dev proxy is not production routing.** `AddViteApp` works for local
-    dev, but publish/deploy needs an explicit JavaScript production serving
-    model. Console can use `PublishAsStaticWebsite("/api", gateway)`. Business
-    Console needs two production API routes (`/api/console` to PlatformGateway
-    and `/api/business-console` to BusinessGateway) or an equivalent
-    BusinessGateway auth facade before Compose output can be called a complete
-    Business Console deployment.
+该入口需要 PowerShell 7、主机可用的 `psql` 和已设置的 `NERV_IIP_TEST_POSTGRES`。它只接受严格的
+`nerv_*_<UUIDv7>` 名称，以 UUIDv7 时间与最小存活时长共同筛选；删除前再次检查活动连接，使用普通
+`DROP DATABASE` 而非 `WITH (FORCE)`，并在删除后精确回读。业务库、非标准名称、未到年龄或有活动连接
+的数据库都不会删除。性能基线测试继续使用独占实例，禁止接入共享 AppHost，以免资源竞争污染测量。
 
-15. **Offline deployment is a separate track.** Offline packaging is a
-    deployment architecture track, not the first local-development fix. Keep the
-    immediate startup path focused on connected machines and Aspire CLI/AppHost.
-    Future offline scripts should consume Aspire-generated artifacts instead of
-    inventing a parallel topology.
+真实 Redis/CAP 测试把一次本地测试会话的 stream/topic、consumer group 和分布式锁统一放入
+`nerv:n822:<UUIDv7>:` 命名空间。`Cap:TopicNamePrefix` 负责 stream/topic 前缀，`Cap:Version`
+负责 consumer group 版本，`DistributedLocking:RedisKeyPrefix` 位于服务名锁前缀之外；三者缺少任一项，
+同一服务的两个 worktree 都可能发生串台。测试会写入带 5 分钟 TTL、每分钟按 owner token 原子续租的
+`__owner` 租约，正常退出时只删除自己命名空间内的 key 并回读确认为空。崩溃或 Ctrl-C 后，使用下面的
+默认预览和显式应用入口清理至少存活 24 小时、且 owner 租约已过期的本地测试命名空间：
+
+```bash
+pwsh scripts/cleanup-stale-redis-test-keys.ps1
+pwsh scripts/cleanup-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
+```
+
+该脚本需要 PowerShell 7、`redis-cli` 与 `NERV_IIP_TEST_REDIS`。它只接受严格的
+`nerv:n822:<UUIDv7>:`，逐 key 使用 `UNLINK` 并精确复核；`nerv:n688:*` hosted lane 命名空间、普通业务
+key、未到年龄或 owner 租约仍存活的会话都不会删除，且绝不使用 `FLUSHALL`。若手工运行同一真实
+Redis/CAP 用例的两个进程，需要从同一个唯一 session root 派生并分别注入
+`NERV_IIP_TEST_CAP_VERSION`、`NERV_IIP_TEST_CAP_TOPIC_PREFIX` 与
+`DistributedLocking__RedisKeyPrefix`；其中后两项都以该 root 开头，不要复制另一会话的任一项身份。
+
+9. **Bootstrap seed 密码绝不硬编码。** 联网机器的 bootstrap 可以创建本地 Development user-secrets，
+   但不得在源码中保留固定 IAM admin 密码。默认生成随机本地值，或要求操作者通过不记录日志的路径显式
+   传入值。设置 secret 的命令必须将敏感参数标记为脚本日志脱敏对象。
+
+10. **Connector 断连验收是 opt-in 的真实基础设施门禁。** 运行
+    `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；不得启用
+    `ConnectorHealthAcceptance:Enabled` 供普通 `nerv.ps1 dev` 或客户 profile 使用。验收 profile 会将 session-scoped internal token、
+    IndustrialTelemetry endpoint 和 loopback Modbus mapping 注入 Connector Host，随后把证据写入
+    `artifacts/script-logs/connector-health-disconnect/<timestamp>/`。即使 simulator、script contract 和
+    AppHost build 门禁通过，Docker daemon/runtime 健康失败仍表示未发生真实运行（例如 0/3）。修复
+    Docker Desktop 后重跑；绝不得放宽固定十秒（ten-second）deadline。
+
+## 服务启动失败模式
+
+11. **CAP PostgreSQL profile 未注册 integration event publisher。** 含有
+    domain-event-to-integration-event converter 的服务必须在活动 CAP profile（包括 PostgreSQL）中注册
+    NetCorePal integration event publisher。若启动因未解析的
+    `NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher` 失败，修改 handler 前先将该
+    服务的 CAP 注册与已知可用服务进行比对。
+
+12. **Redis 支持的服务在首次连接时中止启动。** 本地 Aspire 启动可能与 Redis readiness 发生竞争。
+    服务构造 `ConnectionMultiplexer` 时，应以 `AbortOnConnectFail=false` 解析选项，使服务能够启动并重连，
+    而不是把一次瞬时 Redis 竞争转为资源失败。
+
+## 部署产物
+
+13. **Aspire AppHost 是唯一拓扑来源。** 容器部署应新增/维护 Aspire deployment target，并使用
+    `.\nerv.ps1 publish-compose` 生成 Docker Compose 产物，或使用 `.\nerv.ps1 deploy-compose` 部署。
+    既有手写 Compose 文件可以保留用于依赖项、smoke 测试或 legacy overlay 验证，但绝不得成为竞争性的
+    服务图。
+
+14. **Vite 开发 proxy 不是生产路由。** `AddViteApp` 可用于本地开发，但 publish/deploy 需要明确的
+    JavaScript 生产托管模型。Console 可使用 `PublishAsStaticWebsite("/api", gateway)`。Business Console
+    需要两条生产 API route（`/api/console` 指向 PlatformGateway，`/api/business-console` 指向
+    BusinessGateway），或等价的 BusinessGateway auth facade；在此之前，不能将 Compose 输出称为完整的
+    Business Console 部署。
+
+15. **离线部署是独立轨道。** 离线打包属于部署架构轨道，而非首个本地开发修复。即时启动路径应聚焦
+    联网机器和 Aspire CLI/AppHost。后续离线脚本必须消费 Aspire 生成的产物，不得发明平行拓扑。

@@ -2,7 +2,11 @@
 import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpOpportunities } from '@/composables/useBusinessErp'
+import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { buildKpiTrend, seriesFromDatedItems } from '@/utils/kpiTrend'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -14,6 +18,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -26,14 +31,18 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatDateTime } from '../shared'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { erpReadState, formatDateTime, pickerInvalidClass, readCount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售机会', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const opportunities = useErpOpportunities()
+// 客户从业务伙伴主数据里选，机会一开立就挂在真实客户上。
+const { customerOptions, partnersPending } = useErpPartnerCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(opportunities.filters, {
   resetOn: [() => opportunities.filters.keyword],
 })
@@ -45,7 +54,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpOpportunityItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.opportunityNo ?? '-',
   },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'topic', header: '主题', accessor: (r) => r.topic ?? '-' },
   { key: 'status', header: '阶段', width: 'w-28' },
   {
@@ -64,10 +77,61 @@ const customerCount = computed(
 )
 // 机会页的两个数字是同一句话的两半（还在谈几单 / 覆盖几个客户），通栏一条即可，
 // 不必占满两张大卡把表格挤到首屏之外。
-const opportunityCells = computed<NvMetricStripCell[]>(() => [
-  { key: 'active', label: '跟进中机会', value: activeCount.value, unit: '个' },
-  { key: 'customers', label: '涉及客户', value: customerCount.value, unit: '家' },
-])
+const readState = computed(() =>
+  erpReadState({
+    noun: '销售机会',
+    unit: '个',
+    ready: opportunities.ready.value,
+    pending: opportunities.pending.value,
+    error: opportunities.error.value,
+    total: opportunities.total.value,
+    filtered: Boolean(opportunities.filters.keyword || opportunities.filters.status),
+    emptyHint: '还没有销售机会。先登记客户意向，再推进报价和销售订单。',
+  }),
+)
+
+const opportunityCells = computed<NvMetricStripCell[]>(() => {
+  // 机会明细带 openedAtUtc，跟进中机会走真实开立节奏；
+  // 涉及客户是去重口径，按天累加会把同一客户重复计进桶里，只能补形状。
+  const active = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.opportunities', activeCount.value, {
+        kind: 'count',
+        realSeries: seriesFromDatedItems(opportunities.items.value, {
+          date: (o) => o.openedAtUtc,
+          value: () => 1,
+          mode: 'cumulative',
+        }),
+      })
+    : undefined
+  const customers = readState.value.trustworthy
+    ? buildKpiTrend('erp.sales.opportunityCustomers', customerCount.value, { kind: 'count' })
+    : undefined
+
+  return [
+    {
+      key: 'active',
+      label: '跟进中机会',
+      value: readCount(readState.value, activeCount.value),
+      unit: readState.value.trustworthy ? '个' : '',
+      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+      delta: active?.delta,
+      series: active?.series,
+      seriesLabels: active?.seriesLabels,
+      seriesUnit: '个',
+    },
+    {
+      key: 'customers',
+      label: '涉及客户',
+      value: readCount(readState.value, customerCount.value),
+      unit: readState.value.trustworthy ? '家' : '',
+      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+      delta: customers?.delta,
+      series: customers?.series,
+      seriesLabels: customers?.seriesLabels,
+      seriesUnit: '家',
+    },
+  ]
+})
 
 const open = shallowRef(false)
 const form = reactive({ customerCode: '', topic: '' })
@@ -97,7 +161,11 @@ async function submit() {
     open.value = false
     notifySuccess('销售机会已开立')
   } catch (error) {
-    notifyError(opportunities.openOpportunityError.value ?? error, '开立机会失败，请稍后重试。')
+    notifyOperationFailure(
+      '开立机会失败',
+      opportunities.openOpportunityError.value ?? error,
+      '开立机会失败，请稍后重试。',
+    )
   }
 }
 </script>
@@ -107,7 +175,7 @@ async function submit() {
     <NvPageHeader
       title="销售机会"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${opportunities.total.value} 个机会`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -151,10 +219,18 @@ async function submit() {
       :loading="opportunities.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无销售机会。先登记客户意向，再推进报价和销售订单。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="opportunities.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
     </NvDataTable>
 
@@ -170,11 +246,17 @@ async function submit() {
               <NvFieldLabel for="erp-opp-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-opp-customer"
                 v-model="form.customerCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(showErrors && invalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -190,7 +272,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写客户与机会主题。
+            请选择客户并填写机会主题。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

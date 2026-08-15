@@ -29,6 +29,7 @@ describe('workOrderStatusLabel', () => {
 
 describe('operationTaskStatusLabel', () => {
   it('maps known operation-task statuses to Chinese labels', () => {
+    expect(operationTaskStatusLabel('Queued')).toBe('待开工')
     expect(operationTaskStatusLabel('Ready')).toBe('可开工')
     expect(operationTaskStatusLabel('Running')).toBe('执行中')
     expect(operationTaskStatusLabel('Started')).toBe('执行中')
@@ -37,6 +38,7 @@ describe('operationTaskStatusLabel', () => {
     expect(operationTaskStatusLabel('Held')).toBe('已暂停')
     expect(operationTaskStatusLabel('ScheduleInvalidated')).toBe('排程已失效')
     expect(operationTaskStatusLabel('Completed')).toBe('已完成')
+    expect(operationTaskStatusLabel('Cancelled')).toBe('已取消')
     expect(operationTaskStatusLabel('Blocked')).toBe('受阻')
   })
 
@@ -94,8 +96,9 @@ describe('workOrderTitle / workOrderSubtitle', () => {
   })
 
   it('joins status with optional sku and quantity in the subtitle', () => {
-    expect(workOrderSubtitle({ status: 'Released', skuId: 'SKU-1', quantity: 10 }))
-      .toBe('已下达 · 物料 SKU-1 · 计划 10')
+    expect(workOrderSubtitle({ status: 'Released', skuId: 'SKU-1', quantity: 10 })).toBe(
+      '已下达 · 物料 SKU-1 · 计划 10',
+    )
     expect(workOrderSubtitle({ status: 'Planned' })).toBe('已计划')
     expect(workOrderSubtitle({ status: 'Released', quantity: 0 })).toBe('已下达 · 计划 0')
   })

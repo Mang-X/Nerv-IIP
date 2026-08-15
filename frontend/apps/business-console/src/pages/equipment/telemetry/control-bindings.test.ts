@@ -5,6 +5,55 @@ import { computed, reactive, shallowRef } from 'vue'
 
 import ControlBindingsPage from './control-bindings.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const stub = vi.hoisted(() => ({
   saveBinding: vi.fn(() => Promise.resolve({ success: true })),
   disableBinding: vi.fn(() => Promise.resolve({ success: true })),
@@ -51,6 +100,24 @@ vi.mock('@/composables/useBusinessDeviceControlBinding', () => ({
   }),
 }))
 
+// 设备与连接器实例目录走真实读面（useQuery）；单测只关心页面提交行为，给确定目录。
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useConnectorInstanceCatalog: () => ({
+    connectorInstanceOptions: computed(() => [
+      { value: 'opcua-cell-01', label: '一号车间采集器' },
+      { value: 'opcua-cell-09', label: '九号车间采集器' },
+    ]),
+    connectorsPending: shallowRef(false),
+  }),
+  useEquipmentDeviceCatalog: () => ({
+    deviceOptions: computed(() => [
+      { value: 'DEV-CNC-01', label: '一号加工中心' },
+      { value: 'DEV-CNC-09', label: '九号加工中心' },
+    ]),
+    devicesPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     principal: { loginName: 'operator-a', permissionCodes: authState.permissionCodes },
@@ -72,6 +139,13 @@ const stubs = {
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
+  // 实体选择弹窗同样是 reka portal；单测只关心取值，替成同 id 的输入位。
+  NvEntityPicker: {
+    props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   RowActions: { template: '<div><slot /></div>' },
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: {

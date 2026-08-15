@@ -17,6 +17,9 @@ public sealed record ControlledReferenceData(string CodeSet, string Code, string
 
 public static class MasterDataDictionaryRules
 {
+    private static readonly IReadOnlySet<string> ReservedEmptyCodeSets =
+        new HashSet<string>(["priority"], StringComparer.Ordinal);
+
     public static readonly IReadOnlyCollection<ReferenceDataDictionaryEntry> StandardReferenceData =
     [
         new("material-type", "raw-material", "原材料", ReferenceDataCodeSetKind.SystemEnum),
@@ -67,6 +70,12 @@ public static class MasterDataDictionaryRules
         new("uom-dimension", "volume", "体积", ReferenceDataCodeSetKind.SystemEnum),
         new("uom-dimension", "weight", "重量", ReferenceDataCodeSetKind.SystemEnum),
         new("uom-dimension", "time", "时间", ReferenceDataCodeSetKind.SystemEnum),
+        // 质检特性的量纲：检验方案给每条特性写死 unitCode（阻尼力 N、行程 mm 等），
+        // 单位候选由特性量纲派生。这四个码不登记的话，计量单位页的量纲列会直接渲染英文。
+        new("uom-dimension", "force", "力", ReferenceDataCodeSetKind.SystemEnum),
+        new("uom-dimension", "torque", "扭矩", ReferenceDataCodeSetKind.SystemEnum),
+        new("uom-dimension", "pressure", "压力", ReferenceDataCodeSetKind.SystemEnum),
+        new("uom-dimension", "ratio", "比率", ReferenceDataCodeSetKind.SystemEnum),
 
         new("partner-type", "customer", "客户", ReferenceDataCodeSetKind.SystemEnum),
         new("partner-type", "supplier", "供应商", ReferenceDataCodeSetKind.SystemEnum),
@@ -184,7 +193,8 @@ public static class MasterDataDictionaryRules
 
     public static bool IsStandardCodeSet(string codeSet)
     {
-        return StandardReferenceData.Any(x => string.Equals(x.CodeSet, codeSet, StringComparison.Ordinal));
+        return ReservedEmptyCodeSets.Contains(codeSet) ||
+               StandardReferenceData.Any(x => string.Equals(x.CodeSet, codeSet, StringComparison.Ordinal));
     }
 
     public static bool IsSystemEnumCodeSet(string codeSet)

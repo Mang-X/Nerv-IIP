@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { nextTick, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessMaintenance } from './useBusinessMaintenance'
 import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
+  queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
   mutate: {
     createWorkOrder: vi.fn(),
@@ -18,6 +20,10 @@ const coladaState = vi.hoisted(() => ({
 // stubbed because `@/stores/auth` lazily references them (never called in these
 // tests — we only `$patch` the principal).
 vi.mock('@nerv-iip/api-client', () => ({
+  BusinessOperationUnconfirmedError: class BusinessOperationUnconfirmedError extends Error {
+    readonly code = 'business-operation-unconfirmed'
+  },
+  confirmBusinessConsoleOperation: vi.fn(async (value) => value),
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMaintenanceWorkOrders' }],
     query: vi.fn(),
@@ -50,8 +56,10 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    coladaState.queryDataRefById.set(id, data)
     return {
-      data: shallowRef(undefined),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch: vi.fn(),
@@ -60,8 +68,8 @@ vi.mock('@pinia/colada', () => ({
   useMutation: vi.fn((options: { mutation?: unknown }) => {
     // Identify which mutation by structural tag injected by the mocked options.
     const tag = (options as { _tag?: string })._tag
-    const mutateAsync
-      = tag === 'createWorkOrder'
+    const mutateAsync =
+      tag === 'createWorkOrder'
         ? coladaState.mutate.createWorkOrder
         : coladaState.mutate.recordInspection
     return {
@@ -74,15 +82,15 @@ vi.mock('@pinia/colada', () => ({
 
 function seedPrincipal(overrides: Record<string, unknown> = {}) {
   const auth = useAuthStore()
-  auth.$patch({
-    principal: {
+  auth.$patch((state) => {
+    state.principal = {
       principalId: 'user-admin',
       principalType: 'user',
       loginName: 'admin',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       ...overrides,
-    } as never,
+    } as never
   })
 }
 
@@ -90,24 +98,75 @@ describe('useBusinessMaintenance', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    sessionStorage.clear()
+    coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.mutate.createWorkOrder.mockResolvedValue({
+      success: true,
+      data: {
+        workOrderId: '019f1000-0000-7000-8000-000000000001',
+        operationReceipt: {
+          resourceId: '019f1000-0000-7000-8000-000000000001',
+        },
+      },
+    })
   })
 
   it('keeps every list query disabled when the principal has no org/env scope', () => {
     useBusinessMaintenance()
 
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceWorkOrders')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled).toBe(false)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenancePlans')?.enabled).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceWorkOrders')?.enabled,
+    ).toBe(false)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled,
+    ).toBe(false)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenancePlans')?.enabled).toBe(
+      false,
+    )
   })
 
   it('enables list queries once the principal carries an org/env scope', () => {
     seedPrincipal()
-    useBusinessMaintenance()
+    const result = useBusinessMaintenance()
 
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceWorkOrders')?.enabled).toBe(true)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled).toBe(true)
-    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenancePlans')?.enabled).toBe(true)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceWorkOrders')?.enabled,
+    ).toBe(true)
+    expect(
+      coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled,
+    ).toBe(true)
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenancePlans')?.enabled).toBe(
+      true,
+    )
+    expect(result.organizationId.value).toBe('org-001')
+    expect(result.environmentId.value).toBe('env-dev')
+    expect(result.scopeReady.value).toBe(true)
+    expect(result.workOrdersTotal.value).toBe(0)
+  })
+
+  it('requires both maintenance and master-data reads before offering authoritative detail', () => {
+    seedPrincipal({ permissionCodes: ['business.maintenance.work-orders.read'] })
+    const result = useBusinessMaintenance()
+    expect(result.canReadWorkOrderDetail.value).toBe(false)
+
+    seedPrincipal({
+      permissionCodes: [
+        'business.maintenance.work-orders.read',
+        'business.masterdata.resources.read',
+      ],
+    })
+    expect(result.canReadWorkOrderDetail.value).toBe(true)
+  })
+
+  it('keeps task paging at 20 while auxiliary inspection and plan history retain 100 rows', () => {
+    seedPrincipal()
+    const result = useBusinessMaintenance()
+
+    expect(result.workOrderFilters.take).toBe(20)
+    expect(result.inspectionFilters.take).toBe(100)
+    expect(result.planFilters.take).toBe(100)
   })
 
   it('injects org/env/openedBy into the work-order create body — caller cannot override them', async () => {
@@ -137,6 +196,60 @@ describe('useBusinessMaintenance', () => {
     // Injection wins over hostile input.
     expect(arg.body.organizationId).toBe('org-001')
     expect(arg.body.openedBy).toBe('admin')
+  })
+
+  it('preserves an untyped GUID-shaped device code at the create request boundary', async () => {
+    seedPrincipal()
+    const { createWorkOrder } = useBusinessMaintenance()
+
+    await createWorkOrder({
+      deviceAssetId: ' 019F1000-0000-7000-8000-0000000000AB ',
+      priority: 'high',
+      assetUnavailableReason: 'bearing damage',
+    } as never)
+    await createWorkOrder({
+      deviceAssetId: ' DEV-A ',
+      priority: 'high',
+      assetUnavailableReason: 'bearing damage',
+    } as never)
+
+    expect(coladaState.mutate.createWorkOrder.mock.calls[0][0].body.deviceAssetId).toBe(
+      '019F1000-0000-7000-8000-0000000000AB',
+    )
+    expect(coladaState.mutate.createWorkOrder.mock.calls[1][0].body.deviceAssetId).toBe('DEV-A')
+  })
+
+  it('clears a work-order intent after a determinate 422 so a corrected attempt can use a new key', async () => {
+    seedPrincipal()
+    coladaState.mutate.createWorkOrder
+      .mockRejectedValueOnce({ status: 422, message: 'invalid request' })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          workOrderId: '019f1000-0000-7000-8000-000000000002',
+          operationReceipt: {
+            resourceId: '019f1000-0000-7000-8000-000000000002',
+          },
+        },
+      })
+    const { createWorkOrder } = useBusinessMaintenance()
+    const intent = {
+      deviceAssetId: 'D-DETERMINATE',
+      priority: 'high',
+      assetUnavailableReason: 'bearing damage',
+    } as const
+
+    await expect(
+      createWorkOrder({ ...intent, idempotencyKey: 'maintenance-key-1' }),
+    ).rejects.toMatchObject({ status: 422 })
+    await createWorkOrder({ ...intent, idempotencyKey: 'maintenance-key-2' })
+
+    expect(coladaState.mutate.createWorkOrder.mock.calls[0][0].body.idempotencyKey).toBe(
+      'maintenance-key-1',
+    )
+    expect(coladaState.mutate.createWorkOrder.mock.calls[1][0].body.idempotencyKey).toBe(
+      'maintenance-key-2',
+    )
   })
 
   it('injects org/env/inspector/inspectedAtUtc into the inspection body — caller cannot override them', async () => {
@@ -172,7 +285,11 @@ describe('useBusinessMaintenance', () => {
     const { createWorkOrder } = useBusinessMaintenance()
 
     await expect(
-      createWorkOrder({ deviceAssetId: 'D1', priority: 'high', assetUnavailableReason: 'x' } as never),
+      createWorkOrder({
+        deviceAssetId: 'D1',
+        priority: 'high',
+        assetUnavailableReason: 'x',
+      } as never),
     ).rejects.toThrow('登录态未就绪')
     expect(coladaState.mutate.createWorkOrder).not.toHaveBeenCalled()
   })
@@ -182,9 +299,74 @@ describe('useBusinessMaintenance', () => {
     seedPrincipal({ environmentId: '' })
     const { recordInspection } = useBusinessMaintenance()
 
-    await expect(
-      recordInspection({ planId: 'P1', result: 'pass' } as never),
-    ).rejects.toThrow('登录态未就绪')
+    await expect(recordInspection({ planId: 'P1', result: 'pass' } as never)).rejects.toThrow(
+      '登录态未就绪',
+    )
     expect(coladaState.mutate.recordInspection).not.toHaveBeenCalled()
+  })
+
+  it('marks every Maintenance list success:false or malformed raw response as failed', () => {
+    seedPrincipal()
+    coladaState.queryDataById.set('listBusinessConsoleMaintenanceWorkOrders', {
+      success: false,
+      message: '维修工单查询失败',
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMaintenanceInspections', [])
+    coladaState.queryDataById.set('listBusinessConsoleMaintenancePlans', {
+      data: { items: [], total: 0 },
+    })
+
+    const result = useBusinessMaintenance()
+
+    expect(result.workOrders.value).toHaveLength(0)
+    expect(result.workOrdersTotal.value).toBe(0)
+    expect(result.workOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrdersHasFailedResponse.value).toBe(true)
+    expect(result.inspections.value).toHaveLength(0)
+    expect(result.inspectionsTotal.value).toBe(0)
+    expect(result.inspectionsHasSuccessfulResponse.value).toBe(false)
+    expect(result.inspectionsHasFailedResponse.value).toBe(true)
+    expect(result.plans.value).toHaveLength(0)
+    expect(result.plansTotal.value).toBe(0)
+    expect(result.plansHasSuccessfulResponse.value).toBe(false)
+    expect(result.plansHasFailedResponse.value).toBe(true)
+  })
+
+  it('unbinds all Maintenance list projections on an org/env scope switch', async () => {
+    seedPrincipal()
+    for (const id of [
+      'listBusinessConsoleMaintenanceWorkOrders',
+      'listBusinessConsoleMaintenanceInspections',
+      'listBusinessConsoleMaintenancePlans',
+    ]) {
+      coladaState.queryDataById.set(id, {
+        success: true,
+        data: { items: [{ id: `old-${id}` }], total: 6 },
+      })
+    }
+
+    const result = useBusinessMaintenance()
+    expect(result.workOrders.value).toHaveLength(1)
+    expect(result.inspections.value).toHaveLength(1)
+    expect(result.plans.value).toHaveLength(1)
+    expect(result.workOrdersLastUpdatedAt.value).not.toBeNull()
+    expect(result.inspectionsLastUpdatedAt.value).not.toBeNull()
+    expect(result.plansLastUpdatedAt.value).not.toBeNull()
+
+    seedPrincipal({ organizationId: 'org-002', environmentId: 'env-prod' })
+    await nextTick()
+
+    expect(result.workOrders.value).toHaveLength(0)
+    expect(result.workOrdersTotal.value).toBe(0)
+    expect(result.workOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(result.inspections.value).toHaveLength(0)
+    expect(result.inspectionsTotal.value).toBe(0)
+    expect(result.inspectionsHasSuccessfulResponse.value).toBe(false)
+    expect(result.plans.value).toHaveLength(0)
+    expect(result.plansTotal.value).toBe(0)
+    expect(result.plansHasSuccessfulResponse.value).toBe(false)
+    expect(result.workOrdersLastUpdatedAt.value).toBeNull()
+    expect(result.inspectionsLastUpdatedAt.value).toBeNull()
+    expect(result.plansLastUpdatedAt.value).toBeNull()
   })
 })

@@ -6,10 +6,12 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useErpPurchaseRequisitions } from '@/composables/useBusinessErp'
 import { useBusinessPartners } from '@/composables/useBusinessMasterData'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { usePagedList } from '@/composables/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess, notifyWarning } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -32,12 +34,11 @@ import {
   NvSelectValue,
   NvStatusBadge,
   NvToolbar,
-  toast,
 } from '@nerv-iip/ui'
 import { FileSearchIcon, RefreshCwIcon, ShoppingCartIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { firstQueryParam, formatDate, formatQuantity } from './shared'
+import { erpReadState, firstQueryParam, formatDate, formatQuantity, readCount } from './shared'
 
 definePage({
   meta: {
@@ -50,6 +51,9 @@ definePage({
 const route = useRoute()
 const requisitions = useErpPurchaseRequisitions()
 const suppliers = useBusinessPartners()
+// 物料列显中文名、单位列显「件 (pcs)」：读面只回编码，名称在主数据里。
+const { resolveSkuName } = useSkuNames()
+const { formatUom } = useMasterDataDisplayNames({ uoms: true })
 const { page, pageSize } = usePagedList(requisitions.filters, {
   resetOn: [() => requisitions.filters.status, () => requisitions.filters.keyword],
 })
@@ -69,6 +73,23 @@ const statusFilter = computed({
     requisitions.filters.status = value === 'all' ? undefined : value
   },
 })
+
+/**
+ * 读面六档状态：把「未选范围 / 在途 / 失败 / 筛无匹配 / 真 0 条 / 有数据」拆开。
+ * 页头计数、构成卡、表体空态全部由它驱动，页面不再自己拼 `${total} 张`。
+ */
+const readState = computed(() =>
+  erpReadState({
+    noun: '采购申请',
+    unit: '张',
+    ready: requisitions.ready.value,
+    pending: requisitions.pending.value,
+    error: requisitions.error.value,
+    total: requisitions.total.value,
+    filtered: Boolean(requisitions.filters.keyword || requisitions.filters.status),
+    emptyHint: '还没有采购申请。采购类 MRP 建议被接受后会在这里形成真实申请。',
+  }),
+)
 
 const openCount = computed(() => requisitions.items.value.filter((r) => r.status === 'Open').length)
 const convertedCount = computed(
@@ -107,7 +128,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpPurchaseRequisitionItem>[] = 
     cellClass: 'font-medium',
     accessor: (r) => r.requisitionNo ?? '-',
   },
-  { key: 'skuCode', header: '物料', accessor: (r) => r.skuCode ?? '-' },
+  {
+    key: 'skuCode',
+    header: '物料',
+    accessor: (r) => resolveSkuName(r.skuCode) ?? r.skuCode ?? '-',
+  },
   {
     key: 'quantity',
     header: '申请数量',
@@ -115,7 +140,7 @@ const columns: NvDataTableColumn<BusinessConsoleErpPurchaseRequisitionItem>[] = 
     width: 'w-28',
     accessor: (r) => r.quantity ?? 0,
   },
-  { key: 'uomCode', header: '单位', width: 'w-20', accessor: (r) => r.uomCode ?? '-' },
+  { key: 'uomCode', header: '单位', width: 'w-20', accessor: (r) => formatUom(r.uomCode, '-') },
   {
     key: 'requiredDate',
     header: '需求日期',
@@ -204,9 +229,13 @@ async function convertToPurchaseOrder(row: BusinessConsoleErpPurchaseRequisition
       notifySuccess(data.rfqNo ? `已生成 RFQ ${data.rfqNo}` : '已进入 RFQ 流程')
       return
     }
-    toast.warning('缺少有效价源，请先发起 RFQ')
+    notifyWarning('缺少有效价源，请先发起 RFQ')
   } catch (error) {
-    notifyError(requisitions.convertToPurchaseOrderError.value ?? error, '转单失败，请稍后重试。')
+    notifyOperationFailure(
+      '转单失败',
+      requisitions.convertToPurchaseOrderError.value ?? error,
+      '转单失败，请稍后重试。',
+    )
   }
 }
 
@@ -257,9 +286,10 @@ async function submitRfq() {
       return
     }
 
-    toast.warning('缺少有效价源，请检查供应商候选')
+    notifyWarning('缺少有效价源，请检查供应商候选')
   } catch (error) {
-    notifyError(
+    notifyOperationFailure(
+      '发起 RFQ 失败',
       requisitions.convertToPurchaseOrderError.value ?? error,
       '发起 RFQ 失败，请稍后重试。',
     )
@@ -272,7 +302,7 @@ async function submitRfq() {
     <NvPageHeader
       title="采购申请"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${requisitions.total.value} 张申请`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -288,14 +318,41 @@ async function submitRfq() {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="采购申请"
-      :value="requisitions.total.value"
-      unit="张"
-      :segments="requisitionSegments"
-    />
+    <!--
+      读数不可信时（未选范围 / 在途 / 失败）构成卡不出结论：数值显 `—`、不画分段、
+      不给"无待办 / 均已完成流转"这类断言——那等于用故障冒充业务清爽。
+    -->
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="采购申请"
+        :value="readCount(readState, requisitions.total.value)"
+        :unit="readState.trustworthy ? '张' : ''"
+        :segments="readState.trustworthy ? requisitionSegments : []"
+        :foot-start="readState.trustworthy ? undefined : readState.emptyMessage"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="待转采购订单"
+        :value="readCount(readState, openCount)"
+        :unit="readState.trustworthy ? '张' : ''"
+        :tone="readState.trustworthy && openCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          !readState.trustworthy
+            ? { label: '无法判断', tone: 'neutral' }
+            : openCount > 0
+              ? { label: '待采购处理', tone: 'warning' }
+              : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          !readState.trustworthy
+            ? readState.emptyMessage
+            : openCount > 0
+              ? '确认供应策略后转为采购订单。'
+              : '当前采购申请均已完成流转。'
+        "
+      />
+    </div>
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -333,14 +390,21 @@ async function submitRfq() {
       :loading="requisitions.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="未找到采购申请。采购类 MRP 建议接受后会在这里形成真实申请。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="requisitions.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
       >
-      <template #cell-status="{ row }"><NvStatusBadge :value="statusLabel(row.status)" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge :value="row.status" :label="statusLabel(row.status)"
+      /></template>
       <template #cell-actions="{ row }">
         <div v-if="canConvert(row)" class="flex justify-end gap-2">
           <NvButton

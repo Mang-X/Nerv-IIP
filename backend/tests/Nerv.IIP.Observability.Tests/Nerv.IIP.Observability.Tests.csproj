@@ -9,6 +9,7 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
+    <ProjectReference Include="..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

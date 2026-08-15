@@ -1,9 +1,9 @@
-# ADR 0011: 集成事件契约基线
+# ADR 0011：集成事件契约基线
 
-- Status: Accepted
-- Date: 2026-05-19
+- 状态：已接受
+- 日期：2026-05-19
 
-## Context
+## 背景
 
 Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP outbox + 可配置 messaging provider 作为异步集成事件与后台异步任务分发基线，并要求跨服务状态传播优先通过集成事件完成，禁止通过共享数据库表或直接写入他服务 schema 协作。默认单机 profile 使用 InMemory message queue，RabbitMQ 是跨进程和生产扩展 profile。
 
@@ -11,7 +11,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 
 集成事件是公开契约，不是服务内部领域事件的直接序列化结果。它必须和 OpenAPI、SDK、Connector Protocol 一样具备稳定事实来源、版本策略和可验证的兼容边界。
 
-## Decision
+## 决策
 
 1. 所有跨服务 IntegrationEvent 必须采用统一 event envelope。Envelope 标准字段固定为 `eventId`、`eventType`、`eventVersion`、`occurredAtUtc`、`sourceService`、`correlationId`、`causationId`、`organizationId`、`environmentId`、`actor`、`idempotencyKey` 和 `payload`。
 2. `eventId` 是全局唯一事件实例 ID，由发布方生成，消费者不得重新生成或用消息队列 delivery tag 替代。
@@ -41,7 +41,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 26. 事件版本迁移采用并行发布和显式退役策略。发布方可以在迁移窗口内同时发布 v1 与 v2；消费者升级完成、回放窗口结束、DLQ 清理完成后，旧版本才可以退役。
 27. 破坏性事件变更必须同步更新 Contracts、SDK、发布方测试、消费者契约测试、迁移说明和相关架构文档；只修改消息 adapter 或 RabbitMQ binding 不构成契约变更完成。
 
-## Rationale
+## 理由
 
 1. 统一 envelope 能让日志、审计、追踪、重试、DLQ 和 replay 使用同一组字段，降低跨服务诊断成本。
 2. 将 `occurredAtUtc`、`correlationId`、`causationId`、`actor`、组织和环境上下文放入 envelope，可以避免消费者从业务 payload 中猜测隔离与因果关系。
@@ -51,7 +51,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 6. CAP outbox 或等价机制把事件发布和领域事实提交放在同一事务边界，可以避免数据库事实已提交但消息丢失，或消息已发出但事实回滚。
 7. 幂等、DLQ、poison message 和 replay 规则必须成为契约基线的一部分；否则事件系统在失败场景下只会把同步耦合换成不可诊断的异步耦合。
 
-## Consequences
+## 后果
 
 1. 每个新增集成事件都需要补 Contracts DTO、事件常量、序列化测试和消费者契约测试，早期实现成本会上升。
 2. 服务内部 Domain event 不能直接跨进程发布，需要显式转换为 IntegrationEvent payload。
@@ -60,7 +60,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 5. 运维需要为 RabbitMQ DLQ、重试队列、告警、replay 工具和诊断日志建立统一 profile。
 6. Replay 能提升恢复能力，但也要求业务处理器真正做到幂等；不能把 replay 当成手工改数据的替代品。
 
-## Implementation Notes
+## 实施说明
 
 1. `backend/common/Contracts/` 下应补充共享 envelope 类型或基础接口；若多个 Contracts 项目重复 envelope，应提升到窄共享 Contracts 包，而不是放入无边界的 Utils。
 2. 每个服务发布集成事件时，应在 Web/Application 层把领域事实转换为公开 IntegrationEvent payload，再交给 CAP outbox 或等价 publisher。
@@ -70,7 +70,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 6. DLQ 和 replay 工具必须输出 correlationId、消费者名称、失败原因、尝试次数和 replay 批次 ID；不得在日志中打印敏感 payload。
 7. Connector Host 与外部应用协议事件若进入平台消息系统，也必须先转换为本 ADR 定义的 IntegrationEvent envelope；外部协议版本不直接等同于平台事件版本。
 
-## Out of Scope
+## 范围外事项
 
 1. 不在本 ADR 中定义具体 RabbitMQ exchange、queue、prefetch、TTL、quorum queue 或镜像策略。
 2. 不在本 ADR 中冻结每个业务事件的 payload 字段清单；这些字段由对应 Contracts 项目、服务文档和测试承接。

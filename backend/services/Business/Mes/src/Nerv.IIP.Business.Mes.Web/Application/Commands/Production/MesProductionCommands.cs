@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -9,6 +11,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using NetCorePal.Extensions.Repository;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -34,14 +37,74 @@ public sealed record RecordProductionReportCommand(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
     IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
+    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+{
+    internal bool PersistsCallerIntentReceipt { get; private init; } = true;
+
+    // Controlled internal compatibility path: callers that do not cross the
+    // frontline HTTP boundary receive a deterministic payload-derived validation
+    // key, but do not mint a caller-intent receipt. HTTP DTOs cannot select this
+    // constructor; their endpoint always calls the primary constructor.
+    public RecordProductionReportCommand(
+        string OrganizationId,
+        string EnvironmentId,
+        string WorkOrderId,
+        string OperationTaskId,
+        decimal GoodQuantity,
+        decimal ScrapQuantity,
+        bool CompletesOperation,
+        DateTimeOffset ReportedAtUtc,
+        IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+        decimal ReworkQuantity = 0m,
+        string? ScrapReasonCode = null,
+        string? DefectRecordNo = null,
+        string? ProducedLotNo = null,
+        string? SerialNo = null,
+        string Source = "manual")
+        : this(
+            OrganizationId,
+            EnvironmentId,
+            WorkOrderId,
+            OperationTaskId,
+            GoodQuantity,
+            ScrapQuantity,
+            CompletesOperation,
+            ReportedAtUtc,
+            InternalIdempotencyKey(
+                OrganizationId,
+                EnvironmentId,
+                WorkOrderId,
+                OperationTaskId,
+                GoodQuantity,
+                ScrapQuantity,
+                ReworkQuantity,
+                CompletesOperation,
+                ReportedAtUtc,
+                Source),
+            ConsumedMaterialLots,
+            ReworkQuantity,
+            ScrapReasonCode,
+            DefectRecordNo,
+            ProducedLotNo,
+            SerialNo,
+            Source)
+    {
+        PersistsCallerIntentReceipt = false;
+    }
+
+    private static string InternalIdempotencyKey(params object?[] facts)
+    {
+        var canonical = string.Join('|', facts.Select(x => x?.ToString() ?? string.Empty));
+        return $"internal:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))}";
+    }
+}
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -58,6 +121,7 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
             .WithMessage("At least one reported quantity must be positive.");
         RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
             .WithMessage("Production report source must be manual or telemetry.");
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -79,7 +143,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.OrganizationId,
             request.EnvironmentId, "production-report",
             null,
-            request.IdempotencyKey,
+            request.PersistsCallerIntentReceipt ? request.IdempotencyKey : null,
             MesCodingService.Fingerprint(
                 request.WorkOrderId,
                 request.OperationTaskId,
@@ -120,6 +184,30 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         if (operationTask is null)
         {
             throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+        }
+
+        if (operationTask.Status != OperationTaskLifecycleStatus.InProgress)
+        {
+            throw new MesLifecycleConflictException(
+                "report",
+                operationTask.Status.ToString());
+        }
+
+        // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。
+        var reportedGoodQuantity = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.OperationTaskId == request.OperationTaskId)
+            .SumAsync(x => x.GoodQuantity, cancellationToken);
+        var cumulativeGoodQuantity = reportedGoodQuantity + request.GoodQuantity;
+        var hardMaximumGoodQuantity = workOrder.Quantity * 1.2m;
+        if (cumulativeGoodQuantity > hardMaximumGoodQuantity)
+        {
+            throw new KnownException(
+                $"生产工单 {request.WorkOrderId} 的工序 {request.OperationTaskId} 本次提交后累计合格数量 {cumulativeGoodQuantity}，超过计划量 {workOrder.Quantity} 的 120% 硬上限 {hardMaximumGoodQuantity}。请调整本次合格数量或工单计划量后重试。");
         }
 
         var outputOperationSequence = await dbContext.OperationTasks
@@ -203,7 +291,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
                     x.MaterialId == lot.MaterialId &&
                     x.MaterialLotId == lot.MaterialLotId)
-                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity })
+                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity, x.TargetSiteCode, x.TargetLocationCode })
                 .SingleOrDefaultAsync(cancellationToken);
             if (materialIssueRequest is null)
             {
@@ -234,7 +322,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialLotId,
                 materialIssueRequest.UomCode,
                 lot.ConsumedQuantity,
-                lot.MaterialIssueRequestNo));
+                lot.MaterialIssueRequestNo,
+                // 耗料位置来自领料单落库的线边库位（#1322），不再硬编码 production/line-side。
+                materialIssueRequest.TargetSiteCode,
+                materialIssueRequest.TargetLocationCode));
         }
 
         workOrder.RegisterCostReport(consumedMaterialLots.Count);

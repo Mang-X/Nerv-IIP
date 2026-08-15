@@ -18,7 +18,11 @@ const props = defineProps<{
   class?: HTMLAttributes['class']
 }>()
 
-const resolved = computed(() => resolveStatus(props.value))
+// 传了 `label` 时词表结果不上屏（只还拿它的 tone），漏词就不是可见缺陷——照报会把
+// 开发期告警刷成噪声，真漏词反而看不见。
+const resolved = computed(() =>
+  resolveStatus(props.value, { warnOnMissing: props.label === undefined }),
+)
 const tone = computed<StatusTone>(() => props.tone ?? resolved.value.tone)
 const label = computed(() => props.label ?? resolved.value.label)
 

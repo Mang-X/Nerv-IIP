@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 
@@ -127,13 +128,19 @@ public sealed class ApproveQuotationCommandHandler(ApplicationDbContext dbContex
     }
 }
 
+/// <summary>
+/// 报价转订单结果：<see cref="ReusedExistingOrder"/> 为 true 表示本次未新建订单，
+/// 而是幂等返回该报价此前已转出的销售订单（重复点击/重放场景），前端据此区分「新建成功」与「复用既有单」。
+/// </summary>
+public sealed record CreateSalesOrderResult(SalesOrderId SalesOrderId, string SalesOrderNo, bool ReusedExistingOrder);
+
 public sealed record CreateSalesOrderCommand(
     string OrganizationId,
     string EnvironmentId,
     string? SalesOrderNo,
     string QuotationNo,
     string SiteCode,
-    string? IdempotencyKey = null) : ICommand<SalesOrderId>;
+    string? IdempotencyKey = null) : ICommand<CreateSalesOrderResult>;
 
 public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateSalesOrderCommand>
 {
@@ -147,11 +154,11 @@ public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateS
     }
 }
 
-public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ICustomerCreditProfileReader creditProfileReader, ErpCodingService? codingService = null) : ICommandHandler<CreateSalesOrderCommand, SalesOrderId>
+public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ICustomerCreditProfileReader creditProfileReader, ErpCodingService? codingService = null) : ICommandHandler<CreateSalesOrderCommand, CreateSalesOrderResult>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
-    public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
+    public async Task<CreateSalesOrderResult> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
         var fingerprint = await ResolveCompatibleFingerprintAsync(request, cancellationToken);
         var replay = await _codingService.TryPeekReplayAsync(
@@ -163,7 +170,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
             cancellationToken);
         if (replay is not null)
         {
-            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == replay.Code, cancellationToken)).Id;
+            return await ReuseExistingOrderAsync(request, replay.Code, cancellationToken);
         }
 
         var quotation = await dbContext.Quotations
@@ -174,6 +181,13 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
             ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
+
+        // 已转出报价的重复转换：幂等返回既有订单号（不再走业务伙伴可用性与信用检查——不产生任何新敞口）。
+        if (quotation.IsConverted)
+        {
+            return await ReuseExistingOrderAsync(request, quotation.ConvertedSalesOrderNo!, cancellationToken);
+        }
+
         await BusinessPartnerAvailabilityGate.EnsureActiveAsync(
             dbContext,
             request.OrganizationId,
@@ -183,7 +197,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
         var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, fingerprint, cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Code, cancellationToken)).Id;
+            return await ReuseExistingOrderAsync(request, allocation.Code, cancellationToken);
         }
 
         var creditProfile = await creditProfileReader.GetAsync(request.OrganizationId, request.EnvironmentId, quotation.CustomerCode, cancellationToken)
@@ -206,10 +220,31 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
             .Sum(x => x.OpenQuantity * x.UnitPrice);
         var creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, creditProfile.CreditLimit, openReceivables, activeSalesOrders);
 
-        var order = SalesOrder.CreateFromQuotation(allocation.Code, request.SiteCode, quotation, creditSnapshot);
+        SalesOrder order;
+        try
+        {
+            order = SalesOrder.CreateFromQuotation(allocation.Code, request.SiteCode, quotation, creditSnapshot);
+            quotation.MarkConvertedToSalesOrder(order.SalesOrderNo);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
 
         dbContext.SalesOrders.Add(order);
-        return order.Id;
+        return new CreateSalesOrderResult(order.Id, order.SalesOrderNo, ReusedExistingOrder: false);
+    }
+
+    private async Task<CreateSalesOrderResult> ReuseExistingOrderAsync(CreateSalesOrderCommand request, string salesOrderNo, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SalesOrderNo == salesOrderNo,
+                cancellationToken)
+            ?? throw new KnownException($"Sales order '{salesOrderNo}' referenced by quotation '{request.QuotationNo}' was not found.");
+        return new CreateSalesOrderResult(order.Id, order.SalesOrderNo, ReusedExistingOrder: true);
     }
 
     private async Task<string> ResolveCompatibleFingerprintAsync(CreateSalesOrderCommand request, CancellationToken cancellationToken)
@@ -235,11 +270,16 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
     }
 }
 
+/// <summary>
+/// 信用冻结解冻入口：credit-held 订单发起「信用解冻」审批链（模板 <c>erp-sales-credit-release</c>），
+/// 审批通过后由 <c>ApprovalCompleted</c> 消费者把订单恢复为 released；已 released 订单幂等返回。
+/// 返回 <c>credit-release-approval-started</c> 或 <c>released</c>，供 facade/前端明确语义。
+/// </summary>
 public sealed record ReleaseSalesOrderCreditHoldCommand(
     string OrganizationId,
     string EnvironmentId,
     string SalesOrderNo,
-    string StartedBy = "system:erp") : ICommand;
+    string StartedBy = "system:erp") : ICommand<string>;
 
 public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValidator<ReleaseSalesOrderCreditHoldCommand>
 {
@@ -255,9 +295,12 @@ public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValida
 public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
     ApplicationDbContext dbContext,
     IPurchaseOrderApprovalClient approvalClient)
-    : ICommandHandler<ReleaseSalesOrderCreditHoldCommand>
+    : ICommandHandler<ReleaseSalesOrderCreditHoldCommand, string>
 {
-    public async Task Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
+    public const string ResultReleased = "released";
+    public const string ResultApprovalStarted = "credit-release-approval-started";
+
+    public async Task<string> Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
     {
         var order = await dbContext.SalesOrders
             .SingleOrDefaultAsync(x =>
@@ -272,13 +315,13 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
             if (!string.Equals(order.Status, "credit-held", StringComparison.Ordinal))
             {
                 order.ReleaseCreditHold();
-                return;
+                return ResultReleased;
             }
 
             await approvalClient.StartApprovalAsync(new PurchaseOrderApprovalRequest(
                 order.OrganizationId,
                 order.EnvironmentId,
-                "erp-sales-credit-release",
+                ApprovalTemplateCodes.SalesCreditRelease,
                 "business-erp",
                 "sales-order-credit-release",
                 order.SalesOrderNo,
@@ -286,6 +329,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 request.StartedBy,
                 $"sales-credit:{order.OrganizationId}:{order.EnvironmentId}:{order.SalesOrderNo}",
                 order.TotalAmount), cancellationToken);
+            return ResultApprovalStarted;
         }
         catch (InvalidOperationException exception)
         {

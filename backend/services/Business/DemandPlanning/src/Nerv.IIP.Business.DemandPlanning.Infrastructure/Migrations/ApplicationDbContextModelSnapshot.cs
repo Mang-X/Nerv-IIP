@@ -393,6 +393,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Planning environment id.");
 
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("failure_reason")
+                        .HasComment("Human-readable failure reason when the asynchronous MRP run fails.");
+
                     b.Property<DateOnly>("HorizonEnd")
                         .HasColumnType("date")
                         .HasColumnName("horizon_end")

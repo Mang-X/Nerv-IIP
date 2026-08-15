@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { shallowRef } from 'vue'
+import { reactive, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  cancelBusinessConsoleMesWorkOrderMutationOptions,
+  cancelBusinessConsoleMesWorkOrder,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
   createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
+  getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
@@ -23,17 +25,23 @@ import {
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
-  recordBusinessConsoleMesProductionReportMutationOptions,
+  recordBusinessConsoleMesProductionReport,
+  releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
   runBusinessConsoleMesScheduleMutationOptions,
+  startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
 import {
   describeMesReadinessReason,
+  describeMesReadinessReasons,
   useMesCapacityImpacts,
   useMesDispatchTasks,
   useMesDowntimeEvents,
@@ -44,6 +52,7 @@ import {
   useMesOperationTasks,
   useMesOverview,
   useMesProductionPlans,
+  useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
   useMesSchedules,
@@ -59,10 +68,28 @@ const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
+const receiptState = vi.hoisted(() => ({
+  confirm: vi.fn(),
+}))
+const authState = vi.hoisted(() => ({
+  principal: {
+    principalId: 'user-001',
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+  },
+  sessionId: 'session-001',
+}))
+const reactiveAuthState = reactive(authState)
 
 vi.mock('@nerv-iip/api-client', () => ({
+  cancelBusinessConsoleMesWorkOrder: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  confirmBusinessConsoleOperation: (...args: unknown[]) => receiptState.confirm(...args),
   acceptBusinessConsoleMesShiftHandoverMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -127,6 +154,12 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   createBusinessConsoleMesRushWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -168,6 +201,10 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleMesFoundationReadiness' }],
     query: vi.fn(),
   })),
+  getBusinessConsolePrincipalWorkContextQueryOptions: vi.fn(({ query }) => ({
+    key: [{ _id: `getBusinessConsolePrincipalWorkContext:${query.permissionCode}` }],
+    query: vi.fn(),
+  })),
   getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialReadiness' }],
     query: vi.fn(),
@@ -194,7 +231,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
-    query: vi.fn(),
+    query: vi.fn(async () => ({ success: true, data: { status: 'Created' } })),
   })),
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
@@ -231,6 +268,28 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleMesOperationTasks: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+        total: 1,
+      },
+    },
+  })),
+  listBusinessConsoleMesReportableOperationTasks: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+        total: 1,
+      },
+    },
+  })),
+  recordBusinessConsoleMesProductionReport: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   listBusinessConsoleMesProductionPlansQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesProductionPlans' }],
     query: vi.fn(),
@@ -241,6 +300,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleMesRelatedQualityItemsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesRelatedQualityItems' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesScheduleResultsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleMesScheduleResults' }],
     query: vi.fn(),
   })),
   listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
@@ -326,8 +389,10 @@ vi.mock('@pinia/colada', () => ({
     const refetch = vi.fn()
     coladaState.queryRefetchById.set(id, refetch)
 
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    coladaState.queryDataRefById.set(id, data)
     return {
-      data: shallowRef(coladaState.queryDataById.get(id)),
+      data,
       error: shallowRef(),
       isLoading: shallowRef(false),
       refetch,
@@ -338,15 +403,243 @@ vi.mock('@pinia/colada', () => ({
   })),
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: vi.fn(() => ({
+    get principal() {
+      return reactiveAuthState.principal
+    },
+    get sessionId() {
+      return reactiveAuthState.sessionId
+    },
+  })),
+}))
+
 describe('business MES composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
+    sessionStorage.clear()
+    receiptState.confirm.mockImplementation(async (value) => value)
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+          total: 1,
+        },
+      },
+    } as never)
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'op-1', workOrderId: 'wo-rush', status: 'InProgress' }],
+          total: 1,
+        },
+      },
+    } as never)
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryDataRefById.clear()
     coladaState.queryRefetchById.clear()
+    reactiveAuthState.principal = {
+      principalId: 'user-001',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    }
+    reactiveAuthState.sessionId = 'session-001'
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.read',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.read',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
+      },
+    )
+  })
+
+  it('keeps the original MES action key across failed accepted readback and composable re-entry', async () => {
+    const context = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-1',
+    }
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'task-1', workOrderId: 'wo-1', status: 'Queued' }],
+          total: 1,
+        },
+      },
+    } as never)
+    receiptState.confirm
+      .mockRejectedValueOnce(
+        Object.assign(new Error('请求已受理，但权威状态尚未确认'), {
+          code: 'business-operation-unconfirmed',
+        }),
+      )
+      .mockImplementation(async (value) => value)
+
+    const firstPage = useMesOperationTasks()
+    await expect(
+      firstPage.startOperationTask('task-1', context, {
+        reasonCode: 'OPERATOR_READY',
+        idempotencyKey: 'page-random-key-1',
+      }),
+    ).rejects.toThrow('权威状态尚未确认')
+
+    const returnedPage = useMesOperationTasks()
+    await returnedPage.startOperationTask('task-1', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'page-random-key-2',
+    })
+
+    const newIntentPage = useMesOperationTasks()
+    await newIntentPage.startOperationTask('task-1', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'page-random-key-3',
+    })
+
+    const sentKeys = vi
+      .mocked(startBusinessConsoleMesOperationTaskMutationOptions)
+      .mock.results.map(
+        ({ value }) =>
+          (value.mutation as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].body.idempotencyKey,
+      )
+
+    expect(sentKeys).toEqual(['page-random-key-1', 'page-random-key-1', 'page-random-key-3'])
+    const firstRequest = vi.mocked(startBusinessConsoleMesOperationTaskMutationOptions).mock
+      .results[0]?.value.mutation as ReturnType<typeof vi.fn>
+    expect(firstRequest.mock.calls[0]?.[0].query).toEqual({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    })
+    expect(listBusinessConsoleMesOperationTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          scopeKind: 'work-center',
+          scopeId: 'WC-A',
+        }),
+      }),
+    )
+  })
+
+  it('fails closed before readback or mutation when no authorized operation scope is selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.manage',
+      { success: true, data: { selectedScope: null } },
+    )
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockClear()
+    const page = useMesOperationTasks()
+    const mutation = vi.mocked(startBusinessConsoleMesOperationTaskMutationOptions).mock.results[0]
+      ?.value.mutation as ReturnType<typeof vi.fn>
+
+    await expect(
+      page.startOperationTask(
+        'task-no-scope',
+        {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          workOrderId: 'wo-no-scope',
+        },
+        { idempotencyKey: 'no-scope-key' },
+      ),
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+    ).rejects.toThrow('没有已授权的作业范围')
+
+    expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
+    expect(mutation).not.toHaveBeenCalled()
+  })
+
+  it('rotates the MES action key after an explicit 422 rejection', async () => {
+    const context = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-422',
+    }
+    vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ operationTaskId: 'task-422', workOrderId: 'wo-422', status: 'Queued' }],
+          total: 1,
+        },
+      },
+    } as never)
+    receiptState.confirm
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    const page = useMesOperationTasks()
+    await expect(
+      page.startOperationTask('task-422', context, {
+        reasonCode: 'OPERATOR_READY',
+        idempotencyKey: 'mes-key-1',
+      }),
+    ).rejects.toThrow('validation failed')
+
+    const returnedPage = useMesOperationTasks()
+    await returnedPage.startOperationTask('task-422', context, {
+      reasonCode: 'OPERATOR_READY',
+      idempotencyKey: 'mes-key-2',
+    })
+
+    const sentKeys = vi
+      .mocked(startBusinessConsoleMesOperationTaskMutationOptions)
+      .mock.results.map(
+        ({ value }) =>
+          (value.mutation as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].body.idempotencyKey,
+      )
+    expect(sentKeys).toEqual(['mes-key-1', 'mes-key-2'])
   })
 
   it('maps backend MES readiness reason codes to shared labels and next steps', () => {
@@ -369,6 +662,72 @@ describe('business MES composables', () => {
     })
   })
 
+  // MAN-698 台账 #35：缺料阻塞原来整条塞进徽标（且后端还是英文生码
+  // 「物料编码 + shortage + 数量」），用户既读不懂又只看得见前半截。
+  // 现在码进短标签、中文事实进 detail。
+  it('缺料阻塞：码取短标签，中文事实单独给 detail，不把整条塞进徽标', () => {
+    expect(
+      describeMesReadinessReason('MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 2'),
+    ).toEqual({
+      code: 'MATERIAL_SHORTAGE',
+      label: '物料缺料',
+      category: '物料齐套',
+      detail: '物料 MAT-OIL，批次 LOT-OIL-A 缺口 2',
+      nextStep: '在工单详情「用料齐套」发起领料；物料到线边后确认收料',
+    })
+    expect(
+      describeMesReadinessReason('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照。'),
+    ).toMatchObject({ label: '齐套快照缺失', detail: '工单缺少齐套需求快照。' })
+    expect(
+      describeMesReadinessReason('PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成'),
+    ).toMatchObject({ label: '前序工序未完工', detail: '前序工序尚未完成' })
+  })
+
+  it('未登记的码退回中文说明当标签；中文里的冒号不会被当成码分隔符', () => {
+    expect(describeMesReadinessReason('SOME_NEW_CODE: 这条还没登记')).toMatchObject({
+      code: 'SOME_NEW_CODE',
+      label: '这条还没登记',
+      detail: '',
+      nextStep: '查看阻塞详情并按来源业务页面处理',
+    })
+    expect(describeMesReadinessReason('物料齐套未满足：还差 3 件')).toMatchObject({
+      label: '物料齐套未满足：还差 3 件',
+      detail: '',
+    })
+  })
+
+  // #1418：服务端按「每种缺料各一条」下发，逐条渲染会在同一工序上堆出两条一模一样的
+  // 「物料缺料」——看不出是两种料，也不知道缺哪两项。同码必须合并成一条并点名。
+  it('merges same-code readiness reasons and names every shortage', () => {
+    const merged = describeMesReadinessReasons([
+      'MATERIAL_SHORTAGE: 物料 MAT-OIL 缺口 2',
+      'MATERIAL_SHORTAGE: 物料 MAT-SEAL 缺口 5',
+      'QUALITY_HOLD_ACTIVE: 存在未放行的质量冻结',
+    ])
+
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toMatchObject({
+      code: 'MATERIAL_SHORTAGE',
+      label: '物料缺料',
+      detail: '物料 MAT-OIL 缺口 2、物料 MAT-SEAL 缺口 5',
+    })
+    // 不同码是不同处理路径，必须各占一行，不能被一起合掉。
+    expect(merged[1]).toMatchObject({ code: 'QUALITY_HOLD_ACTIVE', label: '质量冻结中' })
+  })
+
+  it('collapses byte-identical duplicates without leaving an empty detail separator', () => {
+    const merged = describeMesReadinessReasons(['MATERIAL_SHORTAGE', 'MATERIAL_SHORTAGE'])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ code: 'MATERIAL_SHORTAGE', label: '物料缺料', detail: '' })
+  })
+
+  it('returns an empty list for missing reasons', () => {
+    expect(describeMesReadinessReasons(undefined)).toEqual([])
+    expect(describeMesReadinessReasons(null)).toEqual([])
+    expect(describeMesReadinessReasons([])).toEqual([])
+  })
+
   it('lists work orders with default context and safe items', () => {
     coladaState.queryDataById.set('listBusinessConsoleMesWorkOrders', {
       success: true,
@@ -389,6 +748,8 @@ describe('business MES composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
         skip: 0,
         take: 100,
       },
@@ -409,6 +770,8 @@ describe('business MES composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
         skip: 0,
         take: 500,
       },
@@ -439,6 +802,8 @@ describe('business MES composables', () => {
       query: {
         organizationId: 'org-mes-b',
         environmentId: 'env-mes-b',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
         keyword: 'filter',
         skip: 0,
         take: 100,
@@ -498,6 +863,20 @@ describe('business MES composables', () => {
     expect(refetch).toHaveBeenCalledOnce()
   })
 
+  it('does not manually refresh operation tasks before an authorized read scope is ready', async () => {
+    coladaState.queryDataById.delete(
+      'getBusinessConsolePrincipalWorkContext:business.mes.operations.read',
+    )
+    const operationTasks = useMesOperationTasks()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleMesOperationTasks')
+
+    await operationTasks.refreshOperationTasks()
+
+    expect(refetch).not.toHaveBeenCalled()
+    expect(operationTasks.operationListScopeReady.value).toBe(false)
+    expect(operationTasks.operationListScopeMessage.value).toContain('尚未选择已授权作业范围')
+  })
+
   it('submits rush work orders and production reports', async () => {
     const { createRushWorkOrder, recordProductionReport } = useMesWorkOrders()
 
@@ -512,14 +891,13 @@ describe('business MES composables', () => {
       durationMinutes: 60,
     })
     await recordProductionReport({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
       workOrderId: 'wo-rush',
       operationTaskId: 'op-1',
       goodQuantity: 8,
       scrapQuantity: 1,
       completesOperation: true,
       reportedAtUtc: '2026-05-24T01:00:00Z',
+      idempotencyKey: 'production-report-test',
     })
 
     expect(createBusinessConsoleMesRushWorkOrderMutationOptions).toHaveBeenCalled()
@@ -531,17 +909,133 @@ describe('business MES composables', () => {
         workOrderId: 'wo-rush',
       }),
     })
-    expect(recordBusinessConsoleMesProductionReportMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(recordBusinessConsoleMesProductionReportMutationOptions).mock.results[0]?.value
-        .mutation,
-    ).toHaveBeenCalledWith({
+    expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledWith({
       body: expect.objectContaining({
         operationTaskId: 'op-1',
+        scopeKind: 'self',
+        scopeId: 'user-001',
       }),
+      throwOnError: false,
     })
     // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
+  })
+
+  it('does not send a production report when the write scope is not selected', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.reporting.write',
+      { success: true, data: { selectedScope: null } },
+    )
+    const { recordProductionReport, reportScopeReady } = useMesProductionReporting()
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockClear()
+
+    expect(reportScopeReady.value).toBe(false)
+    await expect(
+      recordProductionReport({
+        workOrderId: 'wo-no-scope',
+        operationTaskId: 'op-no-scope',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: false,
+        idempotencyKey: 'report-no-scope',
+      }),
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+    ).rejects.toThrow('没有已授权的作业范围')
+    expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
+  })
+
+  it('fails closed before report POST when the frozen write scope cannot pass reportable readback', async () => {
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks).mockResolvedValueOnce({
+      error: { status: 403, message: 'scope not readable' },
+      response: { status: 403 },
+    } as never)
+    const { recordProductionReport } = useMesProductionReporting()
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockClear()
+
+    await expect(
+      recordProductionReport({
+        workOrderId: 'wo-write-only',
+        operationTaskId: 'op-write-only',
+        goodQuantity: 1,
+        scrapQuantity: 0,
+        completesOperation: true,
+        idempotencyKey: 'report-write-only',
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+
+    expect(listBusinessConsoleMesReportableOperationTasks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          scopeKind: 'self',
+          scopeId: 'user-001',
+        }),
+      }),
+    )
+    expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
+  })
+
+  it('仅重放当前实例已发出的同键报工完工，新键仍按最新 Completed 状态拦截', async () => {
+    const { recordProductionReport } = useMesProductionReporting()
+    vi.mocked(listBusinessConsoleMesReportableOperationTasks)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'op-replay',
+                workOrderId: 'wo-replay',
+                status: 'InProgress',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            items: [
+              {
+                operationTaskId: 'op-replay',
+                workOrderId: 'wo-replay',
+                status: 'Completed',
+              },
+            ],
+            total: 1,
+          },
+        },
+      } as never)
+    vi.mocked(recordBusinessConsoleMesProductionReport)
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValue({
+        data: { success: true, data: { reportNo: 'PRPT-REPLAY' } },
+        response: { status: 200 },
+      } as never)
+    const originalIntent = {
+      workOrderId: 'wo-replay',
+      operationTaskId: 'op-replay',
+      goodQuantity: 4,
+      scrapQuantity: 0,
+      completesOperation: true,
+      reportedAtUtc: '2026-07-28T01:00:00.000Z',
+      idempotencyKey: 'report-complete-replay',
+    }
+
+    await expect(recordProductionReport(originalIntent)).rejects.toThrow('response lost')
+    await expect(recordProductionReport(originalIntent)).resolves.toMatchObject({
+      success: true,
+    })
+    await expect(
+      recordProductionReport({
+        ...originalIntent,
+        idempotencyKey: 'report-complete-new-intent',
+      }),
+    ).rejects.toThrow('状态已被其他操作更新')
+
+    expect(listBusinessConsoleMesReportableOperationTasks).toHaveBeenCalledTimes(3)
+    expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 
   it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
@@ -600,6 +1094,15 @@ describe('business MES composables', () => {
     expect(tasks.operationTasksTotal.value).toBe(77)
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
+  })
+
+  it('exposes an unsuccessful operation-task envelope as a business-response failure', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', { success: false })
+
+    const tasks = useMesOperationTasks()
+
+    expect(tasks.operationTasksHasSuccessfulResponse.value).toBe(false)
+    expect(tasks.operationTasksHasFailedResponse.value).toBe(true)
   })
 
   it('queries current SOP documents by operation and work center context', () => {
@@ -693,6 +1196,8 @@ describe('business MES composables', () => {
       query: {
         organizationId: 'org-001',
         environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
         status: 'Released',
         keyword: 'filter',
         workCenterId: 'WC-FILTER',
@@ -874,7 +1379,10 @@ describe('business MES composables', () => {
         .mutation,
     ).toHaveBeenCalledWith({
       path: { reportNo: 'PR-2001' },
-      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
       body: { reason: '误报工', idempotencyKey: 'reverse-1' },
     })
     // 冲销回退工单累计并新增负向记录:本域 7 键(报工列表/工单详情/工单列表/概览/在制/工序任务/完工入库),
@@ -893,7 +1401,10 @@ describe('business MES composables', () => {
     coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.()
     expect(getBusinessConsoleMesProductionReportQueryOptions).toHaveBeenLastCalledWith({
       path: { reportNo: 'PR-2001' },
-      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
     })
     expect(
       coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
@@ -912,6 +1423,24 @@ describe('business MES composables', () => {
 
     expect(
       coladaState.queryFactoriesById.get('getBusinessConsoleMesProductionReport')?.(),
+    ).toMatchObject({ enabled: false })
+  })
+
+  it('reads schedule history through the generated query option', () => {
+    const schedules = useMesSchedules()
+    schedules.filters.skip = 5
+    schedules.filters.take = 25
+
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.()
+
+    expect(listBusinessConsoleMesScheduleResultsQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ skip: 5, take: 25 }),
+    })
+
+    // 业务上下文为空时不发请求（页面给空态，不是反复失败的请求）。
+    schedules.filters.organizationId = ''
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.(),
     ).toMatchObject({ enabled: false })
   })
 
@@ -971,16 +1500,92 @@ describe('business MES composables', () => {
 
     await detail.cancelWorkOrder('计划取消：产线调整')
 
-    expect(cancelBusinessConsoleMesWorkOrderMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(cancelBusinessConsoleMesWorkOrderMutationOptions).mock.results[0]?.value.mutation,
-    ).toHaveBeenCalledWith({
+    expect(cancelBusinessConsoleMesWorkOrder).toHaveBeenCalledWith({
       path: { workOrderId: 'WO-CANCEL' },
-      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
       body: { reason: '计划取消：产线调整' },
+      throwOnError: false,
     })
     // 本域 9 键 + 跨域库存可用量 1 键（A1 §4.2 跨域刷新首个落地）
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(10)
+  })
+
+  it('uses one frozen manage scope for cancel readback and command when read/manage defaults differ', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-MANAGE' } },
+      },
+    )
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-SCOPE'
+    vi.mocked(getBusinessConsoleMesWorkOrderDetailQueryOptions).mockClear()
+
+    await detail.cancelWorkOrder('范围核对')
+
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-SCOPE' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-MANAGE',
+      },
+    })
+    expect(cancelBusinessConsoleMesWorkOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          scopeKind: 'work-center',
+          scopeId: 'WC-MANAGE',
+        }),
+      }),
+    )
+  })
+
+  it('requires and forwards the selected manage scope for work-order release', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-MANAGE' } },
+      },
+    )
+    const workOrders = useMesWorkOrders()
+
+    await workOrders.releaseWorkOrder('WO-RELEASE', {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      confirmWarnings: true,
+      idempotencyKey: 'release-key',
+    })
+
+    const mutation = vi
+      .mocked(releaseBusinessConsoleMesWorkOrderMutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-RELEASE' },
+        query: {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          scopeKind: 'work-center',
+          scopeId: 'WC-MANAGE',
+        },
+      }),
+    )
   })
 
   it('scopes the cancel compensation preview receipts to the current work order', () => {

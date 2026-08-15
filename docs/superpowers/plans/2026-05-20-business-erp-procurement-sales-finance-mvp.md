@@ -1,25 +1,25 @@
-# Business ERP Procurement Sales Finance MVP Implementation Plan
+# 业务 ERP 采购、销售与财务 MVP 实施计划
 
-> Historical input only. As of 2026-05-23, ERP is split into #137 Procurement, #138 Sales and #139 Finance. Use `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` plus the three 2026-05-23 ERP plans instead of executing this older combined plan directly.
+> 仅作为历史输入。截至 2026-05-23，ERP 已拆分为 #137 采购、#138 销售和 #139 财务。请使用 `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md` 及三份 2026-05-23 ERP 计划，不要直接执行这份较早的合并计划。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Build ERP MVP covering Procurement/SRM-lite, Sales/CRM-lite/OMS-lite and Finance MVP.
+**目标：**构建覆盖采购/轻量级 SRM、销售/轻量级 CRM/轻量级 OMS 及财务能力的 ERP MVP。
 
-**Architecture:** ERP owns commercial and financial documents. Procurement accepts planning purchase suggestions, manages RFQ, supplier quotation, purchase order and receipt. Sales manages opportunity, quotation, sales order and delivery request. Finance creates AR/AP/voucher/cost candidate facts from business and inventory events while enforcing balanced vouchers.
+**架构：**ERP 拥有商务单据和财务单据。采购域接受计划采购建议，并管理 RFQ、供应商报价、采购订单和采购收货。销售域管理商机、报价、销售订单和发货请求。财务域基于业务事件和库存事件创建 AR、AP、凭证及成本候选事实，同时强制保证凭证借贷平衡。
 
-**Tech Stack:** .NET 10, FastEndpoints, MediatR, EF Core, Npgsql, netcorepal integration events, xUnit.
+**技术栈：**.NET 10、FastEndpoints、MediatR、EF Core、Npgsql、netcorepal 集成事件、xUnit。
 
 ---
 
-## Boundaries
+## 边界
 
-1. No complete general ledger month-end close.
-2. No standalone SRM, CRM, CPQ or OMS service in this slice.
-3. ERP does not own warehouse execution steps or stock balance.
-4. ERP Finance must not create unbalanced vouchers.
+1. 不包含完整的总账月结。
+2. 本纵切不包含独立的 SRM、CRM、CPQ 或 OMS 服务。
+3. ERP 不拥有仓储执行步骤或库存余额。
+4. ERP 财务域不得创建借贷不平衡的凭证。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/
@@ -46,16 +46,16 @@ backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/
   Endpoints/Erp/*.cs
 ```
 
-## Task 1: Scaffold ERP Service
+## 任务 1：搭建 ERP 服务骨架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Erp/*`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/services/Business/Erp/*`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create projects and tests**
+- [ ] **步骤 1：创建项目和测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Erp -o backend/services/Business/Erp --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -68,29 +68,29 @@ dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Erp/tests/Nerv.IIP
 dotnet sln backend/Nerv.IIP.sln add backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj
 ```
 
-- [ ] **Step 2: Commit scaffold**
+- [ ] **步骤 2：提交服务骨架**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/services/Business/Erp
 git commit -m "feat: scaffold erp service"
 ```
 
-## Task 2: Implement Procurement and SRM-lite
+## 任务 2：实现采购与轻量级 SRM
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseRequisitionAggregate/PurchaseRequisition.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/RequestForQuotationAggregate/RequestForQuotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierQuotationAggregate/SupplierQuotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseOrderAggregate/PurchaseOrder.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ProcurementAggregateTests.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseRequisitionAggregate/PurchaseRequisition.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/RequestForQuotationAggregate/RequestForQuotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierQuotationAggregate/SupplierQuotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseOrderAggregate/PurchaseOrder.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ProcurementAggregateTests.cs`
 
-- [ ] **Step 1: Write failing procurement tests**
+- [ ] **步骤 1：编写预期失败的采购测试**
 
-Test this chain:
+测试以下链路：
 
 ```csharp
 var requisition = PurchaseRequisition.FromPlanningSuggestion("org-001", "env-dev", "suggestion-001", "SKU-RM-1000", 19m);
@@ -100,11 +100,11 @@ var po = PurchaseOrder.Create("org-001", "env-dev", "SUP-001", new[] { PurchaseO
 var receipt = PurchaseReceipt.Record("org-001", "env-dev", po.Id.Value, new[] { PurchaseReceiptLine.Create("SKU-RM-1000", 19m) });
 ```
 
-Assert supplier quotation quantity and price are positive, purchase order cannot be received beyond ordered quantity, and receipt emits `PurchaseReceiptRecordedDomainEvent`.
+断言供应商报价的数量和价格为正数，采购收货不得超过订购数量，并且收货会发出 `PurchaseReceiptRecordedDomainEvent`。
 
-- [ ] **Step 2: Implement routes**
+- [ ] **步骤 2：实现路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/erp/purchase-requisitions/from-suggestion` | `business.erp.procurement.manage` |
 | `POST /api/business/v1/erp/rfqs` | `business.erp.procurement.manage` |
@@ -113,9 +113,9 @@ Assert supplier quotation quantity and price are positive, purchase order cannot
 | `POST /api/business/v1/erp/purchase-receipts` | `business.erp.procurement.manage` |
 | `GET /api/business/v1/erp/purchase-orders` | `business.erp.procurement.read` |
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~ProcurementAggregateTests
@@ -123,21 +123,21 @@ git add backend/services/Business/Erp
 git commit -m "feat: add erp procurement flow"
 ```
 
-Expected: tests pass before commit.
+预期：提交前测试通过。
 
-## Task 3: Implement Sales, CRM-lite and OMS-lite
+## 任务 3：实现销售、轻量级 CRM 和轻量级 OMS
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/OpportunityAggregate/Opportunity.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/QuotationAggregate/Quotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/SalesAggregateTests.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/OpportunityAggregate/Opportunity.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/QuotationAggregate/Quotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/SalesAggregateTests.cs`
 
-- [ ] **Step 1: Write failing sales tests**
+- [ ] **步骤 1：编写预期失败的销售测试**
 
-Cover opportunity creation, quotation approval, sales order creation and delivery release:
+覆盖商机创建、报价审批、销售订单创建和发货下达：
 
 ```csharp
 var opportunity = Opportunity.Open("org-001", "env-dev", "CUST-001", "Pump replacement");
@@ -147,11 +147,11 @@ var order = SalesOrder.CreateFromQuotation("org-001", "env-dev", quotation.Id.Va
 var delivery = DeliveryOrder.Release("org-001", "env-dev", order.Id.Value, new[] { DeliveryOrderLine.Create("SKU-FG-1000", 2m) });
 ```
 
-Assert unapproved quotation cannot become a sales order and delivery quantity cannot exceed ordered quantity.
+断言未审批的报价不能转为销售订单，并且发货数量不得超过订购数量。
 
-- [ ] **Step 2: Add sales routes**
+- [ ] **步骤 2：添加销售路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/erp/opportunities` | `business.erp.sales.manage` |
 | `POST /api/business/v1/erp/quotations` | `business.erp.sales.manage` |
@@ -159,9 +159,9 @@ Assert unapproved quotation cannot become a sales order and delivery quantity ca
 | `POST /api/business/v1/erp/delivery-orders` | `business.erp.sales.manage` |
 | `GET /api/business/v1/erp/sales-orders` | `business.erp.sales.read` |
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~SalesAggregateTests
@@ -169,21 +169,21 @@ git add backend/services/Business/Erp
 git commit -m "feat: add erp sales flow"
 ```
 
-Expected: tests pass before commit.
+预期：提交前测试通过。
 
-## Task 4: Implement Finance MVP
+## 任务 4：实现财务 MVP
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/JournalVoucherAggregate/JournalVoucher.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/CostCalculationAggregate/CostCalculation.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/FinanceAggregateTests.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/JournalVoucherAggregate/JournalVoucher.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/CostCalculationAggregate/CostCalculation.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/FinanceAggregateTests.cs`
 
-- [ ] **Step 1: Write failing finance tests**
+- [ ] **步骤 1：编写预期失败的财务测试**
 
-Tests assert:
+测试断言：
 
 ```csharp
 JournalVoucher.Create("org-001", "env-dev", "AP accrual")
@@ -192,20 +192,20 @@ JournalVoucher.Create("org-001", "env-dev", "AP accrual")
     .Post();
 ```
 
-`Post()` fails when debit and credit totals differ. AR and AP received/paid amount cannot exceed open amount.
+借方和贷方合计不一致时，`Post()` 必须失败。AR 的收款金额和 AP 的付款金额不得超过未结金额。
 
-- [ ] **Step 2: Add finance routes**
+- [ ] **步骤 2：添加财务路由**
 
-| Route | Permission |
+| 路由 | 权限 |
 | --- | --- |
 | `POST /api/business/v1/erp/finance/vouchers` | `business.erp.finance.manage` |
 | `GET /api/business/v1/erp/finance/summary` | `business.erp.finance.read` |
 | `GET /api/business/v1/erp/finance/receivables` | `business.erp.finance.read` |
 | `GET /api/business/v1/erp/finance/payables` | `business.erp.finance.read` |
 
-- [ ] **Step 3: Run and commit**
+- [ ] **步骤 3：运行并提交**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~FinanceAggregateTests
@@ -213,32 +213,32 @@ git add backend/services/Business/Erp
 git commit -m "feat: add erp finance mvp"
 ```
 
-Expected: tests pass before commit.
+预期：提交前测试通过。
 
-## Task 5: Add Persistence, Events, Permissions and Verification
+## 任务 5：添加持久化、事件、权限和验证
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpEndpointTests.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Create: `scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpEndpointTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 创建：`scripts/verify-business-erp-procurement-sales-finance-mvp.ps1`
 
-- [ ] **Step 1: Configure schema and events**
+- [ ] **步骤 1：配置 schema 和事件**
 
-Use schema `erp`. Add integration events `PurchaseReceiptRecordedIntegrationEvent`, `DeliveryOrderReleasedIntegrationEvent`, `AccountPayableCreatedIntegrationEvent`, `AccountReceivableCreatedIntegrationEvent` and `CostCalculatedIntegrationEvent`.
+使用 schema `erp`。添加集成事件 `PurchaseReceiptRecordedIntegrationEvent`、`DeliveryOrderReleasedIntegrationEvent`、`AccountPayableCreatedIntegrationEvent`、`AccountReceivableCreatedIntegrationEvent` 和 `CostCalculatedIntegrationEvent`。
 
-- [ ] **Step 2: Seed ERP permissions**
+- [ ] **步骤 2：写入 ERP 初始权限数据**
 
-Seed `business.erp.procurement.read`, `business.erp.procurement.manage`, `business.erp.sales.read`, `business.erp.sales.manage`, `business.erp.finance.read`, `business.erp.finance.manage`.
+写入初始权限数据 `business.erp.procurement.read`、`business.erp.procurement.manage`、`business.erp.sales.read`、`business.erp.sales.manage`、`business.erp.finance.read`、`business.erp.finance.manage`。
 
-- [ ] **Step 3: Run full ERP tests**
+- [ ] **步骤 3：运行完整 ERP 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore
@@ -246,11 +246,11 @@ dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore --filter FullyQualifiedName~IamFoundationTests
 ```
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 4: Add verification and commit**
+- [ ] **步骤 4：添加验证并提交**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-erp-procurement-sales-finance-mvp.ps1
@@ -259,11 +259,11 @@ git add backend/services/Business/Erp backend/services/Iam/src/Nerv.IIP.Iam.Web/
 git commit -m "feat: complete erp procurement sales finance mvp"
 ```
 
-Expected: verification passes before commit.
+预期：提交前验证通过。
 
-## Self-Review Checklist
+## 自审清单
 
-1. ERP Procurement covers MRP suggestion to purchase receipt.
-2. ERP Sales covers opportunity to delivery order.
-3. Finance rejects unbalanced vouchers.
-4. ERP stores no stock balance and no WMS execution state.
+1. ERP 采购域覆盖从 MRP 建议到采购收货的链路。
+2. ERP 销售域覆盖从商机到发货单的链路。
+3. 财务域拒绝借贷不平衡的凭证。
+4. ERP 不存储库存余额，也不存储 WMS 执行状态。

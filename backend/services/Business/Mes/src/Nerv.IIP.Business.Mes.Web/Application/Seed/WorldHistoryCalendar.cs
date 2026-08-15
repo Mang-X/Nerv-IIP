@@ -37,6 +37,21 @@ public static class WorldHistoryCalendar
     public const int MiddleShiftStartLocalHour = 16;
     public const int ShiftLengthHours = 8;
 
+    /// <summary>
+    /// L0 主数据 <c>WorldBibleSpec.Shifts</c> 的班次编码。班次（何时）与班组（何人）是两个维度：
+    /// 班组 <c>TEAM-WB-*</c> 各自引用其中一个班次，绝不可互相顶替。
+    /// </summary>
+    public const string EarlyShiftCode = "EARLY";
+    public const string MiddleShiftCode = "MIDDLE";
+
+    /// <summary><paramref name="shiftIndex"/>：0 = 早班、1 = 中班，映射到 L0 的班次编码。</summary>
+    public static string ShiftCode(int shiftIndex)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(shiftIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(shiftIndex, 1);
+        return shiftIndex == 0 ? EarlyShiftCode : MiddleShiftCode;
+    }
+
     /// <summary>周日停产保养。</summary>
     public static bool IsWorkingDay(DateOnly date) => date.DayOfWeek != DayOfWeek.Sunday;
 

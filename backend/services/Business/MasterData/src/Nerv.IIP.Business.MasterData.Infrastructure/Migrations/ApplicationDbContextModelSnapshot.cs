@@ -1063,6 +1063,112 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ScopeContextAuditAggregate.MasterDataScopeContextAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Scope context audit entry identifier.");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Trusted authenticated principal.");
+
+                    b.Property<string>("AfterJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasComment("Canonical authorization-relevant state after the mutation.");
+
+                    b.Property<string>("BeforeJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasComment("Canonical authorization-relevant state before the mutation.");
+
+                    b.Property<string>("CausationId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Request causation identity.");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Request correlation identity.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC timestamp when the mutation occurred.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasComment("Idempotency key or correlation identity.");
+
+                    b.Property<string>("OperationKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Stable scope-context mutation kind.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasComment("Normalized reason or stable system reason code.");
+
+                    b.Property<string>("ResourceCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Stable resource code.");
+
+                    b.Property<string>("ResourceId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Persistent resource identifier.");
+
+                    b.Property<string>("ResourceIdentity")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasComment("Canonical resource identity.");
+
+                    b.Property<string>("ResourceType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Master-data resource type.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationId")
+                        .HasDatabaseName("ix_master_data_scope_context_audit_operation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ResourceType", "ResourceCode", "OccurredAtUtc")
+                        .HasDatabaseName("ix_master_data_scope_context_audit_resource");
+
+                    b.ToTable("master_data_scope_context_audit", "business_masterdata", t =>
+                        {
+                            t.HasComment("Durable audit trail for master-data changes that alter principal scope candidates.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate.Shift", b =>
                 {
                     b.Property<Guid>("Id")

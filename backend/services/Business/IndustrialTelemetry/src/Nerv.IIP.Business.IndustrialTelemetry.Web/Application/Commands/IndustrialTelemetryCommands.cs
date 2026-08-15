@@ -16,6 +16,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSn
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Sdk.Ops;
 
@@ -1616,12 +1617,30 @@ public sealed class AcknowledgeAlarmCommandValidator : AbstractValidator<Acknowl
     }
 }
 
+public sealed class AcknowledgeAlarmCommandLock : ICommandLock<AcknowledgeAlarmCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        AcknowledgeAlarmCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-industrial-telemetry:alarm-lifecycle:{command.OrganizationId}:{command.EnvironmentId}",
+            30));
+    }
+}
+
 public sealed class AcknowledgeAlarmCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AcknowledgeAlarmCommand, AlarmEventId>
 {
     public async Task<AlarmEventId> Handle(AcknowledgeAlarmCommand request, CancellationToken cancellationToken)
     {
         var alarm = await LoadAlarmAsync(dbContext, request.AlarmEventId, request.OrganizationId, request.EnvironmentId, cancellationToken);
+        if (alarm.Status == "cleared")
+        {
+            throw new IndustrialTelemetryLifecycleConflictException("acknowledge", alarm.Status);
+        }
+
         try
         {
             alarm.Acknowledge(request.AcknowledgedAtUtc, request.AcknowledgedBy);
@@ -1662,7 +1681,7 @@ public sealed record ShelveAlarmCommand(
     int DurationMinutes,
     string ShelvedBy,
     string? Reason,
-    string? IdempotencyKey = null) : ICommand<AlarmEventId>;
+    string? IdempotencyKey) : ICommand<AlarmEventId>;
 
 public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmCommand>
 {
@@ -1674,6 +1693,19 @@ public sealed class ShelveAlarmCommandValidator : AbstractValidator<ShelveAlarmC
         RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).MaximumLength(300);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class ShelveAlarmCommandLock : ICommandLock<ShelveAlarmCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        ShelveAlarmCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-industrial-telemetry:alarm-lifecycle:{command.OrganizationId}:{command.EnvironmentId}",
+            30));
     }
 }
 
@@ -1689,8 +1721,8 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
         // so a delayed duplicate replays its own record instead of re-applying. Same key + a
         // different payload is a conflicting key reuse. The unique index collapses concurrent
         // duplicates to a single apply.
-        var idempotencyKey = IndustrialTelemetryText.Optional(request.IdempotencyKey);
-        if (idempotencyKey is not null)
+        var idempotencyKey = request.IdempotencyKey?.Trim() ?? string.Empty;
+        if (idempotencyKey.Length > 0)
         {
             var alarmEventId = request.AlarmEventId.Id.ToString();
             var fingerprint = ComputeShelveFingerprint(request);
@@ -1704,19 +1736,27 @@ public sealed class ShelveAlarmCommandHandler(ApplicationDbContext dbContext)
             {
                 if (existing.PayloadFingerprint != fingerprint)
                 {
-                    throw new KnownException("Shelve idempotency key was reused with a different payload.");
+                    throw new IndustrialTelemetryIdempotencyConflictException();
                 }
 
                 // Same key + same payload → replay the prior result, apply nothing.
                 return alarm.Id;
             }
+        }
 
+        if (alarm.Status == "cleared")
+        {
+            throw new IndustrialTelemetryLifecycleConflictException("shelve", alarm.Status);
+        }
+
+        if (idempotencyKey.Length > 0)
+        {
             dbContext.AlarmShelveIdempotencies.Add(new AlarmShelveIdempotency(
                 request.OrganizationId,
                 request.EnvironmentId,
-                alarmEventId,
+                request.AlarmEventId.Id.ToString(),
                 idempotencyKey,
-                fingerprint));
+                ComputeShelveFingerprint(request)));
         }
 
         try
@@ -1773,6 +1813,19 @@ public sealed class UnshelveAlarmCommandValidator : AbstractValidator<UnshelveAl
     }
 }
 
+public sealed class UnshelveAlarmCommandLock : ICommandLock<UnshelveAlarmCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        UnshelveAlarmCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-industrial-telemetry:alarm-lifecycle:{command.OrganizationId}:{command.EnvironmentId}",
+            30));
+    }
+}
+
 public sealed class UnshelveAlarmCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<UnshelveAlarmCommand, AlarmEventId>
 {
@@ -1805,6 +1858,19 @@ public sealed class RunAlarmEscalationsCommandValidator : AbstractValidator<RunA
         RuleFor(x => x.RecipientRefs).NotEmpty();
         RuleForEach(x => x.RecipientRefs).NotEmpty().MaximumLength(200);
         RuleFor(x => x.MaxAlarms).InclusiveBetween(1, 5000);
+    }
+}
+
+public sealed class RunAlarmEscalationsCommandLock : ICommandLock<RunAlarmEscalationsCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        RunAlarmEscalationsCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-industrial-telemetry:alarm-lifecycle:{command.OrganizationId}:{command.EnvironmentId}",
+            30));
     }
 }
 

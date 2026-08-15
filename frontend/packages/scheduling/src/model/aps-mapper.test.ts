@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { samplePlan } from './fixtures'
+import { samplePlan, samplePlanWithCalendar } from './fixtures'
 import { toLockedAssignments, toModel } from './aps-mapper'
 import { conflictReasonLabel } from './labels'
 
@@ -42,6 +42,62 @@ describe('toModel', () => {
     })
   })
 
+  // 产品裁决（#1291）：齐套是开工门槛不是排产门槛 —— 物料缺口挂在「已排」工序上，不进 unscheduled。
+  it('maps material risks onto their scheduled tasks instead of unscheduling them', () => {
+    const m = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [
+            {
+              materialId: 'RM-OIL-01',
+              materialLotId: null,
+              requiredQuantity: 145.86,
+              availableQuantity: 0,
+              shortageQuantity: 145.86,
+            },
+          ],
+          message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+        },
+      ],
+    })
+
+    const op10 = m.tasks.find((t) => t.id === 'a1')!
+    expect(op10.materialRisk?.shortages[0]!.shortageQuantity).toBe(145.86)
+    expect(op10.materialRisk?.message).toContain('需在开工前完成备料')
+    expect(m.materialRisks).toHaveLength(1)
+    // 风险挂在已排 task 上，不是把工序标成「未排」。
+    expect(op10.type).toBe('operation')
+    expect(op10.startUtc).toBeTruthy()
+  })
+
+  // #1320:设备「状态未知」同样是软约束 —— 挂在已排工序上,不进 unscheduled。
+  it('maps equipment data risks onto their scheduled tasks instead of unscheduling them', () => {
+    const m = toModel({
+      ...samplePlan,
+      equipmentRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          resourceId: 'DEV-CNC-01',
+          reasonCodes: ['equipment.sourceStale'],
+          message:
+            '设备 DEV-CNC-01 状态未知(采集数据已过期)。已按计划排入,开工前请人工确认设备可用。',
+        },
+      ],
+    })
+
+    const op10 = m.tasks.find((t) => t.id === 'a1')!
+    expect(op10.equipmentRisk?.resourceId).toBe('DEV-CNC-01')
+    expect(op10.equipmentRisk?.message).toContain('开工前请人工确认设备可用')
+    expect(m.equipmentRisks).toHaveLength(1)
+    expect(op10.type).toBe('operation')
+    expect(op10.startUtc).toBeTruthy()
+  })
+
   it('keeps the current tooling conflict in business language', () => {
     const m = toModel({
       ...samplePlan,
@@ -61,6 +117,53 @@ describe('toModel', () => {
   })
 })
 
+describe('toModel — 工作日历与资源时间块', () => {
+  it('把计划带出的班次窗口映射成模型日历', () => {
+    const m = toModel(samplePlanWithCalendar)
+    expect(m.calendars).toHaveLength(1)
+    expect(m.calendars![0].calendarId).toBe('CAL-MAIN')
+    expect(m.calendars![0].resourceIds).toEqual(['WC-001', 'WC-002'])
+    expect(m.calendars![0].shiftWindows.map((w) => w.shiftCode)).toEqual([
+      'early-shift',
+      'middle-shift',
+      'early-shift',
+    ])
+  })
+
+  it('把不可用窗口映射成不可拖拽的资源时间块任务(带中文语义名)', () => {
+    const m = toModel(samplePlanWithCalendar)
+    const blocks = m.tasks.filter((t) => t.blockKind)
+    expect(blocks.map((b) => b.blockKind)).toEqual(['changeover', 'maintenance'])
+    expect(blocks.map((b) => b.text)).toEqual(['换型', '设备维护'])
+    // 泳道键与工序一致(按工作中心),否则块会另起一条孤立泳道。
+    expect(blocks.map((b) => b.dimensions?.workCenter?.id)).toEqual(['WC-001', 'WC-002'])
+    expect(blocks.every((b) => b.locked)).toBe(true)
+  })
+
+  it('没有日历/不可用窗口时不编造:calendars 为空、任务里没有块', () => {
+    const m = toModel(samplePlan)
+    expect(m.calendars).toBeUndefined()
+    expect(m.tasks.some((t) => t.blockKind)).toBe(false)
+  })
+
+  it('未知的块类型码值按停机处理,不丢窗口', () => {
+    const m = toModel({
+      ...samplePlanWithCalendar,
+      blockWindows: [
+        {
+          resourceId: 'WC-001',
+          workCenterId: 'WC-001',
+          startUtc: '2026-06-10T10:00:00.000Z',
+          endUtc: '2026-06-10T11:00:00.000Z',
+          reasonCode: '未来才有的码值',
+          kind: 'somethingNew' as never,
+        },
+      ],
+    })
+    expect(m.tasks.filter((t) => t.blockKind).map((t) => t.blockKind)).toEqual(['downtime'])
+  })
+})
+
 describe('toLockedAssignments', () => {
   it('emits only locked operation tasks as assignment contracts', () => {
     const m = toModel(samplePlan)
@@ -71,5 +174,10 @@ describe('toLockedAssignments', () => {
     expect(out.map((x) => x.assignmentId).sort()).toEqual(['a1', 'a2'])
     expect(out.find((x) => x.assignmentId === 'a1')!.startUtc).toBe('2026-06-10T09:00:00.000Z')
     expect(out.some((x) => (x.orderId ?? '').startsWith('order:'))).toBe(false)
+  })
+
+  it('资源时间块不当成锁定工序回传(它不是工序,只是不可拖拽)', () => {
+    const out = toLockedAssignments(toModel(samplePlanWithCalendar))
+    expect(out.map((x) => x.assignmentId)).toEqual(['a2'])
   })
 })

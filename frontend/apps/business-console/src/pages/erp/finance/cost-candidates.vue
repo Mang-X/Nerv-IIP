@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpCostCandidates } from '@/composables/useBusinessErp'
+import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -31,8 +31,8 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount } from '../shared'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
 
 definePage({
   meta: {
@@ -58,33 +58,78 @@ const columns: NvDataTableColumn<BusinessConsoleErpCostCandidateItem>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
 ]
 
+// 表单里能选的是四个成本大类，但读面回的是**产生成本的那张单据类型**
+// （采购收货 / 完工入库 / 领料 / 维修工单…），两套取值都得收，缺词就把英文码印到列上。
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   production: '生产成本',
   procurement: '采购成本',
   maintenance: '维护成本',
   logistics: '物流成本',
+  'purchase-receipt': '采购收货',
+  'purchase-order': '采购订单',
+  'purchase-invoice': '采购发票',
+  'finished-goods-receipt': '完工入库',
+  'material-issue': '生产领料',
+  'work-order': '生产工单',
+  'delivery-order': '发货出库',
+  'maintenance-work-order': '维修工单',
+  'inventory-adjustment': '库存调整',
+  manual: '手工登记',
 }
 function sourceTypeLabel(value?: string | null) {
-  return SOURCE_TYPE_LABELS[(value ?? '').toLowerCase()] ?? value ?? '-'
+  const raw = (value ?? '').trim()
+  if (!raw) return '-'
+  const label = SOURCE_TYPE_LABELS[raw.toLowerCase()]
+  if (label === undefined && import.meta.env.DEV) {
+    console.warn(`[成本候选] 词表缺失: ${raw}，请补 SOURCE_TYPE_LABELS`)
+  }
+  return label ?? raw
 }
 
-const amount = computed(() => costs.items.value.reduce((sum, c) => sum + (c.amount ?? 0), 0))
+const readState = computed(() =>
+  erpReadState({
+    noun: '成本候选',
+    unit: '条',
+    ready: costs.ready.value,
+    pending: costs.pending.value,
+    error: costs.error.value,
+    total: costs.total.value,
+    filtered: Boolean(costs.filters.keyword || costs.filters.status),
+    emptyHint: '还没有成本候选。生产、采购或维护成本归集后会在这里等待入账。',
+  }),
+)
+
+/**
+ * 「候选金额」卡用全库口径的财务摘要（#1418 B5 同族）：原先对当前页行求和冒充总额，
+ * 翻页/新增都会让"汇总"乱跳。「待入账候选」条数同理只能按本页数，标签如实带「本页」。
+ */
+const { ready: summaryReady, summary, summaryError } = useErpFinanceSummary()
+const summaryTrustworthy = computed(
+  () => summaryReady.value && summaryError.value == null && summary.value !== undefined,
+)
 const pendingCount = computed(
   () => costs.items.value.filter((c) => (c.status ?? '').toLowerCase() === 'pending').length,
 )
 const costCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'pending',
-    label: '待入账候选',
-    value: pendingCount.value,
-    unit: '条',
-    meta: '等待生成凭证或结转成本',
+    label: '本页待入账候选',
+    value: readCount(readState.value, pendingCount.value),
+    unit: readState.value.trustworthy ? '条' : '',
+    meta: readState.value.trustworthy
+      ? '仅统计当前页；等待生成凭证或结转成本'
+      : readState.value.emptyMessage,
   },
   {
     key: 'amount',
-    label: '候选金额',
-    value: formatAmount(amount.value),
-    meta: `当前列表 ${costs.items.value.length} 条候选合计`,
+    label: '待入账成本',
+    // 取不到数时显 `—`，不显 ¥0.00——「零待入账成本」是会被当真的结论。
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.costCandidateAmount)
+      : UNAVAILABLE_TEXT,
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : '财务摘要读取失败或尚未返回，当前无法判断总额。',
   },
 ])
 
@@ -119,7 +164,11 @@ async function submit() {
     open.value = false
     notifySuccess('成本候选已登记')
   } catch (error) {
-    notifyError(costs.createCostCandidateError.value ?? error, '登记成本失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记成本失败',
+      costs.createCostCandidateError.value ?? error,
+      '登记成本失败，请稍后重试。',
+    )
   }
 }
 </script>
@@ -129,7 +178,7 @@ async function submit() {
     <NvPageHeader
       title="成本候选"
       :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]"
-      :count="`${costs.total.value} 条候选`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -172,7 +221,12 @@ async function submit() {
       :loading="costs.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无成本候选。生产、采购或维护成本归集后在这里入账。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="costs.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >

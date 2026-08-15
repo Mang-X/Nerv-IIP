@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 
@@ -51,17 +52,26 @@ public sealed class MesCodingService
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? fields = null)
     {
-        var allocation = await _allocator.AllocateAsync(
-            new CodeAllocationRequest(
-                organizationId,
-                environmentId,
-                StandardCodeRules.Get(ruleKey),
-                fields,
-                requestedCode,
-                idempotencyKey,
-                payloadFingerprint,
-                "MES"),
-            cancellationToken);
+        CodeAllocation allocation;
+        try
+        {
+            allocation = await _allocator.AllocateAsync(
+                new CodeAllocationRequest(
+                    organizationId,
+                    environmentId,
+                    StandardCodeRules.Get(ruleKey),
+                    fields,
+                    requestedCode,
+                    idempotencyKey,
+                    payloadFingerprint,
+                    "MES"),
+                cancellationToken);
+        }
+        catch (KnownException exception) when (
+            exception.Message.Contains("conflicts with a different", StringComparison.Ordinal))
+        {
+            throw new Nerv.IIP.Business.Mes.Web.Application.Errors.MesIdempotencyConflictException();
+        }
 
         return new MesCodeAllocation(allocation.Code, allocation.IsIdempotentReplay);
     }

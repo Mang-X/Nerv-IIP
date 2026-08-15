@@ -48,8 +48,25 @@ const openModel = computed({
   set: (value: boolean) => emit('update:open', value),
 })
 
-const { form, invalid, showErrors, canSubmit, recordProductionReportPending, submit } =
-  useProductionReportForm(() => props.context, { onReported: () => emit('reported') })
+const {
+  form,
+  invalid,
+  showErrors,
+  canSubmit,
+  canCompleteOperation,
+  intentLocked,
+  recordProductionReportPending,
+  quantitySnapshotPending,
+  quantityValidationMessage,
+  overproductionConfirmationRequired,
+  reportScopeMessage,
+  reportScopePending,
+  reportScopeReady,
+  submit,
+} = useProductionReportForm(() => props.context, {
+  onReported: () => emit('reported'),
+  onStateChanged: () => emit('update:open', false),
+})
 
 const operationLabel = computed(() => {
   const ctx = props.context
@@ -114,6 +131,7 @@ async function onSubmit() {
               step="any"
               type="number"
               autofocus
+              :disabled="intentLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.goodQuantity ? '' : undefined"
             />
           </NvField>
@@ -126,6 +144,7 @@ async function onSubmit() {
               min="0"
               step="any"
               type="number"
+              :disabled="intentLocked || !reportScopeReady"
               :data-invalid="showErrors && invalid.scrapQuantity ? '' : undefined"
             />
           </NvField>
@@ -134,21 +153,59 @@ async function onSubmit() {
             class="items-center justify-between rounded-lg border p-3 sm:col-span-2"
           >
             <NvFieldLabel for="report-complete">本工序已完成</NvFieldLabel>
-            <NvCheckbox id="report-complete" v-model:checked="form.completesOperation" />
+            <NvCheckbox
+              id="report-complete"
+              v-model="form.completesOperation"
+              :disabled="!canCompleteOperation || intentLocked || !reportScopeReady"
+            />
           </NvField>
         </NvFieldGroup>
 
+        <p
+          v-if="reportScopeMessage"
+          data-testid="report-scope-message"
+          class="text-sm text-destructive"
+          role="alert"
+        >
+          {{ reportScopeMessage }}
+        </p>
+        <p
+          v-if="quantityValidationMessage"
+          data-testid="production-quantity-message"
+          class="rounded-lg border border-warning bg-warning/10 p-3 text-sm font-medium text-warning-strong"
+          role="alert"
+        >
+          {{ quantityValidationMessage }}
+        </p>
         <!-- 点提交才标红；未通过不发请求。 -->
-        <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+        <p
+          v-if="showErrors && (invalid.goodQuantity || invalid.scrapQuantity)"
+          class="text-sm text-destructive"
+          role="alert"
+        >
           请填写数量：合格与不合格均不可为负，且合计需大于 0。
+        </p>
+        <p v-if="intentLocked" class="text-sm text-warning-strong">
+          提交结果未知，当前内容已锁定；仅可按原内容重试。
         </p>
 
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
-          <NvButton type="submit" :disabled="recordProductionReportPending">
-            <Spinner v-if="recordProductionReportPending" aria-hidden="true" />
+          <NvButton
+            type="submit"
+            :disabled="
+              !canSubmit ||
+              recordProductionReportPending ||
+              reportScopePending ||
+              quantitySnapshotPending
+            "
+          >
+            <Spinner
+              v-if="recordProductionReportPending || reportScopePending || quantitySnapshotPending"
+              aria-hidden="true"
+            />
             <ClipboardCheckIcon v-else aria-hidden="true" />
-            提交报工
+            {{ overproductionConfirmationRequired ? '确认超产并提交' : '提交报工' }}
           </NvButton>
         </NvDialogFooter>
       </form>

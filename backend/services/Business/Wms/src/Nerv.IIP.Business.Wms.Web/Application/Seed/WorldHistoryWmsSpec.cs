@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Wms;
+
 namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 
 /// <summary>
@@ -31,10 +33,11 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// 因此这里统一用 <c>quality.InspectionPassed</c>，无需把质量域规格再复制一份到仓储侧。
 /// </para>
 /// <para>
-/// 裁决点四 · **执行人无处可落**。<c>InboundOrder</c> / <c>OutboundOrder</c> / <c>WarehouseTask</c>
-/// 三个聚合都没有作业人字段（领域层从未建模执行人），因此库管的分配结果只出现在
-/// <see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
-/// <see cref="WorldHistoryOutboundDocument.ExecutorUserId"/> 与校验器抽样里，落不进库。
+/// 裁决点四 · **背景历史保持终态，当前队列另行受控派工**。本规格仍只描述已经闭环的
+/// 历史单据；<see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
+/// <see cref="WorldHistoryOutboundDocument.ExecutorUserId"/> 保留为历史叙事字段，不回写终态聚合。
+/// 演示日仍可执行的收货 / 上架 / 拣货 / 复核事实由
+/// <see cref="WorldHistoryWarehouseOpsSpec.BuildCurrentQueue"/> 生成，并通过 WMS 作业池持久化归属。
 /// </para>
 /// </summary>
 public static class WorldHistoryWmsSpec
@@ -50,7 +53,14 @@ public static class WorldHistoryWmsSpec
 
     public const string PurchaseReceiptSourceType = "purchase-receipt";
     public const string ProductionReceiptSourceType = "production-receipt";
-    public const string DeliveryOrderSourceType = "delivery-order";
+    /// <summary>
+    /// 发货出库单的源单据类型。**必须与运行期入口同字面量**
+    /// （<c>WmsOutboundOrderRequestedIntegrationEventHandler</c> 建单时写的就是它）：
+    /// 出库完成事件只在类型等于本值时才把发货单号回填进 <c>PublicReference</c>，
+    /// ERP 应收消费者按发货单号反查，查不到就静默 return（#1374）。
+    /// 种子若自造一个 "delivery-order"，历史单据与演示当场新建的单会分成两个世界。
+    /// </summary>
+    public const string DeliveryOrderSourceType = WmsSourceDocumentTypes.DeliveryOrder;
     public const string MaterialIssueSourceType = "material-issue";
 
     #endregion
@@ -252,7 +262,7 @@ public static class WorldHistoryWmsSpec
                 UomCode: WorldHistorySpec.UomCode,
                 Quantity: order.Quantity,
                 PickFromLocationCode: WorldHistoryPhase2Spec.FinishedGoodsLocationCode,
-                PickToLocationCode: WorldHistoryPhase2Spec.ReceivingStagingLocationCode,
+                PickToLocationCode: WorldHistoryPhase2Spec.ShippingStagingLocationCode,
                 LotNo: WorldHistoryMesSpec.ProducedLotNo(order.WorkOrderNo),
                 WarehouseTaskNo: WorldHistoryPhase2Spec.WarehouseTaskNo(outboundOrderNo, 1),
                 PackReviewNo: PackReviewNo(outboundOrderNo),

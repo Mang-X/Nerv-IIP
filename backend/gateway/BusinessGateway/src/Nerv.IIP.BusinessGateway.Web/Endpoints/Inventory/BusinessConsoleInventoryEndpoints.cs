@@ -52,6 +52,72 @@ public sealed class ListBusinessConsoleInventoryExpiryAlertsEndpoint(
 }
 
 [Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/movements")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryMovements")]
+public sealed class ListBusinessConsoleInventoryMovementsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryMovementListRequest, BusinessConsoleInventoryMovementListResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLedgerRead)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryMovementListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryMovementListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryMovementListResponse> ForwardAsync(
+        BusinessConsoleInventoryMovementListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListMovementsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/count-tasks")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryCountTasks")]
+public sealed class ListBusinessConsoleInventoryCountTasksEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryCountTaskListRequest, BusinessConsoleInventoryCountTaskListResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryCountsManage)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryCountTaskListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryCountTaskListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryCountTaskListResponse> ForwardAsync(
+        BusinessConsoleInventoryCountTaskListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListCountTasksAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/count-adjustments")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryCountAdjustments")]
+public sealed class ListBusinessConsoleInventoryCountAdjustmentsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryCountAdjustmentListRequest, BusinessConsoleInventoryCountAdjustmentListResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryCountsManage)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryCountAdjustmentListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryCountAdjustmentListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryCountAdjustmentListResponse> ForwardAsync(
+        BusinessConsoleInventoryCountAdjustmentListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListCountAdjustmentsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
 [HttpPost("/api/business-console/v1/inventory/movements")]
 [BusinessGatewayOperationId("postBusinessConsoleInventoryMovement")]
 public sealed class PostBusinessConsoleInventoryMovementEndpoint(

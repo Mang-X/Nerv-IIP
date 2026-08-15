@@ -9,10 +9,12 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -22,7 +24,6 @@ using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
-
 
 var isTesting = false;
 try
@@ -68,7 +69,7 @@ try
     builder.Services.AddHostedService<AlarmEscalationScheduler>();
     builder.Services.AddHostedService<TelemetryHistorianScheduler>();
     builder.Services.AddScoped<IDeviceControlOpsClient, DeviceControlOpsClient>();
-    var opsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
+    var opsBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Ops:BaseUrl", "http://localhost:5103");
     builder.Services.AddHttpClient<IOpsClient, HttpOpsClient>((services, client) =>
     {
         client.BaseAddress = opsBaseAddress;
@@ -85,7 +86,12 @@ try
     builder.Services.AddIndustrialTelemetryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        IndustrialTelemetryFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
@@ -116,11 +122,15 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             // Must wrap unit-of-work save so save-time ingestion unique conflicts can retry through idempotent lookups.
             .AddOpenBehavior(typeof(IndustrialTelemetryIdempotentIngestionBehavior<,>))
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<ICommandLock<AcknowledgeAlarmCommand>, AcknowledgeAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<ShelveAlarmCommand>, ShelveAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<UnshelveAlarmCommand>, UnshelveAlarmCommandLock>();
+    builder.Services.AddScoped<ICommandLock<RunAlarmEscalationsCommand>, RunAlarmEscalationsCommandLock>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = IndustrialTelemetryFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
@@ -146,6 +156,11 @@ try
         throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
     }
 
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration) && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:History:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
+    }
+
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
@@ -156,10 +171,49 @@ try
         {
             await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
         }
+
+        // 《工厂世界观设定集》L1 设备域历史（三期）。校验器 fail-closed：对不上账就让启动失败。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var historyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                organizationId,
+                environmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            historyStopwatch.Stop();
+            app.Logger.LogInformation(
+                "World-history device seed completed in {ElapsedSeconds:F1}s: {Rules} alarm rules, {Alarms} alarm events, " +
+                "{Daily} daily rollups, {Hourly} hourly rollups, {Raw} raw samples, {Summaries} summaries, " +
+                "{States} device states, {OeeFacts} OEE facts, {ControlCommands} device control commands; " +
+                "validator checked {AlarmsChecked} alarms / {DailyChecked} daily rollups / {FaultedChecked} faulted states / " +
+                "{OeeChecked} OEE facts / {ControlChecked} control commands (all terminal) ({OpenAlarms} open-tail alarms).",
+                historyStopwatch.Elapsed.TotalSeconds,
+                report.AlarmRulesWritten,
+                report.AlarmEventsWritten,
+                report.DailyRollupsWritten,
+                report.HourlyRollupsWritten,
+                report.RawSamplesWritten,
+                report.SummariesWritten,
+                report.DeviceStateSnapshotsWritten,
+                report.OeeFactsWritten,
+                report.DeviceControlCommandsWritten,
+                report.Validation.AlarmsChecked,
+                report.Validation.DailyRollupsChecked,
+                report.Validation.FaultedStatesChecked,
+                report.Validation.OeeFactsChecked,
+                report.Validation.DeviceControlCommandsChecked,
+                report.Validation.OpenAlarms);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history device sample: {Chain}", line);
+            }
+        }
     }
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = System.Net.HttpStatusCode.BadRequest });
+    app.UseMiddleware<IndustrialTelemetryLifecycleConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -196,26 +250,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

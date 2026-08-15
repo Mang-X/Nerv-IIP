@@ -1,0 +1,43 @@
+{
+  "solution": {
+    "path": "../Nerv.IIP.sln",
+    "projects": [
+      "gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj",
+      "services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/Nerv.IIP.AppHub.Domain.Tests.csproj",
+      "services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj",
+      "services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj",
+      "services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj",
+      "services/Notification/tests/Nerv.IIP.Notification.Domain.Tests/Nerv.IIP.Notification.Domain.Tests.csproj",
+      "services/Notification/tests/Nerv.IIP.Notification.Web.Tests/Nerv.IIP.Notification.Web.Tests.csproj",
+      "services/Ops/tests/Nerv.IIP.Ops.Domain.Tests/Nerv.IIP.Ops.Domain.Tests.csproj",
+      "services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj",
+      "tests/Nerv.IIP.Coding.Tests/Nerv.IIP.Coding.Tests.csproj",
+      "tests/Nerv.IIP.ContractBoundary.Tests/Nerv.IIP.ContractBoundary.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contracts.AppHubQueries.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.EquipmentRuntime.Tests/Nerv.IIP.Contracts.EquipmentRuntime.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.FileStorage.Tests/Nerv.IIP.Contracts.FileStorage.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.IntegrationEvents.Tests/Nerv.IIP.Contracts.IntegrationEvents.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.MasterData.Tests/Nerv.IIP.Contracts.MasterData.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.Notification.Tests/Nerv.IIP.Contracts.Notification.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.Ops.Tests/Nerv.IIP.Contracts.Ops.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.ProductEngineering.Tests/Nerv.IIP.Contracts.ProductEngineering.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.Quality.Tests/Nerv.IIP.Contracts.Quality.Tests.csproj",
+      "tests/Nerv.IIP.Contracts.Scheduling.Tests/Nerv.IIP.Contracts.Scheduling.Tests.csproj",
+      "tests/Nerv.IIP.FacadeCoverage.Tests/Nerv.IIP.FacadeCoverage.Tests.csproj",
+      "tests/Nerv.IIP.FastEndpoints.Architecture.Tests/Nerv.IIP.FastEndpoints.Architecture.Tests.csproj",
+      "tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests/Nerv.IIP.FastEndpoints.ProcessIsolation.Tests.csproj",
+      "tests/Nerv.IIP.Localization.Tests/Nerv.IIP.Localization.Tests.csproj",
+      "tests/Nerv.IIP.Messaging.CAP.Tests/Nerv.IIP.Messaging.CAP.Tests.csproj",
+      "tests/Nerv.IIP.MigrationGovernance.Tests/Nerv.IIP.MigrationGovernance.Tests.csproj",
+      "tests/Nerv.IIP.Observability.Tests/Nerv.IIP.Observability.Tests.csproj",
+      "tests/Nerv.IIP.Persistence.Tests/Nerv.IIP.Persistence.Tests.csproj",
+      "tests/Nerv.IIP.Sdk.Core.Tests/Nerv.IIP.Sdk.Core.Tests.csproj",
+      "tests/Nerv.IIP.Sdk.Notification.Tests/Nerv.IIP.Sdk.Notification.Tests.csproj",
+      "tests/Nerv.IIP.Sdk.Observability.Tests/Nerv.IIP.Sdk.Observability.Tests.csproj",
+      "tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
+      "tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
+      "tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj"
+    ]
+  }
+}

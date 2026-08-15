@@ -3,11 +3,16 @@ import type { BusinessConsoleTelemetryDeviceControlBindingItem } from '@nerv-iip
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessDeviceControlBindings } from '@/composables/useBusinessDeviceControlBinding'
+import {
+  useConnectorInstanceCatalog,
+  useEquipmentDeviceCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -26,6 +31,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -64,6 +70,8 @@ const {
   disableBindingPending,
 } = useBusinessDeviceControlBindings()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
+const { connectorInstanceOptions, connectorsPending } = useConnectorInstanceCatalog()
 
 const errorMessage = computed(() => formatError(bindingsError.value))
 
@@ -76,12 +84,18 @@ const disableOpen = ref(false)
 const disableTarget = ref<BusinessConsoleTelemetryDeviceControlBindingItem | null>(null)
 const disableReason = ref('')
 
+// 绑定读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryDeviceControlBindingItem>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.deviceAssetId ?? '无',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无'),
   },
   { key: 'connectorHostId', header: '连接主机', accessor: (r) => r.connectorHostId ?? '无' },
   { key: 'instanceKey', header: '实例标识', accessor: (r) => r.instanceKey ?? '无' },
@@ -94,6 +108,21 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryDeviceControlBindingIte
   },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
+
+/**
+ * 实例目录只包含上报过采集健康的连接器实例；编辑一条老绑定时它的实例可能已不在名单里，
+ * 仍把当前值显示出来，避免打开弹窗就把已存的实例标识"看没了"。
+ */
+const instancePickerOptions = computed(() => {
+  const instanceKey = form.instanceKey.trim()
+  if (!instanceKey || connectorInstanceOptions.value.some((o) => o.value === instanceKey)) {
+    return connectorInstanceOptions.value
+  }
+  return [
+    ...connectorInstanceOptions.value,
+    { value: instanceKey, label: instanceKey, hint: '当前绑定（连接器未上报采集健康）' },
+  ]
+})
 
 const deviceError = computed(() =>
   showErrors.value && !form.deviceAssetId.trim() ? '请填写设备编号' : '',
@@ -149,7 +178,7 @@ async function submit() {
     )
     dialogOpen.value = false
   } catch (error) {
-    notifyError(error, '保存控制通道绑定失败，请稍后重试。')
+    notifyOperationFailure('保存控制通道绑定失败', error, '保存控制通道绑定失败，请稍后重试。')
   }
 }
 
@@ -166,7 +195,7 @@ async function confirmDisable() {
     notifySuccess(`控制通道绑定已停用：${target.deviceAssetId}`)
     disableOpen.value = false
   } catch (error) {
-    notifyError(error, '停用控制通道绑定失败，请稍后重试。')
+    notifyOperationFailure('停用控制通道绑定失败', error, '停用控制通道绑定失败，请稍后重试。')
   }
 }
 
@@ -179,7 +208,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -222,12 +251,16 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="binding-device"
                     >设备编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <NvEntityPicker
                     id="binding-device"
                     v-model="form.deviceAssetId"
-                    placeholder="如 DEV-CNC-01"
-                    :aria-invalid="!!deviceError"
-                    :aria-describedby="deviceError ? 'binding-device-error' : undefined"
+                    :options="deviceOptions"
+                    title="选择设备"
+                    placeholder="选择设备"
+                    source-text="数据来自基础数据设备资产"
+                    empty-text="暂无设备资产，请先在基础数据登记设备"
+                    :loading="devicesPending"
+                    aria-label="设备编号"
                   />
                   <p
                     v-if="deviceError"
@@ -256,11 +289,16 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="binding-instance"
                     >实例标识 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <NvEntityPicker
                     id="binding-instance"
                     v-model="form.instanceKey"
-                    placeholder="连接器实例键，如 opcua-cell-01"
-                    :aria-invalid="!!instanceError"
+                    :options="instancePickerOptions"
+                    title="选择连接器实例"
+                    placeholder="选择连接器实例"
+                    source-text="数据来自连接器采集健康上报"
+                    empty-text="还没有连接器上报采集健康，请先让连接器接入并上报"
+                    :loading="connectorsPending"
+                    aria-label="实例标识"
                   />
                   <p v-if="instanceError" class="text-xs text-destructive" role="alert">
                     {{ instanceError }}
@@ -283,11 +321,17 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
+        <NvEntityPicker
           v-model="filters.deviceAssetId"
-          class="h-9 w-72"
-          placeholder="按设备编号筛选"
-          aria-label="设备编号"
+          class="w-72"
+          :options="deviceOptions"
+          title="选择设备"
+          placeholder="全部设备"
+          source-text="数据来自基础数据设备资产"
+          empty-text="暂无设备资产，请先在基础数据登记设备"
+          :loading="devicesPending"
+          clearable
+          aria-label="设备"
         />
       </template>
     </NvToolbar>
@@ -309,6 +353,14 @@ function formatError(error: unknown) {
       :column-settings="false"
       empty-message="还没有设备控制通道绑定，点击「新建绑定」为设备配置下发通道。"
     >
+      <template #cell-deviceAssetId="{ row }">
+        <span class="grid leading-tight">
+          <span>{{ resolveDevice(row.deviceAssetId) ?? row.deviceAssetId ?? '无' }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
+        </span>
+      </template>
       <template #cell-isActive="{ row }">
         <NvStatusBadge :value="row.isActive === false ? 'disabled' : 'active'" />
       </template>

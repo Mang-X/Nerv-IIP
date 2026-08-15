@@ -15,6 +15,7 @@ import {
   useMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
+import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '@/data/timeZones'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -32,6 +33,7 @@ import {
   NvMetricStrip,
   NvPageHeader,
   ScrollArea,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -44,7 +46,7 @@ import { FactoryIcon, PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -57,7 +59,7 @@ definePage({
 // 列表端点有分页上限（默认 take=100），层级树需尽量全量拼装：用较大 take 兜底。
 // 真正全量需后端全量端点（#373），超过此阈值的层级在树底给出提示。
 const TREE_TAKE = 200
-const DEFAULT_TIMEZONE = 'Asia/Shanghai'
+const DEFAULT_TIMEZONE = DEFAULT_TIME_ZONE
 const WORK_CENTER_DEFAULTS = {
   resourceType: 'work-center',
   capacityUnit: 'minutes',
@@ -206,7 +208,7 @@ const treeListError = computed(() => {
     workshops.workshopsError.value ??
     lines.error.value ??
     workCenters.error.value
-  return e instanceof Error ? e.message : e ? '层级数据加载失败，请刷新重试。' : ''
+  return inlineErrorMessage(e, '层级数据加载失败，请刷新重试。')
 })
 
 // ---- 渲染森林：始终以工厂为根（含单一工厂——藏根会导致无法选中/编辑该工厂）。
@@ -614,7 +616,11 @@ async function submitCreate() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure(
+      `创建${NODE_LABEL[createType.value]}失败`,
+      error,
+      `创建${NODE_LABEL[createType.value]}失败，请稍后重试。`,
+    )
   }
 }
 
@@ -635,6 +641,18 @@ const editForm = reactive({
   defaultCalendarCode: '',
   capacityMinutesPerDay: '480',
 })
+// 时区只能是合法 IANA 标识符（手输 `GMT+8` 之类会让排产/日历算错），一律从常用清单里选；
+// 已存的历史值若不在清单里，兜住它显示，不至于变成未选。
+function timeZoneOptionsWith(current: string) {
+  const trimmed = current.trim()
+  if (trimmed && !TIME_ZONE_OPTIONS.some((option) => option.value === trimmed)) {
+    return [{ value: trimmed, label: trimmed }, ...TIME_ZONE_OPTIONS]
+  }
+  return TIME_ZONE_OPTIONS
+}
+const timeZoneOptions = computed(() => timeZoneOptionsWith(createForm.timezone))
+const editTimeZoneOptions = computed(() => timeZoneOptionsWith(editForm.timezone))
+
 const canEdit = computed(() => {
   if (!isNonEmpty(editForm.name)) return false
   switch (editType.value) {
@@ -783,7 +801,11 @@ async function submitEdit() {
     editShowErrors.value = false
     editOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure(
+      `更新${NODE_LABEL[editType.value]}失败`,
+      error,
+      `更新${NODE_LABEL[editType.value]}失败，请稍后重试。`,
+    )
   }
 }
 
@@ -924,7 +946,7 @@ function childLabelOf(type: string): string | undefined {
         </ScrollArea>
 
         <p v-if="treeTruncated" class="text-xs text-muted-foreground">
-          节点较多，当前仅展示前 {{ TREE_TAKE }} 条，层级可能不完整；完整层级加载能力即将上线。
+          节点较多，当前仅展示前 {{ TREE_TAKE }} 条；请使用搜索缩小范围。
         </p>
       </section>
 
@@ -1063,7 +1085,13 @@ function childLabelOf(type: string): string | undefined {
               <NvFieldLabel for="create-tz"
                 >时区 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvInput id="create-tz" v-model="createForm.timezone" autocomplete="off" required />
+              <NvSearchSelect
+                id="create-tz"
+                v-model="createForm.timezone"
+                :options="timeZoneOptions"
+                placeholder="选择时区"
+                aria-label="时区"
+              />
             </NvField>
           </NvFieldGroup>
 
@@ -1156,7 +1184,13 @@ function childLabelOf(type: string): string | undefined {
             </NvField>
             <NvField v-if="editType === 'site'">
               <NvFieldLabel for="edit-tz">时区</NvFieldLabel>
-              <NvInput id="edit-tz" v-model="editForm.timezone" autocomplete="off" />
+              <NvSearchSelect
+                id="edit-tz"
+                v-model="editForm.timezone"
+                :options="editTimeZoneOptions"
+                placeholder="选择时区"
+                aria-label="时区"
+              />
             </NvField>
           </NvFieldGroup>
 

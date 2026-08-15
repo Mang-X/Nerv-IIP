@@ -26,6 +26,7 @@ export function workOrderStatusLabel(status?: string | null): string {
 
 /** 工序任务状态可读标签（operation / report 页面共用，原本两份相同副本）。 */
 export const OPERATION_TASK_STATUS_LABELS: Record<string, string> = {
+  Queued: '待开工',
   Ready: '可开工',
   Running: '执行中',
   Started: '执行中',
@@ -34,6 +35,7 @@ export const OPERATION_TASK_STATUS_LABELS: Record<string, string> = {
   Held: '已暂停',
   ScheduleInvalidated: '排程已失效',
   Completed: '已完成',
+  Cancelled: '已取消',
   Blocked: '受阻',
 }
 

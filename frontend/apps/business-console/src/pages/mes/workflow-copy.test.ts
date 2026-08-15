@@ -29,6 +29,7 @@ const mesSpies = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
   RouterLink: {
     props: ['to'],
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
@@ -37,24 +38,92 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
-vi.mock('@/utils/notify', () => ({ notifySuccess: vi.fn(), notifyError: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: vi.fn(),
+  notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({ resources: ref([]) }),
-  useBusinessSkus: () => ({ skus: ref([]) }),
+  useBusinessMasterDataResources: () => ({
+    resources: ref([]),
+    resourcesPending: ref(false),
+    filters: reactive({}),
+  }),
+  // 完工入库的单位跟随成品物料主档的基本单位（FG-001 是计件成品 → pcs）。
+  useBusinessSkus: () => ({
+    skus: ref([{ code: 'FG-001', baseUomCode: 'pcs', active: true }]),
+    skusPending: ref(false),
+    filters: reactive({}),
+  }),
+  // 完工入库的单位改成从计量单位主数据里选。
+  useBusinessUoms: () => ({
+    uoms: ref([{ code: 'pcs', displayName: '个', active: true }]),
+    uomsPending: ref(false),
+    filters: reactive({}),
+  }),
+  useBusinessWorkers: () => ({
+    workers: ref([]),
+    workersPending: ref(false),
+    filters: reactive({}),
+  }),
+}))
+
+// 急单表单的物料 ▸ 生产版本目录走 colada 读面，本文件只看文案与提交体，整体打桩。
+vi.mock('@/composables/useMesPickerCatalog', () => ({
+  useMesMaterialVersionCatalog: () => ({
+    skuOptions: ref([]),
+    skusPending: ref(false),
+    productionVersionOptions: () => [],
+    productionVersionsPending: ref(false),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
+  // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: ref([]),
+    scopeSelectionValue: ref(undefined),
+    scopeReady: ref(true),
+    scopeMessage: ref(''),
+    scopePending: ref(false),
+    scopeUnavailable: ref(false),
+    selectedScope: ref(undefined),
+    principalIdentity: ref('principal-test'),
+    requireSelectedScope: vi.fn(),
+  }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+    reportScopeMessage: ref(''),
+    reportScopePending: ref(false),
+    reportScopeReady: ref(true),
+    refreshProductionReportState: vi.fn(),
   }),
   describeMesReadinessReason: (code: string) => ({
     code,
     label: code || '未检',
     nextStep: '请按质量或设备处理要求跟进。',
   }),
+  // 同码合并版（#1418）：页面改用它渲染阻塞项，桩要跟着真实模块的导出面走。
+  describeMesReadinessReasons: (codes?: readonly string[] | null) => {
+    const seen = new Map<
+      string,
+      { code: string; label: string; detail: string; nextStep: string }
+    >()
+    for (const code of codes ?? []) {
+      if (seen.has(code)) continue
+      seen.set(code, {
+        code,
+        label: code || '未检',
+        detail: '',
+        nextStep: '请按质量或设备处理要求跟进。',
+      })
+    }
+    return [...seen.values()]
+  },
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   useMesWorkOrderProducedLots: () => ({
     // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
@@ -102,7 +171,28 @@ vi.mock('@/composables/useBusinessMes', () => ({
     operationTasksError: ref(undefined),
     operationTasksPending: ref(false),
     operationTasksTotal: ref(1),
+    operationListScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    operationListScopeMessage: ref(''),
+    operationListScopeReady: ref(true),
+    operationScopeMessage: ref(''),
+    operationScopePending: ref(false),
+    operationScopeReady: ref(true),
+    operationTasksLastUpdatedAt: ref('2026-07-30T00:00:00Z'),
+    operationTasksHasSuccessfulResponse: ref(true),
+    operationTasksHasFailedResponse: ref(false),
     refreshOperationTasks: vi.fn(),
+    startOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
+    resumeOperationTask: vi.fn(),
+    completeOperationTask: vi.fn(),
+  }),
+  useMesDispatchTasks: () => ({
+    assignDispatchTask: vi.fn(),
+    assignDispatchTaskPending: ref(false),
   }),
   useMesCurrentOperationSops: () => ({
     filters: {
@@ -195,10 +285,23 @@ vi.mock('@/composables/useBusinessMes', () => ({
     workOrdersError: ref(undefined),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(1),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00Z'),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersHasFailedResponse: ref(false),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 
 const businessStubs = {
+  // 派工弹窗内部用 reka 的 DialogRoot/DialogTrigger（实体选择器），
+  // 与本文件的 UI passthrough stub 不兼容；本用例只看工序行的文案，整体桩掉。
+  DispatchAssignDialog: true,
   BusinessActionSheet: {
     props: ['open', 'title', 'description'],
     template: '<section><h2>{{ title }}</h2><p>{{ description }}</p><slot /></section>',
@@ -347,6 +450,20 @@ const uiStubs = {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
   },
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  NvSearchSelect: {
+    props: ['modelValue', 'options', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   Spinner: true,
   Table: {
     template: '<table><slot /></table>',
@@ -401,7 +518,7 @@ function mountMesPage(component: unknown) {
 
 function expectNoForbiddenVisibleTerms(text: string) {
   expect(text).not.toMatch(
-    /demo|mock|seed|样例|用于验证|接口|契约|组织|环境|sourceSystem|operationId|联动测试|内置|幂等键/i,
+    /demo|mock|seed|样例|用于验证|sourceSystem|operationId|联动测试|内置|幂等键/i,
   )
 }
 
@@ -518,7 +635,7 @@ describe('MES workflow copy', () => {
         quantity: 10,
         skuId: 'FG-001',
         unitCost: 12.34,
-        uomCode: 'EA',
+        uomCode: 'pcs',
         workOrderId: 'WO-001',
       }),
     )

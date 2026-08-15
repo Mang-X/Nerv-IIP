@@ -47,7 +47,12 @@ import {
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -342,7 +347,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布工艺路线失败', error, '发布工艺路线失败，请稍后重试。')
   }
 }
 
@@ -371,7 +376,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -400,7 +405,9 @@ function formatError(error: unknown) {
               发布新版本
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-3xl">
+          <!-- 工序行数不定，弹框高度会超出视口（实测 970.75px > 950px）：内部滚动，
+               别让「发布」按钮被挤到屏幕外够不着（GH#1292 第 7 项）。 -->
+          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工艺路线新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -600,14 +607,28 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="工艺路线版本"
-      :value="routingsTotal"
-      unit="个"
-      :segments="routingSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="工艺路线版本"
+        :value="routingsTotal"
+        unit="个"
+        :segments="routingSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="draftCount > 0 ? '确认工序顺序与工时后发布。' : '当前没有待发布的工艺路线。'"
+      />
+    </div>
 
     <NvToolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>

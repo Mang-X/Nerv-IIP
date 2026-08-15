@@ -79,7 +79,7 @@ const outputSeries = [
 
 ## 折线图 NvLineChart
 
-多系列对比，例如计划 vs 实际产量。
+多系列对比，例如计划与实际产量。
 
 <Demo>
   <div class="w-full">

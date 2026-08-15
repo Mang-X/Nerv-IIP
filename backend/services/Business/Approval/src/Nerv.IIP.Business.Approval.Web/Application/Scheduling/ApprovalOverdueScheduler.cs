@@ -5,7 +5,8 @@ namespace Nerv.IIP.Business.Approval.Web.Application.Scheduling;
 public sealed class ApprovalOverdueScheduler(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    ILogger<ApprovalOverdueScheduler> logger)
+    ILogger<ApprovalOverdueScheduler> logger,
+    TimeProvider timeProvider)
     : BackgroundService
 {
     private static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(15);
@@ -34,7 +35,10 @@ public sealed class ApprovalOverdueScheduler(
             interval = DefaultInterval;
         }
 
-        using var timer = new PeriodicTimer(interval);
+        // The tick boundary is a scheduling semantic, so it runs on the injected clock: tests can drive it
+        // without waiting for wall-clock time, and an unadvanced fake clock makes a second pass structurally
+        // impossible instead of merely improbable.
+        using var timer = new PeriodicTimer(interval, timeProvider);
         await TryCheckAllScopesAsync(scopes, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {

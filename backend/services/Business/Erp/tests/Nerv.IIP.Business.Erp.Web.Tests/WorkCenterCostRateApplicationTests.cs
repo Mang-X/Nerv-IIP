@@ -19,6 +19,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class WorkCenterCostRateApplicationTests
 {
     private static readonly DateTimeOffset July1 = new(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);

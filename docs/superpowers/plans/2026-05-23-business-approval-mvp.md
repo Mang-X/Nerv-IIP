@@ -1,43 +1,43 @@
-# BusinessApproval MVP Implementation Plan
+# BusinessApproval 最小可行产品（MVP）实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Implement #134 by creating BusinessApproval for business approval templates, approval chains, approval steps, decision records and approval result events.
+**目标：**通过创建 BusinessApproval 来实施 #134，涵盖业务审批模板、审批链、审批步骤、决策记录和审批结果事件。
 
-**Architecture:** BusinessApproval is a CleanDDD business service under `backend/services/Business/Approval`. It references IAM users/contexts by public IDs and emits approval result events for business services. It does not replace Ops operation approvals or copy IAM role facts.
+**架构：**BusinessApproval 是位于 `backend/services/Business/Approval` 下的 CleanDDD 业务服务。它通过公开 ID 引用 IAM 用户/上下文，并为业务服务发出审批结果事件。它不替代 Ops 操作审批，也不复制 IAM 角色事实。
 
-**Tech Stack:** .NET 10, NetCorePal CleanDDD template, FastEndpoints, EF Core PostgreSQL, xUnit, ADR 0011 integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、NetCorePal CleanDDD 模板、FastEndpoints、EF Core PostgreSQL、xUnit、ADR 0011 集成事件转换、`Nerv.IIP.Testing` 数据库模式约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-business-approval-mvp-design.md` as the domain contract for this plan.
+使用 `docs/superpowers/specs/2026-05-23-business-approval-mvp-design.md` 作为本计划的领域契约。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/Nerv.IIP.Business.Approval.Domain.csproj`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Nerv.IIP.Business.Approval.Infrastructure.csproj`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Nerv.IIP.Business.Approval.Web.csproj`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalTemplateAggregate/ApprovalTemplate.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalChainAggregate/ApprovalChain.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalStepAggregate/ApprovalStep.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalDecisionAggregate/ApprovalDecision.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/DomainEvents/ApprovalDomainEvents.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/ApprovalPermissionCodes.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Commands/*.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Queries/*.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/IntegrationEvents/ApprovalIntegrationEvents.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/IntegrationEventConverters/ApprovalIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Endpoints/Approvals/ApprovalEndpoints.cs`
-- Create: `backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Domain.Tests/ApprovalAggregateTests.cs`
-- Create: `backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalEndpointContractTests.cs`
-- Create: `backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalIntegrationEventTests.cs`
-- Create: `backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalSchemaConventionTests.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/Nerv.IIP.Business.Approval.Domain.csproj`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Nerv.IIP.Business.Approval.Infrastructure.csproj`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Nerv.IIP.Business.Approval.Web.csproj`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalTemplateAggregate/ApprovalTemplate.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalChainAggregate/ApprovalChain.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalStepAggregate/ApprovalStep.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/AggregatesModel/ApprovalDecisionAggregate/ApprovalDecision.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Domain/DomainEvents/ApprovalDomainEvents.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/EntityConfigurations/*.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Auth/ApprovalPermissionCodes.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Commands/*.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/Queries/*.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/IntegrationEvents/ApprovalIntegrationEvents.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Application/IntegrationEventConverters/ApprovalIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Endpoints/Approvals/ApprovalEndpoints.cs`
+- 创建：`backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Domain.Tests/ApprovalAggregateTests.cs`
+- 创建：`backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalEndpointContractTests.cs`
+- 创建：`backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalIntegrationEventTests.cs`
+- 创建：`backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/ApprovalSchemaConventionTests.cs`
 
-Shared files requested from WAVE2-INTEG:
+请求 WAVE2-INTEG 处理的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `infra/aspire/Nerv.IIP.AppHost/Program.cs`
@@ -46,11 +46,11 @@ Shared files requested from WAVE2-INTEG:
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-approval-mvp.ps1`
 
-## Task 1: Scaffold BusinessApproval Service Locally
+## 任务 1：在本地搭建 BusinessApproval 服务骨架
 
-- [ ] **Step 1: Create service projects**
+- [ ] **步骤 1：创建服务项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Approval -o backend/services/Business/Approval --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -58,52 +58,52 @@ dotnet new xunit -n Nerv.IIP.Business.Approval.Domain.Tests -o backend/services/
 dotnet new xunit -n Nerv.IIP.Business.Approval.Web.Tests -o backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests --framework net10.0
 ```
 
-- [ ] **Step 2: Remove template demo code**
+- [ ] **步骤 2：删除模板演示代码**
 
-Run:
+运行：
 
 ```powershell
 rg -n "OrderAggregate|DeliverRecord|LoginEndpoint|ChatHub|LockEndpoint" backend/services/Business/Approval
 ```
 
-Expected: no matches.
+预期：无匹配项。
 
-## Task 2: Implement Domain Model
+## 任务 2：实施领域模型
 
-- [ ] **Step 1: Write failing aggregate tests**
+- [ ] **步骤 1：编写失败的聚合测试**
 
-Cover:
+覆盖：
 
-1. Active template starts an approval chain for a source document reference.
-2. Ordered steps must resolve in sequence.
-3. Same actor repeating the same decision is idempotent.
-4. Same actor repeating a conflicting decision is rejected.
-5. Rejected chains are terminal.
-6. Approved chains emit approved domain event only after the last required step.
+1. 已启用模板针对源文档引用启动审批链。
+2. 有序步骤必须依次完成处理。
+3. 同一操作者重复相同决策时具有幂等性。
+4. 拒绝同一操作者重复作出存在冲突的决策。
+5. 被拒绝的审批链处于终态。
+6. 获批的审批链仅在最后一个必需步骤完成后发出审批通过领域事件。
 
-- [ ] **Step 2: Implement aggregate roots**
+- [ ] **步骤 2：实施聚合根**
 
-Implement template, chain, step and decision aggregates. Keep IAM facts as string references only.
+实施模板、审批链、步骤和决策聚合。IAM 事实仅保留为字符串引用。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Domain.Tests/Nerv.IIP.Business.Approval.Domain.Tests.csproj --no-restore
 ```
 
-Expected: BusinessApproval domain tests pass.
+预期：BusinessApproval 领域测试通过。
 
-## Task 3: Add Persistence And Events
+## 任务 3：添加持久化与事件
 
-- [ ] **Step 1: Configure DbContext**
+- [ ] **步骤 1：配置 DbContext**
 
-Use schema `business_approval` and migrations history `business_approval.__EFMigrationsHistory`.
+使用数据库模式 `business_approval` 和迁移历史表 `business_approval.__EFMigrationsHistory`。
 
-- [ ] **Step 2: Generate migration**
+- [ ] **步骤 2：生成迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -111,9 +111,9 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add InitialBusinessApprovalSchema --project backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Nerv.IIP.Business.Approval.Infrastructure.csproj --startup-project backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Nerv.IIP.Business.Approval.Web.csproj --output-dir Migrations
 ```
 
-- [ ] **Step 3: Add event tests**
+- [ ] **步骤 3：添加事件测试**
 
-Verify event names:
+验证事件名称：
 
 1. `businessApproval.ApprovalStarted`
 2. `businessApproval.StepResolved`
@@ -121,31 +121,31 @@ Verify event names:
 4. `businessApproval.ApprovalRejected`
 5. `businessApproval.ApprovalReturned`
 
-## Task 4: Add API Surface
+## 任务 4：添加 API 接口
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Cover routes, permission codes, validation, operation IDs and pending task query behavior.
+覆盖路由、权限代码、校验、操作 ID 和待处理任务查询行为。
 
-- [ ] **Step 2: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 2：实施命令、查询和 FastEndpoints**
 
-Implement endpoints from the spec under `Endpoints/Approvals`.
+在 `Endpoints/Approvals` 下实施规格中的端点。
 
-- [ ] **Step 3: Run Web tests**
+- [ ] **步骤 3：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/Nerv.IIP.Business.Approval.Web.Tests.csproj --no-restore
 ```
 
-Expected: BusinessApproval Web tests pass.
+预期：BusinessApproval Web 测试通过。
 
-## Task 5: Handoff Shared Changes To WAVE2-INTEG
+## 任务 5：向 WAVE2-INTEG 移交共享修改
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享修改**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -157,13 +157,13 @@ In the PR/session summary, include:
 - Add `scripts/verify-business-approval-mvp.ps1`.
 ```
 
-- [ ] **Step 2: Run final focused verification**
+- [ ] **步骤 2：运行最终聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Domain.Tests/Nerv.IIP.Business.Approval.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Approval/tests/Nerv.IIP.Business.Approval.Web.Tests/Nerv.IIP.Business.Approval.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两个命令均通过。

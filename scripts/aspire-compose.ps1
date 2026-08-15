@@ -37,20 +37,18 @@ $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHos
 $resolvedOutputPath = Join-Path $root $OutputPath
 Get-AspireCliCommand | Out-Null
 
-switch ($Mode) {
-    'ListSteps' {
+if ([string]::Equals([string]($Mode), [string]('ListSteps'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('publish', '--list-steps')
     }
-    'Publish' {
+elseif ([string]::Equals([string]($Mode), [string]('Publish'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('publish', '--output-path', $resolvedOutputPath)
     }
-    'Prepare' {
+elseif ([string]::Equals([string]($Mode), [string]('Prepare'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('do', 'prepare-compose', '--output-path', $resolvedOutputPath)
     }
-    'Deploy' {
+elseif ([string]::Equals([string]($Mode), [string]('Deploy'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('deploy', '--output-path', $resolvedOutputPath)
     }
-}
 
 $arguments += @(
     '--environment',

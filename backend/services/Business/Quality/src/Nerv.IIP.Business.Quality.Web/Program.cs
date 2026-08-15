@@ -14,7 +14,9 @@ using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
@@ -23,6 +25,7 @@ using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Caching;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -34,7 +37,6 @@ using NetCorePal.Extensions.NewtonsoftJson;
 using Newtonsoft.Json;
 using Prometheus;
 using StackExchange.Redis;
-
 
 var isTesting = false;
 try
@@ -48,8 +50,8 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
-    var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
     builder.Services.AddHttpClient<IApprovalChainStatusClient, HttpApprovalChainStatusClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
@@ -111,7 +113,11 @@ try
     }
 
     builder.Services.AddQualityPostgreSqlPersistence(qualityConnectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddHttpContextAccessor();
@@ -119,6 +125,7 @@ try
     builder.Services.AddScoped<QualitySeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddScoped<WorldHistoryMetrologySeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -159,10 +166,19 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddBehavior<CreateReinspectionUniqueConflictBehavior>()
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<
+        ICommandLock<CreateInspectionRecordFromTaskCommand>,
+        CreateInspectionRecordFromTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignInspectionTaskCommand>,
+        AssignInspectionTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<ClaimInspectionTaskCommand>,
+        ClaimInspectionTaskCommandLock>();
     builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();
@@ -230,7 +246,8 @@ try
                 "World-history quality seed completed: {Plans} inspection plans, {Tasks} inspection tasks, " +
                 "{Records} inspection records ({Reinspections} reinspections), {Ncrs} nonconformance reports; " +
                 "validator checked {CheckedTasks} tasks / {CheckedCompleted} completed inspections / " +
-                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate.",
+                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate; " +
+                "pending assignment distribution: {PendingPreassigned} preassigned / {PendingUnassigned} unassigned.",
                 report.InspectionPlansWritten,
                 report.InspectionTasksWritten,
                 report.InspectionRecordsWritten,
@@ -240,16 +257,51 @@ try
                 report.Validation.CompletedInspectionsChecked,
                 report.Validation.InspectionRecordsChecked,
                 report.Validation.NonconformanceReportsChecked,
-                report.Validation.NonconformingRate);
+                report.Validation.NonconformingRate,
+                report.Validation.PendingTasksPreassigned,
+                report.Validation.PendingTasksUnassigned);
             foreach (var line in report.Validation.Sample)
             {
                 app.Logger.LogInformation("World-history sample: {Chain}", line);
+            }
+
+            // 三期：计量器具台账 / 校准记录 / SPC 控制限 / CAPA。必须排在二期之后——
+            // CAPA 要挂真实 NCR、效果验证要引用真实合格检验记录，两者都由二期写入。
+            var metrologyReport = await scope.ServiceProvider
+                .GetRequiredService<WorldHistoryMetrologySeedService>()
+                .SeedAsync(
+                    leaderDemoOrganizationId,
+                    leaderDemoEnvironmentId,
+                    WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                    WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history metrology seed completed: {Devices} measuring devices, {Calibrations} calibration records, " +
+                "{Charts} SPC control charts, {Capas} CAPAs ({Items} action items); validator checked " +
+                "{CheckedDevices} devices (overdue {Overdue} / warning {Warning} / unavailable {Unavailable}), " +
+                "{CheckedCharts} charts, {CheckedCapas} CAPAs ({ClosedCapas} closed, {OverdueCapas} overdue).",
+                metrologyReport.MeasuringDevicesWritten,
+                metrologyReport.CalibrationRecordsWritten,
+                metrologyReport.SpcControlChartsWritten,
+                metrologyReport.CorrectiveActionsWritten,
+                metrologyReport.CorrectiveActionItemsWritten,
+                metrologyReport.Validation.MeasuringDevicesChecked,
+                metrologyReport.Validation.OverdueDevices,
+                metrologyReport.Validation.WarningDevices,
+                metrologyReport.Validation.UnavailableDevices,
+                metrologyReport.Validation.SpcControlChartsChecked,
+                metrologyReport.Validation.CorrectiveActionsChecked,
+                metrologyReport.Validation.ClosedCorrectiveActions,
+                metrologyReport.Validation.OverdueCorrectiveActions);
+            foreach (var line in metrologyReport.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history metrology sample: {Chain}", line);
             }
         }
     }
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
+    app.UseMiddleware<QualityLifecycleConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -302,26 +354,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

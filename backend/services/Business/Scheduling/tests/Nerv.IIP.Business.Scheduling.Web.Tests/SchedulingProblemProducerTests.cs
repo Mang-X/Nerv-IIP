@@ -293,6 +293,66 @@ public sealed class SchedulingProblemProducerTests
         Assert.Equal(HorizonEnd, window.EndUtc);
     }
 
+    /// <summary>
+    /// #1320 黄金向量:同一台设备在两侧必须解析到同一个键。
+    /// MasterData 读面同时给业务编码 <c>code</c> 与聚合主键 <c>deviceAssetId</c>(GUID),
+    /// 而 IIoT / 维护世界只认业务编码。排程资源必须落在业务编码上,否则可用性查询一台都对不上,
+    /// 全部回落成「状态未知」。
+    /// </summary>
+    [Fact]
+    public async Task Master_data_client_uses_device_business_code_as_scheduling_resource_id()
+    {
+        // IIoT 侧对同一台设备持有的键(DeviceStateSnapshot.DeviceAssetId / AlarmEvent.DeviceAssetId)。
+        const string IiotDeviceAssetId = "DEV-MIX-01";
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+            {
+              "data": {
+                "resources": [
+                  {
+                    "resourceType": "device-asset",
+                    "code": "DEV-MIX-01",
+                    "displayName": "Mixer 01",
+                    "active": true,
+                    "snapshotVersion": "1",
+                    "workCenterCode": "WC-MIX-01",
+                    "deviceAssetId": "0198f0aa-1111-7000-8000-000000000001"
+                  }
+                ],
+                "total": 1,
+                "truncated": false
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """)))
+        {
+            BaseAddress = new Uri("http://master-data")
+        };
+        var client = new HttpSchedulingProblemMasterDataClient(httpClient);
+
+        var devices = await client.ListDeviceAssetsAsync("org-001", "env-dev", "WC-MIX-01", CancellationToken.None);
+
+        var device = Assert.Single(devices);
+        Assert.Equal(IiotDeviceAssetId, device.ResourceId);
+        Assert.False(Guid.TryParse(device.ResourceId, out _), "排程资源标识不能是 MasterData 的聚合主键 GUID。");
+    }
+
+    [Theory]
+    // 有业务编码时永远用业务编码,哪怕主数据同时给了 GUID 主键。
+    [InlineData("DEV-CNC-01", "0198f0aa-1111-7000-8000-000000000001", "DEV-CNC-01")]
+    [InlineData("  DEV-CNC-02  ", null, "DEV-CNC-02")]
+    // 编码缺失才兜底用 GUID:宁可给一个对不上的键,也不产出空标识把整台设备从问题里抹掉。
+    [InlineData("", "0198f0aa-1111-7000-8000-000000000002", "0198f0aa-1111-7000-8000-000000000002")]
+    [InlineData(null, null, "")]
+    public void Device_asset_key_prefers_the_business_code_shared_by_both_sides(
+        string? code,
+        string? deviceAssetId,
+        string expected)
+    {
+        Assert.Equal(expected, SchedulingDeviceAssetKey.Resolve(code, deviceAssetId));
+    }
+
     [Fact]
     public async Task Master_data_client_reads_authoritative_tooling_facts_over_internal_http_contract()
     {

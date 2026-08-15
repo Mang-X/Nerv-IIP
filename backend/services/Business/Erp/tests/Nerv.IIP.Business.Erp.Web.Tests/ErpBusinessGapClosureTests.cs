@@ -364,18 +364,19 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
-    public async Task Direct_account_payable_posts_expense_payable_without_touching_inventory_or_gr_ir()
+    public async Task Direct_account_payable_from_purchase_order_posts_expense_payable_without_touching_inventory_or_gr_ir()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "PO-DIRECT-001", "SUP-001");
 
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand(
                 "org-001",
                 "env-dev",
                 "AP-DIRECT-001",
-                "MANUAL-AP-001",
+                "PO-DIRECT-001",
                 "SUP-001",
                 100m,
                 "CNY",
@@ -622,9 +623,11 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
             CancellationToken.None);
@@ -705,9 +708,11 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
             CancellationToken.None);
@@ -742,9 +747,11 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-2STAGE-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-2STAGE-001", "INV-2STAGE-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-2STAGE-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-2STAGE-001", "DO-2STAGE-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 15), "NET14"),
             CancellationToken.None);
@@ -786,6 +793,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-USD-COLLECT-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-USD-COLLECT-001", "DO-USD-COLLECT-001", "CUS-001", 80m, "USD", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30", ExchangeRate: 7.1m),
             CancellationToken.None);
@@ -813,9 +821,11 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "INV-001", "SUP-001", 100m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 80m, "CNY", new DateOnly(2026, 6, 1), new DateOnly(2026, 7, 1), "NET30"),
             CancellationToken.None);
@@ -861,6 +871,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-SUP-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-SUP-002", "SUP-002");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-SUP-001", "INV-SUP-001", "SUP-001", 100m, "CNY"),
             CancellationToken.None);
@@ -894,6 +906,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-002", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-USD-001", "INV-USD-001", "SUP-001", 100m, "USD", ExchangeRate: 7.1m),
             CancellationToken.None);
@@ -940,12 +954,15 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-CNY-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedSupplierInvoiceAsync(dbContext, "INV-USD-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-CNY-001", "INV-CNY-001", "SUP-001", 100m, "CNY"),
             CancellationToken.None);
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-USD-001", "INV-USD-001", "SUP-001", 10m, "USD", ExchangeRate: 7m),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-USD-001", "CUST-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-USD-001", "DO-USD-001", "CUST-001", 20m, "USD", ExchangeRate: 7m),
             CancellationToken.None);
@@ -970,6 +987,7 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-OLD", "CUST-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-OLD", "CUST-001", 90m, "CNY"),
             CancellationToken.None);
@@ -994,7 +1012,7 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-001").Status);
         await Assert.ThrowsAsync<KnownException>(() => new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
             new ReleaseDeliveryOrderCommand(
                 "org-001",
@@ -1004,10 +1022,50 @@ public sealed class ErpBusinessGapClosureTests
                 [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
             CancellationToken.None));
 
-        await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, new CapturingPurchaseOrderApprovalClient()).Handle(
-            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001"),
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        var releaseResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
             CancellationToken.None);
-        Assert.Equal("credit-held", dbContext.SalesOrders.Single().Status);
+        // 解冻语义：credit-held 订单不直接放行，而是发起「信用解冻」审批链，审批通过后才恢复 released。
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultApprovalStarted, releaseResult);
+        Assert.Equal("erp-sales-credit-release", approvalClient.LastRequest?.TemplateCode);
+        Assert.Equal("sales-order-credit-release", approvalClient.LastRequest?.DocumentType);
+        Assert.Equal("user:sales-001", approvalClient.LastRequest?.StartedBy);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-001").Status);
+
+        // 审批驳回：订单维持冻结，且再次提交解冻必须重新发起审批（ERP 侧不做本地去重；
+        // 审批侧 PendingIdentityKey 在驳回时置空，故新链不会被吞——见 Approval 侧配套实证用例）。
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            new ApprovalCompletedIntegrationEvent(
+                "evt-sales-credit-rejected-001",
+                ApprovalIntegrationEventTypes.ApprovalRejected,
+                ApprovalIntegrationEventVersions.V1,
+                DateTimeOffset.UtcNow,
+                ApprovalIntegrationEventSources.BusinessApproval,
+                "chain-sales-credit-000",
+                "decision-sales-credit-000",
+                "org-001",
+                "env-dev",
+                "user:credit-manager",
+                "sales-credit-rejected:SO-001",
+                new ApprovalCompletedPayload(
+                    "chain-sales-credit-000",
+                    ApprovalResults.Rejected,
+                    "user",
+                    "credit-manager",
+                    null,
+                    null,
+                    new ApprovalDocumentReferencePayload("business-erp", "sales-order-credit-release", "SO-001", null),
+                    "user:sales-001")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-001").Status);
+
+        var secondSubmitResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
+            CancellationToken.None);
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultApprovalStarted, secondSubmitResult);
+        Assert.Equal(2, approvalClient.CallCount);
         await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             new ApprovalCompletedIntegrationEvent(
                 "evt-sales-credit-approved-001",
@@ -1033,7 +1091,25 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal("released", dbContext.SalesOrders.Single().Status);
+        Assert.Equal("released", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-001").Status);
+
+        // 已下达（released）后履约恢复：交货放行不再被信用冻结拦截。
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand(
+                "org-001",
+                "env-dev",
+                "DO-UNBLOCKED",
+                "SO-001",
+                [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Single(dbContext.DeliveryOrders.Where(x => x.SalesOrderNo == "SO-001"));
+
+        // 已 released 订单重复解冻是幂等回执，不再发起新审批链。
+        var idempotentResult = await new ReleaseSalesOrderCreditHoldCommandHandler(dbContext, approvalClient).Handle(
+            new ReleaseSalesOrderCreditHoldCommand("org-001", "env-dev", "SO-001", "user:sales-001"),
+            CancellationToken.None);
+        Assert.Equal(ReleaseSalesOrderCreditHoldCommandHandler.ResultReleased, idempotentResult);
     }
 
     private static ApprovalCompletedIntegrationEvent ApprovedPurchaseOrderEvent(string purchaseOrderNo, string chainId)
@@ -1080,9 +1156,12 @@ public sealed class ErpBusinessGapClosureTests
     {
         public PurchaseOrderApprovalRequest? LastRequest { get; private set; }
 
+        public int CallCount { get; private set; }
+
         public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
         {
             LastRequest = request;
+            CallCount++;
             return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
         }
     }

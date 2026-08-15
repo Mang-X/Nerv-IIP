@@ -4,14 +4,29 @@ import type {
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import { NCR_DISPOSITION_DOCUMENT_TYPE } from '@/data/approvalReference'
+import {
+  NCR_DISPOSITION_TYPE_OPTIONS,
+  ncrDispositionRequiresCentralApproval,
+  ncrDispositionRequiresEvidence,
+} from '@/data/qualityReference'
+import { labelFor, NCR_STATUS_LABELS, QUALITY_SOURCE_TYPE_LABELS } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { useAuthStore } from '@/stores/auth'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -23,6 +38,7 @@ import {
   NvAlertDialogTitle,
   NvAlertDialogTrigger,
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDropdownMenuItem,
   NvField,
@@ -59,6 +75,7 @@ definePage({
 })
 
 const route = useRoute()
+const auth = useAuthStore()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
 const {
   closeNcr,
@@ -78,17 +95,20 @@ const { page, pageSize } = usePagedList(filters, {
 
 const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
+// 值必须与后端 NonconformanceReport 的状态字完全一致（读面按 Status 精确匹配过滤）。
 const statusOptions = [
   { label: '全部状态', value: 'all' },
-  { label: '待处理', value: 'open' },
-  { label: '处置中', value: 'dispositioned' },
+  { label: '待处置', value: 'open' },
+  { label: '处置中', value: 'disposition-in-progress' },
   { label: '已关闭', value: 'closed' },
 ]
 
 const dispositionForm = reactive({
-  dispositionType: 'use-as-is',
+  dispositionType: 'rework',
   dispositionApprovalChainId: '',
   attachmentFileIds: '',
+  mrbReviewApproved: false,
+  mrbComment: '',
 })
 const closeForm = reactive({
   reason: '',
@@ -119,24 +139,76 @@ const ncrContextItems = computed(() => {
   if (!ncr) return []
   return [
     { label: '来源单据', value: ncr.sourceDocumentId },
-    { label: '来源类型', value: ncr.sourceType },
+    { label: '来源类型', value: labelFor(QUALITY_SOURCE_TYPE_LABELS, ncr.sourceType) },
     { label: '物料', value: ncr.skuCode },
     { label: '不合格数量', value: ncr.defectQuantity },
     { label: '不合格原因', value: ncr.defectReason },
     { label: '批次', value: ncr.batchNo },
     { label: '序列号', value: ncr.serialNo },
     { label: '返工工单', value: closeForm.reworkWorkOrderId },
+    // 关闭原因是必填的关单审计事实，已关闭的单必须回显，否则看起来像"关了但没写原因"。
+    ...(ncr.closeReason ? [{ label: '关闭原因', value: ncr.closeReason }] : []),
   ]
+})
+/** 该处置是否需要 MRB 评审 + 中央审批链（与后端同一判定，界面据此自解释地展开录入位）。 */
+const requiresCentralApproval = computed(() =>
+  ncrDispositionRequiresCentralApproval(dispositionForm.dispositionType),
+)
+const requiresDispositionEvidence = computed(() =>
+  ncrDispositionRequiresEvidence(dispositionForm.dispositionType),
+)
+/** MRB 评审人取当前登录人：评审是本人当场作出的结论，不允许替他人署名。 */
+const mrbReviewerId = computed(() => auth.principal?.principalId ?? auth.principal?.loginName ?? '')
+const mrbReviewerLabel = computed(
+  () => auth.principal?.loginName || mrbReviewerId.value || '当前账号',
+)
+const dispositionBlockers = computed(() => {
+  const blockers: string[] = []
+  if (requiresCentralApproval.value) {
+    if (!dispositionForm.mrbReviewApproved) blockers.push('该处置需 MRB 评审通过后才能提交。')
+    if (!mrbReviewerId.value) blockers.push('当前账号无法识别评审人身份，无法署名 MRB 评审。')
+    if (!isNonEmpty(dispositionForm.dispositionApprovalChainId))
+      blockers.push('该处置需关联一条已批准的处置审批链。')
+  }
+  if (requiresDispositionEvidence.value && !isNonEmpty(dispositionForm.attachmentFileIds)) {
+    blockers.push('该处置需先上传处置证据（附件）。')
+  }
+  return blockers
 })
 const canSubmitDisposition = computed(
   () =>
     hasBusinessContext(filters) &&
     isNonEmpty(selectedNcrId.value) &&
-    isNonEmpty(dispositionForm.dispositionType),
+    isNonEmpty(dispositionForm.dispositionType) &&
+    dispositionBlockers.value.length === 0 &&
+    statusActionGate({
+      domain: 'quality-ncr',
+      action: 'submit-disposition',
+      facts: {
+        status: selectedNcr.value?.status,
+        dispositionType:
+          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
+            ? 'recorded'
+            : undefined,
+      },
+    }).executable,
 )
 const canCloseNcr = computed(
   () =>
-    hasBusinessContext(filters) && isNonEmpty(selectedNcrId.value) && isNonEmpty(closeForm.reason),
+    hasBusinessContext(filters) &&
+    isNonEmpty(selectedNcrId.value) &&
+    isNonEmpty(closeForm.reason) &&
+    statusActionGate({
+      domain: 'quality-ncr',
+      action: 'close',
+      facts: {
+        status: selectedNcr.value?.status,
+        dispositionType:
+          selectedNcr.value?.status?.toLowerCase() === 'disposition-in-progress'
+            ? 'recorded'
+            : undefined,
+      },
+    }).executable,
 )
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -150,12 +222,21 @@ const columns: NvDataTableColumn<NcrRow>[] = [
   { key: 'code', header: 'NCR', cellClass: 'font-medium', accessor: (r) => r.code ?? r.id ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
+  // 已关闭的单在列表上直接给出关单理由，不必逐条点开。
+  { key: 'closeReason', header: '关闭原因', accessor: (r) => r.closeReason ?? '—' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
+
+/** NCR 状态中文名；词表没有的状态字原样显示，不编造说法。 */
+function ncrStatusLabel(status?: string | null) {
+  return labelFor(NCR_STATUS_LABELS, status) || '未知'
+}
 
 function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
   dispositionForm.dispositionApprovalChainId = ''
+  dispositionForm.mrbReviewApproved = false
+  dispositionForm.mrbComment = ''
   closeForm.reason = ''
   closeForm.reworkWorkOrderId =
     contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
@@ -172,12 +253,35 @@ async function submitNcrDisposition() {
     dispositionType: dispositionForm.dispositionType.trim(),
     dispositionApprovalChainId: optionalText(dispositionForm.dispositionApprovalChainId),
     attachmentFileIds: splitCsv(dispositionForm.attachmentFileIds),
+    // 需中央审批的处置：后端要求 MRB 评审记录齐备且全部为 approved，缺这一段提交必 400（#1327）。
+    mrbReviews: requiresCentralApproval.value
+      ? [
+          {
+            reviewerId: mrbReviewerId.value,
+            decision: 'approved',
+            comment: optionalText(dispositionForm.mrbComment),
+            reviewedAtUtc: new Date().toISOString(),
+          },
+        ]
+      : undefined,
   }
   const label = selectedNcr.value?.code ?? selectedNcrId.value
   try {
     await submitDisposition(selectedNcrId.value, body)
   } catch (error) {
-    notifyError(error, '处置提交失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          detailOpen.value = false
+          selectedNcr.value = undefined
+        },
+        refresh: refreshNcrs,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('处置提交失败', error, '处置提交失败，请稍后重试。')
     return
   }
   notifySuccess(`不合格品 ${label} 处置已提交。`)
@@ -200,7 +304,19 @@ async function submitCloseNcr() {
   try {
     await closeNcr(selectedNcrId.value, body)
   } catch (error) {
-    notifyError(error, '不合格品关闭失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          detailOpen.value = false
+          selectedNcr.value = undefined
+        },
+        refresh: refreshNcrs,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('不合格品关闭失败', error, '不合格品关闭失败，请稍后重试。')
     return
   }
   notifySuccess(`不合格品 ${label} 已关闭。`)
@@ -220,7 +336,7 @@ function splitCsv(value: string) {
 }
 function qualityItemSummary(item: BusinessConsoleQualityItem) {
   const values = [
-    item.sourceType,
+    labelFor(QUALITY_SOURCE_TYPE_LABELS, item.sourceType) || undefined,
     item.sourceDocumentId,
     item.skuCode,
     item.defectQuantity === undefined || item.defectQuantity === null
@@ -237,7 +353,7 @@ function firstQuery(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -346,7 +462,9 @@ watch(
       <template #cell-code="{ row }">
         <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="ncrStatusLabel(row.status)" />
+      </template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`NCR 操作 ${row.code ?? ''}`">
           <NvDropdownMenuItem @click="openNcr(row)">打开处置</NvDropdownMenuItem>
@@ -367,7 +485,10 @@ watch(
         <div class="grid gap-4 px-1">
           <div class="flex items-center justify-between gap-2 rounded-lg border p-3">
             <span class="text-sm font-medium text-foreground">状态</span>
-            <NvStatusBadge :value="selectedNcr?.status" />
+            <NvStatusBadge
+              :value="selectedNcr?.status"
+              :label="ncrStatusLabel(selectedNcr?.status)"
+            />
           </div>
 
           <CarriedContextSummary label="不合格品信息" :items="ncrContextItems" />
@@ -380,22 +501,63 @@ watch(
                 <NvSelect v-model="dispositionForm.dispositionType">
                   <NvSelectTrigger aria-label="处置类型"><NvSelectValue /></NvSelectTrigger>
                   <NvSelectContent>
-                    <NvSelectItem value="use-as-is">让步接收</NvSelectItem>
-                    <NvSelectItem value="rework">返工</NvSelectItem>
-                    <NvSelectItem value="scrap">报废</NvSelectItem>
-                    <NvSelectItem value="return-to-supplier">退供应商</NvSelectItem>
+                    <NvSelectItem
+                      v-for="option in NCR_DISPOSITION_TYPE_OPTIONS"
+                      :key="option.value"
+                      :value="option.value"
+                      >{{ option.label }}</NvSelectItem
+                    >
                   </NvSelectContent>
                 </NvSelect>
               </NvField>
+
+              <!-- 需中央审批的处置：MRB 评审 + 审批链是硬前置，界面在此自解释地展开录入位。 -->
+              <div
+                v-if="requiresCentralApproval"
+                class="grid gap-3 rounded-md border bg-muted/20 p-3"
+              >
+                <div class="grid gap-1">
+                  <h3 class="text-sm font-semibold text-foreground">MRB 评审</h3>
+                  <p class="text-xs text-muted-foreground">
+                    该处置属于重大处置，需 MRB 评审通过并挂一条已批准的处置审批链后才能提交。
+                  </p>
+                </div>
+                <NvField>
+                  <NvFieldLabel>评审人</NvFieldLabel>
+                  <p class="text-sm text-foreground">{{ mrbReviewerLabel }}</p>
+                </NvField>
+                <NvField orientation="horizontal" class="justify-between">
+                  <NvFieldLabel for="ncr-mrb-approved">
+                    本人代表 MRB 评审通过该处置方案 <span class="text-destructive">*</span>
+                  </NvFieldLabel>
+                  <NvCheckbox id="ncr-mrb-approved" v-model="dispositionForm.mrbReviewApproved" />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="ncr-mrb-comment">评审意见</NvFieldLabel>
+                  <NvInput
+                    id="ncr-mrb-comment"
+                    v-model="dispositionForm.mrbComment"
+                    maxlength="500"
+                    placeholder="说明评审依据与结论（选填）"
+                  />
+                </NvField>
+              </div>
+              <p v-else class="text-xs text-muted-foreground">
+                全检挑选由质量部门内部决定，无需 MRB 评审与中央审批链。
+              </p>
+
               <BusinessDocumentApprovalPanel
+                v-if="requiresCentralApproval"
                 v-model="dispositionForm.dispositionApprovalChainId"
                 title="处置审批链"
                 source-service="quality"
-                document-type="quality-ncr"
+                :document-type="NCR_DISPOSITION_DOCUMENT_TYPE"
                 :document-id="selectedNcr?.code ?? selectedNcr?.id"
               />
               <NvField>
-                <NvFieldLabel for="ncr-disposition-files">附件</NvFieldLabel>
+                <NvFieldLabel for="ncr-disposition-files">
+                  附件<span v-if="requiresDispositionEvidence" class="text-destructive"> *</span>
+                </NvFieldLabel>
                 <NvInput
                   id="ncr-disposition-files"
                   v-model="dispositionForm.attachmentFileIds"
@@ -403,6 +565,15 @@ watch(
                 />
               </NvField>
             </NvFieldGroup>
+            <ul v-if="dispositionBlockers.length" class="grid gap-1" role="status">
+              <li
+                v-for="blocker in dispositionBlockers"
+                :key="blocker"
+                class="text-xs text-muted-foreground"
+              >
+                {{ blocker }}
+              </li>
+            </ul>
             <div class="flex justify-end">
               <NvButton type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                 <Spinner v-if="submitDispositionPending" aria-hidden="true" />

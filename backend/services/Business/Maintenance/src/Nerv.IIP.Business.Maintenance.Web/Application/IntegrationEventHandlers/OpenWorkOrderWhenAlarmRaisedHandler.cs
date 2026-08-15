@@ -1,4 +1,5 @@
 using DotNetCore.CAP;
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -45,6 +46,16 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
             return;
         }
 
+        var sourceAlarmAlreadyBound = await dbContext.MaintenanceWorkOrders.AsNoTracking().AnyAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId &&
+                x.EnvironmentId == integrationEvent.EnvironmentId &&
+                x.SourceAlarmId == integrationEvent.Payload.ExternalAlarmId,
+            cancellationToken);
+        if (sourceAlarmAlreadyBound)
+        {
+            return;
+        }
+
         await sender.Send(
             new CreateMaintenanceWorkOrderCommand(
                 integrationEvent.OrganizationId,
@@ -56,9 +67,15 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
                 integrationEvent.Payload.AlarmCode,
                 BuildDiagnosticDescription(integrationEvent.Payload),
                 integrationEvent.Payload.AlarmCode,
-                integrationEvent.Payload.TagKey),
+                integrationEvent.Payload.TagKey,
+                IdempotencyKey: BuildInternalIdempotencyKey(integrationEvent)),
             cancellationToken);
     }
+
+    private static string BuildInternalIdempotencyKey(AlarmRaisedIntegrationEvent integrationEvent) =>
+        $"integration-event:{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(
+                $"{integrationEvent.OrganizationId}|{integrationEvent.EnvironmentId}|{integrationEvent.Payload.ExternalAlarmId}")))}";
 
     private static string? BuildDiagnosticDescription(AlarmRaisedPayload payload)
     {

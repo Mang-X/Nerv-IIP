@@ -1,59 +1,59 @@
-# ProductEngineering SKU Continuity Implementation Plan
+# ProductEngineering SKU 连续性实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close issue #405 by making ProductEngineering treat EngineeringItem and EBOM codes as SKU codes and by requiring non-phantom EBOM lines to be covered by MBOM material lines.
+**目标：**让 ProductEngineering 将 EngineeringItem 和 EBOM 编码视为 SKU 编码，并要求非 phantom EBOM 行必须由 MBOM 物料行覆盖，从而补齐 issue #405。
 
-**Architecture:** Keep existing public field names (`ItemCode`, `ParentItemCode`, `ChildItemCode`) as compatibility names, but freeze their meaning as MasterData SKU codes. Do not add a ProductEngineering item-to-SKU mapping table. Add command-handler validation so MBOM release cannot publish a manufacturing BOM whose output SKU differs from the referenced EBOM parent SKU or omits a required non-phantom EBOM child SKU. Phantom EBOM children may be omitted or expanded by MBOM, and MBOM may include manufacturing-only material lines.
+**架构：**保留现有公共字段名（`ItemCode`、`ParentItemCode`、`ChildItemCode`）作为兼容名称，但将其含义冻结为 MasterData SKU 编码。不得添加 ProductEngineering EngineeringItem 到 SKU 的映射表。添加命令处理器校验，使 MBOM 发布不能发布输出 SKU 与所引用 EBOM 父 SKU 不同，或遗漏必需的非 phantom（虚拟）EBOM 子 SKU 的制造 BOM。Phantom EBOM 子项可在 MBOM 中省略或展开，MBOM 也可包含仅用于制造的物料行。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, MediatR, EF Core, xUnit.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、MediatR、EF Core、xUnit。
 
-## Global Constraints
+## 全局约束
 
-- Do not introduce cross-schema foreign keys or direct references from ProductEngineering Domain/Application to MasterData Infrastructure.
-- Keep ProductEngineering as the owner of EBOM, MBOM, Routing, ProductionVersion and revision facts.
-- Keep MasterData as the owner of durable SKU/material identity.
-- Use TDD: add failing tests before implementation.
+- 不得引入跨 schema 外键，也不得让 ProductEngineering Domain/Application 直接引用 MasterData Infrastructure。
+- ProductEngineering 继续拥有 EBOM、MBOM、Routing、ProductionVersion 和修订事实。
+- MasterData 继续拥有持久的 SKU/物料身份。
+- 使用 TDD：实施前先添加失败测试。
 
 ---
 
-### Task 1: ProductEngineering SKU Continuity Tests
+### Task 1：ProductEngineering SKU 连续性测试
 
-**Files:**
-- Modify: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringReleaseApiContractTests.cs`
-- Modify: `backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductEngineeringReleaseAggregateTests.cs`
+**文件：**
+- 修改：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/ProductEngineeringReleaseApiContractTests.cs`
+- 修改：`backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Domain.Tests/ProductEngineeringReleaseAggregateTests.cs`
 
-**Interfaces:**
-- Consumes: existing `ReleaseManufacturingBomCommandHandler`
-- Produces: tests that require MBOM material lines to cover referenced non-phantom EBOM child SKU codes while allowing phantom omissions and manufacturing-only additions.
+**接口：**
+- 消费：现有 `ReleaseManufacturingBomCommandHandler`
+- 产出：要求 MBOM 物料行覆盖所引用的非 phantom EBOM 子 SKU 编码，同时允许省略 phantom 项和添加仅用于制造的物料行的测试。
 
-- [x] Add failing tests for missing EBOM material line, parent SKU trim, phantom omission, manufacturing-only MBOM additions, and invalid material line inputs.
-- [x] Update existing EBOM/MBOM fixtures so compatibility field names use SKU-like codes.
-- [x] Run ProductEngineering Web tests and confirm the new tests fail for missing continuity validation.
+- [x] 为缺失 EBOM 物料行、父 SKU 去除首尾空白、phantom 省略、仅用于制造的 MBOM 新增项和无效物料行输入添加失败测试。
+- [x] 更新现有 EBOM/MBOM fixture，使兼容字段名使用 SKU 形式的编码。
+- [x] 运行 ProductEngineering Web 测试，并确认新测试因缺少连续性校验而失败。
 
-### Task 2: ProductEngineering Continuity Validation
+### Task 2：ProductEngineering 连续性校验
 
-**Files:**
-- Modify: `backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs`
+**文件：**
+- 修改：`backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs`
 
-**Interfaces:**
-- Consumes: `EngineeringBom.Lines` and `ReleaseManufacturingBomCommand.MaterialLines`
-- Produces: deterministic `KnownException` failures when MBOM output SKU differs from the EBOM parent SKU or required non-phantom EBOM child SKU codes are missing from MBOM material lines.
+**接口：**
+- 消费：`EngineeringBom.Lines` 和 `ReleaseManufacturingBomCommand.MaterialLines`
+- 产出：当 MBOM 输出 SKU 与 EBOM 父 SKU 不同，或 MBOM 物料行缺少必需的非 phantom EBOM 子 SKU 编码时，产生确定性的 `KnownException` 失败。
 
-- [x] Add minimal release-handler validation for MBOM release against the trimmed EBOM parent SKU and required non-phantom child SKU coverage.
-- [x] Run ProductEngineering Domain and Web tests.
+- [x] 为 MBOM 发布添加最小发布处理器校验，核对去除首尾空白后的 EBOM 父 SKU，并确保覆盖必需的非 phantom 子 SKU。
+- [x] 运行 ProductEngineering Domain 和 Web 测试。
 
-### Task 3: Documentation
+### Task 3：文档
 
-**Files:**
-- Modify: `docs/architecture/business-platform-domain-architecture.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+**文件：**
+- 修改：`docs/architecture/business-platform-domain-architecture.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-**Interfaces:**
-- Consumes: code diff from Tasks 1-2.
-- Produces: docs that state existing `itemCode` compatibility names now represent SKU codes.
+**接口：**
+- 消费：Task 1–2 的代码差异。
+- 产出：说明现有 `itemCode` 兼容名称现在表示 SKU 编码的文档。
 
-- [x] Document the compatibility semantic: EngineeringItem itemCode and EBOM parent/child codes are SKU codes.
-- [x] Document MBOM release line continuity validation.
-- [x] Run focused tests again after doc updates.
+- [x] 记录兼容语义：EngineeringItem itemCode 与 EBOM 父/子编码均为 SKU 编码。
+- [x] 记录 MBOM 发布行连续性校验。
+- [x] 更新文档后再次运行聚焦测试。

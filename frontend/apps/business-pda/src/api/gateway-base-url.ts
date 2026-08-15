@@ -10,8 +10,6 @@
  * Empty string is treated as unset (`undefined`) — behaviour-identical to the
  * api-client default (`options.baseUrl ?? getApiBaseUrl()`).
  */
-export function resolveGatewayBaseUrl(
-  env: ImportMetaEnv = import.meta.env,
-): string | undefined {
+export function resolveGatewayBaseUrl(env: ImportMetaEnv = import.meta.env): string | undefined {
   return env.VITE_NERV_IIP_API_BASE_URL || undefined
 }

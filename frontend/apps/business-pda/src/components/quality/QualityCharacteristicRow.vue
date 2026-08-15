@@ -74,7 +74,11 @@ function specRangeText() {
         <span>规格公差</span>
         <span data-testid="spec-range" class="text-foreground">{{ specRangeText() }}</span>
       </div>
-      <p v-if="outOfTolerance" data-testid="out-of-tolerance" class="text-sm font-medium text-destructive">
+      <p
+        v-if="outOfTolerance"
+        data-testid="out-of-tolerance"
+        class="text-sm font-medium text-destructive"
+      >
         超差：测量值越出规格公差
       </p>
     </template>

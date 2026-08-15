@@ -33,6 +33,9 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.LateOperationCount).HasColumnName("late_operation_count").HasComment("Number of non-locked assigned operations finishing after their due dates.");
         builder.Property(x => x.OnTimeRate).HasColumnName("on_time_rate").HasPrecision(18, 6).HasComment("Non-locked operations completed on or before due date divided by non-locked assigned operations.");
         builder.Property(x => x.AverageResourceUtilization).HasColumnName("average_resource_utilization").HasPrecision(18, 6).HasComment("Total assigned minutes divided by total available minutes across resource load windows.");
+        builder.Property(x => x.MaterialRisksJson).HasColumnName("material_risks_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of material risks and nested shortages emitted with the generated plan.");
+        builder.Property(x => x.EquipmentRisksJson).HasColumnName("equipment_risks_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of equipment data risks emitted with the generated plan.");
+        builder.Property(x => x.BlockWindowsJson).HasColumnName("block_windows_json").HasColumnType("jsonb").IsRequired().HasDefaultValue("[]").HasComment("Immutable JSON snapshot of equipment unavailability (maintenance/downtime) windows that actually constrained this plan.");
         builder.HasIndex(x => x.PlanId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId })
             .IsUnique()

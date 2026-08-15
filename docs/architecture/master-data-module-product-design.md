@@ -136,7 +136,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 1. **产品分类（category）字典化**：从硬编码 demo 选项改为受控字典 `product-category` 驱动；用户在「数据字典」页维护分类，物料表单即可选到。Phase 1 用去 demo 的前端常量兜底 + 文案声明数据源为字典；Phase 2 切「按 CodeSet 拉取」端点，UI 不变。层级分类树（物料组）作为远期 Roadmap。
 2. **`...Code` 自由文本 → 选字典**：`shelfLifePolicyCode/storageConditionCode/defaultBarcodeRuleCode` 由 `Input` 改为 `Select`，UI 只见业务词（保质期管理/存储条件/默认条码规则），取值受字典约束。
-3. **平台枚举 vs 工厂字典**：`materialType/batchTrackingPolicy/serialTrackingPolicy/shelfLifePolicy` 带系统行为语义 → 平台预置枚举，只能启停不可改语义（前端常量即可）；`product-category/storage-condition/barcode-rule/quality-reason` 偏业务 → 平台预置常用值 + 工厂可维护。
+3. **平台枚举与工厂字典**：`materialType/batchTrackingPolicy/serialTrackingPolicy/shelfLifePolicy` 带系统行为语义 → 平台预置枚举，只能启停不可改语义（前端常量即可）；`product-category/storage-condition/barcode-rule/quality-reason` 偏业务 → 平台预置常用值 + 工厂可维护。
 4. **伙伴角色诚实处理**：列表不回 partnerType，**不再猜 code 子串**。Phase 1 用「角色筛选 + 角色列（含『未分配』并标注推断口径）+ 新建时显式选角色」；Phase 2 后端列表回 partnerType 后角色展示才精确。同一主体可兼多角色（客户+供应商互供），建议 `partnerType` 演进为多角色（§7.4 issue）。
 5. **字典做成受控值中心**：字典页改 CodeSet 主从结构，成为唯一受控值来源，被物料表单消费，形成「维护→消费」闭环。
 6. **诚实的能力分级**：编辑/停用/详情字段等后端未就绪的入口，**保留可见但禁用 + tooltip 说明**，绝不放会失败的假按钮。

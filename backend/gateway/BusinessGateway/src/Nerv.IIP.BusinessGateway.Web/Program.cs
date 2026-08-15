@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
@@ -23,16 +24,28 @@ using NetCorePal.Extensions.AspNetCore;
 const string BusinessConsoleCorsPolicy = "business-console-cors";
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
-    .AddFastEndpoints()
+    .AddFastEndpoints(o =>
+    {
+        if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+        {
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        }
+    })
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>
         {
             s.Title = "Nerv IIP Business Gateway";
             s.Version = "v1";
+            // OpenAPI 快照必须机器无关：禁止 NJsonSchema 运行时探测 NuGet 全局缓存/SDK 目录
+            // 读取依赖包 XML 文档（如 FastEndpoints.xml）。本机缓存是否解出过 XML
+            // （NUGET_XMLDOC_MODE）会导致导出快照与 CI 重生成结果漂移。
+            s.SchemaSettings.ResolveExternalXmlDocumentation = false;
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
-            s.DocumentProcessors.Add(new WmsWarehouseTaskOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>
@@ -44,30 +57,34 @@ builder.Services.AddNervIipCaching(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-gateway");
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
+builder.Services.AddScoped<PrincipalWorkScopeResolver>();
+builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
+builder.Services.AddScoped<WmsTrustedRequestContextResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
 builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
-var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
-var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
-var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
-var qualityBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
-var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-var demandPlanningBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "DemandPlanning:BaseUrl", "http://localhost:5112");
-var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
-var wmsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5115");
-var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
-var barcodeLabelBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "BarcodeLabel:BaseUrl", "http://localhost:5113");
-var notificationBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
-var fileStorageBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
-var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
-var schedulingBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
-var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
-var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
-var appHubBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
+var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+var qualityBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
+var productEngineeringBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+var demandPlanningBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "DemandPlanning:BaseUrl", "http://localhost:5112");
+var erpBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+var wmsBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5115");
+var approvalBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+var barcodeLabelBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "BarcodeLabel:BaseUrl", "http://localhost:5113");
+var notificationBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+var fileStorageBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
+var mesBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+var schedulingBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
+var industrialTelemetryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+var maintenanceBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
+var appHubBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "AppHub:BaseUrl", "http://localhost:5101");
 builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusinessGatewayAuthorizationClient>(client =>
 {
     client.BaseAddress = iamBaseAddress;
@@ -187,26 +204,6 @@ app.UseFastEndpoints(c =>
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
 }).UseSwaggerGen();
 app.Run();
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
-}
 
 // Keep this gateway-local until another gateway shares the same production security policy shape.
 static string[] ResolveGatewayCorsOrigins(IConfiguration configuration, IWebHostEnvironment environment)

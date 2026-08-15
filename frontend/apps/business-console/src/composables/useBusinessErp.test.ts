@@ -64,7 +64,10 @@ describe('business ERP composable', () => {
     coladaState.queryDataById.clear()
     coladaState.refetchById.clear()
     coladaState.mutateAsync.mockReset()
-    coladaState.mutateAsync.mockResolvedValue({ success: true, data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-001' } })
+    coladaState.mutateAsync.mockResolvedValue({
+      success: true,
+      data: { status: 'PurchaseOrderCreated', purchaseOrderNo: 'PO-001' },
+    })
   })
 
   it('converts open purchase requisitions through the generated gateway mutation', async () => {
@@ -74,7 +77,9 @@ describe('business ERP composable', () => {
     const erp = useErpPurchaseRequisitions()
     await erp.convertToPurchaseOrder(['PR-001', 'PR-002'])
 
-    expect(convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions).toHaveBeenCalled()
+    expect(
+      convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
+    ).toHaveBeenCalled()
     expect(coladaState.mutateAsync).toHaveBeenCalledWith({
       body: expect.objectContaining({
         organizationId: 'org-002',
@@ -130,7 +135,13 @@ describe('business ERP composable', () => {
       },
     })
 
-    const { filters, purchaseOrders, purchaseOrdersTotal, purchaseRequisitions, purchaseRequisitionsTotal } = useBusinessErp()
+    const {
+      filters,
+      purchaseOrders,
+      purchaseOrdersTotal,
+      purchaseRequisitions,
+      purchaseRequisitionsTotal,
+    } = useBusinessErp()
     filters.purchaseOrderStatus = 'Released'
     filters.purchaseRequisitionStatus = 'Open'
     filters.keyword = 'SUP-001'
@@ -176,7 +187,11 @@ describe('business ERP composable', () => {
 
     await erp.refreshProcurementDocuments()
 
-    expect(coladaState.refetchById.get('listBusinessConsoleErpPurchaseOrders')).not.toHaveBeenCalled()
-    expect(coladaState.refetchById.get('listBusinessConsoleErpPurchaseRequisitions')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleErpPurchaseOrders'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsoleErpPurchaseRequisitions'),
+    ).not.toHaveBeenCalled()
   })
 })

@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Nerv.IIP.FastEndpoints.Architecture.Tests;
 
 public sealed class FastEndpointsArchitectureTests
@@ -42,8 +44,8 @@ public sealed class FastEndpointsArchitectureTests
         "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web"
     };
 
-    public static TheoryData<string> CommandLockWebProjects => new()
-    {
+    private static readonly string[] CommandLockWebProjectDirectories =
+    [
         "backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web",
         "backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web",
         "backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web",
@@ -52,11 +54,26 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web",
         "backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web",
         "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web",
+        "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web",
         "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web",
         "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web",
         "backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web",
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
-    };
+    ];
+
+    public static TheoryData<string> CommandLockWebProjects
+    {
+        get
+        {
+            var data = new TheoryData<string>();
+            foreach (var projectDirectory in CommandLockWebProjectDirectories)
+            {
+                data.Add(projectDirectory);
+            }
+
+            return data;
+        }
+    }
 
     public static TheoryData<string> CapUnitOfWorkWebProjects => new()
     {
@@ -134,13 +151,55 @@ public sealed class FastEndpointsArchitectureTests
     public void Command_lock_services_register_distributed_lock(string projectDirectory)
     {
         var root = FindRepositoryRoot();
-        var programText = File.ReadAllText(Path.Combine(root, projectDirectory, "Program.cs"));
+        var fullProjectDirectory = Path.Combine(root, projectDirectory);
+        var programText = File.ReadAllText(Path.Combine(fullProjectDirectory, "Program.cs"));
+        var projectText = File.ReadAllText(Directory.GetFiles(fullProjectDirectory, "*.csproj").Single());
+        var usesSharedRegistration = programText.Contains("AddNervIipCommandLocking", StringComparison.Ordinal);
+        var usesSharedBehavior = programText.Contains(
+            "AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))",
+            StringComparison.Ordinal);
+
+        if (usesSharedRegistration || usesSharedBehavior)
+        {
+            Assert.True(
+                usesSharedRegistration && usesSharedBehavior,
+                "Shared command-lock services must register AddNervIipCommandLocking and NervIipCommandLockBehavior together.");
+            Assert.Contains(
+                @"common\DistributedLocking\Nerv.IIP.DistributedLocking\Nerv.IIP.DistributedLocking.csproj",
+                projectText);
+        }
+        else
+        {
+            Assert.True(
+                programText.Contains("AddCommandLockBehavior", StringComparison.Ordinal)
+                    || programText.Contains("AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))", StringComparison.Ordinal),
+                "Command-lock services must register the built-in command-lock behavior or the Maintenance lock-loss-aware behavior.");
+            Assert.Contains("AddInMemoryDistributedLock", programText);
+        }
+    }
+
+    [Fact]
+    public void Shared_command_lock_web_projects_are_registered_for_governance()
+    {
+        var root = FindRepositoryRoot();
+        var sharedCommandLockProjects = Directory
+            .GetFiles(Path.Combine(root, "backend"), "Program.cs", SearchOption.AllDirectories)
+            .Where(file =>
+            {
+                var programText = File.ReadAllText(file);
+                return programText.Contains("AddNervIipCommandLocking", StringComparison.Ordinal)
+                    || programText.Contains("AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))", StringComparison.Ordinal);
+            })
+            .Select(file => Path.GetRelativePath(root, Path.GetDirectoryName(file)!).Replace('\\', '/'))
+            .OrderBy(projectDirectory => projectDirectory, StringComparer.Ordinal)
+            .ToArray();
+        var unregisteredProjects = sharedCommandLockProjects
+            .Except(CommandLockWebProjectDirectories, StringComparer.Ordinal)
+            .ToArray();
 
         Assert.True(
-            programText.Contains("AddCommandLockBehavior", StringComparison.Ordinal)
-                || programText.Contains("AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))", StringComparison.Ordinal),
-            "Command-lock services must register the built-in command-lock behavior or the Maintenance lock-loss-aware behavior.");
-        Assert.Contains("AddInMemoryDistributedLock", programText);
+            unregisteredProjects.Length == 0,
+            $"Shared command-lock Web projects must be registered in {nameof(CommandLockWebProjects)}: {string.Join(", ", unregisteredProjects)}");
     }
 
     [Theory]
@@ -214,6 +273,15 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("AddViteApp(\"console\"", programText);
         Assert.Contains("WithPnpm", programText);
 
+        Assert.Matches(
+            "if \\(!fullStackEphemeral\\)\\s*\\{\\s*postgres\\.WithHostPort\\(15432\\);\\s*\\}",
+            programText);
+        Assert.Matches(
+            "if \\(!fullStackEphemeral\\)\\s*\\{\\s*redis\\.WithHostPort\\(6379\\);\\s*\\}",
+            programText);
+        Assert.Single(Regex.Matches(programText, "postgres\\.WithHostPort\\(15432\\)"));
+        Assert.Single(Regex.Matches(programText, "redis\\.WithHostPort\\(6379\\)"));
+
         Assert.Contains("Nerv.IIP.Iam.Web.csproj", projectText);
         Assert.Contains("Nerv.IIP.FileStorage.Web.csproj", projectText);
         Assert.Contains("Nerv.IIP.Notification.Web.csproj", projectText);
@@ -273,6 +341,29 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains(".WithReference(businessMasterData)", resourceBlock);
         Assert.Contains(".WaitFor(businessMasterData)", resourceBlock);
         Assert.DoesNotContain("localhost:5107", resourceBlock);
+    }
+
+    // 反向回填（MasterData 删除防护要反查 ProductEngineering 的引用占用）同样是跨服务接线，
+    // WithEnvironment 与 WithReference 必须成对；WaitFor 反向加会与 PE→MasterData 成环，故不加。
+    [Fact]
+    public void Aspire_apphost_master_data_backfills_product_engineering_reference_without_waiting()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        // `businessMasterData = businessMasterData` 出现多次（PostgreSQL 分支也有一处），
+        // 取其中真正做 ProductEngineering 回填的那条语句。
+        var backfill = Regex
+            .Matches(programText, @"businessMasterData = businessMasterData[^;]*;", RegexOptions.Singleline)
+            .Select(match => match.Value)
+            .Single(statement => statement.Contains("ProductEngineering__BaseUrl", StringComparison.Ordinal));
+
+        Assert.Contains(
+            ".WithEnvironment(\"ProductEngineering__BaseUrl\", businessProductEngineering.GetEndpoint(\"http\"))",
+            backfill);
+        Assert.Contains(".WithReference(businessProductEngineering)", backfill);
+        Assert.DoesNotContain(".WaitFor(", backfill);
+        Assert.DoesNotContain("localhost:5108", backfill);
     }
 
     [Fact]
@@ -435,6 +526,67 @@ public sealed class FastEndpointsArchitectureTests
         Assert.True(resourceEnd > resourceStart, $"Aspire resource block '{resourceVariable}' is incomplete.");
 
         return programText[resourceStart..resourceEnd];
+    }
+
+    /// <summary>
+    /// 下游基址解析只许有一处实现（<c>Nerv.IIP.ServiceAuth.InternalServiceBaseAddress</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 这段逻辑曾在 14 个 Program.cs 里各抄一份并且已经抄漂：6 份只放行 <c>Development</c>、
+    /// 8 份还放行 <c>Testing</c>，异常文案两种写法。于是同一个「忘配 BaseUrl」的错误
+    /// 在不同服务上表现不同——有的在 Testing 下静默走 localhost，有的直接启动失败。
+    /// 本用例防止再抄回去。
+    /// </remarks>
+    [Fact]
+    public void Service_base_address_resolution_is_not_reimplemented_in_any_host()
+    {
+        var root = FindRepositoryRoot();
+        var hostProgramFiles = Directory
+            .GetFiles(Path.Combine(root, "backend"), "Program.cs", SearchOption.AllDirectories)
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(hostProgramFiles);
+
+        // 认**形状**不认函数名：改个名字就能绕过的字面量匹配等于没有门禁。
+        // 手搓基址解析的特征是「在 IsDevelopment() 分支里 new 一个 Uri」——两个标记同时出现即判定。
+        // 单独出现都不算：16 个 Program.cs 用 IsDevelopment() 做别的开关（属正常），
+        // 而收敛后已无任何 Program.cs 还需要 new Uri(。
+        var offenders = hostProgramFiles
+            .Where(path =>
+            {
+                var text = File.ReadAllText(path);
+                return text.Contains("IsDevelopment()", StringComparison.Ordinal)
+                    && text.Contains("new Uri(", StringComparison.Ordinal);
+            })
+            .Select(path => Path.GetRelativePath(root, path))
+            .ToArray();
+
+        Assert.True(
+            offenders.Length == 0,
+            "下游基址解析必须调用 InternalServiceBaseAddress.Resolve / ResolveAllowingTestHost，"
+                + $"不得在宿主里重抄：{string.Join(", ", offenders)}");
+    }
+
+    /// <summary>
+    /// 回退档位按宿主性质分档，且**边缘入口不吃 Testing 回退**。
+    /// </summary>
+    /// <remarks>
+    /// Gateway 是边缘入口：若某环境以 <c>ASPNETCORE_ENVIRONMENT=Testing</c> 部署（staging / 测试环），
+    /// 漏配下游基址时静默回落 localhost 正是该解析器自己要防的事，必须启动失败。
+    /// 业务服务与 Ops 的集成测试宿主确实起在 Testing 下，用放行档。
+    /// </remarks>
+    [Theory]
+    [InlineData("backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Program.cs")]
+    [InlineData("backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs")]
+    public void Edge_gateways_do_not_fall_back_to_localhost_in_the_testing_environment(string relativeProgramPath)
+    {
+        var root = FindRepositoryRoot();
+        var programText = File.ReadAllText(Path.Combine(root, relativeProgramPath.Replace('/', Path.DirectorySeparatorChar)));
+
+        Assert.Contains("InternalServiceBaseAddress.Resolve(", programText);
+        Assert.DoesNotContain("InternalServiceBaseAddress.ResolveAllowingTestHost(", programText);
     }
 
     private static string FindRepositoryRoot()

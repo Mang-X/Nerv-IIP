@@ -21,8 +21,8 @@ import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 质量看板（spec §六）：质量健康度 + 待办闭环 —— 一眼看清不良率是否越红线、
-// 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：电芯线卷绕机报警 ⇔
-// 帕累托 TOP1/2 电芯缺陷、最老超期 NCR 挂 WO-1951。5s 轮询。
+// 该催哪张 NCR、缺陷集中在哪条线。与产线屏同一个故事：活塞杆一线 DEV-CNC-03
+// 振动超限 ⇔ 帕累托 TOP1/2 为活塞杆缺陷、最老超期 NCR 挂该线当前工单。5s 轮询。
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const {
@@ -391,9 +391,9 @@ const trendPin = computed(() => {
       <footer class="qb-foot">
         <span class="qb-foot-l">
           <RouterLink :to="backLink.to" class="qb-back">‹ {{ backLink.label }}</RouterLink>
-          <span>合格率 / 不良率 / 帕累托为演示推算 · NCR 与检验明细就绪</span>
+          <span>合格率、不良率与帕累托按当前数据窗口推算</span>
         </span>
-        <span>缺陷码 Quality ↔ MES 口径映射 · MRB/CAPA · 聚合端点 待 #570</span>
+        <span>缺陷分类与处置进度按当前质量记录汇总</span>
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
       </footer>
     </div>
@@ -442,7 +442,7 @@ const trendPin = computed(() => {
     height: 2px;
     margin-top: 10px;
     border-radius: 1px;
-    background: linear-gradient(90deg, currentColor, transparent);
+    background: currentColor;
     opacity: 0.75;
   }
 
@@ -617,7 +617,7 @@ const trendPin = computed(() => {
     border-top: 1px solid var(--nv-scr-divider);
   }
   .qn-row.overdue {
-    background: linear-gradient(90deg, rgba(239, 90, 99, 0.055), transparent 70%);
+    background: rgba(239, 90, 99, 0.055);
     border-radius: 6px;
   }
   .qn-top {
@@ -861,11 +861,11 @@ const trendPin = computed(() => {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
-    gap: 10px;
+    justify-content: space-between;
+    gap: 4px;
   }
   .ib-group {
-    padding: 2px 0;
+    min-height: 0;
   }
   .ib-top {
     display: flex;
@@ -904,7 +904,7 @@ const trendPin = computed(() => {
     display: flex;
     align-items: baseline;
     gap: 12px;
-    margin-top: 6px;
+    margin-top: 2px;
     font-size: 12.5px;
     color: var(--nv-scr-muted);
     font-variant-numeric: tabular-nums;
@@ -929,8 +929,8 @@ const trendPin = computed(() => {
   }
   /* 今日进度：发丝轨道 + 青色渐隐填充（静态不发光） */
   .ib-bar {
-    margin-top: 8px;
-    height: 4px;
+    margin-top: 4px;
+    height: 3px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.045);
     box-shadow: inset 0 0 0 1px var(--nv-scr-line);
@@ -940,7 +940,7 @@ const trendPin = computed(() => {
     display: block;
     height: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, rgba(74, 166, 238, 0.66), rgba(74, 166, 238, 0.16));
+    background: rgba(74, 166, 238, 0.66);
     transition: width 0.6s var(--nv-scr-ease-emphasized);
   }
 

@@ -1,4 +1,13 @@
-export type FileFamily = 'word' | 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'audio' | 'video' | 'archive' | 'file'
+export type FileFamily =
+  | 'word'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'pdf'
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'archive'
+  | 'file'
 
 export const fileFamilyExtensions = {
   word: ['doc', 'docx'],
@@ -91,15 +100,28 @@ export function getFileFamily(fileName: string, contentType = ''): FileFamily {
   const extension = getFileExtension(fileName)
   const type = normalizeContentType(contentType)
 
-  if (wordExtensions.has(extension) || type.includes('wordprocessingml') || type === 'application/msword') {
+  if (
+    wordExtensions.has(extension) ||
+    type.includes('wordprocessingml') ||
+    type === 'application/msword'
+  ) {
     return 'word'
   }
 
-  if (spreadsheetExtensions.has(extension) || type.includes('spreadsheetml') || type === 'text/csv' || type === 'application/vnd.ms-excel') {
+  if (
+    spreadsheetExtensions.has(extension) ||
+    type.includes('spreadsheetml') ||
+    type === 'text/csv' ||
+    type === 'application/vnd.ms-excel'
+  ) {
     return 'spreadsheet'
   }
 
-  if (presentationExtensions.has(extension) || type.includes('presentationml') || type === 'application/vnd.ms-powerpoint') {
+  if (
+    presentationExtensions.has(extension) ||
+    type.includes('presentationml') ||
+    type === 'application/vnd.ms-powerpoint'
+  ) {
     return 'presentation'
   }
 

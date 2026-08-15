@@ -1,31 +1,31 @@
-# Schema Governance & Migration Hardening Implementation Plan
+# Schema 治理与迁移加固实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Turn AppHub/Ops schema governance rules into EF metadata and reusable tests before new persistent services add tables.
+**目标：** 在新的持久化服务添加数据表之前，将 AppHub/Ops schema 治理规则转化为 EF 元数据和可复用测试。
 
-**Architecture:** Add a small EF Core metadata assertion helper in `Nerv.IIP.Testing`, then use AppHub/Ops service tests to enforce table comments, column comments, JSON compatibility comments, string strongly typed ID rules and service-schema migrations history configuration. Keep customer-release bundles, IAM, FileStorage and frontend work out of this stage.
+**架构：** 在 `Nerv.IIP.Testing` 中添加一个小型 EF Core 元数据断言辅助库，然后通过 AppHub/Ops 服务测试强制执行表注释、列注释、JSON 兼容性注释、字符串强类型 ID 规则和服务 schema 迁移历史配置。本阶段不包含客户发布包、IAM、FileStorage 和前端工作。
 
-**Tech Stack:** .NET 10, EF Core 10.0.8, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1, xUnit, PowerShell, EF Core local tool manifest, existing AppHub/Ops CleanDDD infrastructure projects.
+**技术栈：** .NET 10、EF Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、xUnit、PowerShell、EF Core 本地工具清单、现有 AppHub/Ops CleanDDD Infrastructure 项目。
 
 ---
 
-## Completion Record
+## 完成记录
 
-This plan starts from commit `39d6917 docs: plan schema governance hardening` on branch `codex/schema-governance-hardening`.
+本计划从提交 `39d6917 docs: plan schema governance hardening` 开始，该提交位于分支 `codex/schema-governance-hardening` 上。
 
-Known handoff note: `skills-lock.json` is dirty before this plan begins, with no text diff reported in the prior audit. Do not stage or modify it unless the user explicitly asks.
+已知交接说明：本计划开始前 `skills-lock.json` 已处于脏状态，先前审核未报告文本差异。除非用户明确要求，否则不得暂存或修改该文件。
 
-## Boundaries
+## 边界
 
-1. Do not implement IAM, FileStorage, Notification, Knowledge, AI Integration or Observability tables.
-2. Do not create customer-release migration bundles, installers, backup scripts or restore rehearsals.
-3. Do not add frontend routes, pages, styling, component libraries or Design System decisions.
-4. Do not validate GaussDB, DMDB or other provider profiles in this plan.
-5. Do not require Docker or a live PostgreSQL database for schema convention tests.
-6. Do not stage or revert unrelated `skills-lock.json` changes.
+1. 不得实施 IAM、FileStorage、Notification、Knowledge、AI Integration 或 Observability 数据表。
+2. 不得创建客户发布迁移包、安装程序、备份脚本或恢复演练。
+3. 不得添加前端路由、页面、样式、组件库或设计系统决策。
+4. 本计划不得验证 GaussDB、DMDB 或其他 provider profile。
+5. schema 约定测试不得依赖 Docker 或运行中的 PostgreSQL 数据库。
+6. 不得暂存或还原无关的 `skills-lock.json` 变更。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/common/Testing/Nerv.IIP.Testing/
@@ -65,16 +65,16 @@ README.md
 docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md
 ```
 
-## Task 1: Add AppHub Failing Schema Convention Test
+## 任务 1：添加预期失败的 AppHub Schema 约定测试
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubSchemaConventionTests.cs`
-- Modify: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj`
+- 创建：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubSchemaConventionTests.cs`
+- 修改：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj`
 
-- [ ] **Step 1: Add the AppHub test project reference to shared testing**
+- [ ] **步骤 1：为 AppHub 测试项目添加共享测试引用**
 
-Add this reference to `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj`:
+将此引用添加到 `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj`：
 
 ```xml
   <ItemGroup>
@@ -83,11 +83,11 @@ Add this reference to `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/N
   </ItemGroup>
 ```
 
-If the existing Web project reference already exists in an `ItemGroup`, add only the `Nerv.IIP.Testing` reference beside it.
+如果现有 Web 项目引用已存在于 `ItemGroup` 中，只需在其旁边添加 `Nerv.IIP.Testing` 引用。
 
-- [ ] **Step 2: Write the failing AppHub schema convention test**
+- [ ] **步骤 2：编写预期失败的 AppHub schema 约定测试**
 
-Create `AppHubSchemaConventionTests.cs`:
+创建 `AppHubSchemaConventionTests.cs`：
 
 ```csharp
 using MediatR;
@@ -174,27 +174,27 @@ public sealed class AppHubSchemaConventionTests
 }
 ```
 
-- [ ] **Step 3: Run the AppHub schema test and verify it fails**
+- [ ] **步骤 3：运行 AppHub schema 测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter FullyQualifiedName~AppHubSchemaConventionTests
 ```
 
-Expected: FAIL at compile time because `Nerv.IIP.Testing.EntityFramework.SchemaConventionAssertions` and `JsonColumnRule` do not exist yet.
+预期结果：编译时失败，因为 `Nerv.IIP.Testing.EntityFramework.SchemaConventionAssertions` 和 `JsonColumnRule` 尚不存在。
 
-## Task 2: Add Reusable EF Schema Convention Assertions
+## 任务 2：添加可复用的 EF Schema 约定断言
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj`
-- Delete: `backend/common/Testing/Nerv.IIP.Testing/Class1.cs`
-- Create: `backend/common/Testing/Nerv.IIP.Testing/EntityFramework/SchemaConventionAssertions.cs`
+- 修改：`backend/common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj`
+- 删除：`backend/common/Testing/Nerv.IIP.Testing/Class1.cs`
+- 创建：`backend/common/Testing/Nerv.IIP.Testing/EntityFramework/SchemaConventionAssertions.cs`
 
-- [ ] **Step 1: Add EF Core relational reference to shared testing**
+- [ ] **步骤 1：为共享测试添加 EF Core relational 引用**
 
-Modify `Nerv.IIP.Testing.csproj`:
+修改 `Nerv.IIP.Testing.csproj`：
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -212,13 +212,13 @@ Modify `Nerv.IIP.Testing.csproj`:
 </Project>
 ```
 
-- [ ] **Step 2: Remove the empty starter class**
+- [ ] **步骤 2：移除空的初始类**
 
-Delete `backend/common/Testing/Nerv.IIP.Testing/Class1.cs`.
+删除 `backend/common/Testing/Nerv.IIP.Testing/Class1.cs`。
 
-- [ ] **Step 3: Add schema convention helper**
+- [ ] **步骤 3：添加 schema 约定辅助库**
 
-Create `EntityFramework/SchemaConventionAssertions.cs`:
+创建 `EntityFramework/SchemaConventionAssertions.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -374,34 +374,34 @@ public static class SchemaConventionAssertions
 }
 ```
 
-- [ ] **Step 4: Run the AppHub schema test again**
+- [ ] **步骤 4：再次运行 AppHub schema 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter FullyQualifiedName~AppHubSchemaConventionTests
 ```
 
-Expected: FAIL with convention messages for missing AppHub table comments, JSON compatibility comments and AppHub migrations history schema.
+预期结果：失败，并报告 AppHub 表注释、JSON 兼容性注释和 AppHub 迁移历史 schema 缺失的约定消息。
 
-## Task 3: Add Ops Failing Schema Convention Test
+## 任务 3：添加预期失败的 Ops Schema 约定测试
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsSchemaConventionTests.cs`
-- Modify: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj`
+- 创建：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsSchemaConventionTests.cs`
+- 修改：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj`
 
-- [ ] **Step 1: Add the Ops test project reference to shared testing**
+- [ ] **步骤 1：为 Ops 测试项目添加共享测试引用**
 
-Add this reference beside the existing Ops test project references:
+在现有 Ops 测试项目引用旁添加此引用：
 
 ```xml
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
 ```
 
-- [ ] **Step 2: Write the failing Ops schema convention test**
+- [ ] **步骤 2：编写预期失败的 Ops schema 约定测试**
 
-Create `OpsSchemaConventionTests.cs`:
+创建 `OpsSchemaConventionTests.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -485,30 +485,30 @@ public sealed class OpsSchemaConventionTests
 }
 ```
 
-- [ ] **Step 3: Run the Ops schema test and verify it fails**
+- [ ] **步骤 3：运行 Ops schema 测试并验证其失败**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter FullyQualifiedName~OpsSchemaConventionTests
 ```
 
-Expected: FAIL with convention messages for missing Ops table comments, insufficient JSON comments and Ops migrations history schema.
+预期结果：失败，并报告 Ops 表注释缺失、JSON 注释不足和 Ops 迁移历史 schema 缺失的约定消息。
 
-## Task 4: Harden AppHub Schema Metadata
+## 任务 4：加固 AppHub Schema 元数据
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubPersistenceServiceCollectionExtensions.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ApplicationEntityTypeConfiguration.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ApplicationInstanceEntityTypeConfiguration.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ManagedNodeEntityTypeConfiguration.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/*SchemaGovernanceMetadata*.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubPersistenceServiceCollectionExtensions.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ApplicationEntityTypeConfiguration.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ApplicationInstanceEntityTypeConfiguration.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/ManagedNodeEntityTypeConfiguration.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/*SchemaGovernanceMetadata*.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
 
-- [ ] **Step 1: Configure AppHub migrations history schema**
+- [ ] **步骤 1：配置 AppHub 迁移历史 schema**
 
-Change PostgreSQL registration to:
+将 PostgreSQL 注册更改为：
 
 ```csharp
 services.AddDbContext<ApplicationDbContext>(options =>
@@ -516,9 +516,9 @@ services.AddDbContext<ApplicationDbContext>(options =>
         npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "apphub")));
 ```
 
-- [ ] **Step 2: Add AppHub table comments**
+- [ ] **步骤 2：添加 AppHub 表注释**
 
-Use these table comments in AppHub entity configurations:
+在 AppHub 实体配置中使用以下表注释：
 
 ```csharp
 builder.ToTable("applications", table => table.HasComment("AppHub application catalog aggregate roots scoped by organization and environment."));
@@ -531,9 +531,9 @@ builder.ToTable("instance_status_changes", table => table.HasComment("AppHub rep
 builder.ToTable("registration_idempotency", table => table.HasComment("AppHub registration idempotency records used to deduplicate connector retries."));
 ```
 
-- [ ] **Step 3: Add AppHub JSON compatibility comments**
+- [ ] **步骤 3：添加 AppHub JSON 兼容性注释**
 
-Change `Metadata` and `Capabilities` property comments:
+更改 `Metadata` 和 `Capabilities` 属性注释：
 
 ```csharp
 builder.Property(x => x.Metadata)
@@ -547,19 +547,19 @@ builder.Property(x => x.Capabilities)
     .Metadata.SetValueComparer(EntityConfigurationJson.CapabilitiesComparer);
 ```
 
-- [ ] **Step 4: Run AppHub schema convention test**
+- [ ] **步骤 4：运行 AppHub schema 约定测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter FullyQualifiedName~AppHubSchemaConventionTests
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Generate AppHub schema governance migration**
+- [ ] **步骤 5：生成 AppHub schema 治理迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -570,22 +570,22 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__AppHubDb -ErrorAction SilentlyContinue
 ```
 
-Expected: AppHub creates a new migration and updates `ApplicationDbContextModelSnapshot.cs`. The migration should contain table/comment metadata changes and no new business tables.
+预期结果：AppHub 创建新迁移并更新 `ApplicationDbContextModelSnapshot.cs`。迁移应包含表/注释元数据变更，且不新增业务表。
 
-## Task 5: Harden Ops Schema Metadata
+## 任务 5：加固 Ops Schema 元数据
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsPersistenceServiceCollectionExtensions.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/AuditRecordEntityTypeConfiguration.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/OperationAttemptEntityTypeConfiguration.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/OperationTaskEntityTypeConfiguration.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/*SchemaGovernanceMetadata*.cs`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsPersistenceServiceCollectionExtensions.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/AuditRecordEntityTypeConfiguration.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/OperationAttemptEntityTypeConfiguration.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/EntityConfigurations/OperationTaskEntityTypeConfiguration.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/*SchemaGovernanceMetadata*.cs`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/ApplicationDbContextModelSnapshot.cs`
 
-- [ ] **Step 1: Configure Ops migrations history schema**
+- [ ] **步骤 1：配置 Ops 迁移历史 schema**
 
-Change PostgreSQL registration to:
+将 PostgreSQL 注册更改为：
 
 ```csharp
 services.AddDbContext<ApplicationDbContext>(options =>
@@ -593,9 +593,9 @@ services.AddDbContext<ApplicationDbContext>(options =>
         npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "ops")));
 ```
 
-- [ ] **Step 2: Add Ops table comments**
+- [ ] **步骤 2：添加 Ops 表注释**
 
-Use these table comments in Ops entity configurations:
+在 Ops 实体配置中使用以下表注释：
 
 ```csharp
 builder.ToTable("operation_tasks", table => table.HasComment("Ops operation task aggregate roots requested through Gateway and executed by connector hosts."));
@@ -603,9 +603,9 @@ builder.ToTable("operation_attempts", table => table.HasComment("Ops operation e
 builder.ToTable("audit_records", table => table.HasComment("Ops audit records for operation task lifecycle events and user-visible traceability."));
 ```
 
-- [ ] **Step 3: Add Ops JSON compatibility comments**
+- [ ] **步骤 3：添加 Ops JSON 兼容性注释**
 
-Change `ParametersJson` and `FailureJson` comments:
+更改 `ParametersJson` 和 `FailureJson` 注释：
 
 ```csharp
 builder.Property(x => x.ParametersJson)
@@ -616,19 +616,19 @@ builder.Property(x => x.FailureJson)
     .HasComment("JSON failure details produced by Connector Host execution, consumed by Ops and Gateway diagnostics; additive optional keys are compatible, removing or changing key semantics requires Ops contract versioning.");
 ```
 
-- [ ] **Step 4: Run Ops schema convention test**
+- [ ] **步骤 4：运行 Ops schema 约定测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter FullyQualifiedName~OpsSchemaConventionTests
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Generate Ops schema governance migration**
+- [ ] **步骤 5：生成 Ops schema 治理迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -639,50 +639,50 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__OpsDb -ErrorAction SilentlyContinue
 ```
 
-Expected: Ops creates a new migration and updates `ApplicationDbContextModelSnapshot.cs`. The migration should contain table/comment metadata changes and no new business tables.
+预期结果：Ops 创建新迁移并更新 `ApplicationDbContextModelSnapshot.cs`。迁移应包含表/注释元数据变更，且不新增业务表。
 
-## Task 6: Update Architecture And Handoff Documentation
+## 任务 6：更新架构和交接文档
 
-**Files:**
+**文件：**
 
-- Modify: `README.md`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/database-schema-conventions.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/technology-stack-references.md`
-- Modify: `docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md`
+- 修改：`README.md`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/architecture/database-schema-conventions.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/technology-stack-references.md`
+- 修改：`docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md`
 
-- [ ] **Step 1: Update README stage handoff**
+- [ ] **步骤 1：更新 README 阶段交接说明**
 
-Change the repository entry that currently says the current fourth-stage worktree to:
+将仓库中当前写作第四阶段工作树的条目更改为：
 
 ```markdown
 - 当前工作树：`codex/schema-governance-hardening`，从第五阶段迁移发布底座之后继续推进 schema governance hardening。
 ```
 
-Add the sixth-stage plan to the implementation plans list:
+将第六阶段计划添加到实施计划清单：
 
 ```markdown
 6. docs/superpowers/plans/2026-05-17-schema-governance-migration-hardening.md
 ```
 
-Add a current-status sentence:
+添加当前状态说明：
 
 ```markdown
 第六阶段 Schema Governance & Migration Hardening 规划已启动，目标是在 IAM、FileStorage 等新持久化服务开工前，把 AppHub/Ops 的表注释、JSON 兼容注释、migrations history schema 和 schema convention tests 固化为门禁。
 ```
 
-- [ ] **Step 2: Update technology stack current baseline**
+- [ ] **步骤 2：更新技术栈当前基线**
 
-Change the repository table current baseline row to:
+将仓库表格中的当前基线行更改为：
 
 ```markdown
 | Current baseline | 第五阶段 Release-grade Persistence Foundation 已合入；本计划是历史执行记录，不是当前状态源。当前状态见 [implementation-readiness.md](../../architecture/implementation-readiness.md)，原始设计输入见 [schema-governance design](../specs/2026-05-17-schema-governance-migration-hardening-design.md)。 |
 ```
 
-- [ ] **Step 3: Update schema catalog known gaps**
+- [ ] **步骤 3：更新 schema 目录中的已知缺口**
 
-For AppHub and Ops, remove gaps that this plan closes:
+对于 AppHub 和 Ops，移除本计划关闭的缺口：
 
 ```markdown
 Known gaps:
@@ -690,133 +690,133 @@ Known gaps:
 1. CAP system tables 当前只在 catalog 中标记 system-owned，后续可补 table comment 便于数据库工具展示。
 ```
 
-Keep future-service rows unchanged.
+保持未来服务的行不变。
 
-- [ ] **Step 4: Update schema conventions enforcement status**
+- [ ] **步骤 4：更新 schema 约定强制执行状态**
 
-In `Schema Convention Tests`, state that AppHub/Ops now enforce the first six checks and future persistent services must adopt the same helper:
+在 `Schema Convention Tests` 中说明 AppHub/Ops 现已强制执行前六项检查，未来的持久化服务必须采用同一辅助库：
 
 ```markdown
 AppHub/Ops 已通过 `Nerv.IIP.Testing` 中的 schema convention helper 覆盖 business table comment、business column comment、JSON/text 兼容注释、string ID 约束和 service-schema `__EFMigrationsHistory`。后续 IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引建表时必须复用同一类测试。
 ```
 
-Update current known gaps so AppHub/Ops closed items are not listed as open after implementation:
+更新当前已知缺口，确保实施后 AppHub/Ops 已关闭项不会继续列为开放项：
 
 ```markdown
 1. CAP system tables 当前只在 DbContext 中配置表名和主键，后续应至少补表注释或在 catalog 中保持 system-owned 标记。
 2. IAM、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引尚未建表；首次建表前必须先补 catalog 草案和 schema convention tests。
 ```
 
-- [ ] **Step 5: Update implementation readiness**
+- [ ] **步骤 5：更新实施就绪状态**
 
-Add a sixth-stage current conclusion:
+添加第六阶段当前结论：
 
 ```markdown
 18. 第六阶段 Schema Governance & Migration Hardening 用 AppHub/Ops 作为已迁移服务样本，把业务表注释、业务列注释、JSON/text 兼容注释、string ID 约束和 service-schema migrations history 配置固化为测试门禁；IAM/FileStorage 等新增持久化服务开工前必须沿用该门禁。
 ```
 
-Add the new plan to the plan list and note that customer release bundles remain future work.
+将新计划添加到计划清单，并说明客户发布包仍属于未来工作。
 
-- [ ] **Step 6: Mark fifth-stage plan as historical completion**
+- [ ] **步骤 6：将第五阶段计划标记为历史完成状态**
 
-At the top of `docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md`, after the completion record intro, add:
+在 `docs/superpowers/plans/2026-05-17-release-grade-persistence-foundation.md` 顶部的完成记录引言之后添加：
 
 ```markdown
 > Historical note: the unchecked task list below is preserved as the original execution plan. The stage is complete; use the Completion Record and git history as the source of truth for status.
 ```
 
-Do not rewrite the whole historical task list.
+不得重写整个历史任务清单。
 
-## Task 7: Verification
+## 任务 7：验证
 
-**Files:**
+**文件：**
 
-- No new files unless a previous task uncovers a missing test or doc.
+- 除非前一任务发现缺失的测试或文档，否则不新增文件。
 
-- [ ] **Step 1: Run targeted schema tests**
+- [ ] **步骤 1：运行针对性的 schema 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter FullyQualifiedName~AppHubSchemaConventionTests
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter FullyQualifiedName~OpsSchemaConventionTests
 ```
 
-Expected: both exit `0`.
+预期结果：两者都以 `0` 退出。
 
-- [ ] **Step 2: Run full backend solution tests**
+- [ ] **步骤 2：运行完整后端解决方案测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln
 ```
 
-Expected: exit `0`.
+预期结果：以 `0` 退出。
 
-- [ ] **Step 3: Run fifth-stage persistence verification**
+- [ ] **步骤 3：运行第五阶段持久化验证**
 
-Run because migrations and PostgreSQL history configuration changed:
+由于迁移和 PostgreSQL 历史配置发生变化，运行：
 
 ```powershell
 pwsh scripts/verify-fifth-slice-persistence-foundation.ps1
 ```
 
-Expected final line:
+预期最后一行：
 
 ```text
 Fifth slice release-grade persistence foundation verified.
 ```
 
-- [ ] **Step 4: Run repository whitespace check**
+- [ ] **步骤 4：运行仓库空白检查**
 
-Run:
+运行：
 
 ```powershell
 git diff --check
 ```
 
-Expected: exit `0`.
+预期结果：以 `0` 退出。
 
-- [ ] **Step 5: Confirm final git status only includes intended files plus pre-existing skills lock**
+- [ ] **步骤 5：确认最终 git 状态只包含预期文件和预先存在的 skills lock**
 
-Run:
+运行：
 
 ```powershell
 git status --short
 ```
 
-Expected: intended schema governance files are modified/added. `skills-lock.json` may still appear as a pre-existing unstaged modification; do not stage it.
+预期结果：预期的 schema 治理文件已修改/添加。`skills-lock.json` 仍可能显示为预先存在的未暂存修改；不得暂存它。
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 first to establish AppHub red test.
-2. Task 2 second because both service tests depend on shared assertions.
-3. Task 3 third to establish Ops red test.
-4. Tasks 4 and 5 can run independently after Task 2 if assigned to separate workers, because AppHub and Ops write sets are disjoint.
-5. Task 6 runs after schema tests pass so documentation reflects the real closed gaps.
-6. Task 7 runs last.
+1. 首先执行任务 1，建立 AppHub 红灯测试。
+2. 接着执行任务 2，因为两个服务测试都依赖共享断言。
+3. 然后执行任务 3，建立 Ops 红灯测试。
+4. 如果分配给不同执行者，任务 4 和任务 5 可在任务 2 后独立运行，因为 AppHub 和 Ops 的写入集合互不相交。
+5. schema 测试通过后运行任务 6，使文档反映真实关闭的缺口。
+6. 最后运行任务 7。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. AppHub/Ops table comments are covered by Tasks 4 and 5.
-2. JSON/text compatibility comments are covered by Tasks 4 and 5.
-3. Migrations history schema configuration is covered by Tasks 4 and 5.
-4. Reusable convention tests are covered by Tasks 1, 2 and 3.
-5. Documentation and handoff drift are covered by Task 6.
-6. Full verification is covered by Task 7.
+1. 任务 4 和任务 5 覆盖 AppHub/Ops 表注释。
+2. 任务 4 和任务 5 覆盖 JSON/text 兼容性注释。
+3. 任务 4 和任务 5 覆盖迁移历史 schema 配置。
+4. 任务 1、2 和 3 覆盖可复用的约定测试。
+5. 任务 6 覆盖文档和交接偏差。
+6. 任务 7 覆盖完整验证。
 
-Red-flag scan:
+风险标记扫描：
 
-1. No red-flag markers or empty sections remain.
-2. Every code-changing task names exact files and concrete snippets.
-3. Every verification step has a concrete command and expected result.
+1. 不保留风险标记或空章节。
+2. 每个代码变更任务都指定精确文件和具体片段。
+3. 每个验证步骤都有具体命令和预期结果。
 
-Type consistency:
+类型一致性：
 
-1. Helper type names are `SchemaConventionAssertions`, `JsonColumnRule` and `StringKeyRule` throughout.
-2. AppHub schema name is `apphub` throughout.
-3. Ops schema name is `ops` throughout.
-4. New migration name is `SchemaGovernanceMetadata` for both services.
+1. 辅助类型始终命名为 `SchemaConventionAssertions`、`JsonColumnRule` 和 `StringKeyRule`。
+2. AppHub schema 始终命名为 `apphub`。
+3. Ops schema 始终命名为 `ops`。
+4. 两个服务的新迁移都命名为 `SchemaGovernanceMetadata`。

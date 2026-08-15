@@ -11,26 +11,32 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain;
+using Nerv.IIP.Business.Maintenance.Domain;
 using Npgsql;
 using IndustrialTelemetryDbContext = Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.ApplicationDbContext;
 using MaintenanceDbContext = Nerv.IIP.Business.Maintenance.Infrastructure.ApplicationDbContext;
 
 namespace Nerv.IIP.Business.Acceptance.Tests;
 
+[Collection(AcceptancePostgresLaneDatabase.CollectionName)]
 public sealed class RuntimeHoursMaintenancePostgresAcceptanceTests
 {
-    private const string PostgresConnectionStringEnvironmentVariable = "NERV_IIP_TEST_POSTGRES";
-
     [RealPostgresFact]
     public async Task Runtime_hour_interval_generates_pm_work_order_from_industrial_telemetry_runtime_hours_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var industrialTelemetryDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "it_runtime");
-        await using var maintenanceDatabase = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "mx_runtime");
-        await using var industrialTelemetryDbContext = CreateIndustrialTelemetryDbContext(industrialTelemetryDatabase.ConnectionString);
-        await using var maintenanceDbContext = CreateMaintenanceDbContext(maintenanceDatabase.ConnectionString);
-        await industrialTelemetryDbContext.Database.EnsureCreatedAsync();
-        await maintenanceDbContext.Database.EnsureCreatedAsync();
+        await AcceptancePostgresLaneDatabase.ResetSchemaAsync(IndustrialTelemetryFacts.Schema, MaintenanceFacts.Schema);
+        var connectionString = AcceptancePostgresLaneDatabase.ConnectionString;
+        await using var industrialTelemetryDbContext = CreateIndustrialTelemetryDbContext(connectionString);
+        await using var maintenanceDbContext = CreateMaintenanceDbContext(connectionString);
+        AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(industrialTelemetryDbContext);
+        AcceptancePostgresLaneDatabase.AssertUsesGovernedDatabase(maintenanceDbContext);
+        // The lane database persists across every test in this member, so EnsureCreatedAsync would see the
+        // database already exists (it checks database-level existence, not per-schema table existence) and
+        // silently skip creating these two schemas' tables. MigrateAsync actually inspects each schema's own
+        // __EFMigrationsHistory (dropped by ResetSchemaAsync above) and creates the tables from a clean state.
+        await industrialTelemetryDbContext.Database.MigrateAsync();
+        await maintenanceDbContext.Database.MigrateAsync();
 
         industrialTelemetryDbContext.DeviceStateSnapshots.AddRange(
             DeviceStateSnapshot.Record("org-001", "env-dev", "DEV-CNC-PG", "running", new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero), "pg-runtime-001", "SCADA-A", "opc-ua-cell-01"),
@@ -136,57 +142,6 @@ public sealed class RuntimeHoursMaintenancePostgresAcceptanceTests
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Real PostgreSQL acceptance must use IndustrialTelemetry runtime-hours, not fallback runtime.");
-        }
-    }
-
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-            };
-            var databaseName = $"nerv_iip_{prefix}_{Guid.NewGuid():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = @databaseName AND pid <> pg_backend_pid();",
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", databaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{databaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
         }
     }
 

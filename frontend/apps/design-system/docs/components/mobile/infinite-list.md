@@ -78,6 +78,8 @@ function onLoad() {
 
 容器需要一个**确定的高度**形成内部滚动区。当滚动到距底部 `offset` 像素内时触发 `load`，组件会自动把加载标志置为 `true`；请在异步请求完成后将其置回 `false`。全部加载完成后设 `finished` 为 `true`，停止继续触发。
 
+分页发生可重试错误时可暂时设置 `paused`：组件会停止滚动区与底部观察器触发，也不会显示“没有更多了”或“上拉加载更多”。用户显式重试时由业务组件发起请求；只有服务端确认没有后续页时才设置 `finished`。
+
 ```vue
 <script setup>
 const orders = ref(initial)
@@ -112,6 +114,7 @@ function onLoad() {
 | -------------- | ------------------------------------------------------------- | --------- | -------------- |
 | `v-model`      | 加载中状态（触发时自动置 `true`，请求完成后自行置回 `false`） | `boolean` | `false`        |
 | `finished`     | 是否已全部加载完（为 `true` 时不再触发 `load`）               | `boolean` | `false`        |
+| `paused`       | 暂停自动触发且不渲染未完成/已完成 footer                      | `boolean` | `false`        |
 | `offset`       | 距底部多少像素内触发加载                                      | `number`  | `80`           |
 | `finishedText` | 加载完毕时的底部文案                                          | `string`  | `'没有更多了'` |
 | `class`        | 根容器类（**须指定高度**）                                    | `string`  | —              |

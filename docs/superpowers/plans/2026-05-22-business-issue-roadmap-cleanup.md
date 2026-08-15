@@ -1,45 +1,45 @@
-# Business Issue Roadmap Cleanup Implementation Plan
+# 业务 Issue 路线图清理实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Reorganize the non-Gantt business-platform GitHub issues so open issues match current code facts, architecture decisions and executable slices.
+**目标：**重新组织业务平台中非甘特图相关的 GitHub Issue，使开放 Issue 与当前代码事实、架构决策和可执行切片保持一致。
 
-**Architecture:** Keep old broad issues as epics when they still carry useful scope, create missing child issues for executable work, and leave #72 closed. Use `gh` CLI only; generate temporary markdown files under the workspace for issue bodies so remote edits are reviewable before submission.
+**架构：**仍承载有效范围的旧宽泛 Issue 保留为史诗 Issue（Epic），为可执行工作创建缺失的子 Issue，并保持 #72 已关闭。只使用 `gh` 命令行界面（CLI）；在工作区内生成用于 Issue 正文的临时 Markdown 文件，以便提交前审核远程修改内容。
 
-**Tech Stack:** GitHub CLI, Markdown issue bodies, existing Nerv-IIP docs, PowerShell.
+**技术栈：**GitHub CLI、Markdown Issue 正文、现有 Nerv-IIP 文档、PowerShell。
 
-**Execution Result (2026-05-22):** Completed. Existing epics #70, #71 and #73-#77 were rewritten, child issues #131-#143 were created, execution issues #127-#130 were linked by comments, #70/#73-#77 bodies now include actual child issue numbers, architecture docs were updated, and temporary `.codex/tmp/business-issue-roadmap` body files were removed after submission.
+**执行结果（2026-05-22）：**已完成。已重写现有史诗 Issue #70、#71 和 #73-#77，已创建子 Issue #131-#143，已通过评论关联执行 Issue #127-#130，#70/#73-#77 的正文现已包含实际子 Issue 编号，架构文档已更新，并已在提交后删除临时正文文件 `.codex/tmp/business-issue-roadmap`。
 
 ---
 
-## Files
+## 文件
 
-- Read: `docs/superpowers/specs/2026-05-22-business-issue-roadmap-design.md`
-- Read: `docs/architecture/implementation-readiness.md`
-- Read: `docs/architecture/business-platform-domain-architecture.md`
-- Create: `.codex/tmp/business-issue-roadmap/*.md`
-- Modify: `docs/architecture/business-platform-domain-architecture.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 读取：`docs/superpowers/specs/2026-05-22-business-issue-roadmap-design.md`
+- 读取：`docs/architecture/implementation-readiness.md`
+- 读取：`docs/architecture/business-platform-domain-architecture.md`
+- 创建：`.codex/tmp/business-issue-roadmap/*.md`
+- 修改：`docs/architecture/business-platform-domain-architecture.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-## Task 1: Prepare Issue Body Files
+## 任务 1：准备 Issue 正文文件
 
-- [x] **Step 1: Create temp directory**
+- [x] **步骤 1：创建临时目录**
 
-Run:
+运行：
 
 ```powershell
 New-Item -ItemType Directory -Force .codex/tmp/business-issue-roadmap
 ```
 
-Expected: directory exists.
+预期：目录存在。
 
-- [x] **Step 2: Write replacement bodies for #70, #71, #73, #74, #75, #76 and #77**
+- [x] **步骤 2：为 #70、#71、#73、#74、#75、#76 和 #77 编写替换正文**
 
-Use the templates from `docs/superpowers/specs/2026-05-22-business-issue-roadmap-design.md`. The child issue links will initially use child issue titles; after creating child issues, replace or comment with actual issue numbers.
+使用 `docs/superpowers/specs/2026-05-22-business-issue-roadmap-design.md` 中的模板。子 Issue 链接起初使用子 Issue 标题；创建子 Issue 后，替换为实际 Issue 编号或用实际编号添加评论。
 
-- [x] **Step 3: Write child issue bodies**
+- [x] **步骤 3：编写子 Issue 正文**
 
-Create one markdown file for each new child issue:
+为每个新子 Issue 创建一个 Markdown 文件：
 
 1. `inventory-mvp.md`
 2. `quality-inspection-mvp.md`
@@ -55,7 +55,7 @@ Create one markdown file for each new child issue:
 12. `filestorage-object-storage-integration.md`
 13. `frontend-component-gap-closure.md`
 
-Each body must include:
+每份正文必须包含：
 
 ```markdown
 ## Parent
@@ -79,33 +79,33 @@ The issue body lists concrete API, persistence, permission and verification expe
 ADR 0012, the business architecture document and the relevant plan path.
 ```
 
-Use the actual parent number for each child issue: #73 for Inventory, Quality inspection, BarcodeLabel and BusinessApproval; #74 for MES; #75 for WMS; #76 for ERP Procurement/Sales/Finance; #77 for business service registration and verify readiness; #70 for FileStorage and frontend component follow-ups.
+为每个子 Issue 使用实际父 Issue 编号：Inventory、Quality 检验、BarcodeLabel 和 BusinessApproval 使用 #73；MES 使用 #74；WMS 使用 #75；ERP 采购/销售/财务使用 #76；业务服务注册与就绪性验证使用 #77；FileStorage 和前端组件后续工作使用 #70。
 
-## Task 2: Rewrite Existing Epics
+## 任务 2：重写现有史诗 Issue
 
-- [x] **Step 1: Update #70**
+- [x] **步骤 1：更新 #70**
 
-Run:
+运行：
 
 ```powershell
 gh issue edit 70 --body-file .codex/tmp/business-issue-roadmap/issue-70.md
 ```
 
-Expected: issue #70 body is replaced.
+预期：Issue #70 的正文已替换。
 
-- [x] **Step 2: Update #71**
+- [x] **步骤 2：更新 #71**
 
-Run:
+运行：
 
 ```powershell
 gh issue edit 71 --body-file .codex/tmp/business-issue-roadmap/issue-71.md
 ```
 
-Expected: issue #71 body is replaced.
+预期：Issue #71 的正文已替换。
 
-- [x] **Step 3: Update #73 through #77**
+- [x] **步骤 3：更新 #73 至 #77**
 
-Run:
+运行：
 
 ```powershell
 gh issue edit 73 --body-file .codex/tmp/business-issue-roadmap/issue-73.md
@@ -115,13 +115,13 @@ gh issue edit 76 --body-file .codex/tmp/business-issue-roadmap/issue-76.md
 gh issue edit 77 --body-file .codex/tmp/business-issue-roadmap/issue-77.md
 ```
 
-Expected: issues #73-#77 are rewritten as epics.
+预期：Issue #73-#77 已重写为史诗 Issue。
 
-## Task 3: Create Child Issues
+## 任务 3：创建子 Issue
 
-- [x] **Step 1: Create #73 child issues**
+- [x] **步骤 1：创建 #73 的子 Issue**
 
-Run:
+运行：
 
 ```powershell
 gh issue create --title "feat: Inventory MVP - stock ledger, movement, availability and counts" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/inventory-mvp.md
@@ -130,22 +130,22 @@ gh issue create --title "feat: BarcodeLabel MVP - rules, templates, print batche
 gh issue create --title "feat: BusinessApproval MVP - templates, approval chains and approval records" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/business-approval-mvp.md
 ```
 
-Expected: four issue URLs are printed.
+预期：输出四个 Issue URL。
 
-- [x] **Step 2: Create #74 and #75 child issues**
+- [x] **步骤 2：创建 #74 和 #75 的子 Issue**
 
-Run:
+运行：
 
 ```powershell
 gh issue create --title "feat: MES CleanDDD persistence and execution MVP" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/mes-cleanddd-persistence.md
 gh issue create --title "feat: WMS execution MVP - inbound, outbound, count and WCS adapter boundary" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/wms-execution-mvp.md
 ```
 
-Expected: two issue URLs are printed.
+预期：输出两个 Issue URL。
 
-- [x] **Step 3: Create #76 child issues**
+- [x] **步骤 3：创建 #76 的子 Issue**
 
-Run:
+运行：
 
 ```powershell
 gh issue create --title "feat: ERP Procurement MVP - requisitions, RFQ, purchase orders and receipts" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/erp-procurement-mvp.md
@@ -153,11 +153,11 @@ gh issue create --title "feat: ERP Sales MVP - opportunity, quotation, sales ord
 gh issue create --title "feat: ERP Finance MVP - receivables, payables, vouchers and cost candidates" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/erp-finance-mvp.md
 ```
 
-Expected: three issue URLs are printed.
+预期：输出三个 Issue URL。
 
-- [x] **Step 4: Create cross-cutting and infrastructure child issues**
+- [x] **步骤 4：创建跨领域和基础设施子 Issue**
 
-Run:
+运行：
 
 ```powershell
 gh issue create --title "chore: Business service registration, verify script pattern and readiness tracking" --label "enhancement" --label "business-platform" --body-file .codex/tmp/business-issue-roadmap/business-service-registration-verify-readiness.md
@@ -166,13 +166,13 @@ gh issue create --title "feat: FileStorage object storage integration - MinIO/S3
 gh issue create --title "feat: Frontend component gap closure for business console readiness" --label "enhancement" --label "area:frontend" --body-file .codex/tmp/business-issue-roadmap/frontend-component-gap-closure.md
 ```
 
-Expected: four issue URLs are printed.
+预期：输出四个 Issue URL。
 
-## Task 4: Link Existing Execution Issues
+## 任务 4：关联现有执行 Issue
 
-- [x] **Step 1: Comment on #127 through #130**
+- [x] **步骤 1：评论 #127 至 #130**
 
-Run one comment per issue:
+为每个 Issue 添加一条评论：
 
 ```powershell
 gh issue comment 127 --body "Roadmap alignment: this issue is the executable ProductEngineering completion slice. Parent domain context: ADR 0012 Slice 2 and docs/superpowers/plans/2026-05-20-business-product-engineering-mvp.md. Current code fact: ProductionVersion exists; EngineeringDocument, EngineeringItem, EBOM, MBOM, Routing and ECO/ECN remain in scope."
@@ -181,13 +181,13 @@ gh issue comment 129 --body "Roadmap alignment: this issue is the executable Ind
 gh issue comment 130 --body "Roadmap alignment: this issue is the executable Maintenance slice. Existing facts: Contracts.Maintenance already defines AssetUnavailable/AssetRestored events, and MES has a consumer-side handler. Alarm-triggered work order creation depends on IndustrialTelemetry."
 ```
 
-Expected: each issue receives one roadmap alignment comment.
+预期：每个 Issue 都收到一条路线图对齐评论。
 
-## Task 5: Update Architecture Docs
+## 任务 5：更新架构文档
 
-- [x] **Step 1: Update business architecture issue mapping**
+- [x] **步骤 1：更新业务架构 Issue 映射**
 
-Modify `docs/architecture/business-platform-domain-architecture.md` by adding an "Issue Roadmap" section that maps:
+修改 `docs/architecture/business-platform-domain-architecture.md`，新增“路线图 Issue”章节并包含以下映射：
 
 ```markdown
 | Slice | GitHub Tracking |
@@ -205,9 +205,9 @@ Modify `docs/architecture/business-platform-domain-architecture.md` by adding an
 | Full-chain acceptance | #77 |
 ```
 
-- [x] **Step 2: Update implementation readiness**
+- [x] **步骤 2：更新实施就绪状态**
 
-Modify `docs/architecture/implementation-readiness.md` current conclusion or current usage section with a concise business-service code fact table:
+修改 `docs/architecture/implementation-readiness.md` 的当前结论或当前使用说明章节，加入简明的业务服务代码事实表：
 
 ```markdown
 | Service | Current code fact | Tracking |
@@ -226,33 +226,33 @@ Modify `docs/architecture/implementation-readiness.md` current conclusion or cur
 | Maintenance | no service directory | #130 |
 ```
 
-## Task 6: Verify Cleanup
+## 任务 6：验证清理结果
 
-- [x] **Step 1: Verify issue list**
+- [x] **步骤 1：验证 Issue 列表**
 
-Run:
+运行：
 
 ```powershell
 gh issue list --state open --limit 200 --json number,title,labels,url,updatedAt
 ```
 
-Expected: the list includes rewritten epics, existing #127-#130, and newly created child issues.
+预期：列表包含重写后的史诗 Issue、现有 #127-#130 以及新创建的子 Issue。
 
-- [x] **Step 2: Verify local docs**
+- [x] **步骤 2：验证本地文档**
 
-Run:
+运行：
 
 ```powershell
 rg -n "Issue Roadmap|BusinessMasterData|ProductEngineering|MES CleanDDD|Inventory MVP" docs/architecture/business-platform-domain-architecture.md docs/architecture/implementation-readiness.md
 git diff --check
 ```
 
-Expected: both commands exit 0; `rg` shows the new roadmap/readiness facts.
+预期：两个命令的退出码均为 0；`rg` 显示新的路线图和就绪状态事实。
 
-## Self-Review Checklist
+## 自审清单
 
-1. #78 remains untouched.
-2. #72 remains closed and untouched.
-3. Old broad issues remain open only as epics.
-4. New child issues have clear parent issue references and acceptance criteria.
-5. Local docs state code facts, not assumptions.
+1. #78 保持未修改。
+2. #72 保持已关闭且未修改。
+3. 旧宽泛 Issue 仅以史诗 Issue 形式保持开放。
+4. 新子 Issue 具有明确的父 Issue 引用和验收标准。
+5. 本地文档陈述代码事实，而不是假设。

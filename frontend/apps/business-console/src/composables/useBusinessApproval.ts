@@ -24,6 +24,7 @@ import {
   type BusinessConsoleApprovalTemplateStepItem,
   type BusinessConsoleStartApprovalChainEnvelope,
 } from '@nerv-iip/api-client'
+import type { ApprovalDecisionValue } from '@/data/approvalReference'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
@@ -90,7 +91,11 @@ export interface ApprovalTemplatePayload {
 export interface ApprovalDecisionPayload {
   chainId: string
   stepNo: number
-  decision: string
+  /**
+   * 只接受权威小写取值：Gateway 契约把 `decision` 声明成自由 `string`，类型层不设防，
+   * 所以由这里的联合类型充当前端的「契约闸门」（#1311）。
+   */
+  decision: ApprovalDecisionValue
   comment?: string
 }
 
@@ -113,7 +118,9 @@ export interface ApprovalStartChainPayload {
   documentLineId?: string
 }
 
-function defaultPaged<T extends ApprovalPagedFilters>(input: Omit<T, 'skip' | 'take'> = {} as Omit<T, 'skip' | 'take'>): T {
+function defaultPaged<T extends ApprovalPagedFilters>(
+  input: Omit<T, 'skip' | 'take'> = {} as Omit<T, 'skip' | 'take'>,
+): T {
   return reactive({
     skip: 0,
     take: DEFAULT_TAKE,
@@ -131,22 +138,32 @@ function optionalNullableText(value?: string) {
   return trimmed ? trimmed : null
 }
 
-function unwrapItems<T>(envelope: { success?: boolean, data?: { items?: T[] } | null } | undefined): T[] {
-  return envelope?.success ? envelope.data?.items ?? [] : []
+function unwrapItems<T>(
+  envelope: { success?: boolean; data?: { items?: T[] } | null } | undefined,
+): T[] {
+  return envelope?.success ? (envelope.data?.items ?? []) : []
 }
 
-function unwrapTotal(envelope: { success?: boolean, data?: { total?: number } | null } | undefined): number {
-  return envelope?.success ? envelope.data?.total ?? 0 : 0
+function unwrapTotal(
+  envelope: { success?: boolean; data?: { total?: number } | null } | undefined,
+): number {
+  return envelope?.success ? (envelope.data?.total ?? 0) : 0
 }
 
-function unwrapData<T>(envelope: { success?: boolean, data?: T | null } | undefined): T | undefined {
-  return envelope?.success ? envelope.data ?? undefined : undefined
+function unwrapData<T>(
+  envelope: { success?: boolean; data?: T | null } | undefined,
+): T | undefined {
+  return envelope?.success ? (envelope.data ?? undefined) : undefined
 }
 
 function isApprovalQuery(entry: UseQueryEntry) {
   const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
   return keyParts.some(
-    (part) => typeof part === 'object' && part !== null && '_id' in part && APPROVAL_QUERY_IDS.includes(String(part._id)),
+    (part) =>
+      typeof part === 'object' &&
+      part !== null &&
+      '_id' in part &&
+      APPROVAL_QUERY_IDS.includes(String(part._id)),
   )
 }
 
@@ -289,6 +306,12 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
   })
 
   return {
+    /**
+     * 业务上下文是否就绪 = 五张读面查询是否真的发出去了。
+     * 未就绪时 `enabled:false`，pinia-colada 的 `asyncStatus` 停在 `idle`，`isLoading`
+     * 为 **false**——页面只看 pending/error 会把「压根没查」当成「查过了、是 0」。
+     */
+    contextReady: computed(() => hasBusinessContext(businessContext)),
     chainDetail: computed(() =>
       unwrapData(chainDetailQuery.data.value as BusinessConsoleApprovalChainEnvelope | undefined),
     ),
@@ -324,21 +347,29 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
     createDelegationPending: createDelegationMutation.isLoading,
     decisionFilters,
     decisions: computed<BusinessConsoleApprovalDecisionListItem[]>(() =>
-      unwrapItems(decisionQuery.data.value as BusinessConsoleApprovalDecisionListEnvelope | undefined),
+      unwrapItems(
+        decisionQuery.data.value as BusinessConsoleApprovalDecisionListEnvelope | undefined,
+      ),
     ),
     decisionsError: decisionQuery.error,
     decisionsPending: decisionQuery.isLoading,
     decisionsTotal: computed(() =>
-      unwrapTotal(decisionQuery.data.value as BusinessConsoleApprovalDecisionListEnvelope | undefined),
+      unwrapTotal(
+        decisionQuery.data.value as BusinessConsoleApprovalDecisionListEnvelope | undefined,
+      ),
     ),
     delegationFilters,
     delegations: computed<BusinessConsoleApprovalDelegationItem[]>(() =>
-      unwrapItems(delegationQuery.data.value as BusinessConsoleApprovalDelegationListEnvelope | undefined),
+      unwrapItems(
+        delegationQuery.data.value as BusinessConsoleApprovalDelegationListEnvelope | undefined,
+      ),
     ),
     delegationsError: delegationQuery.error,
     delegationsPending: delegationQuery.isLoading,
     delegationsTotal: computed(() =>
-      unwrapTotal(delegationQuery.data.value as BusinessConsoleApprovalDelegationListEnvelope | undefined),
+      unwrapTotal(
+        delegationQuery.data.value as BusinessConsoleApprovalDelegationListEnvelope | undefined,
+      ),
     ),
     refreshAll: async () => {
       if (!hasBusinessContext(businessContext)) {
@@ -420,12 +451,16 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
     ),
     templateFilters,
     templates: computed<BusinessConsoleApprovalTemplateItem[]>(() =>
-      unwrapItems(templateQuery.data.value as BusinessConsoleApprovalTemplateListEnvelope | undefined),
+      unwrapItems(
+        templateQuery.data.value as BusinessConsoleApprovalTemplateListEnvelope | undefined,
+      ),
     ),
     templatesError: templateQuery.error,
     templatesPending: templateQuery.isLoading,
     templatesTotal: computed(() =>
-      unwrapTotal(templateQuery.data.value as BusinessConsoleApprovalTemplateListEnvelope | undefined),
+      unwrapTotal(
+        templateQuery.data.value as BusinessConsoleApprovalTemplateListEnvelope | undefined,
+      ),
     ),
   }
 }

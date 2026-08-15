@@ -2,7 +2,15 @@
 import type { BusinessConsoleErpPurchaseOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseOrders } from '@/composables/useBusinessErp'
+import {
+  useErpItemCatalog,
+  useErpPartnerCatalog,
+  useErpSiteCatalog,
+} from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
+import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -14,6 +22,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -30,9 +39,15 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, formatQuantity } from '../shared'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatQuantity,
+  pickerInvalidClass,
+} from '../shared'
 
 definePage({
   meta: {
@@ -43,6 +58,13 @@ definePage({
 })
 
 const orders = useErpPurchaseOrders()
+// 供应商 / 工厂 / 物料 / 单位一律从主数据目录里选，手输编码只会在提交时才发现敲错。
+const { supplierOptions, partnersPending } = useErpPartnerCatalog()
+const { siteOptions, sitesPending } = useErpSiteCatalog()
+const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
+const { resolveSkuName } = useSkuNames()
 const { page, pageSize } = usePagedList(orders.filters, {
   resetOn: [() => orders.filters.status, () => orders.filters.keyword],
 })
@@ -59,11 +81,13 @@ const rows = computed(() =>
     (order.lines ?? []).map((line) => ({
       purchaseOrderNo: order.purchaseOrderNo ?? '-',
       supplierCode: order.supplierCode ?? '-',
+      supplierName: resolvePartner(order.supplierCode),
       siteCode: order.siteCode ?? '-',
       status: order.status ?? '-',
       receiptReadiness: order.receiptReadiness ?? '-',
       lineNo: line.lineNo ?? '-',
       skuCode: line.skuCode ?? '-',
+      skuName: resolveSkuName(line.skuCode),
       sourceRequisitions:
         (line.sources ?? [])
           .map((source) => source.purchaseRequisitionNo)
@@ -90,20 +114,36 @@ const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
   { key: 'amount', header: '金额', align: 'end', width: 'w-32' },
 ]
 
+const readState = computed(() =>
+  erpReadState({
+    noun: '采购订单',
+    unit: '张',
+    ready: orders.ready.value,
+    pending: orders.pending.value,
+    error: orders.error.value,
+    total: orders.total.value,
+    filtered: Boolean(orders.filters.keyword || orders.filters.status),
+    emptyHint: '还没有采购订单。已批准的供应商报价或采购申请转单后会在这里出现。',
+  }),
+)
+
 const openQuantity = computed(() => rows.value.reduce((sum, row) => sum + row.openQuantity, 0))
 const orderAmount = computed(() => rows.value.reduce((sum, row) => sum + row.amount, 0))
 const orderCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'open-quantity',
     label: '未到数量',
-    value: formatQuantity(openQuantity.value),
-    meta: '已下达但供应商尚未交付',
+    // 取不到订单时显 `—`：0 会被读成"供应商都交齐了"。
+    value: readState.value.trustworthy ? formatQuantity(openQuantity.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy ? '已下达但供应商尚未交付' : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '订单金额',
-    value: formatAmount(orderAmount.value),
-    meta: `当前列表 ${rows.value.length} 行采购明细合计`,
+    value: readState.value.trustworthy ? formatAmount(orderAmount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${rows.value.length} 行采购明细合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -112,11 +152,19 @@ const form = reactive({
   supplierCode: '',
   siteCode: '',
   skuCode: '',
-  uomCode: 'EA',
+  uomCode: '',
   quantity: '1',
   unitPrice: '0',
   promisedDate: '',
 })
+// 采购单位默认跟随物料的基本单位；用户仍可改成采购包装单位。
+watch(
+  () => form.skuCode,
+  (skuCode) => {
+    const baseUom = baseUomBySku.value.get(skuCode.trim())
+    if (baseUom) form.uomCode = baseUom
+  },
+)
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
@@ -134,7 +182,7 @@ function openDialog() {
   form.supplierCode = ''
   form.siteCode = ''
   form.skuCode = ''
-  form.uomCode = 'EA'
+  form.uomCode = ''
   form.quantity = '1'
   form.unitPrice = '0'
   form.promisedDate = ''
@@ -165,7 +213,11 @@ async function submit() {
     open.value = false
     notifySuccess('采购订单已创建')
   } catch (error) {
-    notifyError(orders.createPurchaseOrderError.value ?? error, '创建采购单失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建采购单失败',
+      orders.createPurchaseOrderError.value ?? error,
+      '创建采购单失败，请稍后重试。',
+    )
   }
 }
 </script>
@@ -175,7 +227,7 @@ async function submit() {
     <NvPageHeader
       title="采购订单"
       :breadcrumbs="[{ label: '经营管理' }, { label: '采购' }]"
-      :count="`${orders.total.value} 张订单`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -230,10 +282,21 @@ async function submit() {
       :loading="orders.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无采购订单。已批准供应商报价或采购申请可转入采购订单。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="orders.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #cell-supplierCode="{ row }">
+        <CodeWithNameCell :code="row.supplierCode" :name="row.supplierName" />
+      </template>
+      <template #cell-skuCode="{ row }">
+        <CodeWithNameCell :code="row.skuCode" :name="row.skuName" fallback="未指定物料" />
+      </template>
       <template #cell-orderedQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template
       >
@@ -264,44 +327,68 @@ async function submit() {
               <NvFieldLabel for="erp-po-supplier">
                 供应商 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-po-supplier"
                 v-model="form.supplierCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.supplierCode ? '' : undefined"
+                :options="supplierOptions"
+                title="选择供应商"
+                placeholder="选择供应商"
+                source-text="数据来自基础数据业务伙伴（供应商角色）"
+                empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="供应商"
+                :class="pickerInvalidClass(showErrors && invalid.supplierCode)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-po-site">
                 工厂 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-po-site"
                 v-model="form.siteCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.siteCode ? '' : undefined"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择收货工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
+                :loading="sitesPending"
+                aria-label="工厂"
+                :class="pickerInvalidClass(showErrors && invalid.siteCode)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-po-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-po-sku"
                 v-model="form.skuCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
+                :loading="skusPending"
+                aria-label="物料"
+                :class="pickerInvalidClass(showErrors && invalid.skuCode)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-po-uom">
                 单位 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-po-uom"
                 v-model="form.uomCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+                :options="uomOptions"
+                title="选择单位"
+                placeholder="选择采购单位"
+                source-text="数据来自基础数据计量单位；选定物料后默认带出基本单位"
+                empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
+                :loading="uomsPending"
+                aria-label="单位"
+                :class="pickerInvalidClass(showErrors && invalid.uomCode)"
               />
             </NvField>
             <NvField>
@@ -343,7 +430,7 @@ async function submit() {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写供应商、工厂、物料、单位、承诺日期，并给出正数数量与非负单价。
+            请选择供应商、工厂、物料、单位，填写承诺日期，并给出正数数量与非负单价。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

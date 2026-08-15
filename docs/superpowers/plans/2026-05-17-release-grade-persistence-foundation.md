@@ -1,20 +1,20 @@
-# Release-Grade Persistence Foundation Implementation Plan
+# 发布级持久化基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Replace the fourth-stage PostgreSQL `EnsureCreated()` shortcut with migration-based AppHub/Ops verification and explicit local auto-migration guardrails.
+**目标：** 使用基于迁移的 AppHub/Ops 验证和显式本地自动迁移护栏，替换第四阶段 PostgreSQL 的 `EnsureCreated()` 捷径。
 
-**Architecture:** AppHub and Ops keep EF Core migrations and migration runners in their own Infrastructure projects. PostgreSQL tests and scripts apply migrations through `Database.MigrateAsync`; Web startup auto-migrates only when `Persistence:AutoMigrate=true`. Frontend feature work is excluded, with only generated API client and quality gates allowed if backend OpenAPI changes.
+**架构：** AppHub 和 Ops 将 EF Core 迁移及迁移运行器保留在各自的 Infrastructure 项目中。PostgreSQL 测试和脚本通过 `Database.MigrateAsync` 应用迁移；Web 启动仅在 `Persistence:AutoMigrate=true` 时自动迁移。不包含前端功能工作；仅当后端 OpenAPI 发生变化时，才允许更新生成的 API 客户端并运行质量门禁。
 
-**Tech Stack:** .NET 10, EF Core 10.0.8, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1, netcorepal 3.3.0, xUnit, PowerShell, Docker Compose, pnpm 10.13.1 for optional frontend contract gates.
+**技术栈：** .NET 10、EF Core 10.0.8、Npgsql.EntityFrameworkCore.PostgreSQL 10.0.1、netcorepal 3.3.0、xUnit、PowerShell、Docker Compose，以及用于可选前端契约门禁的 pnpm 10.13.1。
 
 ---
 
-## Completion Record
+## 完成记录
 
 2026-05-17 本阶段迁移发布底座门禁已通过：
 
-> Historical note: the unchecked task list below is preserved as the original execution plan. The stage is complete; use the Completion Record and git history as the source of truth for status.
+> 历史说明：下面未勾选的任务清单作为原始执行计划保留。该阶段已经完成；状态以“完成记录”和 git 历史为事实来源。
 
 AppHub `IGuidStronglyTypedId` 主键已按 NetCorePal 约定改为 EF `UseGuidVersion7ValueGenerator()` 生成；领域构造函数不再手动调用 `Guid.CreateVersion7()`。新增 `Postgres_store_generates_guid_strong_ids_on_add` 覆盖“构造时无 ID，保存时由 EF 生成 ID”的约束。
 
@@ -47,15 +47,15 @@ pwsh scripts/verify-fourth-slice-real-infra.ps1
 Fourth vertical slice real infrastructure verified.
 ```
 
-## Boundaries
+## 边界
 
-1. Do not implement IAM, FileStorage, Notification, CAP business outbox, approval UI, or console pages in this plan.
-2. Do not add frontend visual components, style tokens or app shell redesign. The design system needs a later spec.
-3. Do not use `EnsureCreated()` in PostgreSQL verification or Web startup after this plan.
-4. Do not move migrations into Web projects. Service Infrastructure projects own their schema.
-5. Do not silently auto-migrate production-like service startup. Use `Persistence:AutoMigrate=true` only for local/dev verification entrypoints.
+1. 本计划不得实施 IAM、FileStorage、Notification、CAP 业务 outbox、审批 UI 或控制台页面。
+2. 不得添加前端视觉组件、样式令牌或重新设计应用外壳。设计系统需要后续规范。
+3. 本计划完成后，不得在 PostgreSQL 验证或 Web 启动中使用 `EnsureCreated()`。
+4. 不得将迁移移动到 Web 项目中。服务的 Infrastructure 项目拥有其 schema。
+5. 不得在类似生产环境的服务启动中静默自动迁移。仅对本地/开发验证入口使用 `Persistence:AutoMigrate=true`。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 dotnet-tools.json
@@ -79,64 +79,64 @@ docs/architecture/
   frontend-design-system-planning.md
 ```
 
-## Task 1: Add Repeatable Migration Tooling
+## 任务 1：添加可重复的迁移工具链
 
-**Files:**
+**文件：**
 
-- Create: `dotnet-tools.json`
-- Modify: `README.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 创建：`dotnet-tools.json`
+- 修改：`README.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Create a local .NET tool manifest**
+- [ ] **步骤 1：创建本地 .NET 工具清单**
 
-Run:
+运行：
 
 ```powershell
 dotnet new tool-manifest
 ```
 
-Expected: `dotnet-tools.json` exists at the repository root.
+预期结果：仓库根目录存在 `dotnet-tools.json`。
 
-- [ ] **Step 2: Install dotnet-ef as a local tool**
+- [ ] **步骤 2：将 dotnet-ef 安装为本地工具**
 
-Run:
+运行：
 
 ```powershell
 dotnet tool install dotnet-ef --version 10.0.8
 ```
 
-Expected: manifest contains `dotnet-ef` version `10.0.8`.
+预期结果：清单包含 `dotnet-ef`，其版本为 `10.0.8`。
 
-- [ ] **Step 3: Verify the tool can run**
+- [ ] **步骤 3：验证工具可以运行**
 
-Run:
+运行：
 
 ```powershell
 dotnet tool run dotnet-ef --version
 ```
 
-Expected: output includes `10.0.8`.
+预期结果：输出包含 `10.0.8`。
 
-- [ ] **Step 4: Document restore usage**
+- [ ] **步骤 4：记录还原用法**
 
-Add to implementation readiness:
+在实施就绪状态文档中添加：
 
 ```markdown
 第五阶段起仓库包含本地 `dotnet-tools.json`，用于固定 `dotnet-ef` 版本。首次生成或检查迁移前运行 `dotnet tool restore`，再使用 `dotnet tool run dotnet-ef ...`，避免依赖开发者全局工具。
 ```
 
-## Task 2: Add AppHub Migration Runner And Initial Migration
+## 任务 2：添加 AppHub 迁移运行器和初始迁移
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubDatabaseMigrationRunner.cs`
-- Create: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/*`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
-- Modify: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/AppHubDatabaseMigrationRunner.cs`
+- 创建：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/*`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
+- 修改：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs`
 
-- [ ] **Step 1: Write the failing AppHub migration test**
+- [ ] **步骤 1：编写预期失败的 AppHub 迁移测试**
 
-Modify the PostgreSQL profile test so setup calls a migration runner instead of `EnsureCreatedAsync()`:
+修改 PostgreSQL profile 测试，使初始化调用迁移运行器而不是 `EnsureCreatedAsync()`：
 
 ```csharp
 await db.Database.EnsureDeletedAsync();
@@ -144,24 +144,24 @@ var migrationRunner = scope.ServiceProvider.GetRequiredService<AppHubDatabaseMig
 await migrationRunner.MigrateAsync();
 ```
 
-Register the runner in the test service collection:
+在测试服务集合中注册运行器：
 
 ```csharp
 services.AddScoped<AppHubDatabaseMigrationRunner>();
 ```
 
-Run:
+运行：
 
 ```powershell
 $env:NERV_IIP_TEST_POSTGRES = "Host=localhost;Port=15432;Database=nerv_iip_apphub_migration_red;Username=nerv;Password=nerv"
 dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.AppHub.Web.Tests.csproj --filter FullyQualifiedName~AppHubPostgresProfileTests
 ```
 
-Expected: FAIL because `AppHubDatabaseMigrationRunner` does not exist.
+预期结果：失败，因为 `AppHubDatabaseMigrationRunner` 不存在。
 
-- [ ] **Step 2: Add the runner**
+- [ ] **步骤 2：添加运行器**
 
-Create `AppHubDatabaseMigrationRunner.cs`:
+创建 `AppHubDatabaseMigrationRunner.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -177,9 +177,9 @@ public sealed class AppHubDatabaseMigrationRunner(ApplicationDbContext dbContext
 }
 ```
 
-- [ ] **Step 3: Register and guard auto-migration in Web startup**
+- [ ] **步骤 3：在 Web 启动中注册自动迁移并加设护栏**
 
-In `Program.cs`, register the runner after persistence registration:
+在 `Program.cs` 中，于注册持久化之后注册运行器：
 
 ```csharp
 if (usePostgreSql)
@@ -188,7 +188,7 @@ if (usePostgreSql)
 }
 ```
 
-Replace the current `EnsureCreated()` block with:
+将当前 `EnsureCreated()` 块替换为：
 
 ```csharp
 if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
@@ -200,11 +200,11 @@ if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigra
 }
 ```
 
-Top-level statements can use `await`; no explicit `Main` method is needed.
+顶级语句可以使用 `await`；无需显式 `Main` 方法。
 
-- [ ] **Step 4: Generate AppHub initial migration**
+- [ ] **步骤 4：生成 AppHub 初始迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -215,11 +215,11 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__AppHubDb -ErrorAction SilentlyContinue
 ```
 
-Expected: a `Migrations` folder appears under AppHub Infrastructure.
+预期结果：AppHub Infrastructure 下出现 `Migrations` 文件夹。
 
-- [ ] **Step 5: Verify AppHub migration path passes**
+- [ ] **步骤 5：验证 AppHub 迁移路径通过**
 
-Run:
+运行：
 
 ```powershell
 $env:NERV_IIP_TEST_POSTGRES = "Host=localhost;Port=15432;Database=nerv_iip_apphub_migration_green;Username=nerv;Password=nerv"
@@ -227,20 +227,20 @@ dotnet test backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/Nerv.IIP.App
 Remove-Item Env:\NERV_IIP_TEST_POSTGRES -ErrorAction SilentlyContinue
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-## Task 3: Add Ops Migration Runner And Initial Migration
+## 任务 3：添加 Ops 迁移运行器和初始迁移
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsDatabaseMigrationRunner.cs`
-- Create: `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/*`
-- Modify: `backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
-- Modify: `backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/OpsDatabaseMigrationRunner.cs`
+- 创建：`backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/*`
+- 修改：`backend/services/Ops/src/Nerv.IIP.Ops.Web/Program.cs`
+- 修改：`backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs`
 
-- [ ] **Step 1: Write the failing Ops migration test**
+- [ ] **步骤 1：编写预期失败的 Ops 迁移测试**
 
-Modify the PostgreSQL profile test setup:
+修改 PostgreSQL profile 测试初始化：
 
 ```csharp
 await db.Database.EnsureDeletedAsync();
@@ -248,18 +248,18 @@ var migrationRunner = scope.ServiceProvider.GetRequiredService<OpsDatabaseMigrat
 await migrationRunner.MigrateAsync();
 ```
 
-Run:
+运行：
 
 ```powershell
 $env:NERV_IIP_TEST_POSTGRES = "Host=localhost;Port=15432;Database=nerv_iip_ops_migration_red;Username=nerv;Password=nerv"
 dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.Tests.csproj --filter FullyQualifiedName~OpsPostgresProfileTests
 ```
 
-Expected: FAIL because `OpsDatabaseMigrationRunner` does not exist or is not registered.
+预期结果：失败，因为 `OpsDatabaseMigrationRunner` 不存在或未注册。
 
-- [ ] **Step 2: Add the runner**
+- [ ] **步骤 2：添加运行器**
 
-Create `OpsDatabaseMigrationRunner.cs`:
+创建 `OpsDatabaseMigrationRunner.cs`：
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -275,9 +275,9 @@ public sealed class OpsDatabaseMigrationRunner(ApplicationDbContext dbContext)
 }
 ```
 
-- [ ] **Step 3: Register and guard auto-migration in Web startup**
+- [ ] **步骤 3：在 Web 启动中注册自动迁移并加设护栏**
 
-In `Program.cs`, register the runner in PostgreSQL mode:
+在 `Program.cs` 中以 PostgreSQL 模式注册运行器：
 
 ```csharp
 if (usePostgreSql)
@@ -286,7 +286,7 @@ if (usePostgreSql)
 }
 ```
 
-Replace the current `EnsureCreated()` block with:
+将当前 `EnsureCreated()` 块替换为：
 
 ```csharp
 if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigrate"))
@@ -298,9 +298,9 @@ if (usePostgreSql && builder.Configuration.GetValue<bool>("Persistence:AutoMigra
 }
 ```
 
-- [ ] **Step 4: Generate Ops initial migration**
+- [ ] **步骤 4：生成 Ops 初始迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -311,11 +311,11 @@ Remove-Item Env:\Persistence__Provider -ErrorAction SilentlyContinue
 Remove-Item Env:\ConnectionStrings__OpsDb -ErrorAction SilentlyContinue
 ```
 
-Expected: a `Migrations` folder appears under Ops Infrastructure.
+预期结果：Ops Infrastructure 下出现 `Migrations` 文件夹。
 
-- [ ] **Step 5: Verify Ops migration path passes**
+- [ ] **步骤 5：验证 Ops 迁移路径通过**
 
-Run:
+运行：
 
 ```powershell
 $env:NERV_IIP_TEST_POSTGRES = "Host=localhost;Port=15432;Database=nerv_iip_ops_migration_green;Username=nerv;Password=nerv"
@@ -323,20 +323,20 @@ dotnet test backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/Nerv.IIP.Ops.Web.T
 Remove-Item Env:\NERV_IIP_TEST_POSTGRES -ErrorAction SilentlyContinue
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-## Task 4: Add Fifth-Stage Verification Script
+## 任务 4：添加第五阶段验证脚本
 
-**Files:**
+**文件：**
 
-- Create: `scripts/verify-fifth-slice-persistence-foundation.ps1`
-- Modify: `scripts/verify-fourth-slice-real-infra.ps1`
-- Modify: `README.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 创建：`scripts/verify-fifth-slice-persistence-foundation.ps1`
+- 修改：`scripts/verify-fourth-slice-real-infra.ps1`
+- 修改：`README.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Create the fifth-stage verification script**
+- [ ] **步骤 1：创建第五阶段验证脚本**
 
-Create `scripts/verify-fifth-slice-persistence-foundation.ps1`:
+创建 `scripts/verify-fifth-slice-persistence-foundation.ps1`：
 
 ```powershell
 Set-StrictMode -Version Latest
@@ -388,37 +388,37 @@ dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
 Write-Host "Fifth slice release-grade persistence foundation verified."
 ```
 
-- [ ] **Step 2: Keep the fourth-stage script migration-safe**
+- [ ] **步骤 2：保持第四阶段脚本的迁移安全性**
 
-Ensure `scripts/verify-fourth-slice-real-infra.ps1` still passes after the AppHub/Ops tests move to migrations. Do not reintroduce `EnsureCreated()` anywhere.
+确保 AppHub/Ops 测试迁移到 migration 后，`scripts/verify-fourth-slice-real-infra.ps1` 仍然通过。不得在任何位置重新引入 `EnsureCreated()`。
 
-- [ ] **Step 3: Run the fifth-stage script**
+- [ ] **步骤 3：运行第五阶段脚本**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-fifth-slice-persistence-foundation.ps1
 ```
 
-Expected final line:
+预期最后一行：
 
 ```text
 Fifth slice release-grade persistence foundation verified.
 ```
 
-## Task 5: Document Frontend Deferral And Design System Planning
+## 任务 5：记录前端延后与设计系统规划
 
-**Files:**
+**文件：**
 
-- Create: `docs/architecture/frontend-design-system-planning.md`
-- Modify: `README.md`
-- Modify: `docs/architecture/api-contract-and-codegen.md`
-- Modify: `docs/architecture/frontend-structure.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 创建：`docs/architecture/frontend-design-system-planning.md`
+- 修改：`README.md`
+- 修改：`docs/architecture/api-contract-and-codegen.md`
+- 修改：`docs/architecture/frontend-structure.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-- [ ] **Step 1: Add the Design System planning note**
+- [ ] **步骤 1：添加设计系统规划说明**
 
-Create a doc that states:
+创建一份文档，说明：
 
 ```markdown
 # Frontend Design System Planning
@@ -428,38 +428,38 @@ The console has a working third-stage skeleton, but the visual design system is 
 Before adding new console pages or restyling packages/ui, create a separate Superpowers spec that decides component library, token model, icon policy, density, accessibility baseline, theme strategy and migration path from the current local primitives.
 ```
 
-- [ ] **Step 2: Update API contract rules**
+- [ ] **步骤 2：更新 API 契约规则**
 
-Add:
+添加：
 
 ```markdown
 Backend SDK and OpenAPI changes may regenerate `frontend/packages/api-client`, but this does not authorize new console views. If a backend contract is not needed by the current console, keep the generated client change mechanical and covered by generated contract tests.
 ```
 
-- [ ] **Step 3: Update readiness and README**
+- [ ] **步骤 3：更新就绪状态文档和 README**
 
-Add the fifth-stage plan and verification command to the existing plan/status lists. State that frontend feature work is intentionally deferred until the design system spec exists.
+将第五阶段计划和验证命令添加到现有计划/状态清单中。说明在设计系统规范形成之前，前端功能工作会有意延后。
 
-## Task 6: Final Verification
+## 任务 6：最终验证
 
-**Files:**
+**文件：**
 
-- No new files unless a previous task uncovered a missing test or doc.
+- 除非前一任务发现缺失的测试或文档，否则不新增文件。
 
-- [ ] **Step 1: Run backend and connector tests**
+- [ ] **步骤 1：运行后端和 Connector Host 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln
 dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
 ```
 
-Expected: both exit `0`.
+预期结果：两者都以 `0` 退出。
 
-- [ ] **Step 2: Run frontend quality gates only if frontend files changed**
+- [ ] **步骤 2：仅当前端文件发生变化时运行前端质量门禁**
 
-If any `frontend/` file changed, run:
+如果任何 `frontend/` 文件发生变化，运行：
 
 ```powershell
 pnpm -C frontend check
@@ -470,43 +470,43 @@ pnpm -C frontend test
 pnpm -C frontend build
 ```
 
-Expected: all exit `0`.
+预期结果：全部以 `0` 退出。
 
-- [ ] **Step 3: Run repository whitespace check**
+- [ ] **步骤 3：运行仓库空白检查**
 
-Run:
+运行：
 
 ```powershell
 git diff --check
 ```
 
-Expected: exit `0`.
+预期结果：以 `0` 退出。
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 first, because migration generation must use a pinned local tool.
-2. Tasks 2 and 3 can be assigned to separate workers only if their write sets remain disjoint.
-3. Task 4 depends on Tasks 2 and 3.
-4. Task 5 can run in parallel with Task 2 or Task 3 because it only touches docs.
-5. Task 6 runs last.
+1. 首先执行任务 1，因为迁移生成必须使用已锁定版本的本地工具。
+2. 只有任务 2 和任务 3 的写入集合保持互不相交时，才能将它们分配给不同执行者。
+3. 任务 4 依赖任务 2 和任务 3。
+4. 任务 5 只涉及文档，因此可以与任务 2 或任务 3 并行运行。
+5. 最后运行任务 6。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. Migration replacement for `EnsureCreated()` is covered by Tasks 2, 3 and 4.
-2. Tooling repeatability is covered by Task 1.
-3. Frontend deferral and Design System planning are covered by Task 5.
-4. Verification is covered by Task 6.
+1. 任务 2、3 和 4 覆盖使用 migration 替换 `EnsureCreated()`。
+2. 任务 1 覆盖工具链可重复性。
+3. 任务 5 覆盖前端延后和设计系统规划。
+4. 任务 6 覆盖验证。
 
-Placeholder scan:
+占位符扫描：
 
-1. No `TBD` or `TODO` markers remain.
-2. Commands use concrete paths and expected outputs.
-3. The only optional branch is frontend gates, and it is tied to whether frontend files changed.
+1. 不保留 `TBD` 或 `TODO` 标记。
+2. 命令使用具体路径和预期输出。
+3. 唯一可选分支是前端门禁，并且与前端文件是否发生变化绑定。
 
-Type consistency:
+类型一致性：
 
-1. AppHub runner name is `AppHubDatabaseMigrationRunner` throughout.
-2. Ops runner name is `OpsDatabaseMigrationRunner` throughout.
-3. Migration command context names match current Infrastructure `ApplicationDbContext` namespaces.
+1. AppHub 运行器始终命名为 `AppHubDatabaseMigrationRunner`。
+2. Ops 运行器始终命名为 `OpsDatabaseMigrationRunner`。
+3. 迁移命令的上下文名称与当前 Infrastructure 的 `ApplicationDbContext` 命名空间一致。

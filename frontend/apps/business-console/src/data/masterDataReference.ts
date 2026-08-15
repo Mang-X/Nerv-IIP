@@ -119,7 +119,7 @@ function hasChinese(value: string): boolean {
  * - 实时为空则整体回退常量。
  */
 export function mergeReferenceOptions(
-  resources: ReadonlyArray<{ code?: string | null, displayName?: string | null, active?: boolean }>,
+  resources: ReadonlyArray<{ code?: string | null; displayName?: string | null; active?: boolean }>,
   fallback: readonly RefOption[],
 ): RefOption[] {
   const live = resources

@@ -4,8 +4,20 @@ import type {
   BusinessConsoleErpReceivableItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpPayables, useErpReceivables } from '@/composables/useBusinessErp'
+import {
+  useErpFinanceSummary,
+  useErpPayables,
+  useErpReceivables,
+} from '@/composables/useBusinessErp'
+import {
+  useErpPartnerCatalog,
+  useErpPayableSourceCatalog,
+  useErpReceivableSourceCatalog,
+} from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { buildKpiTrend } from '@/utils/kpiTrend'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -17,6 +29,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -34,8 +47,8 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount } from '../shared'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: 'AR/AP', requiredPermissions: ['business.erp.finance.read'] },
@@ -43,6 +56,12 @@ definePage({
 
 const receivables = useErpReceivables()
 const payables = useErpPayables()
+// 客户/供应商与来源单据都从既有读面里选，不再手输编码。
+const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
+const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
+const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const receivablesPaged = usePagedList(receivables.filters, {
   resetOn: [() => receivables.filters.status, () => receivables.filters.keyword],
 })
@@ -71,7 +90,11 @@ const receivableColumns: NvDataTableColumn<BusinessConsoleErpReceivableItem>[] =
     accessor: (r) => r.receivableNo ?? '-',
   },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '-' },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.amount ?? 0 },
   {
     key: 'openAmount',
@@ -90,7 +113,11 @@ const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
     accessor: (r) => r.payableNo ?? '-',
   },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '-' },
-  { key: 'supplierCode', header: '供应商', accessor: (r) => r.supplierCode ?? '-' },
+  {
+    key: 'supplierCode',
+    header: '供应商',
+    accessor: (r) => resolvePartner(r.supplierCode) ?? r.supplierCode ?? '-',
+  },
   { key: 'amount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.amount ?? 0 },
   {
     key: 'openAmount',
@@ -102,26 +129,108 @@ const payableColumns: NvDataTableColumn<BusinessConsoleErpPayableItem>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
 ]
 
-const receivableAmount = computed(() =>
-  receivables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
+/** 应收 / 应付各自的读面六档状态：两张表分别有可能失败，不能共用一个结论。 */
+const receivableState = computed(() =>
+  erpReadState({
+    noun: '应收账款',
+    unit: '笔',
+    ready: receivables.ready.value,
+    pending: receivables.pending.value,
+    error: receivables.error.value,
+    total: receivables.total.value,
+    filtered: Boolean(receivables.filters.keyword || receivables.filters.status),
+    emptyHint: '还没有应收账款。销售出货或手工登记后会在这里形成应收。',
+  }),
 )
-const payableAmount = computed(() =>
-  payables.items.value.reduce((sum, r) => sum + (r.openAmount ?? 0), 0),
+const payableState = computed(() =>
+  erpReadState({
+    noun: '应付账款',
+    unit: '笔',
+    ready: payables.ready.value,
+    pending: payables.pending.value,
+    error: payables.error.value,
+    total: payables.total.value,
+    filtered: Boolean(payables.filters.keyword || payables.filters.status),
+    emptyHint: '还没有应付账款。采购收货或手工登记后会在这里形成应付。',
+  }),
 )
-// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向；金额只能对已取回的行加总，
-// 口径写进副行而不是让它冒充全量余额。
+
+/** 页头两路读数各自独立：一路挂了只说这一路取不到，不把另一路也抹掉。 */
+const headerCount = computed(() => {
+  if (receivableState.value.count === undefined && payableState.value.count === undefined) {
+    return undefined
+  }
+  return `${receivableState.value.count ?? '应收读取中'} / ${payableState.value.count ?? '应付读取中'}`
+})
+
+/**
+ * 顶部两张卡用**全库口径**的财务摘要（#1418 B5，owner 亲验点名）。
+ *
+ * 曾踩坑：这里原本对「当前页 10 行」求和冒充「应收/应付未结」——翻页数字乱跳，
+ * 登记一笔新应付反而让卡上的「应付未结」下降（新行把旧行挤出第一页）。
+ * KPI 卡位只许放全局读数；页内合计不是余额，不许再占卡位。
+ */
+const { ready: summaryReady, summary, summaryError, refreshSummary } = useErpFinanceSummary()
+const summaryTrustworthy = computed(
+  () => summaryReady.value && summaryError.value == null && summary.value !== undefined,
+)
+const summaryUnavailableNote = computed(() => {
+  if (!summaryReady.value) return '尚未选择业务范围，还没有发起查询。'
+  if (summaryError.value != null) return '财务摘要读取失败，当前无法判断未结余额。'
+  return '正在读取财务摘要…'
+})
+/**
+ * 迷你图（#1395）与全库口径（#1418 B5）的交叉点。
+ *
+ * #1395 原本用当前页的 `createdAtUtc` 累加出一条真实曲线，那是配着「当前列表 N 笔合计」
+ * 的页内读数才成立的。头条数字换成全库余额之后，再挂一条 10 行拼出来的曲线就是拿一页
+ * 的形状冒充全书走势——正是 B5 要消灭的那类穿帮。**全局余额没有对应的时间序列读面**，
+ * 所以这里不传 realSeries，由 buildKpiTrend 回落到确定性补形状：它自带 `synthetic` 标记
+ * 且不发日期标签，悬停不会谎称某天是多少。真曲线要等后端补按日余额聚合。
+ */
+const settlementTrends = computed(() => ({
+  receivable: summaryTrustworthy.value
+    ? buildKpiTrend('erp.arap.receivable', summary.value?.openReceivableAmount, {
+        kind: 'amount',
+        polarity: 'neutral',
+      })
+    : undefined,
+  payable: summaryTrustworthy.value
+    ? buildKpiTrend('erp.arap.payable', summary.value?.openPayableAmount, {
+        kind: 'amount',
+        polarity: 'neutral',
+      })
+    : undefined,
+}))
+// 应收/应付是一对读数，通栏放一行才看得出资金缺口方向。
 const settlementCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'receivable',
     label: '应收未结',
-    value: formatAmount(receivableAmount.value),
-    meta: `当前列表 ${receivables.items.value.length} 笔应收合计`,
+    // 取不到数时绝不显 ¥0.00——那会被当成"确实没有欠款"。
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.openReceivableAmount)
+      : UNAVAILABLE_TEXT,
+    // 副行不挂筛选后的行数——筛选一变就和全局金额对不上，又是一次口径穿帮。
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : summaryUnavailableNote.value,
+    delta: settlementTrends.value.receivable?.delta,
+    series: settlementTrends.value.receivable?.series,
+    seriesLabels: settlementTrends.value.receivable?.seriesLabels,
   },
   {
     key: 'payable',
     label: '应付未结',
-    value: formatAmount(payableAmount.value),
-    meta: `当前列表 ${payables.items.value.length} 笔应付合计`,
+    value: summaryTrustworthy.value
+      ? formatAmount(summary.value?.openPayableAmount)
+      : UNAVAILABLE_TEXT,
+    meta: summaryTrustworthy.value
+      ? '全库口径 · 不随下方筛选与分页变化'
+      : summaryUnavailableNote.value,
+    delta: settlementTrends.value.payable?.delta,
+    series: settlementTrends.value.payable?.series,
+    seriesLabels: settlementTrends.value.payable?.seriesLabels,
   },
 ])
 
@@ -172,8 +281,14 @@ async function submitReceivable() {
     })
     receivableOpen.value = false
     notifySuccess('应收已登记')
+    // 顶卡是全库口径的摘要，登记成功后必须跟着刷新，否则卡片数字停在旧余额上。
+    void refreshSummary()
   } catch (error) {
-    notifyError(receivables.createReceivableError.value ?? error, '登记应收失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记应收失败',
+      receivables.createReceivableError.value ?? error,
+      '登记应收失败，请稍后重试。',
+    )
   }
 }
 
@@ -189,8 +304,13 @@ async function submitPayable() {
     })
     payableOpen.value = false
     notifySuccess('应付已登记')
+    void refreshSummary()
   } catch (error) {
-    notifyError(payables.createPayableError.value ?? error, '登记应付失败，请稍后重试。')
+    notifyOperationFailure(
+      '登记应付失败',
+      payables.createPayableError.value ?? error,
+      '登记应付失败，请稍后重试。',
+    )
   }
 }
 </script>
@@ -200,7 +320,7 @@ async function submitPayable() {
     <NvPageHeader
       title="AR/AP"
       :breadcrumbs="[{ label: '经营管理' }, { label: '财务' }]"
-      :count="`${receivables.total.value} 笔应收 / ${payables.total.value} 笔应付`"
+      :count="headerCount"
     >
       <template #actions>
         <NvButton
@@ -211,6 +331,7 @@ async function submitPayable() {
             () => {
               receivables.refresh()
               payables.refresh()
+              refreshSummary()
             }
           "
         >
@@ -261,10 +382,18 @@ async function submitPayable() {
       :loading="receivables.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无应收账款。"
+      :empty-message="receivableState.emptyMessage"
+      :error="receivableState.error"
+      :error-message="receivableState.errorMessage"
+      :awaiting-scope="receivableState.awaitingScope"
+      :awaiting-scope-message="receivableState.awaitingScopeMessage"
+      @retry="receivables.refresh"
       @update:page="receivablesPaged.page.value = $event"
       @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
     >
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
       <template #cell-amount="{ row }"
         ><span class="tabular-nums">{{
           formatAmount(row.amount, row.currencyCode ?? 'CNY')
@@ -309,10 +438,18 @@ async function submitPayable() {
       :loading="payables.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无应付账款。"
+      :empty-message="payableState.emptyMessage"
+      :error="payableState.error"
+      :error-message="payableState.errorMessage"
+      :awaiting-scope="payableState.awaitingScope"
+      :awaiting-scope-message="payableState.awaitingScopeMessage"
+      @retry="payables.refresh"
       @update:page="payablesPaged.page.value = $event"
       @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
     >
+      <template #cell-supplierCode="{ row }">
+        <PartnerNameCell :code="row.supplierCode" />
+      </template>
       <template #cell-amount="{ row }"
         ><span class="tabular-nums">{{
           formatAmount(row.amount, row.currencyCode ?? 'CNY')
@@ -340,11 +477,18 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ar-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ar-source"
                 v-model="receivableForm.sourceDocumentNo"
-                :data-invalid="
-                  receivableShowErrors && receivableInvalid.sourceDocumentNo ? '' : undefined
+                :options="receivableSourceOptions"
+                title="选择来源单据"
+                placeholder="选择销售订单或发货单"
+                source-text="数据来自销售订单与发货单"
+                empty-text="暂无可开票的销售订单或发货单"
+                :loading="receivableSourcesPending"
+                aria-label="来源单据"
+                :class="
+                  pickerInvalidClass(receivableShowErrors && receivableInvalid.sourceDocumentNo)
                 "
               />
             </NvField>
@@ -352,12 +496,17 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ar-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ar-customer"
                 v-model="receivableForm.customerCode"
-                :data-invalid="
-                  receivableShowErrors && receivableInvalid.customerCode ? '' : undefined
-                "
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(receivableShowErrors && receivableInvalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -379,7 +528,7 @@ async function submitPayable() {
             class="text-sm text-destructive"
             role="alert"
           >
-            请填写来源单据、客户，并给出正数金额。
+            请选择来源单据与客户，并给出正数金额。
           </p>
           <NvDialogFooter
             ><NvDialogClose as-child
@@ -409,22 +558,34 @@ async function submitPayable() {
               <NvFieldLabel for="erp-ap-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ap-source"
                 v-model="payableForm.sourceDocumentNo"
-                :data-invalid="
-                  payableShowErrors && payableInvalid.sourceDocumentNo ? '' : undefined
-                "
+                :options="payableSourceOptions"
+                title="选择来源单据"
+                placeholder="选择采购订单"
+                source-text="数据来自采购订单"
+                empty-text="暂无采购订单，请先在「采购 · 采购订单」下达"
+                :loading="payableSourcesPending"
+                aria-label="来源单据"
+                :class="pickerInvalidClass(payableShowErrors && payableInvalid.sourceDocumentNo)"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="erp-ap-supplier">
                 供应商 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-ap-supplier"
                 v-model="payableForm.supplierCode"
-                :data-invalid="payableShowErrors && payableInvalid.supplierCode ? '' : undefined"
+                :options="supplierOptions"
+                title="选择供应商"
+                placeholder="选择供应商"
+                source-text="数据来自基础数据业务伙伴（供应商角色）"
+                empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="供应商"
+                :class="pickerInvalidClass(payableShowErrors && payableInvalid.supplierCode)"
               />
             </NvField>
             <NvField>
@@ -446,7 +607,7 @@ async function submitPayable() {
             class="text-sm text-destructive"
             role="alert"
           >
-            请填写来源单据、供应商，并给出正数金额。
+            请选择来源单据与供应商，并给出正数金额。
           </p>
           <NvDialogFooter
             ><NvDialogClose as-child

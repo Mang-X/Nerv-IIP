@@ -91,6 +91,7 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             cancellationToken);
         if (existing)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -125,7 +126,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                     DemandPlanningSourceReferences.PlanningSuggestion,
                     payload.SuggestionId,
                     payload.DemandSourceReference,
-                    integrationEvent.IdempotencyKey),
+                    integrationEvent.IdempotencyKey,
+                    payload.DemandSourceReferences),
                 cancellationToken);
         }
         catch (DisabledMesSkuException)

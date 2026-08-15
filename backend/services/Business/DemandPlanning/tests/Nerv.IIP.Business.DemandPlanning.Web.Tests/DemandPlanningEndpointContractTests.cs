@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
@@ -20,11 +21,14 @@ using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Testing;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class DemandPlanningEndpointContractTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -34,7 +38,7 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var contracts = DemandPlanningEndpointContracts.All.ToArray();
 
-        Assert.Equal(15, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMpsBuckets");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createPlanningMpsBucket");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/planning/mps/{mpsId}" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "updatePlanningMpsBucket");
@@ -50,6 +54,7 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs/{runId}/pegging" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getPlanningMrpPegging");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/suggestions" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningSuggestions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/accept" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptPlanningSuggestion");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/suggestions/{suggestionId}/reject" && x.PermissionCode == DemandPlanningPermissionCodes.SuggestionsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "rejectPlanningSuggestion");
     }
 
     [Theory]
@@ -68,6 +73,7 @@ public sealed class DemandPlanningEndpointContractTests
     [InlineData(typeof(ListMrpPeggingEndpoint))]
     [InlineData(typeof(ListPlanningSuggestionsEndpoint))]
     [InlineData(typeof(AcceptPlanningSuggestionEndpoint))]
+    [InlineData(typeof(RejectPlanningSuggestionEndpoint))]
     public void DemandPlanning_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType.GetConstructors().Single().GetParameters().Select(x => x.ParameterType).ToArray();
@@ -292,10 +298,11 @@ public sealed class DemandPlanningEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new RunMrpCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
-
-        var result = await handler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var result = await ExecuteMrpAsync(
+            dbContext,
+            new DemandPlanningFixtureInputSnapshotProvider(dbContext),
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30));
 
         Assert.Equal(2, result.SuggestionCount);
         var suggestions = await new ListPlanningSuggestionsQueryHandler(dbContext).Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", null), CancellationToken.None);
@@ -315,10 +322,11 @@ public sealed class DemandPlanningEndpointContractTests
             "org-001", "env-dev", "sales-order-id-1001", "SO-1001", "10", "CUST-001",
             "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), 1));
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new RunMrpCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
-
-        var result = await handler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var result = await ExecuteMrpAsync(
+            dbContext,
+            new DemandPlanningFixtureInputSnapshotProvider(dbContext),
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30));
 
         var suggestions = await new ListPlanningSuggestionsQueryHandler(dbContext)
             .Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", null), CancellationToken.None);
@@ -349,14 +357,11 @@ public sealed class DemandPlanningEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new RunMrpCommandHandler(
+        var result = await ExecuteMrpAsync(
             dbContext,
-            new FixedPlanningInputSnapshotProvider(inventorySnapshotSource));
-
-        var result = await handler.Handle(
-            new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+            new FixedPlanningInputSnapshotProvider(inventorySnapshotSource),
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30));
 
         Assert.Equal(expectedSources, result.InputDegradationSources);
         var runs = await new ListMrpRunsQueryHandler(dbContext)
@@ -371,7 +376,7 @@ public sealed class DemandPlanningEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new RunMrpCommandHandler(
+        var result = await ExecuteMrpAsync(
             dbContext,
             new FixedPlanningInputSnapshotProvider(
                 "inventory-http:1",
@@ -380,12 +385,9 @@ public sealed class DemandPlanningEndpointContractTests
                     new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 12), "sales-order"),
                     new DemandSnapshot("FC-2026-W24", "SKU-FG-2000", "pcs", "SITE-01", 8m, new DateOnly(2026, 6, 14), "forecast"),
                     new DemandSnapshot("SS-SKU-RM-1000-SITE-01", "SKU-RM-1000", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 20), "safety-stock"),
-                ]));
-
-        var result = await handler.Handle(
-            new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
-            CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+                ]),
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30));
 
         Assert.Equal(["mps", "sales-order", "forecast", "safety-stock"], result.InputSources);
         Assert.Equal(new DateOnly(2026, 6, 10), result.InputCoverageStart);
@@ -395,6 +397,284 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(["mps", "sales-order", "forecast", "safety-stock"], run.InputSources);
         Assert.Equal(new DateOnly(2026, 6, 10), run.InputCoverageStart);
         Assert.Equal(new DateOnly(2026, 6, 20), run.InputCoverageEnd);
+    }
+
+    [Fact]
+    public async Task Run_mrp_command_only_registers_queued_run_and_defers_calculation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var runId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 受理只登记排队记录：不拉快照、不产建议、不进入运行态（#1306 受理事务必须秒回）。
+        var run = Assert.Single(dbContext.MrpRuns);
+        Assert.Equal(runId, run.Id);
+        Assert.Equal(MrpRunStatus.Created, run.Status);
+        Assert.Null(run.StartedAtUtc);
+        Assert.Empty(dbContext.PlanningSuggestions);
+    }
+
+    [Fact]
+    public async Task Execute_mrp_run_command_rejects_missing_and_non_queued_runs()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var executeHandler = new ExecuteMrpRunCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
+
+        var missing = await Assert.ThrowsAsync<KnownException>(() =>
+            executeHandler.Handle(new ExecuteMrpRunCommand(new MrpRunId(Guid.CreateVersion7())), CancellationToken.None));
+        Assert.Contains("不存在", missing.Message, StringComparison.Ordinal);
+
+        var result = await ExecuteMrpAsync(
+            dbContext,
+            new DemandPlanningFixtureInputSnapshotProvider(dbContext),
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30));
+        var replay = await Assert.ThrowsAsync<KnownException>(() =>
+            executeHandler.Handle(new ExecuteMrpRunCommand(result.RunId), CancellationToken.None));
+        Assert.Contains("不能重复执行", replay.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Mark_mrp_run_failed_command_records_failure_reason_for_run_list()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var runId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MarkMrpRunFailedCommandHandler(dbContext)
+            .Handle(new MarkMrpRunFailedCommand(runId, "MRP 计算失败：上游库存快照不可用。"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var run = Assert.Single(await new ListMrpRunsQueryHandler(dbContext)
+            .Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None));
+        Assert.Equal(MrpRunStatus.Failed, run.Status);
+        Assert.Equal("MRP 计算失败：上游库存快照不可用。", run.FailureReason);
+    }
+
+    [Fact]
+    public async Task Mrp_run_worker_completes_queued_run_end_to_end_and_commits_running_before_calculation()
+    {
+        // 状态时序断言（PR #1310 审核整改）：worker 必须先在独立事务提交 Running，
+        // 再进入计算事务——快照拉取时从新 scope 读 DB 应当已看到 Running。
+        var observedStatusesDuringSnapshotFetch = new List<MrpRunStatus>();
+        await using var provider = CreateWorkerProvider(sp => new StatusObservingSnapshotProvider(
+            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            observedStatusesDuringSnapshotFetch));
+        MrpRunId runId;
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+            runId = await new RunMrpCommandHandler(dbContext)
+                .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+
+            // 受理提交后、worker 启动前：DB 呈现排队态（时序起点）。
+            Assert.Equal(MrpRunStatus.Created, dbContext.MrpRuns.AsNoTracking().Single(x => x.Id == runId).Status);
+        }
+
+        // 不显式入队：worker 启动恢复扫描必须接管遗留的排队记录（服务重启场景）。
+        var worker = CreateWorker(provider);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var run = await WaitForTerminalRunAsync(provider, runId);
+            Assert.Equal(MrpRunStatus.Completed, run.Status);
+            Assert.NotNull(run.StartedAtUtc);
+            Assert.NotNull(run.CompletedAtUtc);
+            Assert.True(run.StartedAtUtc <= run.CompletedAtUtc);
+            Assert.Equal(2, run.SuggestionCount);
+            // 计算事务开始（快照拉取）时，独立 scope 已能读到已提交的 Running。
+            Assert.Equal([MrpRunStatus.Running], observedStatusesDuringSnapshotFetch);
+            using var scope = provider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(2, dbContext.PlanningSuggestions.Count());
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Mark_mrp_run_running_command_commits_running_state_and_rejects_replay()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var runId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new MarkMrpRunRunningCommandHandler(dbContext);
+
+        await handler.Handle(new MarkMrpRunRunningCommand(runId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var run = dbContext.MrpRuns.AsNoTracking().Single(x => x.Id == runId);
+        Assert.Equal(MrpRunStatus.Running, run.Status);
+        Assert.NotNull(run.StartedAtUtc);
+        var replay = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(new MarkMrpRunRunningCommand(runId), CancellationToken.None));
+        Assert.Contains("不能进入运行中", replay.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Mrp_run_worker_marks_run_failed_with_reason_when_snapshot_fetch_throws()
+    {
+        await using var provider = CreateWorkerProvider(_ => new ThrowingPlanningInputSnapshotProvider());
+        var worker = CreateWorker(provider);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            MrpRunId runId;
+            using (var scope = provider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                runId = await new RunMrpCommandHandler(dbContext)
+                    .Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+                await dbContext.SaveChangesAsync(CancellationToken.None);
+            }
+
+            provider.GetRequiredService<IMrpRunExecutionQueue>().Enqueue(runId);
+
+            var run = await WaitForTerminalRunAsync(provider, runId);
+            Assert.Equal(MrpRunStatus.Failed, run.Status);
+            Assert.NotNull(run.FailureReason);
+            Assert.Contains("MRP 计算失败", run.FailureReason!, StringComparison.Ordinal);
+            Assert.Contains("上游库存快照拉取超时", run.FailureReason!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Mrp_run_worker_recovery_marks_interrupted_running_run_failed()
+    {
+        await using var provider = CreateWorkerProvider(sp =>
+            new DemandPlanningFixtureInputSnapshotProvider(sp.GetRequiredService<ApplicationDbContext>()));
+        MrpRunId runId;
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+            run.Start(new PlanningInputSnapshot("product-engineering-http:0", "inventory-http:0", 0, 0));
+            dbContext.MrpRuns.Add(run);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            runId = run.Id;
+        }
+
+        var worker = CreateWorker(provider);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var run = await WaitForTerminalRunAsync(provider, runId);
+            Assert.Equal(MrpRunStatus.Failed, run.Status);
+            Assert.Equal(MrpRunWorker.InterruptedFailureReason, run.FailureReason);
+        }
+        finally
+        {
+            await worker.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static MrpRunWorker CreateWorker(ServiceProvider provider) =>
+        new(
+            provider.GetRequiredService<IMrpRunExecutionQueue>(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            provider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MrpRunWorker>>());
+
+    /// <summary>
+    /// The MRP worker is a real <see cref="Microsoft.Extensions.Hosting.BackgroundService"/> draining a
+    /// queue, so the run's persisted status is the only observable completion fact. Bounded polling with a
+    /// reported last observation replaces the hand-rolled deadline loop, which used to throw a
+    /// <see cref="TimeoutException"/> that said nothing about the status actually reached.
+    /// </summary>
+    private static async Task<MrpRun> WaitForTerminalRunAsync(ServiceProvider provider, MrpRunId runId)
+    {
+        return await Eventually.WaitAsync(
+            condition: $"MRP run {runId} reaches a terminal status",
+            observe: async token =>
+            {
+                using var scope = provider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                return await dbContext.MrpRuns.AsNoTracking().SingleAsync(x => x.Id == runId, token);
+            },
+            isSatisfied: run => run.Status is MrpRunStatus.Completed or MrpRunStatus.Failed,
+            describe: run => $"status={run.Status}; failureReason={run.FailureReason ?? "<none>"}",
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(15),
+                PollInterval: TimeSpan.FromMilliseconds(50),
+                SensitiveValues: []));
+    }
+
+    private static ServiceProvider CreateWorkerProvider(
+        Func<IServiceProvider, IPlanningInputSnapshotProvider> snapshotProviderFactory)
+    {
+        var services = new ServiceCollection();
+        var databaseName = $"demand-planning-worker-{Guid.NewGuid():N}";
+        services.AddLogging();
+        // worker 经 MediatR 管道执行命令：必须挂 UoW 行为验证「计算事务自动提交」这条真实链路。
+        services.AddMediatR(configuration =>
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
+                .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options => options
+            .UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddSingleton<IMrpRunExecutionQueue, MrpRunExecutionQueue>();
+        services.AddScoped(snapshotProviderFactory);
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// 在快照拉取瞬间从**独立 scope** 回读 run 的已提交状态：验证 worker 的 Running
+    /// 确实先于计算事务提交（而不是同事务内的未提交中间态）。
+    /// </summary>
+    private sealed class StatusObservingSnapshotProvider(
+        IPlanningInputSnapshotProvider inner,
+        IServiceScopeFactory scopeFactory,
+        List<MrpRunStatus> observedStatuses) : IPlanningInputSnapshotProvider
+    {
+        public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly horizonStart,
+            DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            using (var scope = scopeFactory.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                observedStatuses.Add(dbContext.MrpRuns.AsNoTracking().Single().Status);
+            }
+
+            return await inner.GetSnapshotAsync(organizationId, environmentId, horizonStart, horizonEnd, cancellationToken);
+        }
+    }
+
+    private sealed class ThrowingPlanningInputSnapshotProvider : IPlanningInputSnapshotProvider
+    {
+        public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly horizonStart,
+            DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("上游库存快照拉取超时。");
+        }
     }
 
     [Fact]
@@ -521,6 +801,76 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Suggestion_rejection_marks_open_suggestion_rejected_and_records_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
+        Assert.Equal("demand-cancelled", suggestion.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Suggestion_rejection_replay_is_tolerated_and_preserves_original_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "replayed-reason"), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
+        Assert.Equal("demand-cancelled", suggestion.ReasonCode);
+    }
+
+    [Fact]
+    public async Task Suggestion_rejection_of_accepted_suggestion_is_a_business_error()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        suggestion.Accept("erp", "purchase-request", "PR-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "too-late"), CancellationToken.None));
+
+        Assert.Contains("Only open planning suggestions can be rejected", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
+    }
+
+    [Fact]
+    public void Suggestion_rejection_command_requires_actor_and_reason()
+    {
+        var validator = new RejectPlanningSuggestionCommandValidator();
+
+        var missingReason = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", ""));
+        var missingActor = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "", "demand-cancelled"));
+        var valid = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", "demand-cancelled"));
+
+        Assert.False(missingReason.IsValid);
+        Assert.Contains(missingReason.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.Reason), StringComparison.OrdinalIgnoreCase));
+        Assert.False(missingActor.IsValid);
+        Assert.Contains(missingActor.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.RejectedBy), StringComparison.OrdinalIgnoreCase));
+        Assert.True(valid.IsValid);
+    }
+
+    [Fact]
     public async Task DemandPlanning_http_endpoints_reject_anonymous_callers_before_persistence()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -570,6 +920,25 @@ public sealed class DemandPlanningEndpointContractTests
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.True(response.IsSuccessStatusCode, $"Expected DemandPlanning demand write endpoint to execute, got {(int)response.StatusCode}: {body}");
+    }
+
+    /// <summary>
+    /// 走异步任务模式的两跳（受理登记 + 后台执行），等价于旧同步 RunMrp 的完整结果，
+    /// 供既有计算断言复用。两跳各自 SaveChanges，模拟受理事务与计算事务分离。
+    /// </summary>
+    private static async Task<ExecuteMrpRunCommandResult> ExecuteMrpAsync(
+        ApplicationDbContext dbContext,
+        IPlanningInputSnapshotProvider snapshotProvider,
+        DateOnly horizonStart,
+        DateOnly horizonEnd)
+    {
+        var runId = await new RunMrpCommandHandler(dbContext)
+            .Handle(new RunMrpCommand("org-001", "env-dev", horizonStart, horizonEnd), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var result = await new ExecuteMrpRunCommandHandler(dbContext, snapshotProvider)
+            .Handle(new ExecuteMrpRunCommand(runId), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        return result;
     }
 
     private static ServiceProvider CreateInMemoryProvider()

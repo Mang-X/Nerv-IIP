@@ -22,7 +22,7 @@ const dialogOpen = ref(false)
 
 # NvDialog 对话框
 
-承载需要用户聚焦确认的关键操作。`NvDialog` 提供模糊遮罩与缩放入场，由 Header / Title / Description / Footer 组合内容。
+承载需要用户聚焦确认的关键操作。`NvDialog` 提供模糊遮罩与缩放入场，由头部、标题、说明与底部操作区组合内容。
 
 ## 基础用法
 

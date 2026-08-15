@@ -1,6 +1,5 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
@@ -19,6 +18,7 @@ using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing.PostgreSql;
 using ErpDbContext = Nerv.IIP.Business.Erp.Infrastructure.ApplicationDbContext;
 using WmsDbContext = Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext;
 using ErpSalesReturnAuthorizedDomainEvent = Nerv.IIP.Business.Erp.Domain.DomainEvents.SalesReturnAuthorizedDomainEvent;
@@ -33,17 +33,23 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
     public async Task Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(baseConnectionString, "erp_return_closure");
-        await using var erpDb = CreateErpContext(database.ConnectionString);
-        await using var wmsDb = CreateWmsContext(database.ConnectionString);
-        await erpDb.Database.MigrateAsync();
-        await wmsDb.Database.MigrateAsync();
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            baseConnectionString,
+            "nerv_fullchain_erp_return_closure");
+        try
+        {
+            await using var erpDb = CreateErpContext(database.ConnectionString);
+            await using var wmsDb = CreateWmsContext(database.ConnectionString);
+            database.AssertOwns(erpDb.Database.GetConnectionString());
+            database.AssertOwns(wmsDb.Database.GetConnectionString());
+            await erpDb.Database.MigrateAsync();
+            await wmsDb.Database.MigrateAsync();
 
-        var erpDeadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var wmsDeadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            var erpDeadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            var wmsDeadLetters = new InMemoryIntegrationEventDeadLetterStore();
 
-        await SeedUninvoicedPurchaseReceiptAsync(erpDb);
-        var purchaseInbound = InboundOrder.Create(
+            await SeedUninvoicedPurchaseReceiptAsync(erpDb);
+            var purchaseInbound = InboundOrder.Create(
             "org-001",
             "env-dev",
             "WMS-IN-RETURN-PG-001",
@@ -51,41 +57,47 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             "GR-RETURN-PG-001",
             "SITE-01",
             [new InboundOrderLineDraft("LINE-001", "SKU-RETURN-PG-001", "EA", 1m, "LOC-QA", null, null, "quality", "company", null)]);
-        wmsDb.InboundOrders.Add(purchaseInbound);
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
-        purchaseInbound.Complete("wms-complete:return:purchase:001");
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
+            wmsDb.InboundOrders.Add(purchaseInbound);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
+            purchaseInbound.Complete(
+            "wms-complete:return:purchase:001",
+            purchaseInbound.Version);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        var rejectedQualityEvent = QualityEvent(
+            var rejectedQualityEvent = QualityEvent(
             QualityIntegrationEventTypes.InspectionRejected,
             purchaseInbound.InboundOrderNo,
             "quality-rejected:return:purchase:001",
             "SKU-RETURN-PG-001");
-        var qualityGateHandler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(wmsDb, wmsDeadLetters);
-        await qualityGateHandler.HandleAsync(rejectedQualityEvent, CancellationToken.None);
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
-        var supplierReturnOutbound = await wmsDb.OutboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.PurchaseReceiptReturn);
-        supplierReturnOutbound.CompletePackReview("PACK-RETURN-PG-001", true, "wms-complete:return:purchase:outbound:001");
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
+            var qualityGateHandler = new QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate(wmsDb, wmsDeadLetters);
+            await qualityGateHandler.HandleAsync(rejectedQualityEvent, CancellationToken.None);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
+            var supplierReturnOutbound = await wmsDb.OutboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.PurchaseReceiptReturn);
+            supplierReturnOutbound.CompletePackReview(
+            "PACK-RETURN-PG-001",
+            true,
+            "wms-complete:return:purchase:outbound:001",
+            supplierReturnOutbound.Version);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        var purchaseReturnEvent = new OutboundOrderCompletedIntegrationEventConverter()
-            .Convert(new WmsOutboundOrderCompletedDomainEvent(supplierReturnOutbound));
-        var purchaseReturnHandler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(erpDb, erpDeadLetters, new ErpCodingService());
-        await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
-        await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
+            var purchaseReturnEvent = new OutboundOrderCompletedIntegrationEventConverter()
+                .Convert(new WmsOutboundOrderCompletedDomainEvent(supplierReturnOutbound));
+            var purchaseReturnHandler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(erpDb, erpDeadLetters, new ErpCodingService());
+            await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
+            await purchaseReturnHandler.HandleAsync(purchaseReturnEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
 
-        var purchaseReturn = Assert.Single(await erpDb.PurchaseReturns.Include(x => x.Lines).ToListAsync());
-        var purchaseVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}").Include(x => x.Lines).ToListAsync());
-        Assert.Equal(100m, purchaseReturn.GrIrReversalAmount);
-        Assert.Equal(0m, purchaseReturn.DebitNoteAmount);
-        Assert.Contains(purchaseVoucher.Lines, x => x.AccountCode == "GR-IR" && x.DebitAmount == 100m);
-        Assert.Contains(purchaseVoucher.Lines, x => x.AccountCode == "1401" && x.CreditAmount == 100m);
+            var purchaseReturn = Assert.Single(await erpDb.PurchaseReturns.Include(x => x.Lines).ToListAsync());
+            var purchaseVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-PRTN-{purchaseReturn.PurchaseReturnNo}").Include(x => x.Lines).ToListAsync());
+            Assert.Equal(100m, purchaseReturn.GrIrReversalAmount);
+            Assert.Equal(0m, purchaseReturn.DebitNoteAmount);
+            Assert.Contains(purchaseVoucher.Lines, x => x.AccountCode == "GR-IR" && x.DebitAmount == 100m);
+            Assert.Contains(purchaseVoucher.Lines, x => x.AccountCode == "1401" && x.CreditAmount == 100m);
 
-        var receivable = AccountReceivable.Create(
+            var receivable = AccountReceivable.Create(
             "org-001", "env-dev", "AR-RETURN-PG-001", "DO-RETURN-PG-001", "CUST-RETURN-PG-001", 100m, "CNY");
-        var rma = SalesReturnAuthorization.Authorize(
+            var rma = SalesReturnAuthorization.Authorize(
             "org-001",
             "env-dev",
             "RMA-RETURN-PG-001",
@@ -96,53 +108,60 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             "CNY",
             1m,
             [new SalesReturnAuthorizationLineDraft("LINE-001", "SKU-RETURN-PG-001", "EA", 1m, 100m, "LOC-RETURN", null)]);
-        erpDb.AccountReceivables.Add(receivable);
-        erpDb.SalesReturnAuthorizations.Add(rma);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
+            erpDb.AccountReceivables.Add(receivable);
+            erpDb.SalesReturnAuthorizations.Add(rma);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
 
-        var authorizationEvent = new SalesReturnAuthorizedIntegrationEventConverter()
-            .Convert(new ErpSalesReturnAuthorizedDomainEvent(rma));
-        var authorizationHandler = new ErpSalesReturnAuthorizedIntegrationEventHandler(wmsDb, wmsDeadLetters);
-        await authorizationHandler.HandleAsync(authorizationEvent, CancellationToken.None);
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
-        await authorizationHandler.HandleAsync(authorizationEvent, CancellationToken.None);
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
+            var authorizationEvent = new SalesReturnAuthorizedIntegrationEventConverter()
+                .Convert(new ErpSalesReturnAuthorizedDomainEvent(rma));
+            var authorizationHandler = new ErpSalesReturnAuthorizedIntegrationEventHandler(wmsDb, wmsDeadLetters);
+            await authorizationHandler.HandleAsync(authorizationEvent, CancellationToken.None);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
+            await authorizationHandler.HandleAsync(authorizationEvent, CancellationToken.None);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        var rmaInbound = await wmsDb.InboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.SalesReturnRma);
-        rmaInbound.Complete("wms-complete:return:sales:001");
-        await wmsDb.SaveChangesAsync(CancellationToken.None);
-        var inboundEvent = new InboundOrderCompletedIntegrationEventConverter()
-            .Convert(new WmsInboundOrderCompletedDomainEvent(rmaInbound));
-        var inboundHandler = new WmsInboundOrderCompletedIntegrationEventHandlerForRecordSalesReturnReceipt(erpDb, erpDeadLetters);
-        await inboundHandler.HandleAsync(inboundEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
-        await inboundHandler.HandleAsync(inboundEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
+            var rmaInbound = await wmsDb.InboundOrders.SingleAsync(x => x.SourceDocumentType == WmsSourceDocumentTypes.SalesReturnRma);
+            rmaInbound.Complete(
+            "wms-complete:return:sales:001",
+            rmaInbound.Version);
+            await wmsDb.SaveChangesAsync(CancellationToken.None);
+            var inboundEvent = new InboundOrderCompletedIntegrationEventConverter()
+                .Convert(new WmsInboundOrderCompletedDomainEvent(rmaInbound));
+            var inboundHandler = new WmsInboundOrderCompletedIntegrationEventHandlerForRecordSalesReturnReceipt(erpDb, erpDeadLetters);
+            await inboundHandler.HandleAsync(inboundEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
+            await inboundHandler.HandleAsync(inboundEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
 
-        var rmaQualityHandler = new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(erpDb, erpDeadLetters, new ErpCodingService());
-        var rmaQualityEvent = QualityEvent(
+            var rmaQualityHandler = new QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit(erpDb, erpDeadLetters, new ErpCodingService());
+            var rmaQualityEvent = QualityEvent(
             QualityIntegrationEventTypes.InspectionPassed,
             rmaInbound.InboundOrderNo,
             "quality-passed:return:sales:001",
             "SKU-RETURN-PG-001");
-        await rmaQualityHandler.HandleAsync(rmaQualityEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
-        await rmaQualityHandler.HandleAsync(rmaQualityEvent, CancellationToken.None);
-        await erpDb.SaveChangesAsync(CancellationToken.None);
+            await rmaQualityHandler.HandleAsync(rmaQualityEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
+            await rmaQualityHandler.HandleAsync(rmaQualityEvent, CancellationToken.None);
+            await erpDb.SaveChangesAsync(CancellationToken.None);
 
-        var persistedRma = await erpDb.SalesReturnAuthorizations.SingleAsync(x => x.RmaNo == "RMA-RETURN-PG-001");
-        var creditNote = Assert.Single(await erpDb.CreditNotes.ToListAsync());
-        var persistedReceivable = await erpDb.AccountReceivables.SingleAsync(x => x.ReceivableNo == "AR-RETURN-PG-001");
-        var creditVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-CN-{creditNote.CreditNoteNo}").Include(x => x.Lines).ToListAsync());
-        Assert.Equal(SalesReturnAuthorizationStatus.CreditIssued, persistedRma.Status);
-        Assert.Equal(rmaInbound.InboundOrderNo, persistedRma.WmsInboundOrderNo);
-        Assert.Equal(100m, creditNote.Amount);
-        Assert.Equal(100m, persistedReceivable.CreditNoteAmount);
-        Assert.Equal(0m, persistedReceivable.OpenAmount);
-        Assert.Contains(creditVoucher.Lines, x => x.AccountCode == "6001" && x.DebitAmount == 100m);
-        Assert.Contains(creditVoucher.Lines, x => x.AccountCode == "1122" && x.CreditAmount == 100m);
-        Assert.Empty(await erpDeadLetters.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
-        Assert.Empty(await wmsDeadLetters.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+            var persistedRma = await erpDb.SalesReturnAuthorizations.SingleAsync(x => x.RmaNo == "RMA-RETURN-PG-001");
+            var creditNote = Assert.Single(await erpDb.CreditNotes.ToListAsync());
+            var persistedReceivable = await erpDb.AccountReceivables.SingleAsync(x => x.ReceivableNo == "AR-RETURN-PG-001");
+            var creditVoucher = Assert.Single(await erpDb.JournalVouchers.Where(x => x.VoucherNo == $"JV-CN-{creditNote.CreditNoteNo}").Include(x => x.Lines).ToListAsync());
+            Assert.Equal(SalesReturnAuthorizationStatus.CreditIssued, persistedRma.Status);
+            Assert.Equal(rmaInbound.InboundOrderNo, persistedRma.WmsInboundOrderNo);
+            Assert.Equal(100m, creditNote.Amount);
+            Assert.Equal(100m, persistedReceivable.CreditNoteAmount);
+            Assert.Equal(0m, persistedReceivable.OpenAmount);
+            Assert.Contains(creditVoucher.Lines, x => x.AccountCode == "6001" && x.DebitAmount == 100m);
+            Assert.Contains(creditVoucher.Lines, x => x.AccountCode == "1122" && x.CreditAmount == 100m);
+            Assert.Empty(await erpDeadLetters.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+            Assert.Empty(await wmsDeadLetters.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        }
+        finally
+        {
+            await database.DropAsync();
+        }
     }
 
     private static async Task SeedUninvoicedPurchaseReceiptAsync(ErpDbContext dbContext)
@@ -213,48 +232,6 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", WmsFacts.Schema))
             .Options;
         return new WmsDbContext(options, new NoopMediator());
-    }
-
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            this.adminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            this.databaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var databaseName = $"{prefix}_{Guid.CreateVersion7():N}";
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database,
-            };
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName,
-            };
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\";", connection);
-            await command.ExecuteNonQueryAsync();
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE);", connection);
-            await command.ExecuteNonQueryAsync();
-        }
     }
 
     private sealed class NoopMediator : IMediator

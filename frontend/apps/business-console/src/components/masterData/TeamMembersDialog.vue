@@ -25,7 +25,7 @@ import {
 } from '@nerv-iip/ui'
 import { Trash2Icon } from '@lucide/vue'
 import { computed, ref, toRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = defineProps<{
   teamCode: string
@@ -96,7 +96,7 @@ async function submitAdd() {
     isLeader.value = false
     showErrors.value = false
   } catch (error) {
-    notifyError(error, '添加成员失败，请稍后重试。')
+    notifyOperationFailure('添加成员失败', error, '添加成员失败，请稍后重试。')
   }
 }
 
@@ -108,7 +108,7 @@ async function confirmRemove() {
     notifySuccess('已移除成员。')
     removeTarget.value = null
   } catch (error) {
-    notifyError(error, '移除成员失败，请稍后重试。')
+    notifyOperationFailure('移除成员失败', error, '移除成员失败，请稍后重试。')
   }
 }
 </script>
@@ -131,7 +131,7 @@ async function confirmRemove() {
           >
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
         </NvField>
-        <NvField class="flex flex-row items-center gap-2">
+        <NvField orientation="horizontal">
           <NvCheckbox id="member-leader" v-model="isLeader" />
           <NvFieldLabel for="member-leader" class="mb-0">设为组长</NvFieldLabel>
         </NvField>

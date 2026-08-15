@@ -244,7 +244,7 @@ public sealed class EvaluateSpcControlChartCommandHandler(
                 request.SubgroupSize,
                 request.Take), cancellationToken);
         }
-        catch (KnownException exception) when (string.Equals(exception.Message, SpcCalculation.NoCompleteSubgroupMessage, StringComparison.Ordinal))
+        catch (KnownException exception) when (exception.Message.StartsWith(SpcCalculation.NoCompleteSubgroupMessage, StringComparison.Ordinal))
         {
             return new SpcEvaluationResponse(false, []);
         }
@@ -381,7 +381,8 @@ internal static class SpcDataProjection
         var characteristic = plans
             .SelectMany(x => x.Characteristics)
             .FirstOrDefault(x => x.CharacteristicCode == normalizedCharacteristic && x.CharacteristicType == InspectionCharacteristicTypes.Variable)
-            ?? throw new KnownException($"Variable characteristic '{normalizedCharacteristic}' was not found for SPC capability analysis.");
+            ?? throw new KnownException(
+                $"SKU {skuCode} 在工作中心 {workCenterId} 找不到计量特性 {normalizedCharacteristic}，请在检验方案页确认该特性已配置并启用后重试。");
         return new SpcSpecification(characteristic.LowerSpecLimit, characteristic.UpperSpecLimit);
     }
 }
@@ -397,7 +398,7 @@ internal sealed record SpcMeasurementPointProjection(
 
 internal static class SpcCalculation
 {
-    public const string NoCompleteSubgroupMessage = "SPC control chart requires at least one complete subgroup.";
+    public const string NoCompleteSubgroupMessage = "当前 SPC 数据不足以组成完整子组，请在 SPC 页面补充检验数据后重试。";
 
     private static readonly IReadOnlyDictionary<int, XbarRConstants> Constants = new Dictionary<int, XbarRConstants>
     {
@@ -440,12 +441,13 @@ internal static class SpcCalculation
     {
         if (!Constants.TryGetValue(subgroupSize, out var constants))
         {
-            throw new KnownException($"SPC Xbar-R constants are not configured for subgroup size {subgroupSize}.");
+            throw new KnownException(
+                $"SPC 子组大小 {subgroupSize} 尚未配置 Xbar-R 常数，请调整子组大小为 2–10 后重试，或联系质量管理员补充配置。");
         }
 
         if (subgroups.Count == 0)
         {
-            throw new KnownException(NoCompleteSubgroupMessage);
+            throw new KnownException($"{NoCompleteSubgroupMessage}（子组大小 {subgroupSize}）");
         }
 
         var centerLine = Mean(subgroups.Select(x => x.Xbar).ToArray());
@@ -538,7 +540,8 @@ internal static class SpcCalculation
 
         if (!Constants.TryGetValue(subgroupSize, out var constants))
         {
-            throw new KnownException($"SPC Xbar-R constants are not configured for subgroup size {subgroupSize}.");
+            throw new KnownException(
+                $"SPC 子组大小 {subgroupSize} 尚未配置 Xbar-R 常数，请调整子组大小为 2–10 后重试，或联系质量管理员补充配置。");
         }
 
         var averageRange = Mean(subgroups.Select(x => x.Range).ToArray());

@@ -90,7 +90,9 @@ export function useConsoleInstances() {
     })
   })
 
-  const instances = computed<InstanceListItem[]>(() => unwrapResponseData(listQuery.data.value)?.items ?? [])
+  const instances = computed<InstanceListItem[]>(
+    () => unwrapResponseData(listQuery.data.value)?.items ?? [],
+  )
   const effectiveInstanceKey = computed(
     () => selectedInstanceKey.value ?? instances.value[0]?.instanceKey ?? '',
   )
@@ -118,7 +120,9 @@ export function useConsoleInstances() {
   }
 
   return {
-    detail: computed<InstanceDetailResponse | undefined>(() => unwrapResponseData(detailQuery.data.value)),
+    detail: computed<InstanceDetailResponse | undefined>(() =>
+      unwrapResponseData(detailQuery.data.value),
+    ),
     detailError: detailQuery.error,
     detailPending: detailQuery.isLoading,
     effectiveInstanceKey,
@@ -218,7 +222,9 @@ export function useOperationTask(operationTaskId: MaybeRefOrGetter<string>) {
   return {
     operationError: taskQuery.error,
     operationPending: taskQuery.isLoading,
-    operationTask: computed<OperationTaskResponse | undefined>(() => unwrapResponseData(taskQuery.data.value)),
+    operationTask: computed<OperationTaskResponse | undefined>(() =>
+      unwrapResponseData(taskQuery.data.value),
+    ),
     refreshOperation: taskQuery.refetch,
   }
 }

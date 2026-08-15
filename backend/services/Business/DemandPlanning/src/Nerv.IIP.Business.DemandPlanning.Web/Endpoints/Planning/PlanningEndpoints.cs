@@ -7,6 +7,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
 using Nerv.IIP.ServiceAuth;
 
@@ -123,14 +124,10 @@ public sealed record ListForecastInputsRequest(
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
-public sealed record RunMrpResponse(
-    MrpRunId RunId,
-    int SuggestionCount,
-    bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources,
-    IReadOnlyCollection<string> InputSources,
-    DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+/// <summary>
+/// 异步受理回执（#1306）：提交即返回排队中的 runId，计算结果经运行列表读面轮询获取。
+/// </summary>
+public sealed record RunMrpResponse(MrpRunId RunId, MrpRunStatus Status);
 
 public sealed record ListMrpRunsRequest(string OrganizationId, string EnvironmentId);
 
@@ -150,6 +147,13 @@ public sealed record AcceptPlanningSuggestionResponse(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId);
+
+public sealed record RejectPlanningSuggestionRequest(
+    PlanningSuggestionId SuggestionId,
+    string RejectedBy,
+    string Reason);
+
+public sealed record RejectPlanningSuggestionResponse(bool Rejected);
 
 public sealed class ListMasterProductionScheduleBucketsEndpoint(ISender sender)
     : DemandPlanningEndpoint<ListMasterProductionScheduleBucketsRequest, ResponseData<IReadOnlyCollection<MasterProductionScheduleBucketResponse>>>
@@ -361,25 +365,25 @@ public sealed class ListForecastInputsEndpoint(ISender sender)
     }
 }
 
-public sealed class RunMrpEndpoint(ISender sender)
+public sealed class RunMrpEndpoint(ISender sender, IMrpRunExecutionQueue executionQueue)
     : DemandPlanningEndpoint<RunMrpRequest, ResponseData<RunMrpResponse>>
 {
     public override void Configure()
     {
         ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<RunMrpEndpoint>());
+        Description(b => b.Produces<ResponseData<RunMrpResponse>>(StatusCodes.Status202Accepted));
     }
 
     public override async Task HandleAsync(RunMrpRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RunMrpCommand(req.OrganizationId, req.EnvironmentId, req.HorizonStart, req.HorizonEnd), ct);
-        await Send.OkAsync(new RunMrpResponse(
-            result.RunId,
-            result.SuggestionCount,
-            result.HasInputDegradation,
-            result.InputDegradationSources,
-            result.InputSources,
-            result.InputCoverageStart,
-            result.InputCoverageEnd).AsResponseData(), cancellation: ct);
+        // 受理事务（登记排队记录）在 Send 返回时已由 UoW 行为提交；之后才入队，
+        // 避免 worker 抢在提交前读不到记录。
+        var runId = await sender.Send(new RunMrpCommand(req.OrganizationId, req.EnvironmentId, req.HorizonStart, req.HorizonEnd), ct);
+        executionQueue.Enqueue(runId);
+        await Send.ResponseAsync(
+            new RunMrpResponse(runId, MrpRunStatus.Created).AsResponseData(),
+            StatusCodes.Status202Accepted,
+            ct);
     }
 }
 
@@ -452,6 +456,24 @@ public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
     }
 }
 
+public sealed class RejectPlanningSuggestionEndpoint(ISender sender)
+    : DemandPlanningEndpoint<RejectPlanningSuggestionRequest, ResponseData<RejectPlanningSuggestionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<RejectPlanningSuggestionEndpoint>());
+    }
+
+    public override async Task HandleAsync(RejectPlanningSuggestionRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RejectPlanningSuggestionCommand(
+            req.SuggestionId,
+            req.RejectedBy,
+            req.Reason), ct);
+        await Send.OkAsync(new RejectPlanningSuggestionResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record DemandPlanningEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -479,6 +501,7 @@ public static class DemandPlanningEndpointContracts
         new(typeof(ListMrpPeggingEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/pegging", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMrpPegging"),
         new(typeof(ListPlanningSuggestionsEndpoint), "GET", "/api/business/v1/planning/suggestions", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningSuggestions"),
         new(typeof(AcceptPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/accept", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "acceptPlanningSuggestion"),
+        new(typeof(RejectPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/reject", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "rejectPlanningSuggestion"),
     ];
 
     public static DemandPlanningEndpointContract Get<TEndpoint>()

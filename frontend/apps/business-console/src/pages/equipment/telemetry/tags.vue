@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryTagItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { formatSamplingPolicy, formatTelemetryUnit } from '@/data/businessLabels'
 import { useBusinessTelemetryTags } from '@/composables/useBusinessTelemetry'
+import { useEquipmentDeviceCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
   NvDropdownMenuItem,
-  NvInput,
+  NvEntityPicker,
   NvPageHeader,
   NvRowActions,
   NvToolbar,
@@ -16,6 +19,7 @@ import {
 import { EyeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -26,9 +30,18 @@ definePage({
 })
 
 const { filters, refreshTags, tags, tagsError, tagsPending, tagsTotal } = useBusinessTelemetryTags()
-const { page, pageSize } = usePagedList(filters)
+const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.deviceAssetId] })
+const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 
 const errorMessage = computed(() => formatError(tagsError.value))
+
+// 采集标签读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
 
 const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
   {
@@ -37,15 +50,33 @@ const columns: NvDataTableColumn<BusinessConsoleTelemetryTagItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.tagKey ?? '无标签',
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   {
     key: 'valueType',
     header: '值类型',
     width: 'w-24',
     accessor: (r) => valueTypeLabel(r.valueType),
   },
-  { key: 'unitCode', header: '单位', width: 'w-24', accessor: (r) => r.unitCode ?? '无' },
-  { key: 'samplingPolicy', header: '采样策略', accessor: (r) => r.samplingPolicy ?? '未标注' },
+  // 单位是设备侧工程单位（degC / mm/s），与主数据计量单位不同，走独立词表。
+  {
+    key: 'unitCode',
+    header: '单位',
+    width: 'w-32',
+    accessor: (r) => formatTelemetryUnit(r.unitCode),
+  },
+  // 采样策略是配置串（sample-2s / bucket=30s;raw=7d），翻成「每 2 秒采样」。
+  {
+    key: 'samplingPolicy',
+    header: '采样策略',
+    accessor: (r) => formatSamplingPolicy(r.samplingPolicy),
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -55,15 +86,20 @@ function valueTypeLabel(value?: string | null) {
     boolean: '布尔',
     number: '数值',
     numeric: '数值',
+    decimal: '数值',
+    int: '整数',
+    integer: '整数',
     text: '文本',
+    string: '文本',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知类型」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知类型') : '未知'
 }
 function rowKey(row: BusinessConsoleTelemetryTagItem) {
   return row.telemetryTagId ?? `${row.deviceAssetId}-${row.tagKey}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -100,11 +136,17 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
-        <NvInput
+        <NvEntityPicker
           v-model="filters.deviceAssetId"
-          class="h-9 w-72"
-          placeholder="按设备编号筛选"
-          aria-label="设备编号"
+          class="w-72"
+          :options="deviceOptions"
+          title="选择设备"
+          placeholder="全部设备"
+          source-text="数据来自基础数据设备资产"
+          empty-text="暂无设备资产，请先在基础数据登记设备"
+          :loading="devicesPending"
+          clearable
+          aria-label="设备"
         />
       </template>
     </NvToolbar>
@@ -129,9 +171,12 @@ function formatError(error: unknown) {
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
           :to="`/equipment/${row.deviceAssetId}`"
-          class="text-brand underline-offset-4 hover:underline"
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
-          {{ row.deviceAssetId ?? '无设备' }}
+          <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
         </RouterLink>
       </template>
       <template #cell-actions="{ row }">

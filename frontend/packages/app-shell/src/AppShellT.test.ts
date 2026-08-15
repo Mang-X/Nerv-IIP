@@ -56,7 +56,12 @@ describe('AppShellT (T-shaped shell)', () => {
     const router = makeRouter()
     const wrapper = mount(AppShellT, {
       global: { plugins: [router] },
-      props: { title: 'Nerv-IIP', topDomains: domains, currentDomainId: 'workbench', maxVisibleDomains: 2 },
+      props: {
+        title: 'Nerv-IIP',
+        topDomains: domains,
+        currentDomainId: 'workbench',
+        maxVisibleDomains: 2,
+      },
     })
     // Scope to the real nav (the off-flow measurement layer is a sibling).
     const nav = wrapper.find('nav[aria-label="一级能力区"]')

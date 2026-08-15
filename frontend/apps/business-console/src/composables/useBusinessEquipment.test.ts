@@ -3,14 +3,16 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
+  acknowledgeBusinessConsoleEquipmentAlarm,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
-  shelveBusinessConsoleEquipmentAlarmMutationOptions,
-  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
+  listBusinessConsoleEquipmentAlarms,
+  shelveBusinessConsoleEquipmentAlarm,
+  unshelveBusinessConsoleEquipmentAlarm,
 } from '@nerv-iip/api-client'
+import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
@@ -22,12 +24,18 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
   mutations: [] as Array<ReturnType<typeof vi.fn>>,
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  acknowledgeBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  confirmBusinessConsoleOperation: (...args: unknown[]) => coladaState.confirmOperation(...args),
   acknowledgeBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
     key: [],
     mutation: vi.fn(),
@@ -47,6 +55,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleEquipmentAlarmsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleEquipmentAlarms' }],
     query: vi.fn(),
+  })),
+  listBusinessConsoleEquipmentAlarms: vi.fn(),
+  shelveBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
+  unshelveBusinessConsoleEquipmentAlarm: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   shelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   unshelveBusinessConsoleEquipmentAlarmMutationOptions: vi.fn(() => ({
@@ -131,6 +148,7 @@ describe('business equipment composables', () => {
     setActivePinia(createPinia())
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
+    coladaState.confirmOperation.mockImplementation(async (value) => value)
     coladaState.mutations.length = 0
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
@@ -310,27 +328,37 @@ describe('business equipment composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', { success: false })
     const failed = useBusinessEquipmentAlarms()
     expect(failed.alarms.value).toEqual([])
+    expect(failed.alarmsHasSuccessfulResponse.value).toBe(false)
+    expect(failed.alarmsHasFailedResponse.value).toBe(true)
   })
 
   it('posts alarm lifecycle actions with current business context', async () => {
     const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Shelved' }] } },
+      } as never)
 
     await active.acknowledgeAlarm('alarm-1', 'operator-a')
     await active.shelveAlarm('alarm-1', 'operator-a', 45, 'maintenance window')
     await active.unshelveAlarm('alarm-1')
 
-    expect(acknowledgeBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(shelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(unshelveBusinessConsoleEquipmentAlarmMutationOptions).toHaveBeenCalled()
-    expect(coladaState.mutations[0]).toHaveBeenCalledWith({
+    expect(acknowledgeBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
         acknowledgedBy: 'operator-a',
       }),
+      throwOnError: false,
     })
-    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
@@ -339,26 +367,30 @@ describe('business equipment composables', () => {
         reason: 'maintenance window',
         shelvedBy: 'operator-a',
       }),
+      throwOnError: false,
     })
-    expect(coladaState.mutations[2]).toHaveBeenCalledWith({
+    expect(unshelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         organizationId: 'org-001',
         environmentId: 'env-dev',
       }),
+      throwOnError: false,
     })
   })
 
   it('forwards a frozen shelvedAtUtc and idempotency key so batch shelve retries are no-ops', async () => {
     const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValueOnce({
+      data: { success: true, data: { items: [{ alarmEventId: 'alarm-1', status: 'Raised' }] } },
+    } as never)
 
     await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', {
       shelvedAtUtc: '2026-07-12T08:00:00.000Z',
       idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
     })
 
-    // acknowledge / shelve / unshelve mutations register in order → shelve is index 1.
-    expect(coladaState.mutations[1]).toHaveBeenCalledWith({
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledWith({
       path: { alarmEventId: 'alarm-1' },
       body: expect.objectContaining({
         durationMinutes: 120,
@@ -366,6 +398,108 @@ describe('business equipment composables', () => {
         shelvedAtUtc: '2026-07-12T08:00:00.000Z',
         idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
       }),
+      throwOnError: false,
     })
+  })
+
+  it('rotates the alarm intent key after an explicit 422 rejection', async () => {
+    const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValue({
+      data: { success: true, data: { items: [{ alarmEventId: 'alarm-422', status: 'Raised' }] } },
+    } as never)
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      active.shelveAlarm('alarm-422', 'operator-a', 30, 'inspection', {
+        idempotencyKey: 'alarm-key-1',
+      }),
+    ).rejects.toThrow('validation failed')
+    await active.shelveAlarm('alarm-422', 'operator-a', 30, 'inspection', {
+      idempotencyKey: 'alarm-key-2',
+    })
+
+    expect(
+      vi
+        .mocked(shelveBusinessConsoleEquipmentAlarm)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['alarm-key-1', 'alarm-key-2'])
+  })
+
+  it('retains the alarm intent key while receipt confirmation is indeterminate', async () => {
+    const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValue({
+      data: {
+        success: true,
+        data: { items: [{ alarmEventId: 'alarm-unknown', status: 'Raised' }] },
+      },
+    } as never)
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(
+        Object.assign(new Error('权威状态尚未确认'), {
+          code: 'business-operation-unconfirmed',
+        }),
+      )
+      .mockImplementation(async (value) => value)
+
+    await expect(
+      active.shelveAlarm('alarm-unknown', 'operator-a', 30, 'inspection', {
+        idempotencyKey: 'alarm-key-stable',
+      }),
+    ).rejects.toThrow('权威状态尚未确认')
+    await active.shelveAlarm('alarm-unknown', 'operator-a', 30, 'inspection', {
+      idempotencyKey: 'alarm-key-new',
+    })
+
+    expect(
+      vi
+        .mocked(shelveBusinessConsoleEquipmentAlarm)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['alarm-key-stable', 'alarm-key-stable'])
+  })
+
+  it('uses the frozen shelf instant only for an explicit same-key retry gate', async () => {
+    const active = useBusinessEquipmentAlarms()
+    vi.mocked(listBusinessConsoleEquipmentAlarms).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              alarmEventId: 'alarm-1',
+              status: 'Shelved',
+              shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+              shelvedUntilUtc: '2026-07-12T10:00:00.000Z',
+            },
+          ],
+        },
+      },
+    } as never)
+    const intent = {
+      attempt: 'retry' as const,
+      shelvedAtUtc: '2026-07-12T08:00:00.000Z',
+      idempotencyKey: 'shelve:alarm-1:2026-07-12T08:00:00.000Z:120',
+    }
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationType: 'iiot.alarm.shelve',
+        payloadFingerprint: JSON.stringify({
+          alarmEventId: 'alarm-1',
+          shelvedBy: 'operator-a',
+          durationMinutes: 120,
+          reason: 'planned maintenance',
+        }),
+      },
+      () => intent.idempotencyKey,
+      { shelvedAtUtc: intent.shelvedAtUtc },
+    )
+
+    await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', intent)
+
+    expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledOnce()
   })
 })

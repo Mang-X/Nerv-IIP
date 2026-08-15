@@ -31,7 +31,13 @@ public sealed class IamAuthorizationCheckEndpointTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
 
         var response = await client.PostAsJsonAsync("/internal/iam/v1/authorization/check",
-            new AuthorizationCheckRequest("apphub.instances.read", "org-001", "env-dev", "application-instance", "demo-api-001"));
+            new AuthorizationCheckRequest(
+                "apphub.instances.read",
+                "org-001",
+                "env-dev",
+                "application-instance",
+                "demo-api-001",
+                IncludePrincipalContext: true));
 
         response.EnsureSuccessStatusCode();
         var body = await ReadResponseDataAsync<AuthorizationCheckResponse>(response);
@@ -39,6 +45,34 @@ public sealed class IamAuthorizationCheckEndpointTests
         Assert.Equal("user", body.PrincipalType);
         Assert.Equal("admin", body.LoginName);
         Assert.Null(body.DataScope);
+        var scopeGrant = Assert.Single(body.ScopeGrants!);
+        Assert.Equal("role", scopeGrant.SourceKind);
+        Assert.Equal("role-platform-admin", scopeGrant.SourceId);
+        Assert.Equal("organization", scopeGrant.ScopeKind);
+        Assert.Equal("org-001", scopeGrant.ScopeId);
+        Assert.True(scopeGrant.OrganizationWide);
+        var role = Assert.Single(body.Roles!);
+        Assert.False(string.IsNullOrWhiteSpace(role.Id));
+        Assert.False(string.IsNullOrWhiteSpace(role.DisplayName));
+    }
+
+    [Fact]
+    public async Task Authorization_check_omits_principal_context_unless_requested()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        var client = factory.CreateClient();
+        var auth = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new LoginRequest("admin", "Admin123!"));
+        var tokens = await ReadResponseDataAsync<AuthResponse>(auth);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens!.AccessToken);
+
+        var response = await client.PostAsJsonAsync(
+            "/internal/iam/v1/authorization/check",
+            new AuthorizationCheckRequest("apphub.instances.read", "org-001", "env-dev", null, null));
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<AuthorizationCheckResponse>(response);
+        Assert.Null(body!.ScopeGrants);
+        Assert.Empty(body.Roles!);
     }
 
     [Fact]

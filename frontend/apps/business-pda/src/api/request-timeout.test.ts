@@ -8,6 +8,10 @@ import {
   RequestTimeoutError,
   resolveRequestTimeoutMs,
 } from './request-timeout'
+import {
+  BusinessOperationFailedError,
+  BusinessOperationUnconfirmedError,
+} from '@nerv-iip/api-client'
 
 /** A fetch that never resolves on its own — only rejects (AbortError) when its signal aborts. */
 function hangingFetch(): typeof fetch {
@@ -141,6 +145,46 @@ describe('typed request errors', () => {
 })
 
 describe('describeRequestError', () => {
+  it.each([
+    [401, '登录已失效，请重新登录', false],
+    [403, '当前账号无此操作权限', false],
+    [404, '业务对象已不存在', false],
+    [409, '状态已变化', false],
+    [422, '未通过业务校验', false],
+    [503, '服务暂时不可用', true],
+  ])('maps HTTP %s to consistent actionable copy', (status, expected, indeterminate) => {
+    expect(describeRequestError({ status, message: 'downstream-request-failed' })).toMatchObject({
+      message: expect.stringContaining(expected),
+      status,
+      indeterminate,
+    })
+  })
+
+  // #1324：三道开工拦截的反馈必须一致——缺料的服务端真因以前被通用 HTTP 文案吞掉。
+  it.each([
+    [409, '物料齐套未满足，物料 MAT-OIL 缺口 5'],
+    [422, '物料齐套未满足：MAT-OIL 缺口 5'],
+    [400, '当前工序尚未派工，不能开工'],
+  ])(
+    'lets the server business reason through for HTTP %s instead of generic copy',
+    (status, reason) => {
+      expect(describeRequestError({ status, message: reason })).toMatchObject({
+        status,
+        message: reason,
+        indeterminate: false,
+      })
+    },
+  )
+
+  it('keeps local guidance when the server only returns a technical string or an auth failure', () => {
+    expect(
+      describeRequestError({ status: 409, message: 'downstream-request-failed' }),
+    ).toMatchObject({ message: expect.stringContaining('状态已变化') })
+    expect(
+      describeRequestError({ status: 403, message: '缺少权限码 business.mes.operations.manage' }),
+    ).toMatchObject({ message: expect.stringContaining('当前账号无此操作权限') })
+  })
+
   it('classifies a DISPATCHED timeout / network drop as INDETERMINATE (result unknown, non-idempotent retry unsafe)', () => {
     expect(describeRequestError(new RequestTimeoutError())).toMatchObject({
       kind: 'timeout',
@@ -154,6 +198,44 @@ describe('describeRequestError', () => {
     })
   })
 
+  it.each([
+    new BusinessOperationUnconfirmedError(
+      '请求已受理，但权威状态尚未确认（downstream-invalid-response）',
+    ),
+    {
+      code: 'business-operation-unconfirmed',
+      message: 'raw technical readback failure',
+    },
+  ])(
+    'classifies an accepted-but-unconfirmed business receipt as indeterminate with field copy',
+    (error) => {
+      const described = describeRequestError(error)
+
+      expect(described).toMatchObject({
+        kind: 'business',
+        indeterminate: true,
+        message: '操作已受理，但结果尚未核实。请刷新列表确认状态，勿重复提交',
+      })
+      expect(described.message).not.toContain('downstream')
+      expect(described.message).not.toContain('technical')
+    },
+  )
+
+  it('surfaces a confirmed business failure as determinate safe copy', () => {
+    expect(
+      describeRequestError(
+        new BusinessOperationFailedError(
+          'Stock movement would make on-hand quantity negative.',
+          'NEGATIVE_ON_HAND',
+        ),
+      ),
+    ).toMatchObject({
+      kind: 'business',
+      indeterminate: false,
+      message: '库存不足，无法完成本次库存过账，请核对数量后重试',
+    })
+  })
+
   it('classifies an OFFLINE pre-check as safe to retry (request never left the device)', () => {
     expect(describeRequestError(new OfflineError())).toMatchObject({
       kind: 'offline',
@@ -162,7 +244,7 @@ describe('describeRequestError', () => {
     })
   })
 
-  it('treats a gateway business error as DETERMINATE and surfaces the server message', () => {
+  it('treats a standalone gateway business error as determinate', () => {
     expect(describeRequestError({ success: false, message: '工序状态非法' })).toMatchObject({
       kind: 'business',
       indeterminate: false,
@@ -171,6 +253,28 @@ describe('describeRequestError', () => {
     // problem-details fall back to detail/title when message is absent.
     expect(describeRequestError({ detail: '库存不足' }).message).toBe('库存不足')
     expect(describeRequestError({ title: '请求无效' }).message).toBe('请求无效')
+  })
+
+  it.each([
+    [{ statusCode: 503, message: '服务暂不可用' }],
+    [{ response: { status: 503 }, message: '服务暂不可用' }],
+  ])('treats a structured HTTP 5xx as indeterminate', (error) => {
+    expect(describeRequestError(error)).toMatchObject({
+      indeterminate: true,
+      message: '服务暂时不可用，请稍后重试；写操作请先刷新核实结果',
+    })
+  })
+
+  it.each([{ statusCode: 400 }, { statusCode: 422 }, { response: { status: 422 } }])(
+    'keeps a structured HTTP 4xx determinate',
+    (error) => {
+      expect(describeRequestError(error).indeterminate).toBe(false)
+    },
+  )
+
+  it('classifies a Response 5xx as indeterminate and a Response 4xx as determinate', () => {
+    expect(isIndeterminateError(new Response(null, { status: 503 }))).toBe(true)
+    expect(isIndeterminateError(new Response(null, { status: 422 }))).toBe(false)
   })
 
   it('uses the caller fallback for a business error without a usable message', () => {
@@ -189,7 +293,7 @@ describe('describeRequestError', () => {
   it('isIndeterminateError is true only for a dispatched-but-unanswered request', () => {
     // Dispatched, outcome unknown → unsafe to blindly retry a non-idempotent write.
     expect(isIndeterminateError(new RequestTimeoutError())).toBe(true)
-    // Offline pre-check (never dispatched) + business errors (server responded) → safe.
+    // Offline pre-check and explicit application failures are determinate.
     expect(isIndeterminateError(new OfflineError())).toBe(false)
     expect(isIndeterminateError({ message: '业务失败' })).toBe(false)
   })

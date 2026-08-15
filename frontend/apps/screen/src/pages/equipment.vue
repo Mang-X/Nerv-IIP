@@ -342,7 +342,7 @@ const paramsFreshness = computed(() =>
                 </div>
               </template>
             </NvScreenScrollArea>
-            <p class="ev-note">维修历史与参数趋势见设备详情 · 帕累托/备件联动 待 #570</p>
+            <p class="ev-note">维修历史与参数趋势见设备详情</p>
           </NvScreenPanel>
         </div>
       </div>
@@ -352,7 +352,7 @@ const paramsFreshness = computed(() =>
         <div class="scr-foot-r">
           <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
           <NvScreenFreshness :tone="paramsFreshness.tone" :label="`参数 ${paramsFreshness.text}`" />
-          <span>实时参数与趋势待 historian · #570 · 单机 OEE 已接入真实读面 · #738</span>
+          <span>参数更新时间与设备接入状态以右上角标识为准</span>
         </div>
       </footer>
     </div>
@@ -435,7 +435,7 @@ const paramsFreshness = computed(() =>
     flex: none;
     border-radius: 2px;
     transform: skewX(-16deg);
-    background: linear-gradient(180deg, var(--nv-scr-cyan), rgba(74, 166, 238, 0.25));
+    background: var(--nv-scr-cyan);
     box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
   }
   .sec-t {
@@ -450,12 +450,7 @@ const paramsFreshness = computed(() =>
     flex: 1;
     height: 1px;
     margin: 0 6px;
-    background: linear-gradient(
-      90deg,
-      rgba(135, 208, 255, 0.28),
-      rgba(255, 255, 255, 0.05) 45%,
-      transparent
-    );
+    background: rgba(135, 208, 255, 0.2);
   }
 
   /* —— 右窄栏 —— */
@@ -560,7 +555,7 @@ const paramsFreshness = computed(() =>
   }
   /* #686 未确认高亮：左侧红条 + 极淡红底，一眼看出"还没人响应" */
   .al-row.unacked {
-    background: linear-gradient(90deg, rgba(239, 90, 99, 0.1), transparent 60%);
+    background: rgba(239, 90, 99, 0.08);
     box-shadow: inset 2px 0 0 var(--nv-scr-red);
     padding-left: 8px;
   }

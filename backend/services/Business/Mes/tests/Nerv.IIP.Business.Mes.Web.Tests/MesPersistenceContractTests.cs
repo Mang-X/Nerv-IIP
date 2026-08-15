@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.Schedules;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
@@ -265,12 +266,14 @@ public sealed class MesPersistenceContractTests
 
             await dbContext.SaveChangesAsync();
 
-            var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext);
+            var receiptHandler = new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver);
             await receiptHandler.Handle(
                 new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", response.ReferenceId, now.AddMinutes(15), 4m, "LOT-OIL-A"),
                 CancellationToken.None);
 
             await dbContext.SaveChangesAsync();
+            // 齐套只认库存过账成功的量：补上两条腿回执后「已收 4」才成立（#1322）。
+            await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, response.ReferenceId, now.AddMinutes(16));
         }
 
         using var recreatedScope = services.CreateScope();
@@ -280,7 +283,7 @@ public sealed class MesPersistenceContractTests
             CancellationToken.None);
 
         Assert.Equal("Blocked", readiness.ReadinessStatus);
-        Assert.Contains("MAT-OIL LOT-OIL-A shortage 2", readiness.BlockingReasons);
+        Assert.Contains("MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 2", readiness.BlockingReasons);
         var row = Assert.Single(readiness.Items);
         Assert.Equal("MAT-OIL", row.MaterialId);
         Assert.Equal("LOT-OIL-A", row.MaterialLotId);
@@ -291,6 +294,116 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(4m, row.ReceivedQuantity);
         Assert.Equal(2m, row.ShortageQuantity);
         Assert.Equal("Shortage", row.Status);
+        // 齐套口径显式带出(#1291):读面据此写明「线边 + 已备 + 已收」范围,不让用户拿它和 MRP 全厂口径对撞。
+        Assert.Equal(MesMaterialReadinessScopes.LineSideAndStaged, readiness.ReadinessScope);
+        // 已发起的 4 已经全部收齐(requested == received),残余的 2 没有任何在途领料
+        // → 缺口卡在备料环节,下一步是再发一张领料,而不是去仓库跟催。
+        Assert.Equal(MesMaterialShortageStages.AwaitingPreparation, row.ShortageStage);
+    }
+
+    [Fact]
+    // #1291:领料已发起、仓库一件没发 → 缺口卡在配送环节,读面该说「去仓库跟催」。
+    public async Task Material_readiness_reports_awaiting_delivery_while_an_issue_request_is_in_flight()
+    {
+        var services = CreateServices(nameof(Material_readiness_reports_awaiting_delivery_while_an_issue_request_is_in_flight));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-INFLIGHT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-INFLIGHT-001",
+                "OP-INFLIGHT-10",
+                "MAT-OIL",
+                null,
+                requiredQuantity: 10m,
+                availableQuantity: 0m,
+                stagedQuantity: 0m,
+                sourceSystem: "Inventory",
+                sourceSnapshotId: "inv-snap-inflight",
+                capturedAtUtc: now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-INFLIGHT-001",
+                "WO-INFLIGHT-001",
+                "OP-INFLIGHT-10",
+                "MAT-OIL",
+                "L",
+                requestedQuantity: 10m,
+                requestedAtUtc: now.AddMinutes(5)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-INFLIGHT-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal(10m, row.RequestedQuantity);
+        Assert.Equal(0m, row.ReceivedQuantity);
+        Assert.Equal(MesMaterialShortageStages.AwaitingDelivery, row.ShortageStage);
+    }
+
+    [Fact]
+    // #1291:齐套两态区分必须只认「还在数」的领料单。取消掉的单子不代表仓库还在配货,
+    // 把它算进「应领」会把「其实没人在配」误标成「仓库配送中」。
+    public async Task Material_readiness_ignores_cancelled_issue_requests_when_deciding_the_shortage_stage()
+    {
+        var services = CreateServices(nameof(Material_readiness_ignores_cancelled_issue_requests_when_deciding_the_shortage_stage));
+        var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CANCELLED-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001",
+                "env-dev",
+                "WO-CANCELLED-001",
+                "OP-CANCELLED-10",
+                "MAT-OIL",
+                null,
+                requiredQuantity: 10m,
+                availableQuantity: 0m,
+                stagedQuantity: 0m,
+                sourceSystem: "Inventory",
+                sourceSnapshotId: "inv-snap-cancelled",
+                capturedAtUtc: now));
+
+            // 一张已取消的领料单:没有收过任何料,取消后不该再被算成「仓库在配」。
+            var cancelled = MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-CANCELLED-001",
+                "WO-CANCELLED-001",
+                "OP-CANCELLED-10",
+                "MAT-OIL",
+                "L",
+                requestedQuantity: 10m,
+                requestedAtUtc: now.AddMinutes(5));
+            cancelled.CancelForWorkOrderCancellation(now.AddMinutes(30));
+            dbContext.MaterialIssueRequests.Add(cancelled);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-CANCELLED-001"),
+            CancellationToken.None);
+
+        var row = Assert.Single(readiness.Items);
+        Assert.Equal(MaterialIssueRequest.CancelledStatus, (await recreatedDbContext.MaterialIssueRequests.SingleAsync()).Status);
+        Assert.Equal(0m, row.RequestedQuantity);
+        Assert.Equal(10m, row.ShortageQuantity);
+        // 没有任何在途领料 → 缺口卡在备料环节,下一步是发起领料,而不是去仓库跟催。
+        Assert.Equal(MesMaterialShortageStages.AwaitingPreparation, row.ShortageStage);
     }
 
     [Fact]
@@ -338,7 +451,7 @@ public sealed class MesPersistenceContractTests
             "L",
             6m,
             now.AddMinutes(1));
-        wrongLotRequest.ConfirmLineSideReceipt(now.AddMinutes(2), 6m, "LOT-OIL-B");
+        wrongLotRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(2), 6m, "LOT-OIL-B");
         dbContext.MaterialIssueRequests.Add(wrongLotRequest);
         await dbContext.SaveChangesAsync();
 
@@ -350,7 +463,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("LOT-OIL-A", row.MaterialLotId);
         Assert.Equal(0m, row.ReceivedQuantity);
         Assert.Equal(6m, row.ShortageQuantity);
-        Assert.Contains("MAT-OIL LOT-OIL-A shortage 6", readiness.BlockingReasons);
+        Assert.Contains("MATERIAL_SHORTAGE: 物料 MAT-OIL，批次 LOT-OIL-A 缺口 6", readiness.BlockingReasons);
     }
 
     [Fact]
@@ -368,10 +481,10 @@ public sealed class MesPersistenceContractTests
             10m,
             now);
 
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 4m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 4m, "LOT-OIL-A");
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), 6m, "LOT-OIL-B"));
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), 6m, "LOT-OIL-B"));
         Assert.Contains("同一领料申请不能混用多个物料批次", exception.Message);
     }
 
@@ -422,7 +535,9 @@ public sealed class MesPersistenceContractTests
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-BLOCKED-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
-        Assert.Contains("物料齐套未满足", exception.Message);
+        // 开工被拒的文案已剥掉英文码，只剩中文事实（读面仍保留 `CODE: 中文`）。
+        Assert.Contains("物料 MAT-SEAL 缺口 8", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_SHORTAGE", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -591,13 +706,14 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext, FakeMesMaterialRequirementSnapshotProvider.Missing).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-MISSING-MAT-001", now.AddMinutes(10)),
                 CancellationToken.None));
-        Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", releaseException.Message);
+        Assert.Contains("工单缺少齐套需求快照", releaseException.Message, StringComparison.Ordinal);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
-            new ChangeOperationTaskStateCommandHandler(dbContext, FakeMesMaterialRequirementSnapshotProvider.Missing).Handle(
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-MISSING-MAT-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
-        Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message);
+        Assert.Contains("工单缺少齐套需求快照", startException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -681,7 +797,9 @@ public sealed class MesPersistenceContractTests
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-QH-10", "start", now.AddMinutes(12)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, startHold.Message);
+        // 开工被拒的文案经分层透传直接上屏，已剥掉英文码只留中文（读面仍保留 `CODE: 中文`）。
+        Assert.Contains("质量保留", startHold.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(MesReadinessReasonCodes.QualityHoldActive, startHold.Message, StringComparison.Ordinal);
     }
 
     // 回归 #799（2026-07-17 隔离全栈实测暴露的跨服务 sourceService 词汇 bug）：Quality 发布的 payload.SourceService
@@ -1756,7 +1874,19 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-LIFE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-LIFE-001",
+            "FG-FSA",
+            "PV-FSA-1",
+            10m,
+            20,
+            now.AddHours(8));
+        workOrder.RecordMaterialRequirementSnapshot(
+            WorkOrder.MaterialRequirementSnapshotCapturedStatus,
+            now);
+        dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -1787,15 +1917,15 @@ public sealed class MesPersistenceContractTests
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
 
-        // Invalid lifecycle transitions are domain-rule violations and must surface as a clean KnownException
-        // business error, not an unhandled InvalidOperationException (which would become an HTTP 500).
-        await Assert.ThrowsAsync<KnownException>(() =>
+        // Invalid lifecycle transitions are typed conflicts so the Gateway/PDA can
+        // refresh the authoritative state instead of treating them as generic 400s.
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(1)), CancellationToken.None));
 
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "start", now.AddMinutes(2)), CancellationToken.None);
         await handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "complete", now.AddMinutes(45)), CancellationToken.None);
 
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
             handler.Handle(new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-LIFE-10", "pause", now.AddMinutes(46)), CancellationToken.None));
     }
 
@@ -1832,7 +1962,7 @@ public sealed class MesPersistenceContractTests
                 "PCS",
                 10m,
                 now.AddMinutes(-10));
-            materialIssue.ConfirmLineSideReceipt(now.AddMinutes(-9), 10m, "LOT-SCRAP");
+            materialIssue.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(-9), 10m, "LOT-SCRAP");
             materialIssue.ClearDomainEvents();
             dbContext.MaterialIssueRequests.Add(materialIssue);
             await dbContext.SaveChangesAsync();
@@ -1897,7 +2027,7 @@ public sealed class MesPersistenceContractTests
                 now.AddMinutes(5)));
             await dbContext.SaveChangesAsync();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
             await dbContext.SaveChangesAsync();
 
             await new RecordProductionReportCommandHandler(dbContext).Handle(
@@ -1990,10 +2120,21 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
 
-        await new ConfirmLineSideMaterialReceiptCommandHandler(dbContext).Handle(
+        await new ConfirmLineSideMaterialReceiptCommandHandler(dbContext, MaterialSupplyTestFixtures.Resolver).Handle(
             new ConfirmLineSideMaterialReceiptCommand("org-001", "env-dev", "MIR-PARTIAL-001", now.AddMinutes(5), 4m, "LOT-OIL-A"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
+
+        // 过账回执之前：单据在途，齐套一分钱都不能认（消灭「MES 单方面翻绿」的假绿路径，#1322）。
+        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+            new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
+            CancellationToken.None);
+        Assert.Equal(0m, Assert.Single(pendingReadiness.Items).ReceivedQuantity);
+        Assert.Equal(
+            MaterialIssueRequest.ReceiptPostingStatus,
+            await dbContext.MaterialIssueRequests.Select(x => x.Status).SingleAsync());
+
+        await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, "MIR-PARTIAL-001", now.AddMinutes(6));
 
         var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
@@ -2046,7 +2187,7 @@ public sealed class MesPersistenceContractTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmLineSideReceipt(now.AddMinutes(10), materialLotId: "LOT-OIL-A");
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-OIL-A");
             await dbContext.SaveChangesAsync();
 
             var handler = new RecordProductionReportCommandHandler(dbContext);
@@ -2153,7 +2294,7 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
         var request = await dbContext.MaterialIssueRequests.SingleAsync();
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
         var handler = new RecordProductionReportCommandHandler(dbContext);
@@ -2222,7 +2363,7 @@ public sealed class MesPersistenceContractTests
             "L",
             10m,
             now.AddMinutes(1));
-        otherRequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        otherRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         dbContext.MaterialIssueRequests.Add(otherRequest);
         await dbContext.SaveChangesAsync();
 
@@ -2309,9 +2450,9 @@ public sealed class MesPersistenceContractTests
             now,
             now.AddMinutes(45)));
         var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(1));
-        lotARequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        lotARequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(2));
-        lotBRequest.ConfirmLineSideReceipt(now.AddMinutes(6), 10m, "LOT-OIL-B");
+        lotBRequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(6), 10m, "LOT-OIL-B");
         dbContext.MaterialIssueRequests.AddRange(lotARequest, lotBRequest);
         await dbContext.SaveChangesAsync();
 
@@ -2380,7 +2521,7 @@ public sealed class MesPersistenceContractTests
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
         var request = await dbContext.MaterialIssueRequests.SingleAsync();
-        request.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
@@ -2440,7 +2581,7 @@ public sealed class MesPersistenceContractTests
             "L",
             6m,
             now.AddMinutes(1));
-        materialIssue.ConfirmLineSideReceipt(now.AddMinutes(5), 6m, "LOT-OIL-REV");
+        materialIssue.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 6m, "LOT-OIL-REV");
         materialIssue.ClearDomainEvents();
         dbContext.MaterialIssueRequests.Add(materialIssue);
         await dbContext.SaveChangesAsync();
@@ -2525,7 +2666,7 @@ public sealed class MesPersistenceContractTests
     // 跨边界事实(MAN-444/#798 review):冲销 handler fingerprint = ReportNo + Reason + ReversedAtUtc,
     // ReverseProductionReportEndpoint 对缺失 reversedAtUtc 每次补新的 TimeProvider.GetUtcNow()。故幂等重放
     // 要求前端**同时冻结** idempotencyKey 与 reversedAtUtc:同 key + 同 reversedAtUtc 才走 IsIdempotentReplay;
-    // 同 key + 不同 reversedAtUtc 会因 fingerprint 变被 CodeAllocator 判为冲突(KnownException),而非重放。
+    // 同 key + 不同 reversedAtUtc 会因 fingerprint 变被 CodeAllocator 判为类型化幂等冲突,而非重放。
     [Fact]
     public async Task Reverse_production_report_idempotent_replay_requires_stable_reversed_at()
     {
@@ -2585,19 +2726,19 @@ public sealed class MesPersistenceContractTests
         var workOrderAfterReplay = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-REV-IDEM");
         Assert.Equal(0m, workOrderAfterReplay.CompletedQuantity);
 
-        // 同 key + **不同** reversedAtUtc → fingerprint 变 → CodeAllocator 判冲突(KnownException),不会误重放
-        await Assert.ThrowsAsync<KnownException>(() =>
+        // 同 key + **不同** reversedAtUtc → fingerprint 变 → 类型化幂等冲突,不会误重放
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt.AddSeconds(1), "operator-1", "reverse-idem-key"),
                 CancellationToken.None));
 
         // 同 key + 同 reversedAtUtc + **不同 reason** → fingerprint 同样变 → 冲突。故前端必须把 reason 也冻结进意图。
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "wrong-quantity", reversedAt, "operator-1", "reverse-idem-key"),
                 CancellationToken.None));
 
-        await Assert.ThrowsAsync<KnownException>(() =>
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
                 new ReverseProductionReportCommand("org-001", "env-dev", reportResult.ReportNo, "mis-report", reversedAt, "operator-2", "reverse-idem-key"),
                 CancellationToken.None));

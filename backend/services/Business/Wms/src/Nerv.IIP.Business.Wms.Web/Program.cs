@@ -9,9 +9,12 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -20,7 +23,6 @@ using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
-
 
 var isTesting = false;
 try
@@ -35,7 +37,7 @@ try
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+    var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
     builder.Services.AddHttpClient<IWmsInventoryReservationClient, HttpWmsInventoryReservationClient>(client =>
     {
         client.BaseAddress = inventoryBaseAddress;
@@ -66,7 +68,14 @@ try
 
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
+    builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
+    builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        WmsFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
@@ -97,9 +106,49 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddCommandLockBehavior()
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
+            .AddOpenBehavior(typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>))
             .AddUnitOfWorkBehaviors());
+    builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteCountExecutionCommand>, CompleteCountExecutionCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<StartWarehouseTaskCommand>,
+        WarehouseTaskActionCommandLock<StartWarehouseTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<RecordWarehouseTaskProgressActionCommand>,
+        WarehouseTaskActionCommandLock<RecordWarehouseTaskProgressActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<ReportWarehouseTaskExceptionCommand>,
+        WarehouseTaskActionCommandLock<ReportWarehouseTaskExceptionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWarehouseTaskActionCommand>,
+        WarehouseTaskActionCommandLock<CompleteWarehouseTaskActionCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<DispatchWcsTaskCommand>,
+        DispatchWcsTaskCommandLock>();
+    builder.Services.AddScoped<
+        ICommandLock<CompleteWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<CompleteWcsTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<FailWcsTaskCommand>,
+        WcsTaskCallbackCommandLock<FailWcsTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignInboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignInboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPutawayTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPutawayTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignOutboundOrderCommand>,
+        WarehouseAssignmentCommandLock<AssignOutboundOrderCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignPickingTaskCommand>,
+        WarehouseAssignmentCommandLock<AssignPickingTaskCommand>>();
+    builder.Services.AddScoped<
+        ICommandLock<AssignCountExecutionCommand>,
+        WarehouseAssignmentCommandLock<AssignCountExecutionCommand>>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = WmsFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
@@ -154,10 +203,57 @@ try
         {
             app.Logger.LogInformation("World-history sample: {Document}", line);
         }
+
+        // 仓储自动化 / 盘点执行 / 来料退货块必须排在单据块之后：
+        // WCS 任务要绑真实落库的仓储作业任务，退货要挂真实落库的收货入库单。
+        var opsReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryWarehouseOpsSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history WMS operations seed completed: {Counts} count executions, {Returns} supplier returns, " +
+            "current queue {QueueInbound} inbound / {QueuePutaway} putaway / {QueueOutbound} outbound / " +
+            "{QueuePicking} picking ({QueueReviewReady} review-ready), " +
+            "{Pools} work pools, {Memberships} memberships, {Assignments} controlled assignments, " +
+            "{WcsTasks} WCS tasks, {Circuits} dispatch circuits; validator checked {CheckedCounts} counts " +
+            "({CompletedCounts} completed, {VarianceCounts} with variance) / {CheckedWcs} WCS tasks " +
+            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns / " +
+            "{CheckedPools} pools / {CheckedMemberships} memberships / assignments " +
+            "{CheckedInbound}/{CheckedPutaway}/{CheckedPicking}/{CheckedOutbound}/{CheckedCount}.",
+            opsReport.CountExecutionsWritten,
+            opsReport.SupplierReturnRequestsWritten,
+            opsReport.CurrentQueue.InboundOrdersWritten,
+            opsReport.CurrentQueue.PutawayTasksWritten,
+            opsReport.CurrentQueue.OutboundOrdersWritten,
+            opsReport.CurrentQueue.PickingTasksWritten,
+            opsReport.CurrentQueue.ReviewReadyOrdersWritten,
+            opsReport.WorkPoolsWritten,
+            opsReport.WorkPoolMembershipsWritten,
+            opsReport.Assignments.TotalAssignments,
+            opsReport.WcsTasksWritten,
+            opsReport.WcsDispatchCircuitsWritten,
+            opsReport.Validation.CountExecutionsChecked,
+            opsReport.Validation.CompletedCountExecutionsChecked,
+            opsReport.Validation.VarianceCountExecutionsChecked,
+            opsReport.Validation.WcsTasksChecked,
+            opsReport.Validation.CompletedWcsTasksChecked,
+            opsReport.Validation.FailedWcsTasksChecked,
+            opsReport.Validation.WcsDispatchCircuitsChecked,
+            opsReport.Validation.SupplierReturnRequestsChecked,
+            opsReport.Validation.WorkPoolsChecked,
+            opsReport.Validation.WorkPoolMembershipsChecked,
+            opsReport.Validation.AssignedInboundOrdersChecked,
+            opsReport.Validation.AssignedPutawayTasksChecked,
+            opsReport.Validation.AssignedPickingTasksChecked,
+            opsReport.Validation.AssignedOutboundOrdersChecked,
+            opsReport.Validation.AssignedCountExecutionsChecked);
     }
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
+    app.UseMiddleware<WmsLifecycleConflictMiddleware>();
+    app.UseMiddleware<WarehouseTaskActionPersistenceConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -193,26 +289,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

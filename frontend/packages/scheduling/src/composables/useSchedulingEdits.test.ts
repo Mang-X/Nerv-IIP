@@ -39,7 +39,10 @@ describe('useSchedulingEdits', () => {
 
   it('repreview replaces model with backend result and resets baseline', async () => {
     const model = ref<ScheduleModel>(toModel(samplePlan))
-    const replaced: ScheduleModel = { ...toModel(samplePlan), meta: { planId: 'plan-2', status: 'preview', algorithmVersion: 'heuristic-1' } }
+    const replaced: ScheduleModel = {
+      ...toModel(samplePlan),
+      meta: { planId: 'plan-2', status: 'preview', algorithmVersion: 'heuristic-1' },
+    }
     let receivedLocked = 0
     const edits = useSchedulingEdits(model, {
       preview: async (locked) => {
@@ -48,7 +51,13 @@ describe('useSchedulingEdits', () => {
       },
       release: async () => {},
     })
-    edits.onTaskDragEnd({ taskId: 'a1', operationId: 'op-10', startUtc: '2026-06-10T09:00:00.000Z', endUtc: '2026-06-10T11:00:00.000Z', kind: 'move' })
+    edits.onTaskDragEnd({
+      taskId: 'a1',
+      operationId: 'op-10',
+      startUtc: '2026-06-10T09:00:00.000Z',
+      endUtc: '2026-06-10T11:00:00.000Z',
+      kind: 'move',
+    })
     edits.setLocked('a1', true) // 用户显式锁定该落点,再重预览
     await edits.repreview()
     expect(receivedLocked).toBeGreaterThanOrEqual(2) // a1(显式锁定) + a2(本就锁定)

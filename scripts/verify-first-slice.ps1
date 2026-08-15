@@ -23,7 +23,7 @@ function Wait-Healthy {
   do {
     try {
       $result = Invoke-RestMethod -Method Get -Uri $Uri
-      if ($result -eq "Healthy") { return }
+      if ([string]::Equals([string]($result), [string]("Healthy"), [StringComparison]::OrdinalIgnoreCase)) { return }
     }
     catch {
       Start-Sleep -Milliseconds 500
@@ -125,10 +125,10 @@ try {
   if ($list.totalCount -lt 1) { throw "Gateway instance list did not return the registered instance." }
 
   $detail = Invoke-RestMethod -Method Get -Uri "$gatewayUrl/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev"
-  if ($detail.instanceKey -ne "demo-api-001" -or $detail.reportedStatus -ne "running" -or $detail.healthStatus -ne "healthy") {
+  if ((-not [string]::Equals([string]($detail.instanceKey), [string]("demo-api-001"), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]($detail.reportedStatus), [string]("running"), [StringComparison]::OrdinalIgnoreCase)) -or (-not [string]::Equals([string]($detail.healthStatus), [string]("healthy"), [StringComparison]::OrdinalIgnoreCase))) {
     throw "Gateway detail did not return the expected instance state."
   }
-  if (-not ($detail.capabilities | Where-Object { $_.capabilityCode -eq "lifecycle.restart" })) {
+  if (-not ($detail.capabilities | Where-Object { [string]::Equals([string]($_.capabilityCode), [string]("lifecycle.restart"), [StringComparison]::OrdinalIgnoreCase) })) {
     throw "Gateway detail did not return expected capabilities."
   }
 

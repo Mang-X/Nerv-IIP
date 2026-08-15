@@ -19,4 +19,10 @@ describe('generated route metadata', () => {
       'business.approvals.manage',
     ])
   })
+
+  it('guards WMS count execution with the dedicated count read permission', () => {
+    const route = findRouteByName(routes as RouteRecordRaw[], '/wms/counts')
+
+    expect(route?.meta?.requiredPermissions).toEqual(['business.wms.counts.read'])
+  })
 })

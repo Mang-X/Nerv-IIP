@@ -13,12 +13,55 @@ const WC_LABEL: Record<string, string> = {
   '折弯-02': '折弯中心',
   '焊接-01': '焊装中心',
   '加工中心-03': '机加中心',
+  '装配-04': '装配中心',
+  '涂装-05': '表面处理中心',
+  '检测-06': '检测中心',
+  '包装-07': '包装中心',
 }
-const WC_DIMS: Record<string, { device: [string, string]; team: [string, string]; line: [string, string] }> = {
-  '激光切割-01': { device: ['DEV-L1', '激光切割机 L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '折弯-02': { device: ['DEV-B2', '数控折弯机 B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
-  '焊接-01': { device: ['DEV-W1', '焊接机器人 W1'], team: ['T-B', '乙班'], line: ['LN-WELD', '焊装线'] },
-  '加工中心-03': { device: ['DEV-C3', '数控机床 M3'], team: ['T-B', '乙班'], line: ['LN-MACH', '机加线'] },
+const WC_DIMS: Record<
+  string,
+  { device: [string, string]; team: [string, string]; line: [string, string] }
+> = {
+  '激光切割-01': {
+    device: ['DEV-L1', '激光切割机 L1'],
+    team: ['T-A', '甲班'],
+    line: ['LN-SHEET', '钣金线'],
+  },
+  '折弯-02': {
+    device: ['DEV-B2', '数控折弯机 B2'],
+    team: ['T-A', '甲班'],
+    line: ['LN-SHEET', '钣金线'],
+  },
+  '焊接-01': {
+    device: ['DEV-W1', '焊接机器人 W1'],
+    team: ['T-B', '乙班'],
+    line: ['LN-WELD', '焊装线'],
+  },
+  '加工中心-03': {
+    device: ['DEV-C3', '数控机床 M3'],
+    team: ['T-B', '乙班'],
+    line: ['LN-MACH', '机加线'],
+  },
+  '装配-04': {
+    device: ['DEV-A4', '装配工位 A4'],
+    team: ['T-A', '甲班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '涂装-05': {
+    device: ['DEV-P5', '喷涂线 P5'],
+    team: ['T-B', '乙班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '检测-06': {
+    device: ['DEV-T6', '三坐标 T6'],
+    team: ['T-A', '甲班'],
+    line: ['LN-ASSY', '总装线'],
+  },
+  '包装-07': {
+    device: ['DEV-K7', '打包机 K7'],
+    team: ['T-B', '乙班'],
+    line: ['LN-ASSY', '总装线'],
+  },
 }
 
 const OWNERS = ['张伟', '李强', '王磊', '刘洋', '陈刚', '赵敏', '孙凯']
@@ -28,11 +71,16 @@ const STATUSES = [
   { label: '进行中', tone: 'info' as const, progress: 0.55 },
   { label: '未开始', tone: 'neutral' as const, progress: 0 },
 ]
+// 八个色槽全覆盖:分色回归要看得见 assy/insp/pack 与 cut/bend 是否还撞色。
 const WC_COLOR: Record<string, string> = {
   '激光切割-01': 'cut',
   '折弯-02': 'bend',
   '焊接-01': 'weld',
   '加工中心-03': 'mach',
+  '装配-04': 'assy',
+  '涂装-05': 'paint',
+  '检测-06': 'insp',
+  '包装-07': 'pack',
 }
 const ORDER_PRODUCT: Record<string, string> = {
   'WO-2026-001': '前减振器总成',
@@ -49,6 +97,10 @@ const RES_KPI: Record<string, [number, number, number, number]> = {
   '折弯-02': [0.38, 0.85, 3, 0],
   '焊接-01': [1.12, 0.72, 8, 3],
   '加工中心-03': [0.96, 0.77, 7, 1],
+  '装配-04': [0.72, 0.81, 4, 1],
+  '涂装-05': [0.64, 0.79, 2, 0],
+  '检测-06': [0.45, 0.9, 1, 0],
+  '包装-07': [0.55, 0.83, 2, 0],
 }
 
 const model = computed(() => {
@@ -88,7 +140,13 @@ const model = computed(() => {
     i += 1
   }
   // 标准甘特里程碑:独立一行 + 菱形(零时长)。
-  const milestone = (id: string, orderId: string, text: string, whenUtc: string, colorKey: string) => ({
+  const milestone = (
+    id: string,
+    orderId: string,
+    text: string,
+    whenUtc: string,
+    colorKey: string,
+  ) => ({
     id,
     orderId,
     operationId: '',
@@ -141,10 +199,42 @@ const model = computed(() => {
       hasConflict: false,
     }
   }
-  m.tasks.push(block('blk-maint', 'maintenance', '焊接-01', '2026-06-11T03:00:00.000Z', '2026-06-11T04:30:00.000Z'))
-  m.tasks.push(block('blk-down', 'downtime', '加工中心-03', '2026-06-11T08:00:00.000Z', '2026-06-11T10:00:00.000Z'))
-  m.tasks.push(block('blk-line', 'lineChange', '激光切割-01', '2026-06-11T06:00:00.000Z', '2026-06-11T07:00:00.000Z'))
-  m.tasks.push(block('blk-co', 'changeover', '折弯-02', '2026-06-10T22:00:00.000Z', '2026-06-10T22:40:00.000Z'))
+  m.tasks.push(
+    block(
+      'blk-maint',
+      'maintenance',
+      '焊接-01',
+      '2026-06-11T03:00:00.000Z',
+      '2026-06-11T04:30:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-down',
+      'downtime',
+      '加工中心-03',
+      '2026-06-11T08:00:00.000Z',
+      '2026-06-11T10:00:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-line',
+      'lineChange',
+      '激光切割-01',
+      '2026-06-11T06:00:00.000Z',
+      '2026-06-11T07:00:00.000Z',
+    ),
+  )
+  m.tasks.push(
+    block(
+      'blk-co',
+      'changeover',
+      '折弯-02',
+      '2026-06-10T22:00:00.000Z',
+      '2026-06-10T22:40:00.000Z',
+    ),
+  )
 
   // 资源 KPI(排产板左侧泳道头)。
   for (const r of m.resources) {
@@ -178,16 +268,37 @@ const view = ref<'order' | 'resource'>(
       <header class="flex flex-wrap items-center gap-3">
         <div class="mr-auto">
           <h1 class="text-2xl font-semibold tracking-tight">甘特图组件预览</h1>
-          <p class="text-sm text-muted-foreground">@nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染</p>
+          <p class="text-sm text-muted-foreground">
+            @nerv-iip/scheduling · 样例数据 · DHTMLX 试用引擎渲染
+          </p>
         </div>
-        <NvButton size="sm" :variant="view === 'order' ? 'default' : 'outline'" @click="view = 'order'">工单甘特图</NvButton>
-        <NvButton size="sm" :variant="view === 'resource' ? 'default' : 'outline'" @click="view = 'resource'">资源甘特图</NvButton>
-        <NvButton size="sm" variant="outline" @click="toggle()">{{ isDark ? '切到亮色' : '切到暗色' }}</NvButton>
-        <NvButton size="sm" variant="outline" @click="readOnly = !readOnly">{{ readOnly ? '允许编辑' : '设为只读' }}</NvButton>
+        <NvButton
+          size="sm"
+          :variant="view === 'order' ? 'default' : 'outline'"
+          @click="view = 'order'"
+          >工单甘特图</NvButton
+        >
+        <NvButton
+          size="sm"
+          :variant="view === 'resource' ? 'default' : 'outline'"
+          @click="view = 'resource'"
+          >资源甘特图</NvButton
+        >
+        <NvButton size="sm" variant="outline" @click="toggle()">{{
+          isDark ? '切到亮色' : '切到暗色'
+        }}</NvButton>
+        <NvButton size="sm" variant="outline" @click="readOnly = !readOnly">{{
+          readOnly ? '允许编辑' : '设为只读'
+        }}</NvButton>
       </header>
 
       <div class="h-[calc(100vh-9rem)] min-h-[520px]">
-        <GanttChart v-if="view === 'order'" :model="model" :read-only="readOnly" engine-kind="auto" />
+        <GanttChart
+          v-if="view === 'order'"
+          :model="model"
+          :read-only="readOnly"
+          engine-kind="auto"
+        />
         <ResourceSchedulerBoard v-else :model="model" :read-only="readOnly" engine-kind="auto" />
       </div>
     </div>

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Infrastructure;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 using System.Diagnostics;
 using Xunit.Abstractions;
 
@@ -26,58 +26,64 @@ public sealed class WorldHistoryLabelSeedPostgresTests(ITestOutputHelper output)
     public async Task Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable(PostgresConnectionStringEnvironmentVariable)!;
-        await using var database = await TemporaryPostgresDatabase.CreateAsync(postgresConnectionString, "barcode_world_history");
-
-        await using (var migrationContext = CreatePostgresDbContext(database.ConnectionString))
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(postgresConnectionString, "barcode_world_history");
+        try
         {
-            await migrationContext.Database.MigrateAsync();
+            await using (var migrationContext = CreatePostgresDbContext(database.ConnectionString))
+            {
+                await migrationContext.Database.MigrateAsync();
+            }
+
+            await using var db = CreatePostgresDbContext(database.ConnectionString);
+            var seed = new WorldHistorySeedService(db);
+
+            var stopwatch = Stopwatch.StartNew();
+            var first = await seed.SeedAsync("org-001", "env-dev", AsOfDate, 1.0d);
+            stopwatch.Stop();
+
+            var rerun = Stopwatch.StartNew();
+            var second = await seed.SeedAsync("org-001", "env-dev", AsOfDate, 1.0d);
+            rerun.Stop();
+
+            output.WriteLine($"label-world-history-templates={first.LabelTemplatesWritten}");
+            output.WriteLine($"label-world-history-rules={first.BarcodeRulesWritten}");
+            output.WriteLine($"label-world-history-print-batches={first.PrintBatchesWritten}");
+            output.WriteLine($"label-world-history-print-items={first.PrintItemsWritten}");
+            output.WriteLine($"label-world-history-epcis-events={first.EpcisEventsWritten}");
+            output.WriteLine($"label-world-history-scans={first.ScanRecordsWritten}");
+            output.WriteLine($"label-world-history-printed-batches={first.Validation.PrintedBatchesChecked}");
+            output.WriteLine($"label-world-history-failed-batches={first.Validation.FailedBatchesChecked}");
+            output.WriteLine($"label-world-history-accepted-scans={first.Validation.AcceptedScansChecked}");
+            output.WriteLine($"label-world-history-rejected-scans={first.Validation.RejectedScansChecked}");
+            output.WriteLine($"label-world-history-devices={first.Validation.DeviceFleetSize}");
+            output.WriteLine($"label-world-history-first-run-ms={stopwatch.ElapsedMilliseconds}");
+            output.WriteLine($"label-world-history-idempotent-rerun-ms={rerun.ElapsedMilliseconds}");
+            foreach (var line in first.Validation.Sample)
+            {
+                output.WriteLine($"label-world-history-sample: {line}");
+            }
+
+            // 设定集 §7：标签模板 4 套、打印批次约 900。
+            Assert.Equal(4, first.LabelTemplatesWritten);
+            Assert.Equal(4, first.BarcodeRulesWritten);
+            Assert.Equal(WorldHistoryLabelSpec.PrintBatchTarget, first.PrintBatchesWritten);
+            Assert.Equal(WorldHistoryLabelSpec.ScanRecordTarget, first.ScanRecordsWritten);
+
+            Assert.Equal(0, second.LabelTemplatesWritten);
+            Assert.Equal(0, second.BarcodeRulesWritten);
+            Assert.Equal(0, second.PrintBatchesWritten);
+            Assert.Equal(0, second.ScanRecordsWritten);
+            Assert.Equal(first.PrintBatchesWritten, await db.LabelPrintBatches.CountAsync());
+            Assert.Equal(first.ScanRecordsWritten, await db.ScanRecords.CountAsync());
+            Assert.Equal(WorldHistoryConsistencyValidator.SampleSize, first.Validation.Sample.Count);
+            Assert.True(
+                stopwatch.ElapsedMilliseconds < BudgetMilliseconds,
+                $"BarcodeLabel world-history seed took {stopwatch.ElapsedMilliseconds} ms, exceeding the {BudgetMilliseconds} ms budget.");
         }
-
-        await using var db = CreatePostgresDbContext(database.ConnectionString);
-        var seed = new WorldHistorySeedService(db);
-
-        var stopwatch = Stopwatch.StartNew();
-        var first = await seed.SeedAsync("org-001", "env-dev", AsOfDate, 1.0d);
-        stopwatch.Stop();
-
-        var rerun = Stopwatch.StartNew();
-        var second = await seed.SeedAsync("org-001", "env-dev", AsOfDate, 1.0d);
-        rerun.Stop();
-
-        output.WriteLine($"label-world-history-templates={first.LabelTemplatesWritten}");
-        output.WriteLine($"label-world-history-rules={first.BarcodeRulesWritten}");
-        output.WriteLine($"label-world-history-print-batches={first.PrintBatchesWritten}");
-        output.WriteLine($"label-world-history-print-items={first.PrintItemsWritten}");
-        output.WriteLine($"label-world-history-epcis-events={first.EpcisEventsWritten}");
-        output.WriteLine($"label-world-history-scans={first.ScanRecordsWritten}");
-        output.WriteLine($"label-world-history-printed-batches={first.Validation.PrintedBatchesChecked}");
-        output.WriteLine($"label-world-history-failed-batches={first.Validation.FailedBatchesChecked}");
-        output.WriteLine($"label-world-history-accepted-scans={first.Validation.AcceptedScansChecked}");
-        output.WriteLine($"label-world-history-rejected-scans={first.Validation.RejectedScansChecked}");
-        output.WriteLine($"label-world-history-devices={first.Validation.DeviceFleetSize}");
-        output.WriteLine($"label-world-history-first-run-ms={stopwatch.ElapsedMilliseconds}");
-        output.WriteLine($"label-world-history-idempotent-rerun-ms={rerun.ElapsedMilliseconds}");
-        foreach (var line in first.Validation.Sample)
+        finally
         {
-            output.WriteLine($"label-world-history-sample: {line}");
+            await database.DropAsync();
         }
-
-        // 设定集 §7：标签模板 4 套、打印批次约 900。
-        Assert.Equal(4, first.LabelTemplatesWritten);
-        Assert.Equal(4, first.BarcodeRulesWritten);
-        Assert.Equal(WorldHistoryLabelSpec.PrintBatchTarget, first.PrintBatchesWritten);
-        Assert.Equal(WorldHistoryLabelSpec.ScanRecordTarget, first.ScanRecordsWritten);
-
-        Assert.Equal(0, second.LabelTemplatesWritten);
-        Assert.Equal(0, second.BarcodeRulesWritten);
-        Assert.Equal(0, second.PrintBatchesWritten);
-        Assert.Equal(0, second.ScanRecordsWritten);
-        Assert.Equal(first.PrintBatchesWritten, await db.LabelPrintBatches.CountAsync());
-        Assert.Equal(first.ScanRecordsWritten, await db.ScanRecords.CountAsync());
-        Assert.Equal(WorldHistoryConsistencyValidator.SampleSize, first.Validation.Sample.Count);
-        Assert.True(
-            stopwatch.ElapsedMilliseconds < BudgetMilliseconds,
-            $"BarcodeLabel world-history seed took {stopwatch.ElapsedMilliseconds} ms, exceeding the {BudgetMilliseconds} ms budget.");
     }
 
     private static ApplicationDbContext CreatePostgresDbContext(string connectionString)
@@ -89,63 +95,6 @@ public sealed class WorldHistoryLabelSeedPostgresTests(ITestOutputHelper output)
             .Options;
 
         return new ApplicationDbContext(options, new NoopMediator());
-    }
-
-    private sealed class TemporaryPostgresDatabase : IAsyncDisposable
-    {
-        private TemporaryPostgresDatabase(string adminConnectionString, string connectionString, string databaseName)
-        {
-            AdminConnectionString = adminConnectionString;
-            ConnectionString = connectionString;
-            DatabaseName = databaseName;
-        }
-
-        public string ConnectionString { get; }
-
-        private string AdminConnectionString { get; }
-
-        private string DatabaseName { get; }
-
-        public static async Task<TemporaryPostgresDatabase> CreateAsync(string baseConnectionString, string prefix)
-        {
-            var baseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString);
-            var adminBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = string.IsNullOrWhiteSpace(baseBuilder.Database) ? "postgres" : baseBuilder.Database
-            };
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            };
-
-            await using var connection = new NpgsqlConnection(adminBuilder.ConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"""CREATE DATABASE "{databaseName}";""", connection);
-            await command.ExecuteNonQueryAsync();
-
-            return new TemporaryPostgresDatabase(adminBuilder.ConnectionString, databaseBuilder.ConnectionString, databaseName);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(AdminConnectionString);
-            await connection.OpenAsync();
-            await using (var terminate = new NpgsqlCommand(
-                """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName AND pid <> pg_backend_pid();
-                """,
-                connection))
-            {
-                terminate.Parameters.AddWithValue("databaseName", DatabaseName);
-                await terminate.ExecuteNonQueryAsync();
-            }
-
-            await using var drop = new NpgsqlCommand($"""DROP DATABASE IF EXISTS "{DatabaseName}";""", connection);
-            await drop.ExecuteNonQueryAsync();
-        }
     }
 
     private sealed class RealPostgresFactAttribute : FactAttribute

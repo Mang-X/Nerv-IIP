@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Text;
 using MediatR;
@@ -5,11 +6,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
@@ -29,6 +33,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataApiContractTests
 {
     [Theory]
@@ -100,7 +105,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(48, contracts.Count);
+        Assert.Equal(49, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -158,6 +163,19 @@ public sealed class MasterDataApiContractTests
             && x.Route == "/api/business/v1/master-data/skills/{skillCode}/archive"
             && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
             && x.OperationId == "archiveBusinessMasterDataSkill");
+    }
+
+    [Fact]
+    public void Principal_work_context_has_a_stable_read_contract()
+    {
+        Assert.Contains(
+            MasterDataEndpointContracts.All,
+            contract =>
+                contract.EndpointType == typeof(GetPrincipalWorkContextEndpoint)
+                && contract.HttpMethod == "GET"
+                && contract.Route == "/api/business/v1/master-data/principals/{userId}/work-context"
+                && contract.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+                && contract.OperationId == "getBusinessMasterDataPrincipalWorkContext");
     }
 
     [Fact]
@@ -240,6 +258,164 @@ public sealed class MasterDataApiContractTests
             Assert.True(reference.Active);
             Assert.Equal("Scratch", reference.DisplayName);
         });
+    }
+
+    [Fact]
+    public async Task Resolve_references_batches_two_hundred_device_ids_with_authoritative_alias_facts()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var devices = Enumerable.Range(1, 200)
+            .Select(index => DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                $"DEV-{index:000}",
+                $"Device {index:000}",
+                "LINE-A",
+                "WC-A"))
+            .ToArray();
+        dbContext.DeviceAssets.AddRange(devices);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ResolveMasterDataReferencesQueryHandler(dbContext).Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                devices.Select(device => new MasterDataReferenceRequest("device-asset", device.Id.ToString())).ToArray()),
+            CancellationToken.None);
+
+        Assert.Equal(200, response.References.Count);
+        Assert.All(response.References, reference =>
+        {
+            Assert.True(reference.Exists);
+            Assert.True(reference.Active);
+            Assert.False(string.IsNullOrWhiteSpace(reference.SnapshotVersion));
+            Assert.False(string.IsNullOrWhiteSpace(reference.DeviceAssetId));
+            Assert.StartsWith("DEV-", reference.CanonicalCode, StringComparison.Ordinal);
+            Assert.Equal("org-001", reference.OrganizationId);
+            Assert.Equal("env-dev", reference.EnvironmentId);
+        });
+    }
+
+    [Fact]
+    public async Task Device_reference_batch_uses_two_fixed_relational_reads_in_sqlite_for_one_and_two_hundred_references()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var counter = new RelationalReadCounter();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(counter)
+            .Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await dbContext.Database.EnsureCreatedAsync();
+        var devices = Enumerable.Range(1, 200)
+            .Select(index => DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                $"DEV-{index:000}",
+                $"Device {index:000}",
+                "LINE-A",
+                "WC-A"))
+            .ToArray();
+        dbContext.DeviceAssets.AddRange(devices);
+        await dbContext.SaveChangesAsync();
+        var handler = new ResolveMasterDataReferencesQueryHandler(dbContext);
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                [new MasterDataReferenceRequest("device-asset", devices[0].Id.ToString())]),
+            CancellationToken.None);
+        var oneReferenceReads = counter.ReadCount;
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                devices.Select(device => new MasterDataReferenceRequest("device-asset", device.Id.ToString())).ToArray()),
+            CancellationToken.None);
+
+        Assert.Equal(2, oneReferenceReads);
+        Assert.Equal(oneReferenceReads, counter.ReadCount);
+    }
+
+    [Fact]
+    public async Task Resolve_references_rejects_more_than_two_hundred_inputs()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ResolveMasterDataReferencesQueryHandler(dbContext).Handle(
+                new ResolveMasterDataReferencesQuery(
+                    "org-001",
+                    "env-dev",
+                    Enumerable.Range(1, 201)
+                        .Select(index => new MasterDataReferenceRequest("device-asset", $"DEV-{index:000}"))
+                        .ToArray()),
+                CancellationToken.None));
+
+        Assert.Contains("between 1 and 200", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Device_reference_batch_candidate_query_translates_for_postgresql()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=translation_only;Username=unused;Password=unused")
+            .Options;
+        using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        var deviceId = new DeviceAssetId(Guid.CreateVersion7());
+        var queryMethod = typeof(ResolveMasterDataReferencesQueryHandler).GetMethod(
+            "DeviceAuthorityCandidatesQuery",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        var query = Assert.IsAssignableFrom<IQueryable>(queryMethod?.Invoke(
+            null,
+            [dbContext, "org-001", "env-dev", new[] { deviceId }, new[] { "DEV-001" }]));
+
+        var sql = query.ToQueryString();
+
+        Assert.Contains("device_assets", sql, StringComparison.Ordinal);
+        Assert.Contains("organization_id", sql, StringComparison.Ordinal);
+        Assert.Contains("environment_id", sql, StringComparison.Ordinal);
+        Assert.Contains("code", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Resolve_references_fails_the_device_batch_closed_for_id_code_namespace_collision()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deviceById = DeviceAsset.Register("org-001", "env-dev", "DEV-B", "Device B", "LINE-B", "WC-B");
+        dbContext.DeviceAssets.Add(deviceById);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.DeviceAssets.Add(DeviceAsset.Register(
+            "org-001",
+            "env-dev",
+            deviceById.Id.ToString(),
+            "Device A",
+            "LINE-A",
+            "WC-A"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ResolveMasterDataReferencesQueryHandler(dbContext).Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                [new MasterDataReferenceRequest("device-asset", deviceById.Id.ToString())]),
+            CancellationToken.None);
+
+        var reference = Assert.Single(response.References);
+        Assert.False(reference.Exists);
+        Assert.False(reference.Active);
+        Assert.Equal("ambiguous", reference.DisabledReason);
     }
 
     [Fact]
@@ -567,9 +743,21 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("SUP-001", device.SupplierPartnerCode);
         Assert.Equal("active", device.Status);
 
+        var station = Assert.Single((await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-001"),
+            CancellationToken.None)).Resources);
+        Assert.Equal("station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001", station.Code);
+        Assert.Equal("ST-001", station.DisplayName);
+        Assert.Equal("ST-001", station.StationCode);
+        Assert.Equal("SITE-001", station.SiteCode);
+        Assert.Equal("WS-001", station.WorkshopCode);
+        Assert.Equal("LINE-001", station.LineCode);
+        Assert.Equal("WC-001", station.WorkCenterCode);
+
         var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
             new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", "DEV-001"),
             CancellationToken.None);
+        Assert.Equal(device.DeviceAssetId, detail.DeviceAssetId);
         Assert.Equal(new DateOnly(2024, 1, 15), detail.PurchaseDate);
         Assert.Equal(125000m, detail.PurchaseCost);
         Assert.Equal("CNY", detail.PurchaseCurrencyCode);
@@ -582,6 +770,7 @@ public sealed class MasterDataApiContractTests
             new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", device.DeviceAssetId!),
             CancellationToken.None);
         Assert.Equal("DEV-001", detailByPublicId.Code);
+        Assert.Equal(device.DeviceAssetId, detailByPublicId.DeviceAssetId);
         Assert.Equal(new DateOnly(2027, 1, 14), detailByPublicId.WarrantyExpiresOn);
 
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
@@ -613,6 +802,118 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("material-type", referenceData.CodeSet);
         Assert.Equal("raw-material", referenceData.Code);
     }
+
+    [Fact]
+    public async Task Device_detail_rejects_id_code_namespace_collision_as_ambiguous()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deviceById = DeviceAsset.Register("org-001", "env-dev", "DEV-B", "Device B", "LINE-B", "WC-B");
+        dbContext.DeviceAssets.Add(deviceById);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var ambiguousReference = deviceById.Id.ToString();
+        dbContext.DeviceAssets.Add(DeviceAsset.Register(
+            "org-001",
+            "env-dev",
+            ambiguousReference,
+            "Device A",
+            "LINE-A",
+            "WC-A"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+                new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", ambiguousReference),
+                CancellationToken.None));
+
+        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Station_directory_keeps_local_codes_distinct_and_pages_deterministically()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.DeviceAssets.AddRange(
+            StationAsset("DEV-A", "LINE-A", "WC-A", "ST-01"),
+            StationAsset("DEV-B", "LINE-B", "WC-B", "ST-01"),
+            StationAsset("DEV-C", "LINE-A", "WC-A", "ST-02"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+        var firstPage = await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 0, Take: 2),
+            CancellationToken.None);
+        var secondPage = await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 2, Take: 2),
+            CancellationToken.None);
+
+        Assert.Equal(3, firstPage.Total);
+        Assert.Equal(2, firstPage.Resources.Count);
+        Assert.Single(secondPage.Resources);
+        var resources = firstPage.Resources.Concat(secondPage.Resources).ToArray();
+        Assert.Equal(3, resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, resources.Count(resource => resource.StationCode == "ST-01"));
+        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-A5:ST-01", StringComparison.Ordinal));
+        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-B5:ST-01", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Station_directory_id_is_stable_and_collision_safe_for_opaque_component_values()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.DeviceAssets.AddRange(
+            StationAsset("DEV-COLON-A", "LINE-01", "WC:0", "工位 站"),
+            StationAsset("DEV-COLON-B", "LINE-01", "WC", "0:工位 站"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+        var request = new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Take: 10);
+        var first = await handler.Handle(request, CancellationToken.None);
+        var repeated = await handler.Handle(request, CancellationToken.None);
+
+        Assert.Equal(2, first.Total);
+        Assert.Equal(
+            first.Resources.Select(resource => resource.Code),
+            repeated.Resources.Select(resource => resource.Code));
+        Assert.Equal(2, first.Resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
+        Assert.All(first.Resources, resource =>
+        {
+            Assert.StartsWith("station:", resource.Code, StringComparison.Ordinal);
+            Assert.NotEqual(resource.StationCode, resource.Code);
+        });
+        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC:0" && resource.StationCode == "工位 站");
+        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC" && resource.StationCode == "0:工位 站");
+    }
+
+    private static Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset StationAsset(
+        string deviceCode,
+        string lineCode,
+        string workCenterCode,
+        string stationCode) =>
+        Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset
+            .RegisterCapability(
+                "org-001",
+                "env-dev",
+                deviceCode,
+                "Station asset",
+                lineCode,
+                workCenterCode,
+                "station",
+                "ACME",
+                "SN-" + deviceCode,
+                1m,
+                1m,
+                "unit",
+                "normal",
+                true,
+                false,
+                new Dictionary<string, string>())
+            .WithLedger(null, null, "", null, "", "SITE-001", "WS-001", lineCode, stationCode, null, null);
 
     [Fact]
     public async Task List_resources_all_mode_reports_truncation_when_limit_is_reached()
@@ -662,6 +963,7 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
 
         Assert.Equal("supplier", detail.PartnerType);
+        Assert.Null(detail.DeviceAssetId);
         Assert.Equal(["supplier", "customer", "carrier"], detail.PartnerRoles);
         Assert.Equal("TAX-001", detail.TaxId);
 
@@ -1090,7 +1392,8 @@ public sealed class MasterDataApiContractTests
                 "team",
                 "TEAM-001",
                 DepartmentCode: "DEPT-ROOT",
-                ShiftCode: "SHIFT-NIGHT"),
+                ShiftCode: "SHIFT-NIGHT",
+                AuditContext: new("corr-team-update", "cause-team-update", "user:test", "op-team-update")),
             CancellationToken.None);
         Assert.Equal("DEPT-ROOT", team.DepartmentCode);
         Assert.Equal("SHIFT-NIGHT", team.ShiftCode);
@@ -1369,6 +1672,7 @@ public sealed class MasterDataApiContractTests
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
         dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "mass", 3, "half-up"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var scopeAudit = new MasterDataIntegrationEventContext("corr-create-core", "cause-create-core", "user:test", "op-create-core");
 
         var created = new[]
         {
@@ -1387,23 +1691,31 @@ public sealed class MasterDataApiContractTests
             await new CreateDepartmentCommandHandler(new DepartmentRepository(dbContext)).Handle(
                 new CreateDepartmentCommand("org-001", "env-dev", "D-001", "Production", null),
                 CancellationToken.None),
-            await new CreateTeamCommandHandler(new TeamRepository(dbContext)).Handle(
-                new CreateTeamCommand("org-001", "env-dev", "T-001", "Team A", "D-001", "S-001"),
+            await new CreateTeamCommandHandler(new TeamRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateTeamCommand("org-001", "env-dev", "T-001", "Team A", "D-001", "S-001", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new CreateWorkshopCommandHandler(new WorkshopRepository(dbContext)).Handle(
-                new CreateWorkshopCommand("org-001", "env-dev", "WS-001", "Workshop A", "SITE-001", "user-manager", "Process workshop"),
+            await new CreateWorkshopCommandHandler(new WorkshopRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateWorkshopCommand("org-001", "env-dev", "WS-001", "Workshop A", "SITE-001", "user-manager", "Process workshop", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new AddTeamMemberCommandHandler(new TeamMemberRepository(dbContext)).Handle(
-                new AddTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null),
+            await new AddTeamMemberCommandHandler(new TeamMemberRepository(dbContext), dbContext).Handle(
+                new AddTeamMemberCommand(
+                    "org-001",
+                    "env-dev",
+                    "T-001",
+                    "user-001",
+                    true,
+                    new DateOnly(2026, 1, 1),
+                    null,
+                    new("corr-add-1", "cause-add-1", "user:test", "op-add-1")),
                 CancellationToken.None),
             await new AssignPersonnelSkillCommandHandler(new PersonnelSkillRepository(dbContext)).Handle(
                 new AssignPersonnelSkillCommand("org-001", "env-dev", "user-001", "weighing", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
                 CancellationToken.None),
-            await new CreateSiteCommandHandler(new SiteRepository(dbContext)).Handle(
-                new CreateSiteCommand("org-001", "env-dev", "SITE-001", "Main Plant", "Asia/Shanghai"),
+            await new CreateSiteCommandHandler(new SiteRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateSiteCommand("org-001", "env-dev", "SITE-001", "Main Plant", "Asia/Shanghai", AuditContext: scopeAudit),
                 CancellationToken.None),
-            await new CreateProductionLineCommandHandler(new ProductionLineRepository(dbContext)).Handle(
-                new CreateProductionLineCommand("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"),
+            await new CreateProductionLineCommandHandler(new ProductionLineRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateProductionLineCommand("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001", AuditContext: scopeAudit),
                 CancellationToken.None),
             await new CreateShiftCommandHandler(new ShiftRepository(dbContext)).Handle(
                 new CreateShiftCommand("org-001", "env-dev", "S-001", "Night Shift", new TimeOnly(20, 0), new TimeOnly(8, 0), 720),
@@ -1411,8 +1723,8 @@ public sealed class MasterDataApiContractTests
             await new CreateWorkCalendarCommandHandler(new WorkCalendarRepository(dbContext)).Handle(
                 new CreateWorkCalendarCommand("org-001", "env-dev", "CAL-001", "Standard Calendar"),
                 CancellationToken.None),
-            await new CreateWorkCenterCommandHandler(new WorkCenterRepository(dbContext)).Handle(
-                new CreateWorkCenterCommand("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "SITE-001", "LINE-001", "CAL-001", "minute", true, "WS-001"),
+            await new CreateWorkCenterCommandHandler(new WorkCenterRepository(dbContext), dbContext: dbContext).Handle(
+                new CreateWorkCenterCommand("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "SITE-001", "LINE-001", "CAL-001", "minute", true, "WS-001", AuditContext: scopeAudit),
                 CancellationToken.None),
             await new RegisterDeviceAssetCommandHandler(new DeviceAssetRepository(dbContext)).Handle(
                 new RegisterDeviceAssetCommand("org-001", "env-dev", "EQ-001", "Mixer 500", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()),
@@ -1428,7 +1740,10 @@ public sealed class MasterDataApiContractTests
         Assert.Contains(created, x => x.ResourceType == "workshop" && x.Code == "WS-001");
         Assert.Contains(created, x => x.ResourceType == "team-member" && x.Code == "T-001:user-001");
         Assert.Contains(created, x => x.ResourceType == "reference-data-code" && x.Code == "scratch");
-        Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry => entry.State == EntityState.Added));
+        Assert.Equal(16, dbContext.ChangeTracker.Entries().Count(entry =>
+            entry.State == EntityState.Added
+            && entry.Entity is not Domain.AggregatesModel.ScopeContextAuditAggregate.MasterDataScopeContextAuditEntry));
+        Assert.Equal(6, dbContext.ScopeContextAuditEntries.Local.Count);
     }
 
     [Fact]
@@ -1505,8 +1820,16 @@ public sealed class MasterDataApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var repository = new TeamMemberRepository(dbContext);
-        await new AddTeamMemberCommandHandler(repository).Handle(
-            new AddTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", true, new DateOnly(2026, 1, 1), null),
+        await new AddTeamMemberCommandHandler(repository, dbContext).Handle(
+            new AddTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                true,
+                new DateOnly(2026, 1, 1),
+                null,
+                new("corr-add-2", "cause-add-2", "user:test", "op-add-2")),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1519,7 +1842,13 @@ public sealed class MasterDataApiContractTests
         Assert.True(member.IsLeader);
 
         await new RemoveTeamMemberCommandHandler(dbContext).Handle(
-            new RemoveTeamMemberCommand("org-001", "env-dev", "T-001", "user-001", "transferred"),
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                "transferred",
+                new("corr-remove-1", "cause-remove-1", "user:test", "op-remove-1")),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -2110,6 +2439,57 @@ public sealed class MasterDataApiContractTests
     private sealed class FixedInternalServiceTokenProvider : IInternalServiceTokenProvider
     {
         public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RelationalReadCounter : DbCommandInterceptor
+    {
+        public int ReadCount { get; private set; }
+
+        public void Reset() => ReadCount = 0;
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            ReadCount++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            ReadCount++;
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler

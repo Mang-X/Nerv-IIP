@@ -11,7 +11,7 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 给高频操作台用的 KPI 卡。**下半区永远承载可行动的数据**——一段趋势、一个离目标的差距、一组状态分布、一个处理入口——而不是被填成无意义的描述文本。`variant` 决定下半区结构；语义色沿用 `NvStatusBadge` 五 tone；数字一律 tabular-nums；内联微图带悬浮 tooltip（曲线复用 `NvAreaChart` 原生 crosshair）。
 
-> 平铺的「计划 vs 实际 / 目标 vs 当前」对比卡用 `NvMetricComparison`（自动算差值与达成率）。
+> 平铺的「计划与实际 / 目标与当前」对比卡用 `NvMetricComparison`（自动算差值与达成率）。
 
 ## variant 一览
 
@@ -28,11 +28,13 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 ## icon 图标紧凑型
 
-`tone` 决定左侧图标位配色，`trend` 出右上环比 chip。
+`tone` 决定左侧图标位配色，`trend` 出右上环比 chip。给了 `series` 还会在 chip 左侧插一段 64px 内联迷你图——`icon` 卡是一行式摘要，走势跟数字并排而不是另起一行。
+
+窄格降级顺序（容器查询，宽度需求大的先让）：内联迷你图 264px → 环比 chip 208px → 图标位 152px；标题与数值永不让位。
 
 <Demo>
   <div class="grid w-full gap-4 sm:grid-cols-2">
-    <NvMetricCard variant="icon" tone="brand" :icon="WrenchIcon" label="在制工单" :value="38" :trend="{ value: '5', direction: 'up' }" />
+    <NvMetricCard variant="icon" tone="brand" :icon="WrenchIcon" label="在制工单" :value="38" :trend="{ value: '+15.2%', direction: 'up' }" :series="[33, 34, 32, 35, 36, 37, 38]" :series-labels="['07-17','07-18','07-19','07-20','07-21','07-22','07-23']" series-unit=" 张" />
     <NvMetricCard variant="icon" tone="success" :icon="CircleCheckIcon" label="一次合格率" value="98.6" unit="%" :trend="{ value: '0.4pt', direction: 'up' }" />
     <NvMetricCard variant="icon" tone="warning" :icon="ClockIcon" label="待派工" :value="9" :trend="{ value: '持平', direction: 'flat' }" />
     <NvMetricCard variant="icon" tone="danger" :icon="TriangleAlertIcon" label="超期工单" :value="6" :trend="{ value: '2', direction: 'up', tone: 'danger' }" />
@@ -330,10 +332,10 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
   <NvMetricStrip
     class="w-full"
     :cells="[
-      { label: '今日产量', value: '12,480', unit: '件', meta: '4.9% 环比', metaTone: 'up' },
+      { label: '今日产量', value: '12,480', unit: '件', delta: { value: '+4.9%', direction: 'up' }, series: [11020, 11460, 11180, 11890, 11640, 12130, 12480], seriesLabels: ['07-17','07-18','07-19','07-20','07-21','07-22','07-23'], seriesUnit: ' 件' },
       { label: '报工工单', value: '26', unit: '单', meta: '待审核 3 单', metaTone: 'neutral' },
-      { label: '一次合格率', value: '98.6', unit: '%', meta: '0.4pt', metaTone: 'up' },
-      { label: '超期工单', value: '2', unit: '单', valueTone: 'danger', meta: '最久超期 3 天', metaTone: 'neutral' },
+      { label: '一次合格率', value: '98.6', unit: '%', delta: { value: '+0.4pt', direction: 'up' }, series: [98.1, 98.0, 98.3, 98.2, 98.4, 98.5, 98.6], seriesLabels: ['07-17','07-18','07-19','07-20','07-21','07-22','07-23'], seriesUnit: '%' },
+      { label: '超期工单', value: '2', unit: '单', valueTone: 'danger', delta: { value: '+2', direction: 'up', tone: 'danger' }, meta: '最久超期 3 天' },
     ]"
   />
 </Demo>
@@ -341,8 +343,19 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 ```vue
 <NvMetricStrip
   :cells="[
-    { label: '今日产量', value: '12,480', unit: '件', meta: '4.9% 环比', metaTone: 'up' },
-    { label: '超期工单', value: '2', unit: '单', valueTone: 'danger', meta: '最久超期 3 天' },
+    {
+      label: '今日产量',
+      value: '12,480',
+      unit: '件',
+      // 变化幅度由 series 首尾算出，末点就是 value——线和数字永远对得上
+      delta: { value: '+4.9%', direction: 'up' },
+      series: [11020, 11460, 11180, 11890, 11640, 12130, 12480],
+      seriesLabels: ['07-17', ..., '07-23'],
+      seriesUnit: ' 件',
+    },
+    // 涨了是坏事：箭头照实朝上，tone 手动压成 danger
+    { label: '超期工单', value: '2', unit: '单', valueTone: 'danger',
+      delta: { value: '+2', direction: 'up', tone: 'danger' }, meta: '最久超期 3 天' },
   ]"
 />
 ```
@@ -393,4 +406,14 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 | ------- | -------- | --------------------- | ---- |
 | `cells` | 各格指标 | `NvMetricStripCell[]` | `[]` |
 
-`NvMetricStripCell`：`{ label, value, unit?, valueTone?, meta?, metaTone?, key? }`；`metaTone` 取 `'up' \| 'down' \| 'flat' \| 'neutral'`，向上/下附趋势图标与语义色。
+`NvMetricStripCell`：`{ label, value, unit?, valueTone?, meta?, metaTone?, delta?, series?, seriesLabels?, seriesUnit?, key? }`。
+
+| 字段                | 说明                                                                                                                                                                                                                                             | 类型                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `meta` / `metaTone` | 副行文本与其趋势图标；`metaTone` 取 `'up' \| 'down' \| 'flat' \| 'neutral'`，向上/下附趋势图标与语义色                                                                                                                                           | `string` / `NvMetricDeltaDirection \| 'neutral'` |
+| `delta`             | 副行变化 chip。**真正的变化幅度优先用它，而不是 `meta`**：它带 `tone` 覆盖，能表达"涨了是坏事"（超期工单 +3 保持上箭头但读 danger），这是 `metaTone` 做不到的（它把 up 硬映射成 success）。两者同时给出时 chip 在前、`meta` 作为灰字注脚跟在后面 | `NvMetricDelta`                                  |
+| `series`            | 该格的迷你走势（≥2 点）。**末点必须就是 `value` 那个数**——指标条读作"数字 + 产生它的形状"，线落在别处即自相矛盾                                                                                                                                  | `number[]`                                       |
+| `seriesLabels`      | 逐点标签（十字准线 tooltip）                                                                                                                                                                                                                     | `string[]`                                       |
+| `seriesUnit`        | tooltip 数值单位                                                                                                                                                                                                                                 | `string`                                         |
+
+任一格给了 `series`，整行会为迷你图预留等高位置，避免"有图的格比没图的高一截"把卡片下沿拉参差。

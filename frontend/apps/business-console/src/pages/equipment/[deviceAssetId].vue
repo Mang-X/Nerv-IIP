@@ -42,6 +42,8 @@ import {
   useMaintenanceSpareParts,
   useMaintenanceWorkOrders,
 } from '@/composables/useBusinessMaintenance'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { formatIsoInterval } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -68,6 +70,8 @@ import {
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 
 definePage({
   meta: {
@@ -457,6 +461,21 @@ watch(
   { immediate: true },
 )
 
+// 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+/** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? readFaceText(code, fallback)
+}
+function workCenterLabel(code?: string | null, fallback = '未绑定') {
+  if (!code) return fallback
+  return resolveWorkCenter(code) ?? readFaceText(code, fallback)
+}
+
 type Window = (typeof availabilityWindows)['value'][number]
 const columns: NvDataTableColumn<Window>[] = [
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
@@ -465,15 +484,21 @@ const columns: NvDataTableColumn<Window>[] = [
     header: '原因',
     accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label,
   },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => workCenterLabel(r.workCenterId) },
   { key: 'startUtc', header: '开始', width: 'w-44' },
   { key: 'endUtc', header: '结束', width: 'w-44' },
-  { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
+  {
+    key: 'sourceReferenceId',
+    header: '关联业务',
+    accessor: (r) => r.sourceReferenceLabel?.trim() || '—',
+  },
   {
     key: 'substituteDeviceAssetIds',
     header: '替代设备',
     accessor: (r) =>
-      r.substituteDeviceAssetIds?.length ? r.substituteDeviceAssetIds.join(', ') : '无',
+      r.substituteDeviceAssetIds?.length
+        ? r.substituteDeviceAssetIds.map((id) => deviceLabel(id)).join('、')
+        : '无',
   },
 ]
 
@@ -491,8 +516,11 @@ function statusLabel(status?: string | null) {
     ready: '就绪',
     running: '运行中',
     stopped: '停止',
+    maintenance: '维护中',
+    warmup: '预热中',
   }
-  return status ? (labels[status.toLowerCase()] ?? status) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return status ? (labels[status.toLowerCase()] ?? '未知状态') : '未知'
 }
 function severityLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -500,8 +528,11 @@ function severityLabel(value?: string | null) {
     critical: '严重',
     info: '信息',
     warning: '预警',
+    major: '重要',
+    minor: '次要',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -515,7 +546,8 @@ function availabilityLabel(value?: string | null) {
     unavailable: '不可用',
     unknown: '未知',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
 }
 function availabilityVariant(value?: string | null) {
   if (value === 'available') return 'success'
@@ -538,7 +570,8 @@ function historyTypeLabel(value?: string | null) {
     sample: '采样',
     state: '状态',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '事件'
+  // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '其他记录') : '事件'
 }
 function historyType(row: { itemType?: string | null }) {
   return row.itemType
@@ -555,20 +588,42 @@ function maintenanceStatusLabel(value?: string | null) {
     'in-progress': '处理中',
     completed: '已完成',
     closed: '已关闭',
+    cancelled: '已取消',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
-function workOrderLabel(row: { workOrderId?: string }) {
-  return row.workOrderId ?? '维护工单'
+function workOrderLabel(row: { openedAtUtc?: string | null }) {
+  return row.openedAtUtc ? `维修工单 · ${formatDateTime(row.openedAtUtc)}` : '维修工单'
 }
+const alarmCodeById = computed(
+  () =>
+    new Map(
+      activeAlarms.value
+        .filter((alarm) => alarm.alarmEventId && alarm.alarmCode)
+        .map((alarm) => [alarm.alarmEventId!, alarm.alarmCode!]),
+    ),
+)
+function alarmLabel(alarmId?: string | null) {
+  return (alarmId && alarmCodeById.value.get(alarmId)) || '—'
+}
+function sparePartWorkOrderLabel(workOrderId?: string | null) {
+  if (!workOrderId) return '未关联'
+  const workOrder = currentDeviceWorkOrders.value.find((row) => row.workOrderId === workOrderId)
+  return workOrder ? workOrderLabel(workOrder) : '—'
+}
+/** 保养/点检周期：先查常用说法，其余按 ISO 8601 周期翻译（P7D → 每 7 天）。 */
 function intervalLabel(value?: string | null) {
   const labels: Record<string, string> = {
     P7D: '每周',
     P14D: '每两周',
     P30D: '每月',
     P90D: '每季度',
+    P180D: '每半年',
+    P365D: '每年',
   }
-  return value ? (labels[value] ?? value) : '未设置'
+  if (!value) return '未设置'
+  return labels[value.toUpperCase()] ?? formatIsoInterval(value)
 }
 function quantityLabel(row: { quantity?: number | null; uomCode?: string | null }) {
   if (row.quantity === null || row.quantity === undefined) return '未记录'
@@ -583,14 +638,16 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="filters.deviceAssetId ? `设备详情：${filters.deviceAssetId}` : '设备详情'"
+      :title="
+        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
+      "
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
     >
       <template #actions>
@@ -759,7 +816,10 @@ function formatError(error: unknown) {
             <div class="mt-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-lg font-semibold text-foreground">
-                  {{ currentState?.deviceAssetId ?? filters.deviceAssetId }}
+                  {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                </p>
+                <p class="truncate text-xs text-muted-foreground">
+                  {{ readFaceText(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                   状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}
@@ -862,7 +922,7 @@ function formatError(error: unknown) {
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-foreground">遥测深层上下文</h2>
+            <h2 class="text-base font-semibold text-foreground">设备运行指标</h2>
             <p class="mt-1 text-sm text-muted-foreground">
               {{ describeTelemetryOeeLimitations() }}
             </p>
@@ -880,7 +940,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <LineChartIcon aria-hidden="true" />
-                历史趋势正式页面
+                历史趋势
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -891,7 +951,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <GaugeIcon aria-hidden="true" />
-                OEE 正式页面
+                OEE 与可用性
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -899,7 +959,7 @@ function formatError(error: unknown) {
                 :to="{ path: '/equipment/alarms', query: { deviceAssetId: filters.deviceAssetId } }"
               >
                 <Settings2Icon aria-hidden="true" />
-                报警列表正式页面
+                设备报警
               </RouterLink>
             </NvButton>
           </div>
@@ -1079,12 +1139,7 @@ function formatError(error: unknown) {
 
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="text-base font-semibold text-foreground">维护与可靠性上下文</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              汇总本设备的维修工单、保养计划、点检、备件与可用窗口；若记录未标注设备，将不在此处显示。
-            </p>
-          </div>
+          <h2 class="text-base font-semibold text-foreground">维护与可靠性</h2>
           <div class="flex flex-wrap gap-2">
             <NvButton size="sm" type="button" variant="outline" as-child>
               <RouterLink
@@ -1094,7 +1149,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <WrenchIcon aria-hidden="true" />
-                维护工单正式页面
+                维护工单
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -1105,7 +1160,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <CalendarRangeIcon aria-hidden="true" />
-                保养计划正式页面
+                保养计划
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -1116,7 +1171,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <PackageSearchIcon aria-hidden="true" />
-                备件正式页面
+                备件需求
               </RouterLink>
             </NvButton>
           </div>
@@ -1164,15 +1219,14 @@ function formatError(error: unknown) {
                   v-if="row.sourceAlarmId || row.relatedAlarmId"
                   class="text-xs text-muted-foreground"
                 >
-                  关联报警 {{ row.sourceAlarmId ?? row.relatedAlarmId }}
+                  关联报警 {{ alarmLabel(row.sourceAlarmId ?? row.relatedAlarmId) }}
                 </p>
               </div>
               <div
                 v-if="!maintenancePending && !currentDeviceWorkOrders.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前返回窗口未包含该设备的 Maintenance
-                工单记录；如需确认全量或开单，请进入维护工单正式页面。
+                当前数据窗口没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
               </div>
             </div>
           </div>
@@ -1235,14 +1289,15 @@ function formatError(error: unknown) {
                   row.skuCode ?? '备件物料'
                 }}</span>
                 <span class="text-xs text-muted-foreground"
-                  >数量 {{ quantityLabel(row) }} · 工单 {{ row.workOrderId ?? '未关联' }}</span
+                  >数量 {{ quantityLabel(row) }} · 工单
+                  {{ sparePartWorkOrderLabel(row.workOrderId) }}</span
                 >
               </div>
               <div
                 v-if="!maintenancePending && !currentDeviceSpareParts.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有备件需求；库存可用量以库存管理正式页面为准。
+                当前设备没有备件需求。可前往库存可用量核对备件库存。
               </div>
             </div>
           </div>
@@ -1288,11 +1343,7 @@ function formatError(error: unknown) {
       <section class="grid gap-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 class="text-base font-semibold text-foreground">控制命令历史</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              来源：设备控制命令台账（含 Ops 审批状态与执行回执）；倒序分页。命令下发需 Ops
-              审批门禁·全程审计。
-            </p>
+            <h2 class="text-base font-semibold text-foreground">控制命令记录</h2>
           </div>
           <NvButton
             v-if="canControlDevice"

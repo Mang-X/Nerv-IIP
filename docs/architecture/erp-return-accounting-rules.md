@@ -1,38 +1,38 @@
-# ERP Return Accounting Rules
+# ERP 退货会计规则
 
-## Purpose
+## 用途
 
-MAN-397 defines return documents as compensating facts. A recorded purchase receipt, posted voucher, completed WMS movement, matched supplier invoice, and issued AR remain immutable. A return therefore creates a separately numbered return/debit/credit document and a balancing voucher; it never deletes or mutates the original fact.
+MAN-397 将退货单据定义为补偿性事实。已记录的采购收货、已过账凭证、已完成的 WMS 移动、已匹配的供应商发票和已形成的应收账款（AR）均保持不可变。因此，退货会创建独立编号的退货/借项/贷项单据及平衡凭证；绝不删除或修改原始事实。
 
-## Ownership and Trigger Facts
+## 归属与触发事实
 
-| Fact | Owner | ERP action |
+| 事实 | 所有者 | ERP 操作 |
 | --- | --- | --- |
-| Supplier-return WMS outbound completed | WMS | Create one ERP purchase return from the referenced receipt lines. |
-| Customer RMA WMS inbound completed | WMS | Mark the RMA warehouse-received; no financial posting yet. |
-| Customer-return receiving inspection passed or conditionally released | Quality | Record disposition, issue credit note, apply it to the referenced open AR, and post the credit voucher. |
-| Customer-return receiving inspection rejected | Quality | Record the rejected disposition and make no credit posting. |
+| 供应商退货 WMS 出库已完成 | WMS | 根据所引用的收货行创建一张 ERP 采购退货单。 |
+| 客户 RMA WMS 入库已完成 | WMS | 将 RMA 标记为仓库已收货；暂不进行财务过账。 |
+| 客户退货收货检验已通过或有条件放行 | Quality | 记录处置结果，开具贷项通知单，将其应用于所引用的未结 AR，并过账贷项凭证。 |
+| 客户退货收货检验被拒绝 | Quality | 记录被拒绝的处置结果，且不进行贷项过账。 |
 
-All cross-service facts use public versioned integration events, consumer-local inbox records, stable business idempotency keys, and DLQ on non-recoverable divergence. ERP never reads WMS, Quality, Inventory, or Finance schemas.
+所有跨服务事实均使用公开的版本化集成事件、消费者本地收件箱记录（inbox）、稳定的业务幂等键，以及不可恢复分歧时的 DLQ。ERP 绝不读取 WMS、Quality、Inventory 或 Finance 的数据库模式（schema）。
 
-## Purchase Return Rules
+## 采购退货规则
 
-1. A WMS supplier-return outbound must name the original ERP purchase receipt and its purchase-order line references. ERP rejects a line whose SKU/UOM, quantity, tenant, or already-returned balance does not match the immutable receipt fact.
-2. The supplier-return outbound remains the stock-removal authority. ERP only records the financial/documentary compensation after WMS reports it completed.
-3. For the uninvoiced portion of a returned receipt line, ERP posts **Dr `GR-IR`, Cr `1401` inventory**. This reverses the original goods-receipt accrual (Dr `1401`, Cr `GR-IR`).
-4. For the invoice-matched portion, ERP issues a supplier debit note, applies it to the matching open AP, and posts **Dr `2202` accounts payable, Cr `1401` inventory**. The debit note cannot exceed the invoice/AP amount still open.
-5. A mixed return is allowed: one immutable purchase-return document stores the returned quantity and separately records its GR/IR-reversal and debit-note amounts. Each compensating voucher is balanced, carries the source return number, and uses the return completion date subject to the existing accounting-period guard.
+1. WMS 供应商退货出库必须指明原始 ERP 采购收货及其采购订单行引用。对于 SKU/UOM、数量、租户或已退余额与不可变收货事实不一致的行，ERP 必须拒绝。
+2. 供应商退货出库仍是移除库存的权威。仅在 WMS 报告其已完成后，ERP 才记录财务/单据补偿。
+3. 对于退货收货行中尚未开票的部分，ERP 过账 **借 `GR-IR`，贷 `1401` 存货**。这会冲回原始收货暂估（借 `1401`，贷 `GR-IR`）。
+4. 对于已匹配发票的部分，ERP 开具供应商借项通知单，将其应用于匹配的未结 AP，并过账 **借 `2202` 应付账款，贷 `1401` 存货**。借项通知单不得超过仍未结清的发票/AP 金额。
+5. 允许混合退货：一张不可变采购退货单存储退货数量，并分别记录其 GR/IR 冲回金额和借项通知单金额。每张补偿凭证均须平衡、携带源退货编号，并在现有会计期间控制的约束下使用退货完成日期。
 
-## Sales RMA Rules
+## 销售 RMA 规则
 
-1. An RMA is authorized only against an ERP sales-order line and its source AR. Customer, SKU, UOM, quantity, and credit amount must agree with ERP-owned sales/AR facts. The RMA cannot exceed the unreturned delivery quantity or the AR open balance.
-2. ERP publishes the authorization; WMS owns creation and completion of the return inbound order. Its actual inbound number is only projected back when WMS completes the receipt.
-3. The customer-return inbound is quality-gated. Quality disposition is an auditable prerequisite to credit: `InspectionPassed` and `InspectionConditionalReleased` are credit-eligible; `InspectionRejected` records a denied credit and does not alter AR.
-4. A credit-eligible RMA creates one credit note, applies its amount to the original AR, and posts **Dr `6001` sales returns/allowances, Cr `1122` accounts receivable**. Applying a credit note is distinct from a cash receipt: it reduces AR without fabricating cash collection.
-5. Replayed WMS or Quality events locate the existing RMA, return document, note, AP/AR application, and voucher by their stable business keys and produce no second financial effect.
+1. RMA 只能针对 ERP 销售订单行及其源 AR 获得授权。客户、SKU、UOM、数量和贷项金额必须与 ERP 所有的销售/AR 事实一致。RMA 不得超过未退货的交付数量或 AR 未结余额。
+2. ERP 发布授权；WMS 负责创建和完成退货入库单。仅在 WMS 完成收货时，才回写投影其实际入库编号。
+3. 客户退货入库受质量门控。Quality 处置结果是可审计的贷项先决条件：`InspectionPassed` 和 `InspectionConditionalReleased` 符合贷项资格；`InspectionRejected` 记录被拒绝的贷项，且不改变 AR。
+4. 符合贷项资格的 RMA 创建一张贷项通知单，将其金额应用于原始 AR，并过账 **借 `6001` 销售退回/折让，贷 `1122` 应收账款**。应用贷项通知单不同于现金收款：它减少 AR，但不会虚构现金收款。
+5. 重放的 WMS 或 Quality 事件通过稳定业务键定位既有 RMA、退货单据、通知单、AP/AR 核销和凭证，且不产生第二次财务影响。
 
-## Boundaries and Reporting
+## 边界与报告
 
-- The BusinessERP service owns purchase returns, debit notes, RMAs, credit notes, AP/AR applications, and accounting vouchers in the `erp` schema.
-- WMS owns warehouse task/outbound/inbound completion and Inventory owns physical stock posting. The ERP voucher is not a substitute for a WMS or Inventory result.
-- The first delivery exposes BusinessERP endpoints as facade-coverage `deferred`; no BusinessGateway/OpenAPI/api-client change occurs until the Business Console returns workflow is delivered. Product documentation is unaffected until that user-facing flow exists.
+- BusinessERP 服务在 `erp` 数据库模式（schema）中拥有采购退货、借项通知单、RMA、贷项通知单、AP/AR 核销和会计凭证。
+- WMS 拥有仓库任务/出库/入库完成事实，Inventory 拥有实物库存过账。ERP 凭证不能替代 WMS 或 Inventory 的处理结果。
+- 首次交付将 BusinessERP 端点作为 facade-coverage `deferred` 暴露；在 Business Console 退货工作流交付前，不发生 BusinessGateway/OpenAPI/api-client 变更。在该面向用户的流程存在前，产品文档不受影响。

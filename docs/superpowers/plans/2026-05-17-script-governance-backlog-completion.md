@@ -1,49 +1,49 @@
-# Script Governance Backlog Completion Implementation Plan
+# 脚本治理待办收尾实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Close the remaining script automation governance backlog before starting the next feature stage: finish the current IAM authorization audit handoff, migrate the priority legacy verify scripts, remove their governance exemptions, and capture non-Windows compatibility evidence.
+**目标：** 在开始下一功能阶段之前关闭剩余的脚本自动化治理待办：完成当前 IAM 授权审核交接，迁移优先级较高的遗留验证脚本，移除其治理豁免，并采集非 Windows 兼容性证据。
 
-**Architecture:** Keep ADR 0010 and `docs/architecture/script-automation-governance.md` as the decision boundary. Use `scripts/lib/ScriptAutomation.ps1` as the only wrapper for long-running native commands, Docker Compose, nested PowerShell scripts, scoped environment variables and process diagnostics. Add a small compatibility gate script that can be run from WSL, macOS or Linux and that records exact command/version evidence instead of claiming support from intent alone.
+**架构：** 以 ADR 0010 和 `docs/architecture/script-automation-governance.md` 作为决策边界。将 `scripts/lib/ScriptAutomation.ps1` 作为长时间运行的原生命令、Docker Compose、嵌套 PowerShell 脚本、作用域环境变量和进程诊断的唯一包装器。添加可在 WSL、macOS 或 Linux 中运行的小型兼容性门禁脚本，记录精确的命令/版本证据，而不是仅凭意图声称支持。
 
-**Tech Stack:** PowerShell 7, .NET 10, Docker Compose v2, Git, WSL Ubuntu or another macOS/Linux runner, existing xUnit and frontend verification scripts.
+**技术栈：** PowerShell 7、.NET 10、Docker Compose v2、Git、WSL Ubuntu 或其他 macOS/Linux runner、现有 xUnit 和前端验证脚本。
 
 ---
 
-## Completion Record
+## 完成记录
 
-This plan starts from commit `8c6bcde Merge pull request #12 from Mang-X/codex/iam-persistent-auth-foundation`, currently checked out as detached `HEAD` with `main` and `origin/main` pointing at the same commit.
+本计划从提交 `8c6bcde Merge pull request #12 from Mang-X/codex/iam-persistent-auth-foundation` 开始；当前以 detached `HEAD` 检出，`main` 和 `origin/main` 指向同一提交。
 
-Known handoff notes:
+已知交接说明：
 
-1. `skills-lock.json` is dirty before this plan begins. Do not stage, edit or revert it unless the user explicitly asks.
-2. A post-merge IAM audit has already produced local changes that guard PostgreSQL IAM user/role management endpoints before persistence access. Keep those changes separate from the script governance commit.
-3. The script governance plan `docs/superpowers/plans/2026-05-17-script-automation-governance.md` still has two open backlog items: migrate the priority fourth/fifth verify scripts and run a macOS/Linux compatibility gate.
+1. 本计划开始前 `skills-lock.json` 已处于脏状态。除非用户明确要求，否则不得暂存、编辑或还原该文件。
+2. 合并后的 IAM 审核已产生本地变更，在访问持久化之前保护 PostgreSQL IAM 用户/角色管理 endpoint。保持这些变更与脚本治理提交分离。
+3. 脚本治理计划 `docs/superpowers/plans/2026-05-17-script-automation-governance.md` 仍有两个开放待办：迁移优先级较高的第四/第五阶段验证脚本，以及运行 macOS/Linux 兼容性门禁。
 
-## Execution Record
+## 执行记录
 
-1. Created branch `codex/script-governance-backlog-completion` from `8c6bcde`.
-2. Committed the IAM audit handoff separately as `99970a6 fix: guard iam management endpoints`.
-3. Added priority no-exemption governance coverage as `70aabd1 test: cover priority script governance backlog`.
-4. Migrated the fifth-stage verify script as `d9dd810 chore: migrate fifth verify script governance`.
-5. Migrated the fourth-stage verify script as `71e073e chore: migrate fourth verify script governance`.
-6. Removed the fourth/fifth priority exemptions as `3691f49 chore: remove priority script exemptions`.
-7. Added the compatibility gate as `396f281 chore: add script compatibility gate`.
-8. Ran the full Ubuntu WSL compatibility gate with evidence at `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`: Ubuntu 22.04.3 LTS, PowerShell 7.6.1, .NET SDK 10.0.300, Docker Compose 5.1.3, `fastOnly: false`, IAM persistent auth verify passed.
-9. Aligned the compatibility script with the documented `compat-fast` fallback so `-FastOnly` no longer probes Docker Compose and full mode is classified as `verify`.
-10. Re-ran final Windows gates: script governance tests, script governance gate, Windows fast compatibility smoke, fifth verify script, fourth verify script, backend solution tests and `git diff --check`.
-11. Kept pre-existing `skills-lock.json` and generated `artifacts/script-logs/**` evidence out of git.
+1. 创建分支 `codex/script-governance-backlog-completion`，起点为 `8c6bcde`。
+2. 将 IAM 审核交接单独提交为 `99970a6 fix: guard iam management endpoints`。
+3. 以 `70aabd1 test: cover priority script governance backlog` 添加优先脚本无豁免治理覆盖。
+4. 以 `d9dd810 chore: migrate fifth verify script governance` 迁移第五阶段验证脚本。
+5. 以 `71e073e chore: migrate fourth verify script governance` 迁移第四阶段验证脚本。
+6. 以 `3691f49 chore: remove priority script exemptions` 移除第四/第五阶段优先脚本豁免。
+7. 以 `396f281 chore: add script compatibility gate` 添加兼容性门禁。
+8. 运行完整 Ubuntu WSL 兼容性门禁，证据位于 `artifacts/script-logs/script-compatibility/20260518-000559-198/evidence.json`：Ubuntu 22.04.3 LTS、PowerShell 7.6.1、.NET SDK 10.0.300、Docker Compose 5.1.3、`fastOnly: false`，IAM 持久化认证验证通过。
+9. 使兼容性脚本与文档记录的 `compat-fast` 回退方案一致，因此 `-FastOnly` 不再探测 Docker Compose，完整模式分类为 `verify`。
+10. 重新运行最终 Windows 门禁：脚本治理测试、脚本治理门禁、Windows 快速兼容性冒烟测试、第五阶段验证脚本、第四阶段验证脚本、后端解决方案测试和 `git diff --check`。
+11. 未将预先存在的 `skills-lock.json` 和生成的 `artifacts/script-logs/**` 证据纳入 git。
 
-## Boundaries
+## 边界
 
-1. Do not start Gateway-wide authorization, Console login UI, FileStorage, Notification, high-risk Ops approval or deployment installer work in this plan.
-2. Do not migrate every legacy script in one pass. The required migration target is `verify-fifth-slice-persistence-foundation.ps1` and `verify-fourth-slice-real-infra.ps1`.
-3. Do not remove exemptions for `export-gateway-openapi.ps1`, `verify-first-slice.ps1`, `verify-second-slice-ops.ps1` or `verify-third-slice-console.ps1` unless those scripts are migrated in a separate approved plan.
-4. Do not add `.github` CI provider files in this pass. The non-Windows gate is a repo-local script plus recorded evidence.
-5. Do not claim macOS/Linux support unless the gate actually runs outside Windows and the evidence file records OS, PowerShell, .NET and Docker Compose details.
-6. Do not stage unrelated `skills-lock.json`.
+1. 本计划不得启动 Gateway 全局授权、Console 登录 UI、FileStorage、Notification、高风险 Ops 审批或部署安装程序工作。
+2. 不得在一次工作中迁移所有遗留脚本。必需的迁移目标是 `verify-fifth-slice-persistence-foundation.ps1` 和 `verify-fourth-slice-real-infra.ps1`。
+3. 除非在另一份已批准计划中迁移 `export-gateway-openapi.ps1`、`verify-first-slice.ps1`、`verify-second-slice-ops.ps1` 或 `verify-third-slice-console.ps1`，否则不得移除这些脚本的豁免。
+4. 本次不得添加特定 CI 提供商的 `.github` 文件。非 Windows 门禁由仓库本地脚本和记录的证据组成。
+5. 除非门禁确实在 Windows 之外运行，并且证据文件记录 OS、PowerShell、.NET 和 Docker Compose 详情，否则不得声称支持 macOS/Linux。
+6. 不得暂存无关的 `skills-lock.json`。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 scripts/
@@ -64,41 +64,41 @@ docs/superpowers/plans/
   2026-05-17-script-governance-backlog-completion.md
 ```
 
-## Task 0: Stabilize Current IAM Audit Handoff
+## 任务 0：稳定当前 IAM 审核交接
 
-**Files:**
+**文件：**
 
-- Stage later: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/IamEndpointAuthorization.cs`
-- Stage later: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
-- Stage later: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
-- Stage later: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs`
-- Stage later: `docs/architecture/iam-authentication-baseline.md`
-- Stage later: `docs/architecture/database-schema-catalog.md`
-- Stage later: `docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md`
+- 稍后暂存：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/IamEndpointAuthorization.cs`
+- 稍后暂存：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Users/UserEndpoints.cs`
+- 稍后暂存：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Roles/RoleEndpoints.cs`
+- 稍后暂存：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamManagementEndpointAuthorizationTests.cs`
+- 稍后暂存：`docs/architecture/iam-authentication-baseline.md`
+- 稍后暂存：`docs/architecture/database-schema-catalog.md`
+- 稍后暂存：`docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md`
 
-- [x] **Step 1: Create a working branch from detached HEAD**
+- [x] **步骤 1：从 detached HEAD 创建工作分支**
 
-Run:
+运行：
 
 ```powershell
 git switch -c codex/script-governance-backlog-completion
 ```
 
-Expected: branch creation succeeds from `8c6bcde`. If the branch already exists, run `git switch codex/script-governance-backlog-completion` and continue.
+预期结果：从 `8c6bcde` 成功创建分支。如果分支已存在，运行 `git switch codex/script-governance-backlog-completion` 并继续。
 
-- [x] **Step 2: Confirm the IAM audit changes are the only non-script work**
+- [x] **步骤 2：确认 IAM 审核变更是唯一的非脚本工作**
 
-Run:
+运行：
 
 ```powershell
 git status --short --branch
 ```
 
-Expected: the status includes the IAM endpoint/test/doc changes listed above, the pre-existing `skills-lock.json`, and no staged files.
+预期结果：状态包含上面列出的 IAM endpoint/测试/文档变更、预先存在的 `skills-lock.json`，且没有已暂存文件。
 
-- [x] **Step 3: Re-run IAM audit verification before committing it**
+- [x] **步骤 3：提交 IAM 审核前重新运行验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
@@ -107,11 +107,11 @@ pwsh scripts/check-script-governance.ps1
 git diff --check
 ```
 
-Expected: every command exits `0`. `git diff --check` may print line-ending warnings before the command summary, but it must not report whitespace errors.
+预期结果：每条命令都以 `0` 退出。`git diff --check` 可能在命令摘要前打印行尾警告，但不得报告空白错误。
 
-- [x] **Step 4: Commit the IAM audit fix separately**
+- [x] **步骤 4：单独提交 IAM 审核修复**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/IamEndpointAuthorization.cs
@@ -124,17 +124,17 @@ git add docs/superpowers/plans/2026-05-17-iam-persistent-auth-foundation.md
 git commit -m "fix: guard iam management endpoints"
 ```
 
-Expected: commit succeeds and `skills-lock.json` remains unstaged.
+预期结果：提交成功，`skills-lock.json` 保持未暂存。
 
-## Task 1: Add Regression Coverage For Priority Script Governance
+## 任务 1：为优先脚本治理添加回归覆盖
 
-**Files:**
+**文件：**
 
-- Modify: `scripts/tests/check-script-governance.Tests.ps1`
+- 修改：`scripts/tests/check-script-governance.Tests.ps1`
 
-- [x] **Step 1: Add a helper that runs the governance gate without exemptions**
+- [x] **步骤 1：添加无豁免运行治理门禁的辅助函数**
 
-Append this helper after `Invoke-GovernanceCase` in `scripts/tests/check-script-governance.Tests.ps1`:
+在 `Invoke-GovernanceCase` 之后追加此辅助函数，位置在 `scripts/tests/check-script-governance.Tests.ps1` 中：
 
 ```powershell
 function Invoke-GovernanceScriptCase {
@@ -162,34 +162,34 @@ function Invoke-GovernanceScriptCase {
 }
 ```
 
-- [x] **Step 2: Add the priority script assertions**
+- [x] **步骤 2：添加优先脚本断言**
 
-Add these calls after the existing fixture cases and before the helper smoke block:
+在现有夹具场景之后、辅助冒烟测试块之前添加这些调用：
 
 ```powershell
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
 ```
 
-- [x] **Step 3: Run the test harness and verify the expected red state**
+- [x] **步骤 3：运行测试工具并验证预期红灯状态**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/tests/check-script-governance.Tests.ps1
 ```
 
-Expected: FAIL because the fifth and fourth verify scripts still rely on baseline exemptions for missing governance headers, missing helper usage and direct native commands.
+预期结果：失败，因为第五和第四阶段验证脚本仍依赖基线豁免来允许缺失治理头、缺失辅助库用法和直接原生命令。
 
-## Task 2: Migrate Fifth-Stage Verify Script
+## 任务 2：迁移第五阶段验证脚本
 
-**Files:**
+**文件：**
 
-- Replace: `scripts/verify-fifth-slice-persistence-foundation.ps1`
+- 替换：`scripts/verify-fifth-slice-persistence-foundation.ps1`
 
-- [x] **Step 1: Replace the script with a helper-governed version**
+- [x] **步骤 1：使用由辅助库治理的版本替换脚本**
 
-Replace the full contents of `scripts/verify-fifth-slice-persistence-foundation.ps1` with:
+将 `scripts/verify-fifth-slice-persistence-foundation.ps1` 的全部内容替换为：
 
 ```powershell
 # Script-Governance:
@@ -281,9 +281,9 @@ Invoke-WithScopedEnvironment -Variables @{
 Write-Host "Fifth slice release-grade persistence foundation verified."
 ```
 
-- [x] **Step 2: Run the no-exemption gate for the fifth script**
+- [x] **步骤 2：为第五阶段脚本运行无豁免门禁**
 
-Run:
+运行：
 
 ```powershell
 $emptyBaseline = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-empty-script-governance-baseline.json"
@@ -296,17 +296,17 @@ finally {
 }
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-## Task 3: Migrate Fourth-Stage Verify Script
+## 任务 3：迁移第四阶段验证脚本
 
-**Files:**
+**文件：**
 
-- Replace: `scripts/verify-fourth-slice-real-infra.ps1`
+- 替换：`scripts/verify-fourth-slice-real-infra.ps1`
 
-- [x] **Step 1: Replace the script with a helper-governed version**
+- [x] **步骤 1：使用由辅助库治理的版本替换脚本**
 
-Replace the full contents of `scripts/verify-fourth-slice-real-infra.ps1` with:
+将 `scripts/verify-fourth-slice-real-infra.ps1` 的全部内容替换为：
 
 ```powershell
 # Script-Governance:
@@ -434,9 +434,9 @@ Invoke-WithScopedEnvironment -Variables @{
 Write-Host "Fourth vertical slice real infrastructure verified."
 ```
 
-- [x] **Step 2: Run the correct no-exemption gate for the fourth script**
+- [x] **步骤 2：为第四阶段脚本运行正确的无豁免门禁**
 
-Run:
+运行：
 
 ```powershell
 $emptyBaseline = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-empty-script-governance-baseline.json"
@@ -449,17 +449,17 @@ finally {
 }
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-## Task 4: Remove Priority Script Exemptions
+## 任务 4：移除优先脚本豁免
 
-**Files:**
+**文件：**
 
-- Modify: `scripts/script-governance-baseline.json`
+- 修改：`scripts/script-governance-baseline.json`
 
-- [x] **Step 1: Remove the fourth/fifth exemptions only**
+- [x] **步骤 1：仅移除第四/第五阶段豁免**
 
-Replace `scripts/script-governance-baseline.json` with:
+将 `scripts/script-governance-baseline.json` 替换为：
 
 ```json
 {
@@ -513,35 +513,35 @@ Replace `scripts/script-governance-baseline.json` with:
 }
 ```
 
-- [x] **Step 2: Run the script governance harness**
+- [x] **步骤 2：运行脚本治理测试工具**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/tests/check-script-governance.Tests.ps1
 ```
 
-Expected: PASS, including the two no-exemption assertions added in Task 1.
+预期结果：通过，包括任务 1 添加的两个无豁免断言。
 
-- [x] **Step 3: Run the repository script governance gate**
+- [x] **步骤 3：运行仓库脚本治理门禁**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/check-script-governance.ps1
 ```
 
-Expected: PASS with the remaining legacy exemptions only for export, first, second and third scripts.
+预期结果：通过，其余遗留豁免仅适用于 export、第一、第二和第三阶段脚本。
 
-## Task 5: Add Non-Windows Compatibility Gate
+## 任务 5：添加非 Windows 兼容性门禁
 
-**Files:**
+**文件：**
 
-- Create: `scripts/check-script-compatibility.ps1`
+- 创建：`scripts/check-script-compatibility.ps1`
 
-- [x] **Step 1: Add the compatibility gate script**
+- [x] **步骤 1：添加兼容性门禁脚本**
 
-Create `scripts/check-script-compatibility.ps1`:
+创建 `scripts/check-script-compatibility.ps1`：
 
 ```powershell
 # Script-Governance:
@@ -685,104 +685,104 @@ finally {
 Write-Host "Script compatibility gate verified."
 ```
 
-- [x] **Step 2: Run a Windows smoke pass without claiming compatibility**
+- [x] **步骤 2：运行 Windows 冒烟验证，但不声称兼容性**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/check-script-compatibility.ps1 -AllowWindows -FastOnly
 ```
 
-Expected: PASS and an evidence JSON is written under `artifacts/script-logs/script-compatibility/**/evidence.json`. This is a smoke pass only, not the macOS/Linux compatibility evidence.
+预期结果：通过，并在 `artifacts/script-logs/script-compatibility/**/evidence.json` 下写入证据 JSON。这只是冒烟验证，不是 macOS/Linux 兼容性证据。
 
-- [x] **Step 3: Run the script governance gate after adding the new script**
+- [x] **步骤 3：添加新脚本后运行脚本治理门禁**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/check-script-governance.ps1
 ```
 
-Expected: PASS. The new compatibility script has a governance header, helper dot-source and no direct forbidden native command invocation.
+预期结果：通过。新兼容性脚本具有治理头、辅助库 dot-source，且没有直接调用被禁止的原生命令。
 
-## Task 6: Run Non-Windows Compatibility Gate And Record Evidence
+## 任务 6：运行非 Windows 兼容性门禁并记录证据
 
-**Files:**
+**文件：**
 
-- Generated by script: `artifacts/script-logs/script-compatibility/**/evidence.json`
+- 由脚本生成：`artifacts/script-logs/script-compatibility/**/evidence.json`
 
-- [x] **Step 1: Verify WSL Ubuntu is available on this machine**
+- [x] **步骤 1：验证本机可用 WSL Ubuntu**
 
-Run:
+运行：
 
 ```powershell
 wsl -l -q
 ```
 
-Expected: output includes `Ubuntu`. If `Ubuntu` is missing, run the same gate on another macOS or Linux machine and copy no logs into git unless explicitly requested.
+预期结果：输出包含 `Ubuntu`。如果缺少 `Ubuntu`，在另一台 macOS 或 Linux 机器上运行相同门禁；除非明确要求，否则不要将日志复制到 git。
 
-- [x] **Step 2: Run the full compatibility gate in Ubuntu**
+- [x] **步骤 2：在 Ubuntu 中运行完整兼容性门禁**
 
-Run:
+运行：
 
 ```powershell
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Users/Mang/.codex/worktrees/bcca/Nerv-IIP && pwsh scripts/check-script-compatibility.ps1'
 ```
 
-Expected: PASS and final output `Script compatibility gate verified.` The evidence JSON must show `isLinux: true`, `isWindows: false`, and include successful records for script governance, governance tests, `git diff --check`, Docker Compose version and IAM persistent auth verification.
+预期结果：通过，最终输出为 `Script compatibility gate verified.`。证据 JSON 必须显示 `isLinux: true`、`isWindows: false`，并包含脚本治理、治理测试、`git diff --check`、Docker Compose 版本和 IAM 持久化认证验证的成功记录。
 
-- [x] **Step 3: Confirm fallback was not needed**
+- [x] **步骤 3：确认无需回退方案**
 
-Step 2 passed with Docker Compose v2 available from Ubuntu, so the fallback fast-only run was not needed. The fallback command would be:
+步骤 2 已通过，Ubuntu 中可用 Docker Compose v2，因此无需仅快速模式的回退运行。回退命令为：
 
 ```powershell
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Users/Mang/.codex/worktrees/bcca/Nerv-IIP && pwsh scripts/check-script-compatibility.ps1 -FastOnly'
 ```
 
-Expected if needed: PASS for `compat-fast`. Because the full gate passed, the compatibility backlog item is closed.
+如需回退，预期结果为：`compat-fast` 通过。由于完整门禁已通过，兼容性待办项已经关闭。
 
-## Task 7: Update Architecture And Plan Documentation
+## 任务 7：更新架构和计划文档
 
-**Files:**
+**文件：**
 
-- Modify: `docs/architecture/script-automation-governance.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/superpowers/plans/2026-05-17-script-automation-governance.md`
+- 修改：`docs/architecture/script-automation-governance.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/superpowers/plans/2026-05-17-script-automation-governance.md`
 
-- [x] **Step 1: Update the script migration matrix**
+- [x] **步骤 1：更新脚本迁移矩阵**
 
-In `docs/architecture/script-automation-governance.md`, change the migration matrix rows for the fourth and fifth scripts to:
+在 `docs/architecture/script-automation-governance.md` 中，将第四和第五阶段脚本的迁移矩阵行更改为：
 
 ```markdown
 | `verify-fifth-slice-persistence-foundation.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、dotnet、solution tests 和 scoped PostgreSQL test environment；baseline exemption 已移除。 |
 | `verify-fourth-slice-real-infra.ps1` | `verify` | 已迁移 | 使用 helper 执行 Docker Compose、PostgreSQL reset、AppHub/Ops profile tests 和嵌套第三阶段脚本；baseline exemption 已移除。 |
 ```
 
-- [x] **Step 2: Document the compatibility gate entry point**
+- [x] **步骤 2：记录兼容性门禁入口**
 
-In the `跨平台兼容门禁` section of `docs/architecture/script-automation-governance.md`, add this paragraph after the three-step compatibility sequence:
+在 `跨平台兼容门禁` 章节中，于三步兼容性序列之后添加此段落，该章节位于 `docs/architecture/script-automation-governance.md`：
 
 ```markdown
 仓库提供 `scripts/check-script-compatibility.ps1` 作为本地兼容门禁入口。默认必须在 macOS 或 Linux 上运行；`-AllowWindows -FastOnly` 只用于 Windows 本地 smoke，不可作为兼容性声明依据。脚本会将 OS、PowerShell、.NET SDK、执行命令、退出码和日志位置写入 `artifacts/script-logs/script-compatibility/**/evidence.json`；full 模式还会记录 Docker Compose 版本并运行核心 verify 脚本。
 ```
 
-- [x] **Step 3: Update implementation readiness**
+- [x] **步骤 3：更新实施就绪状态**
 
-In `docs/architecture/implementation-readiness.md`, update the current conclusion about script governance to:
+在 `docs/architecture/implementation-readiness.md` 中，将脚本治理的当前结论更新为：
 
 ```markdown
 20. 脚本自动化治理已冻结到 ADR 0010 和 docs/architecture/script-automation-governance.md；IAM、第五阶段和第四阶段核心 verify 脚本已迁移到 helper 门禁，新增或修改脚本必须声明分类、副作用、日志、清理和 helper 使用方式。
 ```
 
-In the "可以并行但不阻塞开工的事项" list, replace the existing script migration item with:
+在“可以并行但不阻塞开工的事项”清单中，将现有脚本迁移项替换为：
 
 ```markdown
 10. 剩余 legacy 脚本继续迁移到 docs/architecture/script-automation-governance.md 的 helper 和门禁；剩余顺序是 OpenAPI 导出、第三阶段 console、第二阶段 Ops、第一阶段 slice。
 ```
 
-- [x] **Step 4: Close the script governance backlog checkboxes after verification passes**
+- [x] **步骤 4：验证通过后关闭脚本治理待办复选框**
 
-In `docs/superpowers/plans/2026-05-17-script-automation-governance.md`, update the follow-up backlog to:
+在 `docs/superpowers/plans/2026-05-17-script-automation-governance.md` 中，将后续待办更新为：
 
 ```markdown
 ## Follow-up Backlog
@@ -793,55 +793,55 @@ In `docs/superpowers/plans/2026-05-17-script-automation-governance.md`, update t
 Completion note: `scripts/check-script-compatibility.ps1` records compatibility evidence under `artifacts/script-logs/script-compatibility/**/evidence.json`. The fourth/fifth verify scripts have had their priority baseline exemptions removed. Remaining legacy scripts are tracked as follow-on migration work, not blockers for the next feature stage.
 ```
 
-Use the checked compatibility line only after Task 6 Step 2 passes. If only `-FastOnly` passed outside Windows, leave the second checkbox unchecked and add a blocker note instead.
+仅在任务 6 步骤 2 通过后使用已勾选的兼容性行。如果在 Windows 之外只有 `-FastOnly` 通过，保持第二个复选框未勾选，并添加阻塞说明。
 
-## Task 8: Final Verification And Commit
+## 任务 8：最终验证并提交
 
-**Files:**
+**文件：**
 
-- All files changed by Tasks 1-7.
+- 任务 1–7 更改的所有文件。
 
-- [x] **Step 1: Run script governance tests**
+- [x] **步骤 1：运行脚本治理测试**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/tests/check-script-governance.Tests.ps1
 pwsh scripts/check-script-governance.ps1
 ```
 
-Expected: both exit `0`.
+预期结果：两者都以 `0` 退出。
 
-- [x] **Step 2: Run migrated priority verify scripts on Windows**
+- [x] **步骤 2：在 Windows 上运行已迁移的优先验证脚本**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-fifth-slice-persistence-foundation.ps1
 pwsh scripts/verify-fourth-slice-real-infra.ps1
 ```
 
-Expected final lines:
+预期最后几行：
 
 ```text
 Fifth slice release-grade persistence foundation verified.
 Fourth vertical slice real infrastructure verified.
 ```
 
-- [x] **Step 3: Run compatibility gate**
+- [x] **步骤 3：运行兼容性门禁**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/check-script-compatibility.ps1 -AllowWindows -FastOnly
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/Users/Mang/.codex/worktrees/bcca/Nerv-IIP && pwsh scripts/check-script-compatibility.ps1'
 ```
 
-Expected: Windows smoke and Ubuntu full gate both exit `0`. If the Ubuntu full gate fails because Docker Compose is unavailable, run the Ubuntu `-FastOnly` command from Task 6 and do not mark the full compatibility backlog closed.
+预期结果：Windows 冒烟验证和 Ubuntu 完整门禁均以 `0` 退出。如果 Ubuntu 完整门禁因 Docker Compose 不可用而失败，运行任务 6 中的 Ubuntu `-FastOnly` 命令，并且不要将完整兼容性待办标记为已关闭。
 
-- [x] **Step 4: Run repository hygiene checks**
+- [x] **步骤 4：运行仓库卫生检查**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/Nerv.IIP.sln --no-restore
@@ -849,11 +849,11 @@ git diff --check
 git status --short
 ```
 
-Expected: backend tests and diff check exit `0`. `git status --short` shows only intended script governance changes plus pre-existing `skills-lock.json`.
+预期结果：后端测试和 diff 检查以 `0` 退出。`git status --short` 只显示预期的脚本治理变更和预先存在的 `skills-lock.json`。
 
-- [x] **Step 5: Commit script governance backlog completion**
+- [x] **步骤 5：提交脚本治理待办收尾**
 
-Run:
+运行：
 
 ```powershell
 git add scripts/tests/check-script-governance.Tests.ps1
@@ -868,38 +868,38 @@ git add docs/superpowers/plans/2026-05-17-script-governance-backlog-completion.m
 git commit -m "chore: close script governance backlog"
 ```
 
-Expected: commit succeeds. Do not stage `skills-lock.json` or generated `artifacts/script-logs/**` evidence files unless the user explicitly asks to preserve compatibility evidence in git.
+预期结果：提交成功。除非用户明确要求在 git 中保留兼容性证据，否则不得暂存 `skills-lock.json` 或生成的 `artifacts/script-logs/**` 证据文件。
 
-## Execution Order
+## 执行顺序
 
-1. Task 0 first, so the current IAM authorization audit is preserved in a focused commit.
-2. Task 1 establishes the red script governance regression test.
-3. Tasks 2 and 3 can run in parallel because their write sets are disjoint.
-4. Task 4 runs after both scripts pass without exemptions.
-5. Task 5 adds the compatibility entry point after the priority scripts are migrated.
-6. Task 6 runs after Task 5 so it can use the new gate.
-7. Task 7 updates durable documentation only after verification evidence exists.
-8. Task 8 performs final verification and commit.
+1. 首先执行任务 0，以聚焦的提交保留当前 IAM 授权审核。
+2. 任务 1 建立红灯脚本治理回归测试。
+3. 任务 2 和任务 3 的写入集合互不相交，因此可以并行运行。
+4. 两个脚本都无豁免通过后运行任务 4。
+5. 迁移优先脚本后，任务 5 添加兼容性入口。
+6. 任务 6 在任务 5 之后运行，以便使用新门禁。
+7. 任务 7 仅在验证证据存在后更新持久文档。
+8. 任务 8 执行最终验证和提交。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. Priority legacy verify migration is covered by Tasks 2, 3 and 4.
-2. Script governance test coverage is covered by Tasks 1 and 8.
-3. macOS/Linux compatibility gate and evidence are covered by Tasks 5 and 6.
-4. Documentation and previous plan backlog closure are covered by Task 7.
-5. Current IAM audit handoff is covered by Task 0.
+1. 任务 2、3 和 4 覆盖优先遗留验证脚本迁移。
+2. 任务 1 和任务 8 覆盖脚本治理测试。
+3. 任务 5 和任务 6 覆盖 macOS/Linux 兼容性门禁及证据。
+4. 任务 7 覆盖文档和先前计划待办的关闭。
+5. 任务 0 覆盖当前 IAM 审核交接。
 
-Red-flag scan:
+风险标记扫描：
 
-1. No empty task sections remain.
-2. No unbounded "migrate everything" step remains.
-3. Every script-changing task names exact files and concrete replacement content.
-4. Every verification step has concrete commands and expected outcomes.
+1. 不保留空任务章节。
+2. 不保留无边界的“迁移一切”步骤。
+3. 每个脚本变更任务都指定精确文件和具体替换内容。
+4. 每个验证步骤都有具体命令和预期结果。
 
-Type and command consistency:
+类型和命令一致性：
 
-1. Helper names match `scripts/lib/ScriptAutomation.ps1`: `Invoke-DotNet`, `Invoke-DockerCompose`, `Invoke-PwshScript`, `Invoke-NativeCommandWithTimeout`, `Invoke-WithScopedEnvironment`, and `New-ScriptAutomationLogDirectory`.
-2. The fourth/fifth migrated script names match the baseline JSON paths.
-3. The compatibility evidence path is consistently `artifacts/script-logs/script-compatibility/**/evidence.json`.
+1. 辅助函数名称与 `scripts/lib/ScriptAutomation.ps1` 一致：`Invoke-DotNet`、`Invoke-DockerCompose`、`Invoke-PwshScript`、`Invoke-NativeCommandWithTimeout`、`Invoke-WithScopedEnvironment` 和 `New-ScriptAutomationLogDirectory`。
+2. 已迁移的第四/第五阶段脚本名称与 baseline JSON 路径一致。
+3. 兼容性证据路径始终为 `artifacts/script-logs/script-compatibility/**/evidence.json`。

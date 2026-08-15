@@ -1,34 +1,34 @@
-# First Vertical Slice Implementation Plan
+# 第一阶段纵切实施计划
 
-> **For automated implementers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向自动化实施者：** 必须使用子技能：使用 superpowers:executing-plans 逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** 建立 Nerv-IIP 第一迭代纵切：Connector Host 发现一个 Docker 运行目标，上报注册、心跳和状态快照，AppHub 沉淀应用与实例事实，PlatformGateway 能查询到最新状态。
+**目标：** 建立 Nerv-IIP 第一迭代纵切：Connector Host 发现一个 Docker 运行目标，上报注册、心跳和状态快照，AppHub 沉淀应用与实例事实，PlatformGateway 能查询到最新状态。
 
-**Execution Status (2026-05-15):** 第一迭代纵切骨架已经落地，并通过 `pwsh scripts/verify-first-slice.ps1` 验证。当前实现满足本计划的本地纵切验收口径：backend 与 connector-hosts 可 restore/build/test，Connector Host 可通过 Platform SDK 上报 registration、heartbeat、state snapshot，AppHub 可接收并沉淀内存态实例事实，PlatformGateway 可查询实例列表与详情。本文档保留为原始执行计划和后续补齐真实持久化、完整 IAM、FileStorage、Ops 等能力的任务来源。
+**执行状态（2026-05-15）：** 第一迭代纵切骨架已经落地，并通过 `pwsh scripts/verify-first-slice.ps1` 验证。当前实现满足本计划的本地纵切验收口径：后端与 Connector Host 解决方案可还原/构建/测试，Connector Host 可通过 Platform SDK 上报注册、心跳和状态快照，AppHub 可接收并沉淀内存态实例事实，PlatformGateway 可查询实例列表与详情。本文档保留为原始执行计划和后续补齐真实持久化、完整 IAM、FileStorage、Ops 等能力的任务来源。
 
-**Architecture:** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/query contract 聚合数据；Connector Host 独立于 backend solution，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
+**架构：** 第一迭代采用文档冻结的服务边界：IAM 先提供身份、权限、会话和 Connector Host 凭证底座；FileStorage 先提供主平台文件存储服务骨架和边界约束；AppHub 拥有应用与实例事实；PlatformGateway 只做薄 BFF，通过 AppHub 显式 HTTP/查询契约聚合数据；Connector Host 独立于后端解决方案，通过 Platform SDK 的 ConnectorProtocol 客户端和共享 Connector Protocol DTO 调用平台。Ops 只创建服务骨架和健康入口，不进入第一迭代完成定义。Notification 已作为独立平台通知边界冻结，但第一迭代不创建通知服务、通知表、`Sdk.Notification` 或外部通道 provider；其它服务不得临时内置站内通知、邮件、短信、企业 IM 或 Webhook 投递逻辑。
 
-**Tech Stack:** .NET 10、ASP.NET Core、netcorepal-cloud-framework、FastEndpoints、PostgreSQL、RabbitMQ、Redis、FusionCache、MinIO、OpenTelemetry、Docker、xUnit 或模板默认测试框架。
+**技术栈：** .NET 10、ASP.NET Core、netcorepal-cloud-framework、FastEndpoints、PostgreSQL、RabbitMQ、Redis、FusionCache、MinIO、OpenTelemetry、Docker、xUnit 或模板默认测试框架。
 
 ---
 
-## Scope
+## 范围
 
-### In This Plan
+### 本计划范围内
 
-1. `backend` 与 `connector-hosts` 两套 solution 骨架。
+1. `backend` 与 `connector-hosts` 两套解决方案骨架。
 2. `backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol` 共享协议。
 3. `backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries` 作为 Gateway 到 AppHub 的第一迭代查询契约。
 4. `backend/common/Sdk/Nerv.IIP.Sdk.Core`、`Nerv.IIP.Sdk.Auth`、`Nerv.IIP.Sdk.ConnectorProtocol`、`Nerv.IIP.Sdk.FileStorage` 的最小 SDK 边界。
 5. `backend/common/Caching/Nerv.IIP.Caching` 的 FusionCache 统一注册边界。
 6. `backend/common/Observability/Nerv.IIP.Observability` 的日志、trace、metrics、correlation 基线。
-7. IAM 最小后台管理底座：用户、角色、权限、会话、Connector Host 凭证、初始管理员 seed。
+7. IAM 最小后台管理底座：用户、角色、权限、会话、Connector Host 凭证和初始管理员数据。
 8. FileStorage 最小服务骨架：文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配边界。
-9. AppHub 的 registration、heartbeat、state snapshot 写入和内部查询接口。
+9. AppHub 的注册、心跳、状态快照写入和内部查询接口。
 10. PlatformGateway 的实例列表与实例详情查询接口。
 11. Connector Host、Sdk.ConnectorProtocol 客户端、Docker Connector 的最小发现与上报链路。
 
-### Outside This Plan
+### 本计划范围外
 
 1. Ops 到 Connector Host 的命令下发传输机制。
 2. restart、stop、backup 等动作闭环。
@@ -37,9 +37,9 @@
 5. FileStorage 的完整文件管理后台、文件预览、转码、复杂保留策略和跨服务附件工作流。
 6. Sdk.Ops、Sdk.Notification、Sdk.Observability 的完整实现和 SDK 多语言发布流水线。
 7. Notification 服务骨架、站内通知、待办、通知偏好、去重合并、投递状态和外部通道 provider。
-8. Knowledge、AI Integration、复杂 autonomous workflow。
+8. Knowledge、AI Integration 和复杂自主工作流。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/
@@ -104,13 +104,13 @@ connector-hosts/
     Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/
 ```
 
-## Boundary Rules
+## 边界规则
 
 1. PlatformGateway 不引用 `Nerv.IIP.AppHub.Domain` 或 `Nerv.IIP.AppHub.Infrastructure`。
-2. Connector Host 不引用任何 backend 服务实现项目。
+2. Connector Host 不引用任何后端服务实现项目。
 3. Connector Host 与平台共享的业务载荷只放在 `Nerv.IIP.Contracts.ConnectorProtocol`。
 4. Gateway 到 AppHub 的第一迭代查询 DTO 放在 `Nerv.IIP.Contracts.AppHubQueries`，避免 Gateway 复制 AppHub 返回模型。
-5. refresh token、session revoke list、OperationTask、AuditRecord、ApplicationInstance reported state 不使用缓存作为事实来源。
+5. 刷新令牌、会话吊销列表、OperationTask、AuditRecord 和 ApplicationInstance 上报状态不使用缓存作为事实来源。
 6. `--UseAdmin false` 固定传入 netcorepal 模板；IAM 使用 Nerv-IIP 自有领域模型。
 7. 计划中的项目引用只服务首批单仓开发便利；发布和升级边界必须按 Platform SDK、版本化 Connector Protocol、公开 HTTP API 和 IAM 授权处理。
 8. Connector Host、Connector 和示例应用的主版本必须与主平台主版本对齐；同一主版本内小版本可以低于主平台小版本。
@@ -122,40 +122,40 @@ connector-hosts/
 14. 平台 HTTP 接口统一使用 FastEndpoints；`Program.cs` 只保留服务注册、中间件和 `UseFastEndpoints()` 接线，具体接口放在各 Web 项目的 `Endpoints/**`。
 15. 新增平台 HTTP 接口不得使用 Minimal API 的 `.MapGet()`、`.MapPost()`、`.MapPatch()` 等启动文件路由映射。
 
-## Task 1: Scaffold Backend Solution And Common Projects
+## 任务 1：搭建后端解决方案与公共项目骨架
 
-**Files:**
+**文件：**
 
-- Create: `backend/Nerv.IIP.sln`
-- Create: `backend/Directory.Build.props`
-- Create: `backend/Directory.Packages.props`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol/Nerv.IIP.Contracts.ConnectorProtocol.csproj`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/Nerv.IIP.Contracts.AppHubQueries.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Core/Nerv.IIP.Sdk.Core.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Auth/Nerv.IIP.Sdk.Auth.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol/Nerv.IIP.Sdk.ConnectorProtocol.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj`
-- Create: `backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj`
-- Create: `backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj`
-- Create: `backend/common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj`
+- 创建：`backend/Nerv.IIP.sln`
+- 创建：`backend/Directory.Build.props`
+- 创建：`backend/Directory.Packages.props`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol/Nerv.IIP.Contracts.ConnectorProtocol.csproj`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/Nerv.IIP.Contracts.AppHubQueries.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Core/Nerv.IIP.Sdk.Core.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Auth/Nerv.IIP.Sdk.Auth.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.ConnectorProtocol/Nerv.IIP.Sdk.ConnectorProtocol.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj`
+- 创建：`backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj`
+- 创建：`backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj`
+- 创建：`backend/common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj`
 
-- [ ] **Step 1: Verify template inputs**
+- [ ] **步骤 1：验证模板输入**
 
-Run:
+运行：
 
 ```powershell
 dotnet --version
 dotnet new netcorepal-web --help
 ```
 
-Expected:
+预期结果：
 
-- `dotnet --version` reports a .NET 10 SDK.
-- `netcorepal-web` help shows `--Framework`, `--Database`, `--MessageQueue`, `--UseAspire`, `--IncludeCopilotInstructions`, and `--UseAdmin`.
+- `dotnet --version` 报告 .NET 10 SDK。
+- `netcorepal-web` 帮助中显示 `--Framework`、`--Database`、`--MessageQueue`、`--UseAspire`、`--IncludeCopilotInstructions` 和 `--UseAdmin`。
 
-- [ ] **Step 2: Create backend solution and shared projects**
+- [ ] **步骤 2：创建后端解决方案与共享项目**
 
-Run:
+运行：
 
 ```powershell
 New-Item -ItemType Directory -Force -Path backend/common/Contracts | Out-Null
@@ -187,14 +187,14 @@ dotnet sln backend/Nerv.IIP.sln add `
   backend/common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj
 ```
 
-Expected:
+预期结果：
 
-- All nine shared projects target `net10.0`.
-- `dotnet sln backend/Nerv.IIP.sln list` shows the nine shared projects.
+- 全部九个共享项目都以 `net10.0` 为目标框架。
+- `dotnet sln backend/Nerv.IIP.sln list` 显示这九个共享项目。
 
-- [ ] **Step 3: Wire SDK project references**
+- [ ] **步骤 3：接入 SDK 项目引用**
 
-Run:
+运行：
 
 ```powershell
 dotnet add backend/common/Sdk/Nerv.IIP.Sdk.Auth/Nerv.IIP.Sdk.Auth.csproj reference `
@@ -210,9 +210,9 @@ dotnet add backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.
   backend/common/Sdk/Nerv.IIP.Sdk.Auth/Nerv.IIP.Sdk.Auth.csproj
 ```
 
-- [ ] **Step 4: Add repo-level build props**
+- [ ] **步骤 4：添加仓库级构建属性**
 
-Create `backend/Directory.Build.props`:
+创建 `backend/Directory.Build.props`：
 
 ```xml
 <Project>
@@ -225,7 +225,7 @@ Create `backend/Directory.Build.props`:
 </Project>
 ```
 
-Create `backend/Directory.Packages.props` with central package management enabled. Keep template-owned single-service package references in the generated project files until the same package is used by more than one backend project.
+创建 `backend/Directory.Packages.props` 并启用集中式包管理。在同一包被多个后端项目使用之前，模板拥有的单服务包引用继续保留在生成的项目文件中。
 
 ```xml
 <Project>
@@ -235,37 +235,37 @@ Create `backend/Directory.Packages.props` with central package management enable
 </Project>
 ```
 
-- [ ] **Step 5: Build shared projects**
+- [ ] **步骤 5：构建共享项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
 dotnet build backend/Nerv.IIP.sln
 ```
 
-Expected: both commands exit with code `0`.
+预期结果：两条命令都以代码 `0` 退出。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/Directory.Build.props backend/Directory.Packages.props backend/common
 git commit -m "chore: scaffold backend common and sdk projects"
 ```
 
-## Task 2: Define Connector Protocol Contracts
+## 任务 2：定义 Connector Protocol 契约
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol/ConnectorProtocolContracts.cs`
-- Create: `backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests.csproj`
-- Create: `backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/ConnectorProtocolJsonTests.cs`
+- 修改：`backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol/ConnectorProtocolContracts.cs`
+- 创建：`backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests.csproj`
+- 创建：`backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/ConnectorProtocolJsonTests.cs`
 
-- [ ] **Step 1: Add the protocol DTOs**
+- [ ] **步骤 1：添加协议 DTO**
 
-Create `ConnectorProtocolContracts.cs`:
+创建 `ConnectorProtocolContracts.cs`：
 
 ```csharp
 namespace Nerv.IIP.Contracts.ConnectorProtocol;
@@ -340,9 +340,9 @@ public sealed record FailureReason(
     IReadOnlyDictionary<string, string> Detail);
 ```
 
-- [ ] **Step 2: Add serialization tests**
+- [ ] **步骤 2：添加序列化测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet new xunit -n Nerv.IIP.Contracts.ConnectorProtocol.Tests -o backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests --framework net10.0
@@ -350,7 +350,7 @@ dotnet add backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Con
 dotnet sln backend/Nerv.IIP.sln add backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests.csproj
 ```
 
-Create `ConnectorProtocolJsonTests.cs`:
+创建 `ConnectorProtocolJsonTests.cs`：
 
 ```csharp
 using System.Text.Json;
@@ -391,36 +391,36 @@ public sealed class ConnectorProtocolJsonTests
 }
 ```
 
-- [ ] **Step 3: Run contract tests**
+- [ ] **步骤 3：运行契约测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests.csproj
 ```
 
-Expected: test exits with code `0`.
+预期结果：测试以代码 `0` 退出。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Contracts/Nerv.IIP.Contracts.ConnectorProtocol backend/tests/Nerv.IIP.Contracts.ConnectorProtocol.Tests backend/Nerv.IIP.sln
 git commit -m "feat: define connector protocol contracts"
 ```
 
-## Task 3: Define AppHub Query Contract
+## 任务 3：定义 AppHub 查询契约
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/AppHubQueryContracts.cs`
-- Create: `backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contracts.AppHubQueries.Tests.csproj`
-- Create: `backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/AppHubQueryJsonTests.cs`
+- 修改：`backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries/AppHubQueryContracts.cs`
+- 创建：`backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contracts.AppHubQueries.Tests.csproj`
+- 创建：`backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/AppHubQueryJsonTests.cs`
 
-- [ ] **Step 1: Add query DTOs**
+- [ ] **步骤 1：添加查询 DTO**
 
-Create `AppHubQueryContracts.cs`:
+创建 `AppHubQueryContracts.cs`：
 
 ```csharp
 namespace Nerv.IIP.Contracts.AppHubQueries;
@@ -473,9 +473,9 @@ public sealed record CapabilitySummary(
     IReadOnlyList<string> SupportedOperations);
 ```
 
-- [ ] **Step 2: Add contract tests**
+- [ ] **步骤 2：添加契约测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet new xunit -n Nerv.IIP.Contracts.AppHubQueries.Tests -o backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests --framework net10.0
@@ -483,7 +483,7 @@ dotnet add backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contrac
 dotnet sln backend/Nerv.IIP.sln add backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contracts.AppHubQueries.Tests.csproj
 ```
 
-Create `AppHubQueryJsonTests.cs`:
+创建 `AppHubQueryJsonTests.cs`：
 
 ```csharp
 using System.Text.Json;
@@ -524,38 +524,38 @@ public sealed class AppHubQueryJsonTests
 }
 ```
 
-- [ ] **Step 3: Run query contract tests**
+- [ ] **步骤 3：运行查询契约测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests/Nerv.IIP.Contracts.AppHubQueries.Tests.csproj
 ```
 
-Expected: test exits with code `0`.
+预期结果：测试以代码 `0` 退出。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Contracts/Nerv.IIP.Contracts.AppHubQueries backend/tests/Nerv.IIP.Contracts.AppHubQueries.Tests backend/Nerv.IIP.sln
 git commit -m "feat: define apphub query contracts"
 ```
 
-## Task 4: Scaffold Platform Services
+## 任务 4：搭建平台服务骨架
 
-**Files:**
+**文件：**
 
-- Create: `backend/services/Iam/**`
-- Create: `backend/services/FileStorage/**`
-- Create: `backend/services/AppHub/**`
-- Create: `backend/services/Ops/**`
-- Create: `backend/gateway/PlatformGateway/**`
+- 创建：`backend/services/Iam/**`
+- 创建：`backend/services/FileStorage/**`
+- 创建：`backend/services/AppHub/**`
+- 创建：`backend/services/Ops/**`
+- 创建：`backend/gateway/PlatformGateway/**`
 
-- [ ] **Step 1: Create Iam, FileStorage, AppHub, and Ops with netcorepal template**
+- [ ] **步骤 1：使用 netcorepal 模板创建 Iam、FileStorage、AppHub 和 Ops**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Iam -o backend/services/Iam --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -564,14 +564,14 @@ dotnet new netcorepal-web -n Nerv.IIP.AppHub -o backend/services/AppHub --Framew
 dotnet new netcorepal-web -n Nerv.IIP.Ops -o backend/services/Ops --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
 ```
 
-Expected:
+预期结果：
 
-- Each service has `.Web`, `.Domain`, and `.Infrastructure` projects.
-- No template Admin UI or Admin RBAC code is generated into Nerv-IIP service ownership.
+- 每个服务都有 `.Web`、`.Domain` 和 `.Infrastructure` 项目。
+- 不在 Nerv-IIP 服务所有权范围中生成模板 Admin UI 或 Admin RBAC 代码。
 
-- [ ] **Step 2: Create PlatformGateway as thin Web service**
+- [ ] **步骤 2：将 PlatformGateway 创建为轻薄 Web 服务**
 
-Run:
+运行：
 
 ```powershell
 New-Item -ItemType Directory -Force -Path backend/gateway/PlatformGateway/src | Out-Null
@@ -581,9 +581,9 @@ dotnet new xunit -n Nerv.IIP.PlatformGateway.Web.Tests -o backend/gateway/Platfo
 dotnet add backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj reference backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj
 ```
 
-- [ ] **Step 3: Add projects to backend solution**
+- [ ] **步骤 3：将项目添加到后端解决方案**
 
-Run:
+运行：
 
 ```powershell
 dotnet sln backend/Nerv.IIP.sln add `
@@ -603,9 +603,9 @@ dotnet sln backend/Nerv.IIP.sln add `
   backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj
 ```
 
-- [ ] **Step 4: Add shared references**
+- [ ] **步骤 4：添加共享引用**
 
-Run:
+运行：
 
 ```powershell
 dotnet add backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Nerv.IIP.AppHub.Web.csproj reference `
@@ -628,53 +628,53 @@ dotnet add backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv
   backend/common/Observability/Nerv.IIP.Observability/Nerv.IIP.Observability.csproj
 ```
 
-- [ ] **Step 5: Build**
+- [ ] **步骤 5：构建**
 
-Run:
+运行：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
 dotnet build backend/Nerv.IIP.sln
 ```
 
-Expected: build exits with code `0`.
+预期结果：构建以代码 `0` 退出。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend
 git commit -m "chore: scaffold platform services"
 ```
 
-## Task 5: Implement IAM Foundation
+## 任务 5：实施 IAM 基础
 
-**Files:**
+**文件：**
 
-- Create/Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/**`
-- Create/Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/**`
-- Create/Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/**`
-- Create/Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/**`
-- Test: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/**`
+- 创建/修改：`backend/services/Iam/src/Nerv.IIP.Iam.Domain/AggregatesModel/**`
+- 创建/修改：`backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/**`
+- 创建/修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/**`
+- 创建/修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/**`
+- 测试：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/**`
 
-- [ ] **Step 1: Model IAM facts**
+- [ ] **步骤 1：建模 IAM 事实**
 
-Create aggregates and persistence mappings for:
+为以下对象创建聚合和持久化映射：
 
-| Aggregate | Owns |
+| 聚合 | 拥有内容 |
 | --- | --- |
-| `Organization` | organization id, name, status |
-| `Environment` | environment id, organization id, name, status |
-| `User` | login name, email, password hash, enabled flag, security stamp |
-| `Role` | role name, permission codes |
-| `Membership` | user, organization, environment, role assignments |
-| `UserSession` | refresh token hash, issued/expires/revoked timestamps, permission version |
-| `ConnectorHostCredential` | connector host identity, organization, environment, capability scope, secret hash, valid range |
+| `Organization` | organization id、名称、状态 |
+| `Environment` | 环境 ID、组织 ID、名称、状态 |
+| `User` | 登录名、邮箱、密码哈希、启用标志、security stamp |
+| `Role` | 角色名称、权限代码 |
+| `Membership` | 用户、组织、环境、角色分配 |
+| `UserSession` | 刷新令牌哈希、签发/到期/吊销时间戳、权限版本 |
+| `ConnectorHostCredential` | Connector Host 身份、组织、环境、能力范围、secret 哈希、有效范围 |
 
-- [ ] **Step 2: Add first IAM endpoints**
+- [ ] **步骤 2：添加首批 IAM endpoint**
 
-Implement these endpoints first:
+优先实施以下 endpoint：
 
 ```text
 POST /api/iam/v1/auth/login
@@ -692,21 +692,21 @@ GET  /api/iam/v1/sessions
 POST /api/iam/v1/sessions/{sessionId}/revoke
 ```
 
-Use ASP.NET Core `PasswordHasher<TUser>` through a thin adapter. Store refresh tokens and Connector Host secrets only as hashes.
+通过轻薄适配器使用 ASP.NET Core `PasswordHasher<TUser>`。刷新令牌和 Connector Host 密钥仅以哈希形式存储。
 
-Authentication uses short-lived JWT Bearer access tokens plus refresh token rotation. Do not add a separate session authentication code. `sessionId`, `securityStamp`, and `permissionVersion` claims must be validated against IAM server-side facts for protected operations.
+认证使用短期 JWT Bearer 访问令牌加刷新令牌轮换。不得添加独立的会话认证代码。对于受保护操作，必须根据 IAM 服务端事实验证 `sessionId`、`securityStamp` 和 `permissionVersion` 声明。
 
-- [ ] **Step 3: Add initial seed**
+- [ ] **步骤 3：添加初始种子**
 
-Seed:
+写入以下初始数据：
 
-1. One organization.
-2. One environment.
-3. One super administrator user.
-4. One platform administrator role.
-5. One Connector Host credential for the first local Connector Host.
+1. 一个组织。
+2. 一个环境。
+3. 一个超级管理员用户。
+4. 一个平台管理员角色。
+5. 为首个本地 Connector Host 创建一个 Connector Host 凭证。
 
-Seed at least these first permission codes:
+至少写入以下首批权限数据：
 
 ```text
 iam.users.read
@@ -729,58 +729,58 @@ ops.results.write
 ops.audit.read
 ```
 
-The seed must be idempotent by natural keys, not by generated database ids.
+种子必须按自然键幂等，而不是按生成的数据库 ID 幂等。
 
-- [ ] **Step 4: Add tests**
+- [ ] **步骤 4：添加测试**
 
-Cover these cases:
+覆盖以下场景：
 
-1. Super administrator can login and receives access token plus refresh token.
-2. Refresh rotates the refresh token and invalidates the old refresh token.
-3. Logout revokes the active session.
-4. Disabled user cannot refresh and cannot access protected endpoints.
-5. Connector Host credential can be validated as `principalType = connector-host` with organization and environment scope.
-6. Protected endpoints reject stale `permissionVersion` or revoked `sessionId`.
+1. 超级管理员可以登录，并收到访问令牌和刷新令牌。
+2. 刷新会轮换刷新令牌，并使旧刷新令牌失效。
+3. 登出会吊销活动会话。
+4. 已禁用用户无法刷新，也无法访问受保护 endpoint。
+5. Connector Host 凭证可以验证为 `principalType = connector-host`，并带组织和环境范围。
+6. 受保护 endpoint 拒绝过期的 `permissionVersion` 或已吊销的 `sessionId`。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/Iam
 git commit -m "feat: add iam foundation"
 ```
 
-## Task 6: Implement AppHub Domain And Connector Host Write APIs
+## 任务 6：实施 AppHub Domain 和 Connector Host 写入 API
 
-**Files:**
+**文件：**
 
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/AggregatesModel/**`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/DomainEvents/**`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/**`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Commands/**`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Queries/**`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/**`
-- Test: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/**`
-- Test: `backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/AggregatesModel/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Domain/DomainEvents/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/EntityConfigurations/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Commands/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Queries/**`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Endpoints/**`
+- 测试：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Domain.Tests/**`
+- 测试：`backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/**`
 
-- [ ] **Step 1: Model AppHub facts**
+- [ ] **步骤 1：建模 AppHub 事实**
 
-Implement these facts:
+实施以下事实：
 
-| Aggregate or entity | Required behavior |
+| 聚合或实体 | 必需行为 |
 | --- | --- |
-| `Application` | Created or updated by `applicationKey`; tracks display name and observed versions. |
-| `ApplicationVersion` | Created by `applicationKey + version`; does not replace prior versions. |
-| `ManagedNode` | Created or updated by `nodeKey`; tracks deployment kind and node name. |
-| `ApplicationInstance` | Created or updated by `instanceKey`; owns current reported status and health status. |
-| `CapabilityManifest` | Replaced by latest registration for the same instance. |
-| `InstanceLiveness` | Updated only by heartbeat; keeps last heartbeat time and reachability. |
-| `InstanceStateHistory` | Appended by state snapshot; state-change event only when status changes. |
+| `Application` | 按 `applicationKey` 创建或更新；跟踪显示名称和观察到的版本。 |
+| `ApplicationVersion` | 按 `applicationKey + version` 创建；不替换先前版本。 |
+| `ManagedNode` | 按 `nodeKey` 创建或更新；跟踪部署类型和节点名称。 |
+| `ApplicationInstance` | 按 `instanceKey` 创建或更新；拥有当前上报状态和健康状态。 |
+| `CapabilityManifest` | 由同一实例的最新注册替换。 |
+| `InstanceLiveness` | 仅由心跳更新；保留最近心跳时间和可达性。 |
+| `InstanceStateHistory` | 由状态快照追加；仅在状态变化时产生状态变更事件。 |
 
-- [ ] **Step 2: Add AppHub write endpoints**
+- [ ] **步骤 2：添加 AppHub 写入 endpoint**
 
-Implement:
+实施：
 
 ```text
 POST /api/connectors/v1/registrations
@@ -788,86 +788,86 @@ POST /api/connectors/v1/heartbeats
 POST /api/connectors/v1/state-snapshots
 ```
 
-Each endpoint:
+每个 endpoint：
 
-1. Requires Connector Host authentication after IAM task is available.
-2. Accepts DTOs from `Nerv.IIP.Contracts.ConnectorProtocol`.
-3. Writes `correlationId`, `organizationId`, `environmentId`, `connectorHostId`, and `sdkVersion`.
-4. Returns a ProblemDetails-compatible failure for invalid organization, environment, connector host, or instance context.
-5. Requires the matching permission code: `connectors.registrations.write`, `connectors.heartbeats.write`, or `connectors.state-snapshots.write`.
+1. IAM 任务可用后要求 Connector Host 认证。
+2. 接收 `Nerv.IIP.Contracts.ConnectorProtocol` 中的 DTO。
+3. 写入 `correlationId`、`organizationId`、`environmentId`、`connectorHostId` 和 `sdkVersion`。
+4. 对无效组织、环境、Connector Host 或实例上下文返回与 ProblemDetails 兼容的失败。
+5. 要求匹配的权限代码：`connectors.registrations.write`、`connectors.heartbeats.write` 或 `connectors.state-snapshots.write`。
 
-- [ ] **Step 3: Enforce idempotency and state rules**
+- [ ] **步骤 3：强制执行幂等和状态规则**
 
-Implement these rules:
+实施以下规则：
 
-1. Duplicate `ApplicationRegistration.IdempotencyKey` returns the same logical registration result.
-2. Heartbeat updates `InstanceLiveness` and does not change `ApplicationInstance.ReportedStatus`.
-3. State snapshot updates `ReportedStatus`, `HealthStatus`, and state history.
-4. `InstanceStatusChanged` publishes only when the reported status changes.
-5. Any externally published IntegrationEvent must use the CAP outbox or equivalent reliable publishing path; if first iteration defers external consumers, keep the converter and outbox shape ready.
+1. 重复的 `ApplicationRegistration.IdempotencyKey` 返回相同的逻辑注册结果。
+2. 心跳更新 `InstanceLiveness`，且不更改 `ApplicationInstance.ReportedStatus`。
+3. 状态快照更新 `ReportedStatus`、`HealthStatus` 和状态历史。
+4. 仅当上报状态变化时发布 `InstanceStatusChanged`。
+5. 任何对外发布的 IntegrationEvent 都必须使用 CAP outbox 或等效可靠发布路径；如果第一次迭代延后外部消费者，保持 converter 和 outbox 形态就绪。
 
-- [ ] **Step 4: Add AppHub internal query endpoints**
+- [ ] **步骤 4：添加 AppHub 内部查询 endpoint**
 
-Implement internal endpoints for Gateway:
+为 Gateway 实施内部 endpoint：
 
 ```text
 POST /internal/apphub/v1/instances/query
 GET  /internal/apphub/v1/instances/{instanceKey}
 ```
 
-Responses use `Nerv.IIP.Contracts.AppHubQueries`.
+响应使用 `Nerv.IIP.Contracts.AppHubQueries`。
 
-- [ ] **Step 5: Add tests**
+- [ ] **步骤 5：添加测试**
 
-Cover these cases:
+覆盖以下场景：
 
-1. Registration creates application, version, node, instance, and capability rows.
-2. Repeating the same registration idempotency key does not create duplicates.
-3. Heartbeat changes liveness and preserves reported status.
-4. First state snapshot writes state history.
-5. Second snapshot with same status does not publish `InstanceStatusChanged`.
-6. Snapshot with changed status publishes one `InstanceStatusChanged`.
-7. Internal instance query returns application, version, node, liveness, state, and capabilities.
+1. 注册创建应用、版本、节点、实例和能力行。
+2. 使用相同注册幂等 key 重复注册不会创建重复项。
+3. 心跳更改存活性并保持上报状态。
+4. 第一次状态快照写入状态历史。
+5. 状态相同的第二次快照不发布 `InstanceStatusChanged`。
+6. 状态发生变化的快照发布一个 `InstanceStatusChanged`。
+7. 内部实例查询返回应用、版本、节点、存活性、状态和能力。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/services/AppHub
 git commit -m "feat: add apphub connector ingestion"
 ```
 
-## Task 7: Implement PlatformGateway Instance Queries
+## 任务 7：实施 PlatformGateway 实例查询
 
-**Files:**
+**文件：**
 
-- Create/Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/AppHubClient/**`
-- Create/Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Instances/**`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Test: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/**`
+- 创建/修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/AppHubClient/**`
+- 创建/修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Instances/**`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 测试：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/**`
 
-- [ ] **Step 1: Add AppHub HTTP client**
+- [ ] **步骤 1：添加 AppHub HTTP 客户端**
 
-Create a typed client that calls:
+创建调用以下接口的强类型客户端：
 
 ```text
 POST /internal/apphub/v1/instances/query
 GET  /internal/apphub/v1/instances/{instanceKey}
 ```
 
-Use DTOs from `Nerv.IIP.Contracts.AppHubQueries`. The client belongs to Gateway Web/Application and does not reference AppHub Domain or Infrastructure.
+使用 `Nerv.IIP.Contracts.AppHubQueries` 中的 DTO。客户端属于 Gateway Web/Application，不引用 AppHub Domain 或 Infrastructure。
 
-- [ ] **Step 2: Add Gateway public endpoints**
+- [ ] **步骤 2：添加 Gateway 公开 endpoint**
 
-Implement:
+实施：
 
 ```text
 GET /api/console/v1/instances
 GET /api/console/v1/instances/{instanceKey}
 ```
 
-The list endpoint accepts:
+列表 endpoint 接收：
 
 ```text
 organizationId
@@ -877,7 +877,7 @@ pageSize
 search
 ```
 
-The detail endpoint accepts:
+详情 endpoint 接收：
 
 ```text
 organizationId
@@ -885,65 +885,65 @@ environmentId
 instanceKey
 ```
 
-- [ ] **Step 3: Add caching on read side**
+- [ ] **步骤 3：在读取侧添加缓存**
 
-Cache the instance list and detail responses through `Nerv.IIP.Caching` with keys following:
+通过 `Nerv.IIP.Caching` 缓存实例列表和详情响应，key 遵循：
 
 ```text
 gateway:instance-list:{organizationId}:{environmentId}:query:{hash}:v1
 gateway:instance-detail:{organizationId}:{environmentId}:instance:{instanceKey}:v1
 ```
 
-TTL must be short enough for console freshness; start with a small default and keep explicit invalidation available when AppHub events are later consumed by Gateway.
+TTL 必须足够短以保持控制台新鲜度；从较小默认值开始，并在 Gateway 后续消费 AppHub 事件时保留显式失效能力。
 
-- [ ] **Step 4: Add tests**
+- [ ] **步骤 4：添加测试**
 
-Cover these cases:
+覆盖以下场景：
 
-1. Gateway list endpoint maps query parameters to `InstanceListQuery`.
-2. Gateway detail endpoint returns AppHub detail response without leaking AppHub internal route names.
-3. Gateway returns a diagnostic failure if AppHub is unavailable.
-4. Gateway project file does not reference `Nerv.IIP.AppHub.Domain` or `Nerv.IIP.AppHub.Infrastructure`.
+1. Gateway 列表 endpoint 将查询参数映射到 `InstanceListQuery`。
+2. Gateway 详情 endpoint 返回 AppHub 详情响应，且不泄漏 AppHub 内部路由名称。
+3. 如果 AppHub 不可用，Gateway 返回诊断失败。
+4. Gateway 项目文件不引用 `Nerv.IIP.AppHub.Domain` 或 `Nerv.IIP.AppHub.Infrastructure`。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/gateway/PlatformGateway
 git commit -m "feat: add gateway instance queries"
 ```
 
-## Task 8: Add Caching And Observability Shared Libraries
+## 任务 8：添加缓存和可观测性共享库
 
-**Files:**
+**文件：**
 
-- Create/Modify: `backend/common/Caching/Nerv.IIP.Caching/**`
-- Create/Modify: `backend/common/Observability/Nerv.IIP.Observability/**`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Program.cs`
-- Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 创建/修改：`backend/common/Caching/Nerv.IIP.Caching/**`
+- 创建/修改：`backend/common/Observability/Nerv.IIP.Observability/**`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Program.cs`
+- 修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/Program.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
 
-- [ ] **Step 1: Add FusionCache registration boundary**
+- [ ] **步骤 1：添加 FusionCache 注册边界**
 
-`Nerv.IIP.Caching` exposes one public service registration method:
+`Nerv.IIP.Caching` 公开一个服务注册方法：
 
 ```csharp
 services.AddNervIipCaching(configuration, serviceName);
 ```
 
-It owns:
+它拥有：
 
-1. FusionCache registration.
-2. Redis distributed cache configuration.
-3. Redis backplane configuration.
-4. System.Text.Json serializer options.
-5. OpenTelemetry hooks for cache behavior.
-6. Cache key helper methods.
+1. FusionCache 注册。
+2. Redis 分布式缓存配置。
+3. Redis backplane 配置。
+4. System.Text.Json 序列化器选项。
+5. 缓存行为的 OpenTelemetry hook。
+6. 缓存 key 辅助方法。
 
-- [ ] **Step 2: Add cache key helpers**
+- [ ] **步骤 2：添加缓存 key 辅助函数**
 
-Expose helpers for:
+公开以下辅助函数：
 
 ```text
 AppHub instance list
@@ -953,63 +953,63 @@ Gateway instance detail
 IAM permission snapshot
 ```
 
-Each helper must require service, organization id, environment id, resource, stable id or normalized query hash, and schema version.
+每个辅助函数必须要求服务、组织 ID、环境 ID、资源、稳定 ID 或规范化查询哈希，以及 schema 版本。
 
-- [ ] **Step 3: Add Observability registration boundary**
+- [ ] **步骤 3：添加可观测性注册边界**
 
-`Nerv.IIP.Observability` exposes one public registration method:
+`Nerv.IIP.Observability` 公开一个注册方法：
 
 ```csharp
 services.AddNervIipObservability(configuration, serviceName);
 ```
 
-It owns:
+它拥有：
 
-1. OpenTelemetry traces, metrics, and logs.
-2. ASP.NET Core instrumentation.
-3. HTTP client instrumentation.
-4. netcorepal and CAP instrumentation supplied by the selected template package set.
-5. Correlation id enrichment.
-6. Health and build info conventions.
+1. OpenTelemetry trace、metric 和日志。
+2. ASP.NET Core instrumentation。
+3. HTTP 客户端 instrumentation。
+4. 所选模板包集提供的 netcorepal 和 CAP instrumentation。
+5. Correlation id 丰富。
+6. 健康和构建信息约定。
 
-- [ ] **Step 4: Wire services**
+- [ ] **步骤 4：接入服务**
 
-Call the shared registration methods from Iam, AppHub, and PlatformGateway. Keep service-specific settings in appsettings or environment configuration, not hard-coded in endpoint classes.
+从 Iam、AppHub 和 PlatformGateway 调用共享注册方法。服务特定设置保留在 appsettings 或环境配置中，不得硬编码在 endpoint 类中。
 
-- [ ] **Step 5: Add tests**
+- [ ] **步骤 5：添加测试**
 
-Cover these cases:
+覆盖以下场景：
 
-1. Cache key helpers generate different keys for different organizations.
-2. Cache key helpers generate different keys for different schema versions.
-3. Gateway cached read returns the updated result after explicit invalidation.
-4. A request with `correlationId` appears in logs and trace activity tags.
+1. 缓存 key 辅助函数为不同组织生成不同 key。
+2. 缓存 key 辅助函数为不同 schema 版本生成不同 key。
+3. 显式失效后，Gateway 缓存读取返回更新后的结果。
+4. 带 `correlationId` 的请求出现在日志和 trace activity tag 中。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Caching backend/common/Observability backend/services/Iam backend/services/AppHub backend/gateway/PlatformGateway
 git commit -m "feat: add shared caching and observability"
 ```
 
-## Task 9: Scaffold Connector Host And Docker Connector
+## 任务 9：搭建 Connector Host 和 Docker Connector 骨架
 
-**Files:**
+**文件：**
 
-- Create: `connector-hosts/Nerv.IIP.ConnectorHost.sln`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/**`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Application/**`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts/**`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions/**`
-- Create: `connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker/**`
-- Create: `connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/**`
-- Create: `connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/**`
+- 创建：`connector-hosts/Nerv.IIP.ConnectorHost.sln`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/**`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Application/**`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Contracts/**`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Abstractions/**`
+- 创建：`connector-hosts/src/Nerv.IIP.ConnectorHost.Connectors.Docker/**`
+- 创建：`connector-hosts/tests/Nerv.IIP.ConnectorHost.Application.Tests/**`
+- 创建：`connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/**`
 
-- [ ] **Step 1: Create connector host solution and projects**
+- [ ] **步骤 1：创建 Connector Host 解决方案和项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new sln -n Nerv.IIP.ConnectorHost -o connector-hosts
@@ -1022,9 +1022,9 @@ dotnet new xunit -n Nerv.IIP.ConnectorHost.Application.Tests -o connector-hosts/
 dotnet new xunit -n Nerv.IIP.ConnectorHost.Connectors.Docker.Tests -o connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests --framework net10.0
 ```
 
-- [ ] **Step 2: Add references**
+- [ ] **步骤 2：添加引用**
 
-Run:
+运行：
 
 ```powershell
 dotnet add connector-hosts/src/Nerv.IIP.ConnectorHost.Application/Nerv.IIP.ConnectorHost.Application.csproj reference `
@@ -1051,9 +1051,9 @@ dotnet sln connector-hosts/Nerv.IIP.ConnectorHost.sln add `
   connector-hosts/tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests/Nerv.IIP.ConnectorHost.Connectors.Docker.Tests.csproj
 ```
 
-- [ ] **Step 3: Define connector abstraction**
+- [ ] **步骤 3：定义 Connector 抽象**
 
-`Nerv.IIP.ConnectorHost.Connectors.Abstractions` exposes:
+`Nerv.IIP.ConnectorHost.Connectors.Abstractions` 公开：
 
 ```text
 IConnector
@@ -1062,63 +1062,63 @@ ConnectorCapability
 ConnectorStateSnapshot
 ```
 
-The abstraction returns stable `nodeKey`, `applicationKey`, and `instanceKey` values.
+该抽象返回稳定的 `nodeKey`、`applicationKey` 和 `instanceKey` 值。
 
-- [ ] **Step 4: Implement Docker Connector**
+- [ ] **步骤 4：实施 Docker Connector**
 
-Docker Connector maps one discovered container to:
+Docker Connector 将一个发现的容器映射为：
 
-1. `nodeKey`: stable local Docker node key.
-2. `applicationKey`: image/repository-derived key.
-3. `version`: image tag or digest-derived version.
-4. `instanceKey`: container id based stable key.
-5. capabilities: at least `runtime`, `log`, and `lifecycle.restart`.
+1. `nodeKey`：稳定的本地 Docker 节点 key。
+2. `applicationKey`：由镜像/仓库派生的键。
+3. `version`：由镜像 tag 或 digest 派生的版本。
+4. `instanceKey`：基于容器 id 的稳定 key。
+5. capabilities：至少包括 `runtime`、`log` 和 `lifecycle.restart`。
 
-- [ ] **Step 5: Implement Connector Host reporting loop**
+- [ ] **步骤 5：实施 Connector Host 上报循环**
 
-Connector Host:
+Connector Host：
 
-1. Discovers targets through registered connectors.
-2. Converts discovered targets to `ApplicationRegistration`.
-3. Sends registration to AppHub through `Nerv.IIP.Sdk.ConnectorProtocol`.
-4. Sends heartbeat on a fixed interval through `Nerv.IIP.Sdk.ConnectorProtocol`.
-5. Sends state snapshot on startup and when observed state changes through `Nerv.IIP.Sdk.ConnectorProtocol`.
-6. Uses IAM Connector Host credential to authenticate AppHub requests.
-7. Logs correlation id for each registration, heartbeat, and state snapshot.
+1. 通过已注册的 Connector 发现目标。
+2. 将发现的目标转换为 `ApplicationRegistration`。
+3. 通过 `Nerv.IIP.Sdk.ConnectorProtocol` 向 AppHub 发送注册。
+4. 通过 `Nerv.IIP.Sdk.ConnectorProtocol` 按固定间隔发送心跳。
+5. 启动时以及观察到状态变化时，通过 `Nerv.IIP.Sdk.ConnectorProtocol` 发送状态快照。
+6. 使用 IAM Connector Host 凭证认证 AppHub 请求。
+7. 为每次注册、心跳和状态快照记录 correlation id。
 
-- [ ] **Step 6: Add tests**
+- [ ] **步骤 6：添加测试**
 
-Cover these cases:
+覆盖以下场景：
 
-1. Connector output maps to stable Connector Protocol registration fields.
-2. Reporting loop sends registration before heartbeat.
-3. Reporting loop sends state snapshot after registration.
-4. Failed AppHub request is logged with correlation id and retried on the next cycle.
+1. Connector 输出映射到稳定的 Connector Protocol 注册字段。
+2. 上报循环先发送注册，再发送心跳。
+3. 上报循环在注册后发送状态快照。
+4. 失败的 AppHub 请求会带 correlation id 记录，并在下一循环重试。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
-Run:
+运行：
 
 ```powershell
 git add connector-hosts
 git commit -m "feat: add connector host docker connector"
 ```
 
-## Task 10: Verify The First Vertical Slice
+## 任务 10：验证第一阶段纵切
 
-**Files:**
+**文件：**
 
-- Create/Modify: `infra/docker-compose.dev.yml`
-- Create/Modify: `scripts/verify-first-slice.ps1`
-- Create/Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/appsettings.Development.json`
-- Create/Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/appsettings.Development.json`
-- Create/Modify: `backend/services/AppHub/src/Nerv.IIP.AppHub.Web/appsettings.Development.json`
-- Create/Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json`
-- Create/Modify: `connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json`
+- 创建/修改：`infra/docker-compose.dev.yml`
+- 创建/修改：`scripts/verify-first-slice.ps1`
+- 创建/修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/appsettings.Development.json`
+- 创建/修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/appsettings.Development.json`
+- 创建/修改：`backend/services/AppHub/src/Nerv.IIP.AppHub.Web/appsettings.Development.json`
+- 创建/修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/appsettings.Development.json`
+- 创建/修改：`connector-hosts/src/Nerv.IIP.ConnectorHost.Host/appsettings.Development.json`
 
-- [ ] **Step 1: Add development dependency compose**
+- [ ] **步骤 1：添加开发依赖 Compose**
 
-Compose includes:
+Compose 包含：
 
 ```text
 PostgreSQL
@@ -1128,11 +1128,11 @@ MinIO
 OpenTelemetry collector
 ```
 
-Qdrant can be present in the broader development stack, but this first slice does not depend on its runtime behavior. MinIO is included for FileStorage readiness; the Connector Host registration slice does not require object content flow.
+Qdrant 可以存在于更广泛的开发栈中，但第一阶段纵切不依赖其运行时行为。纳入 MinIO 是为了 FileStorage 就绪；Connector Host 注册纵切不要求对象内容流。
 
-- [ ] **Step 2: Add verification script**
+- [ ] **步骤 2：添加验证脚本**
 
-`scripts/verify-first-slice.ps1` executes:
+`scripts/verify-first-slice.ps1` 执行：
 
 ```powershell
 dotnet restore backend/Nerv.IIP.sln
@@ -1143,88 +1143,88 @@ dotnet build connector-hosts/Nerv.IIP.ConnectorHost.sln
 dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
 ```
 
-Then it starts the required services in the selected execution environment and verifies:
+然后它在所选执行环境中启动必需服务并验证：
 
-1. AppHub accepts registration.
-2. AppHub accepts heartbeat.
-3. AppHub accepts state snapshot.
-4. PlatformGateway list endpoint returns the registered instance.
-5. PlatformGateway detail endpoint returns reported status, health status, heartbeat timestamp, and capabilities.
+1. AppHub 接受注册。
+2. AppHub 接受心跳。
+3. AppHub 接受状态快照。
+4. PlatformGateway 列表 endpoint 返回已注册实例。
+5. PlatformGateway 详情 endpoint 返回上报状态、健康状态、心跳时间戳和能力。
 
-- [ ] **Step 3: Run vertical slice verification**
+- [ ] **步骤 3：运行纵切验证**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/verify-first-slice.ps1
 ```
 
-Expected:
+预期结果：
 
-1. All restore, build, and test commands exit with code `0`.
-2. One Docker target appears in `GET /api/console/v1/instances`.
-3. Detail query returns the same `instanceKey` sent by Connector Host.
-4. Connector Host, AppHub, and Gateway logs share the same correlation id for one request chain.
+1. 所有还原、构建和测试命令都以代码 `0` 退出。
+2. `GET /api/console/v1/instances` 中出现一个 Docker 目标。
+3. 详情查询返回 Connector Host 发送的同一 `instanceKey`。
+4. Connector Host、AppHub 和 Gateway 日志为一条请求链共享相同 correlation id。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
-Run:
+运行：
 
 ```powershell
 git add infra scripts backend connector-hosts
 git commit -m "test: verify first vertical slice"
 ```
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 must be first.
-2. Task 2 and Task 3 can run after Task 1.
-3. Task 4 depends on Task 1.
-4. Task 5 can run after Task 4.
-5. Task 6 depends on Task 2, Task 3, Task 4, and IAM auth hooks from Task 5.
-6. Task 7 depends on Task 3, Task 4, Task 6, and Task 8.
-7. Task 8 can run after Task 4, but Gateway caching acceptance is verified after Task 7.
-8. Task 9 depends on Task 1 SDK projects, Task 2 contracts, and the Connector Host credential seed from Task 5.
-9. Task 10 depends on Tasks 1 through 9.
+1. 必须首先执行任务 1。
+2. 任务 2 和任务 3 可以在任务 1 之后运行。
+3. 任务 4 依赖任务 1。
+4. 任务 5 可以在任务 4 之后运行。
+5. 任务 6 依赖任务 2、任务 3、任务 4 和任务 5 的 IAM 认证 hook。
+6. 任务 7 依赖任务 3、任务 4、任务 6 和任务 8。
+7. 任务 8 可以在任务 4 之后运行，但 Gateway 缓存验收在任务 7 之后验证。
+8. 任务 9 依赖任务 1 的 SDK 项目、任务 2 的契约和任务 5 的 Connector Host 凭证种子。
+9. 任务 10 依赖任务 1 至任务 9。
 
-Recommended parallelization:
+建议并行执行：
 
-1. One worker implements Task 5 IAM.
-2. One worker implements Task 6 AppHub after contracts are ready.
-3. One worker implements Task 9 Connector Host after SDK projects and contracts are ready.
-4. Gateway waits for AppHub query contract and can proceed with a fake AppHub HTTP handler until AppHub is running.
+1. 一名执行者实施任务 5 的 IAM。
+2. 契约就绪后，一名执行者实施任务 6 的 AppHub。
+3. SDK 项目和契约就绪后，一名执行者实施任务 9 的 Connector Host。
+4. Gateway 等待 AppHub 查询契约；在 AppHub 运行前，可以使用模拟的 AppHub HTTP 处理器继续工作。
 
-## First Iteration Completion Definition
+## 第一次迭代完成定义
 
-The first iteration is complete when all statements are true:
+满足以下全部条件时，第一次迭代才算完成：
 
-1. `dotnet restore`, `dotnet build`, and `dotnet test` pass for backend solution.
-2. `dotnet restore`, `dotnet build`, and `dotnet test` pass for connector-hosts solution.
-3. IAM can seed an administrator and one Connector Host credential.
-4. Platform SDK Core/Auth/ConnectorProtocol/FileStorage projects exist and do not reference backend service Web, Domain, Infrastructure, or database models; `Sdk.Notification` remains outside this first iteration.
-5. FileStorage service exists as a health/build-info skeleton with file metadata, upload session, upload instructions, download grant, Upload Provider abstraction, FilePurposePolicy, scanStatus, and object storage adapter boundaries documented in code structure.
-6. Connector Host can authenticate to AppHub as `principalType = connector-host`.
-7. Connector Host can send registration, heartbeat, and state snapshot through `Nerv.IIP.Sdk.ConnectorProtocol`.
-8. AppHub persists application, version, node, instance, capability, liveness, and state history facts.
-9. PlatformGateway can return instance list and detail through AppHub HTTP/query contract.
-10. Gateway does not reference AppHub Domain or Infrastructure projects.
-11. Logs and traces can be correlated across Connector Host, AppHub, and Gateway.
-12. Ops service exists only as a health/build-info skeleton in this iteration.
-13. No first-iteration service implements ad hoc notification tables, notification preferences, delivery attempts, or direct SMS/email/enterprise IM/Webhook provider calls.
+1. 后端解决方案的 `dotnet restore`、`dotnet build` 和 `dotnet test` 通过。
+2. connector-hosts 解决方案的 `dotnet restore`、`dotnet build` 和 `dotnet test` 通过。
+3. IAM 可以创建初始管理员和初始 Connector Host 凭证。
+4. Platform SDK Core/Auth/ConnectorProtocol/FileStorage 项目存在，且不引用后端服务 Web、Domain、Infrastructure 或数据库模型；`Sdk.Notification` 仍在第一次迭代范围外。
+5. FileStorage 服务以 health/build-info 骨架存在，其代码结构记录文件元数据、上传会话、上传指令、下载授权、Upload Provider 抽象、FilePurposePolicy、scanStatus 和对象存储适配器边界。
+6. Connector Host 可以作为 `principalType = connector-host` 向 AppHub 认证。
+7. Connector Host 可以通过 `Nerv.IIP.Sdk.ConnectorProtocol` 发送注册、心跳和状态快照。
+8. AppHub 持久化应用、版本、节点、实例、能力、存活性和状态历史事实。
+9. PlatformGateway 可以通过 AppHub HTTP/查询契约返回实例列表和详情。
+10. Gateway 不引用 AppHub Domain 或 Infrastructure 项目。
+11. Connector Host、AppHub 和 Gateway 之间的日志和 trace 可以关联。
+12. Ops 服务在此次迭代中仅以 health/build-info 骨架存在。
+13. 第一次迭代的任何服务均不实施临时通知表、通知偏好、投递尝试，或直接调用短信/邮件/企业 IM/Webhook provider。
 
-## Self Review
+## 自检
 
-Spec coverage:
+规范覆盖：
 
-1. Architecture boundary: covered by Boundary Rules, Task 4, Task 6, Task 7, and Task 9.
-2. Implementability: covered by concrete scaffold commands, file map, task ordering, and verification script.
-3. Maintainability and extensibility: covered by common contracts, modular SDK boundary, caching boundary, observability boundary, and Gateway/AppHub query contract separation.
-4. Complexity control: Ops action loop, Notification implementation, full UI, OAuth/OIDC, SSO, MFA, Knowledge, AI Integration, and advanced file-management workflows are outside this plan.
-5. Basic admin timing: IAM foundation starts in Task 5, before AppHub Connector Host authentication and before Gateway protected queries.
+1. 架构边界：由“边界规则”、任务 4、任务 6、任务 7 和任务 9 覆盖。
+2. 可实施性：由具体骨架命令、文件图、任务顺序和验证脚本覆盖。
+3. 可维护性和可扩展性：由公共契约、模块化 SDK 边界、缓存边界、可观测性边界，以及 Gateway/AppHub 查询契约分离覆盖。
+4. 复杂度控制：Ops 操作闭环、Notification 实施、完整 UI、OAuth/OIDC、SSO、MFA、Knowledge、AI Integration 和高级文件管理工作流均在本计划范围外。
+5. 基础管理时序：IAM 基础从任务 5 开始，早于 AppHub Connector Host 认证和 Gateway 受保护查询。
 
-Plan self-check:
+计划自检：
 
-1. No task relies on an undefined service boundary.
-2. No first-iteration acceptance item depends on Ops action dispatch.
-3. No first-iteration acceptance item depends on Notification implementation.
-4. Query contract names match Task 3, Task 6, and Task 7.
+1. 没有任务依赖未定义的服务边界。
+2. 第一次迭代的验收项均不依赖 Ops 操作调度。
+3. 第一次迭代的验收项均不依赖 Notification 实施。
+4. 查询契约名称与任务 3、任务 6 和任务 7 一致。

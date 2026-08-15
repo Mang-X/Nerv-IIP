@@ -6,6 +6,7 @@ using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataOpenApiTests
 {
     [Fact]

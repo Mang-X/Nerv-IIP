@@ -17,16 +17,17 @@ export const PERSONAS: Persona[] = [
   {
     id: 'plant-admin',
     label: '全厂管理',
-    factoryIds: ['F01', 'F02'],
+    factoryIds: ['SITE-001'],
     workshopIds: 'all',
     lineIds: 'all',
     allowedScreens: ['factory', 'equipment', 'line', 'workshop', 'warehouse', 'quality'],
   },
   {
+    // 设定集 §5：宁沪减振没有「线长」岗位，车间层的负责人是车间主任（EMP-001..003）
     id: 'workshop-lead',
-    label: '电池车间线长',
-    factoryIds: ['F01'],
-    workshopIds: ['WS-BATTERY'],
+    label: '装配车间主任',
+    factoryIds: ['SITE-001'],
+    workshopIds: ['WS-02'],
     lineIds: 'all',
     allowedScreens: ['line', 'workshop'],
   },

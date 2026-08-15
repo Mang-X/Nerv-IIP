@@ -1,26 +1,43 @@
 <script setup lang="ts">
 import type {
-  BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMaintenanceSparePartInput,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
+import {
+  maintenancePriorityLabel,
+  maintenancePriorityLabels,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
 import {
   useBusinessWorkers,
   useBusinessMasterDataResources,
 } from '@/composables/useBusinessMasterData'
+import {
+  useEquipmentSkuCatalog,
+  useEquipmentUomCatalog,
+} from '@/composables/useEquipmentPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvCombobox,
   NvDataTable,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -69,15 +86,49 @@ const {
   completeWorkOrder,
   completeWorkOrderPending,
   filters,
+  workOrdersLastUpdatedAt,
+  workOrdersHasSuccessfulResponse,
+  workOrdersHasFailedResponse,
 } = useMaintenanceWorkOrders()
+const maintenanceScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const maintenanceEmptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的维护工单，暂不支持按维修人员筛选；空态不代表个人工单。',
+)
 const { page, pageSize } = usePagedList(filters)
 const route = useRoute()
 const router = useRouter()
 
 // 技师目录（人员选择器数据源，读自 /master-data/workers）。
 const { workers, workersPending } = useBusinessWorkers()
-// 设备台账（设备编号联想建议，读自 master-data device-asset 资源）。
+// 设备台账（设备编号联想建议 + 列表里把编号解析成设备名，读自 master-data device-asset 资源）。
 const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
+// 完工登记的换件行：物料与单位从主数据选，单位默认跟随物料基本单位。
+const { skuOptions, skusPending, baseUomBySku } = useEquipmentSkuCatalog()
+const { uomOptions, uomsPending } = useEquipmentUomCatalog()
+function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
+  const baseUom = baseUomBySku.value.get(row.skuCode.trim())
+  if (baseUom) row.uomCode = baseUom
+}
+const deviceNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const r of deviceResources.value) {
+    if (r.code) map.set(r.code, r.displayName ?? r.code)
+  }
+  return map
+})
+/** 设备展示串：名称优先，台账查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '—') {
+  if (!code) return fallback
+  return deviceNameByCode.value.get(code) ?? code
+}
+// 外部维修供应商只回编码（SUP-…），客户/供应商中文名在主数据业务伙伴里。
+const { resolvePartner } = useBusinessPartnerNames()
 // 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
@@ -158,7 +209,8 @@ interface SparePartRow {
 }
 let nextSpareRowId = 1
 function createSpareRow(): SparePartRow {
-  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: 'EA', unitCost: '' }
+  // 单位留空：选完物料自动带出它的基本单位；主档没维护就由操作员选，不预填假单位。
+  return { id: nextSpareRowId++, skuCode: '', quantity: '1', uomCode: '', unitCost: '' }
 }
 
 const completeOpen = shallowRef(false)
@@ -209,7 +261,7 @@ const queryPrefilled = shallowRef(false)
 // 从报警行「创建维修工单」带入时：设备与来源报警是既定事实，只读呈现，不再给输入位。
 const createCarried = shallowRef(false)
 const createCarriedItems = computed(() => [
-  { label: '设备', value: createForm.deviceAssetId },
+  { label: '设备', value: deviceLabel(createForm.deviceAssetId) },
   { label: '来源报警', value: createForm.sourceAlarmId },
 ])
 const completeCarriedItems = computed(() => {
@@ -219,10 +271,15 @@ const completeCarriedItems = computed(() => {
   const omitPlaceholder = (value: string) => (value === '—' ? undefined : value)
   return [
     { label: '工单号', value: workOrderNo(target) },
-    { label: '设备', value: target.deviceAssetId },
+    { label: '设备', value: deviceLabel(target.deviceAssetId) },
     { label: '优先级', value: omitPlaceholder(priorityLabel(target.priority)) },
     { label: '保修', value: omitPlaceholder(warrantyStatusLabel(target.warrantyStatus)) },
-    { label: '供应商', value: target.supplierPartnerCode },
+    {
+      label: '供应商',
+      value: target.supplierPartnerCode
+        ? (resolvePartner(target.supplierPartnerCode) ?? target.supplierPartnerCode)
+        : undefined,
+    },
     { label: '开单时间', value: omitPlaceholder(formatDateTime(target.openedAtUtc)) },
   ]
 })
@@ -235,7 +292,14 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
     cellClass: 'font-medium',
     accessor: (r) => workOrderNo(r),
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
+        ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '—'),
+  },
   { key: 'warrantyStatus', header: '保修', width: 'w-24' },
   {
     key: 'warrantyExpiresOn',
@@ -246,8 +310,11 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   {
     key: 'supplierPartnerCode',
     header: '供应商',
-    width: 'w-28',
-    accessor: (r) => r.supplierPartnerCode ?? '—',
+    width: 'w-32',
+    accessor: (r) =>
+      r.supplierPartnerCode
+        ? (resolvePartner(r.supplierPartnerCode) ?? r.supplierPartnerCode)
+        : '—',
   },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -260,25 +327,20 @@ const columns: NvDataTableColumn<WorkOrderRow>[] = [
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
+/**
+ * 人读工单号。以前拿 workOrderId（GUID）末 8 位拼 `WO-XXXXXXXX` 冒充单号——
+ * 那是编造出来的、系统里查不到的号。真实单号（`MWO-2026-####`）现在落在
+ * `sourceReferenceId` 上；读面还没有专门的 workOrderNo 字段，已登记为后端缺口。
+ */
 function workOrderNo(row: WorkOrderRow) {
-  const id = row.workOrderId ?? ''
-  // 人读单号：取 GUID 末段大写，GUID 自身仅作内部点击目标。
-  return id ? `WO-${id.slice(-8).toUpperCase()}` : '维护工单'
+  return row.sourceReferenceId ?? '无工单号'
 }
-// 建单只开放高/中/低三档，但报警自动开单等来源会带 critical/urgent 等更高档位，
-// 只查建单选项会把它们原样漏成英文码，所以显示走一张覆盖全部来源的映射表。
-const PRIORITY_LABELS: Record<string, string> = {
-  critical: '紧急',
-  urgent: '紧急',
-  high: '高',
-  medium: '中',
-  normal: '中',
-  low: '低',
-}
+// 建单只开放高/中/低三档，但报警自动开单等来源还会带 critical/urgent/normal；
+// 显示统一走 business-core 的跨端生产词表，PC 的空值/未知值继续显示破折号。
 function priorityLabel(value?: string | null) {
   const code = (value ?? '').trim().toLowerCase()
-  if (!code) return '—'
-  return PRIORITY_LABELS[code] ?? '—'
+  if (!Object.hasOwn(maintenancePriorityLabels, code)) return '—'
+  return maintenancePriorityLabel(code)
 }
 function technicianLabel(userId?: string | null) {
   if (!userId) return '未指派'
@@ -324,7 +386,7 @@ async function submitCreate() {
     createError.value = '预估工时需为非负整数。'
     return
   }
-  const body: BusinessConsoleCreateMaintenanceWorkOrderRequest = {
+  const body = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     deviceAssetId: createForm.deviceAssetId.trim(),
@@ -339,7 +401,7 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('维护工单已创建')
   } catch (error) {
-    notifyError(error, '维护工单创建失败，请稍后重试。')
+    notifyOperationFailure('维护工单创建失败', error, '维护工单创建失败，请稍后重试。')
   }
 }
 
@@ -357,6 +419,13 @@ function openComplete(row: WorkOrderRow) {
   sparePartCostOverride.value = ''
   completeError.value = ''
   completeOpen.value = true
+}
+function canComplete(row: WorkOrderRow) {
+  return statusActionGate({
+    domain: 'maintenance-work-order',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function addSpareRow() {
   spareRows.push(createSpareRow())
@@ -415,10 +484,16 @@ async function submitComplete() {
     completeError.value = '备件数量需为正数。'
     return
   }
+  // 单位来自备件的物料主档（选完物料自动带出），主档没维护基本单位时要人工选，不替它兜一个通用单位：
+  // 按 kg / l 计量的备件用错单位，后端单位换算会直接失败。
+  if (filledSpares.some((row) => !row.uomCode.trim())) {
+    completeError.value = '备件单位缺失，请为每条备件选择计量单位。'
+    return
+  }
   const spareParts: BusinessConsoleMaintenanceSparePartInput[] = filledSpares.map((row) => ({
     skuCode: row.skuCode.trim(),
     quantity: Number(row.quantity),
-    uomCode: row.uomCode.trim() || 'EA',
+    uomCode: row.uomCode.trim(),
   }))
   try {
     await completeWorkOrder(target.workOrderId, {
@@ -438,7 +513,20 @@ async function submitComplete() {
     completeOpen.value = false
     notifySuccess(`维护工单 ${workOrderNo(target)} 已完成`)
   } catch (error) {
-    notifyError(error, '维护工单完成失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          completeOpen.value = false
+          completeTarget.value = undefined
+          completeError.value = ''
+        },
+        refresh: refreshWorkOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('维护工单完成失败', error, '维护工单完成失败，请稍后重试。')
   }
 }
 
@@ -468,7 +556,7 @@ function formatDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 watch(
@@ -509,6 +597,18 @@ watch(
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="maintenanceScope"
+      source="维修工单服务（组织/环境范围，暂不支持按维修人员归属筛选）"
+      :loaded="workOrders.length"
+      :total="workOrdersTotal"
+      :updated-at="workOrdersLastUpdatedAt"
+      :empty="workOrdersHasSuccessfulResponse && !workOrdersError && workOrders.length === 0"
+      :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
+      failure-explanation="维修工单服务未成功返回，请重试。"
+      :empty-explanation="maintenanceEmptyExplanation"
+    />
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <!-- 高优先待执行只出现在右侧告警卡（它带「看可用窗口」的行动出口）；
@@ -572,15 +672,17 @@ watch(
       empty-message="暂无维护工单。设备报警或巡检发现异常时在此开单。"
     >
       <template #cell-warrantyStatus="{ row }"
-        ><NvStatusBadge :value="warrantyStatusLabel(row.warrantyStatus)"
+        ><NvStatusBadge
+          :value="row.warrantyStatus"
+          :label="warrantyStatusLabel(row.warrantyStatus)"
       /></template>
       <template #cell-priority="{ row }"
-        ><NvStatusBadge :value="priorityLabel(row.priority)"
+        ><NvStatusBadge :value="row.priority" :label="priorityLabel(row.priority)"
       /></template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <NvRowActions :label="`维护工单操作 ${workOrderNo(row)}`">
-          <NvDropdownMenuItem @click="openComplete(row)">
+          <NvDropdownMenuItem :disabled="!canComplete(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
           </NvDropdownMenuItem>
@@ -757,19 +859,36 @@ watch(
                 添加一行
               </NvButton>
             </div>
+            <!-- 列宽按**抽屉的 512px** 算，不是按视口。`sm:` 是视口断点：视口 1366px 时
+                 规则照样生效，可这一行实际待在 md 档抽屉里——原来的固定列
+                 5rem+8rem+6rem=19rem，加间距与删除按钮吃掉约 368px，留给 `1fr` 的物料
+                 只剩 60 来 px，选择器被压成「选…」，最该看清的字段反而最窄。
+                 收窄固定列并给物料 minmax 下限：512px 下物料仍有约 132px，
+                 容器更宽时它继续吃掉多余空间。 -->
             <div
               v-for="row in spareRows"
               :key="row.id"
               :data-testid="`spare-row-${row.id}`"
-              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[1fr_5rem_4rem_6rem_auto]"
+              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[minmax(7rem,1fr)_4rem_7rem_5rem_auto]"
             >
               <NvField>
                 <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
-                <NvInput
+                <NvEntityPicker
                   :id="`spare-sku-${row.id}`"
-                  v-model="row.skuCode"
-                  autocomplete="off"
-                  placeholder="如 主控芯片MCU"
+                  :model-value="row.skuCode"
+                  :options="skuOptions"
+                  title="选择备件物料"
+                  placeholder="选择备件物料"
+                  source-text="数据来自基础数据物料主数据"
+                  empty-text="暂无物料主数据，请先在基础数据维护物料"
+                  :loading="skusPending"
+                  aria-label="备件物料"
+                  @update:model-value="
+                    (value: string) => {
+                      row.skuCode = value
+                      applySpareRowSku(row)
+                    }
+                  "
                 />
               </NvField>
               <NvField>
@@ -784,7 +903,18 @@ watch(
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-uom-${row.id}`">单位</NvFieldLabel>
-                <NvInput :id="`spare-uom-${row.id}`" v-model="row.uomCode" autocomplete="off" />
+                <NvEntityPicker
+                  :id="`spare-uom-${row.id}`"
+                  v-model="row.uomCode"
+                  :options="uomOptions"
+                  title="选择单位"
+                  placeholder="跟随物料"
+                  source-text="数据来自基础数据计量单位"
+                  empty-text="暂无计量单位，请先在基础数据维护单位"
+                  :loading="uomsPending"
+                  clearable
+                  aria-label="备件单位"
+                />
               </NvField>
               <NvField>
                 <NvFieldLabel :for="`spare-cost-${row.id}`">单价</NvFieldLabel>

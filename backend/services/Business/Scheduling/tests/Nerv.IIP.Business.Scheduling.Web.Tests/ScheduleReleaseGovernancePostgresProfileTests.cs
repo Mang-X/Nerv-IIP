@@ -11,6 +11,7 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
+[Collection(SchedulingPostgresLaneDatabase.CollectionName)]
 public sealed class ScheduleReleaseGovernancePostgresProfileTests
 {
     private const string PreviousMigration = "20260715095540_AddSchedulingOverrideRevocationTombstones";
@@ -19,16 +20,16 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Migration_normalizes_historical_duplicate_releases_with_exact_timestamp_tie()
     {
-        var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(adminConnectionString, "nerv_scheduling_test");
-        await using var context = CreateContext(database.ConnectionString);
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var context = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString);
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(context);
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(PreviousMigration);
-        await SeedHistoricalReleasedRowsAsync(database.ConnectionString);
+        await SeedHistoricalReleasedRowsAsync(SchedulingPostgresLaneDatabase.ConnectionString);
 
         await migrator.MigrateAsync();
 
-        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await using var connection = new NpgsqlConnection(SchedulingPostgresLaneDatabase.ConnectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
             """
@@ -70,20 +71,20 @@ public sealed class ScheduleReleaseGovernancePostgresProfileTests
     [SchedulingPostgresFact]
     public async Task Concurrent_releases_converge_to_one_active_plan_with_monotonic_revisions()
     {
-        var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await PostgreSqlTestDatabase.CreateAsync(adminConnectionString, "nerv_scheduling_test");
-        await using (var setup = CreateContext(database.ConnectionString))
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using (var setup = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString))
         {
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync();
             setup.SchedulePlans.AddRange(CreatePlan("plan-a"), CreatePlan("plan-b"));
             await setup.SaveChangesAsync();
         }
 
         await Task.WhenAll(
-            ReleaseAsync(database.ConnectionString, "plan-a"),
-            ReleaseAsync(database.ConnectionString, "plan-b"));
+            ReleaseAsync(SchedulingPostgresLaneDatabase.ConnectionString, "plan-a"),
+            ReleaseAsync(SchedulingPostgresLaneDatabase.ConnectionString, "plan-b"));
 
-        await using var assertion = CreateContext(database.ConnectionString);
+        await using var assertion = CreateContext(SchedulingPostgresLaneDatabase.ConnectionString);
         var plans = await assertion.SchedulePlans.OrderBy(x => x.ReleaseRevision).ToArrayAsync();
         Assert.Equal(new long?[] { 1, 2 }, plans.Select(x => x.ReleaseRevision));
         Assert.Single(plans, x => x.Status == SchedulePlanLifecycleStatus.Released);

@@ -4,10 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import QualityHoldPanel from './QualityHoldPanel.vue'
 
-const notifySpies = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
-vi.mock('@/utils/notify', () => ({
+const notifySpies = vi.hoisted(() => ({
+  success: vi.fn(),
+  error: vi.fn(),
+  operationFailure: vi.fn(),
+}))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: notifySpies.success,
   notifyError: notifySpies.error,
+  notifyOperationFailure: notifySpies.operationFailure,
 }))
 
 const holdState = vi.hoisted(() => ({

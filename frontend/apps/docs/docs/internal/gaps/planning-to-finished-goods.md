@@ -9,7 +9,7 @@
 - `frontend/apps/business-console/src/pages/mes`
 - `docs/architecture/implementation-readiness.md` Scheduling、MES、Inventory/WMS 段落
 
-## 建议 issue 标题
+## 建议 Issue 标题
 
 - `[Planning/MES] 计划到完工入库路径补齐上下文穿透、交互式重排和过账失败诊断导航`
 
@@ -29,7 +29,7 @@
 
 ### 术语不清
 
-- `/mes/schedules` 的规则排程和 `/scheduling` 的 APS lite 容易被误解为完整 APS；文档和页面文案需要持续区分。
+- `/mes/schedules` 的规则排程和 `/scheduling` 的 APS 轻量版容易被误解为完整 APS；文档和页面文案需要持续区分。
 
 ### 反馈不足
 

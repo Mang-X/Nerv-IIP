@@ -5,6 +5,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -22,7 +23,9 @@ import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useReceiptCreateForm } from '@/composables/mes/useReceiptCreateForm'
+import { useBusinessUoms } from '@/composables/useBusinessMasterData'
 
 // 路由页只负责编排：传入工单上下文与开合，登记表单状态/提交/产出批次全部封装在此组件（Vue best-practices §2）。
 const props = defineProps<{
@@ -42,6 +45,14 @@ const openModel = computed({
   get: () => props.open,
   set: (value: boolean) => emit('update:open', value),
 })
+
+// 单位取基础数据计量单位主数据，不再手输（敲错要到提交才报错）。
+const { uoms, uomsPending } = useBusinessUoms()
+const uomOptions = computed(() =>
+  uoms.value
+    .filter((row) => row.code && row.active !== false)
+    .map((row) => ({ value: row.code as string, label: row.displayName || (row.code as string) })),
+)
 
 const {
   form,
@@ -71,10 +82,13 @@ function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 
+// 成品只带出物料标识，成品名在 SKU 主数据里；查不到只显编码，不编造物料名。
+const { resolveSkuLabel } = useMesDisplayNames()
+
 // 由所选工单行/工单详情带出的只读上下文（不可编辑，不做输入位）。
 const contextItems = computed(() => [
   { label: '工单', value: props.workOrderId },
-  { label: '成品', value: props.skuId },
+  { label: '成品', value: resolveSkuLabel(props.skuId) },
 ])
 </script>
 
@@ -85,7 +99,7 @@ const contextItems = computed(() => [
         <NvSheetTitle>登记完工入库</NvSheetTitle>
         <!-- 入库对象已在下方只读区完整呈现；此处仅供读屏播报，不在界面上再写一遍说明。 -->
         <NvSheetDescription class="sr-only">
-          入库对象：工单 {{ workOrderId }}，成品 {{ skuId }}。
+          入库对象：工单 {{ workOrderId }}，成品 {{ resolveSkuLabel(skuId) }}。
         </NvSheetDescription>
       </NvSheetHeader>
 
@@ -173,11 +187,15 @@ const contextItems = computed(() => [
           </NvField>
           <NvField>
             <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
-            <NvInput
+            <NvSearchSelect
               id="receipt-uom"
               v-model="form.uomCode"
-              required
-              :data-invalid="showErrors && invalid.uomCode ? '' : undefined"
+              :options="uomOptions"
+              placeholder="选择单位"
+              :loading="uomsPending"
+              empty-text="暂无计量单位，请先在基础数据维护"
+              aria-label="单位"
+              :class="showErrors && invalid.uomCode ? 'border-destructive' : undefined"
             />
           </NvField>
           <NvField>

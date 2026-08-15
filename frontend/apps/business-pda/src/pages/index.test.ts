@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-// 真实 router.push 返回 Promise（index.vue 的 openTask 会 `.catch`）；mock 同此契约。
+// 真实 router.push 返回 Promise（index.vue 的导航会 `.catch`）；mock 同此契约。
 const push = vi.fn(() => Promise.resolve())
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -15,12 +15,107 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
   useUnacknowledgedAlarmCount: () => ({ unacknowledgedCount }),
 }))
 
+// 工作台各板块数据源：mock 掉网络层，页面只消费 refs。
+const permissions = ref(new Set<string>())
+const worker = ref<
+  | {
+      displayName?: string
+      employeeNo?: string
+      jobTitle?: string
+      teams?: Array<{ teamName?: string }>
+    }
+  | undefined
+>(undefined)
+const warehouseEntries = ref<Array<{ key: string; label: string; route: string; count: number }>>(
+  [],
+)
+const inspectionTasks = ref<
+  Array<{
+    inspectionTaskId?: string
+    skuCode?: string
+    batchNo?: string | null
+    quantity?: number
+    uomCode?: string
+  }>
+>([])
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const hasScope = computed(() => Boolean(organizationId.value && environmentId.value))
+const inspectionPending = ref(false)
+const inspectionError = ref<unknown>(null)
+const refreshInspection = vi.fn(async () => {})
+const inspectionHasSuccessfulResponse = ref(true)
+const inspectionHasFailedResponse = ref(false)
+
+vi.mock('@/composables/useWorkbenchHome', () => {
+  const HOME_PERMISSIONS = {
+    workerProfile: 'business.masterdata.resources.read',
+    wmsReceipts: 'business.wms.receipts.read',
+    wmsShipments: 'business.wms.shipments.read',
+    wmsCounts: 'business.wms.counts.read',
+    quality: 'business.quality.inspection-records.read',
+    alarms: 'business.iiot.alarms.read',
+  }
+  return {
+    HOME_PERMISSIONS,
+    usePdaIdentity: () => ({
+      principalId: ref('user-emp-010'),
+      loginName: ref('emp010'),
+      organizationId,
+      environmentId,
+      hasScope,
+      can: (code: string) => permissions.value.has(code),
+      worker,
+      displayName: computed(() => worker.value?.displayName || 'emp010'),
+    }),
+    useWarehouseSummary: () => ({
+      enabled: computed(
+        () =>
+          permissions.value.has(HOME_PERMISSIONS.wmsReceipts) ||
+          permissions.value.has(HOME_PERMISSIONS.wmsShipments) ||
+          permissions.value.has(HOME_PERMISSIONS.wmsCounts),
+      ),
+      entries: warehouseEntries,
+      pending: ref(false),
+      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
+    }),
+    usePendingInspectionSummary: () => ({
+      visible: computed(() => permissions.value.has(HOME_PERMISSIONS.quality)),
+      scopeReady: hasScope,
+      enabled: computed(() => permissions.value.has(HOME_PERMISSIONS.quality) && hasScope.value),
+      tasks: inspectionTasks,
+      total: computed(() => inspectionTasks.value.length),
+      pending: inspectionPending,
+      error: inspectionError,
+      refresh: refreshInspection,
+      hasSuccessfulResponse: inspectionHasSuccessfulResponse,
+      hasFailedResponse: inspectionHasFailedResponse,
+      lastUpdatedAt: ref('2026-07-28T10:20:30.000Z'),
+    }),
+  }
+})
+
 import HomePage from './index.vue'
 
-/** Find an app-wall button by its visible label. */
-function buttonByLabel(wrapper: ReturnType<typeof mount>, label: string) {
-  const btn = wrapper.findAll('button').find((b) => b.text() === label)
-  if (!btn) throw new Error(`app-wall button "${label}" not found`)
+const ALL_PERMISSIONS = [
+  'business.masterdata.resources.read',
+  'business.wms.receipts.read',
+  'business.wms.shipments.read',
+  'business.wms.counts.read',
+  'business.quality.inspection-records.read',
+  'business.iiot.alarms.read',
+  'business.mes.reporting.read',
+  'business.mes.materials.read',
+  'business.mes.receipts.read',
+  'business.mes.operations.read',
+  'business.maintenance.work-orders.read',
+  'business.maintenance.plans.read',
+]
+
+/** Find an app-wall grid tile by its visible label. */
+function tileByLabel(wrapper: ReturnType<typeof mount>, label: string) {
+  const btn = wrapper.findAll('button').find((b) => b.text().includes(label))
+  if (!btn) throw new Error(`app-wall tile "${label}" not found`)
   return btn
 }
 
@@ -28,21 +123,29 @@ describe('PDA home', () => {
   beforeEach(() => {
     push.mockReset()
     unacknowledgedCount.value = 0
+    permissions.value = new Set(ALL_PERMISSIONS)
+    worker.value = undefined
+    warehouseEntries.value = []
+    inspectionTasks.value = []
+    organizationId.value = 'org-001'
+    environmentId.value = 'env-dev'
+    inspectionPending.value = false
+    inspectionError.value = null
+    refreshInspection.mockClear()
+    inspectionHasSuccessfulResponse.value = true
+    inspectionHasFailedResponse.value = false
   })
 
   it('shows the unacknowledged-alarm count badge on the 查看报警 tile, and hides it at zero', async () => {
     const wrapper = mount(HomePage)
-    expect(wrapper.find('[data-testid="alarm-badge"]').exists()).toBe(false)
+    expect(wrapper.find('.nv-m-grid-badge').exists()).toBe(false)
 
     unacknowledgedCount.value = 3
     await wrapper.vm.$nextTick()
-    const badge = wrapper.find('[data-testid="alarm-badge"]')
+    const alarmTile = tileByLabel(wrapper, '查看报警')
+    const badge = alarmTile.find('.nv-m-grid-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('3')
-
-    // 角标挂在「查看报警」入口上，而非其它快捷应用
-    const alarmTile = wrapper.findAll('button').find((b) => b.text().includes('查看报警'))
-    expect(alarmTile?.find('[data-testid="alarm-badge"]').exists()).toBe(true)
   })
 
   it('renders the scan bar and the app wall from the task dictionary', () => {
@@ -55,11 +158,128 @@ describe('PDA home', () => {
     expect(wrapper.text()).toContain('报修')
     expect(wrapper.text()).toContain('点检')
     expect(wrapper.text()).toContain('查看报警')
+    expect(wrapper.text()).not.toContain('我的任务')
+    expect(wrapper.text()).not.toContain('暂无派给我的任务')
   })
 
-  it('shows an empty-state for "我的任务" until the backend personal-task facade lands', () => {
+  it('tailors the app wall and sections to the principal permissions（仓储角色不见 MES 入口）', () => {
+    permissions.value = new Set(['business.wms.receipts.read', 'business.wms.shipments.read'])
+    warehouseEntries.value = [{ key: 'putaway', label: '待上架', route: '/wms/putaway', count: 4 }]
     const wrapper = mount(HomePage)
-    expect(wrapper.text()).toContain('暂无分配给你的任务')
+
+    // 仓储板块可见，「我的任务」「待检任务」按权限隐藏
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-my-tasks"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(false)
+
+    // 应用墙只留 WMS 入口
+    expect(wrapper.text()).toContain('收货入库')
+    expect(wrapper.text()).not.toContain('报工')
+    expect(wrapper.text()).not.toContain('查看报警')
+  })
+
+  it('shows count work without receipt entries for a counts-read-only principal', () => {
+    permissions.value = new Set(['business.wms.counts.read'])
+    warehouseEntries.value = [{ key: 'count', label: '待盘点', route: '/wms/count', count: 7 }]
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('待盘点')
+    expect(wrapper.text()).toContain('盘点')
+    expect(wrapper.text()).not.toContain('收货入库')
+  })
+
+  it('does not expose count work to a receipts-read-only principal', () => {
+    permissions.value = new Set(['business.wms.receipts.read'])
+    warehouseEntries.value = [{ key: 'inbound', label: '待收货', route: '/wms/inbound', count: 4 }]
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-warehouse"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('待收货')
+    expect(wrapper.text()).toContain('收货入库')
+    expect(wrapper.text()).not.toContain('盘点')
+  })
+
+  it('shows the inspection source and missing-scope explanation when permitted without scope', () => {
+    organizationId.value = ''
+    environmentId.value = ''
+
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[data-testid="home-inspection"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('组织/环境范围未就绪')
+    expect(wrapper.text()).toContain('质检待检任务服务（组织/环境范围，状态：待检）')
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+  })
+
+  it('does not render cached inspection rows after the organization scope is lost', async () => {
+    inspectionTasks.value = [
+      {
+        inspectionTaskId: 'OLD-INSPECTION',
+        skuCode: 'OLD-SKU',
+        batchNo: 'OLD-BATCH',
+        quantity: 12,
+        uomCode: 'PCS',
+      },
+    ]
+    const wrapper = mount(HomePage)
+    expect(wrapper.text()).toContain('OLD-SKU')
+
+    organizationId.value = ''
+    environmentId.value = ''
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
+    expect(wrapper.text()).toContain('已加载 0 / 共 0')
+    expect(wrapper.text()).not.toContain('OLD-SKU')
+    expect(wrapper.text()).not.toContain('OLD-BATCH')
+  })
+
+  it('shows a retryable inspection error without presenting a business empty set', async () => {
+    inspectionError.value = new Error('待检任务加载失败')
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务加载失败')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+
+    await wrapper
+      .get('[data-testid="home-inspection-error"]')
+      .get('[data-testid="retry-list"]')
+      .trigger('click')
+    expect(refreshInspection).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the inspection business empty state only after a successful scoped response', () => {
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.text()).toContain('当前组织/环境范围暂无待检任务')
+  })
+
+  it('shows a retryable inspection failure for success:false instead of a business empty state', async () => {
+    inspectionHasSuccessfulResponse.value = false
+    inspectionHasFailedResponse.value = true
+    const wrapper = mount(HomePage)
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('待检任务服务未返回成功结果')
+    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无待检任务')
+    await wrapper.get('[data-testid="retry-list"]').trigger('click')
+    expect(refreshInspection).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the worker identity in the header when the directory profile is available', () => {
+    worker.value = {
+      displayName: '吴桂芳',
+      employeeNo: 'EMP-010',
+      jobTitle: '操作工',
+      teams: [{ teamName: '机加车间早班组' }],
+    }
+    const wrapper = mount(HomePage)
+    expect(wrapper.get('[data-testid="home-name"]').text()).toBe('吴桂芳')
+    expect(wrapper.text()).toContain('EMP-010')
+    expect(wrapper.text()).toContain('操作工 · 机加车间早班组')
   })
 
   const ENTRIES: Array<[label: string, route: string]> = [
@@ -80,11 +300,9 @@ describe('PDA home', () => {
     ['查看报警', '/equipment/alarms'],
   ]
 
-  it.each(ENTRIES)('enables the %s entry and navigates to %s on click', async (label, route) => {
+  it.each(ENTRIES)('navigates to %s → %s on tile click', async (label, route) => {
     const wrapper = mount(HomePage)
-    const btn = buttonByLabel(wrapper, label)
-    // 合并后全部域已交付（routeReady=true）→ 入口均不再 disabled
-    expect(btn.attributes('disabled')).toBeUndefined()
+    const btn = tileByLabel(wrapper, label)
     push.mockClear()
     await btn.trigger('click')
     expect(push).toHaveBeenCalledWith(route)

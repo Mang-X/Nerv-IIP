@@ -8,10 +8,13 @@ export const BARCODE_SCAN_WORKFLOW_OPTIONS = [
   { value: 'quality.inspection', label: '质量检验' },
 ] as const
 
-export type BarcodeScanWorkflow = typeof BARCODE_SCAN_WORKFLOW_OPTIONS[number]['value']
+export type BarcodeScanWorkflow = (typeof BARCODE_SCAN_WORKFLOW_OPTIONS)[number]['value']
 
 export function isBarcodeScanWorkflow(value?: string | null): value is BarcodeScanWorkflow {
-  return typeof value === 'string' && BARCODE_SCAN_WORKFLOW_OPTIONS.some((option) => option.value === value)
+  return (
+    typeof value === 'string' &&
+    BARCODE_SCAN_WORKFLOW_OPTIONS.some((option) => option.value === value)
+  )
 }
 
 export function barcodeScanWorkflowLabel(value?: string | null) {

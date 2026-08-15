@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -42,13 +43,32 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             return;
         }
 
-        if (!string.Equals(integrationEvent.Payload.MovementType, "inbound", StringComparison.OrdinalIgnoreCase))
+        // 线边调拨两条腿分别是出库与入库，出库腿的回执同样要收，否则「双腿都过账」永远凑不齐。
+        var isMaterialTransferLeg = MaterialIssueRequest.TryParseLegIdempotencyKey(
+            integrationEvent.Payload.IdempotencyKey,
+            out var transferToken,
+            out var transferLeg,
+            out var allocationIndex);
+
+        if (!isMaterialTransferLeg &&
+            !string.Equals(integrationEvent.Payload.MovementType, "inbound", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
+            return;
+        }
+
+        if (isMaterialTransferLeg)
+        {
+            await MarkMaterialTransferPostedAsync(
+                integrationEvent,
+                transferToken,
+                transferLeg,
+                allocationIndex,
+                cancellationToken);
             return;
         }
 
@@ -59,11 +79,13 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             cancellationToken);
         if (receipt is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
         if (!MatchesReceipt(receipt, integrationEvent.Payload))
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -71,6 +93,35 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             integrationEvent.Payload.InventoryMovementId,
             integrationEvent.Payload.Quantity,
             integrationEvent.Payload.PostedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 线边调拨腿回执：只有两条腿都过账成功，已收数量才增加、状态才可能翻 Received —— 齐套因此不会先于库存实扣转绿（#1322）。
+    /// </summary>
+    private async Task MarkMaterialTransferPostedAsync(
+        StockMovementPostedIntegrationEvent integrationEvent,
+        string transferToken,
+        MaterialTransferLeg transferLeg,
+        int? allocationIndex,
+        CancellationToken cancellationToken)
+    {
+        var materialRequest = await dbContext.MaterialIssueRequests.SingleOrDefaultAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.RequestNo == integrationEvent.Payload.SourceDocumentId,
+            cancellationToken);
+        if (materialRequest is null)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        materialRequest.MarkInventoryPosted(
+            transferToken,
+            transferLeg,
+            integrationEvent.Payload.PostedAtUtc,
+            allocationIndex);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

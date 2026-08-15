@@ -51,6 +51,9 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
     public PlanningSuggestionAcceptedIntegrationEvent Convert(PlanningSuggestionAcceptedDomainEvent domainEvent)
     {
         var suggestion = domainEvent.PlanningSuggestion;
+        // 合批建议 peg 到多个需求源：完整携带 demand 类型引用，主引用取第一个 demand 引用；
+        // 无 demand 类型 pegging 时回退旧行为（任意非空引用），避免历史数据丢链。
+        var demandSourceReferences = suggestion.GetDemandSourceReferences();
         var payload = new PlanningSuggestionAcceptedPayload(
             PublicId(suggestion.Id),
             PublicId(suggestion.MrpRunId),
@@ -61,11 +64,12 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
             suggestion.Quantity,
             suggestion.RequiredDate,
             suggestion.ReleaseDate,
-            suggestion.PeggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
+            suggestion.GetPrimaryDemandSourceReference(),
             suggestion.PeggingLinks.Select(x => x.ProductionVersionReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
             suggestion.AcceptedDownstreamService ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentType ?? string.Empty,
-            suggestion.AcceptedDownstreamDocumentId);
+            suggestion.AcceptedDownstreamDocumentId,
+            demandSourceReferences);
         return new PlanningSuggestionAcceptedIntegrationEvent(
             EventIds.New(),
             DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,

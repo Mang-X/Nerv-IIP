@@ -10,39 +10,33 @@ function resolve(map: Record<string, string>, code: string | null | undefined): 
 }
 
 const WAREHOUSE_TASK_STATUS: Record<string, string> = {
-  pending: '待执行',
+  open: '待执行',
   inprogress: '执行中',
+  exception: '异常待处理',
   completed: '已完成',
+  completedwithdifference: '差异完成',
   cancelled: '已取消',
-  canceled: '已取消',
 }
 
 const COUNT_EXECUTION_STATUS: Record<string, string> = {
-  pending: '待盘点',
-  inprogress: '盘点中',
+  open: '待盘点',
   completed: '已完成',
-  cancelled: '已取消',
-  canceled: '已取消',
 }
 
 const INBOUND_ORDER_STATUS: Record<string, string> = {
-  open: '待入库',
-  pending: '待入库',
-  inprogress: '入库中',
-  completed: '已入库',
-  closed: '已关闭',
+  open: '待收货',
+  completed: '已完成',
+  inventorypostingfailed: '库存过账失败',
+  pendingqualitycheck: '待质检',
   cancelled: '已取消',
-  canceled: '已取消',
 }
 
 const OUTBOUND_ORDER_STATUS: Record<string, string> = {
-  open: '待发货',
-  pending: '待发货',
-  inprogress: '发货中',
-  completed: '已发货',
-  closed: '已关闭',
+  open: '待复核发货',
+  completed: '已完成',
+  inventorypostingfailed: '库存过账失败',
   cancelled: '已取消',
-  canceled: '已取消',
+  inventorypostingpending: '库存过账中',
 }
 
 export function warehouseTaskStatusLabel(code: string | null | undefined): string {

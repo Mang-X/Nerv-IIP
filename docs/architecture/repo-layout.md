@@ -44,20 +44,20 @@ Nerv-IIP/
 
 ## 顶层目录职责
 
-### docs
+### docs 目录
 
 - adr：不可轻易反转的架构决策。
 - architecture：目录职责、上下文边界、生成链路、实施计划和领域模型说明。
 - 文档是工程启动的第一优先级，任何重大结构调整必须先更新文档再改代码。
 
-### frontend
+### frontend 目录
 
 - apps：真实前端应用入口。当前包含主平台 `console`、业务 PC 控制台 `business-console`、一线作业 PDA `business-pda`、`design-system` 文档/预览站和 `docs` 产品文档站。
 - packages：共享 UI、移动 UI、API 客户端、壳层、认证复用和业务前端内核包。当前包含 `ui`、`ui-mobile`、`app-shell`、`api-client`、`auth` 和 `business-core`；`layer-base`、`layer-platform`、`shared-types` 等只作为长期边界预留，未出现真实复用前不得创建空包。
 - frontend 不放后端工程、Connector Host 工程或部署脚本。
 - 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console；面向最终用户的产品文档正文放在 `frontend/apps/docs`，不放入 Business Console 页面。
 
-### backend
+### backend 目录
 
 - services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。当前业务服务包括 MasterData、ProductEngineering、Inventory、Quality、Mes、DemandPlanning、BarcodeLabel、Approval、Wms、IndustrialTelemetry、Maintenance、Erp 和 Scheduling。
 - gateway：PlatformGateway、BusinessGateway 与前端聚合接口。PlatformGateway 只承载主平台控制面 facade；BusinessGateway 承载业务前端或业务移动端 facade。
@@ -77,20 +77,20 @@ Nerv-IIP/
 - 主平台服务不得引用 backend/services/Business 下的 Web、Domain、Infrastructure 项目；业务服务只能通过 Platform SDK、公开 Contracts、OpenAPI、IntegrationEvent 和 IAM 授权上下文消费主平台能力。
 - Domain 项目不得引用查询、读模型或算法输出契约项目；公开 API DTO、跨服务 DTO 与算法契约应在 Web/Application 或 Infrastructure 边界映射为领域输入、领域快照或领域 fact。
 
-### connector-hosts
+### connector-hosts 目录
 
 - 单独承载 Connector Host 与各类 Connector。
 - 与 backend 分开维护 solution，并通过 Platform SDK 与版本化公开契约与主平台协作；同一主版本内允许独立发布和小版本升级。
 - 目标是把目标环境异构性隔离在平台服务之外。
 
-### infra
+### infra 目录
 
 - 平台级 Aspire AppHost、本地开发编排、Docker Compose 生成产物、依赖服务模板、观测栈配置、环境变量示例。
 - 首期重点是 docker-compose.dev.yml、依赖服务最小配置、OpenTelemetry 接线示例；后续完整平台编排统一收敛到 infra/aspire 下的 AppHost。
 - infra 可以保存部署目标模板和 overlay，但不保存真实客户密钥或环境私有配置。
 - 不在 infra 中编写业务逻辑。
 
-### scripts
+### scripts 目录
 
 - 统一放置初始化、环境校验、代码生成、安装、发布辅助脚本。
 - 前后端脚手架脚本都应从这里暴露稳定入口，而不是散落在各自子目录。

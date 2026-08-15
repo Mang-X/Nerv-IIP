@@ -16,6 +16,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvCheckbox,
+  NvCombobox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -35,7 +36,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -80,9 +81,25 @@ watch(
   { immediate: true },
 )
 
+// 非 Error 形态的 rejection 也必须显示出来，否则错误横幅整条消失、页面退化成空态把故障吞掉。
 const listErrorMessage = computed(() =>
-  skillsError.value instanceof Error ? skillsError.value.message : '',
+  skillsError.value
+    ? friendlyErrorMessage(skillsError.value, '技能目录加载失败，请刷新重试。')
+    : '',
 )
+
+// 技能组没有独立目录端点，组名就是本表已有值的去重集合；这里是技能目录自身的维护页，
+// 允许新建组名，所以给「已有组」建议而不是只读选择器。
+const groupSuggestions = computed(() => {
+  const names = new Set<string>()
+  for (const skill of skills.value) {
+    const group = skill.groupName?.trim()
+    if (group) names.add(group)
+  }
+  return [...names]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    .map((name) => ({ value: name }))
+})
 
 const columns: NvDataTableColumn<SkillCatalogItem>[] = [
   { key: 'skillCode', header: '编码', width: 'w-32' },
@@ -184,7 +201,7 @@ async function submitForm() {
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存技能失败', error, '保存技能失败，请稍后重试。')
   }
 }
 
@@ -205,7 +222,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用技能失败', error, '停用技能失败，请稍后重试。')
   }
 }
 </script>
@@ -264,7 +281,13 @@ async function confirmArchive() {
                   <NvFieldLabel for="skill-group"
                     >技能组 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
+                  <NvCombobox
+                    id="skill-group"
+                    v-model="form.groupName"
+                    :suggestions="groupSuggestions"
+                    placeholder="选择已有技能组或新建，例如：机加工"
+                    empty-text="还没有技能组，填写即新建"
+                  />
                 </NvField>
               </NvFieldGroup>
 
@@ -277,7 +300,7 @@ async function confirmArchive() {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>该技能需持证上岗</span>
-                    <NvCheckbox id="skill-cert" v-model:checked="form.requiresCertification" />
+                    <NvCheckbox id="skill-cert" v-model="form.requiresCertification" />
                   </label>
                 </NvField>
                 <NvField :data-invalid="showErrors && !validityValid">

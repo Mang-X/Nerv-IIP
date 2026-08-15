@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryHistoryItem } from '@nerv-iip/api-client'
-import type { DateRange, NvDataTableColumn } from '@nerv-iip/ui'
+import type { DateRange, EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
 import TelemetryEventTimeline from '@/components/equipment/TelemetryEventTimeline.vue'
 import TelemetryTrendPanel from '@/components/equipment/TelemetryTrendPanel.vue'
 import {
@@ -8,16 +9,20 @@ import {
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
 import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
+import { telemetryTagLabel, useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
+  NvCascadePicker,
   NvDataTable,
   NvDateRangePicker,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { GaugeIcon, RefreshCwIcon, Settings2Icon } from '@lucide/vue'
@@ -45,6 +50,48 @@ const { filters, historyError, historyPending, refreshHistory, visibleHistoryIte
   })
 const defaultWindowStartUtc = filters.windowStartUtc
 const defaultWindowEndUtc = filters.windowEndUtc
+
+// 车间 → 产线 → 设备 级联范围：设备层是查询范围的唯一事实源；
+// 深链 query 里带了设备号时以它初始化下钻。
+const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
+  device: routeQuery('deviceAssetId'),
+})
+watch(
+  () => scope.value.device,
+  (device) => {
+    if (filters.deviceAssetId !== device) filters.deviceAssetId = device
+  },
+)
+// 浏览器历史回退等路由驱动的设备变化，反向同步回级联选择。
+watch(
+  () => filters.deviceAssetId,
+  (deviceAssetId) => {
+    const normalized = deviceAssetId.trim()
+    if (scope.value.device !== normalized) scope.value = { ...scope.value, device: normalized }
+  },
+)
+
+/**
+ * 采集标签跟随当前设备：选中设备后目录只列该设备已配置的测点，未选设备时列全部。
+ * 换设备后旧测点若不在新设备的目录里就清空，避免筛选条件与选择器显示对不上。
+ */
+const { tagOptions, tagsPending } = useTelemetryTagCatalog(() => filters.deviceAssetId)
+const selectedTagInCatalog = computed(() =>
+  tagOptions.value.some((option) => option.value === filters.tagKey.trim()),
+)
+const tagPickerOptions = computed<EntityPickerOption[]>(() => {
+  const tagKey = filters.tagKey.trim()
+  // 目录尚未回来 / 该设备没登记标签时，仍把当前生效的筛选值显示出来，不让选择器"看着是空的"。
+  if (!tagKey || selectedTagInCatalog.value) return tagOptions.value
+  return [
+    ...tagOptions.value,
+    { value: tagKey, label: telemetryTagLabel(tagKey), hint: '当前筛选' },
+  ]
+})
+watch([() => filters.deviceAssetId, tagOptions, tagsPending], () => {
+  if (tagsPending.value || !filters.tagKey.trim()) return
+  if (tagOptions.value.length > 0 && !selectedTagInCatalog.value) filters.tagKey = ''
+})
 
 const errorMessage = computed(() =>
   historyError.value
@@ -114,9 +161,24 @@ watch(
   { immediate: true },
 )
 
+// 历史读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+
 const columns: NvDataTableColumn<BusinessConsoleTelemetryHistoryItem>[] = [
   { key: 'occurredAtUtc', header: '时间', width: 'w-44' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'tagKey', header: '采集标签', accessor: (r) => r.tagKey ?? '设备状态' },
   { key: 'value', header: '值', cellClass: 'font-medium', accessor: (r) => r.value ?? '无' },
   { key: 'itemType', header: '类型', width: 'w-24', accessor: (r) => itemTypeLabel(r.itemType) },
@@ -134,7 +196,8 @@ function itemTypeLabel(value?: string | null) {
     sample: '采样',
     state: '状态',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '其他记录') : '未知'
 }
 function rowKey(row: BusinessConsoleTelemetryHistoryItem) {
   return `${row.deviceAssetId}-${row.tagKey ?? 'state'}-${row.occurredAtUtc}-${row.value}`
@@ -170,7 +233,7 @@ function fromDateInput(value: string, dayOffset: number) {
     <NvPageHeader
       title="历史趋势"
       :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="`${visibleHistoryItems.length} 条记录`"
+      :count="hasDeviceScope ? `${visibleHistoryItems.length} 条记录` : scopeLabel"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -206,44 +269,53 @@ function fromDateInput(value: string, dayOffset: number) {
       </template>
     </NvPageHeader>
 
-    <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(200px,1fr)_minmax(240px,1fr)]"
-    >
-      <NvField>
-        <NvFieldLabel for="history-device">设备</NvFieldLabel>
-        <NvInput
-          id="history-device"
-          v-model="filters.deviceAssetId"
-          placeholder="设备编号"
-          aria-label="设备编号"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="history-tag">采集标签</NvFieldLabel>
-        <NvInput
-          id="history-tag"
-          v-model="filters.tagKey"
-          placeholder="采集标签"
-          aria-label="采集标签"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
-        <NvDateRangePicker
-          id="history-window"
-          v-model="windowRange"
-          placeholder="选择时间范围"
-          class="w-full"
-        />
-      </NvField>
-    </NvFieldGroup>
-
-    <div
-      v-if="!hasDeviceScope"
-      class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground"
-    >
-      请选择设备并确认时间范围后查询历史遥测。
+    <div class="grid gap-3 rounded-lg border bg-card p-4">
+      <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
+      <NvFieldGroup
+        class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_minmax(240px,1fr)]"
+      >
+        <NvField>
+          <NvFieldLabel for="history-tag">采集标签</NvFieldLabel>
+          <NvEntityPicker
+            id="history-tag"
+            v-model="filters.tagKey"
+            :options="tagPickerOptions"
+            title="选择采集标签"
+            placeholder="全部采集标签"
+            :source-text="
+              hasDeviceScope ? '数据来自该设备已配置的采集标签' : '数据来自设备采集标签配置'
+            "
+            :empty-text="
+              hasDeviceScope
+                ? '该设备还没有配置采集标签，请先在「采集标签」完成采集映射'
+                : '暂无采集标签，请先完成设备采集映射'
+            "
+            :loading="tagsPending"
+            clearable
+            aria-label="采集标签"
+          />
+        </NvField>
+        <NvField>
+          <NvFieldLabel for="history-window">时间范围</NvFieldLabel>
+          <NvDateRangePicker
+            id="history-window"
+            v-model="windowRange"
+            placeholder="选择时间范围"
+            class="w-full"
+          />
+        </NvField>
+      </NvFieldGroup>
     </div>
+
+    <EquipmentScopeOverviewCard
+      v-if="!hasDeviceScope"
+      :devices="devicesInScope"
+      :scope-label="scopeLabel"
+      :pending="scopePending"
+      action-label="查看趋势"
+      description="选中一台设备即可查看它在当前时间范围内的历史遥测趋势与原始明细。"
+      @select="(code) => (scope = { ...scope, device: code })"
+    />
     <div
       v-else-if="errorMessage"
       class="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4"
@@ -286,9 +358,12 @@ function fromDateInput(value: string, dayOffset: number) {
           <template #cell-deviceAssetId="{ row }">
             <RouterLink
               :to="`/equipment/${row.deviceAssetId}`"
-              class="text-brand underline-offset-4 hover:underline"
+              class="grid leading-tight text-brand underline-offset-4 hover:underline"
             >
-              {{ row.deviceAssetId ?? '无设备' }}
+              <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+              <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+                row.deviceAssetId
+              }}</span>
             </RouterLink>
           </template>
         </NvDataTable>

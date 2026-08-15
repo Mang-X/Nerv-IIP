@@ -157,6 +157,7 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                 x.Status != WorkOrder.CancelledStatus &&
                 x.Status != WorkOrder.ScrappedStatus)
             .ToListAsync(cancellationToken);
+        var autoReboundWorkOrderIds = new List<string>();
 
         foreach (var workOrder in workOrders)
         {
@@ -173,6 +174,7 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                     !string.IsNullOrWhiteSpace(affected.SupersededByVersionId))
                 {
                     workOrder.RebindProductionVersionForEngineeringChange(affected.SupersededByVersionId);
+                    autoReboundWorkOrderIds.Add(workOrder.WorkOrderId);
                     await AddImpactAsync(MesEngineeringChangeWorkOrderImpact.AutoRebound(
                         integrationEvent.OrganizationId,
                         integrationEvent.EnvironmentId,
@@ -215,6 +217,17 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
                 affected.SupersededByVersionId,
                 integrationEvent.Payload.EffectiveDate,
                 integrationEvent.OccurredAtUtc), cancellationToken);
+        }
+
+        if (autoReboundWorkOrderIds.Count > 0)
+        {
+            var staleMaterialRequirements = await dbContext.MaterialRequirements
+                .Where(x =>
+                    x.OrganizationId == integrationEvent.OrganizationId &&
+                    x.EnvironmentId == integrationEvent.EnvironmentId &&
+                    autoReboundWorkOrderIds.Contains(x.WorkOrderId))
+                .ToListAsync(cancellationToken);
+            dbContext.MaterialRequirements.RemoveRange(staleMaterialRequirements);
         }
     }
 

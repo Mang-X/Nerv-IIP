@@ -74,7 +74,12 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifyError: vi.fn(),
+  notifySuccess: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
 
 const stubs = {
   NvSheet: { template: '<div><slot /></div>' },

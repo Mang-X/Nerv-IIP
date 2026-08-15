@@ -14,7 +14,7 @@ import {
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/useBusinessTelemetry'
-import { notifyError } from '@/utils/notify'
+import { notifyOperationFailure } from '@/utils/notify'
 import {
   NvBadge,
   NvButton,
@@ -210,7 +210,7 @@ async function submit() {
       phase.value = 'tracking'
     }
   } catch (error) {
-    notifyError(error, '设备控制命令下发失败，请稍后重试。')
+    notifyOperationFailure('下发控制命令失败', error, '设备控制命令下发失败，请稍后重试。')
   }
 }
 
@@ -501,8 +501,9 @@ const noWritableTags = computed(() => writableTags.value.length === 0)
               <span v-if="trackedReceipt.message" class="text-xs text-muted-foreground">{{
                 trackedReceipt.message
               }}</span>
+              <!-- 连接器原样透传的设备返回码，没有中文名可补——如实标注它是设备侧原始码。 -->
               <span v-if="trackedReceipt.connectorCode" class="text-xs text-muted-foreground"
-                >连接器码 {{ trackedReceipt.connectorCode }}</span
+                >设备侧原始返回码 {{ trackedReceipt.connectorCode }}</span
               >
             </span>
           </div>

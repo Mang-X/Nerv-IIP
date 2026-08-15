@@ -1,7 +1,8 @@
 // 质量看板 mock 聚合（MAN-319）：质量健康度 + 待办闭环，真实业务画像前置 ——
-// ① 与产线屏**同一个故事**：电芯线（LN-BAT-1）卷绕机 1# 报警 ⇔ 本屏帕累托 TOP1/2
-//    为电芯缺陷、龄期最长的超期 NCR 挂在电芯线当前工单 WO-1951（工单号与 mock/line
-//    的 currentWo 同源推导）、过程检积压电芯线偏多；其余产线质量健康（异常是例外）；
+// ① 与产线屏**同一个故事**：活塞杆一线（LINE-WB-ROD-01）DEV-CNC-03 振动超限 ⇔
+//    本屏帕累托 TOP1/2 为活塞杆振纹/尺寸超差、龄期最长的超期 NCR 挂在该线当前工单
+//    （工单号与 mock/line 的 currentWo 同源推导 world.woOf）、过程检积压该线偏多；
+//    其余产线质量健康（异常是例外）；
 // ② 勾稽自洽：批次合格率 = Σ合格批/Σ判定批、不良率（件口径）= Σ不良件/Σ检验件、
 //    帕累托 Σ占比 ≤ 100 且降序、超期 NCR 数 = 龄期 > SLA 行数、三层合格率与检验
 //    积压同源自同一组 InspectionLayer；
@@ -22,7 +23,8 @@ import {
   type QualityKpis,
 } from '@/data/contracts/quality'
 import { seq } from './fixtures'
-import { LINES, WORKSHOPS } from './masterdata'
+import { DEFAULT_FACTORY_ID, LINES, WORKSHOPS } from './masterdata'
+import { woOf } from './world'
 
 export { DEFECT_RED_LINE_PCT, NCR_SLA_HOURS }
 
@@ -46,18 +48,10 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-/** 产线当前工单号 —— 与 mock/line 的 currentWo 同一推导（seq('WO', 1940 + 产线序）），
- *  保证质量屏 NCR 挂的工单与产线屏正在生产的工单一致（电芯线 = WO-1951）。 */
-export function woOf(lineId: string): string {
-  return seq(
-    'WO',
-    1940 +
-      Math.max(
-        0,
-        LINES.findIndex((l) => l.id === lineId),
-      ),
-  )
-}
+// 产线当前工单号与 mock/line 同源（world.woOf）—— 质量屏 NCR 挂的工单
+// 必须与产线屏正在生产的工单是同一张（活塞杆一线 = WO-2026-03421）。
+export { woOf }
+
 function lineNameOf(lineId: string): string {
   return LINES.find((l) => l.id === lineId)?.name ?? lineId
 }
@@ -77,7 +71,7 @@ interface LayerSeed {
   failedTop?: { name: string; count: number }
   pieceInspected: number
   pieceDefects: number
-  /** 该层近 30 天件不良率基线 %（trendRamp = 尾部事故酝酿抬升，F01 过程检） */
+  /** 该层近 30 天件不良率基线 %（trendRamp = 尾部事故酝酿抬升，过程检层） */
   trendBase: number
   trendRamp?: boolean
   /** 该层件不良率管控限 %（分层管控 —— 每层标准不同） */
@@ -88,8 +82,8 @@ interface NcrSeed {
   n: number
   lineId?: string
   supplier?: string
-  /** 来料行的检验单号（source_document） */
-  iqcN?: number
+  /** 来料行的来源采购订单号（source_document），设定集 §9 的 PO-2026-#### 段 */
+  poN?: number
   defect: string
   qty: number
   ageHours: number
@@ -127,22 +121,26 @@ interface QualityProfile {
   extraRelease: number
 }
 
+// 宁沪减振一号工厂质量画像（设定集 §7）：
+//  · 检验任务 29 周约 7000 → ≈40 批/日，按 IQC 10 / IPQC 20 / FQC 8 分层；
+//  · 件不良率 2.3% 是**过程检层**口径（实测 NCR 164 张 / 2.531%），来料与成品检
+//    各自 0.7x%，全厂加权 ≈1.4% —— 「全厂一条红线」不成立，管控看分层限；
+//  · 唯一显著异常源是活塞杆一线（DEV-CNC-03 振动超限 → 表面振纹），
+//    帕累托 TOP1/2 都在这条线上，龄期最长的超期 NCR 挂它的当前工单。
 const PROFILES: Record<string, QualityProfile> = {
-  // F01 华东智造基地：整体健康（批合格率 97%+），电芯线是唯一显著异常源 ——
-  // 不良率（件）刚越红线、帕累托 TOP1/2 电芯缺陷、超期 NCR 2 条（异常是例外）
-  F01: {
+  'SITE-001': {
     layers: [
       {
         key: 'iqc',
         label: '来料检',
         code: 'IQC',
-        lotsDone: 60,
-        lotsPassed: 59,
-        lotsDue: 68,
-        carryOver: 2,
+        lotsDone: 10,
+        lotsPassed: 10,
+        lotsDue: 12,
+        carryOver: 1,
         oldestHours: 6,
-        pieceInspected: 5200,
-        pieceDefects: 38,
+        pieceInspected: 1200,
+        pieceDefects: 9,
         trendBase: 0.72,
         limitPct: 1.0,
       },
@@ -150,16 +148,16 @@ const PROFILES: Record<string, QualityProfile> = {
         key: 'ipqc',
         label: '过程检',
         code: 'IPQC',
-        lotsDone: 70,
-        lotsPassed: 67,
-        lotsDue: 84,
-        carryOver: 9,
-        oldestHours: 36,
-        backlogTop: { name: '电芯线', count: 15 },
-        failedTop: { name: '电芯线', count: 3 },
-        pieceInspected: 7800,
-        pieceDefects: 190,
-        trendBase: 1.85,
+        lotsDone: 20,
+        lotsPassed: 19,
+        lotsDue: 26,
+        carryOver: 3,
+        oldestHours: 34,
+        backlogTop: { name: '活塞杆一线', count: 5 },
+        failedTop: { name: '活塞杆一线', count: 1 },
+        pieceInspected: 3200,
+        pieceDefects: 74,
+        trendBase: 1.86,
         trendRamp: true,
         limitPct: 2.2,
       },
@@ -167,273 +165,159 @@ const PROFILES: Record<string, QualityProfile> = {
         key: 'fqc',
         label: '成品检',
         code: 'FQC',
-        lotsDone: 62,
-        lotsPassed: 61,
-        lotsDue: 70,
-        carryOver: 3,
+        lotsDone: 8,
+        lotsPassed: 8,
+        lotsDue: 10,
+        carryOver: 1,
         oldestHours: 7,
-        pieceInspected: 3800,
-        pieceDefects: 30,
+        pieceInspected: 3200,
+        pieceDefects: 24,
         trendBase: 0.76,
         limitPct: 1.0,
       },
     ],
+    // 设定集 §9 号段：NCR 走 `NCR-2026-####`（29 周共 164 张，当前在 016x 段）；
+    // 来料 NCR 的来源单据引采购订单 `PO-2026-####`（29 周约 480 张）。
     ncrs: [
-      // 龄期最长 + 超期：电芯线当前工单（与产线屏 WO-1951 / LFP-280Ah 电芯同源）
       {
-        n: 41,
-        lineId: 'LN-BAT-1',
-        defect: '极片对齐度超差',
-        qty: 120,
+        n: 158,
+        lineId: 'LINE-WB-ROD-01',
+        defect: '活塞杆表面振纹',
+        qty: 86,
         ageHours: 62,
         status: 'disposing',
         disposition: '返工',
-        product: 'LFP-280Ah 电芯',
+        product: '活塞杆 φ22×420',
       },
       {
-        n: 43,
-        supplier: '宁华新材',
-        iqcN: 2291,
-        defect: '隔膜厚度偏差',
-        qty: 2400,
-        ageHours: 51,
+        n: 161,
+        supplier: '常州恒力弹簧有限公司',
+        poN: 442,
+        defect: '悬架弹簧（二供）自由高度超差',
+        qty: 600,
+        ageHours: 53,
         status: 'disposing',
         disposition: '退供',
       },
       {
-        n: 39,
-        supplier: '东旭精密',
-        iqcN: 2270,
-        defect: '支架孔位偏移',
-        qty: 460,
-        ageHours: 44,
-        status: 'disposing',
-        disposition: '退供',
-      },
-      {
-        n: 40,
-        lineId: 'LN-WELD-2',
-        defect: '激光焊缝气孔',
-        qty: 11,
-        ageHours: 42,
-        status: 'verify',
-      },
-      {
-        n: 44,
-        lineId: 'LN-WELD-3',
-        defect: '螺柱焊漏焊',
-        qty: 7,
-        ageHours: 40,
-        status: 'disposing',
-        disposition: '返工',
-      },
-      {
-        n: 42,
-        lineId: 'LN-PAINT-1',
-        defect: '中涂流挂',
-        qty: 5,
-        ageHours: 38,
-        status: 'disposing',
-        disposition: '返工',
-      },
-      {
-        n: 45,
-        lineId: 'LN-STAMP-1',
-        defect: '板料表面划伤',
-        qty: 18,
-        ageHours: 34,
-        status: 'verify',
-      },
-      { n: 46, lineId: 'LN-ASSY-1', defect: '密封圈压伤', qty: 9, ageHours: 26, status: 'verify' },
-      {
-        n: 47,
-        lineId: 'LN-WELD-1',
-        defect: '焊点虚焊',
+        n: 159,
+        lineId: 'LINE-WB-TUB-01',
+        defect: '环缝焊接气孔',
         qty: 14,
+        ageHours: 41,
+        status: 'verify',
+      },
+      {
+        n: 160,
+        lineId: 'LINE-WB-FA-01',
+        defect: '气密测试泄漏',
+        qty: 9,
+        ageHours: 36,
+        status: 'disposing',
+        disposition: '返工',
+      },
+      {
+        n: 162,
+        lineId: 'LINE-WB-CT-01',
+        defect: '电泳膜厚不足',
+        qty: 22,
+        ageHours: 30,
+        status: 'disposing',
+        disposition: '让步接收',
+      },
+      {
+        n: 163,
+        lineId: 'LINE-WB-TS-01',
+        defect: '阻尼力曲线超差',
+        qty: 7,
+        ageHours: 26,
+        status: 'verify',
+      },
+      {
+        n: 164,
+        lineId: 'LINE-WB-GRD-01',
+        defect: '精磨圆度超差',
+        qty: 11,
         ageHours: 21,
         status: 'disposing',
         disposition: '返工',
       },
       {
-        n: 48,
-        lineId: 'LN-ASSY-2',
-        defect: '内饰面板色差',
-        qty: 60,
+        n: 165,
+        supplier: '江阴特钢制品有限公司',
+        poN: 448,
+        defect: '45# 钢棒料表面裂纹',
+        qty: 320,
         ageHours: 17,
-        status: 'disposing',
-        disposition: '让步接收',
+        status: 'review',
       },
       {
-        n: 49,
-        supplier: '宁华新材',
-        iqcN: 2307,
-        defect: '电解液含水量超标',
-        qty: 1,
+        n: 166,
+        lineId: 'LINE-WB-RA-02',
+        defect: '活塞杆压装力超差',
+        qty: 5,
         ageHours: 12,
         status: 'review',
       },
       {
-        n: 53,
-        lineId: 'LN-STAMP-2',
-        defect: '冲孔毛刺超差',
-        qty: 26,
+        n: 167,
+        lineId: 'LINE-WB-VA-01',
+        defect: '阀片叠装顺序错',
+        qty: 4,
         ageHours: 8,
         status: 'review',
       },
       {
-        n: 54,
-        supplier: '宁华新材',
-        iqcN: 2311,
-        defect: '正极粉料磁性异物',
-        qty: 1,
+        n: 168,
+        supplier: '宁波密封件制造有限公司',
+        poN: 451,
+        defect: '油封唇口毛刺',
+        qty: 180,
         ageHours: 5,
         status: 'review',
       },
+      // 今晨 DEV-CNC-03 振动超限的直接回声：新开 NCR 仍在待评审
       {
-        n: 55,
-        lineId: 'LN-ASSY-3',
-        defect: '车门间隙面差 NG',
-        qty: 12,
-        ageHours: 4,
-        status: 'review',
-      },
-      // 今晨卷绕机报警的直接回声：新开 NCR 仍在待评审
-      {
-        n: 50,
-        lineId: 'LN-BAT-1',
-        defect: '卷绕张力不良',
-        qty: 86,
+        n: 169,
+        lineId: 'LINE-WB-ROD-01',
+        defect: '活塞杆外圆尺寸超差',
+        qty: 34,
         ageHours: 3,
         status: 'review',
-        product: 'LFP-280Ah 电芯',
+        product: '活塞杆 φ22×420',
       },
       {
-        n: 51,
-        lineId: 'LN-BAT-2',
-        defect: '气密测试不合格',
-        qty: 3,
-        ageHours: 2,
+        n: 170,
+        lineId: 'LINE-WB-PK-01',
+        defect: '成品箱贴错贴',
+        qty: 6,
+        ageHours: 1,
         status: 'review',
       },
-      { n: 52, lineId: 'LN-PAINT-2', defect: '面漆橘皮', qty: 6, ageHours: 1, status: 'review' },
     ],
     pareto: [
-      // clamp 区间互不重叠 → 抖动后仍严格降序
-      { defect: '极片对齐度超差', lineId: 'LN-BAT-1', base: 46, amp: 4, lo: 44, hi: 48 },
-      { defect: '卷绕张力不良', lineId: 'LN-BAT-1', base: 31, amp: 4, lo: 29, hi: 33 },
-      { defect: '焊点虚焊', lineId: 'LN-WELD-1', base: 12, amp: 2, lo: 11, hi: 13 },
-      { defect: '面漆橘皮', lineId: 'LN-PAINT-2', base: 9, amp: 2, lo: 8, hi: 10 },
-      { defect: '密封圈压伤', lineId: 'LN-ASSY-1', base: 6, amp: 2, lo: 5, hi: 7 },
+      // clamp 区间互不重叠 → 抖动后仍严格降序；Σ TOP5 + 长尾 ≈ 当日 107 件不良
+      { defect: '活塞杆表面振纹', lineId: 'LINE-WB-ROD-01', base: 26, amp: 3, lo: 25, hi: 28 },
+      { defect: '活塞杆外圆尺寸超差', lineId: 'LINE-WB-ROD-01', base: 18, amp: 3, lo: 17, hi: 20 },
+      { defect: '气密测试泄漏', lineId: 'LINE-WB-FA-01', base: 11, amp: 2, lo: 10, hi: 12 },
+      { defect: '电泳膜厚不足', lineId: 'LINE-WB-CT-01', base: 8, amp: 2, lo: 7, hi: 9 },
+      { defect: '阻尼力曲线超差', lineId: 'LINE-WB-TS-01', base: 5, amp: 2, lo: 4, hi: 6 },
     ],
-    paretoTail: 34,
-    // 近 3h 电芯线缺陷拉升越红线（与产线屏卷绕机报警时段呼应），此前平稳在线下
+    paretoTail: 38,
+    // 近 3h 活塞杆线缺陷拉升（与设备屏 DEV-CNC-03 振动报警时段呼应），此前平稳在本层限下
     hourly: {
-      bases: [1.12, 1.2, 1.08, 1.24, 1.3, 1.18, 1.34, 1.28, 1.22, 1.92, 2.18, 2.42],
+      bases: [1.72, 1.8, 1.68, 1.84, 1.9, 1.78, 1.94, 1.88, 1.82, 2.32, 2.54, 2.72],
       hotFrom: 9,
-      calm: [0.9, 1.45],
-      hot: [1.7, 2.6],
+      calm: [1.5, 2.05],
+      hot: [2.2, 2.95],
     },
     trend30: {
-      rateBase: 1.08,
+      rateBase: 1.18,
       rateAmp: 0.2,
-      rateClamp: [0.85, 1.38],
-      ramp: [1.24, 1.38],
-      lotsBase: 188,
+      rateClamp: [0.95, 1.42],
+      ramp: [1.3, 1.42],
+      lotsBase: 38,
     },
-    extraRelease: 2,
-  },
-  // F02 华南制造中心：无事故，全绿基线（异常是例外的对照组）
-  F02: {
-    layers: [
-      {
-        key: 'iqc',
-        label: '来料检',
-        code: 'IQC',
-        lotsDone: 24,
-        lotsPassed: 24,
-        lotsDue: 26,
-        carryOver: 0,
-        oldestHours: 4,
-        pieceInspected: 2600,
-        pieceDefects: 12,
-        trendBase: 0.44,
-        limitPct: 0.8,
-      },
-      {
-        key: 'ipqc',
-        label: '过程检',
-        code: 'IPQC',
-        lotsDone: 30,
-        lotsPassed: 29,
-        lotsDue: 33,
-        carryOver: 1,
-        oldestHours: 9,
-        failedTop: { name: '注塑一线', count: 1 },
-        pieceInspected: 3400,
-        pieceDefects: 26,
-        trendBase: 0.72,
-        limitPct: 1.2,
-      },
-      {
-        key: 'fqc',
-        label: '成品检',
-        code: 'FQC',
-        lotsDone: 22,
-        lotsPassed: 22,
-        lotsDue: 24,
-        carryOver: 0,
-        oldestHours: 3,
-        pieceInspected: 1800,
-        pieceDefects: 9,
-        trendBase: 0.48,
-        limitPct: 0.8,
-      },
-    ],
-    ncrs: [
-      {
-        n: 55,
-        lineId: 'LN-INJ-1',
-        defect: '缩痕超标',
-        qty: 42,
-        ageHours: 30,
-        status: 'disposing',
-        disposition: '报废',
-      },
-      {
-        n: 56,
-        lineId: 'LN-INJ-2',
-        defect: '仪表板表面划痕',
-        qty: 60,
-        ageHours: 15,
-        status: 'disposing',
-        disposition: '让步接收',
-      },
-      {
-        n: 57,
-        supplier: '东旭精密',
-        iqcN: 1183,
-        defect: '支架孔位偏移',
-        qty: 300,
-        ageHours: 9,
-        status: 'review',
-      },
-      { n: 58, lineId: 'LN-MACH-1', defect: '孔径超差', qty: 5, ageHours: 6, status: 'review' },
-    ],
-    pareto: [
-      { defect: '缩痕超标', lineId: 'LN-INJ-1', base: 9, amp: 2, lo: 8, hi: 10 },
-      { defect: '仪表板表面划痕', lineId: 'LN-INJ-2', base: 6, amp: 2, lo: 5, hi: 7 },
-      { defect: '孔径超差', lineId: 'LN-MACH-1', base: 4, amp: 0, lo: 4, hi: 4 },
-      { defect: '浇口毛边残留', lineId: 'LN-INJ-1', base: 3, amp: 0, lo: 3, hi: 3 },
-      { defect: '端面平面度超差', lineId: 'LN-MACH-1', base: 2, amp: 0, lo: 2, hi: 2 },
-    ],
-    paretoTail: 9,
-    hourly: {
-      bases: [0.68, 0.74, 0.62, 0.76, 0.7, 0.8, 0.72, 0.66, 0.78, 0.72, 0.7, 0.75],
-      hotFrom: 12,
-      calm: [0.55, 0.98],
-      hot: [0.55, 0.98],
-    },
-    trend30: { rateBase: 0.6, rateAmp: 0.16, rateClamp: [0.42, 0.82], ramp: [], lotsBase: 66 },
     extraRelease: 1,
   },
 }
@@ -481,7 +365,7 @@ function buildNcrs(seeds: NcrSeed[], workshopIds: string[] | 'all'): NcrRow[] {
       if (!line) continue
       if (workshopIds !== 'all' && !workshopIds.includes(line.workshopId)) continue
       rows.push({
-        code: seq('NCR-26', s.n, 3),
+        code: seq('NCR-2026', s.n, 4),
         sourceType: 'line',
         source: line.name,
         lineId: line.id,
@@ -499,10 +383,10 @@ function buildNcrs(seeds: NcrSeed[], workshopIds: string[] | 'all'): NcrRow[] {
       // 来料 NCR：车间收窄 scope 下不展示（来料属工厂级，真实维度待 #570）
       if (workshopIds !== 'all') continue
       rows.push({
-        code: seq('NCR-26', s.n, 3),
+        code: seq('NCR-2026', s.n, 4),
         sourceType: 'supplier',
         source: s.supplier ?? '外部供应商',
-        sourceDoc: seq('IQC', s.iqcN ?? 2000),
+        sourceDoc: seq('PO-2026', s.poN ?? 400, 4),
         defect: s.defect,
         qty: s.qty,
         ageHours: s.ageHours,
@@ -607,12 +491,12 @@ function buildTrend30(p: QualityProfile, todayRate: number, todayLots: number): 
 }
 
 /** 质量看板聚合（纯函数）。workshopIds 收窄仅过滤 NCR/帕累托（检验分层与趋势为
- *  工厂级口径，真实车间维度待 #570）；未知工厂回落 F01 画像。 */
+ *  工厂级口径，真实车间维度待 #570）；未知工厂回落一号工厂画像。 */
 export function buildQualityBoard(
-  factoryId = 'F01',
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): QualityBoard {
-  const p = PROFILES[factoryId] ?? PROFILES.F01
+  const p = PROFILES[factoryId] ?? PROFILES[DEFAULT_FACTORY_ID]
   // scope 收窄时仅保留可见车间（供 NCR/帕累托过滤使用）
   const wsScope =
     workshopIds === 'all'

@@ -1,52 +1,45 @@
-# Recommended Components to Install
+# 建议安装的组件
 
-Status ledger for components that were once missing. Checked against
-`packages/ui/src/index.ts` and the `pc/` layer (post-ADR-0020 NvUI state).
+曾经缺失组件的状态台账。已对照 `packages/ui/src/index.ts` 与 `pc/` 层核验
+（ADR-0020 后的 NvUI 状态）。
 
-## Already Delivered
+## 已交付
 
-- **#143 business-console set** — now available from `@nerv-iip/ui` under their
-  NvUI names: `NvTabs*`, `NvSheet*`, `NvDatePicker`, `NvDateRangePicker`,
-  `FileUpload`, plus 原版-canonical `Popover*`, `Progress`, `ScrollArea` and
-  the chart layer (now app-facing as `NvAreaChart` / `NvLineChart` /
+- **#143 business-console 组件集** — 现已通过 `@nerv-iip/ui` 以其 NvUI 名称提供：
+  `NvTabs*`、`NvSheet*`、`NvDatePicker`、`NvDateRangePicker`、
+  `FileUpload`，以及原版规范组件 `Popover*`、`Progress`、`ScrollArea` 和
+  图表层（现面向应用提供 `NvAreaChart` / `NvLineChart` /
   `NvBarChart` / `NvDonutChart`).
-- **`command`** — ✅ delivered as `NvCommand` (pc layer).
-- **Combobox pattern** — ✅ delivered as `NvCombobox` (type-to-filter, free
-  input allowed) and `NvSearchSelect` (searchable popup single-select) for
-  large datasets (SKUs, devices, technicians).
-- **`breadcrumb`** — ✅ installed as a 原版 primitive and exported from
-  `@nerv-iip/ui` (`Breadcrumb*`); no Nv rebuild yet.
+- **`command`** — ✅ 已作为 `NvCommand`（pc 层）交付。
+- **Combobox 模式** — ✅ 已交付 `NvCombobox`（输入筛选，允许自由输入）和
+  `NvSearchSelect`（可搜索的弹窗单选），用于大型数据集（SKU、设备、技术人员）。
+- **`breadcrumb`** — ✅ 已作为原版 primitive 安装并从
+  `@nerv-iip/ui` 导出（`Breadcrumb*`）；尚未进行 Nv 重建。
 
-## Still Open
+## 尚未完成
 
 ### `toggle` / `toggle-group`
 
-Not installed (`components/ui/` has no `toggle`). **Why**: view mode switches
-(table vs. card view), filter toggle pills, chart time range selectors.
-Interim: `NvTabs` quick filters or `NvDataTable` `tabs` cover most cases;
-screen/touch layers have `NvScreenSegmented` / `NvTouchSegmented`.
+尚未安装（`components/ui/` 中没有 `toggle`）。**原因**：视图模式切换
+（表格与卡片视图）、筛选切换胶囊、图表时间范围选择器。
+临时方案：`NvTabs` 快速筛选或 `NvDataTable` 的 `tabs` 可覆盖大多数情形；
+大屏/触控层已有 `NvScreenSegmented` / `NvTouchSegmented`。
 
 ### `resizable`
 
-For resizable panel layouts (e.g. code editor / output split view for
-connector config).
+用于可调整尺寸的面板布局（例如连接器（connector）配置中的代码编辑器/输出分栏视图）。
 
-### `stepper` (custom — not in shadcn-vue core)
+### `stepper`（自定义，未包含在 shadcn-vue core 中）
 
-For multi-step onboarding flows (register instance → configure connector →
-validate connection).
+用于多步骤引导流程（注册实例 → 配置 connector → 验证连接）。
 
-## Installation procedure (per ADR 0020)
+## 安装流程（遵循 ADR 0020）
 
-1. Run `pnpm dlx shadcn-vue@latest add <name>` from `frontend/` — the 原版
-   lands in `packages/ui/src/components/ui/<name>/` and stays byte-for-byte
-   unchanged.
-2. Export the 原版 parts from `packages/ui/src/index.ts` (library-internal
-   baseline).
-3. If app surfaces need it, copy-rebuild a branded version in the matching
-   layer (`pc/` / `touch/` / `screen/`), named per ADR 0020 §1.2 R1–R5
-   (usually `Nv` + plain name), and export it from the layer barrel — app code
-   only ever uses the `Nv*` name.
-4. Add/update the design-system docs page
-   (`frontend/apps/design-system/docs/`) and the contract tests
-   (`nvui-naming`), plus a spec under `DESIGN/components/<name>.md`.
+1. 运行 `pnpm dlx shadcn-vue@latest add <name>`（在 `frontend/` 中）：原版组件会
+   落在 `packages/ui/src/components/ui/<name>/`，并保持逐字节不变。
+2. 从 `packages/ui/src/index.ts` 导出原版部件（库内部基线）。
+3. 若应用界面需要它，在匹配的层（`pc/` / `touch/` / `screen/`）中复制重建品牌版本，
+   按 ADR 0020 §1.2 R1–R5 命名（通常为 `Nv` + 素名），并从该层 barrel（聚合导出入口）导出；应用代码
+   只能使用 `Nv*` 名称。
+4. 新增或更新设计系统文档页面（`frontend/apps/design-system/docs/`）和
+   契约测试（contract test，`nvui-naming`），并在 `DESIGN/components/<name>.md` 下新增规格说明。

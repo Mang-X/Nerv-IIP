@@ -6,7 +6,26 @@ namespace Nerv.IIP.Contracts.Scheduling;
 
 public static class SchedulingWorkbenchLimits
 {
-    public const int MaxOrderCount = 500;
+    /// <summary>
+    /// 一次生成方案可选的工单数上限。
+    ///
+    /// **这个值受网关 10 秒超时约束，不是一个可以随手调大的容量参数。**
+    /// 实测：14 张工单耗时 9.61 秒，离 <c>BusinessGatewayHttpClientResilience</c> 的
+    /// 10 秒硬超时只剩 0.4 秒；原值 500 意味着界面在主动邀请用户勾出一个必然 504 的请求。
+    ///
+    /// 调大之前必须先解决其一：放宽网关超时、把生成改成异步任务（参照 MRP 的做法）、
+    /// 或让排程算法的耗时不随工单数线性增长。
+    /// </summary>
+    public const int MaxOrderCount = 10;
+
+    /// <summary>
+    /// 向 MES 拉取权威工单时的翻页页大小。
+    ///
+    /// **与 <see cref="MaxOrderCount"/> 是两个不同的量，不要合并。** 前者约束「用户一次能勾多少张」
+    /// （受网关 10 秒超时约束），后者约束「每次向下游拉多少条」（越大翻页次数越少、越快）。
+    /// 曾经共用一个常量，把选单上限调小会连带把页大小调小，反而让 #1400 的翻页开销成倍上升。
+    /// </summary>
+    public const int AuthoritativePageSize = 500;
 }
 
 public static class SchedulingJson
@@ -30,7 +49,11 @@ public sealed record SchedulingProblemContract(
     IReadOnlyCollection<SchedulingUnavailabilityWindowContract> UnavailabilityWindows,
     IReadOnlyCollection<SchedulingMaterialReadinessContract> MaterialReadiness,
     IReadOnlyCollection<SchedulingQualityBlockContract> QualityBlocks,
-    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments);
+    IReadOnlyCollection<SchedulingLockedAssignmentContract> LockedAssignments,
+    // 设备数据风险(软约束):设备没有运行时快照 / 快照已过期 / 采集源不可达。
+    // 「不知道」不等于「不可用」——它不进 UnavailabilityWindows(那里只放真实停机与维护),
+    // 只作为风险随计划带出,提示排产员这台设备的状态是盲区。
+    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null);
 
 public sealed record SchedulingOrderContract(
     string OrderId,
@@ -87,12 +110,71 @@ public sealed record SchedulingUnavailabilityWindowContract(
     DateTimeOffset EndUtc,
     string ReasonCode);
 
+/// <summary>
+/// 设备数据风险(软约束):某台设备在某段窗口内「状态未知」——没有运行时快照、快照已过期,
+/// 或采集源当时不可达。这是数据盲区,不是设备真的不能干活,所以它不阻断排程,
+/// 只作为风险随计划带出,由排产员决定是否人工确认设备状态。
+/// </summary>
+public sealed record SchedulingEquipmentDataRiskContract(
+    string ResourceId,
+    string? WorkCenterId,
+    string ReasonCode,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? SourceReferenceLabel = null);
+
+/// <summary>
+/// 设备「状态未知」的口径:软约束(默认)= 照排 + 带设备数据风险标记;
+/// 硬约束 = 沿用旧行为,状态未知即全窗不可用(会把无快照设备整台排除)。
+/// 真实的停机/维护窗口(Unavailable)在两种口径下都是硬阻,不受此开关影响。
+/// </summary>
+public enum SchedulingEquipmentUnknownModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
+
 public sealed record SchedulingMaterialReadinessContract(
     string ScopeType,
     string ScopeId,
     DateTimeOffset? MaterialReadyUtc,
     bool IsReady,
-    IReadOnlyCollection<string> ReasonCodes);
+    IReadOnlyCollection<string> ReasonCodes,
+    IReadOnlyCollection<SchedulingMaterialShortageContract>? Shortages = null);
+
+/// <summary>
+/// 单项物料缺口(排程读面用):缺哪个物料、需要多少、可用多少、缺口多少。
+/// 排产把物料当软约束,缺口只作为「开工前必须补齐」的风险随计划带出,不再阻断排程。
+/// </summary>
+public sealed record SchedulingMaterialShortageContract(
+    string MaterialId,
+    string? MaterialLotId,
+    decimal RequiredQuantity,
+    decimal AvailableQuantity,
+    decimal ShortageQuantity);
+
+/// <summary>
+/// 物料约束口径:软约束(默认)= 可排 + 带物料风险标记;硬约束 = 缺料直接不可排。
+/// 产品裁决:齐套是开工门槛(MES 侧硬门),不是排产门槛。
+/// </summary>
+public enum SchedulingMaterialConstraintModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
+
+/// <summary>
+/// 工艺路线上「该工序需要质检」这一标记的排产口径:软约束(默认)= 照排 + 预警级冲突,
+/// 质量放行由 MES/质量侧在开工与流转时把关;硬约束 = 沿用旧行为,带质检标记的工序直接不可排。
+/// 产品裁决与物料(#1318)、设备状态未知(#1325)同源:质检要求是开工/放行门槛,不是排产门槛。
+/// 注意:真实下达的质量封锁(<see cref="SchedulingQualityBlockContract"/>,针对具体工序或资源)
+/// 在两种口径下都是硬阻,不受此开关影响——那是已经发生的封锁,不是路线上的常规检验要求。
+/// </summary>
+public enum SchedulingQualityConstraintModeContract
+{
+    Soft = 0,
+    Hard = 1
+}
 
 public sealed record SchedulingQualityBlockContract(
     string ScopeType,
@@ -125,7 +207,68 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<ScheduleConflictContract> Conflicts,
     IReadOnlyCollection<UnscheduledOperationContract> UnscheduledOperations,
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
-    IReadOnlyCollection<GanttScheduleItemContract> GanttItems);
+    IReadOnlyCollection<GanttScheduleItemContract> GanttItems,
+    IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
+    IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
+    IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
+    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null);
+
+/// <summary>
+/// 设备数据风险(软约束):工序已排到这台设备上,但该设备在计划窗口内没有可信的运行时状态
+/// (无快照 / 快照过期 / 采集源不可达)。开工前建议人工确认设备可用。
+/// </summary>
+public sealed record SchedulePlanEquipmentRiskContract(
+    string OrderId,
+    string OperationId,
+    string ResourceId,
+    IReadOnlyCollection<string> ReasonCodes,
+    string Message);
+
+/// <summary>
+/// 物料风险(软约束):工序已排入计划,但开工前必须先把这些物料补齐,否则 MES 侧齐套硬门会拦住开工。
+/// </summary>
+public sealed record SchedulePlanMaterialRiskContract(
+    string OrderId,
+    string OperationId,
+    IReadOnlyCollection<string> ReasonCodes,
+    IReadOnlyCollection<SchedulingMaterialShortageContract> Shortages,
+    string Message);
+
+/// <summary>
+/// 计划所依据的工作日历(投影自排程问题的班次窗口),供读面画工作日/非工作日与班次边界。
+/// 一份日历可被多台资源 / 多个工作中心共用,故带出使用它的资源与工作中心清单。
+/// </summary>
+public sealed record SchedulePlanCalendarContract(
+    string CalendarId,
+    IReadOnlyCollection<string> ResourceIds,
+    IReadOnlyCollection<string> WorkCenterIds,
+    IReadOnlyCollection<SchedulePlanShiftWindowContract> ShiftWindows);
+
+/// <summary>单个班次工作窗口。窗口之外即非工作时间。</summary>
+public sealed record SchedulePlanShiftWindowContract(
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string ShiftCode);
+
+/// <summary>
+/// 计划期内资源不可用窗口:设备维护 / 计划停机 / 换线 / 换型。
+/// <see cref="ReasonCode"/> 保留上游原始码值,<see cref="Kind"/> 是读面用的归类。
+/// </summary>
+public sealed record SchedulePlanBlockWindowContract(
+    string? ResourceId,
+    string? WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string ReasonCode,
+    ScheduleBlockKindContract Kind);
+
+public enum ScheduleBlockKindContract
+{
+    Maintenance = 0,
+    Downtime = 1,
+    LineChange = 2,
+    Changeover = 3
+}
 
 public sealed record SchedulePlanImpactContract(
     bool IsInvalidated,
@@ -161,7 +304,9 @@ public sealed record SchedulePlanMetricsContract(
     decimal OnTimeRate,
     decimal AverageResourceUtilization,
     int LockedOperationCount = 0,
-    int OptimizableOperationCount = 0);
+    int OptimizableOperationCount = 0,
+    int MaterialRiskOperationCount = 0,
+    int EquipmentRiskOperationCount = 0);
 
 public sealed record ScheduleAssignmentContract(
     string AssignmentId,
@@ -216,7 +361,9 @@ public sealed record GanttScheduleItemContract(
     DateTimeOffset EndUtc,
     SchedulePlanStatusContract Status,
     bool HasConflict,
-    ScheduleConflictReasonCodeContract? ConflictReasonCode);
+    ScheduleConflictReasonCodeContract? ConflictReasonCode,
+    bool HasMaterialRisk = false,
+    bool HasEquipmentRisk = false);
 
 public static class SchedulingIntegrationEventTypes
 {

@@ -21,7 +21,6 @@ using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -34,17 +33,17 @@ try
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
-    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
     }).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     builder.Services.AddHttpClient<ICustomerCreditProfileReader, HttpCustomerCreditProfileReader>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
     }).UseHttpClientMetrics();
-    var wmsBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5118");
+    var wmsBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Wms:BaseUrl", "http://localhost:5115");
     builder.Services.AddHttpClient<IWmsOutboundCancellationClient, HttpWmsOutboundCancellationClient>(client =>
     {
         client.BaseAddress = wmsBaseAddress;
@@ -55,7 +54,12 @@ try
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services
-        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .AddFastEndpoints(o =>
+        {
+            o.IncludeAbstractValidators = true;
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        })
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>
@@ -174,11 +178,13 @@ try
                 WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
                 WorldHistoryConfiguration.ResolveScale(builder.Configuration));
             app.Logger.LogInformation(
-                "World-history ERP seed completed: {SalesOrders} sales orders, {PurchaseOrders} purchase orders; " +
+                "World-history ERP seed completed: {SalesOrders} sales orders, {PurchaseOrders} purchase orders, " +
+                "{Payables} account payables; " +
                 "validator checked {Orders} orders / {Deliveries} deliveries / {Receivables} receivables / " +
                 "{CashReceipts} cash receipts / {Vouchers} vouchers.",
                 report.SalesOrdersWritten,
                 report.PurchaseOrdersWritten,
+                report.PayablesWritten,
                 report.Validation.OrdersChecked,
                 report.Validation.DeliveriesChecked,
                 report.Validation.ReceivablesChecked,
@@ -210,26 +216,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

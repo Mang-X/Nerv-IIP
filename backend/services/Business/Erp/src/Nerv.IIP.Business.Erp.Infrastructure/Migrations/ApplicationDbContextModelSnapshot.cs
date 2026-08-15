@@ -2080,6 +2080,17 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Quotation aggregate id.");
 
+                    b.Property<DateTime?>("ConvertedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("converted_at_utc")
+                        .HasComment("UTC time the quotation was converted to a sales order.");
+
+                    b.Property<string>("ConvertedSalesOrderNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("converted_sales_order_no")
+                        .HasComment("Sales order number this quotation has been converted to; null when not converted yet.");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")

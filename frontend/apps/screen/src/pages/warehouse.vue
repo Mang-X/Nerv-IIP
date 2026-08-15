@@ -305,7 +305,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
       <div class="wb-main">
         <!-- 左：出入库双进度（大数字 + 发丝进度条 + 12h 流量） -->
         <section class="wb-flows">
-          <NvScreenPanel title="当日入库 · ASN" class="wb-flow">
+          <NvScreenPanel title="当日入库 · 收货" class="wb-flow">
             <template #extra>
               <span class="wb-flow-docs"
                 >收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span
@@ -352,7 +352,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
           </NvScreenPanel>
 
-          <NvScreenPanel title="当日出库 · SO" class="wb-flow out">
+          <NvScreenPanel title="当日出库 · 发货" class="wb-flow out">
             <template #extra>
               <span class="wb-flow-docs"
                 >发运 {{ board.outbound.docsDone }}/{{ board.outbound.docsTotal }} 单</span
@@ -512,7 +512,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
                     :class="{ on: wcsView === 'list' }"
                     role="tab"
                     :aria-selected="wcsView === 'list'"
-                    aria-label="适配器明细"
+                    aria-label="链路明细"
                     @click="wcsView = 'list'"
                   >
                     <LayoutList :size="13" :stroke-width="1.9" />
@@ -575,10 +575,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
 
           <NvScreenPanel title="任务超时榜 · TOP5" class="wb-overdue">
             <template #extra>
-              <NvScreenStatusTag
-                tone="amber"
-                :label="IS_REAL_DATA ? '龄期按创建时刻推算' : '龄期推算 · 待 #570'"
-              />
+              <NvScreenStatusTag tone="amber" label="龄期按创建时刻推算" />
             </template>
             <div class="wo-list">
               <div v-for="(r, i) in overdueTop" :key="r.id" class="wo-row">
@@ -599,10 +596,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
       <footer class="wb-foot">
         <span class="wb-foot-l">
           <RouterLink :to="backLink.to" class="wb-back">‹ {{ backLink.label }}</RouterLink>
-          <span
-            >{{ IS_REAL_DATA ? 'WMS 作业域实时数据' : 'WMS 作业域演示数据' }} · 龄期 / 吞吐 /
-            适配器聚合为前端推算 · 库存半屏读面 待 #570</span
-          >
+          <span>WMS 作业域当前窗口 · 龄期、吞吐与作业流按当前窗口汇总</span>
         </span>
         <span class="wb-foot-r">
           当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
@@ -743,20 +737,20 @@ const wcsView = ref<'chart' | 'list'>('chart')
     height: 2px;
     margin-top: 9px;
     border-radius: 1px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.32), transparent);
+    background: rgba(255, 255, 255, 0.32);
     opacity: 0.8;
   }
   .wb-kpi-line.cyan {
-    background: linear-gradient(90deg, var(--nv-scr-cyan), transparent);
+    background: var(--nv-scr-cyan);
   }
   .wb-kpi-line.bad {
-    background: linear-gradient(90deg, var(--nv-scr-red), transparent);
+    background: var(--nv-scr-red);
   }
   .wb-kpi-line.warn {
-    background: linear-gradient(90deg, var(--nv-scr-amber), transparent);
+    background: var(--nv-scr-amber);
   }
   .wb-kpi-line.ok {
-    background: linear-gradient(90deg, var(--nv-scr-green), transparent);
+    background: var(--nv-scr-green);
   }
   .wb-kpi-sub {
     display: block;
@@ -831,11 +825,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
     display: block;
     height: 100%;
     border-radius: 2px;
-    background: linear-gradient(90deg, rgba(74, 166, 238, 0.35), var(--nv-scr-cyan));
+    background: var(--nv-scr-cyan);
     transition: width 0.6s var(--nv-scr-ease-emphasized);
   }
   .wb-flow.out .wb-bar i {
-    background: linear-gradient(90deg, rgba(139, 155, 230, 0.35), var(--nv-scr-indigo));
+    background: var(--nv-scr-indigo);
   }
   .wb-flow-meta {
     display: flex;
@@ -961,7 +955,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
     flex: 1;
     height: 1px;
     margin: 0 4px;
-    background: linear-gradient(90deg, rgba(255, 255, 255, 0.07), transparent);
+    background: rgba(255, 255, 255, 0.07);
   }
   .tg-done {
     font-size: 12px;

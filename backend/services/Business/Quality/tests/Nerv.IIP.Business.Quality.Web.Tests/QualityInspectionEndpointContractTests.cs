@@ -40,6 +40,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityInspectionEndpointContractTests
 {
     [Fact]
@@ -47,11 +48,25 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(18, contracts.Count);
+        Assert.Equal(24, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/measuring-devices"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesManage
             && x.OperationId == "createBusinessQualityMeasuringDevice");
+
+        // 三期读面：计量器具台账 / 校准记录流水 / SPC 控制图台账。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/measuring-devices"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
+            && x.OperationId == "listBusinessQualityMeasuringDevices");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/calibration-records"
+            && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
+            && x.OperationId == "listBusinessQualityCalibrationRecords");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/spc/control-charts"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "listBusinessQualitySpcControlCharts");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/quality/measuring-devices/calibration-dashboard"
             && x.PermissionCode == BusinessPermissionCodes.QualityMeasuringDevicesRead
@@ -96,6 +111,18 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
             && x.OperationId == "createBusinessQualityInspectionRecordFromTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "getBusinessQualityInspectionTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
+            && x.OperationId == "assignBusinessQualityInspectionTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/claim"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
+            && x.OperationId == "claimBusinessQualityInspectionTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/quality/spc/control-chart"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
@@ -142,6 +169,9 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
     [InlineData(typeof(ListInspectionTasksEndpoint))]
     [InlineData(typeof(CreateInspectionRecordFromTaskEndpoint))]
+    [InlineData(typeof(GetInspectionTaskEndpoint))]
+    [InlineData(typeof(AssignInspectionTaskEndpoint))]
+    [InlineData(typeof(ClaimInspectionTaskEndpoint))]
     [InlineData(typeof(QuerySpcControlChartEndpoint))]
     [InlineData(typeof(QueryProcessCapabilityEndpoint))]
     [InlineData(typeof(EvaluateSpcControlChartEndpoint))]
@@ -403,7 +433,8 @@ public sealed class QualityInspectionEndpointContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(plan.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("检验方案", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.InspectionRecords);
     }
 
@@ -474,7 +505,8 @@ public sealed class QualityInspectionEndpointContractTests
             new CreateInspectionRecordCommand("org-001", "env-dev", null, "receiving", "purchase-receipt", "RCV-MD-001", "SKU-RM-1000", 1m, null, null,
                 [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])], null, [], MeasuringDeviceId: device.Id), CancellationToken.None));
 
-        Assert.Contains("expired", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(device.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("校准已过期", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -575,7 +607,9 @@ public sealed class QualityInspectionEndpointContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RCV-MISMATCH-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-RM-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不一致", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.InspectionRecords);
     }
 
@@ -789,7 +823,8 @@ public sealed class QualityInspectionEndpointContractTests
                 [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
             CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-APPROVAL-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.Equal("approval-chain-pending", approvalStatusClient.LastChainId);
     }
 
@@ -870,7 +905,8 @@ public sealed class QualityInspectionEndpointContractTests
                 [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
             CancellationToken.None));
 
-        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-APPROVAL-003", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("审批链", exception.Message, StringComparison.Ordinal);
         Assert.Equal("NCR-APPROVAL-003", approvalStatusClient.LastNcrCode);
     }
 
@@ -1325,7 +1361,8 @@ public sealed class QualityInspectionEndpointContractTests
                 "Disposition completed"),
             CancellationToken.None));
 
-        Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NCR-SCRAP-CAPA-001", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CAPA", exception.Message, StringComparison.Ordinal);
         Assert.Equal("disposition-in-progress", ncr.Status);
     }
 

@@ -22,7 +22,7 @@ import {
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from '@lucide/vue'
 import { ref } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 export interface DetailField {
   label: string
@@ -65,7 +65,11 @@ async function confirmToggle() {
     }
     toggleOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure(
+      `${props.entityLabel}${isActive ? '停用' : '启用'}失败`,
+      error,
+      `${props.entityLabel}${isActive ? '停用' : '启用'}失败，请稍后重试。`,
+    )
   }
 }
 </script>

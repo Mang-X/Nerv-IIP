@@ -36,14 +36,20 @@ import {
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import { RouterLink } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 const props = withDefaults(
   defineProps<{
     orderReference: string
     urgency?: BusinessConsoleOrderUrgency
     mode?: UrgencyDisplayMode
+    /**
+     * 紧急度读面本身取数失败（非「排程侧没算」）。没有它，读面 400/500 会把整列
+     * 渲染成「未计算」——把「取不到」伪装成「事实不存在」（#1418 B4）。
+     */
+    sourceUnavailable?: boolean
   }>(),
-  { mode: 'level' },
+  { mode: 'level', sourceUnavailable: false },
 )
 
 const emit = defineEmits<{ refresh: [] }>()
@@ -87,7 +93,13 @@ const priorityChanges = computed(() =>
 const currentSetter = computed(() => priorityChanges.value[0]?.changedBy)
 
 const presentation = computed(() => urgencyLevelPresentation(props.urgency?.level))
-const badge = computed(() => formatUrgencyDisplay(props.urgency, props.mode))
+const badge = computed(() => {
+  // 读面失败 ≠ 未计算：失败时明说「读取失败」，绝不冒充「排程侧没算过」。
+  if (!props.urgency && props.sourceUnavailable) {
+    return { label: '读取失败', tone: 'warning' as const }
+  }
+  return formatUrgencyDisplay(props.urgency, props.mode)
+})
 
 const priorityLevelOptions = [
   { value: 'p0', label: 'P0 · 最高' },
@@ -145,7 +157,7 @@ function toIsoOrError(value: string): string | null | typeof INVALID_EXPIRY {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function reasonLabel(code: string) {
@@ -177,8 +189,56 @@ function priorityLabel(level?: string | null) {
   return level ? level.toUpperCase() : '—'
 }
 
+// —— 业务优先级读面的中文口径（#1418：抽屉里曾三处英文直出 + 一处 Unix 纪元）——
+
+/** 服务端在「没有人工优先级」时回的英文哨兵，原样透出就是英文直出。 */
+const NO_MANUAL_PRIORITY_SENTINEL = 'no manual business-priority override'
+
+function priorityReasonLabel(reason?: string | null) {
+  const trimmed = reason?.trim()
+  if (!trimmed) return '默认优先级（未人工设置）'
+  // 去掉句末标点再比，服务端带不带句号都认。
+  if (trimmed.toLowerCase().replace(/[.。]\s*$/, '') === NO_MANUAL_PRIORITY_SENTINEL) {
+    return '默认优先级（未人工设置）'
+  }
+  return trimmed
+}
+
+const PRIORITY_SOURCE_LABELS: Record<string, string> = {
+  'authoritative-default': '系统默认',
+  default: '系统默认',
+  manual: '人工设置',
+  'manual-override': '人工设置',
+  expired: '人工设置已过期',
+}
+
+/**
+ * 「来源 / 修订」整行的人话口径。修订号为 0 表示从未被人工改过，此时说「第 0 版」
+ * 只会让人以为数据漏了——干脆不提修订。
+ */
+function prioritySourceText(source?: string | null, revision?: number | null) {
+  const key = source?.trim() ?? ''
+  const label = key ? (PRIORITY_SOURCE_LABELS[key] ?? key) : '系统默认'
+  const rev = revision ?? 0
+  return rev > 0 ? `${label} · 第 ${rev} 版` : label
+}
+
 function formatNumber(value?: number | null) {
   return value == null ? '—' : String(value)
+}
+
+/**
+ * 判定结论。**当前值缺失时不许说「未触发」**——那是把「没算出来」讲成「没问题」。
+ *
+ * 原来两行都是「没命中原因码 → 未触发」，于是 CR 为空（权威事实过期、算不出比值）时
+ * 判定列照样写「未触发」，读的人会当成「这项检查过了」。owner 第五轮亲验点名。
+ */
+function verdictOf(value: number | null | undefined, ...matches: [string, string][]) {
+  if (value == null) return '未计算'
+  for (const [reasonCode, label] of matches) {
+    if (hasTimeReason(reasonCode)) return label
+  }
+  return '未触发'
 }
 
 function formatDateTime(value?: string | null) {
@@ -186,6 +246,20 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('zh-CN', { hour12: false })
 }
+
+/**
+ * 生效窗口整行。服务端在「无人工优先级」时把 `setAtUtc` 回成纪元零值，格式化出来就是
+ * 触目惊心的 `1970/1/1 08:00:00`（#1418）。起点无效时这一行只需要说清「一直有效」。
+ */
+const priorityWindowText = computed(() => {
+  const setAt = currentPriority.value?.setAtUtc
+  const expiresAt = currentPriority.value?.expiresAtUtc
+  const start = setAt ? new Date(setAt) : null
+  // 纪元零值与 .NET DateTime.MinValue 都落在 <= 0，一并当「没有起点」。
+  const hasStart = start != null && !Number.isNaN(start.getTime()) && start.getTime() > 0
+  if (!hasStart) return expiresAt ? `即刻起 → ${formatDateTime(expiresAt)}` : '长期有效'
+  return `${formatDateTime(setAt)} → ${expiresAt ? formatDateTime(expiresAt) : '长期有效'}`
+})
 
 function hasTimeReason(code: string) {
   return props.urgency?.timeCriticality?.reasonCodes?.includes(code) ?? false
@@ -254,13 +328,12 @@ function hasTimeReason(code: string) {
           <dl class="mt-3 grid gap-2 text-sm text-muted-foreground">
             <div class="flex justify-between gap-4">
               <dt>当前设置</dt>
-              <dd class="text-foreground">{{ currentPriority?.reason ?? '默认优先级' }}</dd>
+              <dd class="text-foreground">{{ priorityReasonLabel(currentPriority?.reason) }}</dd>
             </div>
             <div class="flex justify-between gap-4">
               <dt>来源 / 修订</dt>
               <dd class="text-foreground">
-                {{ currentPriority?.source ?? 'default' }} · rev
-                {{ currentPriority?.revision ?? 0 }}
+                {{ prioritySourceText(currentPriority?.source, currentPriority?.revision) }}
               </dd>
             </div>
             <div v-if="currentSetter" class="flex justify-between gap-4">
@@ -269,14 +342,7 @@ function hasTimeReason(code: string) {
             </div>
             <div class="flex justify-between gap-4">
               <dt>生效窗口</dt>
-              <dd class="text-foreground">
-                {{ formatDateTime(currentPriority?.setAtUtc) }} →
-                {{
-                  currentPriority?.expiresAtUtc
-                    ? formatDateTime(currentPriority.expiresAtUtc)
-                    : '长期有效'
-                }}
-              </dd>
+              <dd class="text-foreground">{{ priorityWindowText }}</dd>
             </div>
           </dl>
 
@@ -374,7 +440,7 @@ function hasTimeReason(code: string) {
 
           <ul class="mt-3 grid gap-1 text-sm text-muted-foreground">
             <li v-for="code in urgency.businessPriority?.reasonCodes ?? []" :key="code">
-              {{ reasonLabel(code) }} <span class="font-mono text-xs">({{ code }})</span>
+              <span :title="code">{{ reasonLabel(code) }}</span>
             </li>
           </ul>
         </section>
@@ -420,11 +486,11 @@ function hasTimeReason(code: string) {
                   <td class="py-2 pr-3">&lt; 1 紧急；≤ 1.2 关注</td>
                   <td class="py-2">
                     {{
-                      hasTimeReason('time.cr.belowOne')
-                        ? '紧急'
-                        : hasTimeReason('time.cr.attention')
-                          ? '关注'
-                          : '未触发'
+                      verdictOf(
+                        urgency.timeCriticality?.criticalRatio,
+                        ['time.cr.belowOne', '紧急'],
+                        ['time.cr.attention', '关注'],
+                      )
                     }}
                   </td>
                 </tr>
@@ -436,11 +502,11 @@ function hasTimeReason(code: string) {
                   <td class="py-2 pr-3">&lt; 0 紧急；&lt; 8 h 高风险</td>
                   <td class="py-2">
                     {{
-                      hasTimeReason('time.slack.negative')
-                        ? '紧急'
-                        : hasTimeReason('time.slack.withinShift')
-                          ? '高风险'
-                          : '未触发'
+                      verdictOf(
+                        urgency.timeCriticality?.slackHours,
+                        ['time.slack.negative', '紧急'],
+                        ['time.slack.withinShift', '高风险'],
+                      )
                     }}
                   </td>
                 </tr>
@@ -449,7 +515,7 @@ function hasTimeReason(code: string) {
           </div>
           <ul class="mt-3 grid gap-1 text-sm text-muted-foreground">
             <li v-for="code in urgency.timeCriticality?.reasonCodes ?? []" :key="code">
-              {{ reasonLabel(code) }} <span class="font-mono text-xs">({{ code }})</span>
+              <span :title="code">{{ reasonLabel(code) }}</span>
             </li>
           </ul>
         </section>
@@ -465,7 +531,7 @@ function hasTimeReason(code: string) {
           </div>
           <ul class="mt-3 grid gap-1 text-sm text-muted-foreground">
             <li v-for="code in urgency.executionRisk?.reasonCodes ?? []" :key="code">
-              {{ reasonLabel(code) }} <span class="font-mono text-xs">({{ code }})</span>
+              <span :title="code">{{ reasonLabel(code) }}</span>
             </li>
           </ul>
         </section>

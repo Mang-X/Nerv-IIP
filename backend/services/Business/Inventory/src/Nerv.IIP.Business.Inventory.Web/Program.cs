@@ -23,7 +23,6 @@ using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Newtonsoft.Json;
 using Prometheus;
 
-
 var isTesting = false;
 try
 {
@@ -36,7 +35,7 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     builder.Services.AddHttpClient<IInventorySkuExpiryPolicyProvider, HttpInventorySkuExpiryPolicyProvider>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -65,10 +64,12 @@ try
     builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
     builder.Services.AddScoped<ExpiredStockBlockingService>();
     builder.Services.AddScoped<ExpiredStockReservationService>();
+    builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
     builder.Services.AddSingleton<InventoryReservationMetrics>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
     builder.Services.AddHostedService<ExpiredStockReservationHostedService>();
-    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IStockCountApprovalClient, HttpStockCountApprovalClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
@@ -83,6 +84,8 @@ try
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
+    builder.Services.AddScoped<WorldHistoryCountSeedService>();
+    builder.Services.AddScoped<WorldHistoryReservationSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -179,6 +182,61 @@ try
             {
                 app.Logger.LogInformation("World-history sample: {Movement}", line);
             }
+
+            // 预留块排在流水块之后：预留的维度取自真实落库的台账。
+            // 它只动 ReservedQuantity / LedgerVersion，绝不改现存量、绝不写流水（校验器 fail-closed）。
+            //
+            // #1374 · **预留必须排在盘点之前**。`StockLedger.Reserve` 会 `LedgerVersion++`，
+            // 而盘点任务把下发时的 `LedgerVersion` 存成 `ExpectedLedgerVersion`，确认差异时逐字比对
+            // （`StockCountTask.ConfirmAdjustment`）。两块的维度 100% 重叠（都是 22 条期初批），
+            // 先盘点后预留会把每一张盘点任务的快照版本当场捅穿——62 张任务一出生即死单。
+            // 顺序不是风格问题：盘点块的校验器现在硬断言两者相等（见 WorldHistoryCountValidator）。
+            var reservationReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryReservationSeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory reservation seed completed: {Reservations} reservations ({Open} still committing stock), " +
+                "{Skipped} plans skipped for a missing ledger dimension, {NotKitted} skipped as not kitted; " +
+                "validator checked {CheckedReservations} reservations " +
+                "({CheckedOpen} open) across {LedgersWithReservation} committed ledgers: reserved {Reserved}, available {Available}.",
+                reservationReport.StockReservationsWritten,
+                reservationReport.OpenReservationsWritten,
+                reservationReport.PlansSkippedWithoutLedger,
+                reservationReport.PlansSkippedNotKitted,
+                reservationReport.Validation.StockReservationsChecked,
+                reservationReport.Validation.OpenReservationsChecked,
+                reservationReport.Validation.LedgersWithReservationChecked,
+                reservationReport.Validation.ReservedQuantityTotal,
+                reservationReport.Validation.AvailableQuantityTotal);
+            foreach (var line in reservationReport.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history reservation sample: {Reservation}", line);
+            }
+
+            // 盘点块必须排在流水块与预留块之后：盘点任务的维度与期望台账版本都取自真实落库的台账，
+            // 而快照必须是**本次 seed 落幕时**的版本，否则任务一出生就过期（见上方 #1374 注释）。
+            var countReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryCountSeedService>().SeedAsync(
+                leaderDemoOrganizationId,
+                leaderDemoEnvironmentId,
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            app.Logger.LogInformation(
+                "World-history inventory count seed completed: {Tasks} count tasks, {Adjustments} count adjustments, " +
+                "{Skipped} plans skipped for a missing ledger dimension; validator checked {CheckedTasks} tasks " +
+                "({PendingApproval} pending approval, {Recount} recount required, {Cancelled} cancelled, {Open} open) " +
+                "and {CheckedAdjustments} adjustments totalling {VarianceAmount} in variance value.",
+                countReport.StockCountTasksWritten,
+                countReport.StockCountAdjustmentsWritten,
+                countReport.PlansSkippedWithoutLedger,
+                countReport.Validation.StockCountTasksChecked,
+                countReport.Validation.PendingApprovalTasksChecked,
+                countReport.Validation.RecountRequiredTasksChecked,
+                countReport.Validation.CancelledTasksChecked,
+                countReport.Validation.OpenTasksChecked,
+                countReport.Validation.StockCountAdjustmentsChecked,
+                countReport.Validation.VarianceAmountTotal);
         }
     }
 
@@ -219,19 +277,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(IConfiguration configuration, IHostEnvironment environment, string key, string developmentDefault)
-{
-    var configured = configuration[key];
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        configured = environment.IsDevelopment() || environment.IsEnvironment("Testing")
-            ? developmentDefault
-            : throw new InvalidOperationException($"{key} is required outside Development.");
-    }
-
-    return new Uri(configured, UriKind.Absolute);
 }
 
 #pragma warning disable S1118

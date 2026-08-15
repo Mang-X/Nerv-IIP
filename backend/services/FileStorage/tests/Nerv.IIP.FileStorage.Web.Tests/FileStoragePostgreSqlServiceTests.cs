@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
@@ -808,6 +809,97 @@ public sealed class FileStoragePostgreSqlServiceTests
             Assert.Equal(["file_recent"], await dbContext.StoredFiles.OrderBy(x => x.FileId).Select(x => x.FileId).ToArrayAsync());
             Assert.Equal(["ups_recent"], await dbContext.UploadSessions.OrderBy(x => x.UploadSessionId).Select(x => x.UploadSessionId).ToArrayAsync());
             Assert.Equal(["dgr_recent"], await dbContext.DownloadGrants.OrderBy(x => x.DownloadGrantId).Select(x => x.DownloadGrantId).ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    /// <summary>
+    /// The collector must read <c>ExpiresAtUtc</c> through the same clock the service used to write it.
+    /// With the collector back on <c>DateTimeOffset.UtcNow</c> this test fails twice over: the advanced
+    /// fake clock is invisible to a wall-clock collector (nothing is collected), and a fake clock anchored
+    /// in the past makes every freshly created session look already expired to it (everything is collected).
+    /// </summary>
+    [Fact]
+    public async Task GarbageCollector_ReadsUploadSessionExpiryThroughTheClockThatWroteIt()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            // Anchored on the real now: only the *advance* is fabricated, so the assertion isolates the
+            // clock the collector reads rather than the anchor it happens to start from.
+            var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:UploadSessionTtlSeconds"] = "60"
+                })
+                .Build();
+            var service = new PostgreSqlFileStorageService(
+                dbContext,
+                new ServerProxyUploadProvider(),
+                configuration: configuration,
+                timeProvider: clock);
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(CreateTusStore(rootPath)),
+                configuration,
+                clock);
+            var created = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+            Assert.Equal(StatusCodes.Status200OK, created.StatusCode);
+
+            var beforeTtl = await collector.CollectAsync(CancellationToken.None);
+
+            Assert.Equal(0, beforeTtl.ExpiredUploadSessionsRemoved);
+            Assert.Single(await dbContext.UploadSessions.ToArrayAsync());
+
+            clock.Advance(TimeSpan.FromHours(2));
+            var afterTtl = await collector.CollectAsync(CancellationToken.None);
+
+            Assert.Equal(1, afterTtl.ExpiredUploadSessionsRemoved);
+            Assert.Empty(await dbContext.UploadSessions.ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task GarbageCollector_KeepsSessionsWrittenByAClockAnchoredBehindTheWallClock()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            // The session expires two hours *before* the wall clock, so a collector reading
+            // DateTimeOffset.UtcNow deletes it the moment it is created.
+            var clock = new FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-2));
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:UploadSessionTtlSeconds"] = "60"
+                })
+                .Build();
+            var service = new PostgreSqlFileStorageService(
+                dbContext,
+                new ServerProxyUploadProvider(),
+                configuration: configuration,
+                timeProvider: clock);
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(CreateTusStore(rootPath)),
+                configuration,
+                clock);
+            await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+
+            var result = await collector.CollectAsync(CancellationToken.None);
+
+            Assert.Equal(0, result.ExpiredUploadSessionsRemoved);
+            Assert.Single(await dbContext.UploadSessions.ToArrayAsync());
         }
         finally
         {

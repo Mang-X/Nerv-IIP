@@ -1,26 +1,26 @@
-# Console Auth Shadcn Baseline Implementation Plan
+# Console 认证与 shadcn 基线实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向代理执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪进度。
 
-**Goal:** Add the first production-shaped Console login loop through PlatformGateway and establish shadcn-vue as the frontend design-system baseline.
+**目标：**通过 PlatformGateway 增加首个具备生产形态的 Console 登录闭环，并确立 shadcn-vue 作为前端设计系统基线。
 
-**Architecture:** The browser continues to use PlatformGateway as its only API surface. Gateway exposes Console auth endpoints, forwards to IAM for identity/session facts, and keeps OpenAPI/api-client generation as the frontend contract. The frontend initializes shadcn-vue in `packages/ui`, keeps Pinia Colada-generated api-client options for server state, and uses a Pinia auth store for client session state.
+**架构：**浏览器继续只通过 PlatformGateway 访问 API。Gateway 暴露 Console 认证端点，将请求转发至 IAM 以获取身份和会话事实，并继续以 OpenAPI/api-client 生成物作为前端契约。前端在 `packages/ui` 中初始化 shadcn-vue，保留由 Pinia Colada 生成的 api-client 选项来管理服务端状态，并使用 Pinia 认证存储管理客户端会话状态。
 
-**Tech Stack:** .NET 10, FastEndpoints, xUnit, ASP.NET Core `WebApplicationFactory`, Vue 3 `<script setup lang="ts">`, Vite, Pinia, Pinia Colada, Hey API OpenAPI TypeScript, shadcn-vue official registry with `nova` preset, lucide-vue-next.
+**技术栈：**.NET 10、FastEndpoints、xUnit、ASP.NET Core `WebApplicationFactory`、Vue 3 `<script setup lang="ts">`、Vite、Pinia、Pinia Colada、Hey API OpenAPI TypeScript、采用 `nova` 预设的 shadcn-vue 官方组件注册表、lucide-vue-next。
 
 ---
 
-## Current Baseline
+## 当前基线
 
-1. Current branch is `main`, ahead of `origin/main` by the committed design spec `501ce97 docs: design console auth shadcn baseline`.
-2. `docs/superpowers/specs/2026-05-18-console-auth-shadcn-design.md` is the approved design source.
-3. `frontend/packages/api-client` already uses Hey API with `@pinia/colada` generation.
-4. Console currently consumes generated Colada options from `@nerv-iip/api-client`.
-5. `frontend/packages/ui` still contains local primitives: `UiButton`, `UiPanel`, `UiBadge`.
-6. `pnpm dlx shadcn-vue@latest info --json` currently reports no `components.json`, no Tailwind config, and no initialized shadcn-vue config.
-7. `pnpm dlx shadcn-vue@latest docs ...` currently fails with `logger.debug is not a function`; use `search`, `view`, generated files, and official registry output during implementation if docs keeps failing.
+1. 当前分支为 `main`，比 `origin/main` 多出已提交的设计规格 `501ce97 docs: design console auth shadcn baseline`。
+2. `docs/superpowers/specs/2026-05-18-console-auth-shadcn-design.md` 是已批准的设计依据。
+3. `frontend/packages/api-client` 已使用 Hey API，并启用了 `@pinia/colada` 生成。
+4. Console 当前使用 `@nerv-iip/api-client` 中生成的 Colada 选项。
+5. `frontend/packages/ui` 仍包含本地基础组件：`UiButton`、`UiPanel`、`UiBadge`。
+6. `pnpm dlx shadcn-vue@latest info --json` 当前报告不存在 `components.json`、Tailwind 配置和已初始化的 shadcn-vue 配置。
+7. `pnpm dlx shadcn-vue@latest docs ...` 当前因 `logger.debug is not a function` 而失败；若实施期间文档命令持续失败，则使用 `search`、`view`、生成文件和官方组件注册表输出。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/services/Iam/src/Nerv.IIP.Iam.Web/
@@ -97,19 +97,19 @@ docs/architecture/
 README.md
 ```
 
-## Task 1: Enrich IAM Current Principal For Console Context
+## 任务 1：为 Console 上下文补充 IAM 当前主体信息
 
-**Files:**
+**文件：**
 
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthModels.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs`
-- Modify: `backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Auth/AuthEndpoints.cs`
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamFoundationTests.cs`
-- Modify: `backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthModels.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Auth/IamAuthService.cs`
+- 修改：`backend/services/Iam/src/Nerv.IIP.Iam.Web/Endpoints/Auth/AuthEndpoints.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamFoundationTests.cs`
+- 修改：`backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs`
 
-- [ ] **Step 1: Write failing IAM `/me` assertions**
+- [ ] **步骤 1：编写失败的 IAM `/me` 断言**
 
-In `IamFoundationTests.cs`, replace the local `AuthResponse` record and add a `MeResponse` record:
+在 `IamFoundationTests.cs` 中，替换本地 `AuthResponse` 记录并增加 `MeResponse` 记录：
 
 ```csharp
 private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
@@ -123,7 +123,7 @@ private sealed record MeResponse(
     int PermissionVersion);
 ```
 
-Then in `Admin_can_login_refresh_logout_and_validate_connector_host`, after the refresh succeeds and before logout, add:
+然后在 `Admin_can_login_refresh_logout_and_validate_connector_host` 中，于刷新成功后、注销前增加：
 
 ```csharp
 _client.DefaultRequestHeaders.Authorization = new("Bearer", rotated.AccessToken);
@@ -140,7 +140,7 @@ Assert.Equal(1, principal.PermissionVersion);
 Assert.True(rotated.ExpiresAtUtc > DateTimeOffset.UtcNow);
 ```
 
-In `IamPostgresProfileTests.cs`, change the local records at the bottom to:
+在 `IamPostgresProfileTests.cs` 中，将底部的本地记录改为：
 
 ```csharp
 private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
@@ -154,7 +154,7 @@ private sealed record MeResponse(
     int PermissionVersion);
 ```
 
-Then after the existing `var principal = await me.Content.ReadFromJsonAsync<MeResponse>();` assertions, add:
+然后在现有 `var principal = await me.Content.ReadFromJsonAsync<MeResponse>();` 断言之后增加：
 
 ```csharp
 Assert.Equal("user-admin", principal!.UserId);
@@ -166,19 +166,19 @@ Assert.Equal(1, principal.PermissionVersion);
 Assert.True(auth.ExpiresAtUtc > DateTimeOffset.UtcNow);
 ```
 
-- [ ] **Step 2: Run IAM tests and confirm red state**
+- [ ] **步骤 2：运行 IAM 测试并确认红灯状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore --filter "FullyQualifiedName~IamFoundationTests|FullyQualifiedName~IamPostgresProfileTests"
 ```
 
-Expected: FAIL because `AuthResponse` does not include `ExpiresAtUtc` and `/me` does not return organization, environment, or permission version.
+预期：失败，因为 `AuthResponse` 不包含 `ExpiresAtUtc`，且 `/me` 不返回组织、环境或权限版本。
 
-- [ ] **Step 3: Extend IAM auth models**
+- [ ] **步骤 3：扩展 IAM 认证模型**
 
-In `IamAuthModels.cs`, replace the existing `AuthResponse` and `CurrentPrincipalResponse` records with:
+在 `IamAuthModels.cs` 中，将现有 `AuthResponse` 和 `CurrentPrincipalResponse` 记录替换为：
 
 ```csharp
 public sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
@@ -192,9 +192,9 @@ public sealed record CurrentPrincipalResponse(
     int PermissionVersion);
 ```
 
-- [ ] **Step 4: Return token expiry from IAM token creation**
+- [ ] **步骤 4：从 IAM 令牌创建流程返回到期时间**
 
-In `IamTokenService.cs`, add:
+在 `IamTokenService.cs` 中增加：
 
 ```csharp
 public DateTimeOffset GetAccessTokenExpiresAtUtc(DateTimeOffset issuedAtUtc)
@@ -203,7 +203,7 @@ public DateTimeOffset GetAccessTokenExpiresAtUtc(DateTimeOffset issuedAtUtc)
 }
 ```
 
-Then in `IamAuthService.CreateSessionResponse`, replace the access-token creation block with:
+然后在 `IamAuthService.CreateSessionResponse` 中，将访问令牌创建代码块替换为：
 
 ```csharp
 var issuedAtUtc = DateTimeOffset.UtcNow;
@@ -212,11 +212,11 @@ var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
 return new AuthResponse(accessToken, refreshToken, session.Id.Id, expiresAtUtc);
 ```
 
-Keep the existing `now` value for `UserSession` issued/expires fields.
+继续使用现有 `now` 值填充 `UserSession` 的签发和到期字段。
 
-- [ ] **Step 5: Return membership context from PostgreSQL `/me`**
+- [ ] **步骤 5：从 PostgreSQL `/me` 返回成员关系上下文**
 
-In `IamAuthService.GetCurrentPrincipalAsync`, after the user validation block and before the return, add:
+在 `IamAuthService.GetCurrentPrincipalAsync` 中，于用户校验代码块之后、返回之前增加：
 
 ```csharp
 var membership = await dbContext.Memberships
@@ -238,11 +238,11 @@ return new CurrentPrincipalResponse(
     user.PermissionVersion);
 ```
 
-Remove the old four-field `CurrentPrincipalResponse` return.
+删除旧的四字段 `CurrentPrincipalResponse` 返回代码。
 
-- [ ] **Step 6: Return membership context from InMemory `/me`**
+- [ ] **步骤 6：从 InMemory `/me` 返回成员关系上下文**
 
-In `InMemoryIamStore.cs`, add:
+在 `InMemoryIamStore.cs` 中增加：
 
 ```csharp
 public CurrentPrincipalSnapshot GetCurrentPrincipal(UserFact user)
@@ -267,7 +267,7 @@ public CurrentPrincipalSnapshot GetCurrentPrincipal(UserFact user)
 }
 ```
 
-At the bottom of the same file, add:
+在同一文件底部增加：
 
 ```csharp
 public sealed record CurrentPrincipalSnapshot(
@@ -280,7 +280,7 @@ public sealed record CurrentPrincipalSnapshot(
     int PermissionVersion);
 ```
 
-In `AuthEndpoints.cs`, replace the InMemory `/me` response with:
+在 `AuthEndpoints.cs` 中，将 InMemory `/me` 响应替换为：
 
 ```csharp
 var principal = store.GetCurrentPrincipal(user);
@@ -294,44 +294,44 @@ await Send.OkAsync(new CurrentPrincipalResponse(
     principal.PermissionVersion), ct);
 ```
 
-- [ ] **Step 7: Return expiry from InMemory login/refresh**
+- [ ] **步骤 7：从 InMemory 登录/刷新流程返回到期时间**
 
-In `InMemoryIamStore.CreateSession`, replace the final return with:
+在 `InMemoryIamStore.CreateSession` 中，将最终返回代码替换为：
 
 ```csharp
 return new AuthResult(accessToken, refreshToken, sessionId, DateTimeOffset.UtcNow.AddMinutes(15));
 ```
 
-At the bottom of the same file, replace `AuthResult` with:
+在同一文件底部，将 `AuthResult` 替换为：
 
 ```csharp
 public sealed record AuthResult(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
 ```
 
-- [ ] **Step 8: Run IAM tests and confirm green state**
+- [ ] **步骤 8：运行 IAM 测试并确认绿灯状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 2: Add PlatformGateway Console Auth Facade
+## 任务 2：增加 PlatformGateway Console 认证 facade
 
-**Files:**
+**文件：**
 
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/ConsoleAuthModels.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/GatewayIamAuthClient.cs`
-- Create: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Auth/ConsoleAuthEndpoints.cs`
-- Create: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayConsoleAuthTests.cs`
-- Modify: `backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
-- Modify: `backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
+- 新建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/ConsoleAuthModels.cs`
+- 新建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/Auth/GatewayIamAuthClient.cs`
+- 新建：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Endpoints/Auth/ConsoleAuthEndpoints.cs`
+- 新建：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayConsoleAuthTests.cs`
+- 修改：`backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs`
+- 修改：`backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/GatewayOpenApiTests.cs`
 
-- [ ] **Step 1: Write failing Gateway auth facade tests**
+- [ ] **步骤 1：编写失败的 Gateway 认证 facade 测试**
 
-Create `GatewayConsoleAuthTests.cs`:
+新建 `GatewayConsoleAuthTests.cs`：
 
 ```csharp
 using System.Net;
@@ -516,19 +516,19 @@ public sealed class GatewayConsoleAuthTests
 }
 ```
 
-- [ ] **Step 2: Run Gateway auth tests and confirm red state**
+- [ ] **步骤 2：运行 Gateway 认证测试并确认红灯状态**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --no-restore --filter FullyQualifiedName~GatewayConsoleAuthTests
 ```
 
-Expected: FAIL because `ConsoleLoginRequest`, `IGatewayIamAuthClient`, and Console auth endpoints do not exist yet.
+预期：失败，因为 `ConsoleLoginRequest`、`IGatewayIamAuthClient` 和 Console 认证端点尚不存在。
 
-- [ ] **Step 3: Add Gateway auth models and exception type**
+- [ ] **步骤 3：增加 Gateway 认证模型和异常类型**
 
-Create `ConsoleAuthModels.cs`:
+新建 `ConsoleAuthModels.cs`：
 
 ```csharp
 using System.Net;
@@ -574,9 +574,9 @@ public sealed class GatewayAuthException(HttpStatusCode statusCode, string reaso
 }
 ```
 
-- [ ] **Step 4: Add IAM HTTP client used by Gateway**
+- [ ] **步骤 4：增加 Gateway 使用的 IAM HTTP 客户端**
 
-Create `GatewayIamAuthClient.cs`:
+新建 `GatewayIamAuthClient.cs`：
 
 ```csharp
 using System.Net;
@@ -709,9 +709,9 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
 }
 ```
 
-- [ ] **Step 5: Add Console auth endpoints**
+- [ ] **步骤 5：增加 Console 认证端点**
 
-Create `ConsoleAuthEndpoints.cs`:
+新建 `ConsoleAuthEndpoints.cs`：
 
 ```csharp
 using FastEndpoints;
@@ -817,15 +817,15 @@ internal static class ConsoleAuthEndpointResults
 }
 ```
 
-- [ ] **Step 6: Register Gateway IAM auth client and operation IDs**
+- [ ] **步骤 6：注册 Gateway IAM 认证客户端和操作 ID**
 
-In `Program.cs`, add the endpoint namespace:
+在 `Program.cs` 中增加端点命名空间：
 
 ```csharp
 using Nerv.IIP.PlatformGateway.Web.Endpoints.Auth;
 ```
 
-Add the HTTP client registration near existing Gateway clients:
+在现有 Gateway 客户端附近增加 HTTP 客户端注册：
 
 ```csharp
 builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(client =>
@@ -834,7 +834,7 @@ builder.Services.AddHttpClient<IGatewayIamAuthClient, HttpGatewayIamAuthClient>(
 });
 ```
 
-Add to the FastEndpoints name generator:
+在 FastEndpoints 名称生成器中增加：
 
 ```csharp
 nameof(LoginConsoleUserEndpoint) => "loginConsoleUser",
@@ -843,9 +843,9 @@ nameof(LogoutConsoleSessionEndpoint) => "logoutConsoleSession",
 nameof(GetConsolePrincipalEndpoint) => "getConsolePrincipal",
 ```
 
-- [ ] **Step 7: Update OpenAPI operation ID tests**
+- [ ] **步骤 7：更新 OpenAPI 操作 ID 测试**
 
-In `GatewayOpenApiTests.cs`, add:
+在 `GatewayOpenApiTests.cs` 中增加：
 
 ```csharp
 var login = paths.GetProperty("/api/console/v1/auth/login");
@@ -862,46 +862,46 @@ Assert.Equal("getConsolePrincipal", me.GetProperty("get").GetProperty("operation
 AssertJsonResponseSchema(me.GetProperty("get"), "200", "NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse");
 ```
 
-- [ ] **Step 8: Run Gateway tests**
+- [ ] **步骤 8：运行 Gateway 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/Nerv.IIP.PlatformGateway.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 3: Regenerate Gateway API Client And Add Auth Transport
+## 任务 3：重新生成 Gateway API 客户端并增加认证传输层
 
-**Files:**
+**文件：**
 
-- Modify: `frontend/packages/api-client/openapi/platform-gateway.v1.json`
-- Modify generated: `frontend/packages/api-client/src/generated/**`
-- Create: `frontend/packages/api-client/src/auth.ts`
-- Modify: `frontend/packages/api-client/src/index.ts`
-- Modify: `frontend/packages/api-client/src/transport/client-config.ts`
-- Modify: `frontend/packages/api-client/src/transport/client-config.test.ts`
+- 修改：`frontend/packages/api-client/openapi/platform-gateway.v1.json`
+- 修改生成内容：`frontend/packages/api-client/src/generated/**`
+- 新建：`frontend/packages/api-client/src/auth.ts`
+- 修改：`frontend/packages/api-client/src/index.ts`
+- 修改：`frontend/packages/api-client/src/transport/client-config.ts`
+- 修改：`frontend/packages/api-client/src/transport/client-config.test.ts`
 
-- [ ] **Step 1: Export Gateway OpenAPI after backend auth endpoints exist**
+- [ ] **步骤 1：后端认证端点就绪后导出 Gateway OpenAPI**
 
-Run:
+运行：
 
 ```powershell
 pwsh scripts/export-gateway-openapi.ps1
 ```
 
-Expected: `frontend/packages/api-client/openapi/platform-gateway.v1.json` includes the four new Console auth paths and operation IDs.
+预期：`frontend/packages/api-client/openapi/platform-gateway.v1.json` 包含四条新的 Console 认证路径及其操作 ID。
 
-- [ ] **Step 2: Regenerate api-client**
+- [ ] **步骤 2：重新生成 api-client**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend generate:api
 ```
 
-Expected: generated SDK and `@pinia/colada.gen.ts` include:
+预期：生成的 SDK 和 `@pinia/colada.gen.ts` 包含：
 
 ```text
 loginConsoleUserMutationOptions
@@ -910,9 +910,9 @@ logoutConsoleSessionMutationOptions
 getConsolePrincipalQueryOptions
 ```
 
-- [ ] **Step 3: Add stable auth exports**
+- [ ] **步骤 3：增加稳定的认证导出**
 
-Create `frontend/packages/api-client/src/auth.ts`:
+新建 `frontend/packages/api-client/src/auth.ts`：
 
 ```ts
 export {
@@ -949,24 +949,24 @@ export type ConsoleRefreshRequest =
   NervIipPlatformGatewayWebApplicationAuthConsoleRefreshRequest
 ```
 
-If generated type names differ, use the exact names from `frontend/packages/api-client/src/generated/types.gen.ts` and keep these public aliases.
+如果生成的类型名称不同，请使用 `frontend/packages/api-client/src/generated/types.gen.ts` 中的准确名称，并保留这些公开别名。
 
-In `frontend/packages/api-client/src/index.ts`, add:
+在 `frontend/packages/api-client/src/index.ts` 中增加：
 
 ```ts
 export * from './auth'
 ```
 
-- [ ] **Step 4: Write failing transport auth tests**
+- [ ] **步骤 4：编写失败的传输层认证测试**
 
-In `client-config.test.ts`, add:
+在 `client-config.test.ts` 中增加：
 
 ```ts
 import { client } from '../generated/client.gen'
 import { configureApiClient } from './client-config'
 ```
 
-Then add tests:
+然后增加测试：
 
 ```ts
 describe('configureApiClient auth transport', () => {
@@ -1023,19 +1023,19 @@ describe('configureApiClient auth transport', () => {
 })
 ```
 
-- [ ] **Step 5: Run transport tests and confirm red state**
+- [ ] **步骤 5：运行传输层测试并确认红灯状态**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test -- src/transport/client-config.test.ts
 ```
 
-Expected: FAIL because `ConfigureApiClientOptions` does not support `accessTokenProvider`, `fetch`, or `onUnauthorized`.
+预期：失败，因为 `ConfigureApiClientOptions` 不支持 `accessTokenProvider`、`fetch` 或 `onUnauthorized`。
 
-- [ ] **Step 6: Implement dynamic bearer transport**
+- [ ] **步骤 6：实现动态 bearer 认证传输层**
 
-Replace `client-config.ts` with:
+将 `client-config.ts` 替换为：
 
 ```ts
 import { client } from '../generated/client.gen'
@@ -1087,35 +1087,35 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
 }
 ```
 
-- [ ] **Step 7: Run api-client tests**
+- [ ] **步骤 7：运行 api-client 测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/api-client test
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 4: Initialize shadcn-vue In The UI Package
+## 任务 4：在 UI 包中初始化 shadcn-vue
 
-**Files:**
+**文件：**
 
-- Create/Modify: `frontend/components.json`
-- Modify: `frontend/package.json`
-- Modify: `frontend/pnpm-lock.yaml`
-- Modify: `frontend/vite.config.ts`
-- Modify: `frontend/tsconfig.base.json`
-- Modify: `frontend/packages/ui/package.json`
-- Modify: `frontend/packages/ui/tsconfig.json`
-- Modify/Create: `frontend/packages/ui/src/index.ts`
-- Create: `frontend/packages/ui/src/lib/utils.ts`
-- Create: `frontend/packages/ui/src/components/ui/**`
-- Modify: `frontend/apps/console/src/assets/main.css`
+- 新建/修改：`frontend/components.json`
+- 修改：`frontend/package.json`
+- 修改：`frontend/pnpm-lock.yaml`
+- 修改：`frontend/vite.config.ts`
+- 修改：`frontend/tsconfig.base.json`
+- 修改：`frontend/packages/ui/package.json`
+- 修改：`frontend/packages/ui/tsconfig.json`
+- 修改/新建：`frontend/packages/ui/src/index.ts`
+- 新建：`frontend/packages/ui/src/lib/utils.ts`
+- 新建：`frontend/packages/ui/src/components/ui/**`
+- 修改：`frontend/apps/console/src/assets/main.css`
 
-- [ ] **Step 1: Inspect shadcn-vue context before initialization**
+- [ ] **步骤 1：初始化前检查 shadcn-vue 上下文**
 
-Run:
+运行：
 
 ```powershell
 pnpm dlx shadcn-vue@latest info --json
@@ -1124,17 +1124,17 @@ pnpm dlx shadcn-vue@latest init --help
 pnpm dlx shadcn-vue@latest add --help
 ```
 
-Expected: info still reports no config before initialization; search includes `@shadcn/field`.
+预期：初始化前，信息命令仍报告没有配置；搜索结果包含 `@shadcn/field`。
 
-- [ ] **Step 2: Initialize shadcn-vue with the selected baseline**
+- [ ] **步骤 2：使用选定基线初始化 shadcn-vue**
 
-Run from `frontend`:
+在 `frontend` 中运行：
 
 ```powershell
 pnpm dlx shadcn-vue@latest init --template vite --preset nova --base reka --icon-library lucide --base-color neutral --css-variables --no-src-dir --cwd .
 ```
 
-When prompted for aliases, use package-owned paths:
+提示输入别名时，使用包内路径：
 
 ```text
 components: @nerv-iip/ui/components
@@ -1143,21 +1143,21 @@ ui: @nerv-iip/ui/components/ui
 lib: @nerv-iip/ui/lib
 ```
 
-Expected: `components.json` is created and points UI code to `frontend/packages/ui/src/components/ui` and utilities to `frontend/packages/ui/src/lib/utils.ts`. If the CLI writes to `frontend/components/ui` instead, move generated files into `frontend/packages/ui/src/components/ui` and update `components.json` before adding components.
+预期：创建 `components.json`，并将 UI 代码指向 `frontend/packages/ui/src/components/ui`、工具指向 `frontend/packages/ui/src/lib/utils.ts`。如果 CLI 改为写入 `frontend/components/ui`，请先将生成文件移至 `frontend/packages/ui/src/components/ui` 并更新 `components.json`，再增加组件。
 
-- [ ] **Step 3: Add initial shadcn-vue components**
+- [ ] **步骤 3：增加首批 shadcn-vue 组件**
 
-Run from `frontend`:
+在 `frontend` 中运行：
 
 ```powershell
 pnpm dlx shadcn-vue@latest add button card field input alert badge separator skeleton dropdown-menu avatar sonner spinner --cwd .
 ```
 
-Expected: files are added below `frontend/packages/ui/src/components/ui/**`.
+预期：文件新增至 `frontend/packages/ui/src/components/ui/**` 下。
 
-- [ ] **Step 4: Export shadcn-vue components through `@nerv-iip/ui`**
+- [ ] **步骤 4：通过 `@nerv-iip/ui` 导出 shadcn-vue 组件**
 
-Replace `frontend/packages/ui/src/index.ts` with:
+将 `frontend/packages/ui/src/index.ts` 替换为：
 
 ```ts
 export { cn } from './lib/utils'
@@ -1203,11 +1203,11 @@ export { Toaster } from './components/ui/sonner'
 export { Spinner } from './components/ui/spinner'
 ```
 
-If a generated component exports different names, inspect its local `index.ts` and keep `@nerv-iip/ui` as the stable public surface.
+如果生成的组件导出名称不同，请检查其本地 `index.ts`，并继续将 `@nerv-iip/ui` 作为稳定的公开边界。
 
-- [ ] **Step 5: Update TypeScript and Vite aliases**
+- [ ] **步骤 5：更新 TypeScript 和 Vite 别名**
 
-In `frontend/tsconfig.base.json`, add paths:
+在 `frontend/tsconfig.base.json` 中增加路径：
 
 ```json
 "baseUrl": ".",
@@ -1219,44 +1219,44 @@ In `frontend/tsconfig.base.json`, add paths:
 }
 ```
 
-In both `frontend/vite.config.ts` and `frontend/apps/console/vite.config.ts`, add:
+在 `frontend/vite.config.ts` 和 `frontend/apps/console/vite.config.ts` 中均增加：
 
 ```ts
 '@nerv-iip/ui/': fileURLToPath(new URL('./packages/ui/src/', import.meta.url)),
 ```
 
-For the app-level config, use:
+对于应用级配置，使用：
 
 ```ts
 '@nerv-iip/ui/': fileURLToPath(new URL('../../packages/ui/src/', import.meta.url)),
 ```
 
-- [ ] **Step 6: Install and verify dependencies**
+- [ ] **步骤 6：安装并验证依赖**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend install
 pnpm -C frontend --filter @nerv-iip/ui typecheck
 ```
 
-Expected: lockfile updates; UI package typecheck passes.
+预期：锁文件得到更新；UI 包类型检查通过。
 
-## Task 5: Add Console Auth Store, Storage, And Route Guards
+## 任务 5：增加 Console 认证状态存储、会话持久化和路由守卫
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/api/auth.ts`
-- Create: `frontend/apps/console/src/stores/auth.ts`
-- Create: `frontend/apps/console/src/stores/auth.test.ts`
-- Create: `frontend/apps/console/src/router/guards/auth.ts`
-- Create: `frontend/apps/console/src/router/guards/auth.test.ts`
-- Modify: `frontend/apps/console/src/router/index.ts`
-- Modify: `frontend/apps/console/src/main.ts`
+- 新建：`frontend/apps/console/src/api/auth.ts`
+- 新建：`frontend/apps/console/src/stores/auth.ts`
+- 新建：`frontend/apps/console/src/stores/auth.test.ts`
+- 新建：`frontend/apps/console/src/router/guards/auth.ts`
+- 新建：`frontend/apps/console/src/router/guards/auth.test.ts`
+- 修改：`frontend/apps/console/src/router/index.ts`
+- 修改：`frontend/apps/console/src/main.ts`
 
-- [ ] **Step 1: Add auth API wrapper**
+- [ ] **步骤 1：增加认证 API 包装层**
 
-Create `api/auth.ts`:
+新建 `api/auth.ts`：
 
 ```ts
 import {
@@ -1321,9 +1321,9 @@ export async function getConsoleMe(accessToken: string): Promise<ConsolePrincipa
 }
 ```
 
-- [ ] **Step 2: Write auth store tests**
+- [ ] **步骤 2：编写认证存储测试**
 
-Create `stores/auth.test.ts` with mocked `@/api/auth`:
+新建 `stores/auth.test.ts`，并模拟 `@/api/auth`：
 
 ```ts
 import { createPinia, setActivePinia } from 'pinia'
@@ -1422,19 +1422,19 @@ describe('auth store', () => {
 })
 ```
 
-- [ ] **Step 3: Run auth store tests and confirm red state**
+- [ ] **步骤 3：运行认证存储测试并确认红灯状态**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console test -- src/stores/auth.test.ts
 ```
 
-Expected: FAIL because `stores/auth.ts` does not exist.
+预期：失败，因为 `stores/auth.ts` 不存在。
 
-- [ ] **Step 4: Implement setup-style Pinia auth store**
+- [ ] **步骤 4：实现组合式 Pinia 认证存储**
 
-Create `stores/auth.ts`:
+新建 `stores/auth.ts`：
 
 ```ts
 import {
@@ -1602,11 +1602,11 @@ export const useAuthStore = defineStore('auth', () => {
 })
 ```
 
-Remove the unused `ConsoleAuthError` import if lint reports it unused.
+如果代码检查报告 `ConsoleAuthError` 导入未使用，请将其删除。
 
-- [ ] **Step 5: Add router guard tests**
+- [ ] **步骤 5：增加路由守卫测试**
 
-Create `router/guards/auth.test.ts`:
+新建 `router/guards/auth.test.ts`：
 
 ```ts
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -1665,9 +1665,9 @@ describe('auth route guard', () => {
 })
 ```
 
-- [ ] **Step 6: Implement auth guard**
+- [ ] **步骤 6：实现认证守卫**
 
-Create `router/guards/auth.ts`:
+新建 `router/guards/auth.ts`：
 
 ```ts
 import { useAuthStore } from '@/stores/auth'
@@ -1708,7 +1708,7 @@ export function installAuthGuard(router: Router) {
 }
 ```
 
-In `router/index.ts`, after router creation, add:
+在 `router/index.ts` 中，于路由器创建后增加：
 
 ```ts
 import { installAuthGuard } from './guards/auth'
@@ -1716,9 +1716,9 @@ import { installAuthGuard } from './guards/auth'
 installAuthGuard(router)
 ```
 
-- [ ] **Step 7: Configure api-client with auth provider**
+- [ ] **步骤 7：为 api-client 配置认证提供程序**
 
-In `main.ts`, replace the early `configureApiClient()` call with:
+在 `main.ts` 中，将前面的 `configureApiClient()` 调用替换为：
 
 ```ts
 const app = createApp(App)
@@ -1736,35 +1736,35 @@ configureApiClient({
 })
 ```
 
-Move the existing `const app` and `const pinia` declarations so Pinia is installed before `useAuthStore()` is called. Keep the existing Pinia Colada installation after `app.use(pinia)`.
+移动现有 `const app` 和 `const pinia` 声明，以便在调用 `useAuthStore()` 前安装 Pinia。继续将现有 Pinia Colada 安装保留在 `app.use(pinia)` 之后。
 
-- [ ] **Step 8: Run store and guard tests**
+- [ ] **步骤 8：运行存储和守卫测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console test -- src/stores/auth.test.ts src/router/guards/auth.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 6: Build Login UI And Authenticated App Shell
+## 任务 6：构建登录 UI 和已认证应用外壳
 
-**Files:**
+**文件：**
 
-- Create: `frontend/apps/console/src/components/auth/LoginForm.vue`
-- Create: `frontend/apps/console/src/components/auth/LoginForm.test.ts`
-- Create: `frontend/apps/console/src/pages/login.vue`
-- Modify: `frontend/apps/console/src/pages/index.vue`
-- Modify: `frontend/apps/console/src/pages/operations/[operationTaskId].vue`
-- Modify: `frontend/apps/console/src/layouts/DefaultLayout.vue`
-- Modify: `frontend/packages/app-shell/src/AppShell.vue`
-- Modify: `frontend/packages/app-shell/src/index.ts`
-- Modify: `frontend/apps/console/src/App.test.ts`
+- 新建：`frontend/apps/console/src/components/auth/LoginForm.vue`
+- 新建：`frontend/apps/console/src/components/auth/LoginForm.test.ts`
+- 新建：`frontend/apps/console/src/pages/login.vue`
+- 修改：`frontend/apps/console/src/pages/index.vue`
+- 修改：`frontend/apps/console/src/pages/operations/[operationTaskId].vue`
+- 修改：`frontend/apps/console/src/layouts/DefaultLayout.vue`
+- 修改：`frontend/packages/app-shell/src/AppShell.vue`
+- 修改：`frontend/packages/app-shell/src/index.ts`
+- 修改：`frontend/apps/console/src/App.test.ts`
 
-- [ ] **Step 1: Write LoginForm tests**
+- [ ] **步骤 1：编写 LoginForm 测试**
 
-Create `LoginForm.test.ts`:
+新建 `LoginForm.test.ts`：
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -1798,9 +1798,9 @@ describe('LoginForm', () => {
 })
 ```
 
-- [ ] **Step 2: Implement LoginForm with shadcn-vue components**
+- [ ] **步骤 2：使用 shadcn-vue 组件实现 LoginForm**
 
-Create `LoginForm.vue`:
+新建 `LoginForm.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -1906,9 +1906,9 @@ function submit() {
 </template>
 ```
 
-- [ ] **Step 3: Add login route**
+- [ ] **步骤 3：增加登录路由**
 
-Create `pages/login.vue`:
+新建 `pages/login.vue`：
 
 ```vue
 <script setup lang="ts">
@@ -2006,9 +2006,9 @@ async function submit(credentials: { loginName: string; password: string }) {
 </style>
 ```
 
-- [ ] **Step 4: Mark existing pages as protected**
+- [ ] **步骤 4：将现有页面标记为受保护页面**
 
-In `pages/index.vue` and `pages/operations/[operationTaskId].vue`, add:
+在 `pages/index.vue` 和 `pages/operations/[operationTaskId].vue` 中增加：
 
 ```ts
 definePage({
@@ -2019,11 +2019,11 @@ definePage({
 })
 ```
 
-For operation detail, use title `Operation task`.
+对于操作详情，使用标题 `Operation task`。
 
-- [ ] **Step 5: Add user menu and sign-out command to AppShell**
+- [ ] **步骤 5：为 AppShell 增加用户菜单和注销命令**
 
-Replace `packages/app-shell/src/AppShell.vue` with a shell that accepts an optional user:
+将 `packages/app-shell/src/AppShell.vue` 替换为接受可选用户参数的应用外壳：
 
 ```vue
 <script setup lang="ts">
@@ -2244,9 +2244,9 @@ const emit = defineEmits<{
 </style>
 ```
 
-- [ ] **Step 6: Wire DefaultLayout to auth store**
+- [ ] **步骤 6：将 DefaultLayout 接入认证存储**
 
-Replace `DefaultLayout.vue` script with:
+将 `DefaultLayout.vue` 脚本替换为：
 
 ```vue
 <script setup lang="ts">
@@ -2267,7 +2267,7 @@ async function signOut() {
 </script>
 ```
 
-Replace the template with:
+将模板替换为：
 
 ```vue
 <template>
@@ -2282,9 +2282,9 @@ Replace the template with:
 </template>
 ```
 
-- [ ] **Step 7: Install Toaster**
+- [ ] **步骤 7：安装 Toaster**
 
-In `App.vue`, use the shadcn-vue Toaster:
+在 `App.vue` 中使用 shadcn-vue Toaster：
 
 ```vue
 <script setup lang="ts">
@@ -2297,46 +2297,46 @@ import { Toaster } from '@nerv-iip/ui'
 </template>
 ```
 
-- [ ] **Step 8: Run frontend component tests**
+- [ ] **步骤 8：运行前端组件测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console test -- src/components/auth/LoginForm.test.ts src/App.test.ts
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 7: Migrate Existing Console Components To shadcn-vue And Delete Old UI Primitives
+## 任务 7：将现有 Console 组件迁移至 shadcn-vue，并删除旧 UI 基础组件
 
-**Files:**
+**文件：**
 
-- Modify: `frontend/apps/console/src/components/console/InstanceTable.vue`
-- Modify: `frontend/apps/console/src/components/console/InstanceDetailPanel.vue`
-- Modify: `frontend/apps/console/src/components/console/OperationTimeline.vue`
-- Modify: `frontend/apps/console/src/pages/index.vue`
-- Modify: `frontend/apps/console/src/pages/operations/[operationTaskId].vue`
-- Delete: `frontend/packages/ui/src/UiBadge.vue`
-- Delete: `frontend/packages/ui/src/UiButton.vue`
-- Delete: `frontend/packages/ui/src/UiPanel.vue`
-- Modify: `frontend/packages/ui/src/index.ts`
-- Modify: `frontend/apps/console/src/pages/index.test.ts`
+- 修改：`frontend/apps/console/src/components/console/InstanceTable.vue`
+- 修改：`frontend/apps/console/src/components/console/InstanceDetailPanel.vue`
+- 修改：`frontend/apps/console/src/components/console/OperationTimeline.vue`
+- 修改：`frontend/apps/console/src/pages/index.vue`
+- 修改：`frontend/apps/console/src/pages/operations/[operationTaskId].vue`
+- 删除：`frontend/packages/ui/src/UiBadge.vue`
+- 删除：`frontend/packages/ui/src/UiButton.vue`
+- 删除：`frontend/packages/ui/src/UiPanel.vue`
+- 修改：`frontend/packages/ui/src/index.ts`
+- 修改：`frontend/apps/console/src/pages/index.test.ts`
 
-- [ ] **Step 1: Replace old imports in console components**
+- [ ] **步骤 1：替换 Console 组件中的旧导入**
 
-In `InstanceTable.vue`, replace:
+在 `InstanceTable.vue` 中，将以下内容：
 
 ```ts
 import { UiBadge, UiButton } from '@nerv-iip/ui'
 ```
 
-with:
+替换为：
 
 ```ts
 import { Badge, Button } from '@nerv-iip/ui'
 ```
 
-Replace `<UiBadge>` with:
+将 `<UiBadge>` 替换为：
 
 ```vue
 <Badge variant="secondary">
@@ -2344,7 +2344,7 @@ Replace `<UiBadge>` with:
 </Badge>
 ```
 
-Replace `<UiButton>` with:
+将 `<UiButton>` 替换为：
 
 ```vue
 <Button
@@ -2356,17 +2356,17 @@ Replace `<UiButton>` with:
 </Button>
 ```
 
-In `InstanceDetailPanel.vue` and `OperationTimeline.vue`, replace `UiBadge` imports and tags with `Badge`.
+在 `InstanceDetailPanel.vue` 和 `OperationTimeline.vue` 中，将 `UiBadge` 导入和标签替换为 `Badge`。
 
-- [ ] **Step 2: Replace custom loading and error callouts**
+- [ ] **步骤 2：替换自定义加载和错误提示块**
 
-In `pages/index.vue`, import:
+在 `pages/index.vue` 中导入：
 
 ```ts
 import { Alert, AlertDescription, Skeleton } from '@nerv-iip/ui'
 ```
 
-Replace loading/error paragraphs with:
+将加载/错误段落替换为：
 
 ```vue
 <Skeleton v-if="listPending" class="h-12 w-full" />
@@ -2378,19 +2378,19 @@ Replace loading/error paragraphs with:
 </Alert>
 ```
 
-In `pages/operations/[operationTaskId].vue`, use `Alert` for `operationError`.
+在 `pages/operations/[operationTaskId].vue` 中，使用 `Alert` 展示 `operationError`。
 
-- [ ] **Step 3: Delete old primitive exports and files**
+- [ ] **步骤 3：删除旧基础组件的导出和文件**
 
-Run:
+运行：
 
 ```powershell
 rg -n "UiButton|UiPanel|UiBadge" frontend
 ```
 
-Expected before deletion: only `frontend/packages/ui/src/index.ts` and old primitive files remain.
+删除前预期：只剩 `frontend/packages/ui/src/index.ts` 和旧基础组件文件仍有匹配项。
 
-Delete:
+删除：
 
 ```text
 frontend/packages/ui/src/UiBadge.vue
@@ -2398,17 +2398,17 @@ frontend/packages/ui/src/UiButton.vue
 frontend/packages/ui/src/UiPanel.vue
 ```
 
-Ensure `frontend/packages/ui/src/index.ts` no longer exports `UiBadge`, `UiButton`, or `UiPanel`.
+确保 `frontend/packages/ui/src/index.ts` 不再导出 `UiBadge`、`UiButton` 或 `UiPanel`。
 
-- [ ] **Step 4: Update page tests for auth guard and shadcn markup**
+- [ ] **步骤 4：针对认证守卫和 shadcn 标记更新页面测试**
 
-In `pages/index.test.ts`, mock auth store or set route meta behavior so the page mounts without redirect. Add a Pinia auth state before mounting:
+在 `pages/index.test.ts` 中，模拟认证存储或设置路由元数据行为，使页面可以挂载而不发生重定向。在挂载前增加 Pinia 认证状态：
 
 ```ts
 import { useAuthStore } from '@/stores/auth'
 ```
 
-Inside `mountPage`, after `createPinia()`:
+在 `mountPage` 内的 `createPinia()` 之后增加：
 
 ```ts
 const pinia = createPinia()
@@ -2428,11 +2428,11 @@ auth.$patch({
 })
 ```
 
-Use `pinia` in the global plugins array.
+在全局插件数组中使用 `pinia`。
 
-- [ ] **Step 5: Run old primitive search and frontend tests**
+- [ ] **步骤 5：搜索旧基础组件并运行前端测试**
 
-Run:
+运行：
 
 ```powershell
 rg -n "UiButton|UiPanel|UiBadge" frontend
@@ -2440,45 +2440,45 @@ pnpm -C frontend --filter @nerv-iip/console test
 pnpm -C frontend --filter @nerv-iip/ui typecheck
 ```
 
-Expected: `rg` returns no matches; tests and typecheck pass.
+预期：`rg` 不返回匹配项；测试和类型检查通过。
 
-## Task 8: Documentation, Browser Verification, And Final Gate
+## 任务 8：文档、浏览器验证和最终门禁
 
-**Files:**
+**文件：**
 
-- Modify: `README.md`
-- Modify: `docs/architecture/frontend-design-system-planning.md`
-- Modify: `docs/architecture/frontend-structure.md`
-- Modify: `docs/architecture/iam-authentication-baseline.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/superpowers/plans/2026-05-18-console-auth-shadcn-baseline.md`
+- 修改：`README.md`
+- 修改：`docs/architecture/frontend-design-system-planning.md`
+- 修改：`docs/architecture/frontend-structure.md`
+- 修改：`docs/architecture/iam-authentication-baseline.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/superpowers/plans/2026-05-18-console-auth-shadcn-baseline.md`
 
-- [ ] **Step 1: Update stale README worktree wording**
+- [ ] **步骤 1：更新 README 中过时的工作树表述**
 
-In `README.md`, replace:
+在 `README.md` 中，将以下内容：
 
 ```markdown
 - 当前工作树：`codex/iam-persistent-auth-foundation`，当前阶段为 IAM Persistent Auth Foundation。
 ```
 
-with:
+替换为：
 
 ```markdown
 - 当前主线：`main` 已合入 IAM Persistent Auth Foundation、Gateway-wide permission enforcement、pnpm 11.1.2 基线和 Console Auth + shadcn-vue 设计规格。
 ```
 
-- [ ] **Step 2: Update stale schema catalog Gateway status**
+- [ ] **步骤 2：更新 schema 目录中过时的 Gateway 状态**
 
-In `docs/architecture/database-schema-catalog.md`, replace the sentence that says Gateway-wide permission enforcement is not connected with:
+在 `docs/architecture/database-schema-catalog.md` 中，将说明 Gateway 全面权限强制尚未接入的句子替换为：
 
 ```markdown
 Gateway-wide permission enforcement 已覆盖现有 Console API；Gateway 转发 bearer token 与 permission/context 到 IAM internal authorization check endpoint，不直接读取 IAM schema。
 ```
 
-- [ ] **Step 3: Update frontend design-system planning**
+- [ ] **步骤 3：更新前端设计系统规划**
 
-Append to `docs/architecture/frontend-design-system-planning.md`:
+在 `docs/architecture/frontend-design-system-planning.md` 末尾追加：
 
 ```markdown
 ## Selected Baseline
@@ -2486,9 +2486,9 @@ Append to `docs/architecture/frontend-design-system-planning.md`:
 Console Auth + shadcn-vue Baseline 选择 official shadcn-vue registry、`nova` preset、Vite template、Reka base components 和 semantic token 体系。组件源码归属 `frontend/packages/ui`，Console 应用通过 `@nerv-iip/ui` 稳定导出消费组件。旧 `UiButton`、`UiPanel` 和 `UiBadge` primitives 在迁移完成后删除，不再作为并行设计系统维护。
 ```
 
-- [ ] **Step 4: Update frontend structure**
+- [ ] **步骤 4：更新前端结构**
 
-In `docs/architecture/frontend-structure.md`, add under state/request layering:
+在 `docs/architecture/frontend-structure.md` 的状态/请求分层下增加：
 
 ```markdown
 ### Console Auth
@@ -2496,23 +2496,23 @@ In `docs/architecture/frontend-structure.md`, add under state/request layering:
 Console 登录闭环通过 PlatformGateway Console Auth facade 调用 IAM。`stores/auth.ts` 只管理客户端会话状态，`api-client` 继续由 Gateway OpenAPI 生成 SDK 与 Pinia Colada options。路由守卫放在 `src/router/guards/auth.ts`，登录页和登录表单放在 `src/pages/login.vue` 与 `src/components/auth/LoginForm.vue`。
 ```
 
-- [ ] **Step 5: Update IAM baseline and readiness**
+- [ ] **步骤 5：更新 IAM 基线和实施就绪状态**
 
-In `docs/architecture/iam-authentication-baseline.md`, add to current implementation status:
+在 `docs/architecture/iam-authentication-baseline.md` 的当前实施状态中增加：
 
 ```markdown
 Console login UI now consumes IAM through PlatformGateway Console Auth facade. The browser keeps a single Gateway API base URL; Gateway forwards login, refresh, logout and current-principal requests to IAM without owning identity facts.
 ```
 
-In `docs/architecture/implementation-readiness.md`, add a new current conclusion after Gateway permission enforcement:
+在 `docs/architecture/implementation-readiness.md` 中，于 Gateway 权限强制之后增加新的当前结论：
 
 ```markdown
 Console Auth + shadcn-vue Baseline 已提供最小登录 UI、会话恢复、Gateway bearer 注入、路由守卫、退出登录和 shadcn-vue UI 基线；完整用户/角色/会话管理、OAuth/OIDC、SSO、MFA 和 ABAC 仍属于后续阶段。
 ```
 
-- [ ] **Step 6: Run backend and frontend quality gates**
+- [ ] **步骤 6：运行后端和前端质量门禁**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/Nerv.IIP.Iam.Web.Tests.csproj --no-restore
@@ -2528,42 +2528,42 @@ pwsh scripts/check-script-governance.ps1
 git diff --check
 ```
 
-Expected: every command exits `0`; `check-script-governance` prints `Script governance check passed.`
+预期：每条命令都以 `0` 退出；`check-script-governance` 输出 `Script governance check passed.`。
 
-- [ ] **Step 7: Browser verification**
+- [ ] **步骤 7：浏览器验证**
 
-Start the local frontend dev server:
+启动本地前端开发服务器：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/console dev
 ```
 
-Start the backend stack needed for Console auth with the existing local verification entry point:
+使用现有本地验证入口启动 Console 认证所需的后端栈：
 
 ```powershell
 pwsh scripts/verify-third-slice-console.ps1 -UsePostgres
 ```
 
-If the verification script exits after completing the check instead of leaving services running, run the Gateway/IAM/AppHub/Ops services through the existing AppHost or the service-specific run commands used by the script, then open:
+如果验证脚本在完成检查后退出，而没有保持服务运行，请通过现有 AppHost 或脚本使用的服务专用运行命令启动 Gateway/IAM/AppHub/Ops 服务，然后打开：
 
 ```text
 http://127.0.0.1:5173/login
 ```
 
-Use Browser/Playwright verification for:
+使用 Browser/Playwright 验证：
 
-1. Desktop login page at 1440x900.
-2. Mobile login page at 390x844.
-3. Invalid credentials show inline error.
-4. Valid seeded admin login redirects to `/`.
-5. Instance list requests include bearer and render.
-6. Sign-out returns to `/login`.
+1. 1440x900 尺寸下的桌面端登录页。
+2. 390x844 尺寸下的移动端登录页。
+3. 凭据无效时显示行内错误。
+4. 使用有效的初始管理员登录后重定向到 `/`。
+5. 实例列表请求携带 bearer 认证信息并正常渲染。
+6. 注销后返回 `/login`。
 
-Expected: screenshots show shadcn-vue styles, no overlapping text, visible focus states, and usable layout on desktop and mobile.
+预期：截图显示 shadcn-vue 样式，无文字重叠，焦点状态清晰可见，且桌面端和移动端布局均可用。
 
-- [ ] **Step 8: Commit implementation**
+- [ ] **步骤 8：提交实施变更**
 
-Run:
+运行：
 
 ```powershell
 git status --short
@@ -2581,50 +2581,50 @@ git add docs/architecture/database-schema-catalog.md
 git commit -m "feat: add console auth shadcn baseline"
 ```
 
-Expected: commit succeeds after all verification commands pass.
+预期：所有验证命令通过后，提交成功。
 
-## Execution Order
+## 执行顺序
 
-1. Task 1 first, because Gateway facade needs IAM `/me` to return Console principal context.
-2. Task 2 adds Gateway browser-facing auth endpoints and stable OpenAPI operation IDs.
-3. Task 3 regenerates api-client and preserves Pinia Colada integration.
-4. Task 4 initializes shadcn-vue before UI code depends on its components.
-5. Task 5 adds session state and route protection.
-6. Task 6 adds Login UI and authenticated shell behavior.
-7. Task 7 migrates existing visible Console components and deletes old primitives.
-8. Task 8 updates durable docs and runs final verification.
+1. 首先执行任务 1，因为 Gateway facade 需要 IAM `/me` 返回 Console 主体上下文。
+2. 任务 2 增加面向浏览器的 Gateway 认证端点和稳定的 OpenAPI 操作 ID。
+3. 任务 3 重新生成 api-client，并保留 Pinia Colada 集成。
+4. 任务 4 在 UI 代码依赖 shadcn-vue 组件之前完成其初始化。
+5. 任务 5 增加会话状态和路由保护。
+6. 任务 6 增加登录 UI 和已认证外壳行为。
+7. 任务 7 迁移现有可见 Console 组件并删除旧基础组件。
+8. 任务 8 更新持久文档并运行最终验证。
 
-## Self Review
+## 自我审核
 
-Spec coverage:
+规格覆盖：
 
-1. Gateway Auth facade is covered by Task 2.
-2. IAM remains the identity/session fact owner through Task 1 and Task 2.
-3. Generated api-client and Pinia Colada integration are preserved in Task 3.
-4. shadcn-vue official registry + `nova` baseline is covered by Task 4.
-5. Login UI, auth store, startup restore, bearer injection, route guards and logout are covered by Tasks 5 and 6.
-6. Old UI primitive deletion is covered by Task 7.
-7. Documentation residual cleanup is covered by Task 8.
-8. `packages/auth` extraction remains future-only and is intentionally not implemented.
+1. Gateway 认证 facade 由任务 2 覆盖。
+2. 在任务 1 和任务 2 中，IAM 继续作为身份/会话事实的所有者。
+3. 任务 3 保留生成的 api-client 和 Pinia Colada 集成。
+4. 任务 4 覆盖 shadcn-vue 官方组件注册表和 `nova` 基线。
+5. 任务 5 和任务 6 覆盖登录 UI、认证存储、启动恢复、bearer 注入、路由守卫和注销。
+6. 任务 7 覆盖旧 UI 基础组件删除。
+7. 任务 8 覆盖文档残留清理。
+8. `packages/auth` 的提取仍只属于未来工作，本计划有意不予实施。
 
-Placeholder scan:
+占位符扫描：
 
-1. No step uses placeholder wording or deferred implementation markers.
-2. Generated files are handled by exact CLI commands and explicit inspection requirements.
-3. Manual code-changing steps include concrete code blocks.
+1. 没有步骤使用占位表述或延期实施标记。
+2. 生成文件通过准确的 CLI 命令和明确的检查要求处理。
+3. 手工代码变更步骤均包含具体代码块。
 
-Type consistency:
+类型一致性：
 
-1. `ConsoleAuthResponse`, `ConsolePrincipalResponse`, `ConsoleLoginRequest`, `ConsoleRefreshRequest`, and `ConsoleLogoutRequest` are defined before Gateway endpoints, api-client exports and frontend store use them.
-2. `expiresAtUtc` is added to IAM auth responses before Gateway and frontend consume it.
-3. `organizationId`, `environmentId`, and `permissionVersion` are added to `/me` before Console principal state depends on them.
-4. Auth store uses generated api-client functions and keeps server-state query/mutation options in `frontend/packages/api-client/src/auth.ts`.
+1. `ConsoleAuthResponse`、`ConsolePrincipalResponse`、`ConsoleLoginRequest`、`ConsoleRefreshRequest` 和 `ConsoleLogoutRequest` 均在 Gateway 端点、api-client 导出和前端存储使用它们之前定义。
+2. `expiresAtUtc` 在 Gateway 和前端使用之前加入 IAM 认证响应。
+3. `organizationId`、`environmentId` 和 `permissionVersion` 在 Console 主体状态依赖它们之前加入 `/me`。
+4. 认证存储使用生成的 api-client 函数，并将服务端状态查询/变更选项保留在 `frontend/packages/api-client/src/auth.ts` 中。
 
-## Execution Handoff
+## 执行交接
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-18-console-auth-shadcn-baseline.md`. Two execution options:
+计划已完成并保存至 `docs/superpowers/plans/2026-05-18-console-auth-shadcn-baseline.md`。有两种执行方式：
 
-1. **Subagent-Driven (recommended)** - dispatch a fresh subagent per task, review between tasks, fast iteration.
-2. **Inline Execution** - execute tasks in this session using executing-plans, batch execution with checkpoints.
+1. **子代理驱动（推荐）**——为每项任务分派新的子代理，在任务之间进行审核，以便快速迭代。
+2. **会话内执行**——在当前会话中使用 executing-plans 执行任务，分批实施并设置检查点。
 
-Which approach?
+采用哪种方式？

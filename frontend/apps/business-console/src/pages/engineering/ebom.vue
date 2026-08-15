@@ -7,10 +7,11 @@ import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/u
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import { useEngineeringEboms } from '@/composables/useProductEngineering'
+import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCombobox,
   NvDataTable,
   NvDatePicker,
   NvDialog,
@@ -43,7 +44,12 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -206,8 +212,23 @@ function parseNumber(value: string | number | null | undefined): number | undefi
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+// 修订号是本次新建的值，不能做成只读选择器；改为「已占用修订」建议 + 重复校验，
+// 让用户看得到哪些号已经用掉，又不会被目录挡住新号。
+const { takenRevisions, takenRevisionsPending, isTaken } = useBomRevisionSuggestions(
+  'engineering',
+  () => form.parentItemCode,
+)
+const revisionTaken = computed(() => isTaken(form.revision))
+// 换了父项物料，已填修订号对新物料未必可用 —— 清空下游，重新按新目录填。
+watch(
+  () => form.parentItemCode,
+  () => {
+    form.revision = ''
+  },
+)
+
 const parentValid = computed(() => form.parentItemCode.trim().length > 0)
-const revisionValid = computed(() => form.revision.trim().length > 0)
+const revisionValid = computed(() => form.revision.trim().length > 0 && !revisionTaken.value)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function lineValid(line: ComponentLine) {
   return (
@@ -285,7 +306,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布设计 BOM 失败', error, '发布设计 BOM 失败，请稍后重试。')
   }
 }
 
@@ -311,7 +332,7 @@ async function openView(row: BusinessConsoleEngineeringBomItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function uomLabel(code?: string | null) {
   if (!code) return '—'
@@ -344,7 +365,8 @@ function uomLabel(code?: string | null) {
               发布新版本
             </NvButton>
           </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-3xl">
+          <!-- 组件行数不定，弹框高度会超出视口：内部滚动，别让「发布」按钮被挤到屏幕外（GH#1292 第 7 项）。 -->
+          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布设计 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -396,7 +418,22 @@ function uomLabel(code?: string | null) {
                   <NvFieldLabel for="ebom-rev"
                     >修订号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <NvCombobox
+                    id="ebom-rev"
+                    v-model="form.revision"
+                    :suggestions="takenRevisions"
+                    :disabled="!form.parentItemCode || takenRevisionsPending"
+                    :placeholder="
+                      form.parentItemCode ? '填写新修订号，如 A、B、001' : '请先选父项物料'
+                    "
+                    empty-text="该物料还没有历史修订"
+                  />
+                  <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
+                    修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                  </p>
+                  <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
+                    已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                  </p>
                 </NvField>
                 <NvField :data-invalid="showErrors && !effectiveValid">
                   <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
@@ -492,14 +529,30 @@ function uomLabel(code?: string | null) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="设计 BOM 版本"
-      :value="ebomsTotal"
-      unit="个"
-      :segments="ebomSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="设计 BOM 版本"
+        :value="ebomsTotal"
+        unit="个"
+        :segments="ebomSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          draftCount > 0 ? '确认组件行后发布，供生产版本引用。' : '当前没有待发布的设计 BOM。'
+        "
+      />
+    </div>
 
     <NvToolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
       <template #filters>

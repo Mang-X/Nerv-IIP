@@ -1,14 +1,68 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
+import { NvAlertDialog, NvDialog } from '@nerv-iip/ui'
 
+import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
+import CountsPage from './counts.vue'
 import InboundPage from './inbound.vue'
 import OutboundPage from './outbound.vue'
 import WcsPage from './wcs.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const wms = vi.hoisted(() => ({
+  createIdempotencyKey: vi.fn(() => 'wms-intent-1'),
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
+  completeCountExecution: vi.fn(),
   failWcs: vi.fn(),
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
@@ -23,6 +77,13 @@ const wms = vi.hoisted(() => ({
     'business.quality.inspection-records.read',
   ] as string[],
   refreshReceivingQuality: vi.fn(),
+  refreshInboundOrders: vi.fn(async () => undefined),
+  refreshOutboundOrders: vi.fn(async () => undefined),
+  refreshCountExecutions: vi.fn(async () => undefined),
+}))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -31,24 +92,83 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
   RouterLink: {
     props: ['to'],
     template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
 }))
 
+// 物料目录与默认工厂来自主数据 facade（需要 pinia 上下文），页面测试里给确定的目录即可。
+vi.mock('@/composables/useInventoryScope', async () => {
+  const { computed, ref } = await import('vue')
+  const catalog = {
+    siteOptions: computed(() => [{ value: 'SITE-001', label: '上海工厂' }]),
+    sitesPending: ref(false),
+    skuOptions: computed(() => [{ value: 'SKU-001', label: '前减振器总成', hint: 'pcs' }]),
+    skusPending: ref(false),
+    // 收货行的单位随所选物料的基本单位带出（不再手输）。
+    resolveUomCode: () => 'pcs',
+  }
+  return {
+    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
+    useInventoryScopeCatalog: () => catalog,
+    useInventoryScopeDefaults: () => catalog,
+  }
+})
+
+// 库位/批次目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'STAGE-01', label: 'STAGE-01' },
+        { value: 'RACK-A-01', label: 'RACK-A-01' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: shallowRef(false),
+    }),
+  }
+})
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
+vi.mock('@/composables/useWmsWorkScope', () => ({
+  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+    filters.scopeKind = 'self'
+    filters.scopeId = 'emp049'
+    filters.skip = 0
+    return {
+      scopeKey: shallowRef('self:emp049'),
+      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+      selectedScopeLabel: computed(() => '我的任务'),
+      hasSelection: computed(() => true),
+      pending: shallowRef(false),
+      error: shallowRef(undefined),
+      refresh: vi.fn(async () => undefined),
+    }
+  },
+}))
+
 vi.mock('@/composables/useBusinessWms', () => ({
+  createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
       {
         inboundOrderId: 'ib-1',
         inboundOrderNo: 'IB-1',
-        status: 'created',
+        status: 'open',
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
@@ -58,7 +178,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     inboundOrdersError: shallowRef(undefined),
     inboundOrdersPending: shallowRef(false),
     inboundOrdersTotal: computed(() => 1),
-    refreshInboundOrders: vi.fn(),
+    refreshInboundOrders: wms.refreshInboundOrders,
     completeInbound: wms.completeInbound,
     completeInboundPending: shallowRef(false),
     completeInboundError: shallowRef(undefined),
@@ -79,20 +199,50 @@ vi.mock('@/composables/useBusinessWms', () => ({
       {
         outboundOrderId: 'ob-1',
         outboundOrderNo: 'OB-1',
-        status: 'created',
+        status: 'open',
         createdAtUtc: '2026-06-01T00:00:00Z',
       },
     ]),
     outboundOrdersError: shallowRef(undefined),
     outboundOrdersPending: shallowRef(false),
     outboundOrdersTotal: computed(() => 1),
-    refreshOutboundOrders: vi.fn(),
+    refreshOutboundOrders: wms.refreshOutboundOrders,
     completeOutbound: wms.completeOutbound,
     completeOutboundPending: shallowRef(false),
     completeOutboundError: shallowRef(undefined),
     createOutbound: wms.createOutbound,
     createOutboundPending: shallowRef(false),
     createOutboundError: shallowRef(undefined),
+  }),
+  useWmsCountExecutions: () => ({
+    filters: reactive({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      locationCode: undefined,
+      status: undefined,
+      skip: 0,
+      take: 100,
+    }),
+    countExecutions: computed(() => [
+      {
+        countExecutionId: 'count-1',
+        countNo: 'CNT-1',
+        skuCode: 'SKU-001',
+        uomCode: 'pcs',
+        siteCode: 'SITE-001',
+        locationCode: 'RACK-A-01',
+        expectedQuantity: 7,
+        status: 'open',
+      },
+    ]),
+    countExecutionsError: shallowRef(undefined),
+    countExecutionsPending: shallowRef(false),
+    countExecutionsTotal: computed(() => 1),
+    refreshCountExecutions: wms.refreshCountExecutions,
+    createCountExecution: vi.fn(),
+    createCountExecutionPending: shallowRef(false),
+    completeCountExecution: wms.completeCountExecution,
+    completeCountExecutionPending: shallowRef(false),
   }),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
@@ -122,14 +272,59 @@ vi.mock('@/composables/useBusinessWms', () => ({
   }),
 }))
 
-const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+/**
+ * 库位/物料/工厂/来源类型等字段已从自由文本输入框改成只选控件。
+ * 这些用例关心的是「填表 → 提交体」，不是选择器自身的交互，
+ * 所以把选择器桩成输入位（透传 id 与 aria-label），让下面的 setInput 仍然表达「选中了某个候选」。
+ */
+const onlySelectStub = {
+  props: ['modelValue', 'options', 'id'],
+  emits: ['update:modelValue'],
+  template:
+    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+}
+
+const layoutStub = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  NvEntityPicker: onlySelectStub,
+  NvSearchSelect: onlySelectStub,
+}
 
 describe('WMS operate actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
-    wms.completeInbound.mockResolvedValue(undefined)
-    wms.completeOutbound.mockResolvedValue(undefined)
+    let keyIndex = 0
+    wms.createIdempotencyKey.mockImplementation(() => `wms-intent-${++keyIndex}`)
+    wms.completeInbound.mockImplementation(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
+    wms.refreshInboundOrders.mockClear()
+    wms.completeOutbound.mockImplementation(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
+    wms.completeCountExecution.mockImplementation(
+      (
+        _id: string,
+        _countedQuantity: number,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.resolve(undefined)
+      },
+    )
     wms.failWcs.mockResolvedValue(undefined)
     wms.createInbound.mockResolvedValue(undefined)
     wms.createOutbound.mockResolvedValue(undefined)
@@ -141,6 +336,8 @@ describe('WMS operate actions', () => {
     wms.permissionCodes = [
       'business.wms.receipts.read',
       'business.wms.receipts.manage',
+      'business.wms.counts.read',
+      'business.inventory.counts.manage',
       'business.quality.inspection-records.read',
     ]
   })
@@ -150,6 +347,33 @@ describe('WMS operate actions', () => {
     el.value = value
     el.dispatchEvent(new Event('input', { bubbles: true }))
   }
+
+  it.each([
+    ['收货入库', InboundPage, wms.refreshInboundOrders],
+    ['复核发货', OutboundPage, wms.refreshOutboundOrders],
+    ['盘点执行', CountsPage, wms.refreshCountExecutions],
+  ])('%s 刷新列表时同步刷新当前范围候选', async (_title, Page, refreshList) => {
+    const wrapper = mount(Page, { global: { stubs: layoutStub } })
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(refreshList).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('盘点只读用户仍可查看列表，但不显示新建与完成动作', async () => {
+    wms.permissionCodes = ['business.wms.counts.read']
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('CNT-1')
+    expect(wrapper.text()).not.toContain('新建盘点单')
+    expect(wrapper.find('button[aria-label="盘点操作 CNT-1"]').exists()).toBe(false)
+  })
 
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
@@ -167,7 +391,102 @@ describe('WMS operate actions', () => {
     confirm?.click()
     await flushPromises()
 
-    expect(wms.completeInbound).toHaveBeenCalledWith('ib-1')
+    expect(wms.completeInbound).toHaveBeenCalledWith(
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+  })
+
+  it('closes and clears a stale completion dialog after a typed lifecycle conflict', async () => {
+    wms.completeInbound.mockRejectedValueOnce(new LifecycleStateChangedError('conflict'))
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '完成入库',
+    )
+    confirm?.click()
+    await flushPromises()
+
+    expect(wms.refreshInboundOrders).toHaveBeenCalledOnce()
+    expect(document.body.textContent).not.toContain('确认完成入库单 IB-1')
+  })
+
+  it('reuses the same idempotency key when an inbound completion is retried', async () => {
+    wms.completeInbound.mockImplementationOnce(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const submit = () =>
+      [...document.body.querySelectorAll('button')]
+        .find((button) => button.textContent?.trim() === '完成入库')
+        ?.click()
+
+    submit()
+    await flushPromises()
+    submit()
+    await flushPromises()
+
+    expect(wms.createIdempotencyKey).toHaveBeenCalledOnce()
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      1,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      2,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('keeps an indeterminate inbound completion dialog locked to its frozen intent', async () => {
+    wms.completeInbound.mockImplementationOnce(
+      (_id: string, _key: string, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ response: { status: 503 }, message: 'service unavailable' })
+      },
+    )
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const submit = () =>
+      [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === '完成入库',
+      )
+    submit()?.click()
+    await flushPromises()
+
+    const completeDialog = wrapper
+      .findAllComponents(NvAlertDialog)
+      .find((dialog) => dialog.props('open'))
+    expect(completeDialog).toBeTruthy()
+    completeDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(completeDialog!.props('open')).toBe(true)
+
+    submit()?.click()
+    await flushPromises()
+    expect(wms.completeInbound).toHaveBeenNthCalledWith(
+      2,
+      'ib-1',
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
   })
 
   it('requires a pack review number before completing outbound review', async () => {
@@ -194,10 +513,174 @@ describe('WMS operate actions', () => {
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
 
-    expect(wms.completeOutbound).toHaveBeenCalledWith('ob-1', {
-      packReviewNo: 'PR-1',
-      passed: true,
-    })
+    expect(wms.completeOutbound).toHaveBeenCalledWith(
+      'ob-1',
+      {
+        packReviewNo: 'PR-1',
+        passed: true,
+      },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+  })
+
+  it('marks only the second same-key outbound submission as a retry', async () => {
+    wms.completeOutbound.mockImplementationOnce(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
+    input.value = 'PR-1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const submit = () =>
+      document.body
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    submit()
+    await flushPromises()
+    const reviewDialog = wrapper.findAllComponents(NvDialog).find((dialog) => dialog.props('open'))
+    expect(reviewDialog).toBeTruthy()
+    reviewDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(reviewDialog!.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
+    submit()
+    await flushPromises()
+
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      1,
+      'ob-1',
+      { packReviewNo: 'PR-1', passed: true },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      2,
+      'ob-1',
+      { packReviewNo: 'PR-1', passed: true },
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('keeps an indeterminate count intent frozen when the dialog requests close', async () => {
+    wms.completeCountExecution.mockImplementationOnce(
+      (
+        _id: string,
+        _countedQuantity: number,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject(new Error('network interrupted'))
+      },
+    )
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="盘点操作 CNT-1"]').trigger('click')
+    await flushPromises()
+    const completeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.includes('完成盘点'),
+    )
+    expect(completeItem).toBeTruthy()
+    completeItem!.click()
+    await flushPromises()
+
+    const input = document.body.querySelector<HTMLInputElement>('#cnt-counted')!
+    input.value = '8'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const form = [...document.body.querySelectorAll<HTMLFormElement>('form')].find((candidate) =>
+      candidate.querySelector('#cnt-counted'),
+    )!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    const completeDialog = wrapper
+      .findAllComponents(NvDialog)
+      .find((dialog) => dialog.props('open'))
+    expect(completeDialog).toBeTruthy()
+    completeDialog!.vm.$emit('update:open', false)
+    await flushPromises()
+    expect(completeDialog!.props('open')).toBe(true)
+    const cancel = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === '取消',
+    )
+    expect(cancel?.disabled).toBe(true)
+    expect(input.disabled).toBe(true)
+    expect(routeGuardState.guard?.()).toBe(false)
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wms.completeCountExecution).toHaveBeenNthCalledWith(
+      2,
+      'count-1',
+      8,
+      'wms-intent-1',
+      expect.objectContaining({ attempt: 'retry' }),
+    )
+  })
+
+  it('rotates the outbound key and resets to initial after a determinate 422 input correction', async () => {
+    wms.completeOutbound.mockImplementationOnce(
+      (
+        _id: string,
+        _payload: unknown,
+        _key: string,
+        options?: { onCommandAttempt?: () => void },
+      ) => {
+        options?.onCommandAttempt?.()
+        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+      },
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
+    input.value = 'PR-1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const submit = () =>
+      document.body
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    submit()
+    await flushPromises()
+
+    input.value = 'PR-2'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    submit()
+    await flushPromises()
+
+    expect(wms.completeOutbound).toHaveBeenNthCalledWith(
+      2,
+      'ob-1',
+      { packReviewNo: 'PR-2', passed: true },
+      'wms-intent-2',
+      expect.objectContaining({ attempt: 'initial' }),
+    )
   })
 
   it('creates an inbound order with a line item', async () => {
@@ -214,8 +697,8 @@ describe('WMS operate actions', () => {
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
+    // 单位不再是输入位：选完物料后由该物料的基本单位带出。
     setInput('[aria-label="第 1 行物料"]', 'SKU1')
-    setInput('[aria-label="第 1 行单位"]', 'EA')
     setInput('[aria-label="第 1 行收货数量"]', '5')
     setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()
@@ -240,7 +723,7 @@ describe('WMS operate actions', () => {
     expect(body.lines[0]).toMatchObject({
       lineNo: '1',
       skuCode: 'SKU1',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       receivedQuantity: 5,
       stagingLocationCode: 'A-01',
       qualityStatus: 'available',
@@ -268,7 +751,7 @@ describe('WMS operate actions', () => {
       source: 'BusinessInventory',
       status: 'ok',
       skuCode: 'SKU-001',
-      uomCode: 'EA',
+      uomCode: 'pcs',
       siteCode: 'S1',
       locationCode: 'A-01',
       lotNo: 'LOT-001',
@@ -572,4 +1055,22 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
   })
+})
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
 })

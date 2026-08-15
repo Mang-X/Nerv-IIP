@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -7,6 +8,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 
@@ -15,7 +17,7 @@ namespace Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureMaintenanceContract(MaintenanceEndpointContract contract)
+    protected void ConfigureMaintenanceContract(MaintenanceEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -37,6 +39,25 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
 
         Tags("Business Maintenance");
         Policies(contract.AuthorizationPolicy);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Maintenance.Web.Application.Errors.MaintenanceLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -48,10 +69,14 @@ public sealed record CreateMaintenanceWorkOrderRequest(
     string? SourceAlarmId,
     string OpenedBy,
     string? AssetUnavailableReason,
+    string IdempotencyKey,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null);
 
-public sealed record CreateMaintenanceWorkOrderResponse(MaintenanceWorkOrderId WorkOrderId);
+public sealed record CreateMaintenanceWorkOrderResponse(
+    MaintenanceWorkOrderId WorkOrderId,
+    string Status,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed record CompleteMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -59,11 +84,89 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     string DowntimeReasonCode,
     int DowntimeMinutes,
     IReadOnlyCollection<MaintenanceSparePartInput> SpareParts,
+    string IdempotencyKey,
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
     string? CostCurrencyCode = null,
-    string? ActualTechnicianUserId = null);
+    string? ActualTechnicianUserId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed class CreateMaintenanceWorkOrderRequestValidator : Validator<CreateMaintenanceWorkOrderRequest>
+{
+    public CreateMaintenanceWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+}
+
+public sealed class CompleteMaintenanceWorkOrderRequestValidator : Validator<CompleteMaintenanceWorkOrderRequest>
+{
+    public CompleteMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class AssignMaintenanceWorkOrderRequestValidator : Validator<AssignMaintenanceWorkOrderRequest>
+{
+    public AssignMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayRequestValidator
+    : Validator<ProbeMaintenanceWorkOrderAssignmentReplayRequest>
+{
+    public ProbeMaintenanceWorkOrderAssignmentReplayRequestValidator()
+    {
+        RuleFor(x => x.WorkOrderId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.TeamId).MaximumLength(150);
+        RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.TechnicianUserId) || !string.IsNullOrWhiteSpace(x.TeamId));
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+    }
+}
+
+public sealed class TransitionMaintenanceWorkOrderRequestValidator : Validator<TransitionMaintenanceWorkOrderRequest>
+{
+    public TransitionMaintenanceWorkOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Action).IsInEnum().NotEqual(MaintenanceWorkOrderAction.Assign);
+        RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ExpectedVersion).GreaterThanOrEqualTo(0);
+        When(x => x.Action == MaintenanceWorkOrderAction.Complete, () =>
+        {
+            RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
+            RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.DowntimeMinutes).NotNull().GreaterThan(0);
+        });
+    }
+}
+
+public sealed record CompleteMaintenanceWorkOrderResponse(
+    MaintenanceWorkOrderId WorkOrderId,
+    string Status,
+    DateTimeOffset ChangedAtUtc);
 
 public sealed record StartMaintenanceRepairRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -74,7 +177,173 @@ public sealed record ListMaintenanceWorkOrdersRequest(
     string? EnvironmentId,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null,
+    string[]? DeviceAssetReferences = null)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences);
+}
+
+public sealed class ListMaintenanceWorkOrdersRequestValidator : Validator<ListMaintenanceWorkOrdersRequest>
+{
+    internal const int MaxDeviceAssetReferences = 400;
+
+    public ListMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.DeviceAssetReferences)
+            .Must(references => references is null || references.Length is > 0 and <= MaxDeviceAssetReferences)
+            .WithMessage($"Device asset references must contain between 1 and {MaxDeviceAssetReferences} values when provided.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+}
+
+public sealed record QueryInternalMaintenanceWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? DeviceAssetIds = null,
+    string? Status = null,
+    string? DeviceAssetId = null,
+    string? Keyword = null,
+    string? AssignedTechnicianUserIds = null,
+    string? AssignedTeamIds = null,
+    string? WorkOrderId = null,
+    string[] DeviceAssetReferences = null!)
+{
+    internal ListMaintenanceWorkOrdersQuery ToQuery() => new ListMaintenanceWorkOrdersRequest(
+        OrganizationId,
+        EnvironmentId,
+        Skip,
+        Take,
+        DeviceAssetIds,
+        Status,
+        DeviceAssetId,
+        Keyword,
+        AssignedTechnicianUserIds,
+        AssignedTeamIds,
+        WorkOrderId,
+        DeviceAssetReferences).ToQuery();
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersRequestValidator
+    : Validator<QueryInternalMaintenanceWorkOrdersRequest>
+{
+    private const int MaxCsvTokens = 200;
+    private const int MaxCsvTokenLength = 150;
+    private const int MaxCsvLength = MaxCsvTokens * MaxCsvTokenLength + MaxCsvTokens - 1;
+
+    public QueryInternalMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        RuleFor(x => x.Status).MaximumLength(40);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(150);
+        RuleFor(x => x.Keyword).MaximumLength(150);
+        RuleFor(x => x.WorkOrderId).MaximumLength(150);
+        RuleFor(x => x.DeviceAssetIds)
+            .Null()
+            .WithMessage("DeviceAssetIds is not supported by the internal work-order query; use DeviceAssetReferences.");
+        RuleFor(x => x.AssignedTechnicianUserIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned technician user IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
+        RuleFor(x => x.AssignedTeamIds)
+            .Must(BeBoundedCsv)
+            .WithMessage($"Assigned team IDs must contain between 1 and {MaxCsvTokens} non-empty values of at most {MaxCsvTokenLength} characters, with a total length of at most {MaxCsvLength}, when provided.");
+        RuleFor(x => x.DeviceAssetReferences)
+            .NotNull()
+            .Must(references => references is { Length: > 0 and <= ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences })
+            .WithMessage($"Device asset references must contain between 1 and {ListMaintenanceWorkOrdersRequestValidator.MaxDeviceAssetReferences} values.");
+        RuleForEach(x => x.DeviceAssetReferences)
+            .NotEmpty()
+            .MaximumLength(150);
+    }
+
+    private static bool BeBoundedCsv(string? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+        if (value.Length > MaxCsvLength)
+        {
+            return false;
+        }
+
+        // Keep the query handler's legacy behavior: empty separators inside an otherwise
+        // valid CSV are ignored. A provided value must still contain at least one token.
+        var tokens = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return tokens.Length is > 0 and <= MaxCsvTokens
+            && tokens.All(token => token.Length is > 0 and <= MaxCsvTokenLength);
+    }
+}
+
+public sealed record GetMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record AssignMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion);
+
+public sealed record ProbeMaintenanceWorkOrderAssignmentReplayRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? TechnicianUserId,
+    string? TeamId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion);
+
+public sealed record TransitionMaintenanceWorkOrderRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<MaintenanceWorkOrderAction>))]
+    MaintenanceWorkOrderAction Action,
+    string ActorPrincipalId,
+    string Reason,
+    string IdempotencyKey,
+    int ExpectedVersion,
+    string? Result = null,
+    string? DowntimeReasonCode = null,
+    int? DowntimeMinutes = null,
+    IReadOnlyCollection<MaintenanceSparePartInput>? SpareParts = null,
+    int? ActualLaborMinutes = null,
+    decimal? SparePartCostAmount = null,
+    decimal? ExternalServiceCostAmount = null,
+    string? CostCurrencyCode = null);
 
 public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
@@ -196,7 +465,12 @@ public sealed record UpdateDowntimeReasonRequest(
 
 public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string EnvironmentId, string ReasonCode);
 
-public sealed record ListDowntimeReasonsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+public sealed record ListDowntimeReasonsRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int Skip = 0,
+    int Take = 100,
+    string? Keyword = null);
 
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateMaintenanceWorkOrderRequest, ResponseData<CreateMaintenanceWorkOrderResponse>>
@@ -205,20 +479,47 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes), ct);
-        await Send.OkAsync(new CreateMaintenanceWorkOrderResponse(id).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey), ct);
+        await Send.OkAsync(
+            new CreateMaintenanceWorkOrderResponse(
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
+            cancellation: ct);
     }
 }
 
 public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
-    : MaintenanceEndpoint<CompleteMaintenanceWorkOrderRequest, ResponseData<object>>
+    : MaintenanceEndpoint<CompleteMaintenanceWorkOrderRequest, ResponseData<CompleteMaintenanceWorkOrderResponse>>
 {
-    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CompleteMaintenanceWorkOrderEndpoint>());
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<CompleteMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
 
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts, req.ActualLaborMinutes, req.SparePartCostAmount, req.ExternalServiceCostAmount, req.CostCurrencyCode, req.ActualTechnicianUserId), ct);
-        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+        var result = await sender.Send(
+            new CompleteMaintenanceWorkOrderCommand(
+                req.WorkOrderId,
+                req.Result,
+                req.DowntimeReasonCode,
+                req.DowntimeMinutes,
+                req.SpareParts,
+                req.ActualLaborMinutes,
+                req.SparePartCostAmount,
+                req.ExternalServiceCostAmount,
+                req.CostCurrencyCode,
+                req.ActualTechnicianUserId,
+                req.IdempotencyKey,
+                req.OrganizationId,
+                req.EnvironmentId),
+            ct);
+        await Send.OkAsync(
+            new CompleteMaintenanceWorkOrderResponse(
+                result.WorkOrderId,
+                result.Status.ToString(),
+                result.ChangedAtUtc).AsResponseData(),
+            cancellation: ct);
     }
 }
 
@@ -241,12 +542,111 @@ public sealed class ListMaintenanceWorkOrdersEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMaintenanceWorkOrdersRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListMaintenanceWorkOrdersQuery(
+        var result = await sender.Send(req.ToQuery(), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryInternalMaintenanceWorkOrdersEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryInternalMaintenanceWorkOrdersRequest, ResponseData<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryInternalMaintenanceWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(QueryInternalMaintenanceWorkOrdersRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(req.ToQuery(), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<GetMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderDetail>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<GetMaintenanceWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(GetMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetMaintenanceWorkOrderQuery(req.OrganizationId, req.EnvironmentId, req.WorkOrderId), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AssignMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<AssignMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderCommandResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<AssignMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(AssignMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new AssignMaintenanceWorkOrderCommand(
             req.OrganizationId,
             req.EnvironmentId,
-            req.Skip,
-            req.Take,
-            req.DeviceAssetIds), ct);
+            req.WorkOrderId,
+            req.ActorPrincipalId,
+            req.TechnicianUserId,
+            req.TeamId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ProbeMaintenanceWorkOrderAssignmentReplayEndpoint(ISender sender)
+    : MaintenanceEndpoint<
+        ProbeMaintenanceWorkOrderAssignmentReplayRequest,
+        ResponseData<MaintenanceWorkOrderAssignmentReplayProbeResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<ProbeMaintenanceWorkOrderAssignmentReplayEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(
+        ProbeMaintenanceWorkOrderAssignmentReplayRequest req,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ActorPrincipalId,
+            req.TechnicianUserId,
+            req.TeamId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class TransitionMaintenanceWorkOrderEndpoint(ISender sender)
+    : MaintenanceEndpoint<TransitionMaintenanceWorkOrderRequest, ResponseData<MaintenanceWorkOrderCommandResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(
+        MaintenanceEndpointContracts.Get<TransitionMaintenanceWorkOrderEndpoint>(),
+        StatusCodes.Status409Conflict);
+
+    public override async Task HandleAsync(TransitionMaintenanceWorkOrderRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new TransitionMaintenanceWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Action,
+            req.ActorPrincipalId,
+            req.Reason,
+            req.IdempotencyKey,
+            req.ExpectedVersion,
+            req.Result,
+            req.DowntimeReasonCode,
+            req.DowntimeMinutes,
+            req.SpareParts,
+            req.ActualLaborMinutes,
+            req.SparePartCostAmount,
+            req.ExternalServiceCostAmount,
+            req.CostCurrencyCode), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -441,7 +841,7 @@ public sealed class ListDowntimeReasonsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListDowntimeReasonsRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ListDowntimeReasonsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        var result = await sender.Send(new ListDowntimeReasonsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take, req.Keyword), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
@@ -480,6 +880,11 @@ public static class MaintenanceEndpointContracts
         new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
+        new(typeof(QueryInternalMaintenanceWorkOrdersEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/query", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryInternalMaintenanceWorkOrders"),
+        new(typeof(GetMaintenanceWorkOrderEndpoint), "GET", "/api/business/v1/maintenance/work-orders/{workOrderId}", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceWorkOrder"),
+        new(typeof(AssignMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "assignMaintenanceWorkOrder"),
+        new(typeof(ProbeMaintenanceWorkOrderAssignmentReplayEndpoint), "POST", "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "probeMaintenanceWorkOrderAssignmentReplay"),
+        new(typeof(TransitionMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/actions", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "transitionMaintenanceWorkOrder"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(UpdateMaintenancePlanEndpoint), "PUT", "/api/business/v1/maintenance/plans/{planId}", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),

@@ -134,7 +134,7 @@ try
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddScoped<WorldBibleSeedService>();
-    var productEngineeringBaseAddress = ResolveServiceBaseAddress(
+    var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration,
         builder.Environment,
         "ProductEngineering:BaseUrl",
@@ -197,7 +197,6 @@ try
     }
 
     #endregion
-
 
     var app = builder.Build();
     app.UseNervIipCorrelation();
@@ -295,26 +294,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configured = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configured))
-    {
-        return new Uri(configured, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} must be configured outside Development.");
 }
 
 #pragma warning disable S1118

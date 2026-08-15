@@ -3,12 +3,12 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  closeBusinessConsoleQualityNcrMutationOptions,
+  closeBusinessConsoleQualityNcr,
   createBusinessConsoleQualityInspectionRecordMutationOptions,
   listBusinessConsoleQualityInspectionPlanCharacteristicsQueryOptions,
   listBusinessConsoleQualityInspectionPlansQueryOptions,
   listBusinessConsoleQualityNcrsQueryOptions,
-  submitBusinessConsoleQualityNcrDispositionMutationOptions,
+  submitBusinessConsoleQualityNcrDisposition,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
@@ -22,8 +22,15 @@ const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
 }))
+const lifecycleApi = vi.hoisted(() => ({
+  getNcr: vi.fn(),
+}))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  closeBusinessConsoleQualityNcr: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
+  })),
   closeBusinessConsoleQualityNcrMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -47,6 +54,14 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleQualityNcrsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleQualityNcrs' }],
     query: vi.fn(),
+  })),
+  getBusinessConsoleQualityNcrQueryOptions: vi.fn(() => ({
+    key: [],
+    query: lifecycleApi.getNcr,
+  })),
+  submitBusinessConsoleQualityNcrDisposition: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   submitBusinessConsoleQualityNcrDispositionMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
@@ -226,6 +241,16 @@ describe('business quality composables', () => {
     })
 
     const { closeNcr, ncrs, ncrsTotal, submitDisposition } = useQualityNcrs()
+    lifecycleApi.getNcr
+      .mockResolvedValueOnce({ success: true, data: { id: 'ncr-1', status: 'Open' } })
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'ncr-1',
+          status: 'Disposition-In-Progress',
+          dispositionType: 'rework',
+        },
+      })
 
     expect(listBusinessConsoleQualityNcrsQueryOptions).toHaveBeenCalledWith({
       query: {
@@ -252,11 +277,7 @@ describe('business quality composables', () => {
       reason: '返工处理已完成',
     })
 
-    expect(submitBusinessConsoleQualityNcrDispositionMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(submitBusinessConsoleQualityNcrDispositionMutationOptions).mock.results[0]?.value
-        .mutation,
-    ).toHaveBeenCalledWith({
+    expect(submitBusinessConsoleQualityNcrDisposition).toHaveBeenCalledWith({
       path: {
         ncrId: 'ncr-1',
       },
@@ -268,11 +289,9 @@ describe('business quality composables', () => {
         dispositionType: 'rework',
         dispositionApprovalChainId: 'chain-1',
       },
+      throwOnError: false,
     })
-    expect(closeBusinessConsoleQualityNcrMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(closeBusinessConsoleQualityNcrMutationOptions).mock.results[0]?.value.mutation,
-    ).toHaveBeenCalledWith({
+    expect(closeBusinessConsoleQualityNcr).toHaveBeenCalledWith({
       path: {
         ncrId: 'ncr-1',
       },
@@ -284,6 +303,7 @@ describe('business quality composables', () => {
         reworkWorkOrderId: 'wo-1',
         reason: '返工处理已完成',
       },
+      throwOnError: false,
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
   })

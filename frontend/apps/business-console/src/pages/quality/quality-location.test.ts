@@ -1,29 +1,91 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
+
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
 
 const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
 
-const notifySpies = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
-const taskActionSpies = vi.hoisted(() => ({ startInspection: vi.fn() }))
-const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
-vi.mock('@/utils/notify', () => ({
-  notifyError: notifySpies.error,
-  notifySuccess: notifySpies.success,
+const notifySpies = vi.hoisted(() => ({
+  error: vi.fn(),
+  operationFailure: vi.fn(),
+  success: vi.fn(),
 }))
-
-vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { principalId: 'qa-user-001' } }),
+const taskActionSpies = vi.hoisted(() => ({
+  startInspection: vi.fn(),
+  refreshInspectionTasks: vi.fn(),
+}))
+const qualityTaskRead = vi.hoisted(() => vi.fn())
+const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
+const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifyError: notifySpies.error,
+  notifyOperationFailure: notifySpies.operationFailure,
+  notifySuccess: notifySpies.success,
 }))
 
 vi.mock('@/composables/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
     startInspection: taskActionSpies.startInspection,
+    refreshInspectionTasks: taskActionSpies.refreshInspectionTasks,
   }),
+}))
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleQualityInspectionTasks: qualityTaskRead,
 }))
 
 const qualityState = vi.hoisted(() => ({
@@ -44,6 +106,7 @@ const qualityState = vi.hoisted(() => ({
     {
       characteristicCode: 'DIM-01',
       name: '长度',
+      characteristicType: undefined as string | undefined,
       lowerSpecLimit: 9.8,
       upperSpecLimit: 10.2,
       unitCode: 'mm',
@@ -72,7 +135,7 @@ vi.mock('vue-router', async (importOriginal) => {
     ...actual,
     RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: routerSpies.push, replace: routerSpies.replace }),
   }
 })
 
@@ -83,6 +146,36 @@ vi.mock('@/composables/usePagedList', async () => {
     usePagedList: () => ({
       page: shallowRef(1),
       pageSize: shallowRef(100),
+    }),
+  }
+})
+
+// 方案 / 物料 / 单位 / 原因码一律只选不填：这些目录内部走 pinia + colada，测试整体打桩。
+vi.mock('@/composables/useQualityPickerCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+
+  return {
+    useQualityInspectionPlanCatalog: () => ({
+      inspectionPlans: shallowRef([{ id: 'plan-1', code: 'QP-1', skuCode: 'SKU-001' }]),
+      inspectionPlansPending: shallowRef(false),
+      inspectionPlanOptions: computed(() => [{ value: 'plan-1', label: 'QP-1' }]),
+      // 只读回显要把方案标识翻成人读方案号（#1418），桩要跟真实目录的契约一致。
+      inspectionPlanCodeById: computed(() => new Map([['plan-1', 'QP-1']])),
+    }),
+    useQualitySkuCatalog: () => ({
+      skuOptions: computed(() => [{ value: 'SKU-001', label: '示例物料' }]),
+      skusPending: shallowRef(false),
+      skuNameByCode: computed(() => new Map([['SKU-001', '示例物料']])),
+    }),
+    useQualityUomCatalog: () => ({
+      uomOptions: computed(() => [{ value: 'EA', label: '个' }]),
+      uomsPending: shallowRef(false),
+    }),
+    useQualityReasonCatalog: () => ({
+      reasonsPending: shallowRef(false),
+      defectReasonOptions: computed(() => [{ value: 'DEF-01', label: '尺寸超差' }]),
+      dispositionReasonOptions: computed(() => [{ value: '让步接收', label: '让步接收' }]),
+      reasonGroupSuggestions: computed(() => []),
     }),
   }
 })
@@ -260,6 +353,7 @@ function mountQualityPage(component: unknown) {
 
 describe('quality route location behavior', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.inspectionContextInitiallyEmpty = false
@@ -270,6 +364,7 @@ describe('quality route location behavior', () => {
       {
         characteristicCode: 'DIM-01',
         name: '长度',
+        characteristicType: undefined,
         lowerSpecLimit: 9.8,
         upperSpecLimit: 10.2,
         unitCode: 'mm',
@@ -277,8 +372,32 @@ describe('quality route location behavior', () => {
     ]
     qualityState.planCharacteristicsRef = undefined
     notifySpies.error.mockReset()
+    notifySpies.operationFailure.mockReset()
     notifySpies.success.mockReset()
     taskActionSpies.startInspection.mockReset()
+    taskActionSpies.refreshInspectionTasks.mockReset()
+    taskActionSpies.refreshInspectionTasks.mockResolvedValue(undefined)
+    qualityTaskRead.mockReset()
+    qualityTaskRead.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-001',
+              status: 'in-progress',
+              allowedActions: ['submit-inspection'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    routerSpies.push.mockReset()
+    routerSpies.replace.mockReset()
+    routerSpies.replace.mockImplementation(async ({ query }: { query: Record<string, string> }) => {
+      routeState.route!.query = query
+    })
     ncrActionSpies.closeNcr.mockReset()
     ncrActionSpies.submitDisposition.mockReset()
   })
@@ -304,12 +423,17 @@ describe('quality route location behavior', () => {
         canCloseNcr: boolean
         canSubmitDisposition: boolean
         closeForm: { reason: string }
+        dispositionForm: { dispositionType: string; attachmentFileIds: string }
         openNcr: (ncr: Record<string, unknown>) => void
         submitCloseNcr: () => Promise<void>
         submitNcrDisposition: () => Promise<void>
       }
       vm.openNcr(qualityState.ncrs[0]!)
       vm.closeForm.reason = '处置结果已核验'
+      // 本用例只考察业务范围这一维门禁：选一个不需要 MRB 评审 / 中央审批链的处置类型，
+      // 免得把 #1327 新增的处置前置条件混进来。
+      vm.dispositionForm.dispositionType = 'sort-and-screen'
+      vm.dispositionForm.attachmentFileIds = 'file-001'
       await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(false)
@@ -334,9 +458,9 @@ describe('quality route location behavior', () => {
       await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(true)
-      expect(vm.canCloseNcr).toBe(true)
+      expect(vm.canCloseNcr).toBe(false)
       expect(dispositionButton?.attributes('disabled')).toBeUndefined()
-      expect(closeButton?.attributes('disabled')).toBeUndefined()
+      expect(closeButton?.attributes('disabled')).toBeDefined()
     },
   )
 
@@ -498,6 +622,51 @@ describe('quality route location behavior', () => {
     await nextRenderTick()
 
     expect(vm.canCreateRecord).toBe(true)
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledOnce()
+    expect(taskActionSpies.startInspection.mock.calls[0]?.[1]).not.toHaveProperty('inspectorUserId')
+  })
+
+  it('keeps the existing task submit action disabled when backend allowedActions only permits claim', async () => {
+    qualityTaskRead.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            {
+              inspectionTaskId: 'TASK-001',
+              status: 'pending',
+              allowedActions: ['claim'],
+            },
+          ],
+          total: 1,
+        },
+      },
+    })
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      canCreateRecord: boolean
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await nextRenderTick()
+
+    expect(vm.canCreateRecord).toBe(false)
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).not.toHaveBeenCalled()
   })
 
   it('preserves inspector input when plan characteristics arrive asynchronously', async () => {
@@ -534,6 +703,262 @@ describe('quality route location behavior', () => {
     ])
   })
 
+  it('clears the routed inspection task and stale form context after a lifecycle conflict', async () => {
+    const { LifecycleStateChangedError } = await import('@/composables/lifecycleAction')
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      batchNo: 'LOT-7',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce(
+      new LifecycleStateChangedError('conflict'),
+    )
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordSheetOpen: boolean
+      recordForm: {
+        inspectionPlanId: string
+        sourceDocumentId: string
+        skuCode: string
+        batchNo: string
+        resultLines: Array<{ observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    await nextRenderTick()
+
+    expect(routerSpies.replace).toHaveBeenCalledWith({ query: {} })
+    expect(routeState.route!.query.inspectionTaskId).toBeUndefined()
+    expect(vm.recordSheetOpen).toBe(false)
+    expect(vm.recordForm).toMatchObject({
+      inspectionPlanId: '',
+      sourceDocumentId: '',
+      skuCode: '',
+      batchNo: '',
+    })
+    expect(vm.recordForm.resultLines).toEqual([
+      expect.objectContaining({ characteristicCode: '', observedValue: '' }),
+    ])
+    expect(taskActionSpies.refreshInspectionTasks).toHaveBeenCalledOnce()
+    expect(notifySpies.error).toHaveBeenCalledWith('状态已被其他操作更新')
+  })
+
+  it('preserves the routed inspection task and form input after an ordinary validation error', async () => {
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce({
+      success: false,
+      statusCode: 422,
+      message: '实测值不符合格式',
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordSheetOpen: boolean
+      recordForm: {
+        inspectionPlanId: string
+        sourceDocumentId: string
+        resultLines: Array<{ observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    await nextRenderTick()
+
+    expect(routerSpies.replace).not.toHaveBeenCalled()
+    expect(routeState.route!.query.inspectionTaskId).toBe('TASK-001')
+    expect(vm.recordSheetOpen).toBe(true)
+    expect(vm.recordForm).toMatchObject({
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+    })
+    expect(vm.recordForm.resultLines[0]!.observedValue).toBe('10.1')
+    expect(taskActionSpies.refreshInspectionTasks).not.toHaveBeenCalled()
+  })
+
+  // #1326：计量型（variable）特性必须提交数值 measuredValue，缺失时后端会以领域 400 拒绝。
+  it('submits measuredValue for variable characteristics and gates submit on a numeric value', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        characteristicType: 'variable',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockResolvedValueOnce({
+      data: { inspectionRecordId: 'REC-001' },
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        resultLines: Array<{
+          characteristicCode: string
+          characteristicType: string
+          measuredValue: string
+          observedValue: string
+        }>
+      }
+      canCreateRecord: boolean
+      submitInspectionRecord: () => Promise<void>
+    }
+
+    // 自动带出的计量特性行：未录测量值前禁止提交（不再靠文本 observedValue 假放行）。
+    expect(vm.recordForm.resultLines[0]).toMatchObject({
+      characteristicCode: 'DIM-01',
+      characteristicType: 'variable',
+    })
+    expect(vm.canCreateRecord).toBe(false)
+
+    vm.recordForm.resultLines[0]!.measuredValue = '10.1'
+    await nextRenderTick()
+    expect(vm.canCreateRecord).toBe(true)
+
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledWith(
+      'TASK-001',
+      expect.objectContaining({
+        resultLines: [
+          expect.objectContaining({
+            characteristicCode: 'DIM-01',
+            measuredValue: 10.1,
+            observedValue: '10.1',
+            unitCode: 'mm',
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('keeps attribute characteristics on text observedValue without measuredValue', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'APP-01',
+        name: '外观',
+        characteristicType: 'attribute',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockResolvedValueOnce({
+      data: { inspectionRecordId: 'REC-002' },
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ observedValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.observedValue = '外观无划痕'
+    await nextRenderTick()
+
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledWith(
+      'TASK-001',
+      expect.objectContaining({
+        resultLines: [
+          expect.objectContaining({
+            characteristicCode: 'APP-01',
+            observedValue: '外观无划痕',
+            measuredValue: undefined,
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('routes the backend measured-value rejection through operation failure passthrough', async () => {
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'DIM-01',
+        name: '长度',
+        characteristicType: 'variable',
+        lowerSpecLimit: 9.8,
+        upperSpecLimit: 10.2,
+        unitCode: 'mm',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'GR-001',
+      sourceType: 'receiving',
+      sourceService: 'wms',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    const rejection = {
+      success: false,
+      statusCode: 400,
+      message: '计量型特性“dim-01”需要填写测量值，请录入数值后重新提交。',
+    }
+    taskActionSpies.startInspection.mockRejectedValueOnce(rejection)
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ measuredValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.measuredValue = '10.1'
+    await nextRenderTick()
+
+    await vm.submitInspectionRecord()
+    // 台账 #52：领域拒绝理由必须走分层透传（notifyOperationFailure），不能吞成兜底文案。
+    expect(notifySpies.operationFailure).toHaveBeenCalledWith(
+      '检验记录提交失败',
+      rejection,
+      '检验记录提交失败，请稍后重试。',
+    )
+  })
+
   it('locates a source inspection record: opens read-only record detail from inspectionRecordId', async () => {
     routeState.route!.query = { inspectionRecordId: 'INSP-REC-9' }
 
@@ -558,6 +983,143 @@ describe('quality route location behavior', () => {
     expect(notifySpies.error).toHaveBeenCalled()
     expect(wrapper.text()).toContain('检验记录加载失败')
     expect(wrapper.text()).not.toContain('未找到该检验记录')
+  })
+
+  // #1396 / 走查 #79：三项实测值填满、无任何红字，「提交检验记录」按钮仍恒为禁用。
+  // 两个真因都在这里上锁，并锁住「禁用必有可见理由」这条不变式本身。
+  it('accepts the number that a numeric input writes back into measuredValue', async () => {
+    // `<input type="number">` 的 v-model 回写的是 number 而不是 string。
+    // 旧断言一律喂 '10.1' 这样的字符串，绕开了真实回写类型，于是 `toMeasuredNumber`
+    // 里的 `.trim()` 在门禁里永远碰不到 number——测试全绿、真机一录入就哑火。
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'damping-force',
+        name: '阻尼力',
+        characteristicType: 'variable',
+        lowerSpecLimit: 1080,
+        upperSpecLimit: 1320,
+        unitCode: 'N',
+      },
+    ]
+    routeState.route!.query = {
+      inspectionTaskId: 'TASK-001',
+      inspectionPlanId: 'PLAN-001',
+      sourceDocumentId: 'WO-1-OP-60',
+      sourceType: 'operation',
+      sourceService: 'mes-operation',
+      skuCode: 'SKU-RM-001',
+      quantity: '12',
+      action: 'create',
+    }
+    taskActionSpies.startInspection.mockResolvedValueOnce({
+      data: { inspectionRecordId: 'REC-N-001' },
+    })
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ measuredValue: string | number }> }
+      canCreateRecord: boolean
+      submitBlockers: string[]
+      submitInspectionRecord: () => Promise<void>
+    }
+
+    vm.recordForm.resultLines[0]!.measuredValue = 1210
+    await nextRenderTick()
+
+    expect(vm.submitBlockers).toEqual([])
+    expect(vm.canCreateRecord).toBe(true)
+
+    await vm.submitInspectionRecord()
+    expect(taskActionSpies.startInspection).toHaveBeenCalledWith(
+      'TASK-001',
+      expect.objectContaining({
+        resultLines: [
+          expect.objectContaining({
+            characteristicCode: 'damping-force',
+            measuredValue: 1210,
+            observedValue: '1210',
+            unitCode: 'N',
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('never leaves the submit button disabled without a visible reason', async () => {
+    // 「无红字」与「可提交」必须同一个真相：禁用⟺清单非空。这条不变式一破，
+    // 检验员就只能对着灰按钮干瞪眼——#79 的用户可见形态。
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        sourceDocumentId: string
+        skuCode: string
+        resultLines: Array<{ characteristicCode: string; observedValue: string }>
+      }
+      canCreateRecord: boolean
+      submitBlockers: string[]
+    }
+
+    expect(vm.canCreateRecord).toBe(false)
+    expect(vm.submitBlockers.length).toBeGreaterThan(0)
+    // 缺什么就点名什么，而不是一句笼统的「请检查填写项」。
+    expect(vm.submitBlockers.join('\n')).toContain('来源单据')
+
+    vm.recordForm.sourceDocumentId = 'WO-1-OP-60'
+    vm.recordForm.skuCode = 'SKU-RM-001'
+    vm.recordForm.resultLines[0]!.characteristicCode = 'APP-01'
+    vm.recordForm.resultLines[0]!.observedValue = '无渗漏'
+    await nextRenderTick()
+
+    // 手动流程里弹框根本没有组织/环境输入位，所以业务范围只能取自实时 filters；
+    // 旧代码在 setup 时快照了一次空串，这里会永远是 false 且没有任何红字可看。
+    expect(vm.submitBlockers).toEqual([])
+    expect(vm.canCreateRecord).toBe(true)
+  })
+
+  it('derives the characteristic unit from the plan instead of the global UOM catalog', async () => {
+    // 走查 #80：单位候选只有 分钟/件/克/千克/升，而特性规格写着「1080–1320 N」。
+    // 单位是特性自己的量纲，不是全局计量单位表里随便挑一个。
+    qualityState.planCharacteristics = [
+      {
+        characteristicCode: 'damping-force',
+        name: '阻尼力',
+        characteristicType: 'variable',
+        lowerSpecLimit: 1080,
+        upperSpecLimit: 1320,
+        unitCode: 'N',
+      },
+      {
+        characteristicCode: 'leakage',
+        name: '渗漏检查',
+        characteristicType: 'attribute',
+        lowerSpecLimit: undefined as unknown as number,
+        upperSpecLimit: undefined as unknown as number,
+        unitCode: undefined as unknown as string,
+      },
+    ]
+    routeState.route!.query = { inspectionPlanId: 'PLAN-001' }
+
+    const wrapper = mountQualityPage(InspectionsPage)
+    await nextRenderTick()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ characteristicCode: string; unitCode: string }> }
+      onCharacteristicCodeChange: (line: unknown, value: string) => void
+      unitPolicyFor: (line: { characteristicCode: string }) => { mode: string; unitCode?: string }
+    }
+
+    const line = vm.recordForm.resultLines[0]!
+    vm.onCharacteristicCodeChange(line, 'damping-force')
+    await nextRenderTick()
+    expect(line.unitCode).toBe('N')
+    expect(vm.unitPolicyFor(line)).toEqual({ mode: 'derived', unitCode: 'N' })
+
+    // 换成无量纲的计数型特性时，上一条特性的单位不许留在行上跟着提交。
+    vm.onCharacteristicCodeChange(line, 'leakage')
+    await nextRenderTick()
+    expect(line.unitCode).toBe('')
+    expect(vm.unitPolicyFor(line)).toEqual({ mode: 'dimensionless' })
   })
 })
 

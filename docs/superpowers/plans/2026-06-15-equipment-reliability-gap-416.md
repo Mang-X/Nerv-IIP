@@ -1,43 +1,43 @@
-# Equipment Reliability Gap 416 Implementation Plan
+# 设备可靠性缺口 416 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close GitHub issue #416 for IndustrialTelemetry and Maintenance reliability gaps: preventive-maintenance due work orders, spare-part inventory movement requests, SEMI E10-aligned OEE running-state mapping, alarm-clear work-order recovery marking, and MTBF/MTTR query coverage.
+**目标：**解决 GitHub issue #416 中 IndustrialTelemetry 和 Maintenance 的可靠性缺口：预防性维护到期工单、备件库存移动请求、与 SEMI E10 对齐的 OEE 运行状态映射、告警清除后的工单恢复标记，以及 MTBF/MTTR 查询覆盖。
 
-**Architecture:** Maintenance remains the owner of maintenance plans, work orders, inspections, spare-part demand and reliability metrics. IndustrialTelemetry remains the owner of device state, alarm and OEE input facts. Cross-service collaboration uses public contracts only: Maintenance consumes `Nerv.IIP.Contracts.IndustrialTelemetry.AlarmClearedIntegrationEvent` and publishes `Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent` from Maintenance domain events; it does not reference Inventory service projects.
+**架构：**Maintenance 仍然拥有维护计划、工单、检查、备件需求和可靠性指标。IndustrialTelemetry 仍然拥有设备状态、告警和 OEE 输入事实。跨服务协作只使用公开契约：Maintenance 消费 `Nerv.IIP.Contracts.IndustrialTelemetry.AlarmClearedIntegrationEvent`，并根据 Maintenance 领域事件发布 `Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent`；它不引用 Inventory 服务项目。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, EF Core, netcorepal domain/integration events, ADR 0011 envelopes, xUnit.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、EF Core、netcorepal 领域/集成事件、ADR 0011 信封、xUnit。
 
 ---
 
-## File Map
+## 文件映射
 
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenancePlanAggregate/MaintenancePlan.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceWorkOrderAggregate/MaintenanceWorkOrder.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/DomainEvents/MaintenanceDomainEvents.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceEntityTypeConfigurations.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Nerv.IIP.Business.Maintenance.Web.csproj`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Program.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/MaintenanceCommands.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/MaintenanceQueries.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/MarkWorkOrderAlarmClearedHandler.cs`
-- Modify: `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Endpoints/Maintenance/MaintenanceEndpoints.cs`
-- Modify: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/MaintenanceAggregateTests.cs`
-- Modify: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceEndpointContractTests.cs`
-- Modify: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs`
-- Modify: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventTests.cs`
-- Modify: `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceSchemaConventionTests.cs`
-- Modify: `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/IndustrialTelemetryQueries.cs`
-- Modify: `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryEndpointContractTests.cs`
-- Modify: `docs/architecture/equipment-status-event-flow.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenancePlanAggregate/MaintenancePlan.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/AggregatesModel/MaintenanceWorkOrderAggregate/MaintenanceWorkOrder.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Domain/DomainEvents/MaintenanceDomainEvents.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/EntityConfigurations/MaintenanceEntityTypeConfigurations.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Nerv.IIP.Business.Maintenance.Web.csproj`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Program.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Commands/MaintenanceCommands.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Queries/MaintenanceQueries.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs`
+- 创建： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/MarkWorkOrderAlarmClearedHandler.cs`
+- 修改： `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Endpoints/Maintenance/MaintenanceEndpoints.cs`
+- 修改： `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/MaintenanceAggregateTests.cs`
+- 修改： `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceEndpointContractTests.cs`
+- 修改： `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs`
+- 修改： `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventTests.cs`
+- 修改： `backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceSchemaConventionTests.cs`
+- 修改： `backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/IndustrialTelemetryQueries.cs`
+- 修改： `backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryEndpointContractTests.cs`
+- 修改： `docs/architecture/equipment-status-event-flow.md`
+- 修改： `docs/architecture/implementation-readiness.md`
 
-## Task 1: TDD Tests For Reliability Gaps
+## Task 1：可靠性缺口的 TDD 测试
 
-- [ ] **Step 1: Add Maintenance aggregate tests**
+- [ ] **步骤 1：添加 Maintenance 聚合测试**
 
-Add tests proving:
+添加测试以证明：
 
 ```csharp
 var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-001", "P7D", new DateOnly(2026, 6, 1), "maintenance");
@@ -48,17 +48,17 @@ order.MarkAlarmCleared(new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero));
 Assert.True(order.AlarmCleared);
 ```
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj --no-restore
 ```
 
-Expected RED: missing due-generation and alarm-clear members.
+预期为红灯：缺少到期生成和告警清除成员。
 
-- [ ] **Step 2: Add Maintenance web tests**
+- [ ] **步骤 2：添加 Maintenance Web 测试**
 
-Add tests proving:
+添加测试以证明：
 
 ```csharp
 await new GenerateDueMaintenanceWorkOrdersCommandHandler(dbContext).Handle(
@@ -70,37 +70,37 @@ var reliability = await new QueryAssetReliabilityQueryHandler(dbContext).Handle(
     CancellationToken.None);
 ```
 
-Also assert `AlarmClearedIntegrationEvent` marks the matching open work order, and `MaintenanceSparePartIssuedDomainEvent` converts to `InventoryMovementRequestedIntegrationEvent` with a negative outbound quantity and idempotency key `maintenance:{org}:{env}:{workOrderId}:{sparePartLineId}`.
+还要断言 `AlarmClearedIntegrationEvent` 会标记匹配的未结工单，并且 `MaintenanceSparePartIssuedDomainEvent` 会转换为 `InventoryMovementRequestedIntegrationEvent`，其中出库数量为负数，幂等键为 `maintenance:{org}:{env}:{workOrderId}:{sparePartLineId}`。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/Nerv.IIP.Business.Maintenance.Web.Tests.csproj --no-restore
 ```
 
-Expected RED: command/query/handler/converter do not exist.
+预期为红灯：命令/查询/处理器/转换器尚不存在。
 
-- [ ] **Step 3: Add IndustrialTelemetry OEE test**
+- [ ] **步骤 3：添加 IndustrialTelemetry OEE 测试**
 
-Add a test that a window split between `running` and `standby` reports availability from productive running time only, while runtime availability can still classify `standby` as available:
+添加测试，验证在 `running` 与 `standby` 之间分割的时间窗口仅根据生产性运行时间报告可用率，而运行时可用性仍可将 `standby` 归类为可用：
 
 ```csharp
 Assert.Equal(0.5m, response.AvailabilityRate);
 ```
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --no-restore --filter FullyQualifiedName~Oee
 ```
 
-Expected RED: current OEE includes `standby` as running time.
+预期为红灯：当前 OEE 将 `standby` 计入运行时间。
 
-## Task 2: Implement Maintenance Domain And Commands
+## Task 2：实现 Maintenance 领域与命令
 
-- [ ] **Step 1: Extend `MaintenancePlan`**
+- [ ] **步骤 1：扩展 `MaintenancePlan`**
 
-Add nullable generation state:
+添加可空的生成状态：
 
 ```csharp
 public DateOnly? LastGeneratedOn { get; private set; }
@@ -113,11 +113,11 @@ public void MarkGenerated(DateOnly generatedOn)
 }
 ```
 
-P0 supports ISO day intervals like `P7D`; invalid intervals throw `KnownException` in command validation.
+P0 支持 `P7D` 之类的 ISO 日间隔；无效间隔在命令校验中抛出 `KnownException`。
 
-- [ ] **Step 2: Extend `MaintenanceWorkOrder`**
+- [ ] **步骤 2：扩展 `MaintenanceWorkOrder`**
 
-Add alarm-clear marker and spare-part issue event:
+添加告警清除标记和备件发放事件：
 
 ```csharp
 public bool AlarmCleared { get; private set; }
@@ -125,27 +125,27 @@ public DateTimeOffset? AlarmClearedAtUtc { get; private set; }
 public void MarkAlarmCleared(DateTimeOffset clearedAtUtc) { ... }
 ```
 
-When `Complete` replaces spare-part lines, raise one `MaintenanceSparePartIssuedDomainEvent` per line after line creation.
+当 `Complete` 替换备件行时，在创建各行后为每行引发一个 `MaintenanceSparePartIssuedDomainEvent`。
 
-- [ ] **Step 3: Add commands**
+- [ ] **步骤 3：添加命令**
 
-Add `GenerateDueMaintenanceWorkOrdersCommand` scanning due plans for one organization/environment/date, creating one open manual work order per due plan, marking the generated plan, and returning generated count. Use the plan code as source context and rely on plan state for idempotency.
+添加 `GenerateDueMaintenanceWorkOrdersCommand`，扫描某个组织/环境/日期下的到期计划，为每个到期计划创建一个未结的手工工单，标记已生成计划，并返回生成数量。使用计划代码作为来源上下文，并依赖计划状态保证幂等性。
 
-Add `MarkMaintenanceWorkOrderAlarmClearedCommand` matching `SourceAlarmId`, organization and environment, then calling `MarkAlarmCleared`.
+添加 `MarkMaintenanceWorkOrderAlarmClearedCommand`，匹配 `SourceAlarmId`、组织和环境，然后调用 `MarkAlarmCleared`。
 
-- [ ] **Step 4: Register alarm-clear consumer**
+- [ ] **步骤 4：注册告警清除消费者**
 
-Add `MarkWorkOrderAlarmClearedHandler` using `IntegrationEventConsumerGuard<AlarmClearedIntegrationEvent>`, the same inbox helper, and no direct IndustrialTelemetry implementation references.
+添加 `MarkWorkOrderAlarmClearedHandler`，使用 `IntegrationEventConsumerGuard<AlarmClearedIntegrationEvent>` 和同一个 inbox 辅助工具，且不直接引用 IndustrialTelemetry 实现。
 
-## Task 3: Inventory Movement Requests
+## Task 3：Inventory 移动请求
 
-- [ ] **Step 1: Reference Inventory contracts**
+- [ ] **步骤 1：引用 Inventory 契约**
 
-Add a Maintenance Web project reference to `backend/common/Contracts/Nerv.IIP.Contracts.Inventory/Nerv.IIP.Contracts.Inventory.csproj`.
+在 Maintenance Web 项目中添加对 `backend/common/Contracts/Nerv.IIP.Contracts.Inventory/Nerv.IIP.Contracts.Inventory.csproj` 的引用。
 
-- [ ] **Step 2: Add converter**
+- [ ] **步骤 2：添加转换器**
 
-Convert `MaintenanceSparePartIssuedDomainEvent` to `InventoryMovementRequestedIntegrationEvent`:
+将 `MaintenanceSparePartIssuedDomainEvent` 转换为 `InventoryMovementRequestedIntegrationEvent`：
 
 ```csharp
 new InventoryMovementRequestedPayload(
@@ -167,13 +167,13 @@ new InventoryMovementRequestedPayload(
     RequestedAtUtc: workOrder.CompletedAtUtc ?? DateTimeOffset.UtcNow);
 ```
 
-The chosen `SiteCode`/`LocationCode` are explicit P0 defaults documented as configurable follow-up because Maintenance does not own warehouse master data.
+由于 Maintenance 不拥有仓库主数据，所选 `SiteCode`/`LocationCode` 是显式的 P0 默认值，并记录为可配置的后续事项。
 
-## Task 4: Queries And Endpoints
+## Task 4：查询与 Endpoint
 
-- [ ] **Step 1: Reliability metrics query**
+- [ ] **步骤 1：可靠性指标查询**
 
-Add `QueryAssetReliabilityQuery` returning:
+添加返回以下内容的 `QueryAssetReliabilityQuery`：
 
 ```csharp
 public sealed record AssetReliabilityResponse(
@@ -188,49 +188,49 @@ public sealed record AssetReliabilityResponse(
     decimal? MttrMinutes);
 ```
 
-Failure count is completed or open work orders with `SourceAlarmId != null` in the window. MTTR is average `CompletedAtUtc - OpenedAtUtc` for completed fault orders and returns `null` when there are no completed repair samples. MTBF P0 uses elapsed query-window hours divided by failure count and returns `null` when there are no fault samples, because runtime-hour integration remains a later IndustrialTelemetry adapter.
+故障数是在该时间窗口内 `SourceAlarmId != null` 的已完成或未结工单数量。MTTR 是已完成故障工单的平均 `CompletedAtUtc - OpenedAtUtc`，没有已完成维修样本时返回 `null`。MTBF P0 使用查询窗口经过的小时数除以故障数，没有故障样本时返回 `null`，因为运行小时集成仍由后续 IndustrialTelemetry 适配器完成。
 
-- [ ] **Step 2: Endpoint contracts**
+- [ ] **步骤 2：Endpoint 契约**
 
-Add:
+添加：
 
 ```text
 POST /api/business/v1/maintenance/plans/generate-due
 GET /api/business/v1/maintenance/assets/{deviceAssetId}/reliability
 ```
 
-Both require `InternalServiceAuthorizationPolicy`; generation uses `business.maintenance.plans.manage`, reliability uses `business.maintenance.work-orders.read`.
+两者都要求 `InternalServiceAuthorizationPolicy`；生成操作使用 `business.maintenance.plans.manage`，可靠性查询使用 `business.maintenance.work-orders.read`。
 
-## Task 5: IndustrialTelemetry OEE Mapping
+## Task 5：IndustrialTelemetry OEE 映射
 
-- [ ] **Step 1: Centralize state classifier**
+- [ ] **步骤 1：集中状态分类器**
 
-Keep runtime availability states permissive (`available`, `idle`, `ready`, `running`, `standby`) but narrow OEE productive runtime to the actual state fact value `running`. `productive` is not a current persisted runtime state value. Add comments/tests tying this to SEMI E10 Productive vs Standby.
+运行时可用状态保持宽松（`available`、`idle`、`ready`、`running`、`standby`），但将 OEE 生产性运行时间收窄到实际状态事实值 `running`。`productive` 不是当前持久化的运行时状态值。添加注释/测试，将其与 SEMI E10 的 Productive 与 Standby 区分联系起来。
 
-- [ ] **Step 2: Run IndustrialTelemetry focused test**
+- [ ] **步骤 2：运行 IndustrialTelemetry 聚焦测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --no-restore --filter FullyQualifiedName~Oee
 ```
 
-Expected GREEN.
+预期为绿灯。
 
-## Task 6: Docs And Verification
+## Task 6：文档与验证
 
-- [ ] **Step 1: Update docs**
+- [ ] **步骤 1：更新文档**
 
-Update `equipment-status-event-flow.md` and `implementation-readiness.md` with:
+更新 `equipment-status-event-flow.md` 和 `implementation-readiness.md`，加入以下内容：
 
-1. alarm clear marks Maintenance work orders as restored-pending-confirmation;
-2. PM due generation is available as bounded command/API, not a long-running scheduler until deployment policy is finalized;
-3. spare-part issue publishes Inventory movement requests with P0 maintenance stock defaults;
-4. MTBF/MTTR P0 uses work-order elapsed time and query-window hours.
+1. 告警清除会将 Maintenance 工单标记为已恢复待确认；
+2. PM 到期生成功能以有界命令/API 提供，在部署策略最终确定前不作为长期运行的 scheduler；
+3. 备件发放使用 P0 维护库存默认值发布 Inventory 移动请求；
+4. MTBF/MTTR P0 使用工单经过时间和查询窗口小时数。
 
-- [ ] **Step 2: Run focused verification**
+- [ ] **步骤 2：运行聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Domain.Tests/Nerv.IIP.Business.Maintenance.Domain.Tests.csproj --no-restore
@@ -240,12 +240,12 @@ dotnet build backend/Nerv.IIP.sln --no-restore
 git diff --check
 ```
 
-Expected: all pass with no new warnings.
+预期：全部通过且没有新增 warning。
 
-## Self-Review
+## 自审
 
-- #416 P0 PM generation is covered by plan state and command-level idempotency.
-- #416 P0 spare-part inventory movement uses `Nerv.IIP.Contracts.Inventory` only.
-- #416 P1 OEE mapping separates productive time from standby/idle availability.
-- #416 P1 alarm clear is consumed by Maintenance and does not auto-complete work orders.
-- #416 P1 MTBF/MTTR is exposed from Maintenance with P0 limitations documented.
+- #416 P0 PM 生成由计划状态和命令级幂等性覆盖。
+- #416 P0 备件库存移动仅使用 `Nerv.IIP.Contracts.Inventory`。
+- #416 P1 OEE 映射将生产性时间与待机/空闲可用性分开。
+- #416 P1 告警清除由 Maintenance 消费，且不会自动完成工单。
+- #416 P1 MTBF/MTTR 由 Maintenance 公开，并记录了 P0 限制。

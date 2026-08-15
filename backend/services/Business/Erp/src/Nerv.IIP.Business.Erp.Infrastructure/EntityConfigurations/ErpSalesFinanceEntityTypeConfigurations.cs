@@ -43,6 +43,9 @@ public sealed class QuotationEntityTypeConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Quotation approval status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Quotation total amount.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC quotation creation time.");
+        builder.Property(x => x.ConvertedSalesOrderNo).HasColumnName("converted_sales_order_no").HasMaxLength(100).HasComment("Sales order number this quotation has been converted to; null when not converted yet.");
+        builder.Property(x => x.ConvertedAtUtc).HasColumnName("converted_at_utc").HasComment("UTC time the quotation was converted to a sales order.");
+        builder.Ignore(x => x.IsConverted);
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("QuotationId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.QuotationNo }).IsUnique();

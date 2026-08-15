@@ -37,6 +37,7 @@ public sealed class MaintenanceSchemaConventionTests
         {
             typeof(MaintenanceWorkOrder),
             typeof(SparePartLine),
+            typeof(MaintenanceWorkOrderLifecycleEvent),
             typeof(MaintenancePlan),
             typeof(MaintenanceInspection),
             typeof(MaintenanceInspectionMeasurement),
@@ -57,6 +58,34 @@ public sealed class MaintenanceSchemaConventionTests
     }
 
     [Fact]
+    public void Lifecycle_event_schema_keeps_auditable_comments_indexes_and_restrictive_ownership()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var entity = Assert.IsAssignableFrom<IReadOnlyEntityType>(
+            fixture.DbContext.GetService<IDesignTimeModel>().Model
+                .FindEntityType(typeof(MaintenanceWorkOrderLifecycleEvent)));
+
+        Assert.Equal(MaintenanceFacts.Schema, entity.GetSchema());
+        Assert.Equal("maintenance_work_order_lifecycle_events", entity.GetTableName());
+        Assert.False(string.IsNullOrWhiteSpace(entity.GetComment()));
+        Assert.All(entity.GetProperties(), property =>
+            Assert.False(string.IsNullOrWhiteSpace(property.GetComment()),
+                $"Lifecycle event column '{property.GetColumnName()}' requires a comment."));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "IdempotencyKey"],
+                StringComparer.Ordinal));
+        Assert.Contains(entity.GetIndexes(), index =>
+            index.Properties.Select(property => property.Name).SequenceEqual(
+                ["OrganizationId", "EnvironmentId", "WorkOrderId", "OccurredAtUtc"],
+                StringComparer.Ordinal));
+        var workOrderForeignKey = Assert.Single(entity.GetForeignKeys(), foreignKey =>
+            foreignKey.PrincipalEntityType.ClrType == typeof(MaintenanceWorkOrder));
+        Assert.Equal(DeleteBehavior.Restrict, workOrderForeignKey.DeleteBehavior);
+    }
+
+    [Fact]
     public void Processed_integration_event_idempotency_migration_deduplicates_before_unique_index()
     {
         var migration = new UseIdempotencyKeyForProcessedIntegrationEvents();
@@ -66,6 +95,30 @@ public sealed class MaintenanceSchemaConventionTests
             .Invoke(migration, [migrationBuilder]);
 
         AssertInboxDeduplicationBeforeUniqueIndex(migrationBuilder, MaintenanceFacts.Schema);
+    }
+
+    [Fact]
+    public void Keyword_search_migration_uses_pg_trgm_expression_indexes_matching_every_substring_field()
+    {
+        var migration = new AddMaintenanceKeywordSearchIndexes();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(AddMaintenanceKeywordSearchIndexes)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+        var sql = string.Join(Environment.NewLine, migrationBuilder.Operations
+            .OfType<SqlOperation>()
+            .Select(operation => operation.Sql));
+
+        Assert.Contains("CREATE EXTENSION IF NOT EXISTS pg_trgm", sql, StringComparison.Ordinal);
+        foreach (var column in new[]
+                 {
+                     "device_asset_id", "source_alarm_id", "source_reference_id",
+                     "assigned_technician_user_id", "assigned_team_id",
+                 })
+        {
+            Assert.Contains($"lower({column}) gin_trgm_ops", sql, StringComparison.Ordinal);
+        }
+        Assert.Equal(5, sql.Split("CREATE INDEX ", StringSplitOptions.None).Length - 1);
     }
 
     private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
@@ -187,6 +240,42 @@ public sealed class MaintenanceSchemaConventionTests
                 nameof(MaintenanceWorkOrder.SourceType),
                 nameof(MaintenanceWorkOrder.SourceReferenceId),
             ]));
+    }
+
+    [Fact]
+    public void Work_order_queue_filters_have_tenant_scoped_query_shaped_indexes()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var workOrder = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(MaintenanceWorkOrder))
+            ?? throw new InvalidOperationException("MaintenanceWorkOrder metadata was not found.");
+        var indexShapes = workOrder.GetIndexes()
+            .Select(index => index.Properties.Select(property => property.Name).ToArray())
+            .ToArray();
+
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.Status),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.DeviceAssetId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.AssignedTechnicianUserId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
+        Assert.Contains(indexShapes, shape => shape.SequenceEqual([
+            nameof(MaintenanceWorkOrder.OrganizationId),
+            nameof(MaintenanceWorkOrder.EnvironmentId),
+            nameof(MaintenanceWorkOrder.AssignedTeamId),
+            nameof(MaintenanceWorkOrder.OpenedAtUtc),
+        ]));
     }
 
     [Fact]

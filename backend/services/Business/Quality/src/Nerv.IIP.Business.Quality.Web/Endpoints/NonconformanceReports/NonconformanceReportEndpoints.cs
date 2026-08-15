@@ -36,14 +36,15 @@ internal static class NonconformanceReportEndpointMapping
             response.AttachmentFileIds,
             response.CreatedAtUtc,
             response.UpdatedAtUtc,
-            response.SourceInspectionRecordId);
+            response.SourceInspectionRecordId,
+            response.CloseReason);
     }
 }
 
 public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
     where TRequest : notnull
 {
-    protected void ConfigureQualityContract(QualityEndpointContract contract)
+    protected void ConfigureQualityContract(QualityEndpointContract contract, params int[] responseStatusCodes)
     {
         switch (contract.HttpMethod)
         {
@@ -62,6 +63,25 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
 
         Tags("Business Quality");
         Policies(InternalServiceAuthorizationPolicy.Name);
+        if (responseStatusCodes.Length > 0)
+        {
+            Description(builder =>
+            {
+                foreach (var statusCode in responseStatusCodes)
+                {
+                    if (statusCode == StatusCodes.Status409Conflict)
+                    {
+                        builder.Produces<
+                            Nerv.IIP.Business.Quality.Web.Application.Errors.QualityLifecycleConflictResponse>(
+                            statusCode);
+                    }
+                    else
+                    {
+                        builder.Produces(statusCode);
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -133,7 +153,10 @@ public sealed record NonconformanceReportDto(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     // 权威业务关系：从检验开出的 NCR 回链其来源检验记录。
-    string? SourceInspectionRecordId = null);
+    string? SourceInspectionRecordId = null,
+    // 关单审计事实：closed 必有关闭原因（界面必填）。查询响应与网关都带这个字段，
+    // 端点 DTO 漏掉会让它在中间一跳静默变 null——真机上表现为「已关闭但没有原因」。
+    string? CloseReason = null);
 
 public sealed record ListNonconformanceReportsEndpointResponse(IReadOnlyCollection<NonconformanceReportDto> Items, int Total);
 
@@ -205,7 +228,10 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
 {
     public override void Configure()
     {
-        ConfigureQualityContract(QualityEndpointContracts.Get<SubmitNonconformanceReportDispositionEndpoint>());
+        ConfigureQualityContract(
+            QualityEndpointContracts.Get<SubmitNonconformanceReportDispositionEndpoint>(),
+            StatusCodes.Status400BadRequest,
+            StatusCodes.Status409Conflict);
     }
 
     public override async Task HandleAsync(SubmitNonconformanceReportDispositionRequest req, CancellationToken ct)
@@ -225,7 +251,10 @@ public sealed class CloseNonconformanceReportEndpoint(ISender sender)
 {
     public override void Configure()
     {
-        ConfigureQualityContract(QualityEndpointContracts.Get<CloseNonconformanceReportEndpoint>());
+        ConfigureQualityContract(
+            QualityEndpointContracts.Get<CloseNonconformanceReportEndpoint>(),
+            StatusCodes.Status400BadRequest,
+            StatusCodes.Status409Conflict);
     }
 
     public override async Task HandleAsync(CloseNonconformanceReportRequest req, CancellationToken ct)
@@ -256,6 +285,8 @@ public static class QualityEndpointContracts
         new(typeof(GetNonconformanceReportEndpoint), "GET", "/api/business/v1/quality/ncrs/{ncrId}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityNcr"),
         new(typeof(SubmitNonconformanceReportDispositionEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/disposition", BusinessPermissionCodes.QualityNcrManage, "submitBusinessQualityNcrDisposition"),
         new(typeof(CloseNonconformanceReportEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityNcr"),
+        new(typeof(ListCorrectiveActionsEndpoint), "GET", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrRead, "listBusinessQualityCapas"),
+        new(typeof(GetCorrectiveActionEndpoint), "GET", "/api/business/v1/quality/capas/{correctiveActionId}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityCapa"),
         new(typeof(OpenCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrManage, "openBusinessQualityCapa"),
         new(typeof(AddCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions", BusinessPermissionCodes.QualityNcrManage, "addBusinessQualityCapaAction"),
         new(typeof(CompleteCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete", BusinessPermissionCodes.QualityNcrManage, "completeBusinessQualityCapaAction"),

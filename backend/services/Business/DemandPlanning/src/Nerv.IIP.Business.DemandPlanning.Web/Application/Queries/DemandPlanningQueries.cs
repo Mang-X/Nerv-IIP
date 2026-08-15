@@ -208,7 +208,8 @@ public sealed record MrpRunResponse(
     IReadOnlyCollection<string> InputDegradationSources,
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+    DateOnly? InputCoverageEnd,
+    string? FailureReason);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
@@ -234,7 +235,8 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             x.InputDegradationSources,
             x.InputSources,
             x.InputCoverageStart,
-            x.InputCoverageEnd)).ToList();
+            x.InputCoverageEnd,
+            x.FailureReason)).ToList();
     }
 }
 

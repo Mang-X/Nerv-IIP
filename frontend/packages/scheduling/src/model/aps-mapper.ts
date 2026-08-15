@@ -4,13 +4,17 @@ import type {
   ConflictSeverity,
   ChangeType,
   PlanStatus,
+  ScheduleCalendar,
   ScheduleChange,
   ScheduleConflict,
   ScheduleLink,
   ScheduleModel,
   ScheduleTask,
   UnscheduledItem,
+  MaterialRisk,
+  EquipmentRisk,
 } from './types'
+import { BLOCK_LABELS, toBlockKind } from './blocks'
 
 const taskId = (a: ScheduleAssignmentContract): string =>
   a.assignmentId ?? `${a.orderId ?? 'order'}:${a.operationId ?? 'op'}`
@@ -33,7 +37,12 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     workCenterId: a.workCenterId ?? undefined,
     dimensions:
       a.workCenterId || a.resourceId
-        ? { workCenter: { id: (a.workCenterId ?? a.resourceId)!, label: (a.workCenterId ?? a.resourceId)! } }
+        ? {
+            workCenter: {
+              id: (a.workCenterId ?? a.resourceId)!,
+              label: (a.workCenterId ?? a.resourceId)!,
+            },
+          }
         : undefined,
     startUtc: a.startUtc ?? '',
     endUtc: a.endUtc ?? '',
@@ -99,6 +108,44 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   }
 
+  // 物料风险（软约束）：这些工序已排入计划，但开工前必须先备料。
+  // 齐套是开工门槛不是排产门槛，所以它标在已排工序上，不进 unscheduled。
+  const materialRisks: MaterialRisk[] = (plan.materialRisks ?? []).map((r) => ({
+    orderId: r.orderId ?? '',
+    operationId: r.operationId ?? '',
+    reasonCodes: [...(r.reasonCodes ?? [])],
+    shortages: (r.shortages ?? []).map((s) => ({
+      materialId: s.materialId ?? '',
+      materialLotId: s.materialLotId,
+      requiredQuantity: s.requiredQuantity ?? 0,
+      availableQuantity: s.availableQuantity ?? 0,
+      shortageQuantity: s.shortageQuantity ?? 0,
+    })),
+    message: r.message ?? '',
+  }))
+  for (const risk of materialRisks) {
+    const t = operations.find(
+      (o) => o.orderId === risk.orderId && o.operationId === risk.operationId,
+    )
+    if (t) t.materialRisk = risk
+  }
+
+  // 设备数据风险（软约束）：这些工序排在状态未知的设备上（无快照 / 快照过期 / 采集源不可达）。
+  // 「不知道」不等于「不可用」，所以它同样标在已排工序上，不进 unscheduled。
+  const equipmentRisks: EquipmentRisk[] = (plan.equipmentRisks ?? []).map((r) => ({
+    orderId: r.orderId ?? '',
+    operationId: r.operationId ?? '',
+    resourceId: r.resourceId ?? '',
+    reasonCodes: [...(r.reasonCodes ?? [])],
+    message: r.message ?? '',
+  }))
+  for (const risk of equipmentRisks) {
+    const t = operations.find(
+      (o) => o.orderId === risk.orderId && o.operationId === risk.operationId,
+    )
+    if (t) t.equipmentRisk = risk
+  }
+
   const unscheduled: UnscheduledItem[] = (plan.unscheduledOperations ?? []).map((u) => ({
     orderId: u.orderId ?? '',
     operationId: u.operationId ?? '',
@@ -117,11 +164,54 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   })
 
-  const allStarts = operations.map((o) => o.startUtc).filter(Boolean).sort()
-  const allEnds = operations.map((o) => o.endUtc).filter(Boolean).sort()
+  const allStarts = operations
+    .map((o) => o.startUtc)
+    .filter(Boolean)
+    .sort()
+  const allEnds = operations
+    .map((o) => o.endUtc)
+    .filter(Boolean)
+    .sort()
+
+  // 资源不可用窗口(维护/停机/换线/换型):做成不可拖拽的「资源时间块」任务,
+  // 引擎不把它们画成工单条,而是按泳道+时段给单元格上斜纹底纹(见 DhtmlxEngine.blockCells)。
+  const blocks: ScheduleTask[] = (plan.blockWindows ?? []).map((w, index) => {
+    const kind = toBlockKind(w.kind)
+    // 泳道键与工序一致(资源板默认按工作中心铺泳道),否则块会另起一条孤立泳道。
+    const laneId = w.workCenterId ?? w.resourceId ?? ''
+    return {
+      id: `block:${index}:${laneId}`,
+      orderId: '',
+      operationId: '',
+      operationSequence: 0,
+      type: 'operation' as const,
+      text: BLOCK_LABELS[kind],
+      resourceId: w.resourceId ?? undefined,
+      workCenterId: w.workCenterId ?? undefined,
+      dimensions: laneId ? { workCenter: { id: laneId, label: laneId } } : undefined,
+      startUtc: w.startUtc ?? '',
+      endUtc: w.endUtc ?? '',
+      blockKind: kind,
+      locked: true,
+      hasConflict: false,
+      conflictReason: null,
+    }
+  })
+
+  const calendars: ScheduleCalendar[] = (plan.calendars ?? []).map((c) => ({
+    calendarId: c.calendarId ?? '',
+    resourceIds: [...(c.resourceIds ?? [])],
+    workCenterIds: [...(c.workCenterIds ?? [])],
+    shiftWindows: (c.shiftWindows ?? []).map((w) => ({
+      startUtc: w.startUtc ?? '',
+      endUtc: w.endUtc ?? '',
+      shiftCode: w.shiftCode ?? '',
+    })),
+  }))
 
   return {
-    tasks: [...orderNodes, ...operations],
+    tasks: [...orderNodes, ...operations, ...blocks],
+    calendars: calendars.length ? calendars : undefined,
     links,
     resources: [...new Set(operations.map((o) => o.resourceId).filter(Boolean) as string[])].map(
       (id) => ({ id, text: id }),
@@ -136,6 +226,8 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     })),
     conflicts,
     unscheduled,
+    materialRisks,
+    equipmentRisks,
     changes,
     groupDimensions: operations.some((o) => o.dimensions?.workCenter)
       ? [{ key: 'workCenter', label: '工作中心' }]
@@ -149,10 +241,13 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
   }
 }
 
-/** 锁定的工序 → assignment 契约,供重预览回传(order 分组父节点不回传)。 */
+/**
+ * 锁定的工序 → assignment 契约,供重预览回传(order 分组父节点不回传)。
+ * 资源时间块虽然也是 locked(不可拖拽),但它不是工序,绝不能当成锁定项回传给排程服务。
+ */
 export function toLockedAssignments(model: ScheduleModel): ScheduleAssignmentContract[] {
   return model.tasks
-    .filter((t) => t.type === 'operation' && t.locked)
+    .filter((t) => t.type === 'operation' && t.locked && !t.blockKind)
     .map((t) => ({
       assignmentId: t.id,
       orderId: t.orderId,

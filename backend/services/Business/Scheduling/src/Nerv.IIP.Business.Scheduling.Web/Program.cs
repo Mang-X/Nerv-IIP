@@ -12,8 +12,10 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -37,11 +39,11 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "MasterData:BaseUrl", "http://localhost:5107");
-    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "ProductEngineering:BaseUrl", "http://localhost:5108");
-    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Mes:BaseUrl", "http://localhost:5111");
-    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
-    var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Maintenance:BaseUrl", "http://localhost:5117");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+    var mesBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var maintenanceBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Maintenance:BaseUrl", "http://localhost:5117");
     builder.Services.AddHttpClient<ISchedulingProblemMasterDataClient, HttpSchedulingProblemMasterDataClient>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -87,11 +89,23 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
-    builder.Services.AddSingleton<FiniteCapacityScheduler>();
+    // 物料约束口径:默认软约束(缺料可排 + 物料风险标记),需要严格口径的环境可配置成 Hard。
+    // 非法值在启动期直接失败,不静默回落到更宽松的一侧。
+    var materialConstraintMode = SchedulingMaterialConstraintModeResolver.Resolve(
+        builder.Configuration[SchedulingMaterialConstraintModeResolver.ConfigurationKey]);
+    // 质检口径:默认软约束(工艺路线上标了要检的工序照排 + 预警级冲突),真实下达的质量封锁仍硬阻。
+    var qualityConstraintMode = SchedulingQualityConstraintModeResolver.Resolve(
+        builder.Configuration[SchedulingQualityConstraintModeResolver.ConfigurationKey]);
+    builder.Services.AddSingleton(new FiniteCapacityScheduler(materialConstraintMode, qualityConstraintMode));
+    // 设备状态未知口径:默认软约束(无快照/快照过期照排 + 设备数据风险标记),真实停机/维护仍硬阻。
+    builder.Services.AddSingleton(new SchedulingEquipmentUnknownModeOption(
+        SchedulingEquipmentUnknownModeResolver.Resolve(
+            builder.Configuration[SchedulingEquipmentUnknownModeResolver.ConfigurationKey])));
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddSingleton(new OrderUrgencyRetentionWorkerIdentity(
         $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"));
     builder.Services.AddHttpClient<IOrderUrgencyArchiveStore, HttpOrderUrgencyArchiveStore>(client =>
@@ -191,6 +205,47 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
+    // 《工厂世界观设定集》L1 背景历史（排产域侧）。校验器 fail-closed：对账不平就让启动失败。
+    var worldHistoryEnabled = WorldHistoryConfiguration.IsEnabled(builder.Configuration);
+    if (worldHistoryEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "LeaderDemo:History:Enabled=true is only allowed for BusinessScheduling in Development.");
+    }
+
+    if (worldHistoryEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history scheduling seed completed: {Problems} problem snapshots, {Plans} schedule plans, " +
+            "{Assignments} assignments, {ResourceLoads} resource loads, {Conflicts} conflicts, " +
+            "{Unscheduled} unscheduled operations, {Urgencies} order urgency snapshots; " +
+            "validator checked {CheckedPlans} plans ({Generated} generated / {Released} released / " +
+            "{Superseded} superseded / {Revoked} revoked) and {CheckedUrgencies} urgency snapshots.",
+            report.ScheduleProblemsWritten,
+            report.SchedulePlansWritten,
+            report.AssignmentsWritten,
+            report.ResourceLoadsWritten,
+            report.ConflictsWritten,
+            report.UnscheduledOperationsWritten,
+            report.OrderUrgencySnapshotsWritten,
+            report.Validation.PlansChecked,
+            report.Validation.GeneratedChecked,
+            report.Validation.ReleasedChecked,
+            report.Validation.SupersededChecked,
+            report.Validation.RevokedChecked,
+            report.Validation.UrgencySnapshotsChecked);
+        foreach (var line in report.Validation.Sample)
+        {
+            app.Logger.LogInformation("World-history scheduling sample: {Sample}", line);
+        }
+    }
+
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
     app.UseStaticFiles();
@@ -229,17 +284,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(IConfiguration configuration, string configurationKey, string fallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    return new Uri(fallback, UriKind.Absolute);
 }
 
 #pragma warning disable S1118

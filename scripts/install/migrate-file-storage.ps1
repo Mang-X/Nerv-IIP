@@ -57,18 +57,7 @@ $validationLogDirectory = New-ScriptAutomationLogDirectory -Name 'file-storage-m
 $summary = "releaseId=$ReleaseId service=file-storage dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=database-current migrationTo=repository-latest seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
 Write-Diagnostic $summary
 
-if ($ValidateOnly) {
-    Write-Diagnostic 'FileStorage migration configuration validation completed; no database command was executed.'
-    exit 0
-}
-
 $project = 'backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Nerv.IIP.FileStorage.Infrastructure.csproj'
-$restore = Invoke-DotNet `
-    -Arguments @('tool', 'restore') `
-    -WorkingDirectory $root `
-    -TimeoutSeconds 300 `
-    -Name "file-storage-migration-tool-restore-$ReleaseId"
-
 $migrationArguments = @(
     'tool', 'run', 'dotnet-ef',
     'database', 'update',
@@ -76,10 +65,28 @@ $migrationArguments = @(
     '--context', 'ApplicationDbContext',
     '--connection', $connectionString
 )
-$connectionArgumentIndex = $migrationArguments.IndexOf($connectionString)
+$connectionArgumentIndex = -1
+for ($index = 0; $index -lt $migrationArguments.Count; $index++) {
+    if ([string]::Equals([string]($migrationArguments[$index]), [string]($connectionString), [StringComparison]::Ordinal)) {
+        $connectionArgumentIndex = $index
+        break
+    }
+}
 if ($connectionArgumentIndex -lt 0) {
     throw 'FileStorage migration connection argument could not be marked as sensitive.'
 }
+
+if ($ValidateOnly) {
+    Write-Diagnostic 'FileStorage migration configuration validation completed; no database command was executed.'
+    exit 0
+}
+
+$restore = Invoke-DotNet `
+    -Arguments @('tool', 'restore') `
+    -WorkingDirectory $root `
+    -TimeoutSeconds 300 `
+    -Name "file-storage-migration-tool-restore-$ReleaseId"
+
 $migration = Invoke-DotNet `
     -Arguments $migrationArguments `
     -WorkingDirectory $root `

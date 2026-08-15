@@ -7,11 +7,78 @@ import type {
   BusinessConsoleTelemetryHistoryItem,
 } from '@nerv-iip/api-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, nextTick, reactive, shallowRef, type Ref } from 'vue'
+import { computed, nextTick, reactive, ref, shallowRef, type Ref } from 'vue'
 
 import EquipmentAlarmsPage from './alarms.vue'
 import EquipmentDetailPage from './[deviceAssetId].vue'
 import EquipmentIndexPage from './index.vue'
+
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+const readFaceState = vi.hoisted(() => ({
+  catalogResolved: true,
+  activeAlarms: [] as Array<Record<string, unknown>>,
+  availabilityWindows: [] as Array<Record<string, unknown>>,
+  currentDeviceAssetId: 'DEV-OIL-01',
+  workOrders: undefined as Array<Record<string, unknown>> | undefined,
+  spareParts: undefined as Array<Record<string, unknown>> | undefined,
+}))
+
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: (code?: string | null) =>
+        code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
+        readFaceState.catalogResolved
+          ? '五轴加工中心'
+          : undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: (code?: string | null) =>
+        code?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) &&
+        readFaceState.catalogResolved
+          ? '精加工一线'
+          : undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
 
 const routeState = vi.hoisted(() => ({
   route: undefined as { params: { deviceAssetId: string } } | undefined,
@@ -22,10 +89,20 @@ const equipmentComposableState = vi.hoisted(() => ({
   refreshDevice: vi.fn(),
 }))
 
-// 看板列表读面；按用例改写以驱动状态构成环的分段。
+// 看板列表读面；按用例改写以驱动状态构成环的分段与四态（idle/loading/error/ready）。
 const overviewState = vi.hoisted(() => ({
   activeBlocks: [] as Array<Record<string, unknown>>,
   devices: [] as Array<Record<string, unknown>>,
+  effectiveCount: 2,
+  overviewError: undefined as unknown,
+  rosterError: undefined as unknown,
+  rosterTotal: 2,
+  state: 'ready' as 'idle' | 'loading' | 'error' | 'ready',
+}))
+
+const overviewMocks = vi.hoisted(() => ({
+  refreshDeviceRoster: vi.fn(),
+  refreshOverview: vi.fn(),
 }))
 
 const authState = vi.hoisted(() => ({
@@ -242,11 +319,11 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     unshelveAlarm: vi.fn(),
   }),
   useBusinessEquipmentDevice: () => ({
-    activeAlarms: computed(() => []),
-    availabilityWindows: computed(() => []),
+    activeAlarms: computed(() => readFaceState.activeAlarms),
+    availabilityWindows: computed(() => readFaceState.availabilityWindows),
     device: computed(() => ({
       currentState: {
-        deviceAssetId: 'DEV-OIL-01',
+        deviceAssetId: readFaceState.currentDeviceAssetId,
         currentState: 'running',
         isSourceFresh: true,
       },
@@ -258,14 +335,39 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
   }),
   useBusinessEquipmentOverview: () => ({
     activeBlocks: computed(() => overviewState.activeBlocks),
+    contextReady: computed(() => overviewState.state !== 'idle'),
+    deviceRosterError: computed(() => overviewState.rosterError),
+    deviceRosterTotal: computed(() => overviewState.rosterTotal),
     devices: computed(() => overviewState.devices),
+    effectiveDeviceAssetIdCount: computed(() => overviewState.effectiveCount),
     filters: {
       deviceAssetIds: 'DEV-OIL-01,DEV-PACK-01',
     },
-    overviewError: shallowRef(),
-    overviewPending: shallowRef(false),
-    refreshOverview: vi.fn(),
+    overviewError: computed(() => overviewState.overviewError),
+    overviewPending: computed(() => overviewState.state === 'loading'),
+    overviewState: computed(() => overviewState.state),
+    refreshDeviceRoster: overviewMocks.refreshDeviceRoster,
+    refreshOverview: overviewMocks.refreshOverview,
   }),
+}))
+
+// 级联范围选择 composable：真实实现依赖主数据 facade（pinia + query），页面测试给可控桩。
+vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+  useEquipmentScopeSelection: (initial?: { workshop?: string; line?: string; device?: string }) => {
+    const scope = ref({
+      workshop: initial?.workshop ?? '',
+      line: initial?.line ?? '',
+      device: initial?.device ?? '',
+    })
+    return {
+      scope,
+      levels: computed(() => []),
+      devicesInScope: computed(() => []),
+      scopeLabel: computed(() => '全厂'),
+      scopePending: shallowRef(false),
+      selectedDevice: computed(() => undefined),
+    }
+  },
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -425,13 +527,13 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     refreshReliability: vi.fn(),
   }),
   useMaintenanceSpareParts: () => ({
-    spareParts: computed(() => reviewFixture.spareParts),
+    spareParts: computed(() => readFaceState.spareParts ?? reviewFixture.spareParts),
     sparePartsError: shallowRef(),
     sparePartsPending: shallowRef(false),
     sparePartsTotal: computed(() => 1),
   }),
   useMaintenanceWorkOrders: () => ({
-    workOrders: computed(() => reviewFixture.workOrders),
+    workOrders: computed(() => readFaceState.workOrders ?? reviewFixture.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
     workOrdersTotal: computed(() => 1),
@@ -471,20 +573,31 @@ describe('equipment pages', () => {
     runtimeHoursState.hasSamples = true
     overviewState.devices = []
     overviewState.activeBlocks = []
+    overviewState.effectiveCount = 2
+    overviewState.overviewError = undefined
+    overviewState.rosterError = undefined
+    overviewState.rosterTotal = 2
+    overviewState.state = 'ready'
+    overviewMocks.refreshDeviceRoster.mockClear()
+    overviewMocks.refreshOverview.mockClear()
     authState.permissionCodes = [
       'business.iiot.alarms.read',
       'business.iiot.alarms.write',
       'business.iiot.device-control.read',
       'business.iiot.device-control.write',
     ]
+    readFaceState.catalogResolved = true
+    readFaceState.activeAlarms = []
+    readFaceState.availabilityWindows = []
+    readFaceState.currentDeviceAssetId = 'DEV-OIL-01'
+    readFaceState.workOrders = undefined
+    readFaceState.spareParts = undefined
   })
 
-  it('does not expose organization or environment context on equipment pages', () => {
+  it('does not expose internal organization or environment identifiers on equipment pages', () => {
     for (const page of [EquipmentIndexPage, EquipmentAlarmsPage, EquipmentDetailPage]) {
       const wrapper = mount(page, { global: { stubs } })
 
-      expect(wrapper.text()).not.toContain('组织')
-      expect(wrapper.text()).not.toContain('环境')
       expect(wrapper.html()).not.toContain('organizationId')
       expect(wrapper.html()).not.toContain('environmentId')
     }
@@ -525,6 +638,54 @@ describe('equipment pages', () => {
     expect(alarmCard!.text()).toContain('查看报警')
   })
 
+  it('renders a read failure as an error block with retry, never as 0 devices', async () => {
+    overviewState.state = 'error'
+    overviewState.rosterError = new Error('roster boom')
+
+    const wrapper = mount(EquipmentIndexPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('设备台账取不到，当前无法判断在册设备与运行情况。')
+    expect(wrapper.text()).toContain('设备清单取不到，无法判断有哪些设备、各自什么状态。')
+    expect(wrapper.text()).toContain('阻塞窗口取不到，无法判断当前是否有设备被阻塞。')
+    expect(wrapper.text()).not.toContain('0 台设备')
+    expect(wrapper.text()).not.toContain('暂无设备运行记录')
+    expect(wrapper.text()).not.toContain('当前没有设备阻塞窗口')
+    expect(wrapper.find('.nv-ring-card').exists()).toBe(false)
+
+    const retry = wrapper.findAll('button').find((button) => button.text().trim() === '重试')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    expect(overviewMocks.refreshDeviceRoster).toHaveBeenCalled()
+    expect(overviewMocks.refreshOverview).toHaveBeenCalled()
+  })
+
+  it('separates not-yet-queried and loading from a genuine zero-device fleet', () => {
+    overviewState.state = 'idle'
+    const idle = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(idle.text()).toContain('业务上下文未就绪，设备运行数据尚未查询。')
+    expect(idle.text()).not.toContain('暂无设备运行记录')
+    expect(idle.text()).not.toContain('0 台设备')
+
+    overviewState.state = 'loading'
+    const loading = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(loading.text()).toContain('正在读取设备台账与运行状态…')
+    expect(loading.text()).not.toContain('0 台设备')
+
+    overviewState.state = 'ready'
+    const ready = mount(EquipmentIndexPage, { global: { stubs } })
+    expect(ready.text()).toContain('0 台设备')
+    expect(ready.text()).toContain('暂无设备运行记录')
+  })
+
+  it('states the 50-device query cap instead of silently truncating the fleet', () => {
+    overviewState.rosterTotal = 71
+    overviewState.effectiveCount = 50
+
+    const wrapper = mount(EquipmentIndexPage, { global: { stubs } })
+
+    expect(wrapper.text()).toContain('范围内共 71 台设备，当前看板展示前 50 台。')
+  })
+
   it('updates the device filter and refreshes when route device id changes', async () => {
     mount(EquipmentDetailPage, { global: { stubs } })
 
@@ -547,21 +708,104 @@ describe('equipment pages', () => {
     expect(equipmentHealthState.refreshHealth).toHaveBeenCalledTimes(1)
   })
 
-  it('renders telemetry and maintenance context with source wording on equipment detail', () => {
+  it('renders equipment indicators and maintenance facts without implementation-stage copy', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
-    expect(wrapper.text()).toContain('遥测深层上下文')
+    expect(wrapper.text()).toContain('设备运行指标')
     expect(wrapper.text()).toContain('OEE = 可用率 × 性能率 × 质量率')
     expect(wrapper.text()).toContain('82.0%')
     expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
-    expect(wrapper.text()).toContain('维护与可靠性上下文')
-    expect(wrapper.text()).toContain('mwo-1')
+    expect(wrapper.text()).toContain('维护与可靠性')
+    expect(wrapper.text()).toContain('维修工单')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
     expect(wrapper.text()).toContain('insp-6')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
-    expect(wrapper.text()).toContain('正式页面')
+    expect(wrapper.text()).not.toContain('正式页面')
+    expect(wrapper.text()).not.toContain('Ops')
+  })
+
+  it('equipment detail read-face guard：目录可解析时显示设备、来源与报警编号', () => {
+    const deviceId = '019fbb41-1111-7111-8111-111111111111'
+    const alarmId = '019fbb41-2222-7222-8222-222222222222'
+    const workOrderId = '019fbb41-3333-7333-8333-333333333333'
+    routeState.route!.params.deviceAssetId = deviceId
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: deviceId })
+    readFaceState.currentDeviceAssetId = deviceId
+    readFaceState.activeAlarms = [{ alarmEventId: alarmId, alarmCode: 'ALM-CNC-008' }]
+    readFaceState.availabilityWindows = [
+      {
+        availabilityStatus: 'unavailable',
+        reasonCode: 'maintenance.pm',
+        workCenterId: '019fbb41-4444-7444-8444-444444444444',
+        sourceReferenceId: workOrderId,
+        sourceReferenceLabel: '计划保养 · PM-CNC-008',
+      },
+    ]
+    readFaceState.workOrders = [
+      {
+        workOrderId,
+        deviceAssetId: deviceId,
+        sourceAlarmId: alarmId,
+        status: 'open',
+        openedAtUtc: '2026-08-01T01:00:00Z',
+      },
+    ]
+    readFaceState.spareParts = [
+      {
+        sparePartLineId: 'sp-readable',
+        workOrderId,
+        deviceAssetId: deviceId,
+        skuCode: 'BEARING-1',
+      },
+    ]
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('五轴加工中心')
+    expect(visibleText).toContain('精加工一线')
+    expect(visibleText).toContain('计划保养 · PM-CNC-008')
+    expect(visibleText).toContain('ALM-CNC-008')
+    expect(visibleText).toContain('维修工单')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
+  })
+
+  it('equipment detail read-face guard：目录与关联解析失败时显示占位符且不泄露 ID', () => {
+    const deviceId = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    const alarmId = '019fbb41-bbbb-7bbb-8bbb-bbbbbbbbbbbb'
+    const workOrderId = '019fbb41-cccc-7ccc-8ccc-cccccccccccc'
+    routeState.route!.params.deviceAssetId = deviceId
+    equipmentComposableState.deviceFilters = reactive({ deviceAssetId: deviceId })
+    readFaceState.catalogResolved = false
+    readFaceState.currentDeviceAssetId = deviceId
+    readFaceState.activeAlarms = []
+    readFaceState.availabilityWindows = [
+      {
+        availabilityStatus: 'unavailable',
+        reasonCode: 'maintenance.pm',
+        workCenterId: deviceId,
+        sourceReferenceId: workOrderId,
+      },
+    ]
+    readFaceState.workOrders = [
+      {
+        workOrderId,
+        deviceAssetId: deviceId,
+        sourceAlarmId: alarmId,
+        status: 'open',
+        openedAtUtc: '2026-08-01T01:00:00Z',
+      },
+    ]
+    readFaceState.spareParts = [
+      { sparePartLineId: 'sp-hidden', workOrderId, deviceAssetId: deviceId, skuCode: 'BEARING-1' },
+    ]
+
+    const visibleText = mount(EquipmentDetailPage, { global: { stubs } }).text()
+    expect(visibleText).toContain('—')
+    expect(visibleText).toContain('维修工单')
+    expect(visibleText).not.toMatch(UUID_PATTERN)
+    expect(visibleText).not.toContain('user-emp-')
   })
 
   it('renders each OEE factor as a gap-to-target bar and OEE itself as multiplied facets', () => {
@@ -690,7 +934,7 @@ describe('equipment pages', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     expect(wrapper.text()).toContain('设备控制')
-    expect(wrapper.text()).toContain('控制命令历史')
+    expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.text()).toContain('spindle.speed')
     expect(wrapper.find('[data-testid="device-control-sheet"]').exists()).toBe(true)
   })
@@ -705,7 +949,7 @@ describe('equipment pages', () => {
     const wrapper = mount(EquipmentDetailPage, { global: { stubs } })
 
     // The control-command history section still renders (read-scoped), but the dispatch action does not.
-    expect(wrapper.text()).toContain('控制命令历史')
+    expect(wrapper.text()).toContain('控制命令记录')
     expect(wrapper.findAll('button').some((b) => b.text().includes('设备控制'))).toBe(false)
   })
 })

@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Testing\Nerv.IIP.Testing.PostgreSql\Nerv.IIP.Testing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.AppHub.Web\Nerv.IIP.AppHub.Web.csproj" />
   </ItemGroup>

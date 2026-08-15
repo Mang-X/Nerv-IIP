@@ -4,10 +4,76 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import OperationTasksPage from './operation-tasks.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const state = vi.hoisted(() => ({ filters: undefined as unknown as Record<string, unknown> }))
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
-vi.mock('@nerv-iip/business-core', () => ({ openDownloadGrantBlob: vi.fn() }))
+// 派工弹窗的技能筛选改取技能目录主数据（中文 skillName）；目录不是本用例被测对象。
+vi.mock('@/composables/usePromotedCatalogs', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkillCatalog: () => ({
+      skills: computed(() => [{ skillCode: 'cnc-operation', skillName: 'CNC 操作' }]),
+      skillsPending: computed(() => false),
+    }),
+  }
+})
+
+vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  useRouter: () => ({ push: vi.fn() }),
+}))
+vi.mock('@nerv-iip/business-core', () => ({
+  openDownloadGrantBlob: vi.fn(),
+  statusActionGate: () => ({ executable: true, legalNoop: false }),
+}))
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref('20') }),
 }))
@@ -15,16 +81,41 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   useMesDisplayNames: () => ({ resolveWorkCenter: (v?: string | null) => v ?? '无' }),
 }))
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({ resources: computed(() => []) }),
+  useBusinessMasterDataResources: () => ({
+    resources: computed(() => []),
+    resourcesPending: shallowRef(false),
+  }),
+  useBusinessSkus: () => ({ skus: computed(() => []) }),
+  useBusinessWorkers: () => ({
+    workers: computed(() => []),
+    workersPending: shallowRef(false),
+    filters: reactive({}),
+  }),
 }))
 vi.mock('@/composables/useBusinessMes', async () => {
   state.filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
   return {
     makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+    // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
+    useMesWorkScopeSelection: () => ({
+      scopeOptions: ref([]),
+      scopeSelectionValue: ref(undefined),
+      scopeReady: ref(true),
+      scopeMessage: ref(''),
+      scopePending: ref(false),
+      scopeUnavailable: ref(false),
+      selectedScope: ref(undefined),
+      principalIdentity: ref('principal-test'),
+      requireSelectedScope: vi.fn(),
+    }),
     useMesProductionReporting: () => ({
       recordProductionReport: vi.fn(),
       recordProductionReportError: shallowRef(undefined),
       recordProductionReportPending: shallowRef(false),
+      reportScopeMessage: computed(() => ''),
+      reportScopePending: shallowRef(false),
+      reportScopeReady: computed(() => true),
+      refreshProductionReportState: vi.fn(),
     }),
     describeMesReadinessReason: (v: string) => ({ code: v, label: v, nextStep: '' }),
     useMesOperationTasks: () => ({
@@ -33,7 +124,28 @@ vi.mock('@/composables/useBusinessMes', async () => {
       operationTasksError: shallowRef(undefined),
       operationTasksPending: shallowRef(false),
       operationTasksTotal: computed(() => 0),
+      operationListScope: computed(() => ({
+        kind: 'work-center',
+        id: 'WC-A',
+        displayName: '精加工一线',
+      })),
+      operationListScopeMessage: computed(() => ''),
+      operationListScopeReady: computed(() => true),
+      operationScopeMessage: computed(() => ''),
+      operationScopePending: shallowRef(false),
+      operationScopeReady: computed(() => true),
+      operationTasksLastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
+      operationTasksHasSuccessfulResponse: computed(() => true),
+      operationTasksHasFailedResponse: computed(() => false),
       refreshOperationTasks: vi.fn(),
+      startOperationTask: vi.fn(),
+      pauseOperationTask: vi.fn(),
+      resumeOperationTask: vi.fn(),
+      completeOperationTask: vi.fn(),
+    }),
+    useMesDispatchTasks: () => ({
+      assignDispatchTask: vi.fn(),
+      assignDispatchTaskPending: shallowRef(false),
     }),
     useMesCurrentOperationSops: () => ({
       filters: reactive({}),
@@ -78,6 +190,8 @@ describe('operation-tasks 排程已失效 quick filter', () => {
   it('binds aria-pressed to the active state and toggles it on click', async () => {
     const wrapper = mountPage()
     await flushPromises()
+
+    expect(wrapper.text()).toContain('当前主体授权作业范围 · 精加工一线（工作中心）')
 
     const button = wrapper.findAll('button').find((b) => b.text().includes('排程已失效'))!
     expect(button).toBeTruthy()

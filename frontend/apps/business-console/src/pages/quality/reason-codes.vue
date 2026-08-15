@@ -7,6 +7,11 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
+import {
+  QUALITY_DISPOSITION_OPTIONS,
+  qualityDispositionLabel,
+  useQualityReasonCatalog,
+} from '@/composables/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
@@ -26,6 +31,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvCombobox,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -42,7 +48,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -66,6 +72,9 @@ const {
   updateReason,
   updatePending,
 } = useQualityReasonCodes()
+
+// 原因组建议：这是目录自身的维护页，允许开新组，所以给已有组作建议而不是封闭选项。
+const { reasonGroupSuggestions } = useQualityReasonCatalog()
 
 // 严重度常量：value 存英文枚举，label 显示中文。
 const severityOptions = [
@@ -104,9 +113,7 @@ watch(
   { immediate: true },
 )
 
-const listErrorMessage = computed(() =>
-  reasonsError.value instanceof Error ? reasonsError.value.message : '',
-)
+const listErrorMessage = computed(() => inlineErrorMessage(reasonsError.value))
 
 const columns: NvDataTableColumn<QualityReasonItem>[] = [
   { key: 'reasonCode', header: '编码', width: 'w-32' },
@@ -200,7 +207,7 @@ async function submitForm() {
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存质量原因失败', error, '保存质量原因失败，请稍后重试。')
   }
 }
 
@@ -221,7 +228,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用质量原因失败', error, '停用质量原因失败，请稍后重试。')
   }
 }
 </script>
@@ -294,10 +301,12 @@ async function confirmArchive() {
                   <NvFieldLabel for="reason-group"
                     >原因组 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <NvCombobox
                     id="reason-group"
                     v-model="form.groupName"
-                    placeholder="例如：外观缺陷"
+                    :suggestions="reasonGroupSuggestions"
+                    placeholder="选择已有原因组，或输入新组"
+                    empty-text="还没有原因组，直接输入即可新建"
                   />
                 </NvField>
                 <NvField :data-invalid="showErrors && !severityValid">
@@ -321,11 +330,30 @@ async function confirmArchive() {
               <NvFieldGroup class="grid gap-3">
                 <NvField>
                   <NvFieldLabel for="reason-disposition">默认处置</NvFieldLabel>
-                  <NvInput
-                    id="reason-disposition"
-                    v-model="form.defaultDisposition"
-                    placeholder="例如：返工 / 报废 / 让步接收"
-                  />
+                  <div class="flex items-center gap-2">
+                    <!-- 处置是四选一的固定集合，与不合格品处置提交同一套码值。 -->
+                    <NvSelect v-model="form.defaultDisposition">
+                      <NvSelectTrigger id="reason-disposition" class="max-w-xs"
+                        ><NvSelectValue placeholder="选择默认处置"
+                      /></NvSelectTrigger>
+                      <NvSelectContent>
+                        <NvSelectItem
+                          v-for="option in QUALITY_DISPOSITION_OPTIONS"
+                          :key="option.value"
+                          :value="option.value"
+                          >{{ option.label }}</NvSelectItem
+                        >
+                      </NvSelectContent>
+                    </NvSelect>
+                    <NvButton
+                      v-if="form.defaultDisposition"
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      @click="form.defaultDisposition = ''"
+                      >不设置</NvButton
+                    >
+                  </div>
                 </NvField>
               </NvFieldGroup>
 
@@ -376,7 +404,9 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-defaultDisposition="{ row }">
-        <span v-if="row.defaultDisposition">{{ row.defaultDisposition }}</span>
+        <span v-if="row.defaultDisposition">{{
+          qualityDispositionLabel(row.defaultDisposition)
+        }}</span>
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">

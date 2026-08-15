@@ -50,17 +50,20 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         for (var batchStart = 0; batchStart < facts.Count; batchStart += BatchSize)
         {
             var batch = facts.Skip(batchStart).Take(BatchSize).ToArray();
-            var existing = await LoadExistingTriggerKeysAsync(
+            var existing = await LoadExistingTasksAsync(
                 organizationId,
                 environmentId,
                 batch.Select(fact => fact.TriggerIdempotencyKey).ToArray(),
                 cancellationToken);
 
             var added = 0;
-            foreach (var fact in batch.Where(fact => !existing.Contains(fact.TriggerIdempotencyKey)))
+            foreach (var fact in batch)
             {
-                WriteInspectionChain(organizationId, environmentId, fact, plans[fact.PlanCode], counters);
-                added++;
+                if (!existing.ContainsKey(fact.TriggerIdempotencyKey))
+                {
+                    WriteInspectionChain(organizationId, environmentId, fact, plans[fact.PlanCode], counters);
+                    added++;
+                }
             }
 
             if (added > 0)
@@ -177,18 +180,16 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
     #endregion
 
-    private async Task<HashSet<string>> LoadExistingTriggerKeysAsync(
+    private async Task<Dictionary<string, InspectionTask>> LoadExistingTasksAsync(
         string organizationId,
         string environmentId,
         string[] triggerKeys,
         CancellationToken cancellationToken) =>
         (await dbContext.InspectionTasks
-            .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                 triggerKeys.Contains(x.TriggerIdempotencyKey))
-            .Select(x => x.TriggerIdempotencyKey)
             .ToArrayAsync(cancellationToken))
-        .ToHashSet(StringComparer.Ordinal);
+        .ToDictionary(x => x.TriggerIdempotencyKey, StringComparer.Ordinal);
 
     /// <summary>写一条历史检验链：任务 → （领取 → 检验记录）→（NCR 开单 → MRB 评审 → 处置 → 复检 → 关单）。</summary>
     private void WriteInspectionChain(
@@ -216,13 +217,31 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             fact.TriggerIdempotencyKey);
         dbContext.InspectionTasks.Add(task);
         counters.Tasks++;
-
         if (fact.Status == WorldHistoryInspectionStatus.Pending)
         {
+            if (WorldHistoryQualitySpec.ShouldPreAssignPendingTask(fact))
+            {
+                task.Assign(
+                    fact.InspectorUserId,
+                    null,
+                    task.Version,
+                    fact.CreatedAtUtc);
+            }
+
             return;
         }
 
-        task.Start(fact.InspectorUserId, fact.StartedAtUtc!.Value);
+        task.Assign(
+            fact.InspectorUserId,
+            null,
+            task.Version,
+            fact.CreatedAtUtc);
+
+        task.Claim(
+            fact.InspectorUserId,
+            [],
+            task.Version,
+            fact.StartedAtUtc!.Value);
         if (fact.Status == WorldHistoryInspectionStatus.InProgress)
         {
             return;
@@ -310,11 +329,12 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
             case WorldHistoryInspectionDisposition.Scrap:
                 // 报废关单引用库存报废流水 id——二期库存域会以同一 id 落一笔报废移动。
-                ncr.CompleteScrapDisposition(fact.ScrapMovementId!, fact.DefectQuantity);
+                // 关闭原因必须是界面可读的中文（NCR 详情页把 CloseReason 当必填展示）。
+                ncr.CompleteScrapDisposition(fact.ScrapMovementId!, fact.DefectQuantity, "报废处理完成，缺陷品已隔离报废出库", ClosureActor);
                 break;
 
             case WorldHistoryInspectionDisposition.ConditionalRelease:
-                ncr.CompleteConditionalReleaseDisposition(fact.DefectQuantity);
+                ncr.CompleteConditionalReleaseDisposition(fact.DefectQuantity, "让步接收放行，客户端确认可用", ClosureActor);
                 break;
 
             default:

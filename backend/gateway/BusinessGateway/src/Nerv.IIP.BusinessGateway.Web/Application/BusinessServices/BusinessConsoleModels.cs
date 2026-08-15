@@ -1,6 +1,8 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using FastEndpoints;
 using Nerv.IIP.Contracts.Coding;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
@@ -60,6 +62,227 @@ public sealed record BusinessConsoleResourceListResponse(
     bool Truncated = false,
     int? Limit = null);
 
+public sealed record BusinessConsoleSearchableDirectoryRequest(
+    [property: RouteParam] string DirectoryType,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? Keyword = null,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null,
+    [property: QueryParam] string? SkuCode = null,
+    [property: QueryParam] int PageIndex = 1,
+    [property: QueryParam] int PageSize = 20,
+    [property: QueryParam] string RankingMode = "default");
+
+public sealed record BusinessConsoleSearchableDirectoryItem(
+    string Id,
+    string DisplayName,
+    string? Code,
+    string SourceService,
+    IReadOnlyDictionary<string, string?> Context);
+
+public sealed record BusinessConsoleSearchableDirectoryResponse(
+    string DirectoryType,
+    string Status,
+    string? ReasonCode,
+    IReadOnlyCollection<BusinessConsoleSearchableDirectoryItem> Items,
+    int Total,
+    string SourceService,
+    string AuthorityDirectoryType,
+    string RankingMode,
+    string RankingStatus,
+    string? RankingReasonCode,
+    string? FallbackOrdering,
+    string Ordering,
+    string OrderingExplanation)
+{
+    public static BusinessConsoleSearchableDirectoryResponse FromItems(
+        string directoryType,
+        IReadOnlyCollection<BusinessConsoleSearchableDirectoryItem> items,
+        int total,
+        string sourceService,
+        bool authorityConfigured = true,
+        string? authorityDirectoryType = null,
+        string rankingMode = "default")
+    {
+        var normalizedRankingMode = rankingMode.Trim().ToLowerInvariant();
+        var rankingAvailable = normalizedRankingMode == "default";
+        return new(
+            directoryType,
+            authorityConfigured ? "available" : "unavailable",
+            authorityConfigured ? null : "directory-authority-unconfigured",
+            authorityConfigured ? items : [],
+            authorityConfigured ? total : 0,
+            sourceService,
+            authorityDirectoryType ?? directoryType,
+            normalizedRankingMode,
+            rankingAvailable ? "applied" : "unavailable",
+            rankingAvailable ? null : "directory-ranking-facts-unavailable",
+            rankingAvailable ? null : "code-ascending",
+            "code-ascending",
+            rankingAvailable
+                ? "Deterministic owner-side ordering by stable business code; no ranking affects business decisions."
+                : "No authoritative usage or recommendation facts are available; candidates use the deterministic code-ascending fallback and do not affect business decisions.");
+    }
+}
+
+public sealed record BusinessConsoleInventoryDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DirectoryType,
+    string? Keyword = null,
+    string? SiteCode = null,
+    string? SkuCode = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleInventoryDirectoryItem(
+    string Id,
+    string Code,
+    string Display,
+    string DirectoryType,
+    string? SiteCode,
+    string? LocationCode,
+    string? SkuCode,
+    string? ParentCode,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleInventoryDirectoryResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryDirectoryItem> Items,
+    int Total,
+    int Skip,
+    int Take,
+    string Status,
+    string SourceKind,
+    DateTimeOffset AsOfUtc,
+    string? ReasonCode = null);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryItem(
+    string Id,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleMaintenanceReasonDirectoryResponse(
+    IReadOnlyCollection<BusinessConsoleMaintenanceReasonDirectoryItem> Items,
+    int Skip,
+    int Take,
+    int Total);
+
+public sealed record BusinessConsolePrincipalWorkContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PermissionCode,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMasterDataPrincipalWorkContextRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string UserId);
+
+public sealed record BusinessMasterDataWorkContextWorker(
+    string Id,
+    string UserId,
+    string EmployeeNo,
+    string Name,
+    string? DepartmentId,
+    string? DepartmentName,
+    string? JobTitle,
+    string EmploymentStatus);
+
+public sealed record BusinessMasterDataWorkContextTeam(
+    string Id,
+    string Name,
+    bool IsLeader,
+    string? WorkshopId,
+    string ShiftId);
+
+public sealed record BusinessMasterDataWorkContextReference(string Id, string Name);
+
+public sealed record BusinessMasterDataWorkContextCoveredWorkCenter(
+    string Id,
+    string Name,
+    string WorkshopId,
+    string Relationship);
+
+public sealed record BusinessMasterDataWorkContextShift(
+    string Id,
+    string Name,
+    TimeOnly StartsAt,
+    TimeOnly EndsAt,
+    bool CrossesMidnight);
+
+public sealed record BusinessMasterDataWorkContextScopeAncestor(string Kind, string Id);
+
+public sealed record BusinessMasterDataWorkContextCandidateScope(
+    string Kind,
+    string Id,
+    string DisplayName,
+    string Relationship,
+    IReadOnlyCollection<BusinessMasterDataWorkContextScopeAncestor> Ancestors);
+
+public sealed record BusinessMasterDataPrincipalWorkContextResponse(
+    string ResolutionStatus,
+    BusinessMasterDataWorkContextWorker? Worker,
+    IReadOnlyCollection<BusinessMasterDataWorkContextTeam> Teams,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCoveredWorkCenter> CoveredWorkCenters,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Workshops,
+    IReadOnlyCollection<BusinessMasterDataWorkContextShift> Shifts,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Sites,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> CandidateScopes,
+    IReadOnlyCollection<string> CandidateScopeKinds,
+    IReadOnlyCollection<string> Issues);
+
+public sealed record BusinessConsoleWorkScopeAuthorizationPath(
+    string SourceKind,
+    string SourceId,
+    string GrantScopeKind,
+    string GrantScopeId,
+    string Relationship,
+    IReadOnlyCollection<string> ApplicablePermissionCodes);
+
+public sealed record BusinessConsoleAuthorizedWorkScope(
+    string Kind,
+    string Id,
+    string DisplayName,
+    string Relationship,
+    IReadOnlyCollection<BusinessConsoleWorkScopeAuthorizationPath> AuthorizationPaths);
+
+public sealed record BusinessConsolePrincipalIdentity(
+    string Id,
+    string PrincipalType,
+    string? LoginName,
+    IReadOnlyCollection<AuthorizationRole> Roles);
+
+public sealed record BusinessConsolePrincipalWorkContextResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string ApplicablePermissionCode,
+    DateTimeOffset ResolvedAtUtc,
+    BusinessConsolePrincipalIdentity Principal,
+    string ResolutionStatus,
+    BusinessMasterDataWorkContextWorker? Worker,
+    IReadOnlyCollection<BusinessMasterDataWorkContextTeam> Teams,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCoveredWorkCenter> CoveredWorkCenters,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Workshops,
+    IReadOnlyCollection<BusinessMasterDataWorkContextShift> Shifts,
+    IReadOnlyCollection<BusinessMasterDataWorkContextReference> Sites,
+    IReadOnlyCollection<BusinessMasterDataWorkContextCandidateScope> CandidateScopes,
+    IReadOnlyCollection<string> CandidateScopeKinds,
+    IReadOnlyCollection<BusinessConsoleAuthorizedWorkScope> AuthorizedScopes,
+    IReadOnlyCollection<string> AvailableScopeKinds,
+    BusinessConsoleAuthorizedWorkScope? SelectedScope,
+    IReadOnlyCollection<string> Issues);
+
 public sealed record BusinessConsoleListResourcesRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -79,7 +302,8 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? DepartmentCode = null,
     string? ShiftCode = null,
     string? UserId = null,
-    string? SkillCode = null);
+    string? SkillCode = null,
+    string? WorkshopCode = null);
 
 public sealed record BusinessConsoleListDeviceAssetsRequest(
     string OrganizationId,
@@ -565,6 +789,32 @@ public sealed record BusinessConsoleMasterDataResourceRequest(
     string? CodeSet = null,
     DateOnly? EffectiveFrom = null);
 
+public sealed record BusinessMasterDataReferenceRequest(
+    string ResourceType,
+    string Code,
+    string? CodeSet = null);
+
+public sealed record BusinessMasterDataResolveReferencesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<BusinessMasterDataReferenceRequest> References);
+
+public sealed record BusinessMasterDataReferenceResponse(
+    string ResourceType,
+    string Code,
+    bool Exists,
+    bool Active,
+    string DisplayName,
+    string SnapshotVersion,
+    string DisabledReason,
+    string? DeviceAssetId = null,
+    string? CanonicalCode = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
+
+public sealed record BusinessMasterDataResolveReferencesResponse(
+    IReadOnlyCollection<BusinessMasterDataReferenceResponse> References);
+
 public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -731,7 +981,8 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? DeviceAssetId = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,
@@ -963,6 +1214,131 @@ public sealed record BusinessConsoleInventoryExpiryAlertLineResponse(
     string? CountBlockReasonCode = null,
     string? CountBlockReason = null);
 
+public sealed record BusinessConsoleInventoryMovementListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    string? MovementType = null,
+    string? SourceService = null,
+    string? SourceDocumentId = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryMovementListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryMovementLineResponse> Items,
+    int TotalCount = 0,
+    decimal InboundQuantityTotal = 0m,
+    decimal OutboundQuantityTotal = 0m,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryMovementLineResponse(
+    string MovementId,
+    string MovementType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    DateTime PostedAtUtc,
+    decimal? UnitCost = null,
+    decimal? MovementAmount = null);
+
+public sealed record BusinessConsoleInventoryCountTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? CountTaskCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryCountTaskLineResponse> Items,
+    int TotalCount = 0,
+    int OpenCount = 0,
+    int PendingApprovalCount = 0,
+    int ConfirmedCount = 0,
+    int RecountRequiredCount = 0,
+    int CancelledCount = 0,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountTaskLineResponse(
+    string CountTaskId,
+    string CountTaskCode,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    long ExpectedLedgerVersion,
+    decimal? CountedQuantity,
+    decimal? VarianceQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? CountTaskCode = null,
+    string? SkuCode = null,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentListResponse(
+    IReadOnlyCollection<BusinessConsoleInventoryCountAdjustmentLineResponse> Items,
+    int TotalCount = 0,
+    int PendingApprovalCount = 0,
+    int PostedCount = 0,
+    int VoidedCount = 0,
+    decimal VarianceAmountTotal = 0m,
+    int Page = 1,
+    int PageSize = 50);
+
+public sealed record BusinessConsoleInventoryCountAdjustmentLineResponse(
+    string AdjustmentId,
+    string CountTaskCode,
+    string IdempotencyKey,
+    string? MovementId,
+    string? ApprovalChainId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal CountedQuantity,
+    decimal VarianceQuantity,
+    decimal VarianceAmount,
+    string Status,
+    DateTime? ConfirmedAtUtc);
+
 public sealed record BusinessConsolePostStockMovementRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -981,12 +1357,17 @@ public sealed record BusinessConsolePostStockMovementRequest(
     string OwnerType,
     string? OwnerId,
     decimal Quantity,
-    bool AllowExpiredStock = false);
+    bool AllowExpiredStock = false,
+    string? TransferInSiteCode = null,
+    string? TransferInLocationCode = null,
+    decimal? TransferInQuantity = null);
 
 public sealed record BusinessConsolePostStockMovementResponse(
     string MovementId,
     decimal OnHandQuantity,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    string? TransferInMovementId = null,
+    decimal? TransferInOnHandQuantity = null);
 
 public sealed record BusinessConsoleCreateStockCountTaskRequest(
     string OrganizationId,
@@ -1045,7 +1426,9 @@ public sealed record BusinessConsoleQualityItem(
     string? BatchNo,
     string? SerialNo,
     int? AttemptNumber = null,
-    string? ReinspectionOfInspectionRecordId = null);
+    string? ReinspectionOfInspectionRecordId = null,
+    // NCR 关单审计事实：closed 行必有关闭原因（界面必填字段），非 NCR 行恒为 null。
+    string? CloseReason = null);
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
@@ -1165,6 +1548,171 @@ public sealed record BusinessConsoleQualityProcessCapabilityResponse(
     decimal? Cp,
     decimal? Cpk);
 
+// ── 计量器具台账 / 校准记录（三期读面）───────────────────────────────────────────────
+public sealed record BusinessConsoleQualityMeasuringDeviceListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? DeviceType = null,
+    string? Status = null,
+    string? CalibrationState = null,
+    string? Keyword = null,
+    int WarningDays = 7,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityMeasuringDeviceItem(
+    string MeasuringDeviceId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceCode,
+    string DeviceType,
+    string Accuracy,
+    int CalibrationIntervalDays,
+    string Status,
+    DateTimeOffset? LastCalibratedAtUtc,
+    DateTimeOffset CalibrationDueAtUtc,
+    string CalibrationState,
+    int DaysUntilDue,
+    int CalibrationRecordCount,
+    string? LatestCalibrationNo,
+    string? LatestCalibrationProvider);
+
+public sealed record BusinessConsoleQualityMeasuringDeviceListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityMeasuringDeviceItem> Items,
+    int Total,
+    int CurrentCount,
+    int WarningCount,
+    int OverdueCount,
+    int UnavailableCount);
+
+public sealed record BusinessConsoleQualityCalibrationRecordListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? MeasuringDeviceId = null,
+    string? Keyword = null,
+    DateTimeOffset? CalibratedFromUtc = null,
+    DateTimeOffset? CalibratedToUtc = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityCalibrationRecordItem(
+    string CalibrationRecordId,
+    string MeasuringDeviceId,
+    string DeviceCode,
+    string DeviceType,
+    string CalibrationNo,
+    DateTimeOffset CalibratedAtUtc,
+    string CalibrationProvider,
+    string? CertificateFileId,
+    int CalibrationIntervalDays,
+    DateTimeOffset NextCalibrationDueAtUtc);
+
+public sealed record BusinessConsoleQualityCalibrationRecordListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityCalibrationRecordItem> Items,
+    int Total);
+
+// ── CAPA 台账（三期读面）─────────────────────────────────────────────────────────────
+public sealed record BusinessConsoleQualityCapaListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? OwnerUserId = null,
+    string? SourceNcrId = null,
+    bool? OverdueOnly = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityCapaDetailRequest(
+    [property: RouteParam] string CorrectiveActionId,
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleQualityCapaActionItem(
+    string CorrectiveActionItemId,
+    string ActionType,
+    string Description,
+    string OwnerUserId,
+    DateTimeOffset DueAtUtc,
+    string Status,
+    string? CompletedByUserId,
+    DateTimeOffset? CompletedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    bool Overdue);
+
+public sealed record BusinessConsoleQualityCapaItem(
+    string CorrectiveActionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string CapaCode,
+    string? SourceNcrId,
+    string RootCause,
+    string ContainmentAction,
+    string OwnerUserId,
+    DateTimeOffset DueAtUtc,
+    string Status,
+    string? EffectivenessVerifiedByUserId,
+    string? EffectivenessResult,
+    DateTimeOffset? EffectivenessVerifiedAtUtc,
+    string? EffectivenessInspectionRecordId,
+    string? CloseApprovalChainId,
+    string? ClosedByUserId,
+    DateTimeOffset? ClosedAtUtc,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    int ActionCount,
+    int CompletedActionCount,
+    bool Overdue,
+    IReadOnlyCollection<BusinessConsoleQualityCapaActionItem> Actions,
+    // 来源 NCR 单号（NCR-2026-0001）。SourceNcrId 是聚合 GUID，界面「来源 NCR」列若直接渲染它
+    // 就是一串裸 GUID，而前端没有 NCR 名录可查，故由读面回带人读单号。
+    string? SourceNcrCode = null);
+
+public sealed record BusinessConsoleQualityCapaListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityCapaItem> Items,
+    int Total,
+    int OpenCount,
+    int EffectivenessVerifiedCount,
+    int ClosedCount,
+    int OverdueCount);
+
+// ── SPC 控制图台账（三期读面）────────────────────────────────────────────────────────
+public sealed record BusinessConsoleQualitySpcControlChartListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? CharacteristicCode = null,
+    string? WorkCenterId = null,
+    bool? Locked = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualitySpcControlChartItem(
+    string SpcControlChartId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string CharacteristicCode,
+    string WorkCenterId,
+    int SubgroupSize,
+    decimal CenterLine,
+    decimal AverageRange,
+    decimal XbarUpperControlLimit,
+    decimal XbarLowerControlLimit,
+    decimal RangeUpperControlLimit,
+    decimal RangeLowerControlLimit,
+    bool Locked,
+    DateTime? LimitsCalculatedAtUtc,
+    DateTime? LockedAtUtc,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc);
+
+public sealed record BusinessConsoleQualitySpcControlChartListResponse(
+    IReadOnlyCollection<BusinessConsoleQualitySpcControlChartItem> Items,
+    int Total,
+    int LockedCount);
+
 public sealed record BusinessConsoleQualityReasonListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1172,7 +1720,8 @@ public sealed record BusinessConsoleQualityReasonListRequest(
     string? Search = null,
     string? GroupName = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? DefaultDisposition = null);
 
 public sealed record BusinessConsoleQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -1271,7 +1820,30 @@ public sealed record BusinessConsoleQualityInspectionTaskListRequest(
     string? Status = null,
     string? SkuCode = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? InspectionTaskId = null,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    string? SourceType = null,
+    string? SourceService = null,
+    string? Keyword = null,
+    bool? Overdue = null);
+
+public sealed record BusinessQualityInspectionTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    string? SkuCode,
+    int Skip,
+    int Take,
+    string? InspectionTaskId,
+    string ScopeKind,
+    string PrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds,
+    string? SourceType,
+    string? SourceService,
+    string? Keyword,
+    bool? Overdue);
 
 public sealed record BusinessConsoleQualityInspectionTaskItem(
     string InspectionTaskId,
@@ -1288,26 +1860,123 @@ public sealed record BusinessConsoleQualityInspectionTaskItem(
     string Status,
     DateTimeOffset DueAtUtc,
     DateTimeOffset CreatedAtUtc,
-    string? InspectionRecordId);
+    string? InspectionRecordId,
+    string? AssignedInspectorUserId = null,
+    string? AssignedTeamId = null,
+    long Version = 1,
+    bool IsOverdue = false,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null);
 
 public sealed record BusinessConsoleQualityInspectionTaskListResponse(
     IReadOnlyCollection<BusinessConsoleQualityInspectionTaskItem> Items,
     int Total);
 
+public sealed record BusinessConsoleQualityInspectionTaskDetailRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessQualityInspectionTaskDetailRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ScopeKind,
+    string PrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds);
+
+public sealed record BusinessConsoleQualityInspectionTaskCharacteristic(
+    string CharacteristicCode,
+    string Name,
+    string Method,
+    string Severity,
+    bool IsRequired,
+    string SamplingRule,
+    string CharacteristicType,
+    decimal? NominalValue,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    string? UnitCode);
+
+public sealed record BusinessConsoleQualityInspectionTaskDetailResponse(
+    BusinessConsoleQualityInspectionTaskItem Task,
+    string PlanCode,
+    string Category,
+    IReadOnlyCollection<BusinessConsoleQualityInspectionTaskCharacteristic> Characteristics);
+
+public sealed record BusinessConsoleAssignQualityInspectionTaskRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    string? Reason,
+    string IdempotencyKey,
+    [property: JsonRequired, Required] long ExpectedVersion,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
+
+public sealed record BusinessQualityAssignInspectionTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    string? Reason,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessConsoleClaimQualityInspectionTaskRequest(
+    [property: RouteParam] string InspectionTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind,
+    [property: QueryParam] string? ScopeId,
+    string IdempotencyKey,
+    [property: JsonRequired, Required] long ExpectedVersion);
+
+public sealed record BusinessQualityClaimInspectionTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedTeamIds,
+    string IdempotencyKey,
+    long ExpectedVersion);
+
+public sealed record BusinessConsoleQualityInspectionTaskAssignmentResponse(
+    string InspectionTaskId,
+    string Status,
+    string? AssignedInspectorUserId,
+    string? AssignedTeamId,
+    long Version,
+    DateTimeOffset ChangedAtUtc);
+
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskRequest(
     [property: RouteParam] string InspectionTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
+    string? DispositionReason,
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string IdempotencyKey);
+
+public sealed record BusinessQualityCreateInspectionRecordFromTaskRequest(
+    string InspectionTaskId,
+    string OrganizationId,
+    string EnvironmentId,
     string InspectorUserId,
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateInspectionRecordFromTaskResponse(
     string InspectionRecordId,
     string Result,
     string? NonconformanceReportId,
-    string? NonconformanceReportCode);
+    string? NonconformanceReportCode,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleQualityInspectionPlanCharacteristicsRequest(
     [property: RouteParam] string InspectionPlanId,
@@ -1342,7 +2011,8 @@ public sealed record BusinessConsoleQualityNcrDetailResponse(
     string? SerialNo,
     string? SourceInspectionRecordId,
     string? DispositionType = null,
-    string? DispositionApprovalChainId = null);
+    string? DispositionApprovalChainId = null,
+    string? CloseReason = null);
 
 /// <summary>
 /// 按 id 取单条检验记录详情（PDA NCR 详情「来源检验记录」→ 打开记录的互链）。代理真实详情端点，
@@ -1435,7 +2105,8 @@ public sealed record BusinessConsoleAcceptedResponse(
     bool Accepted,
     string? DownstreamService = null,
     string? DownstreamDocumentType = null,
-    string? DownstreamDocumentId = null);
+    string? DownstreamDocumentId = null,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleEngineeringContextRequest(
     string OrganizationId,
@@ -2206,14 +2877,13 @@ public sealed record BusinessConsoleRunMrpRequest(
     DateOnly HorizonStart,
     DateOnly HorizonEnd);
 
+/// <summary>
+/// 运行 MRP 的异步受理回执（#1306）：提交即返回排队中的 runId 与状态，
+/// 计算进度与结果通过 MRP 运行列表轮询获取。
+/// </summary>
 public sealed record BusinessConsoleRunMrpResponse(
     string RunId,
-    int SuggestionCount,
-    bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources,
-    IReadOnlyCollection<string> InputSources,
-    DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+    string Status);
 
 public sealed record BusinessConsoleMrpRunItem(
     string RunId,
@@ -2229,7 +2899,8 @@ public sealed record BusinessConsoleMrpRunItem(
     IReadOnlyCollection<string> InputDegradationSources,
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
-    DateOnly? InputCoverageEnd);
+    DateOnly? InputCoverageEnd,
+    string? FailureReason);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 
@@ -2295,6 +2966,16 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
     string? IdempotencyKey = null);
+
+// The rejecting actor is never taken from the request body; the Gateway injects the
+// authorized principal as the downstream RejectedBy audit identity.
+public sealed record BusinessConsoleRejectPlanningSuggestionRequest(
+    [property: RouteParam] string SuggestionId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
+
+public sealed record BusinessConsolePlanningSuggestionRejectedResponse(bool Rejected);
 
 public sealed record BusinessConsoleSchedulingContextRequest(
     string OrganizationId,
@@ -2634,7 +3315,8 @@ public sealed record BusinessConsoleRecordErpPurchaseReceiptRequest(
 
 public sealed record BusinessConsoleErpPurchaseReceiptLine(
     string PurchaseOrderLineNo,
-    decimal ReceivedQuantity);
+    decimal ReceivedQuantity,
+    string QualityStatus);
 
 public sealed record BusinessConsoleRecordErpPurchaseReceiptResponse(string PurchaseReceiptId);
 
@@ -2656,6 +3338,36 @@ public sealed record BusinessConsoleErpRequestForQuotationLineItem(
     decimal Quantity,
     string SiteCode,
     DateOnly RequiredDate);
+
+public sealed record BusinessConsoleErpSupplierQuotationListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? RfqNo = null,
+    string? SupplierCode = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleErpSupplierQuotationListResponse(
+    IReadOnlyCollection<BusinessConsoleErpSupplierQuotationItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpSupplierQuotationItem(
+    string QuotationNo,
+    string RfqNo,
+    string SupplierCode,
+    decimal TotalAmount,
+    IReadOnlyCollection<BusinessConsoleErpSupplierQuotationLineItem> Lines,
+    DateTime ReceivedAtUtc);
+
+public sealed record BusinessConsoleErpSupplierQuotationLineItem(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal Quantity,
+    decimal UnitPrice,
+    decimal LineAmount,
+    DateOnly PromisedDate);
 
 public sealed record BusinessConsoleErpPurchaseRequisitionListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseRequisitionItem> Items,
@@ -2767,7 +3479,8 @@ public sealed record BusinessConsoleErpQuotationItem(
     string Status,
     decimal TotalAmount,
     IReadOnlyCollection<BusinessConsoleErpQuotationLineItem> Lines,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? ConvertedSalesOrderNo);
 
 public sealed record BusinessConsoleErpQuotationLineItem(
     string LineNo,
@@ -2790,7 +3503,17 @@ public sealed record BusinessConsoleCreateErpSalesOrderRequest(
     string SiteCode,
     string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId);
+/// <summary>报价转订单响应：ReusedExistingOrder 为 true 表示报价已转出，本次幂等返回既有订单而未新建。</summary>
+public sealed record BusinessConsoleCreateErpSalesOrderResponse(string SalesOrderId, string SalesOrderNo, bool ReusedExistingOrder);
+
+/// <summary>
+/// 信用冻结解冻请求。<c>StartedBy</c> 由 Gateway 从已认证 principal 注入，客户端不提供。
+/// </summary>
+public sealed record BusinessConsoleReleaseErpSalesOrderCreditHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SalesOrderNo,
+    string? StartedBy = null);
 
 public sealed record BusinessConsoleReleaseErpDeliveryOrderRequest(
     string OrganizationId,
@@ -3468,6 +4191,19 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+/// <summary>派工任务列表专用请求：比通用 MES 列表多一个按被派工人过滤（PDA「我的任务」）。</summary>
+public sealed record BusinessConsoleMesDispatchTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? AssignedUserId = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMesWorkOrderListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -3479,7 +4215,72 @@ public sealed record BusinessConsoleMesWorkOrderListRequest(
     int Skip = 0,
     int Take = 100,
     string? WorkCenterIds = null,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? Statuses = null,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesWorkOrderListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? DeviceAssetIds = null,
+    string? Statuses = null,
+    string? WorkOrderId = null);
+
+public sealed record BusinessConsoleMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? ScopeKind = null,
+    string? ScopeId = null,
+    string? OperationTaskId = null);
+
+public sealed record BusinessConsoleMesReportableOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessMesOperationTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? AssignedUserIds = null,
+    string? TeamIds = null,
+    string? WorkCenterIds = null,
+    string? OperationTaskId = null);
 
 public sealed record BusinessConsoleMesListWithoutStatusRequest(
     string OrganizationId,
@@ -3533,7 +4334,10 @@ public sealed record BusinessConsoleMesOperationTaskItem(
     DateTimeOffset? ExistingEndUtc,
     string? OperationTaskNo = null,
     string? WorkCenterCode = null,
-    string? WorkCenterName = null);
+    string? WorkCenterName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
@@ -3583,7 +4387,9 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     decimal ScrapQuantity,
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
-    string? IdempotencyKey = null,
+    string IdempotencyKey,
+    string ScopeKind,
+    string ScopeId,
     IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
     decimal ReworkQuantity = 0m,
     string? ScrapReasonCode = null,
@@ -3597,7 +4403,10 @@ public sealed record BusinessConsoleConsumedMaterialLotInput(
     decimal ConsumedQuantity,
     string MaterialIssueRequestNo);
 
-public sealed record BusinessConsoleRecordProductionReportResponse(string ProductionReportId, string ReportNo);
+public sealed record BusinessConsoleRecordProductionReportResponse(
+    string ProductionReportId,
+    string ReportNo,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleMesContextRequest(
     string OrganizationId,
@@ -3693,7 +4502,9 @@ public sealed record BusinessConsoleMesConvertPlanToWorkOrderRequest(
 public sealed record BusinessConsoleMesWorkOrderDetailRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
-    [property: QueryParam] string EnvironmentId);
+    [property: QueryParam] string EnvironmentId,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderDetailResponse(
     string WorkOrderId,
@@ -3735,14 +4546,18 @@ public sealed record BusinessConsoleMesReleaseWorkOrderRequest(
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     bool ConfirmWarnings,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 public sealed record BusinessConsoleMesWorkOrderReasonRequest(
     [property: RouteParam] string WorkOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string Reason,
-    DateTimeOffset? ChangedAtUtc);
+    DateTimeOffset? ChangedAtUtc,
+    [property: QueryParam] string? ScopeKind = null,
+    [property: QueryParam] string? ScopeId = null);
 
 // Actor is intentionally omitted: the gateway injects the authenticated principal as the
 // force-release audit actor so a caller cannot forge the releaser identity via the request body.
@@ -3811,7 +4626,10 @@ public sealed record BusinessConsoleMesMaterialReadinessResponse(
     string WorkOrderId,
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
-    IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items);
+    IReadOnlyCollection<BusinessConsoleMesMaterialReadinessRow> Items,
+    // 齐套核算口径（#1291）：只认线边可用 + 已备料 + 已收料，不含原料仓等其他库存。
+    // MRP 用的是全厂库存口径，两个数字不同是正常的——读面必须显式标注，不能让用户以为系统自相矛盾。
+    string? ReadinessScope = null);
 
 public sealed record BusinessConsoleMesMaterialReadinessRow(
     string MaterialId,
@@ -3822,7 +4640,9 @@ public sealed record BusinessConsoleMesMaterialReadinessRow(
     decimal StagedQuantity,
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
-    string Status);
+    string Status,
+    // 缺口卡在哪个环节：none / awaitingPreparation（还没发起领料）/ awaitingDelivery（仓库在配）。
+    string? ShortageStage = null);
 
 // 工单可入库产出批次（MAN-445/#799）：从 MES OutputLotGenealogies 权威表列出当前有效的产出批次，供 Console
 // 完工入库选择真实 producedLotNo。读权限 MesReceiptsRead 与完工入库列表一致，避免入库操作员因缺 reporting.read
@@ -3909,11 +4729,14 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? DeviceAssetName = null,
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null);
 
 /// <summary>
-/// Payload forwarded to the MES service. The assignee display name is resolved by the gateway from
-/// MasterData rather than trusted from the caller, so the dispatch record keeps a verified snapshot.
+/// Payload forwarded to the MES service. The assignee display name and the team the assignee belongs to
+/// are resolved by the gateway from MasterData rather than trusted from the caller, so the dispatch
+/// record keeps a verified snapshot.
 /// </summary>
 public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string OrganizationId,
@@ -3922,7 +4745,9 @@ public sealed record BusinessConsoleMesAssignDispatchTaskForwardRequest(
     string? AssignedUserName,
     string? DeviceAssetId,
     string? ShiftId,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TeamId = null,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -3958,19 +4783,27 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? DeviceAssetName = null,
     string? OperationCode = null,
     DateTimeOffset? ScheduledAtUtc = null,
-    string? ScheduleInvalidationReasonCode = null);
+    string? ScheduleInvalidationReasonCode = null,
+    string? TeamId = null,
+    string? TeamName = null,
+    IReadOnlyCollection<string>? AllowedActions = null,
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? EvaluatedAtUtc = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
     string? ReasonCode,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    [property: QueryParam] string ScopeKind,
+    [property: QueryParam] string ScopeId);
 
 public sealed record BusinessConsoleMesOperationTaskActionResponse(
     string OperationTaskId,
     string Status,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleMesWipSummaryResponse(
     IReadOnlyCollection<BusinessConsoleMesWipSummaryRow> Items,
@@ -4229,7 +5062,7 @@ public sealed record BusinessConsoleMesDowntimeEventListResponse(
 
 public sealed record BusinessConsoleMesDowntimeEventRow(
     string DowntimeEventId,
-    string WorkOrderId,
+    string? WorkOrderId,
     string? OperationTaskId,
     string? DeviceAssetId,
     string Status,
@@ -4238,7 +5071,9 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
     string? DeviceAssetCode = null,
-    string? DeviceAssetName = null);
+    string? DeviceAssetName = null,
+    string? WorkCenterId = null,
+    string? ReasonCode = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,
@@ -4257,6 +5092,27 @@ public sealed record BusinessConsoleMesRecoverDowntimeEventRequest(
     DateTimeOffset RecoveredAtUtc,
     string IdempotencyKey);
 
+/// <summary>历史规则排程结果列表请求（「规则排程」页的历史读面）。</summary>
+public sealed record BusinessConsoleMesScheduleResultListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Trigger = null,
+    int Skip = 0,
+    int Take = 20);
+
+public sealed record BusinessConsoleMesScheduleResultListResponse(
+    IReadOnlyCollection<BusinessConsoleMesScheduleResultRow> Items,
+    int Total);
+
+public sealed record BusinessConsoleMesScheduleResultRow(
+    int ScheduleVersion,
+    string Trigger,
+    DateTimeOffset ScheduledAtUtc,
+    int AssignmentCount,
+    int AffectedWorkOrderCount,
+    IReadOnlyCollection<string> AffectedWorkOrderIds,
+    IReadOnlyCollection<BusinessConsoleScheduledOperation> Assignments);
+
 public sealed record BusinessConsoleMesShiftHandoverListResponse(
     IReadOnlyCollection<BusinessConsoleMesShiftHandoverRow> Items,
     int Total);
@@ -4267,7 +5123,8 @@ public sealed record BusinessConsoleMesShiftHandoverRow(
     string TeamId,
     string HandoverStatus,
     int OpenIssueCount,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string OrganizationId,
@@ -4275,7 +5132,8 @@ public sealed record BusinessConsoleMesCreateShiftHandoverRequest(
     string ShiftId,
     string TeamId,
     IReadOnlyCollection<string>? OpenIssueIds,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? TeamName = null);
 
 public sealed record BusinessConsoleMesAcceptShiftHandoverRequest(
     [property: RouteParam] string HandoverId,

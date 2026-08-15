@@ -33,7 +33,14 @@ public sealed class MasterDataLeaderDemoScaleSeedServiceTests
 
         Assert.Equal(6, await db.Skus.CountAsync(x => x.Code.StartsWith("SKU-SCALE-0")));
         Assert.Single(await db.Skus.Where(x => x.Code == "SKU-SCALE-RM-001").ToArrayAsync());
-        Assert.Equal(4, await db.BusinessPartners.CountAsync(x => x.Code.StartsWith("CUST-SCALE-")));
+        var scaleCustomers = await db.BusinessPartners.Where(x => x.Code.StartsWith("CUST-SCALE-")).ToArrayAsync();
+        Assert.Equal(4, scaleCustomers.Length);
+        // #1290：规模块客户同样带信用额度档案（CNY），保证任选客户转订单不 400。
+        Assert.All(scaleCustomers, x =>
+        {
+            Assert.NotNull(x.CreditLimit);
+            Assert.Equal("CNY", x.CreditCurrencyCode);
+        });
         Assert.Single(await db.ProductionLines.Where(x => x.Code == "LINE-SCALE-01").ToArrayAsync());
     }
 

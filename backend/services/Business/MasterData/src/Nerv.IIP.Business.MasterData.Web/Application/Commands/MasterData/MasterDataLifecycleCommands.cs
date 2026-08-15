@@ -19,6 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -130,7 +131,8 @@ public sealed record UpdateMasterDataResourceCommand(
     string? JobTitle = null,
     string? EmploymentStatus = null,
     string? Phone = null,
-    bool ClearCreditLimit = false) : ICommand<MasterDataResourceDetail>;
+    bool ClearCreditLimit = false,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
     string OrganizationId,
@@ -314,11 +316,19 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 return Detail(site);
             case "workshop":
                 var workshop = await FindWorkshopAsync(request, cancellationToken);
+                var workshopSiteBefore = workshop.SiteCode;
                 workshop.Update(
                     request.Name ?? workshop.Name,
                     request.SiteCode ?? workshop.SiteCode,
                     request.ManagerUserId ?? workshop.ManagerUserId,
                     request.Description ?? workshop.Description);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    workshop.Id.ToString(),
+                    workshop.Code,
+                    new { siteCode = workshopSiteBefore },
+                    new { siteCode = workshop.SiteCode },
+                    !string.Equals(workshopSiteBefore, workshop.SiteCode, StringComparison.Ordinal));
                 return Detail(workshop);
             case "department":
                 var department = await FindDepartmentAsync(request, cancellationToken);
@@ -328,20 +338,40 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 return Detail(department);
             case "team":
                 var team = await FindTeamAsync(request, cancellationToken);
+                var teamWorkshopBefore = team.WorkshopCode;
+                var teamShiftBefore = team.ShiftCode;
                 team.Update(
                     request.Name ?? team.Name,
                     request.DepartmentCode ?? team.DepartmentCode,
                     request.ShiftCode ?? team.ShiftCode,
                     request.WorkshopCode ?? team.WorkshopCode);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    team.Id.ToString(),
+                    team.Code,
+                    new { workshopCode = teamWorkshopBefore, shiftCode = teamShiftBefore },
+                    new { workshopCode = team.WorkshopCode, shiftCode = team.ShiftCode },
+                    !string.Equals(teamWorkshopBefore, team.WorkshopCode, StringComparison.Ordinal)
+                        || !string.Equals(teamShiftBefore, team.ShiftCode, StringComparison.Ordinal));
                 return Detail(team);
             case "worker":
                 var worker = await FindWorkerAsync(request, cancellationToken);
+                var workerStatusBefore = worker.EmploymentStatus;
                 worker.Update(
                     request.Name ?? worker.Name,
                     request.DepartmentCode ?? worker.DepartmentCode,
                     request.JobTitle ?? worker.JobTitle,
                     request.EmploymentStatus ?? worker.EmploymentStatus,
                     request.Phone ?? worker.Phone);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    worker.Id.ToString(),
+                    worker.Code,
+                    new { userId = worker.UserId, employmentStatus = workerStatusBefore, disabled = worker.Disabled },
+                    new { userId = worker.UserId, employmentStatus = worker.EmploymentStatus, disabled = worker.Disabled },
+                    !string.Equals(workerStatusBefore, worker.EmploymentStatus, StringComparison.Ordinal),
+                    "scope-availability-updated",
+                    "scope-availability-updated");
                 return Detail(worker);
             case "shift":
                 var shift = await FindShiftAsync(request, cancellationToken);
@@ -366,10 +396,23 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 return Detail(calendar);
             case "production-line":
                 var line = await FindProductionLineAsync(request, cancellationToken);
+                var lineSiteBefore = line.SiteCode;
+                var lineWorkshopBefore = line.WorkshopCode;
                 line.Update(request.Name ?? line.Name, request.SiteCode ?? line.SiteCode, request.WorkshopCode ?? line.WorkshopCode);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    line.Id.ToString(),
+                    line.Code,
+                    new { siteCode = lineSiteBefore, workshopCode = lineWorkshopBefore },
+                    new { siteCode = line.SiteCode, workshopCode = line.WorkshopCode },
+                    !string.Equals(lineSiteBefore, line.SiteCode, StringComparison.Ordinal)
+                        || !string.Equals(lineWorkshopBefore, line.WorkshopCode, StringComparison.Ordinal));
                 return Detail(line);
             case "work-center":
                 var workCenter = await FindWorkCenterAsync(request, cancellationToken);
+                var workCenterPlantBefore = workCenter.PlantCode;
+                var workCenterLineBefore = workCenter.LineCode;
+                var workCenterWorkshopBefore = workCenter.WorkshopCode;
                 workCenter.UpdateResource(
                     request.Name ?? workCenter.Name,
                     request.CapacityMinutesPerDay ?? workCenter.CapacityMinutesPerDay,
@@ -385,6 +428,25 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                     request.NumberOfCapacities ?? workCenter.NumberOfCapacities,
                     request.CostCenterCode ?? workCenter.CostCenterCode,
                     request.Bottleneck ?? workCenter.Bottleneck);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    workCenter.Id.ToString(),
+                    workCenter.Code,
+                    new
+                    {
+                        plantCode = workCenterPlantBefore,
+                        lineCode = workCenterLineBefore,
+                        workshopCode = workCenterWorkshopBefore,
+                    },
+                    new
+                    {
+                        plantCode = workCenter.PlantCode,
+                        lineCode = workCenter.LineCode,
+                        workshopCode = workCenter.WorkshopCode,
+                    },
+                    !string.Equals(workCenterPlantBefore, workCenter.PlantCode, StringComparison.Ordinal)
+                        || !string.Equals(workCenterLineBefore, workCenter.LineCode, StringComparison.Ordinal)
+                        || !string.Equals(workCenterWorkshopBefore, workCenter.WorkshopCode, StringComparison.Ordinal));
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
@@ -433,6 +495,39 @@ public sealed class UpdateMasterDataResourceCommandHandler(
             default:
                 throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
         }
+    }
+
+    private void AddScopeLineageAuditIfChanged(
+        UpdateMasterDataResourceCommand request,
+        string resourceId,
+        string resourceCode,
+        object before,
+        object after,
+        bool changed,
+        string operationKindSuffix = "scope-lineage-updated",
+        string reason = "scope-lineage-updated")
+    {
+        if (!changed)
+        {
+            return;
+        }
+
+        var auditContext = request.AuditContext
+            ?? throw new KnownException("An authenticated audit context is required for scope lineage changes.");
+        var resourceType = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        MasterDataScopeContextAudit.Add(
+            dbContext,
+            auditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            $"{resourceType}-{operationKindSuffix}",
+            resourceType,
+            resourceId,
+            resourceCode,
+            resourceCode,
+            before,
+            after,
+            reason);
     }
 
     private async Task<Sku> FindSkuAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -705,7 +800,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(
             Criticality: x.Criticality,
             Maintainable: x.Maintainable,
             TelemetryEnabled: x.TelemetryEnabled,
-            Status: x.Disabled ? "disabled" : "active");
+            Status: x.Disabled ? "disabled" : "active",
+            DeviceAssetId: x.Id.ToString());
 
     internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
         new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");

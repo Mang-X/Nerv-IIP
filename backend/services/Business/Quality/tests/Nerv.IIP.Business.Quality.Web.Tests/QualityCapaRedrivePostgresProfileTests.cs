@@ -15,12 +15,14 @@ using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class QualityCapaRedrivePostgresProfileTests
 {
     [QualityPostgresFact]
     public async Task Postgres_uow_persists_recorded_scrap_ncr_redrive_after_capa_effectiveness()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var connectionString = QualityPostgresLaneDatabase.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
@@ -41,7 +43,7 @@ public sealed class QualityCapaRedrivePostgresProfileTests
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await DropQualitySchemaAsync(db);
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
 
             var ncr = NewRecordedScrapNcr("NCR-SCRAP-CAPA-PG-001", "RCV-SCRAP-CAPA-PG-001");
@@ -77,7 +79,8 @@ public sealed class QualityCapaRedrivePostgresProfileTests
             Assert.Equal("SM-FULL-CAPA-PG-001", reloadedNcr.ScrapMovementId);
         }
 
-        Assert.IsType<NcrClosedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Single(publisher.Published.OfType<NcrClosedIntegrationEvent>());
+        Assert.Single(publisher.Published.OfType<CapaEffectivenessVerifiedIntegrationEvent>());
         Assert.DoesNotContain(publisher.Published, x => x is InventoryMovementRequestedIntegrationEvent);
     }
 
@@ -137,14 +140,6 @@ public sealed class QualityCapaRedrivePostgresProfileTests
             [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
             null,
             []);
-    }
-
-    private static async Task DropQualitySchemaAsync(ApplicationDbContext db)
-    {
-        await db.Database.OpenConnectionAsync();
-        await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"DROP SCHEMA IF EXISTS \"{QualityFacts.Schema}\" CASCADE";
-        await command.ExecuteNonQueryAsync();
     }
 
     private sealed class FixedQualityIntegrationEventContextAccessor : IQualityIntegrationEventContextAccessor

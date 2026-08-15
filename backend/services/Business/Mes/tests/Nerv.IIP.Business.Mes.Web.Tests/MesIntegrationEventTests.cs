@@ -8,11 +8,20 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesIntegrationEventTests
 {
+    /// <summary>对齐库存世界观种子的成品仓事实（SITE-001 / WH-WB-FG-01，#1331）。</summary>
+    private static readonly IMesFinishedGoodsReceiptLocationResolver FinishedGoodsLocationResolver =
+        new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions
+        {
+            SiteCode = "SITE-001",
+            LocationCode = "WH-WB-FG-01",
+        });
+
     [Fact]
     public void Manual_dispatch_clear_reason_converter_maps_every_domain_reason_to_wire_contract()
     {
@@ -94,7 +103,9 @@ public sealed class MesIntegrationEventTests
             "LOT-OIL-A",
             "L",
             2.5m,
-            "MIR-001");
+            "MIR-001",
+            MaterialSupplyTestFixtures.Locations.TargetSiteCode,
+            MaterialSupplyTestFixtures.Locations.TargetLocationCode);
 
         var integrationEvent = new ProductionMaterialConsumedIntegrationEventConverter()
             .Convert(new ProductionMaterialConsumedDomainEvent(consumption));
@@ -105,8 +116,8 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("business-mes", integrationEvent.Payload.SourceService);
         Assert.Equal("PRPT-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
-        Assert.Equal("production", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-2.5m, integrationEvent.Payload.Quantity);
         Assert.Equal("PRPT-001", integrationEvent.CorrelationId);
@@ -130,17 +141,43 @@ public sealed class MesIntegrationEventTests
             12.34m);
 
         var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
-        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);
         Assert.Equal("FGR-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("SKU-FG", integrationEvent.Payload.SkuCode);
+        Assert.Equal("SITE-001", integrationEvent.Payload.SiteCode);
+        Assert.Equal("WH-WB-FG-01", integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
         Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_converter_fails_explicitly_when_location_unconfigured()
+    {
+        var request = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-002",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null,
+            12.34m);
+        var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
+        var converter = new FinishedGoodsReceiptRequestedIntegrationEventConverter(
+            new ConfiguredMesFinishedGoodsReceiptLocationResolver(new MesFinishedGoodsReceiptLocationOptions()));
+
+        var exception = Assert.Throws<KnownException>(() => converter.Convert(domainEvent));
+
+        Assert.Contains("FINISHED_GOODS_LOCATION_UNCONFIGURED", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -162,7 +199,7 @@ public sealed class MesIntegrationEventTests
         request.ApplyCapitalizedUnitCost(12.34m);
 
         var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
-        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter(FinishedGoodsLocationResolver)
             .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
@@ -185,6 +222,7 @@ public sealed class MesIntegrationEventTests
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
         request.ConfirmLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -197,11 +235,63 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("MIR-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("L", integrationEvent.Payload.UomCode);
-        Assert.Equal("warehouse", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+    }
+
+    [Fact]
+    public void Material_issue_converter_emits_one_inventory_detail_per_source_allocation()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SPLIT",
+            "WO-001",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            5m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+        request.ConfirmLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-001",
+                "WH-WB-RM-01",
+                "SITE-001",
+                "WH-WB-LINE-01",
+                [
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-RM-01", "LOT-OPENING-MAT-OIL", 3m),
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-SF-01", "LOT-PO-001", 2m),
+                ]),
+            DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
+            5m,
+            "LOT-WO-001");
+
+        var issueEvents = request.GetDomainEvents()
+            .OfType<MaterialIssueRequestedDomainEvent>()
+            .ToArray();
+        var inventoryEvents = issueEvents
+            .Select(new MaterialIssueRequestedIntegrationEventConverter().Convert)
+            .ToArray();
+
+        Assert.Equal(2, inventoryEvents.Length);
+        Assert.Collection(
+            inventoryEvents,
+            first =>
+            {
+                Assert.Equal("WH-WB-RM-01", first.Payload.LocationCode);
+                Assert.Equal("LOT-OPENING-MAT-OIL", first.Payload.LotNo);
+                Assert.Equal(-3m, first.Payload.Quantity);
+            },
+            second =>
+            {
+                Assert.Equal("WH-WB-SF-01", second.Payload.LocationCode);
+                Assert.Equal("LOT-PO-001", second.Payload.LotNo);
+                Assert.Equal(-2m, second.Payload.Quantity);
+            });
+        Assert.NotEqual(inventoryEvents[0].Payload.IdempotencyKey, inventoryEvents[1].Payload.IdempotencyKey);
     }
 
     [Fact]
@@ -218,6 +308,7 @@ public sealed class MesIntegrationEventTests
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
         request.ConfirmLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -231,8 +322,8 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("OP-10", integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("L", integrationEvent.Payload.UomCode);
-        Assert.Equal("production", integrationEvent.Payload.SiteCode);
-        Assert.Equal("line-side", integrationEvent.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, integrationEvent.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, integrationEvent.Payload.LocationCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(3m, integrationEvent.Payload.Quantity);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
@@ -252,7 +343,8 @@ public sealed class MesIntegrationEventTests
             "L",
             3m,
             DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
-        request.ConfirmLineSideReceipt(
+        request.ConfirmAndPostLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
             DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
             3m,
             "LOT-OIL-A");
@@ -264,12 +356,12 @@ public sealed class MesIntegrationEventTests
             .Convert(new MaterialReturnedToWarehouseDomainEvent(request, 1m, "LOT-MAT-001", DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
 
         Assert.Equal("outbound", productionOutbound.Payload.MovementType);
-        Assert.Equal("production", productionOutbound.Payload.SiteCode);
-        Assert.Equal("line-side", productionOutbound.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetSiteCode, productionOutbound.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.TargetLocationCode, productionOutbound.Payload.LocationCode);
         Assert.Equal(-1m, productionOutbound.Payload.Quantity);
         Assert.Equal("inbound", warehouseInbound.Payload.MovementType);
-        Assert.Equal("warehouse", warehouseInbound.Payload.SiteCode);
-        Assert.Equal("line-side", warehouseInbound.Payload.LocationCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceSiteCode, warehouseInbound.Payload.SiteCode);
+        Assert.Equal(MaterialSupplyTestFixtures.Locations.SourceLocationCode, warehouseInbound.Payload.LocationCode);
         Assert.Equal(1m, warehouseInbound.Payload.Quantity);
     }
 
@@ -357,6 +449,82 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("DEV-PACK-01", integrationEvent.Payload.DeviceAssetId);
         Assert.Equal("PCS", integrationEvent.Payload.UomCode);
         Assert.Equal(100m, integrationEvent.Payload.TheoreticalRatePerHour);
+    }
+
+    [Fact]
+    public void Creating_a_material_issue_request_publishes_the_warehouse_leg_of_the_chain()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            7m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+
+        var domainEvent = Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
+        var integrationEvent = new MaterialIssueRequestCreatedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal(MesIntegrationEventTypes.MaterialIssueRequested, integrationEvent.EventType);
+        Assert.Equal(MesIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
+        Assert.Equal("MIR-001", integrationEvent.Payload.RequestNo);
+        Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
+        Assert.Equal("OP-10", integrationEvent.Payload.OperationTaskId);
+        Assert.Equal("MAT-OIL", integrationEvent.Payload.MaterialId);
+        Assert.Equal("L", integrationEvent.Payload.UomCode);
+        Assert.Equal(7m, integrationEvent.Payload.RequestedQuantity);
+        Assert.Equal("mes:material-issue-requested:org-001:env-dev:MIR-001", integrationEvent.IdempotencyKey);
+    }
+
+    [Fact]
+    public void Material_issue_created_idempotency_key_is_stable_across_replays_of_the_same_request()
+    {
+        static MaterialIssueRequestCreatedDomainEvent NewCreation() =>
+            MaterialIssueRequest.Create(
+                    "org-001",
+                    "env-dev",
+                    "MIR-001",
+                    "WO-001",
+                    null,
+                    "MAT-OIL",
+                    "L",
+                    7m,
+                    DateTimeOffset.Parse("2026-06-15T07:45:00Z"))
+                .GetDomainEvents()
+                .OfType<MaterialIssueRequestCreatedDomainEvent>()
+                .Single();
+
+        var converter = new MaterialIssueRequestCreatedIntegrationEventConverter();
+
+        Assert.Equal(
+            converter.Convert(NewCreation()).IdempotencyKey,
+            converter.Convert(NewCreation()).IdempotencyKey);
+    }
+
+    [Fact]
+    public void Linking_the_warehouse_outbound_is_idempotent_for_the_same_acknowledgement()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            null,
+            "MAT-OIL",
+            "L",
+            7m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+        var preparedAtUtc = DateTimeOffset.Parse("2026-06-15T07:50:00Z");
+
+        Assert.True(request.LinkWarehouseOutbound("MI-MIR-001", "MI-MIR-001-P1", preparedAtUtc));
+        Assert.False(request.LinkWarehouseOutbound("MI-MIR-001", "MI-MIR-001-P1", preparedAtUtc.AddMinutes(5)));
+        Assert.Equal("MI-MIR-001", request.WmsRequestId);
+        Assert.Equal("MI-MIR-001-P1", request.WmsPickingTaskNo);
+        Assert.Equal(preparedAtUtc, request.WmsPreparedAtUtc);
     }
 
     private sealed class StubMesIntegrationEventContextAccessor(MesIntegrationEventContext context)

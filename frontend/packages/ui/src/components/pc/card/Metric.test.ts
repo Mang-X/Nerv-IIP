@@ -718,13 +718,50 @@ describe('NvMetricRing / NvMetricStrip', () => {
     const wrapper = mount(NvMetricRing, {
       props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
     })
-    await wrapper.findAll('.nv-ring-seg')[0].trigger('mouseenter')
+    // 指针事件由命中层承担，可见弧只负责好看（见下一条用例）。
+    await wrapper.findAll('.nv-ring-hit')[0].trigger('mouseenter')
     expect(wrapper.findAll('.nv-ring-dim').length).toBe(4)
     // 中心只留占比：段的身份由亮起的弧 + 未淡出的图例行表达，环内也放不下标签
     const arcCentre = wrapper.find('.nv-ring-center').text()
     expect(arcCentre).toContain('24')
     expect(arcCentre).toContain('68.6%')
     expect(arcCentre).not.toContain('进行中')
+  })
+
+  /**
+   * 回归：hover 过去直接把可见弧从 8 加粗到 11，而 SVG 描边的命中区域**就是描边本身**，
+   * 于是「指到」会改变「什么算指到」——指针停在两个宽度的差值带上时，加粗与复原互为因果，
+   * enter/leave 来回自激抽搐。修法是把命中交给一条恒定宽度的透明弧，可见弧不再收事件。
+   * 只要这条不变量还在，自激在结构上就不可能重现。
+   */
+  it('ring 命中几何与视觉状态解耦：可见弧不收指针事件，命中层宽度恒定', async () => {
+    const wrapper = mount(NvMetricRing, {
+      props: { label: '在制工单', value: 35, centerCaption: '总计', segments: ringSegments },
+    })
+    const hits = wrapper.findAll('.nv-ring-hit')
+    expect(hits.length).toBe(ringSegments.length)
+    // 每段一条命中弧，宽度恒为最大视觉宽度，且必须按描边命中（透明描边收不到 visiblePainted）
+    for (const hit of hits) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+      expect(hit.attributes('stroke')).toBe('transparent')
+    }
+    // 可见弧交出全部指针事件
+    for (const seg of wrapper.findAll('.nv-ring-seg')) {
+      expect(seg.classes()).not.toContain('nv-ring-hit')
+    }
+
+    await hits[0].trigger('mouseenter')
+    expect(wrapper.findAll('.nv-ring-seg-active').length).toBe(1)
+    // 关键不变量：高亮之后命中几何**一点没变**
+    for (const hit of wrapper.findAll('.nv-ring-hit')) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+    }
+
+    await hits[0].trigger('mouseleave')
+    expect(wrapper.findAll('.nv-ring-seg-active').length).toBe(0)
+    for (const hit of wrapper.findAll('.nv-ring-hit')) {
+      expect(hit.attributes('stroke-width')).toBe('11')
+    }
   })
 
   it('ring 悬浮图例项：其余分段淡出，中心切到该段读数', async () => {
@@ -760,5 +797,64 @@ describe('NvMetricRing / NvMetricStrip', () => {
     expect(cells[1].find('p.text-xl').classes()).toContain('text-destructive-strong')
     // 向上 meta 出趋势图标（svg）
     expect(cells[0].find('svg').exists()).toBe(true)
+  })
+
+  /*
+   * delta 之所以不能用 meta + metaTone 顶替：metaTone 把 up 硬映射成 success，
+   * 表达不了「超期工单 +3」这种「涨了但是坏事」。下面锁的就是这条。
+   */
+  it('strip 的 delta 走 tone 覆盖，能表达「涨了但是坏事」', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: {
+        cells: [
+          { label: '今日产量', value: '12,480', delta: { value: '+4.9%', direction: 'up' } },
+          {
+            label: '超期工单',
+            value: 3,
+            delta: { value: '+3', direction: 'up', tone: 'danger' },
+            meta: '最久超期 3 天',
+          },
+        ],
+      },
+    })
+    const cells = wrapper.findAll('.flex-1')
+    expect(cells[0].html()).toContain('+4.9%')
+    expect(cells[0].html()).toContain('text-success-strong')
+    // 上箭头照旧，但配色是 danger——方向说事实，颜色说好坏
+    expect(cells[1].html()).toContain('text-destructive-strong')
+    // delta 与 meta 同时给出时，注脚跟在 chip 后面而不是被吃掉
+    expect(cells[1].text()).toContain('最久超期 3 天')
+  })
+
+  it('strip 给了 series 就出迷你图，并为没图的格留出等高位置', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: {
+        cells: [
+          {
+            label: '今日产量',
+            value: 12_480,
+            series: [11_020, 11_460, 11_890, 12_480],
+            seriesLabels: ['07-20', '07-21', '07-22', '07-23'],
+            seriesUnit: ' 件',
+          },
+          { label: '报工工单', value: 26 },
+        ],
+      },
+    })
+    const cells = wrapper.findAll('.flex-1')
+    // 文本等价物必须在——十字准线只在 hover 时吐数，读屏用户否则只拿到一个空图
+    const chart = cells[0].find('[role="img"]')
+    expect(chart.exists()).toBe(true)
+    expect(chart.attributes('aria-label')).toContain('07-23: 12480 件')
+    // 没有 series 的那格留占位，避免整行下沿参差
+    expect(cells[1].find('[role="img"]').exists()).toBe(false)
+    expect(cells[1].find('.h-\\[34px\\]').exists()).toBe(true)
+  })
+
+  it('strip 单点 series 不画图（一个点画不出走势）', () => {
+    const wrapper = mount(NvMetricStrip, {
+      props: { cells: [{ label: '今日产量', value: 12_480, series: [12_480] }] },
+    })
+    expect(wrapper.find('[role="img"]').exists()).toBe(false)
   })
 })

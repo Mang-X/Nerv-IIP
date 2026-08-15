@@ -59,7 +59,11 @@ export function useFileUpload(options: UseFileUploadOptions) {
     const rejectedFiles: FileUploadRejectedFile[] = []
 
     for (const file of files) {
-      const rejection = validateFile(file, toValue(options.acceptedContentTypes), toValue(options.maxFileSizeBytes))
+      const rejection = validateFile(
+        file,
+        toValue(options.acceptedContentTypes),
+        toValue(options.maxFileSizeBytes),
+      )
 
       if (rejection) {
         rejectedFiles.push({ fileName: file.name, reason: rejection })
@@ -102,20 +106,22 @@ export function useFileUpload(options: UseFileUploadOptions) {
     controllers.set(row.id, controller)
 
     try {
-      const session = row.uploadSession ?? await options.createUploadSession({
-        organizationId: toValue(options.organizationId),
-        environmentId: toValue(options.environmentId),
-        owner: {
-          ownerService: toValue(options.ownerService),
-          ownerType: toValue(options.ownerType),
-          ownerId: toValue(options.ownerId),
-        },
-        filePurpose: toValue(options.purpose),
-        fileName: row.fileName,
-        contentType: row.contentType,
-        expectedSizeBytes: row.sizeBytes,
-        checksum: null,
-      })
+      const session =
+        row.uploadSession ??
+        (await options.createUploadSession({
+          organizationId: toValue(options.organizationId),
+          environmentId: toValue(options.environmentId),
+          owner: {
+            ownerService: toValue(options.ownerService),
+            ownerType: toValue(options.ownerType),
+            ownerId: toValue(options.ownerId),
+          },
+          filePurpose: toValue(options.purpose),
+          fileName: row.fileName,
+          contentType: row.contentType,
+          expectedSizeBytes: row.sizeBytes,
+          checksum: null,
+        }))
       row.uploadSession = session
 
       await options.transport({
@@ -139,8 +145,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
       row.status = 'completed'
       row.progress = 100
       options.onCompleted(completedFiles.value)
-    }
-    catch (error) {
+    } catch (error) {
       if (isAbortError(error) && isPausedRow(row)) {
         row.error = null
         return
@@ -149,8 +154,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
       row.status = 'failed'
       row.error = error instanceof Error ? error.message : '上传失败。'
       options.onFailed(row)
-    }
-    finally {
+    } finally {
       if (controllers.get(row.id) === controller) {
         controllers.delete(row.id)
       }
@@ -271,11 +275,7 @@ function createRow(
   }
 }
 
-function validateFile(
-  file: File,
-  acceptedContentTypes: string[],
-  maxFileSizeBytes?: number,
-) {
+function validateFile(file: File, acceptedContentTypes: string[], maxFileSizeBytes?: number) {
   if (maxFileSizeBytes && file.size > maxFileSizeBytes) {
     return '文件超过最大大小限制。'
   }
@@ -328,10 +328,9 @@ export function formatFileSize(bytes: number) {
 }
 
 function isAbortError(error: unknown) {
-  return typeof error === 'object'
-    && error !== null
-    && 'name' in error
-    && error.name === 'AbortError'
+  return (
+    typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+  )
 }
 
 function isPausedRow(row: FileUploadRow) {

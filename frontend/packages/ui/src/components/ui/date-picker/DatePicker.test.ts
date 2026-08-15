@@ -21,7 +21,7 @@ describe('DatePicker', () => {
     const triggers = Array.from(
       document.body.querySelectorAll<HTMLElement>('[data-slot="calendar-cell-trigger"]'),
     )
-    const target = triggers.find(el => el.textContent?.trim() === '2')
+    const target = triggers.find((el) => el.textContent?.trim() === '2')
     expect(target).toBeDefined()
 
     target!.click()
@@ -46,8 +46,9 @@ describe('DatePicker', () => {
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
-    const clearButton = Array.from(document.body.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('清除'))
+    const clearButton = Array.from(document.body.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('清除'),
+    )
     expect(clearButton).toBeDefined()
 
     clearButton!.click()

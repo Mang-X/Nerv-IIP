@@ -16,19 +16,14 @@ using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
 using System.Reflection;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class MesCapSubscriptionCollection
-{
-    public const string Name = "MES CAP subscription";
-}
-
-[Collection(MesCapSubscriptionCollection.Name)]
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "AssetUnavailableIntegrationEvent";
@@ -171,22 +166,34 @@ public sealed class MesCapSubscriptionTests
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_cap_inmemory");
-        await using var factory = CreateFactory(database.ConnectionString);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
         await MigrateAsync(factory);
         await InitializeCapStorageAsync(factory);
         await SeedScheduleFactsAsync(factory);
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox, work-center unavailable window, and reschedule result", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var window = await dbContext.WorkCenterUnavailabilities.SingleOrDefaultAsync(x => x.DeviceAssetId == "ASSET-CNC-01");
-            var result = await dbContext.ScheduleResults.SingleOrDefaultAsync();
+            var inbox = await dbContext.ProcessedIntegrationEvents
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.ConsumerName == AssetUnavailableIntegrationEventHandlerForReschedule.ConsumerName &&
+                        x.EventId == "evt-mes-cap-asset-unavailable",
+                    token);
+            var window = await dbContext.WorkCenterUnavailabilities
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    x => x.DeviceAssetId == "ASSET-CNC-01",
+                    token);
+            var result = await dbContext.ScheduleResults
+                .AsNoTracking()
+                .SingleOrDefaultAsync(token);
 
+            Assert.True(inbox is not null, "MES CAP consumer should persist the processed-event inbox row.");
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
@@ -195,12 +202,55 @@ public sealed class MesCapSubscriptionTests
     }
 
     [PostgreSqlFact]
+    public async Task PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
+        await MigrateAsync(factory);
+        await SeedScheduleFactsAsync(factory);
+
+        var unavailableFromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var restoredAtUtc = unavailableFromUtc.AddHours(2);
+        using (var seedScope = factory.Services.CreateScope())
+        {
+            var store = seedScope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
+            store.AddUnavailability(new WorkCenterUnavailability(
+                "WC-A",
+                unavailableFromUtc,
+                null,
+                "breakdown",
+                "ASSET-CNC-01",
+                "org-001",
+                "env-dev"));
+            await seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateRestoredEvent(restoredAtUtc);
+        using (var handlerScope = factory.Services.CreateScope())
+        {
+            var handler = handlerScope.ServiceProvider
+                .GetRequiredService<AssetRestoredIntegrationEventHandlerForReschedule>();
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        using var assertionScope = factory.Services.CreateScope();
+        var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var window = await assertionDb.WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
+        var schedule = await assertionDb.ScheduleResults.AsNoTracking().SingleAsync();
+        var inbox = await assertionDb.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(x =>
+            x.ConsumerName == AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName);
+
+        Assert.Equal(restoredAtUtc, window.ToUtc);
+        Assert.Equal("AssetRestored", schedule.Trigger.ToString());
+        Assert.Equal(integrationEvent.EventId, inbox.EventId);
+    }
+
+    [PostgreSqlFact]
     [Trait("Category", "cap-inmemory")]
     public async Task PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states()
     {
-        var adminConnectionString = ReadPostgresConnectionString();
-        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "mes_quality_hold_cap");
-        await using var factory = CreateFactory(database.ConnectionString);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
         await MigrateAsync(factory);
         await InitializeCapStorageAsync(factory);
         var occurredAtUtc = DateTimeOffset.Parse("2026-07-24T01:00:00Z");
@@ -279,6 +329,7 @@ public sealed class MesCapSubscriptionTests
     {
         using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
     }
 
@@ -330,16 +381,17 @@ public sealed class MesCapSubscriptionTests
         string expectedHeldInspectionRecordId,
         int expectedInboxCount)
     {
-        await AssertEventuallyAsync(async () =>
+        await AssertEventuallyAsync($"the MES CAP consumer projected the quality hold (active={active}) and its inbox receipt", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var hold = await dbContext.QualityHoldContexts.AsNoTracking().SingleOrDefaultAsync(x =>
                 x.OrganizationId == "org-001" &&
                 x.EnvironmentId == "env-dev" &&
-                x.SourceDocumentId == "WO-MAN-429");
+                x.SourceDocumentId == "WO-MAN-429", token);
             var inboxCount = await dbContext.ProcessedIntegrationEvents.AsNoTracking().CountAsync(x =>
-                x.ConsumerName == QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName);
+                x.ConsumerName == QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+                token);
 
             Assert.NotNull(hold);
             Assert.Equal(active, hold.Active);
@@ -382,6 +434,23 @@ public sealed class MesCapSubscriptionTests
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", fromUtc));
     }
 
+    private static AssetRestoredIntegrationEvent CreateRestoredEvent(DateTimeOffset restoredAtUtc)
+    {
+        return new AssetRestoredIntegrationEvent(
+            "evt-mes-asset-restored",
+            MaintenanceIntegrationEventTypes.AssetRestored,
+            MaintenanceIntegrationEventVersions.V1,
+            restoredAtUtc,
+            MaintenanceIntegrationEventSources.Maintenance,
+            "corr-mes-asset-restored",
+            "evt-mes-cap-asset-unavailable",
+            "org-001",
+            "env-dev",
+            "maintenance",
+            "maintenance.AssetRestored:ASSET-CNC-01:20260523100000",
+            new AssetRestoredPayload("ASSET-CNC-01", restoredAtUtc));
+    }
+
     private static bool CandidateSubscribesToTopic(object candidate, string topic)
     {
         return DescribeCandidate(candidate).Contains(topic, StringComparison.Ordinal);
@@ -402,82 +471,24 @@ public sealed class MesCapSubscriptionTests
         return $"{candidate.GetType().Name}({string.Join("; ", properties)})";
     }
 
-    private static async Task AssertEventuallyAsync(Func<Task> assertion)
+    /// <summary>
+    /// Real CAP dispatch against real PostgreSQL: the consumer runs on its own scope, so the only observable
+    /// fact is the persisted MES state. Bounded polling of that fact, reporting the last failed assertion.
+    /// </summary>
+    private static async Task AssertEventuallyAsync(string condition, Func<CancellationToken, Task> assertion)
     {
-        var timeoutAt = DateTimeOffset.UtcNow.AddSeconds(30);
-        Exception? lastException = null;
-        while (DateTimeOffset.UtcNow < timeoutAt)
-        {
-            try
-            {
-                await assertion();
-                return;
-            }
-            catch (Exception exception) when (exception is Xunit.Sdk.XunitException or InvalidOperationException)
-            {
-                lastException = exception;
-                await Task.Delay(250);
-            }
-        }
-
-        if (lastException is not null)
-        {
-            throw lastException;
-        }
+        await Eventually.AssertAsync(
+            condition: condition,
+            assertion: assertion,
+            options: new EventuallyOptions(
+                Timeout: TimeSpan.FromSeconds(30),
+                PollInterval: TimeSpan.FromMilliseconds(250),
+                SensitiveValues: [ReadPostgresConnectionString()]));
     }
 
     private static string ReadPostgresConnectionString()
     {
         return MesPostgreSqlTestSettings.ReadConnectionString();
-    }
-
-    private sealed class DisposablePostgresDatabase : IAsyncDisposable
-    {
-        private readonly string adminConnectionString;
-        private readonly string databaseName;
-
-        private DisposablePostgresDatabase(string adminConnectionString, string databaseName, string connectionString)
-        {
-            this.adminConnectionString = adminConnectionString;
-            this.databaseName = databaseName;
-            ConnectionString = connectionString;
-        }
-
-        public string ConnectionString { get; }
-
-        public static async Task<DisposablePostgresDatabase> CreateAsync(string adminConnectionString, string prefix)
-        {
-            var databaseName = $"{prefix}_{Guid.NewGuid():N}";
-            await using var adminConnection = new NpgsqlConnection(adminConnectionString);
-            await adminConnection.OpenAsync();
-            await using var createCommand = adminConnection.CreateCommand();
-            createCommand.CommandText = $"""CREATE DATABASE "{databaseName}";""";
-            await createCommand.ExecuteNonQueryAsync();
-
-            var builder = new NpgsqlConnectionStringBuilder(adminConnectionString)
-            {
-                Database = databaseName,
-            };
-            return new DisposablePostgresDatabase(adminConnectionString, databaseName, builder.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var cleanupConnection = new NpgsqlConnection(adminConnectionString);
-            await cleanupConnection.OpenAsync();
-            await using var terminateCommand = cleanupConnection.CreateCommand();
-            terminateCommand.CommandText = """
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE datname = @databaseName;
-                """;
-            terminateCommand.Parameters.AddWithValue("databaseName", databaseName);
-            await terminateCommand.ExecuteNonQueryAsync();
-
-            await using var dropCommand = cleanupConnection.CreateCommand();
-            dropCommand.CommandText = $"""DROP DATABASE IF EXISTS "{databaseName}";""";
-            await dropCommand.ExecuteNonQueryAsync();
-        }
     }
 }
 
