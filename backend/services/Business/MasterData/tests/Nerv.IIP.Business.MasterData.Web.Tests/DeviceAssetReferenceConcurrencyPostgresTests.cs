@@ -400,6 +400,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
         var unitOfWork = (ITransactionUnitOfWork)dbContext;
         await using var transaction = await dbContext.Database.BeginTransactionAsync();
         unitOfWork.CurrentTransaction = transaction;
+        await commitWindow.SignalAndWaitAsync();
         Exception? exception = null;
         try
         {
@@ -415,7 +416,6 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             exception = caught;
         }
 
-        await commitWindow.SignalAndWaitAsync();
         try
         {
             if (exception is null)
@@ -448,6 +448,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
         var unitOfWork = (ITransactionUnitOfWork)dbContext;
         await using var transaction = await dbContext.Database.BeginTransactionAsync();
         unitOfWork.CurrentTransaction = transaction;
+        await commitWindow.SignalAndWaitAsync();
         Exception? exception = null;
         try
         {
@@ -461,7 +462,6 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
             exception = caught;
         }
 
-        await commitWindow.SignalAndWaitAsync();
         try
         {
             if (exception is null)
@@ -571,7 +571,7 @@ public sealed class DeviceAssetReferenceConcurrencyPostgresTests
                 release.TrySetResult();
             }
 
-            await Task.WhenAny(release.Task, Task.Delay(TimeSpan.FromMilliseconds(300)));
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(30));
         }
     }
 
