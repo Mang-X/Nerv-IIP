@@ -1,12 +1,42 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import { statusActionGate } from '@nerv-iip/business-core'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import {
+  isIndeterminateLifecycleWriteError,
+  recoverLifecycleAction,
+} from '@/composables/lifecycleAction'
+import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
-import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
+import { wmsStatusTone } from '@/data/businessLabels'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
+import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import {
+  useWarehouseCodeCatalog,
+  WAREHOUSE_CATALOG_SOURCE_TEXT,
+  WAREHOUSE_LOCATION_EMPTY_TEXT,
+  WAREHOUSE_LOT_EMPTY_TEXT,
+} from '@/composables/useWarehouseCodeCatalog'
+import {
+  wmsOutboundOrderStatusFilterOptions,
+  wmsOutboundOrderStatusLabel,
+  WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
+  WMS_STATUS_ANY,
+} from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvButton,
   NvCheckbox,
@@ -22,7 +52,9 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
+  NvEntityPicker,
   NvInput,
+  NvSearchSelect,
   NvMetricStrip,
   NvPageHeader,
   NvSelect,
@@ -34,7 +66,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -53,17 +85,65 @@ const {
   refreshOutboundOrders,
   completeOutbound,
   completeOutboundPending,
-  completeOutboundError,
   createOutbound,
   createOutboundPending,
   createOutboundError,
-} = useWmsOutboundOrders()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+  outboundOrdersLastUpdatedAt,
+  outboundOrdersHasSuccessfulResponse,
+  outboundOrdersHasFailedResponse,
+} = useWmsOutboundOrders({ workScopeRequired: true })
+const {
+  scopeKey,
+  scopeOptions,
+  selectedScopeLabel,
+  hasSelection: outboundScopeReady,
+  unreadyMessage: workScopeUnreadyMessage,
+  pending: workScopePending,
+  error: workScopeError,
+  refresh: refreshWorkScopes,
+} = bindWmsWorkScopeFilters(filters, 'shipments')
+const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [
+    () => filters.keyword,
+    () => filters.status,
+    () => filters.locationCode,
+    () => filters.lotNo,
+    () => filters.scopeKind,
+    () => filters.scopeId,
+  ],
+})
+// 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
+const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
+  useInventoryScopeCatalog()
+const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
+  undefined,
+  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
+)
+// 状态是后端枚举而不是目录，用哨兵值表达「全部」。
+const statusFilter = computed({
+  get: () => filters.status || WMS_STATUS_ANY,
+  set: (value: string) => {
+    filters.status = value === WMS_STATUS_ANY ? undefined : value
+  },
+})
+/**
+ * 单位不是独立选择项：出库行的单位由物料的基本单位决定，手输只会写出查不到货的组合。
+ * 选完物料就把单位带出来，行上只读展示。
+ */
+function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
+  line.skuCode = skuCode
+  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
+}
 
-const errorMessage = computed(() =>
-  formatError(
-    outboundOrdersError.value ?? completeOutboundError.value ?? createOutboundError.value,
-  ),
+/**
+ * 读错误只归列表区域。提交（创建 / 复核）失败一律走 toast，不并进这一条：
+ * 两者共用一个变量时，「提交失败」会伪装成「列表加载失败」。
+ */
+const listErrorMessage = computed(() =>
+  outboundOrdersError.value
+    ? `取不到出库单列表，当前出库情况无法判断：${formatError(outboundOrdersError.value)}`
+    : '',
 )
 
 // 后端 WMS OutboundOrderLine 要求 uomCode/正数 requestedQuantity/pickLocationCode/qualityStatus/ownerType 均非空。
@@ -175,24 +255,51 @@ async function submitCreate() {
     createOpen.value = false
     notifySuccess('出库单已创建')
   } catch (error) {
-    notifyError(error, '创建出库单失败，请稍后重试。')
+    notifyOperationFailure('创建出库单失败', error, '创建出库单失败，请稍后重试。')
   }
 }
 
 const reviewOpen = shallowRef(false)
 const pendingOrder = shallowRef<OutboundRow>()
+const reviewIntentKey = shallowRef('')
+const reviewIntentAttempted = shallowRef(false)
+const reviewIntentLocked = shallowRef(false)
+usePendingWriteLeaveGuard(reviewIntentLocked)
+const reviewFrozenPayload = shallowRef<{ packReviewNo: string; passed: boolean }>()
 const form = reactive({ packReviewNo: '', passed: true })
 const formError = shallowRef('')
+watch(
+  () => `${form.packReviewNo}\u0000${form.passed}`,
+  () => {
+    if (!reviewIntentAttempted.value || reviewIntentLocked.value) return
+    reviewIntentKey.value = createWmsIdempotencyKey()
+    reviewIntentAttempted.value = false
+    reviewFrozenPayload.value = undefined
+    formError.value = ''
+  },
+)
 
-function isCompleted(row: OutboundRow) {
-  return (row.status ?? '').toLowerCase() === 'completed'
+function canComplete(row: OutboundRow) {
+  return statusActionGate({
+    domain: 'wms-outbound',
+    action: 'complete',
+    facts: { status: row.status },
+  }).executable
 }
 function openReview(row: OutboundRow) {
   pendingOrder.value = row
+  reviewIntentKey.value = createWmsIdempotencyKey()
+  reviewIntentAttempted.value = false
+  reviewIntentLocked.value = false
+  reviewFrozenPayload.value = undefined
   form.packReviewNo = ''
   form.passed = true
   formError.value = ''
   reviewOpen.value = true
+}
+function onReviewOpenChange(open: boolean) {
+  if (!open && reviewIntentLocked.value) return
+  reviewOpen.value = open
 }
 async function submitReview() {
   const id = pendingOrder.value?.outboundOrderId
@@ -202,11 +309,55 @@ async function submitReview() {
     return
   }
   try {
-    await completeOutbound(id, { packReviewNo: form.packReviewNo.trim(), passed: form.passed })
+    const payload = reviewFrozenPayload.value ?? {
+      packReviewNo: form.packReviewNo.trim(),
+      passed: form.passed,
+    }
+    reviewFrozenPayload.value = payload
+    await completeOutbound(id, payload, reviewIntentKey.value, {
+      attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
+      onCommandAttempt: () => {
+        reviewIntentAttempted.value = true
+      },
+    })
     reviewOpen.value = false
+    reviewIntentKey.value = ''
+    reviewIntentAttempted.value = false
+    reviewIntentLocked.value = false
+    reviewFrozenPayload.value = undefined
     notifySuccess('出库复核已提交')
   } catch (error) {
-    notifyError(error, '提交出库复核失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          reviewOpen.value = false
+          pendingOrder.value = undefined
+          form.packReviewNo = ''
+          reviewIntentKey.value = ''
+          reviewIntentAttempted.value = false
+          reviewIntentLocked.value = false
+          reviewFrozenPayload.value = undefined
+        },
+        refresh: refreshOutboundOrders,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    reviewIntentLocked.value =
+      reviewIntentAttempted.value && isIndeterminateLifecycleWriteError(error)
+    // 失败原因必须留在弹框里（#1397 / 台账 #81）：过去这里被清成空串，用户只看到一条
+    // 会自己消失的 toast「请检查填写项」，既不知道卡在哪，也无从自助定位。
+    const reasonContext = { outboundOrderNo: pendingOrder.value?.outboundOrderNo ?? undefined }
+    formError.value = reviewIntentLocked.value
+      ? '提交结果未知，当前内容已锁定；仅可按原内容重试。'
+      : inlineErrorMessage(error, '提交出库复核失败，请稍后重试。', reasonContext)
+    notifyOperationFailure(
+      '提交出库复核失败',
+      error,
+      '提交出库复核失败，请稍后重试。',
+      reasonContext,
+    )
   }
 }
 
@@ -220,9 +371,52 @@ const reviewContextItems = computed(() => [
       : undefined,
   },
 ])
-const openCount = computed(
+/**
+ * 数字口径：页头与「出库单」KPI 一律用**服务端总数**；按状态分档只有当前页能算，
+ * 因此一律带「本页」前缀，绝不和总数混在同一口径里。
+ * 读不到数（上下文未就绪 / 读取中 / 读失败）时显 `—`，不断言 0——0 是结论，不是缺省值。
+ */
+// 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
+// 「还没查」和「真的 0 条」很快又会混回同一个渲染。
+const contextReady = computed(() => hasBusinessContext(filters) && outboundScopeReady.value)
+const listReady = computed(
+  () => contextReady.value && !outboundOrdersError.value && !outboundOrdersPending.value,
+)
+const headerCount = computed(() => {
+  if (!contextReady.value) return '未选择业务范围'
+  if (outboundOrdersError.value) return '出库单数取不到'
+  if (outboundOrdersPending.value) return '加载中'
+  return `${outboundOrdersTotal.value} 张出库单`
+})
+const pageOpenCount = computed(
   () => outboundOrders.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
 )
+const metricCells = computed<NvMetricStripCell[]>(() => {
+  if (!listReady.value) {
+    return [
+      { key: 'total', label: '出库单', value: '—' },
+      { key: 'open', label: '本页待拣货复核发运', value: '—' },
+      { key: 'completed', label: '本页已完成', value: '—' },
+    ]
+  }
+  return [
+    { key: 'total', label: '出库单', value: outboundOrdersTotal.value, unit: '张' },
+    {
+      key: 'open',
+      label: '本页待拣货复核发运',
+      value: pageOpenCount.value,
+      unit: '张',
+      valueTone: pageOpenCount.value > 0 ? 'warning' : undefined,
+    },
+    {
+      key: 'completed',
+      label: '本页已完成',
+      value: outboundOrders.value.length - pageOpenCount.value,
+      unit: '张',
+      valueTone: 'success',
+    },
+  ]
+})
 
 type OutboundRow = BusinessConsoleWmsOutboundOrderItem
 const columns: NvDataTableColumn<OutboundRow>[] = [
@@ -240,30 +434,39 @@ const columns: NvDataTableColumn<OutboundRow>[] = [
 function rowKey(row: OutboundRow) {
   return row.outboundOrderId ?? row.outboundOrderNo ?? '出库单'
 }
+/**
+ * 出库单状态说人话。后端回的是 PascalCase 枚举（`InventoryPostingPending` /
+ * `InventoryPostingFailed`），UI 包通用状态表按小写整串查不到，会把英文印到界面上。
+ */
+function statusLabel(value?: string | null) {
+  return wmsOutboundOrderStatusLabel(value)
+}
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
+}
+
+function refreshAll() {
+  void refreshWorkScopes()
+  void refreshOutboundOrders()
+  void operationalCandidates.refresh()
 }
 </script>
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="出库发货"
-      :breadcrumbs="[{ label: '仓储作业' }]"
-      :count="`${outboundOrders.length} 张出库单`"
-    >
+    <NvPageHeader title="出库发货" :breadcrumbs="[{ label: '仓储作业' }]" :count="headerCount">
       <template #actions>
         <NvButton
           size="sm"
           type="button"
           variant="outline"
           :disabled="outboundOrdersPending"
-          @click="refreshOutboundOrders"
+          @click="refreshAll"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -275,25 +478,23 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricStrip
-      :cells="[
-        { key: 'total', label: '出库单', value: outboundOrdersTotal, unit: '张' },
-        {
-          key: 'open',
-          label: '待拣货复核发运',
-          value: openCount,
-          unit: '张',
-          valueTone: openCount > 0 ? 'warning' : undefined,
-        },
-        {
-          key: 'completed',
-          label: '已完成',
-          value: outboundOrders.length - openCount,
-          unit: '张',
-          valueTone: 'success',
-        },
-      ]"
+    <ListScopeMeta
+      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
+      source="WMS 发货作业范围目录"
+      :loaded="outboundOrders.length"
+      :total="outboundOrdersTotal"
+      :updated-at="outboundOrdersLastUpdatedAt"
+      :empty="
+        outboundOrdersHasSuccessfulResponse && !outboundOrdersError && outboundOrders.length === 0
+      "
+      :failed="
+        outboundOrdersHasFailedResponse || Boolean(outboundOrdersError) || Boolean(workScopeError)
+      "
+      failure-explanation="WMS 发货作业范围或出库单未成功返回，请重试。"
+      :empty-explanation="outboundScopeReady ? '当前作业范围没有出库单。' : workScopeUnreadyMessage"
     />
+
+    <NvMetricStrip :cells="metricCells" />
 
     <WmsInventoryContextPanel
       title="库存明细"
@@ -303,16 +504,45 @@ function formatError(error: unknown) {
     <NvToolbar :show-search="false">
       <template #filters>
         <NvInput
-          v-model="filters.status"
-          class="h-9 w-32"
-          placeholder="状态（可选）"
+          v-model="filters.keyword"
+          class="w-56"
+          placeholder="搜索出库单号、来源单据或物料"
+          aria-label="关键字搜索"
+        />
+        <NvSearchSelect
+          v-model="scopeKey"
+          class="w-56"
+          :options="scopeOptions"
+          :loading="workScopePending"
+          placeholder="选择作业范围"
+          aria-label="作业范围"
+        />
+        <WmsOperationalCandidateFilters
+          v-model:location-code="filters.locationCode"
+          v-model:lot-no="filters.lotNo"
+          :location-options="operationalCandidates.locationOptions.value"
+          :lot-options="operationalCandidates.lotOptions.value"
+          :pending="operationalCandidates.pending.value"
+          :ready="operationalCandidates.ready.value"
+          :error="operationalCandidates.error.value"
+          v-model:search-keyword="operationalCandidates.searchKeyword.value"
+          :source-label="operationalCandidates.sourceLabel.value"
+          :as-of-utc="operationalCandidates.asOfUtc.value"
+          :freshness-utc="operationalCandidates.freshnessUtc.value"
+          :truncated="operationalCandidates.truncated.value"
+          @retry="operationalCandidates.refresh"
+        />
+        <NvSearchSelect
+          v-model="statusFilter"
+          class="w-36"
+          :options="wmsOutboundOrderStatusFilterOptions"
+          placeholder="全部状态"
           aria-label="出库单状态"
         />
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
+    <!-- 读失败 / 未选组织环境都由表格自己的三态呈现，绝不退化成「暂无出库单」。 -->
     <NvDataTable
       manual
       :page="page"
@@ -324,18 +554,28 @@ function formatError(error: unknown) {
       :rows="outboundOrders"
       :row-key="rowKey"
       :loading="outboundOrdersPending"
+      :error="outboundOrdersError"
+      :error-message="listErrorMessage"
+      :awaiting-scope="!contextReady"
+      :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看出库单。'"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
+      @retry="refreshOutboundOrders"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"
+        ><NvStatusBadge
+          :value="row.status"
+          :label="statusLabel(row.status)"
+          :tone="wmsStatusTone(row.status)"
+      /></template>
       <template #cell-actions="{ row }">
         <NvButton
           size="sm"
           type="button"
           variant="outline"
           :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
-          :disabled="isCompleted(row) || !row.outboundOrderId"
+          :disabled="!canComplete(row) || !row.outboundOrderId"
           @click="openReview(row)"
         >
           完成复核
@@ -343,7 +583,7 @@ function formatError(error: unknown) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="reviewOpen">
+    <NvDialog :open="reviewOpen" @update:open="onReviewOpenChange">
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>出库复核</NvDialogTitle>
@@ -360,6 +600,7 @@ function formatError(error: unknown) {
               <NvInput
                 id="wms-pack-review-no"
                 v-model="form.packReviewNo"
+                :disabled="reviewIntentLocked"
                 :aria-invalid="Boolean(formError)"
                 autocomplete="off"
               />
@@ -370,14 +611,22 @@ function formatError(error: unknown) {
               class="items-center justify-between rounded-lg border p-3"
             >
               <NvFieldLabel for="wms-pack-passed">复核通过</NvFieldLabel>
-              <NvCheckbox id="wms-pack-passed" v-model:checked="form.passed" />
+              <NvCheckbox
+                id="wms-pack-passed"
+                v-model="form.passed"
+                :disabled="reviewIntentLocked"
+              />
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>
             <NvDialogClose as-child>
-              <NvButton type="button" variant="outline">取消</NvButton>
+              <NvButton type="button" variant="outline" :disabled="reviewIntentLocked">
+                取消
+              </NvButton>
             </NvDialogClose>
-            <NvButton type="submit" :disabled="completeOutboundPending">提交复核</NvButton>
+            <NvButton type="submit" :disabled="completeOutboundPending">
+              {{ reviewIntentLocked ? '按原内容重试' : '提交复核' }}
+            </NvButton>
           </NvDialogFooter>
         </form>
       </NvDialogContent>
@@ -398,15 +647,27 @@ function formatError(error: unknown) {
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-site">工厂</NvFieldLabel>
-              <NvInput id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
+              <NvEntityPicker
+                id="wms-out-site"
+                v-model="createForm.siteCode"
+                :options="siteOptions"
+                title="选择工厂"
+                placeholder="选择工厂"
+                source-text="数据来自基础数据工厂主数据"
+                empty-text="暂无工厂主数据，请先在基础数据维护工厂"
+                :loading="sitesPending"
+                clearable
+                aria-label="工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-srctype">来源类型</NvFieldLabel>
-              <NvInput
+              <NvSearchSelect
                 id="wms-out-srctype"
                 v-model="createForm.sourceDocumentType"
-                autocomplete="off"
-                placeholder="如 销售发货"
+                :options="WMS_OUTBOUND_SOURCE_TYPE_OPTIONS"
+                placeholder="选择来源类型"
+                aria-label="来源类型"
               />
             </NvField>
             <NvField>
@@ -432,18 +693,24 @@ function formatError(error: unknown) {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvInput
-                v-model="line.skuCode"
-                class="h-9 w-28"
+              <NvEntityPicker
+                :model-value="line.skuCode"
+                class="w-44"
+                :options="skuOptions"
+                title="选择物料"
                 placeholder="物料*"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料主数据，请先在基础数据维护物料"
+                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
+                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
-              <NvInput
-                v-model="line.uomCode"
-                class="h-9 w-16"
-                placeholder="单位*"
+              <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
+              <span
+                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
                 :aria-label="`第 ${index + 1} 行单位`"
-              />
+                >{{ line.uomCode || '单位' }}</span
+              >
               <NvInput
                 v-model="line.requestedQuantity"
                 class="h-9 w-24"
@@ -453,16 +720,28 @@ function formatError(error: unknown) {
                 placeholder="需求数量*"
                 :aria-label="`第 ${index + 1} 行需求数量`"
               />
-              <NvInput
+              <NvEntityPicker
                 v-model="line.pickLocationCode"
-                class="h-9 w-24"
+                class="w-36"
+                :options="locationOptions"
+                title="选择拣货库位"
                 placeholder="拣货库位*"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
                 :aria-label="`第 ${index + 1} 行拣货库位`"
               />
-              <NvInput
+              <NvEntityPicker
                 v-model="line.lotNo"
-                class="h-9 w-24"
+                class="w-36"
+                :options="lotOptions"
+                title="选择批次"
                 placeholder="批次"
+                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
+                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
+                :loading="warehouseCatalogPending"
+                clearable
                 :aria-label="`第 ${index + 1} 行批次`"
               />
               <NvSelect v-model="line.qualityStatus">

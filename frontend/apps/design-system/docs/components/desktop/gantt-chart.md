@@ -56,7 +56,8 @@ const cats = computed(() => {
   return [...seen.values()]
 })
 
-// ③ 选中 → 详情(TaskDetailPanel 未公开导出,这里用页面内简易 inspector)。
+// ③ 选中 → 详情。业务侧请用 @nerv-iip/scheduling 公开导出的 TaskDetailPanel
+//    (只读查阅面传 read-only,隐藏锁定/解锁按钮);这里为压缩文档示例只写了简易 inspector。
 const selectedId = ref(null)
 const selected = computed(() => model.value.tasks.find((t) => t.id === selectedId.value) ?? null)
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')
@@ -74,7 +75,7 @@ const emptyModel = ref({ ...makeModel(), tasks: [], links: [] })
 
 ## 基础用法
 
-传入 `toModel` 归一化后的 `ScheduleModel`。样例数据已带**计划 vs 实际基线**(WO-2026-003 实际较计划晚 3h,条后半透明「计划」条即偏差)、**里程碑**(WO-2026-001 分组下「冲焊下线」菱形,焊接条尾贴「冲焊完成」阶段点)与**依赖链**。
+传入 `toModel` 归一化后的 `ScheduleModel`。样例数据已带**计划与实际基线**(WO-2026-003 实际较计划晚 3h,条后半透明「计划」条即偏差)、**里程碑**(WO-2026-001 分组下「冲焊下线」菱形,焊接条尾贴「冲焊完成」阶段点)与**依赖链**。
 
 <Demo block>
   <div style="height: 440px; width: 100%">
@@ -92,8 +93,12 @@ const model = ref(toModel(plan as SchedulePlanContract)) // plan 来自 APS faca
 
 function onDrag(p) {
   // 改期后回写模型;接后端时改为「锁定 → 重预览」的编辑闭环
-  model.value = { ...model.value, tasks: model.value.tasks.map((t) =>
-    t.id === p.taskId ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc } : t) }
+  model.value = {
+    ...model.value,
+    tasks: model.value.tasks.map((t) =>
+      t.id === p.taskId ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc } : t,
+    ),
+  }
 }
 </script>
 
@@ -106,7 +111,7 @@ function onDrag(p) {
 
 ### 改期(拖拽)
 
-可编辑时(非 `read-only`),**横向拖动**工序条即改期——在上方基础用法 demo 里拖任一条即可。落点经 `@task-drag-end` 归一化回传(`startUtc` / `endUtc`),回写 `model` 后引擎按新位置重绘(不回写则条会弹回原位)。甘特聚焦时间线改期本身;若要**编辑工序字段**(开始时间 / 资源泳道 / 锁定),见 [ResourceSchedulerBoard 的「业务操作 · 编辑工序」](./resource-scheduler#业务操作-编辑工序)。
+可编辑时(非 `read-only`),**横向拖动**工序条即改期——在上方基础用法 demo 里拖任一条即可。落点经 `@task-drag-end` 归一化回传(`startUtc` / `endUtc`),回写 `model` 后引擎按新位置重绘(不回写则条会弹回原位)。甘特聚焦时间线改期本身;若要**编辑工序字段**(开始时间 / 资源泳道 / 锁定),见 [ResourceSchedulerBoard 的「业务操作编辑工序」](./resource-scheduler#业务操作编辑工序)。
 
 ### 刻度切换
 
@@ -127,7 +132,7 @@ function onDrag(p) {
   </div>
 </Demo>
 
-### 图例 ↔ 实际效果 对照
+### 图例 ↔ 实际效果对照
 
 同一张甘特(即上例数据),对着右侧清单在图里逐一指认视觉语言——不是只看图例条,而是「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="order"`)嵌在图底作为速查条。
 
@@ -223,35 +228,35 @@ function onDrag(p) {
 
 ### 字段能力表
 
-| 字段 | 能力 | 后端(APS 契约)现状 |
-|---|---|---|
-| `startUtc` / `endUtc` | 实际排程条 | 已提供 |
-| `plannedStartUtc` / `plannedEndUtc` | 计划 vs 实际双层基线 | 未提供 → demo 补,生产留空 |
-| `isMilestone` / `milestoneLabel` | 独立里程碑菱形 / 条尾阶段点 | 未提供 → demo 补,生产留空 |
-| `blockKind` | 资源时间块(维护/停机/换线/换型 斜纹块) | 未提供 → demo 补,生产留空 |
-| `kitting` | 齐套率 chip(足/缺/危 分级) | 未提供 → demo 补,生产留空 |
-| `changeoverMin` | 换型耗时 chip | 未提供 → demo 补,生产留空 |
-| `load` | 资源占用率(>1 过载瓶颈) | 未提供 → demo 补,生产留空 |
-| `isRush` | 插单高亮 | 未提供 → demo 补,生产留空 |
-| `owner` / `priority` / `status` | 网格列:负责人/优先级/状态 | 未提供 → demo 补,生产留空 |
-| `dueUtc` / `product` / `quantity` | 交期 / 产品 / 数量 | 未提供 → demo 补,生产留空 |
-| `hasConflict` / `conflictReason` | 冲突框 + 原因 | 由 `conflicts` 派生 |
+| 字段                                | 能力                                  | 后端(APS 契约)现状        |
+| ----------------------------------- | ------------------------------------- | ------------------------- |
+| `startUtc` / `endUtc`               | 实际排程条                            | 已提供                    |
+| `plannedStartUtc` / `plannedEndUtc` | 计划与实际双层基线                    | 未提供 → demo 补,生产留空 |
+| `isMilestone` / `milestoneLabel`    | 独立里程碑菱形 / 条尾阶段点           | 未提供 → demo 补,生产留空 |
+| `blockKind`                         | 资源时间块(维护/停机/换线/换型斜纹块) | 未提供 → demo 补,生产留空 |
+| `kitting`                           | 齐套率 chip(足/缺/危分级)             | 未提供 → demo 补,生产留空 |
+| `changeoverMin`                     | 换型耗时 chip                         | 未提供 → demo 补,生产留空 |
+| `load`                              | 资源占用率(>1 过载瓶颈)               | 未提供 → demo 补,生产留空 |
+| `isRush`                            | 插单高亮                              | 未提供 → demo 补,生产留空 |
+| `owner` / `priority` / `status`     | 网格列:负责人/优先级/状态             | 未提供 → demo 补,生产留空 |
+| `dueUtc` / `product` / `quantity`   | 交期 / 产品 / 数量                    | 未提供 → demo 补,生产留空 |
+| `hasConflict` / `conflictReason`    | 冲突框 + 原因                         | 由 `conflicts` 派生       |
 
 > 关键路径当前模型无对应字段、引擎不渲染,故图例与卡片均不展示;待后端补 APS 关键路径标记后再启用。
 
 ## 属性
 
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `model` | 排程数据模型(`toModel` 输出) | `ScheduleModel` | — |
-| `scale` | 时间刻度 | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
-| `readOnly` | 只读(禁用拖拽编辑) | `boolean` | `false` |
-| `loading` | 加载态(骨架占位) | `boolean` | `false` |
-| `engineKind` | 渲染引擎选择 | `'auto' \| 'dhtmlx'` | `'auto'` |
+| 属性         | 说明                         | 类型                                             | 默认     |
+| ------------ | ---------------------------- | ------------------------------------------------ | -------- |
+| `model`      | 排程数据模型(`toModel` 输出) | `ScheduleModel`                                  | —        |
+| `scale`      | 时间刻度                     | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
+| `readOnly`   | 只读(禁用拖拽编辑)           | `boolean`                                        | `false`  |
+| `loading`    | 加载态(骨架占位)             | `boolean`                                        | `false`  |
+| `engineKind` | 渲染引擎选择                 | `'auto' \| 'dhtmlx'`                             | `'auto'` |
 
 **Emits**:`taskSelect(taskId)`、`taskDragEnd(payload)`(落点归一化,不泄露引擎结构)、`conflictClick(taskId)`。
 **Expose**:`command(cmd)` — 下发 `zoomIn`/`zoomOut`/`scaleTo`/`scrollToToday`/`fitToScreen`/`selectTask` 等命令。
 
 ## 相关
 
-- [ResourceSchedulerBoard 资源甘特图](./resource-scheduler) — 同一模型的资源泳道视角；页内「业务操作 · 编辑工序」演示图外编辑面板改开始时间 / 资源泳道 / 锁定。
+- [ResourceSchedulerBoard 资源甘特图](./resource-scheduler) — 同一模型的资源泳道视角；页内「业务操作编辑工序」演示图外编辑面板改开始时间 / 资源泳道 / 锁定。

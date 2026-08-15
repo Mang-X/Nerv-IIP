@@ -606,6 +606,18 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.qualityNcrRead],
         },
         {
+          title: '计量与校准',
+          icon: RulerIcon,
+          to: { path: '/quality/calibration' },
+          requiredPermissions: [P.qualityInspectionRecordsRead],
+        },
+        {
+          title: '纠正措施',
+          icon: WrenchIcon,
+          to: { path: '/quality/capas' },
+          requiredPermissions: [P.qualityNcrRead],
+        },
+        {
           title: '原因码目录',
           icon: HashIcon,
           to: { path: '/quality/reason-codes' },
@@ -681,7 +693,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '盘点执行',
           icon: ClipboardCheckIcon,
           to: { path: '/wms/counts' },
-          requiredPermissions: [P.wmsReceiptsRead],
+          requiredPermissions: [P.wmsCountsRead],
         },
       ],
     },

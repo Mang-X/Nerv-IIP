@@ -1,80 +1,80 @@
-# Quality Business Gap #415 Implementation Plan
+# Quality 业务缺口 #415 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close Quality issue #415 by adding structured inspection specifications/AQL, Inventory release via public Quality events, NCR MRB review facts and CAPA lifecycle support.
+**目标：**通过添加结构化检验规格/AQL、经公共 Quality 事件触发的 Inventory 放行、NCR MRB 审核事实及 CAPA 生命周期支持，补齐 Quality issue #415。
 
-**Architecture:** Quality owns inspection/NCR/CAPA facts and emits enriched public events. Inventory consumes Quality public contracts and posts service-local stock transfer movements; no service crosses Domain/Infrastructure boundaries or writes another service schema.
+**架构：**Quality 拥有检验/NCR/CAPA 事实并发布增强的公共事件。Inventory 消费 Quality 公共契约，并在服务本地过账库存转移移动；任何服务都不得跨越 Domain/Infrastructure 边界，也不得写入其他服务的 schema。
 
-**Tech Stack:** .NET 10, CleanDDD/netcorepal, EF Core PostgreSQL, FastEndpoints, CAP integration events, xUnit, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、CleanDDD/netcorepal、EF Core PostgreSQL、FastEndpoints、CAP 集成事件、xUnit、`Nerv.IIP.Testing` schema 约定 helper。
 
 ---
 
-## Files
+## 文件
 
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.Quality/QualityIntegrationEvents.cs`
-- Modify: `backend/tests/Nerv.IIP.Contracts.Quality.Tests/QualityContractJsonTests.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionPlanAggregate/InspectionPlan.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionRecordAggregate/InspectionRecord.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/CorrectiveActionAggregate/CorrectiveAction.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/DomainEvents/NonconformanceReportDomainEvents.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/ApplicationDbContext.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionPlanEntityTypeConfiguration.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionRecordEntityTypeConfiguration.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/NonconformanceReportEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/CorrectiveActionEntityTypeConfiguration.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Repositories/CorrectiveActionRepository.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/CreateInspectionPlanCommand.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/NonconformanceReports/SubmitNonconformanceReportDispositionCommand.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConverters/InspectionIntegrationEventConverters.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConverters/NonconformanceReportIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/CorrectiveActions/CorrectiveActionCommands.cs`
-- Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/CorrectiveActions/CorrectiveActionEndpoints.cs`
-- Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Program.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Program.cs`
-- Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/InspectionAggregateTests.cs`
-- Create: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/CorrectiveActionTests.cs`
-- Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionIntegrationEventTests.cs`
-- Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
-- Update: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryMovementRequestedConsumerTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 修改：`backend/common/Contracts/Nerv.IIP.Contracts.Quality/QualityIntegrationEvents.cs`
+- 修改：`backend/tests/Nerv.IIP.Contracts.Quality.Tests/QualityContractJsonTests.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionPlanAggregate/InspectionPlan.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/InspectionRecordAggregate/InspectionRecord.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/NonconformanceReportAggregate/NonconformanceReport.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/AggregatesModel/CorrectiveActionAggregate/CorrectiveAction.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Domain/DomainEvents/NonconformanceReportDomainEvents.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/ApplicationDbContext.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionPlanEntityTypeConfiguration.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionRecordEntityTypeConfiguration.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/NonconformanceReportEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/CorrectiveActionEntityTypeConfiguration.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Repositories/CorrectiveActionRepository.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionPlans/CreateInspectionPlanCommand.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/NonconformanceReports/SubmitNonconformanceReportDispositionCommand.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConverters/InspectionIntegrationEventConverters.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventConverters/NonconformanceReportIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/CorrectiveActions/CorrectiveActionCommands.cs`
+- 创建：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/CorrectiveActions/CorrectiveActionEndpoints.cs`
+- 修改：`backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Program.cs`
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs`
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj`
+- 修改：`backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Program.cs`
+- 修改：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/InspectionAggregateTests.cs`
+- 创建：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/CorrectiveActionTests.cs`
+- 修改：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionIntegrationEventTests.cs`
+- 修改：`backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
+- 更新：`backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryMovementRequestedConsumerTests.cs`
+- 修改：`docs/architecture/database-schema-catalog.md`
+- 修改：`docs/architecture/implementation-readiness.md`
 
-## Task 1: Red Tests For Inspection Specs And AQL
+## Task 1：检验规格与 AQL 的红灯测试
 
-- [ ] Add failing Quality domain tests that create a plan with a variable characteristic `length` using lower/upper limits and assert a planned record with measured value outside the limits is rejected.
-- [ ] Add failing Quality domain tests that create an attribute characteristic with AQL sample size, acceptance number and rejection number and assert pass/reject/conditional outcomes.
-- [ ] Run `dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~InspectionAggregateTests`.
-- [ ] Implement characteristic specification fields, sampling fields and planned-record calculation until the tests pass.
+- [ ] 添加失败的 Quality 领域测试：创建带有变量特性 `length` 及上下限的计划，并断言实测值超限的计划检验记录会被拒绝。
+- [ ] 添加失败的 Quality 领域测试：创建包含 AQL 样本量、接收数和拒收数的属性特性，并断言通过/拒绝/有条件通过结果。
+- [ ] 运行 `dotnet test backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/Nerv.IIP.Business.Quality.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~InspectionAggregateTests`。
+- [ ] 实现特性规格字段、抽样字段和计划检验记录计算，直至测试通过。
 
-## Task 2: Red Tests For Quality Events And Inventory Release
+## Task 2：Quality 事件与 Inventory 放行的红灯测试
 
-- [ ] Add failing Quality contract/event tests asserting inspection event payload includes stock release dimensions and numeric result line facts.
-- [ ] Add failing Inventory Web tests where `quality.InspectionPassed` transfers stock from `quality` to `unrestricted`, `quality.InspectionRejected` transfers stock from `quality` to `blocked`, and explicit Quality stock release dimensions disambiguate multiple matching ledgers.
-- [ ] Run the focused Quality contract and Inventory consumer tests and confirm failure before implementation.
-- [ ] Implement event payload enrichment and Inventory consumer with deterministic idempotency keys.
+- [ ] 添加失败的 Quality 契约/事件测试，断言检验事件 payload 包含库存放行维度和数值型结果行事实。
+- [ ] 添加失败的 Inventory Web 测试：`quality.InspectionPassed` 将库存从 `quality` 转移到 `unrestricted`，`quality.InspectionRejected` 将库存从 `quality` 转移到 `blocked`，并且显式的 Quality 库存放行维度可消除多个匹配台账的歧义。
+- [ ] 运行聚焦的 Quality 契约测试和 Inventory 消费者测试，并确认实施前会失败。
+- [ ] 实现事件 payload 增强，以及使用确定性幂等键的 Inventory 消费者。
 
-## Task 3: Red Tests For NCR MRB And CAPA
+## Task 3：NCR MRB 与 CAPA 的红灯测试
 
-- [ ] Add failing NCR tests asserting disposition types `rework`, `scrap`, `return-to-supplier` and `conditional-release` require at least one MRB review entry.
-- [ ] Add failing CAPA tests for open-from-NCR, add containment/corrective/preventive action, verify effectiveness and close.
-- [ ] Run focused Quality domain tests and confirm failure before implementation.
-- [ ] Implement MRB review entries, CAPA aggregate, commands and internal endpoints.
+- [ ] 添加失败的 NCR 测试，断言处置类型 `rework`、`scrap`、`return-to-supplier` 和 `conditional-release` 至少需要一条 MRB 审核记录。
+- [ ] 添加失败的 CAPA 测试，覆盖从 NCR 开启、添加遏制/纠正/预防措施、验证有效性及关闭。
+- [ ] 运行聚焦的 Quality 领域测试，并确认实施前会失败。
+- [ ] 实现 MRB 审核记录、CAPA 聚合、命令和内部 endpoint。
 
-## Task 4: Persistence, Migrations And Contracts
+## Task 4：持久化、migration 与契约
 
-- [ ] Update EF configurations for new Quality fields and CAPA tables with comments.
-- [ ] Generate a Quality migration with `dotnet tool run dotnet-ef migrations add AddQualityBusinessGap415 ...`.
-- [ ] Update schema convention tests where needed and run the focused Quality Web tests.
-- [ ] Update schema catalog and readiness docs to describe the new Quality and Inventory closure behavior.
+- [ ] 更新新增 Quality 字段和 CAPA 表的 EF 配置，并添加注释。
+- [ ] 使用 `dotnet tool run dotnet-ef migrations add AddQualityBusinessGap415 ...` 生成 Quality migration。
+- [ ] 按需更新 schema 约定测试，并运行聚焦的 Quality Web 测试。
+- [ ] 更新 schema 目录和就绪文档，说明新增的 Quality 与 Inventory 闭环行为。
 
-## Task 5: Verification And PR
+## Task 5：验证与 PR
 
-- [ ] Run focused backend tests: Quality Domain/Web, Inventory Web, Contracts Quality and Contracts IntegrationEvents.
-- [ ] Run `dotnet test backend/Nerv.IIP.sln` unless blocked by unrelated baseline failures; report exact failures if blocked.
-- [ ] Commit all changes on `codex/issue-415-quality-business-gap`.
-- [ ] Push the branch and create a PR with `Closes #415` in the body.
+- [ ] 运行聚焦的后端测试：Quality Domain/Web、Inventory Web、Contracts Quality 和 Contracts IntegrationEvents。
+- [ ] 运行 `dotnet test backend/Nerv.IIP.sln`，除非被无关的基线失败阻塞；若被阻塞，应报告确切失败。
+- [ ] 在 `codex/issue-415-quality-business-gap` 上提交所有变更。
+- [ ] 推送分支并创建 PR，在正文中包含 `Closes #415`。

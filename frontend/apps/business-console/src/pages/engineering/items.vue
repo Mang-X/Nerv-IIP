@@ -43,7 +43,12 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -201,7 +206,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存物料修订失败', error, '保存物料修订失败，请稍后重试。')
   }
 }
 
@@ -226,7 +231,7 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -326,7 +331,7 @@ function formatError(error: unknown) {
                   class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                 >
                   <span>创建后立即发布该修订</span>
-                  <NvCheckbox id="item-release" v-model:checked="form.release" />
+                  <NvCheckbox id="item-release" v-model="form.release" />
                 </label>
                 <NvFieldDescription>发布后该修订不可变。</NvFieldDescription>
               </NvField>
@@ -344,14 +349,30 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvMetricCard
-      class="sm:max-w-md"
-      variant="breakdown"
-      label="物料修订"
-      :value="itemsTotal"
-      unit="个"
-      :segments="itemSegments"
-    />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <NvMetricCard
+        variant="breakdown"
+        label="物料修订"
+        :value="itemsTotal"
+        unit="个"
+        :segments="itemSegments"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="草稿待发布"
+        :value="draftCount"
+        unit="个"
+        :tone="draftCount > 0 ? 'warning' : 'neutral'"
+        :status="
+          draftCount > 0
+            ? { label: '待评审', tone: 'warning' }
+            : { label: '无待办', tone: 'success' }
+        "
+        :foot-start="
+          draftCount > 0 ? '确认物料属性后发布，供 BOM 与工艺引用。' : '当前没有待发布的物料修订。'
+        "
+      />
+    </div>
 
     <NvToolbar v-model:search="itemSearch" search-placeholder="按物料编码筛选">
       <template #filters>

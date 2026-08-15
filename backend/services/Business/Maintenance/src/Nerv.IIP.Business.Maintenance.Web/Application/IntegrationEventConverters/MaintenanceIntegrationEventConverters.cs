@@ -102,6 +102,20 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
         var workOrder = domainEvent.WorkOrder;
         var line = domainEvent.SparePartLine;
         var occurredAtUtc = workOrder.CompletedAtUtc ?? DateTimeOffset.UtcNow;
+        // Never invent a unit of measure for a spare-part issue. A guessed unit is either unknown to the
+        // unit master data (the movement fails downstream) or belongs to another dimension (the movement
+        // silently posts against the wrong ledger quantity). Missing units are a data defect at the source,
+        // so surface them here instead of shipping a fabricated one on the integration event.
+        var uomCode = line.UomCode?.Trim();
+        if (string.IsNullOrEmpty(uomCode))
+        {
+            throw new InvalidOperationException(
+                $"Maintenance spare part line '{line.Id}' on work order '{workOrder.Id}' has no unit of measure; " +
+                "the inventory movement cannot be requested without the spare part's unit.");
+        }
+
+        // The key is derived from the work order + line only, so retries of the same issue stay idempotent
+        // on the consumer side regardless of when the unit was filled in.
         var idempotencyKey = $"maintenance:{workOrder.OrganizationId}:{workOrder.EnvironmentId}:{workOrder.Id}:{line.Id}";
         return new InventoryMovementRequestedIntegrationEvent(
             EventIds.New(),
@@ -122,7 +136,7 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
                 line.Id.ToString(),
                 idempotencyKey,
                 line.SkuCode,
-                line.UomCode ?? "EA",
+                uomCode,
                 "maintenance",
                 "maintenance-spares",
                 null,

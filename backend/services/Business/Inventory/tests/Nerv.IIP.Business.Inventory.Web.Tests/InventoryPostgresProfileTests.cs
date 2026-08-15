@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
+[Collection(InventoryPostgresLaneCollection.Name)]
 public sealed class InventoryPostgresProfileTests
 {
     [InventoryPostgresFact]

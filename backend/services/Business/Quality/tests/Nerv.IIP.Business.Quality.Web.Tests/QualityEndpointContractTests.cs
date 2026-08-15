@@ -24,6 +24,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityEndpointContractTests
 {
     [Fact]
@@ -55,6 +56,16 @@ public sealed class QualityEndpointContractTests
             && x.Route == "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete"
             && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
             && x.OperationId == "completeBusinessQualityCapaAction");
+
+        // 三期读面：CAPA 此前只有写端点，台账与详情两条读端点补齐后才看得见。
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/capas"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrRead
+            && x.OperationId == "listBusinessQualityCapas");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/capas/{correctiveActionId}"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrRead
+            && x.OperationId == "getBusinessQualityCapa");
     }
 
     [Fact]
@@ -123,6 +134,11 @@ public sealed class QualityEndpointContractTests
         Assert.Equal("QR-SCRATCH", created.ReasonCode);
         Assert.Equal("QR-SCRATCH", item.ReasonCode);
         Assert.Equal("minor", item.Severity);
+
+        var scrap = await new ListQualityReasonsQueryHandler(dbContext).Handle(
+            new ListQualityReasonsQuery("org-001", "env-dev", Enabled: true, DefaultDisposition: "scrap"),
+            CancellationToken.None);
+        Assert.Empty(scrap.Items);
 
         var detail = await new GetQualityReasonQueryHandler(dbContext).Handle(
             new GetQualityReasonQuery("org-001", "env-dev", "QR-SCRATCH"),

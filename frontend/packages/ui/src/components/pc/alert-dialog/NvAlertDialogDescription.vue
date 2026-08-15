@@ -14,7 +14,12 @@ const delegatedProps = reactiveOmit(props, 'class')
   <AlertDialogDescription
     data-slot="nv-alert-dialog-description"
     v-bind="delegatedProps"
-    :class="cn('text-sm text-muted-foreground text-balance md:text-pretty *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground', props.class)"
+    :class="
+      cn(
+        'text-sm text-muted-foreground text-balance md:text-pretty *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground',
+        props.class,
+      )
+    "
   >
     <slot />
   </AlertDialogDescription>

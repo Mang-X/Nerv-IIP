@@ -101,9 +101,27 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         decimal quantity,
         DateOnly requiredDate,
         DateOnly releaseDate,
-        string reasonCode)
+        string reasonCode,
+        PlanningSuggestionId? suggestionId = null)
     {
-        return new PlanningSuggestion(organizationId, environmentId, mrpRunId, suggestionType, skuCode, uomCode, siteCode, quantity, requiredDate, releaseDate, reasonCode);
+        var suggestion = new PlanningSuggestion(
+            organizationId,
+            environmentId,
+            mrpRunId,
+            suggestionType,
+            skuCode,
+            uomCode,
+            siteCode,
+            quantity,
+            requiredDate,
+            releaseDate,
+            reasonCode);
+        if (suggestionId is not null)
+        {
+            suggestion.Id = suggestionId;
+        }
+
+        return suggestion;
     }
 
     public void SetNetRequirementExplanation(
@@ -159,6 +177,50 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             routingReference,
             sourceType,
             grossDemandQuantity));
+    }
+
+    /// <summary>
+    /// 建议 pegging 中所有 demand 类型的需求源引用（按 pegging 顺序去重）。
+    /// 合批建议会 peg 到多个需求源；下游桥接/事件必须完整携带，履约追溯才能对每张订单点亮。
+    /// scheduled-receipt 类型的 pegging 引用（如 erp:purchase-order:PO-x）不是需求源，予以排除。
+    /// </summary>
+    public IReadOnlyList<string> GetDemandSourceReferences()
+    {
+        var references = new List<string>();
+        foreach (var link in peggingLinks)
+        {
+            if (!string.Equals(link.PeggingType, "demand", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var reference = link.DemandSourceReference?.Trim();
+            if (string.IsNullOrEmpty(reference) || references.Contains(reference, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            references.Add(reference);
+        }
+
+        return references;
+    }
+
+    /// <summary>
+    /// 单值「主需求源引用」：<see cref="GetDemandSourceReferences"/> 的第一条；
+    /// 没有 demand 类型 pegging 时回退到任意非空 pegging 引用，避免历史数据丢链。
+    /// </summary>
+    /// <remarks>
+    /// 下游只认单值引用的字段（MES 工单的 SourceDemandReference、集成事件 payload 的主引用）都用它。
+    /// 之所以收在聚合里：这条「主引用 + 回退」三联式原本在集成事件转换器、下游桥接、
+    /// 验收测试三处各抄一遍，任一处的回退条件写歪，同一张建议在事件里和在工单上就会指向不同需求源。
+    /// </remarks>
+    public string? GetPrimaryDemandSourceReference()
+    {
+        var references = GetDemandSourceReferences();
+        return references.Count > 0
+            ? references[0]
+            : peggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
     }
 
     public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)

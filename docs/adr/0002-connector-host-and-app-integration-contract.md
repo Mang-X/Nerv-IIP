@@ -1,15 +1,15 @@
-# ADR 0002: 应用接入契约与 Connector Host/Connector 协议
+# ADR 0002：应用接入契约与 Connector Host/Connector 协议
 
-- Status: Accepted
-- Date: 2026-05-13
+- 状态：已接受
+- 日期：2026-05-13
 
-## Context
+## 背景
 
 Nerv-IIP 的首要价值不是承载业务逻辑，而是稳定接入、发现、控制与观测真实应用实例。受管目标可能运行在 Docker、Windows Service 与自定义 HTTP 进程环境中，平台不能把接入方式绑定到单一部署形态。
 
 平台需要区分应用目录事实、实例状态事实、执行动作编排与本地资源探测，不能把这些职责全部塞进同一个服务或脚本。任何启停、备份、恢复与日志拉取动作都需要审计、幂等与失败原因回传，否则平台无法形成可信运维闭环。契约如果不版本化，平台与 Connector Host 将在字段和能力演进过程中快速失配。
 
-## Decision
+## 决策
 
 1. 平台统一通过 Connector Host 接入受管环境，本地资源适配由 Connector 实现。
 2. 首批路线图至少规划 Docker Connector、Windows Service Connector、HTTP Connector；第一迭代只实现 Docker Connector，用于验证注册、心跳与状态同步链路。
@@ -23,7 +23,7 @@ Nerv-IIP 的首要价值不是承载业务逻辑，而是稳定接入、发现�
 10. 主平台必须把 Connector Host 视为外部接入客户端；双方只通过 Platform SDK、版本化 Connector Protocol、公开 HTTP API 和 IAM 授权协作，不共享内部实现。
 11. Connector Host 主版本必须与主平台主版本对齐；同一主版本内小版本可以低于主平台小版本，并由主平台尽量保持兼容。
 
-## Rationale
+## 理由
 
 1. 用 Connector Host 统一接入层，可以把平台核心服务与目标环境的异构性隔离开。
 2. Connector 模式能在不改变平台核心协议的前提下扩展新的宿主环境。
@@ -31,14 +31,14 @@ Nerv-IIP 的首要价值不是承载业务逻辑，而是稳定接入、发现�
 4. 把幂等、审计、失败回传作为协议硬约束，可以让运维动作具备可追溯性与可恢复性。
 5. 对能力声明和协议做版本化，可以支持主平台与 Connector Host 在同一主版本内独立升级，降低小版本不同步时的破坏性。
 
-## Consequences
+## 后果
 
 1. Connector Host 侧实现成本会上升，因为每类 Connector 都要遵守统一协议并回报结构化结果。
 2. 平台需要维护能力版本兼容策略，而不是只靠最新版本覆盖所有节点。
 3. 某些简单场景下，直接远程调用会比 Connector Host 协议看起来更省事，但长期会牺牲可观测性、一致性与审计闭环。
 4. 日后扩展更多高风险动作时，协议层需要继续演进审批、授权与回滚信息。
 
-## Implementation Notes
+## 实施说明
 
 1. 第一迭代脚手架需要创建 Connector Host 最小宿主、Docker Connector 原型以及注册、心跳、状态同步三条基本链路的契约定义。
 2. AppHub 负责应用目录与实例事实，Ops 负责执行动作、任务记录与审计闭环，二者职责需要在接口设计中严格分开。
@@ -46,7 +46,7 @@ Nerv-IIP 的首要价值不是承载业务逻辑，而是稳定接入、发现�
 4. 首批可以在单仓中用项目引用加快开发，但发布边界必须按 Platform SDK、版本化协议包、OpenAPI 或等价契约表达，不能要求 Connector Host 跟随主平台源码或小版本同步升级。
 5. 第二阶段低风险动作闭环的当前落地范围以 docs/architecture/second-vertical-slice-ops.md 为准。
 
-## Out of Scope
+## 范围之外
 
 1. 不在本 ADR 中决定 Connector Host 与平台之间最终采用 HTTP 长连接、轮询还是消息驱动。
 2. 不在本 ADR 中定义每个动作的完整参数模型与错误码表。

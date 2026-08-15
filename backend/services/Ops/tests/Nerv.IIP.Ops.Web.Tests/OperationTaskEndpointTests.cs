@@ -8,19 +8,27 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
+using Nerv.IIP.Ops.Web.Application.Auth;
 using Nerv.IIP.Ops.Web.Application.Commands;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Ops.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
+    /// <summary>appsettings.Development.json 里那把「本地开发假凭据」。</summary>
+    private const string DevelopmentFakeConnectorSecret = "local-connector-secret";
+
+    private const string ProductionInternalServiceToken = "production-internal-token";
+
     [Fact]
     public async Task Ops_api_endpoints_require_internal_service_authorization()
     {
@@ -58,15 +66,13 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Operation_task_can_be_created_dispatched_and_completed()
     {
-        var client = CreateInternalServiceClient(factory);
-        client.DefaultRequestHeaders.Add("X-Connector-Host-Id", "connector-host-001");
-        client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
-        client.DefaultRequestHeaders.Add("X-Organization-Id", "org-001");
-        client.DefaultRequestHeaders.Add("X-Environment-Id", "env-dev");
+        const string organizationId = "org-operation-lifecycle";
+        const string environmentId = "env-operation-lifecycle";
+        var client = CreateAuthorizedClient(organizationId, environmentId);
 
         var createRequest = new CreateOperationTaskRequest(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             "docker-container-local-demo-001",
             "lifecycle.restart",
             "idem-restart-001",
@@ -84,14 +90,23 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         Assert.Contains(createdTask.AuditRecords, x => x.Action == "operation.requested");
 
         var pendingResponse = await client.GetAsync(
-            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+            $"/api/ops/v1/operation-tasks/pending?organizationId={organizationId}&environmentId={environmentId}&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.OK, pendingResponse.StatusCode);
         var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(pendingResponse);
         Assert.NotNull(pending);
         var dispatch = Assert.Single(pending.Items);
         Assert.Equal(createdTask.OperationTaskId, dispatch.OperationTaskId);
+        Assert.Equal(createRequest.OrganizationId, dispatch.OrganizationId);
+        Assert.Equal(createRequest.EnvironmentId, dispatch.EnvironmentId);
         Assert.Equal("connector-host-001", dispatch.ConnectorHostId);
+        Assert.Equal(createRequest.InstanceKey, dispatch.InstanceKey);
+        Assert.Equal(createRequest.OperationCode, dispatch.OperationCode);
+        Assert.Equal(createRequest.CorrelationId, dispatch.CorrelationId);
+        Assert.Empty(dispatch.Parameters);
+        Assert.Equal(1, dispatch.AttemptNo);
+        Assert.Equal(300, dispatch.LeaseDurationSeconds);
+        Assert.Equal(3, dispatch.MaxAttempts);
 
         var dispatchedResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{createdTask.OperationTaskId}");
 
@@ -352,27 +367,76 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     [Fact]
     public async Task Production_does_not_accept_development_fake_connector_credential()
     {
-        await using var productionFactory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:BaseUrl", "http://127.0.0.1:1");
-                builder.UseSetting("InternalService:BearerToken", "production-internal-token");
-                builder.UseSetting("Persistence:Provider", "PostgreSQL");
-                builder.UseSetting(
-                    "ConnectionStrings:OpsDb",
-                    "Host=127.0.0.1;Port=1;Database=ops_test;Username=ops_test");
-                builder.UseSetting("Messaging:Provider", "RabbitMQ");
-                builder.UseSetting("RabbitMQ:HostName", "127.0.0.1");
-                builder.UseSetting("RabbitMQ:Port", "1");
-            });
-        var client = CreateInternalServiceClient(productionFactory, "production-internal-token");
-        AddConnectorHeaders(client, "local-connector-secret");
+        var iam = new StubbedIamCredentialHandlerFilter(HttpStatusCode.Unauthorized);
+        await using var productionFactory = CreateProductionFactory(iam);
+        var client = CreateInternalServiceClient(productionFactory, ProductionInternalServiceToken);
+        AddConnectorHeaders(client, DevelopmentFakeConnectorSecret);
 
         var response = await client.GetAsync(
             "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        // 401 必须来自「Production 把凭据交给 IAM、IAM 拒绝」，而不是内部服务令牌不对、连接器请求头
+        // 缺失之类的提前短路——那些同样是 401，会让本用例在断言强度归零后依旧全绿。
+        Assert.Equal(1, iam.RequestCount);
+    }
+
+    [Fact]
+    public async Task Production_fails_closed_when_iam_request_has_helper_owned_cancellation()
+    {
+        var iam = new StubbedIamCredentialHandlerFilter(
+            new OperationCanceledException("helper-owned timeout"));
+        await using var productionFactory = CreateProductionFactory(iam);
+        var client = CreateInternalServiceClient(productionFactory, ProductionInternalServiceToken);
+        AddConnectorHeaders(client, DevelopmentFakeConnectorSecret);
+
+        var response = await client.GetAsync(
+            "/api/ops/v1/operation-tasks/pending?organizationId=org-001&environmentId=env-dev&connectorHostId=connector-host-001&take=10");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(1, iam.RequestCount);
+    }
+
+    [Fact]
+    public async Task Production_connector_credential_validator_ignores_the_configured_secret()
+    {
+        var options = new FixedOptionsMonitor<OpsConnectorCredentialOptions>(new()
+        {
+            Secret = DevelopmentFakeConnectorSecret
+        });
+        var configuredValidator = new ConfiguredOpsConnectorCredentialValidator(options);
+        using var handler = new ScriptedHttpMessageHandler((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://iam.test")
+        };
+        var iamValidator = new IamOpsConnectorCredentialValidator(
+            httpClient,
+            new RecordingLogger<IamOpsConnectorCredentialValidator>());
+        var validator = new OpsConnectorCredentialValidator(
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            options,
+            configuredValidator,
+            iamValidator);
+
+        var request = new OpsConnectorCredentialValidationRequest(
+            "connector-host-001",
+            DevelopmentFakeConnectorSecret,
+            "org-001",
+            "env-dev",
+            "ops.operation-tasks.execute");
+
+        var result = await validator.ValidateAsync(request, CancellationToken.None);
+
+        Assert.False(result.IsAuthorized);
+        Assert.Equal("iam-rejected", result.Reason);
+
+        // 「忽略」的对照面：同一份凭据在 configured 分支下本来是通过的，所以上面的拒绝确实来自
+        // Production 改走 IAM，而不是这份凭据本身就不合法。
+        var configuredResult = await configuredValidator.ValidateAsync(request, CancellationToken.None);
+        Assert.True(configuredResult.IsAuthorized);
     }
 
     [Fact]
@@ -1025,11 +1089,49 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 configuration.AddInMemoryCollection(settings)));
     }
 
+    /// <summary>
+    /// 起一个 Production 档的 Ops 宿主：环境、持久化档位与认证语义都保持真实，但外部依赖全部隔离。
+    /// </summary>
+    /// <remarks>
+    /// Production 档下 <c>PersistenceStartupGovernance</c> 强制 PostgreSQL，而 PostgreSQL 档会带上 CAP，
+    /// CAP 的后台生命周期正是 NERV-733 里那条 teardown 竞态的来源，所以这里显式摘掉它
+    /// （<see cref="OpsTestHostIsolation.WithoutCapBackgroundProcessing"/>）。连接串与 broker 只需存在
+    /// 到能通过启动治理即可：被测请求在 401 处返回，根本不会走到 DB 或 broker。
+    /// </remarks>
+    private static WebApplicationFactory<Program> CreateProductionFactory(StubbedIamCredentialHandlerFilter iam)
+    {
+        return new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("InternalService:BearerToken", ProductionInternalServiceToken);
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting(
+                    "ConnectionStrings:OpsDb",
+                    "Host=ops-production-test.invalid;Database=ops_test;Username=ops_test;Password=ops_test");
+                builder.UseSetting("Messaging:Provider", "RabbitMQ");
+                builder.UseSetting("RabbitMQ:HostName", "ops-production-test.invalid");
+                builder.UseSetting("Iam:BaseUrl", "http://iam.ops-production-test.invalid");
+                builder.UseSetting("Ops:LeaseReaper:Enabled", "false");
+
+                // Development 的 fake 凭据在 Production 宿主里被显式配上：不配的话 Production 分支
+                // 拿不到可比对的 secret，用例就退化成「没有凭据当然 401」，证明不了「Production 不接受
+                // Development fake 凭据」。
+                builder.UseSetting("ConnectorHostCredential:Secret", DevelopmentFakeConnectorSecret);
+
+                builder.WithoutCapBackgroundProcessing();
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IHttpMessageHandlerBuilderFilter>(iam));
+            });
+    }
+
     private static WebApplicationFactory<Program> CreateEfInMemoryFactory(string databaseName)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                // PostgreSQL 档同样会注册 CAP；这些用例只验 EF 查询面，不需要 CAP 后台处理。
+                builder.WithoutCapBackgroundProcessing();
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {

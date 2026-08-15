@@ -23,7 +23,7 @@ const alertOpen = ref(false)
 
 # NvAlertDialog 警告对话框
 
-拦截不可逆的破坏性操作，强制用户在继续前作出明确选择。`NvAlertDialog` 没有右上角关闭按钮，只能经 Cancel / Action 退出，确保确认动作不被误触跳过。Action 内部即 `NvButton`，可通过 `variant="destructive"` 渲染为危险色。
+拦截不可逆的破坏性操作，强制用户在继续前作出明确选择。`NvAlertDialog` 没有右上角关闭按钮，只能通过取消或确认操作退出，确保确认动作不会被误触跳过。`NvAlertDialogAction` 内部使用 `NvButton`，可通过 `variant="destructive"` 渲染为危险色。
 
 ## 基础用法
 

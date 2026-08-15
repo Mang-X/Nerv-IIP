@@ -9,7 +9,10 @@ export interface SchedulingContext {
 }
 
 /** 读取一份排程计划并归一化为 ScheduleModel。需要组织/环境上下文(来自当前登录主体)。 */
-export function useSchedulingPlan(planId: Ref<string | undefined>, context: Ref<SchedulingContext>) {
+export function useSchedulingPlan(
+  planId: Ref<string | undefined>,
+  context: Ref<SchedulingContext>,
+) {
   const model = ref<ScheduleModel>()
   const loading = ref(false)
   const error = ref<unknown>()

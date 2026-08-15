@@ -2,7 +2,7 @@
 
 > 业务域:设备维护(/maintenance) + 设备运行详情维护上下文(/equipment/{deviceAssetId}) · 前端落点:`frontend/apps/business-console/src/pages/maintenance` + `frontend/apps/business-console/src/pages/equipment/[deviceAssetId].vue`
 > 后端:BusinessMaintenance(`backend/services/Business/Maintenance`)· facade:BusinessGateway `/api/business-console/v1/maintenance/**`
-> 关联:#794(运行小时指标 + 保养计划触发模式)、#945(保养计划触发配置编辑)、#688/#884(IIoT 运行小时聚合读面)、#416(设备可靠性闭环)
+> 关联:MAN-631/#1168(工单执行生命周期 M2)、#794(运行小时指标 + 保养计划触发模式)、#945(保养计划触发配置编辑)、#688/#884(IIoT 运行小时聚合读面)、#416(设备可靠性闭环)
 
 ## 1. 这页给谁用、解决什么
 
@@ -14,7 +14,7 @@
 ## 2. 信息架构(IA)
 
 - `/maintenance/plans` 保养计划:列表(触发模式 / 保养周期 / 下次到期)+ 新建/编辑计划 + 生成到期工单。
-- `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。
+- `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。`/reliability` 与 `/availability` 顶部用车间→产线→设备级联范围选择(共用 `useEquipmentScopeSelection`,主数据目录驱动):可靠性指标按单台设备计算,未下钻时默认显示范围设备总览引导下钻;可用窗口接口天然吃设备编号集合,未下钻时直接以范围内设备全集(上限 50 台,超出如实提示截断)做真实范围聚合。
 - `/equipment/{deviceAssetId}` 设备详情「维护与可靠性上下文」:按当前设备收敛的工单/计划/点检/备件/可用窗口 + **运行小时指标卡**(累计运行小时、距下次保养还需 X 小时)。
 
 导航不因本次变更改动(同页面),故 `frontend-navigation-map.md` 无需更新。
@@ -42,6 +42,13 @@
 - **累计运行小时**卡:窗口聚合(锚定运行小时计划起算日,无则近 90 天),明确是「窗口内累计运行事实」非终身表底;无运行样本时诚实显「无样本」。
 - **距下次保养还需 X 小时**卡:前端逐计划派生剩余小时;设备有多个运行小时计划时取**剩余最小**(最紧迫)者,不按创建顺序;剩余未知(无样本/读取失败)的计划排在有剩余之后,读取失败与无样本在卡片上分别显示。
 
+### 3.4 工单执行生命周期(MAN-631)
+
+- 标准路径为`待接单(Open) → 已接单(Accepted) → 处理中(InProgress) → 已完成(Completed) → 已验证(Verified) → 已关闭(Closed)`；处理中可进入`暂停(Paused)`或`待料(WaitingForParts)`后恢复，完成前可取消。
+- 分派与每个动作都带期望版本、业务原因和幂等键；详情的可用动作由服务端按当前权威状态返回，前端不得自行猜测越级操作。
+- 工单详情返回追加式生命周期审计，显示动作主体、当时的技师/班组、原因、前后状态、版本和权威时间。既有一步完工 facade 保留，供已上线调用兼容迁移。
+- “我的工单”只在显式`self`范围下成立，并由 Gateway 从认证 principal 派生；班组队列使用显式`team`范围。客户端不能提交 actor 或借用未授权范围。
+
 ## 4. 角色与权限
 - 读:`business.maintenance.plans.read` / `business.maintenance.work-orders.read` / `business.iiot.telemetry.read`(运行小时卡)。
 - 写:`business.maintenance.plans.manage`(建计划 / 编辑触发配置 / 生成到期工单)/ `business.maintenance.work-orders.manage`。
@@ -50,7 +57,7 @@
 ## 5. 数据来源(facade 代码事实)
 - 保养计划:`listBusinessConsoleMaintenancePlans`(纯 DB 投影,支持 `deviceAssetId` 过滤;返回 `interval`/`nextDueOn`/`runtimeHourInterval`/`nextDueRuntimeHours`/`lastGeneratedRuntimeHours`,**不含**剩余小时——剩余由前端派生)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`updateBusinessConsoleMaintenancePlan`(仅更新触发配置,转发到 BusinessMaintenance `PUT /api/business/v1/maintenance/plans/{planId}`)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
 - 运行小时:`queryBusinessConsoleTelemetryRuntimeHours`(窗口聚合 `totalRuntimeHours` / `hasRuntimeSamples` / 日粒度)。
-- 可靠性 / 工单 / 点检 / 备件 / 可用窗口:各自 facade,设备详情按返回设备字段客户端收敛。**仅保养计划**列表支持 `deviceAssetId` 服务端过滤(设备范围查询);工单列表当前仍是全局 `skip/take` 分页 + 页面客户端按设备过滤,目标设备工单落在全局前 N 条之外时可能遗漏,工单读面的服务端设备过滤为后续增强。
+- 工单:`listBusinessConsoleMaintenanceWorkOrders`在分页前按`status`、`deviceAssetId`、`keyword`和受信任的 technician/team 范围过滤；`getBusinessConsoleMaintenanceWorkOrder`返回详情、`allowedActions`与生命周期；`assignBusinessConsoleMaintenanceWorkOrder`和`transitionBusinessConsoleMaintenanceWorkOrder`完成分派及状态动作。可靠性 / 点检 / 备件 / 可用窗口继续使用各自 facade，设备详情按返回设备字段客户端收敛。
 
 ## 6. 领域口径(代码事实)
 - `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
@@ -62,6 +69,7 @@
 ## 7. 分期
 - #794 已交付:触发模式三档 + 运行小时数快捷值 + 字段级校验;列表三态 + 剩余小时;设备详情两卡。
 - #945 已交付:领域触发配置更新、租户范围内 PUT 端点、BusinessGateway exposed facade、OpenAPI/api-client、列表行编辑入口、三态预填与 update mutation。至此 #794 要求的「创建/编辑表单」编辑缺口已关闭。
+- MAN-631/#1168 已交付后端 M2：多状态生命周期、分派、self/team 队列、并发与幂等、详情可用动作和审计历史，以及 BusinessGateway 两跳契约；本项不新增 Business Console 页面。
 - 后续:运行小时趋势/预测、按到期紧迫度排序的计划工作台。
 
 ## 8. 已收口能力与剩余验收

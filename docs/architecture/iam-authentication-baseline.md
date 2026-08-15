@@ -10,15 +10,15 @@
 
 ## 当前实现状态
 
-IAM Persistent Auth Foundation 已覆盖后端持久化登录基线：PostgreSQL iam schema、初始 admin seed、JWT access token、refresh token hash + rotation、session revoke、/me 和 Connector Host credential validation。PostgreSQL profile 下 IAM 管理端点会先执行 bearer + permission 检查：用户读需要 `iam.users.read`，用户写需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。Phase 8 已交付用户创建/编辑/禁用/启用/重置密码、角色创建、角色权限 patch、权限 catalog、会话列表/撤销和 Console admin facade，不再以 501 作为管理写入口占位。用户生命周期已覆盖账号有效期、禁用即时撤销会话、密码复杂度、密码有效期、强制改密和历史密码禁复用。
+IAM 持久化认证基础已覆盖后端持久化登录基线：PostgreSQL iam 数据库模式、初始管理员种子数据、JWT 访问令牌、刷新令牌哈希与轮换、会话撤销、/me 和 Connector Host 凭据校验。PostgreSQL 配置档下 IAM 管理端点会先执行 bearer 令牌与权限检查：用户读需要 `iam.users.read`，用户写需要 `iam.users.manage`，角色读需要 `iam.roles.read`，角色写需要 `iam.roles.manage`，会话读/撤销分别需要 `iam.sessions.read` 和 `iam.sessions.revoke`。阶段 8 已交付用户创建/编辑/禁用/启用/重置密码、角色创建、角色权限修补、权限目录、会话列表/撤销和 Console 管理 facade，不再以 501 作为管理写入口占位。用户生命周期已覆盖账号有效期、禁用即时撤销会话、密码复杂度、密码有效期、强制改密和历史密码禁复用。
 
-Gateway-wide permission enforcement 已覆盖现有 Console API：PlatformGateway 通过 ASP.NET Core JWT bearer authentication middleware 验证控制台 access token，不直接读取 IAM persistence；通过标准 authorization policy 进入受保护 endpoint 后，再把认证结果中的 bearer token 和所需 permission/context 转发给 IAM 的 internal authorization check endpoint，由 IAM 基于 session、security stamp、permission version、organization、environment、permission code 和可选 resource type/resource id 判断是否放行。当前已保护实例列表、实例详情、restart 运维任务创建和 operation task detail 查询。P2 已补 Development-only OIDC callback stub、SSO session binding 字段、Development-only MFA challenge hook 和 ExternalClient resource-scope ABAC grant enforcement；完整 OAuth/OIDC 授权码服务器、consent 页面、WebAuthn、生产 MFA 和复杂策略语言仍属于后续阶段。
+Gateway 全局权限强制执行已覆盖现有 Console API：PlatformGateway 通过 ASP.NET Core JWT bearer 认证中间件验证控制台访问令牌，不直接读取 IAM 持久化数据；通过标准授权策略进入受保护 endpoint 后，再把认证结果中的 bearer token 和所需权限/上下文转发给 IAM 的内部授权检查 endpoint，由 IAM 基于会话、安全戳、权限版本、组织、环境、权限码和可选资源类型/资源 ID 判断是否放行。当前已保护实例列表、实例详情、重启运维任务创建和操作任务详情查询。P2 已补仅限 Development 的 OIDC callback stub、SSO 会话绑定字段、仅限 Development 的 MFA challenge hook 和 ExternalClient 资源范围 ABAC 授权强制执行；完整 OAuth/OIDC 授权码服务器、consent 页面、WebAuthn、生产 MFA 和复杂策略语言仍属于后续阶段。
 
-Console login UI now consumes IAM through PlatformGateway Console Auth facade. The browser keeps a single Gateway API base URL; Gateway forwards login, refresh, logout and current-principal requests to IAM without owning identity facts.
+Console 登录 UI 现已通过 PlatformGateway Console Auth facade 使用 IAM。浏览器只保留一个 Gateway API 基础 URL；Gateway 将 login、refresh、logout 和 current-principal 请求转发给 IAM，且不持有身份事实。
 
-Console IAM Admin UI now consumes IAM through PlatformGateway Console IAM Admin facade. The browser continues to call only `/api/console/v1/**`; Gateway checks IAM-backed permissions in the current organization/environment context, forwards the original bearer token to IAM, and returns Gateway OpenAPI response envelopes consumed by the generated `@nerv-iip/api-client`.
+Console IAM 管理 UI 现已通过 PlatformGateway Console IAM Admin facade 使用 IAM。浏览器仍只调用 `/api/console/v1/**`；Gateway 在当前 organization/environment 上下文中检查以 IAM 为依据的权限，将原始 bearer token 转发给 IAM，并返回由生成的 `@nerv-iip/api-client` 消费的 Gateway OpenAPI 响应信封。
 
-Ops connector endpoints remain on the existing `X-Connector-*` header credential validator as a transitional boundary until the Connector Host standard authentication pipeline from #17 is present in code. That boundary is intentionally kept separate from the Gateway console JWT pipeline to avoid a parallel rewrite of connector machine identity in this phase.
+在 #17 的 Connector Host 标准认证管线落实到代码前，Ops connector endpoint 继续使用现有的 `X-Connector-*` 请求头凭据校验器作为过渡边界。该边界有意与 Gateway Console JWT 管线隔离，避免本阶段并行重写 connector 机器身份。
 
 ## 决策
 
@@ -130,6 +130,26 @@ JWT 可以携带少量权限码用于前端体验优化，但服务端执行类�
 3. Domain guard：命令处理器或领域服务校验业务不变式。
 
 Endpoint 层只声明所需权限和上下文，不写领域规则。权限快照可以使用 FusionCache 缓存，但权限变更、角色变更、会话撤销和授权撤销必须主动失效相关缓存。
+
+### 当前主体范围上下文
+
+MAN-627 / #1164 在 internal `POST /internal/iam/v1/authorization/check` 增加可选
+`IncludePrincipalContext`。普通动作授权保持轻量；只有需要当前主体角色/范围解释的 Gateway
+请求才设为 `true`，响应附带角色 ID/名称和 permission-aware `ScopeGrants`。每个 grant
+记录 `sourceKind`（`role`/`membership`）、`sourceId`、scope kind/id、本次适用 permission
+及显式 Organization 标记。
+
+Role scope 只从真正授予本次 permission 的角色产生，避免“角色 A 给权限、角色 B 给更宽
+范围”的笛卡尔扩权；membership scope 是当前组织环境主体的显式公共边界。`self`、`team`、
+`work-center`、`workshop`、`organization`、`site`、`production-line` 是受控 scope type。
+空 data scopes 不生成 grant，绝不解释为 Organization；显式 Organization 必须匹配当前
+organization。未知 legacy scope 继续 fail-closed 为 `DenyAll`。富上下文与普通授权使用不同
+缓存键，不能互相复用。
+
+默认管理员与 PDA 演示身份的新建路径分别写入 Organization 与 Self。升级既有演示库时，
+两个独立 seed manifest 只回填可证明仍是旧 seed 基线且 scopes 为空的固定身份；角色名、
+permissions 或 membership roles 已变化，或者已有任意 scope 时均不修改，避免 seed 重启
+覆盖运营授权。
 
 ### 权限码命名基线
 

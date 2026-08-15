@@ -75,7 +75,7 @@ export interface InspectionLayer {
   backlog: number
   /** 最老待检龄期（小时）🟡 */
   oldestHours: number
-  /** 积压最多的来源（过程检里电芯线偏多 —— 与产线屏同一故事）🟡 */
+  /** 积压最多的来源（过程检里活塞杆一线偏多 —— 与产线屏同一故事）🟡 */
   backlogTop?: { name: string; count: number }
   /** 今日未过批次的最大来源（异常是例外：正常线不上榜）🟡 */
   failedTop?: { name: string; count: number }

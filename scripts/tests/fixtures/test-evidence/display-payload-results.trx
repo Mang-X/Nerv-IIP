@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-04T01:00:00Z" queuing="2026-08-04T01:00:00Z" start="2026-08-04T01:00:00Z" finish="2026-08-04T01:00:00.001Z" />
+  <Results>
+    <UnitTestResult executionId="77777777-7777-7777-7777-777777777701" testId="77777777-7777-7777-7777-777777777700" testName="sends(body: &quot;{\&quot;organizationId\&quot;:\&quot;org-secret-A\&quot;,\&quot;nested\&quot;:{\&quot;responseBody\&quot;:\&quot;inner-secret\&quot;}}&quot;, enveloped: True)" duration="00:00:00.0001000" outcome="Passed" />
+    <UnitTestResult executionId="77777777-7777-7777-7777-777777777702" testId="77777777-7777-7777-7777-777777777700" testName="sends(RESPONSEBODY: &quot;{\&quot;organizationId\&quot;:\&quot;org-secret-B\&quot;,\&quot;values\&quot;:[1,2]}&quot;, enveloped: True)" duration="00:00:00.0002000" outcome="Passed" />
+    <UnitTestResult executionId="77777777-7777-7777-7777-777777777703" testId="77777777-7777-7777-7777-777777777700" testName="sends(mode: &quot;POSTGRESQL&quot;, requestBody: &quot;malformed, still-secret&quot;, body: &quot;{\&quot;x\&quot;:\&quot;third-secret\&quot;}&quot;)" duration="00:00:00.0003000" outcome="Passed" />
+  </Results>
+  <TestDefinitions><UnitTest id="77777777-7777-7777-7777-777777777700" name="sends" storage="Display.Payload.Tests.dll"><TestMethod className="Fixture.DisplayPayloadTests" name="sends" /></UnitTest></TestDefinitions>
+  <ResultSummary outcome="Completed"><Counters total="3" executed="3" passed="3" failed="0" notExecuted="0" /></ResultSummary>
+</TestRun>

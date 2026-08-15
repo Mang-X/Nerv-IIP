@@ -1,5 +1,3 @@
-using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
-
 namespace Nerv.IIP.ConnectorHost.Connectors.Modbus;
 
 public sealed record ModbusConnectorOptions(

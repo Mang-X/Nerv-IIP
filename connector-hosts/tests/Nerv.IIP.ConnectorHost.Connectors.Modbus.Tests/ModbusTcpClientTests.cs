@@ -2,12 +2,16 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using Nerv.IIP.ConnectorHost.Connectors.Modbus;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Modbus.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class ModbusTcpClientTests
 {
-    [Fact]
+    private static readonly TimeSpan SocketObservationBudget = TimeSpan.FromSeconds(5);
+
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Read_registers_validates_response_identity_and_decodes_float32_word_swap()
     {
         await using var simulator = await ModbusTcpSimulator.StartAsync(
@@ -40,7 +44,7 @@ public sealed class ModbusTcpClientTests
         Assert.Equal(42.5m, sample.Value);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Read_registers_rejects_response_with_wrong_transaction_or_unit()
     {
         await using var simulator = await ModbusTcpSimulator.StartAsync(
@@ -67,7 +71,7 @@ public sealed class ModbusTcpClientTests
         Assert.Contains("transaction", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Read_registers_drops_non_finite_float32_without_throwing()
     {
         await using var simulator = await ModbusTcpSimulator.StartAsync(_ => [0x7F, 0xC0, 0x00, 0x00]);
@@ -91,7 +95,7 @@ public sealed class ModbusTcpClientTests
         Assert.Empty(samples);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Transaction_timeout_resets_the_socket_so_the_same_endpoint_can_recover()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -99,18 +103,39 @@ public sealed class ModbusTcpClientTests
         var endpoint = (IPEndPoint)listener.LocalEndpoint;
         var server = Task.Run(async () =>
         {
-            using (var first = await listener.AcceptTcpClientAsync())
+            using (var first = await BoundedObservation.ObserveAsync(
+                listener.AcceptTcpClientAsync(),
+                "the first Modbus recovery connection",
+                () => $"listener active={listener.Server.IsBound}",
+                SocketObservationBudget))
             await using (var firstStream = first.GetStream())
             {
-                await ReadExactlyAsync(firstStream, new byte[12]);
+                await BoundedObservation.ObserveAsync(
+                    ReadExactlyAsync(firstStream, new byte[12]),
+                    "the first Modbus recovery request",
+                    () => $"client connected={first.Connected}",
+                    SocketObservationBudget);
                 var closed = new byte[1];
-                Assert.Equal(0, await firstStream.ReadAsync(closed).AsTask().WaitAsync(TimeSpan.FromSeconds(2)));
+                var bytesRead = await BoundedObservation.ObserveAsync(
+                    firstStream.ReadAsync(closed).AsTask(),
+                    "the timed-out Modbus client to close its first socket",
+                    () => $"client connected={first.Connected}",
+                    SocketObservationBudget);
+                Assert.Equal(0, bytesRead);
             }
 
-            using var second = await listener.AcceptTcpClientAsync();
+            using var second = await BoundedObservation.ObserveAsync(
+                listener.AcceptTcpClientAsync(),
+                "the second Modbus recovery connection",
+                () => $"listener active={listener.Server.IsBound}",
+                SocketObservationBudget);
             await using var secondStream = second.GetStream();
             var request = new byte[12];
-            await ReadExactlyAsync(secondStream, request);
+            await BoundedObservation.ObserveAsync(
+                ReadExactlyAsync(secondStream, request),
+                "the second Modbus recovery request",
+                () => $"client connected={second.Connected}",
+                SocketObservationBudget);
             var response = new byte[]
             {
                 request[0], request[1], 0, 0, 0, 5, request[6], request[7], 2, 0, 42
@@ -133,7 +158,11 @@ public sealed class ModbusTcpClientTests
             var sample = Assert.Single(await client.ReadRegistersAsync(
                 mapping, DateTimeOffset.UtcNow, CancellationToken.None));
             Assert.Equal(42m, sample.Value);
-            await server.WaitAsync(TimeSpan.FromSeconds(2));
+            await BoundedObservation.ObserveAsync(
+                server,
+                "the Modbus recovery server to finish both exchanges",
+                () => $"server status={server.Status}",
+                SocketObservationBudget);
         }
         finally
         {
@@ -165,10 +194,18 @@ public sealed class ModbusTcpClientTests
             listener.Start();
             var serverTask = Task.Run(async () =>
             {
-                using var tcpClient = await listener.AcceptTcpClientAsync();
+                using var tcpClient = await BoundedObservation.ObserveAsync(
+                    listener.AcceptTcpClientAsync(),
+                    "the Modbus simulator client connection",
+                    () => $"listener active={listener.Server.IsBound}",
+                    SocketObservationBudget);
                 await using var stream = tcpClient.GetStream();
                 var request = new byte[12];
-                await ReadExactlyAsync(stream, request);
+                await BoundedObservation.ObserveAsync(
+                    ReadExactlyAsync(stream, request),
+                    "the complete Modbus simulator request",
+                    () => $"client connected={tcpClient.Connected}",
+                    SocketObservationBudget);
                 var transactionId = BinaryPrimitives.ReadUInt16BigEndian(request.AsSpan(0, 2));
                 var modbusRequest = new ModbusRequest(
                     request[6],
@@ -192,7 +229,11 @@ public sealed class ModbusTcpClientTests
         public async ValueTask DisposeAsync()
         {
             _listener.Stop();
-            await _serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+            await BoundedObservation.ObserveAsync(
+                _serverTask,
+                "the Modbus simulator server to stop",
+                () => $"server status={_serverTask.Status}",
+                SocketObservationBudget);
         }
 
         private static async Task ReadExactlyAsync(NetworkStream stream, byte[] buffer)

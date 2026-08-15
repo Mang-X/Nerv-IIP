@@ -4,7 +4,10 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Infrastructure.EntityConfigurations;
@@ -46,7 +49,10 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.SourceDocumentType).HasColumnName("source_document_type").IsRequired().HasMaxLength(100).HasComment("Producer document type.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Producer document id.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the inbound order is created.");
+        builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Inbound execution status.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the open inbound expectation was cancelled.");
@@ -56,6 +62,10 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InboundOrderNo }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceDocumentType, x.SourceDocumentId, x.Status })
             .HasDatabaseName("ix_inbound_orders_source_status");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedOperatorUserId, x.CreatedAtUtc })
+            .HasDatabaseName("ix_inbound_orders_operator_scope");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedPoolCode, x.CreatedAtUtc })
+            .HasDatabaseName("ix_inbound_orders_pool_scope");
     }
 
     internal static void AddTenantColumns<T>(EntityTypeBuilder<T> builder)
@@ -140,6 +150,8 @@ public sealed class OutboundOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SourceDocumentType).HasColumnName("source_document_type").IsRequired().HasMaxLength(100).HasComment("Producer document type.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Producer document id.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the outbound order is created.");
+        builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the outbound order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Outbound execution status.");
         builder.Property(x => x.PackReviewNo).HasColumnName("pack_review_no").HasMaxLength(100).HasComment("Pack review reference.");
         builder.Property(x => x.PackReviewPassed).HasColumnName("pack_review_passed").HasComment("Pack review pass flag.");
@@ -151,6 +163,10 @@ public sealed class OutboundOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("OutboundOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OutboundOrderNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedOperatorUserId, x.CreatedAtUtc })
+            .HasDatabaseName("ix_outbound_orders_operator_scope");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedPoolCode, x.CreatedAtUtc })
+            .HasDatabaseName("ix_outbound_orders_pool_scope");
     }
 }
 
@@ -186,14 +202,93 @@ public sealed class WarehouseTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData unit of measure code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional source lot number copied from the execution order line.");
+        builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional source serial number copied from the execution order line.");
+        builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the task is created.");
+        builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the task is created.");
         builder.Property(x => x.FromLocationCode).HasColumnName("from_location_code").IsRequired().HasMaxLength(100).HasComment("Task source location.");
         builder.Property(x => x.ToLocationCode).HasColumnName("to_location_code").IsRequired().HasMaxLength(100).HasComment("Task target location.");
         builder.Property(x => x.PlannedQuantity).HasColumnName("planned_quantity").IsRequired().HasPrecision(18, 6).HasComment("Planned execution quantity.");
         builder.Property(x => x.ExecutedQuantity).HasColumnName("executed_quantity").IsRequired().HasPrecision(18, 6).HasComment("Executed task quantity.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Warehouse task status.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for every successful task mutation.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
+        builder.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").HasComment("UTC time when manual execution started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
+        builder.Property(x => x.ExceptionCode).HasColumnName("exception_code").HasMaxLength(100).HasComment("Operator-reported exception code.");
+        builder.Property(x => x.ExceptionReason).HasColumnName("exception_reason").HasMaxLength(1000).HasComment("Operator-reported exception reason.");
+        builder.Property(x => x.ExceptionAtUtc).HasColumnName("exception_at_utc").HasComment("UTC time when the terminal exception was reported.");
+        builder.Property(x => x.ExceptionBy).HasColumnName("exception_by").HasMaxLength(150).HasComment("Operator user id that reported the terminal exception.");
+        builder.Property(x => x.CompletedBy).HasColumnName("completed_by").HasMaxLength(150).HasComment("Operator or system actor that completed the task.");
+        builder.Property(x => x.CompletionReason).HasColumnName("completion_reason").HasMaxLength(1000).HasComment("Audited reason for completion, required for a picking difference.");
+        builder.Property(x => x.ExecutionChannel).HasColumnName("execution_channel").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Atomic execution ownership channel: legacy-unclaimed, unclaimed, manual or WCS.");
+        builder.Property(x => x.ExecutionClaimedBy).HasColumnName("execution_claimed_by").HasMaxLength(150).HasComment("Trusted operator principal id or WCS task claim reference.");
+        builder.Property(x => x.ExecutionClaimedAtUtc).HasColumnName("execution_claimed_at_utc").HasComment("UTC time when the execution channel was atomically claimed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TaskNo }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TaskType, x.Status, x.SiteCode, x.AssignedOperatorUserId, x.CreatedAtUtc })
+            .HasDatabaseName("ix_warehouse_tasks_operator_scope");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TaskType, x.Status, x.SiteCode, x.AssignedPoolCode, x.CreatedAtUtc })
+            .HasDatabaseName("ix_warehouse_tasks_pool_scope");
+    }
+}
+
+public sealed class WarehouseTaskActionReceiptEntityTypeConfiguration : IEntityTypeConfiguration<WarehouseTaskActionReceipt>
+{
+    public void Configure(EntityTypeBuilder<WarehouseTaskActionReceipt> builder)
+    {
+        builder.ToTable("warehouse_task_action_receipts", table => table.HasComment("Durable idempotency receipts for manual warehouse task actions."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Warehouse task action receipt id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.WarehouseTaskId).HasColumnName("warehouse_task_id").IsRequired().HasComment("Warehouse task targeted by the manual action.");
+        builder.Property(x => x.Action).HasColumnName("action").IsRequired().HasMaxLength(50).HasComment("Stable manual action name.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Caller-provided idempotency key scoped to the task and action.");
+        builder.Property(x => x.PayloadFingerprint).HasColumnName("payload_fingerprint").IsRequired().HasMaxLength(128).HasComment("Canonical request payload fingerprint used to reject key reuse with different content.");
+        builder.Property(x => x.ResultStatus).HasColumnName("result_status").IsRequired().HasMaxLength(50).HasComment("Task status returned by the first successful execution.");
+        builder.Property(x => x.ResultVersion).HasColumnName("result_version").IsRequired().HasComment("Task version returned by the first successful execution.");
+        builder.Property(x => x.ResultExecutedQuantity).HasColumnName("result_executed_quantity").IsRequired().HasPrecision(18, 6).HasComment("Executed quantity returned by the first successful execution.");
+        builder.Property(x => x.ResultDifferenceQuantity).HasColumnName("result_difference_quantity").IsRequired().HasPrecision(18, 6).HasComment("Absolute planned-versus-executed difference returned by the first successful execution.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the durable receipt was created.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WarehouseTaskId, x.Action, x.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("ux_warehouse_task_action_receipts_key");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WarehouseTaskId, x.CreatedAtUtc })
+            .HasDatabaseName("ix_warehouse_task_action_receipts_task");
+    }
+}
+
+public sealed class WarehouseAssignmentReceiptEntityTypeConfiguration
+    : IEntityTypeConfiguration<WarehouseAssignmentReceipt>
+{
+    public void Configure(EntityTypeBuilder<WarehouseAssignmentReceipt> builder)
+    {
+        builder.ToTable(
+            "warehouse_assignment_receipts",
+            table => table.HasComment(
+                "Durable idempotency receipts for controlled WMS assignment and reassignment."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Assignment receipt id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.ResourceCategory).HasColumnName("resource_category").IsRequired().HasMaxLength(50).HasComment("Controlled assignment category.");
+        builder.Property(x => x.ResourceId).HasColumnName("resource_id").IsRequired().HasMaxLength(150).HasComment("Assigned aggregate id.");
+        builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Stable assignment intent key.");
+        builder.Property(x => x.PayloadFingerprint).HasColumnName("payload_fingerprint").IsRequired().HasMaxLength(128).HasComment("Canonical assignment payload fingerprint.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("Authorized exact site snapshot.");
+        builder.Property(x => x.PoolCode).HasColumnName("pool_code").IsRequired().HasMaxLength(150).HasComment("Assigned WMS work-pool snapshot.");
+        builder.Property(x => x.OperatorPrincipalId).HasColumnName("operator_principal_id").HasMaxLength(150).HasComment("Optional assigned operator principal snapshot.");
+        builder.Property(x => x.AssignedByPrincipalId).HasColumnName("assigned_by_principal_id").IsRequired().HasMaxLength(150).HasComment("Trusted assigning principal snapshot.");
+        builder.Property(x => x.ResultVersion).HasColumnName("result_version").IsRequired().HasComment("Authoritative aggregate version after assignment.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC receipt creation time.");
+        builder.HasIndex(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.ResourceCategory,
+                x.ResourceId,
+                x.IdempotencyKey,
+            })
+            .IsUnique()
+            .HasDatabaseName("ux_warehouse_assignment_receipts_key");
     }
 }
 
@@ -209,14 +304,89 @@ public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData unit of measure code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.AssignedOperatorUserId).HasColumnName("assigned_operator_user_id").HasMaxLength(150).HasComment("Optional operator assignment snapshot captured when the count execution is created.");
+        builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the count execution is created.");
         builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Counted warehouse location.");
         builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Expected count quantity provided by upstream boundary.");
         builder.Property(x => x.CountedQuantity).HasColumnName("counted_quantity").HasPrecision(18, 6).HasComment("Actual counted quantity.");
         builder.Property(x => x.VarianceQuantity).HasColumnName("variance_quantity").HasPrecision(18, 6).HasComment("Counted quantity minus expected quantity.");
         builder.Property(x => x.InventoryCountTaskId).HasColumnName("inventory_count_task_id").HasMaxLength(150).HasComment("Public Inventory count task id used to freeze and confirm the counted ledger.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Count execution status.");
+        builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for count assignment and lifecycle mutations.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedOperatorUserId, x.CreatedAtUtc })
+            .HasDatabaseName("ix_count_executions_operator_scope");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status, x.SiteCode, x.AssignedPoolCode, x.CreatedAtUtc })
+            .HasDatabaseName("ix_count_executions_pool_scope");
+    }
+}
+
+public sealed class WarehouseWorkPoolEntityTypeConfiguration
+    : IEntityTypeConfiguration<WarehouseWorkPool>
+{
+    public void Configure(EntityTypeBuilder<WarehouseWorkPool> builder)
+    {
+        builder.ToTable(
+            "warehouse_work_pools",
+            table => table.HasComment(
+                "WMS-owned operational work pools; these are not MasterData teams and grant no IAM permission."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Warehouse work-pool id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.PoolCode).HasColumnName("pool_code").IsRequired().HasMaxLength(150).HasComment("Stable WMS work-pool code.");
+        builder.Property(x => x.DisplayName).HasColumnName("display_name").IsRequired().HasMaxLength(200).HasComment("Operator-facing work-pool name.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code that owns the work pool.");
+        builder.Property(x => x.Active).HasColumnName("active").IsRequired().HasComment("Whether the work pool accepts current assignments.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
+        builder.Property(x => x.DeactivatedAtUtc).HasColumnName("deactivated_at_utc").HasComment("UTC deactivation time.");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PoolCode })
+            .IsUnique()
+            .HasDatabaseName("ux_warehouse_work_pools_code");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SiteCode, x.Active })
+            .HasDatabaseName("ix_warehouse_work_pools_site_active");
+    }
+}
+
+public sealed class WarehouseWorkPoolMembershipEntityTypeConfiguration
+    : IEntityTypeConfiguration<WarehouseWorkPoolMembership>
+{
+    public void Configure(EntityTypeBuilder<WarehouseWorkPoolMembership> builder)
+    {
+        builder.ToTable(
+            "warehouse_work_pool_memberships",
+            table => table.HasComment(
+                "Effective-dated WMS work-pool qualifications for trusted IAM principal ids; memberships grant no permission."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Warehouse work-pool membership id.");
+        InboundOrderEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.PoolCode).HasColumnName("pool_code").IsRequired().HasMaxLength(150).HasComment("Owning WMS work-pool code.");
+        builder.Property(x => x.PrincipalId).HasColumnName("principal_id").IsRequired().HasMaxLength(150).HasComment("Trusted IAM principal id qualified for the pool.");
+        builder.Property(x => x.Active).HasColumnName("active").IsRequired().HasComment("Whether the qualification remains active.");
+        builder.Property(x => x.EffectiveFromUtc).HasColumnName("effective_from_utc").IsRequired().HasComment("Inclusive UTC qualification start.");
+        builder.Property(x => x.EffectiveToUtc).HasColumnName("effective_to_utc").HasComment("Exclusive UTC qualification end.");
+        builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
+        builder.Property(x => x.DeactivatedAtUtc).HasColumnName("deactivated_at_utc").HasComment("UTC deactivation time.");
+        builder.HasIndex(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.PoolCode,
+                x.PrincipalId,
+                x.EffectiveFromUtc,
+            })
+            .IsUnique()
+            .HasDatabaseName("ux_warehouse_work_pool_memberships_window");
+        builder.HasIndex(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.PrincipalId,
+                x.Active,
+                x.EffectiveFromUtc,
+                x.EffectiveToUtc,
+            })
+            .HasDatabaseName("ix_warehouse_work_pool_memberships_principal_effective");
     }
 }
 
@@ -243,7 +413,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
         builder.Property(x => x.NextRetryAtUtc).HasColumnName("next_retry_at_utc").HasComment("Earliest UTC time at which a failed WCS task may be dispatched again.");
         builder.Property(x => x.IsTerminalFailure).HasColumnName("is_terminal_failure").IsRequired().HasDefaultValue(false).HasComment("Whether bounded WCS retry attempts have been exhausted.");
-        builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
+        builder.HasIndex(x => x.WarehouseTaskId).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId }).IsUnique();
     }
 }

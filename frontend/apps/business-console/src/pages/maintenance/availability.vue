@@ -3,10 +3,15 @@ import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
 import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
   NvButton,
+  NvCascadePicker,
   NvDataTable,
   NvField,
   NvFieldGroup,
@@ -16,8 +21,9 @@ import {
   NvPageHeader,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, WrenchIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -28,19 +34,39 @@ definePage({
 })
 
 const route = useRoute()
-const initialDeviceAssetIds =
-  typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : ''
+// 深链只认单台设备（逗号列表取第一台初始化下钻）。
+const initialDeviceAssetId =
+  (typeof route.query.deviceAssetId === 'string' ? route.query.deviceAssetId : '')
+    .split(',')[0]
+    ?.trim() ?? ''
 const {
   availabilityError,
   availabilityPending,
   availabilityWindows,
   filters,
   refreshAvailability,
-} = useMaintenanceAvailabilityWindows({
-  deviceAssetIds: initialDeviceAssetIds,
-})
+} = useMaintenanceAvailabilityWindows()
 
-const hasDeviceScope = computed(() => filters.deviceAssetIds.trim().length > 0)
+// 车间 → 产线 → 设备 级联范围：availability-windows 接口天然吃设备编号集合，
+// 未下钻到单台时直接把范围内设备编码全集喂给它做真实范围聚合（全厂 = 台账全部设备）。
+const { scope, levels, devicesInScope, scopeLabel, scopePending } = useEquipmentScopeSelection({
+  device: initialDeviceAssetId,
+})
+const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
+const MAX_SCOPE_DEVICES = 50
+const scopedDeviceCodes = computed(() =>
+  devicesInScope.value.map((d) => (d.code ?? '').trim()).filter((code) => code.length > 0),
+)
+const scopeTruncated = computed(() => scopedDeviceCodes.value.length > MAX_SCOPE_DEVICES)
+watch(
+  scopedDeviceCodes,
+  (codes) => {
+    filters.deviceAssetIds = codes.slice(0, MAX_SCOPE_DEVICES).join(',')
+  },
+  { immediate: true },
+)
+
+const hasDeviceScope = computed(() => scopedDeviceCodes.value.length > 0)
 const unavailableCount = computed(
   () =>
     availabilityWindows.value.filter(
@@ -78,16 +104,38 @@ const windowEndLocal = computed({
   },
 })
 
+// 可用窗口读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
+const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+  devices: true,
+  workCenters: true,
+})
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '未记录') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+function workCenterLabel(code?: string | null, fallback = '未绑定') {
+  if (!code) return fallback
+  return resolveWorkCenter(code) ?? code
+}
+
 const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
   {
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) => r.deviceAssetId ?? '未记录',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '未记录'),
   },
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
   { key: 'reasonCode', header: '原因' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => workCenterLabel(r.workCenterId),
+  },
   { key: 'startUtc', header: '开始', accessor: (r) => formatDateTime(r.startUtc) },
   { key: 'endUtc', header: '结束', accessor: (r) => formatDateTime(r.endUtc) },
   { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
@@ -99,7 +147,8 @@ function availabilityLabel(value?: string | null) {
     unavailable: '不可用',
     unknown: '未知',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
 }
 function availabilityVariant(value?: string | null) {
   if ((value ?? '').toLowerCase() === 'available') return 'success'
@@ -125,7 +174,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -134,7 +183,7 @@ function formatError(error: unknown) {
     <NvPageHeader
       title="可用窗口"
       :breadcrumbs="[{ label: '设备监控' }]"
-      :count="hasDeviceScope ? `${availabilityWindows.length} 个窗口` : '选择设备后查询'"
+      :count="hasDeviceScope ? `${scopeLabel} · ${availabilityWindows.length} 个窗口` : scopeLabel"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -155,36 +204,38 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
-    <NvFieldGroup
-      class="grid gap-3 rounded-lg border bg-card p-4 lg:grid-cols-[minmax(220px,1fr)_220px_220px_minmax(180px,0.8fr)]"
-    >
-      <NvField>
-        <NvFieldLabel for="avail-devices">设备范围</NvFieldLabel>
-        <NvInput
-          id="avail-devices"
-          v-model="filters.deviceAssetIds"
-          autocomplete="off"
-          placeholder="逗号分隔设备编号"
-        />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="avail-start">窗口开始</NvFieldLabel>
-        <NvInput id="avail-start" v-model="windowStartLocal" type="datetime-local" />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="avail-end">窗口结束</NvFieldLabel>
-        <NvInput id="avail-end" v-model="windowEndLocal" type="datetime-local" />
-      </NvField>
-      <NvField>
-        <NvFieldLabel for="avail-work-centers">工作中心</NvFieldLabel>
-        <NvInput
-          id="avail-work-centers"
-          v-model="filters.workCenterIds"
-          autocomplete="off"
-          placeholder="可选，逗号分隔"
-        />
-      </NvField>
-    </NvFieldGroup>
+    <div class="grid gap-3 rounded-lg border bg-card p-4">
+      <NvCascadePicker v-model="scope" :levels="levels" :aria-busy="scopePending" />
+      <p v-if="scopeTruncated" class="text-xs text-muted-foreground">
+        当前范围内设备超过 {{ MAX_SCOPE_DEVICES }} 台，本页仅统计前
+        {{ MAX_SCOPE_DEVICES }} 台；可用上方级联缩小范围。
+      </p>
+      <NvFieldGroup class="grid gap-3 lg:grid-cols-[220px_220px_minmax(180px,0.8fr)]">
+        <NvField>
+          <NvFieldLabel for="avail-start">窗口开始</NvFieldLabel>
+          <NvInput id="avail-start" v-model="windowStartLocal" type="datetime-local" />
+        </NvField>
+        <NvField>
+          <NvFieldLabel for="avail-end">窗口结束</NvFieldLabel>
+          <NvInput id="avail-end" v-model="windowEndLocal" type="datetime-local" />
+        </NvField>
+        <NvField>
+          <NvFieldLabel for="avail-work-centers">工作中心</NvFieldLabel>
+          <EntityMultiPicker
+            id="avail-work-centers"
+            v-model="filters.workCenterIds"
+            :options="workCenterOptions"
+            title="选择工作中心"
+            placeholder="可选，添加工作中心"
+            source-text="数据来自基础数据工作中心"
+            empty-text="暂无工作中心，请先在基础数据维护工作中心"
+            selection-empty-text="未限定工作中心（统计范围内全部设备）"
+            :loading="workCentersPending"
+            aria-label="工作中心"
+          />
+        </NvField>
+      </NvFieldGroup>
+    </div>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
@@ -192,7 +243,7 @@ function formatError(error: unknown) {
       v-if="!hasDeviceScope"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      请输入设备编号后查看维护占用、点检阻塞和其他可用性窗口。
+      范围内暂无设备主数据。请调整上方范围，或先在基础数据登记设备资产，再查看维护占用、点检阻塞和其他可用性窗口。
     </div>
 
     <template v-else>
@@ -235,9 +286,12 @@ function formatError(error: unknown) {
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
             :to="`/equipment/${row.deviceAssetId}`"
-            class="text-brand underline-offset-4 hover:underline"
+            class="grid leading-tight text-brand underline-offset-4 hover:underline"
           >
-            {{ row.deviceAssetId ?? '未记录' }}
+            <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+            <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+              row.deviceAssetId
+            }}</span>
           </RouterLink>
         </template>
         <template #cell-availabilityStatus="{ row }">

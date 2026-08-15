@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class QualityOpenApiTests
 {
     [Fact]

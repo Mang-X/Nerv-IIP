@@ -2,9 +2,10 @@
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
+import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -15,6 +16,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -81,6 +83,36 @@ const form = reactive({
   result: 'accepted',
   rejectionReason: '',
 })
+
+// 设备/终端从设备资产主数据里选（补录与筛选共用一份目录），不再手输编码。
+const { resources: deviceResources, resourcesPending: devicesPending } =
+  useBusinessMasterDataResources('device-asset')
+const deviceCatalogOptions = computed(() =>
+  deviceResources.value
+    .filter((row) => !!row.code && row.active !== false)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    })),
+)
+function deviceOptionsWith(current: string) {
+  const options = deviceCatalogOptions.value
+  const trimmed = current.trim()
+  if (trimmed && !options.some((option) => option.value === trimmed)) {
+    return [{ value: trimmed, label: trimmed, hint: undefined }, ...options]
+  }
+  return options
+}
+const formDeviceOptions = computed(() => deviceOptionsWith(form.deviceCode))
+// 筛选值是 `string | undefined`（留空=全部），选择器要 `string`，做一层空串代理。
+const deviceFilterValue = computed({
+  get: () => filters.deviceCode ?? '',
+  set: (value: string) => {
+    filters.deviceCode = value.trim() ? value : undefined
+  },
+})
+const filterDeviceOptions = computed(() => deviceOptionsWith(deviceFilterValue.value))
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeScanRecordItem>[] = [
   {
@@ -164,7 +196,7 @@ async function submitScan() {
     notifySuccess('扫码审计已记录。')
     open.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('记录扫码审计失败', error, '记录扫码审计失败，请稍后重试。')
   }
 }
 
@@ -226,7 +258,7 @@ function firstQuery(value: unknown) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -270,7 +302,18 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="barcode-scan-device"
                     >设备/终端 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput id="barcode-scan-device" v-model="form.deviceCode" autocomplete="off" />
+                  <NvEntityPicker
+                    id="barcode-scan-device"
+                    v-model="form.deviceCode"
+                    :options="formDeviceOptions"
+                    title="选择设备/终端"
+                    placeholder="选择设备/终端"
+                    source-text="数据来自基础数据设备台账"
+                    empty-text="暂无设备台账，请先在基础数据维护设备"
+                    :loading="devicesPending"
+                    aria-label="设备/终端"
+                    clearable
+                  />
                 </NvField>
                 <NvField>
                   <NvFieldLabel>扫码结果 <span class="text-destructive">*</span></NvFieldLabel>
@@ -364,11 +407,17 @@ function formatError(error: unknown) {
           placeholder="业务对象"
           aria-label="业务对象"
         />
-        <NvInput
-          v-model="filters.deviceCode"
-          class="h-9 w-32"
-          placeholder="终端"
+        <NvEntityPicker
+          v-model="deviceFilterValue"
+          :options="filterDeviceOptions"
+          class="h-9 w-40"
+          title="选择设备/终端"
+          placeholder="全部终端"
+          source-text="数据来自基础数据设备台账"
+          empty-text="暂无设备台账，请先在基础数据维护设备"
+          :loading="devicesPending"
           aria-label="终端"
+          clearable
         />
       </template>
     </NvToolbar>

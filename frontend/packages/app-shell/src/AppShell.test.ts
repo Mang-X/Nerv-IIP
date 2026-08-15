@@ -49,9 +49,7 @@ describe('AppShell', () => {
   it('renders grouped navigation children with RouterLink route locations', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [
-        { component: { template: '<div />' }, name: '/', path: '/' },
-      ],
+      routes: [{ component: { template: '<div />' }, name: '/', path: '/' }],
     })
 
     router.push('/')

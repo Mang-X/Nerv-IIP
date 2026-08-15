@@ -11,6 +11,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@lucide/vue": "1.24.0",
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/app-shell": "workspace:*",
     "@nerv-iip/auth": "workspace:*",
@@ -20,7 +21,6 @@
     "@pinia/colada": "1.4.2",
     "@pinia/colada-plugin-auto-refetch": "0.2.6",
     "@vueuse/core": "14.3.0",
-    "@lucide/vue": "1.24.0",
     "pinia": "4.0.2",
     "vue": "3.5.39",
     "vue-i18n": "^11.4.6",

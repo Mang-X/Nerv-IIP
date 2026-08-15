@@ -5,7 +5,7 @@
 > 拼接屏。设计规格：`docs/superpowers/specs/2026-06-26-screen-foundation-design.md`、
 > `2026-07-06-screen-m1-core-dashboards-design.md`。
 
-## Commands
+## 命令
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/screen typecheck
@@ -46,10 +46,10 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
   product.md 设计哲学，成熟后上提 `frontend/packages/ui` 的 `screen/` 层
   反哺组件库（R1–R5 定名 + 文档站同步，见该包 AGENTS.md）。
 
-## Hard Rules
+## 硬性规则
 
 1. 真实感数据看效果：产线名、`WO-` 工单号、OEE/节拍/达成率 —— 不用占位
-   假文案（product.md Do/Don't）。
+   假文案（product.md 中的“应做/不应做（Do/Don't）”）。
 2. 不堆叠 `backdrop-filter` / 大面积高斯模糊 —— 大屏渲染环境吃不消；用
    半透明渐变 + 发丝边模拟材质。
 3. 浮层（下拉/弹层）必须 Teleport 到 `<body>` 并 `position:fixed` 锚定，

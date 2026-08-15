@@ -136,7 +136,10 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         WarehouseTask task;
         if (document.RequiresQualityInspection)
         {
-            WriteMovementRequests(order.Complete(document.MovementIdempotencyKey), document.CompletedAtUtc, counters);
+            WriteMovementRequests(
+                order.Complete(document.MovementIdempotencyKey, order.Version),
+                document.CompletedAtUtc,
+                counters);
             order.ApplyInspectionResult(
                 InspectionPassedEventType,
                 document.InspectionRecordId!,
@@ -150,7 +153,10 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         else
         {
             task = CreatePutawayTask(order, document);
-            WriteMovementRequests(order.Complete(document.MovementIdempotencyKey), document.CompletedAtUtc, counters);
+            WriteMovementRequests(
+                order.Complete(document.MovementIdempotencyKey, order.Version),
+                document.CompletedAtUtc,
+                counters);
         }
 
         task.RecordProgress(document.Quantity);
@@ -249,7 +255,11 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         dbContext.WarehouseTasks.Add(task);
         counters.WarehouseTasks++;
 
-        var requests = order.CompletePackReview(document.PackReviewNo, passed: true, document.MovementIdempotencyKey);
+        var requests = order.CompletePackReview(
+            document.PackReviewNo,
+            passed: true,
+            document.MovementIdempotencyKey,
+            order.Version);
         WriteMovementRequests(requests, document.CompletedAtUtc, counters);
         order.MarkInventoryPostingCompleted();
 

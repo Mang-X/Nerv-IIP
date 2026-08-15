@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawSampleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
@@ -11,10 +12,13 @@ using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.Primitives;
+using Npgsql;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(IndustrialTelemetryPostgresLaneDatabase.CollectionName)]
 public sealed class IndustrialTelemetryHistorianTests
 {
     [Fact]
@@ -76,19 +80,71 @@ public sealed class IndustrialTelemetryHistorianTests
                 ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
             })
             .Build();
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero));
         var scheduler = new TelemetryHistorianScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
             NullLogger<TelemetryHistorianScheduler>.Instance,
-            new FixedTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero)));
+            fakeTime);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(async () =>
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782720000000",
+            "raw-old");
+
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Historian_scheduler_runs_again_after_fake_time_advances_to_second_tick()
+    {
+        var databaseName = nameof(Historian_scheduler_runs_again_after_fake_time_advances_to_second_tick);
+        await using var setupContext = CreateDbContext(databaseName);
+        setupContext.TelemetryTags.Add(TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-01", "temperature", "number", "celsius", "sample-60s;raw=1d;hourly=30d;daily=365d"));
+        setupContext.TelemetryRawSamples.AddRange(
+            Raw("DEV-CNC-01", "temperature", "2026-06-29T08:00:00Z", "2026-06-29T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "raw-first-expired-marker"),
+            Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 20m, 20m, 20m, 20m, 20m, "raw-first"));
+        await setupContext.SaveChangesAsync();
+
+        await using var services = new ServiceCollection()
+            .AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName))
+            .AddSingleton<IMediator, NoopMediator>()
+            .AddScoped<TelemetryHistorianService>()
+            .BuildServiceProvider();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:Historian:Enabled"] = "true",
+                ["IndustrialTelemetry:Historian:Interval"] = "01:00:00",
+                ["IndustrialTelemetry:Historian:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:Historian:Scopes:0:EnvironmentId"] = "env-dev",
+            })
+            .Build();
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 0, 0, 0, TimeSpan.Zero));
+        var scheduler = new TelemetryHistorianScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<TelemetryHistorianScheduler>.Instance,
+            fakeTime);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782892800000",
+            "raw-first-expired-marker");
+
+        await using (var secondTickContext = CreateDbContext(databaseName))
         {
-            await using var assertionContext = CreateDbContext(databaseName);
-            return await assertionContext.TelemetryRollups.AnyAsync(x => x.SourceSequence == "historian:hourly:DEV-CNC-01:temperature:1782720000000")
-                && !await assertionContext.TelemetryRawSamples.AnyAsync(x => x.SourceSequence == "raw-old");
-        });
+            secondTickContext.TelemetryRawSamples.Add(Raw("DEV-CNC-01", "temperature", "2026-06-30T08:00:00Z", "2026-06-30T08:01:00Z", 1, 30m, 30m, 30m, 30m, 30m, "raw-second-old"));
+            await secondTickContext.SaveChangesAsync();
+        }
+
+        fakeTime.Advance(TimeSpan.FromHours(1));
+        await WaitForHistorianStateAsync(
+            databaseName,
+            "historian:hourly:DEV-CNC-01:temperature:1782806400000",
+            "raw-second-old");
 
         await scheduler.StopAsync(CancellationToken.None);
     }
@@ -123,10 +179,10 @@ public sealed class IndustrialTelemetryHistorianTests
     [RealPostgresFact]
     public async Task Postgres_downsampling_executes_pending_window_antijoin_queries()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        await using var database = await IndustrialTelemetryPostgresTestDatabase.CreateAsync(postgresConnectionString);
-        await using var dbContext = database.CreateContext();
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
+        await using var dbContext = CreateLaneDbContext();
+        IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
         dbContext.TelemetryRawSamples.AddRange(
             Raw("DEV-CNC-01", "temperature", "2026-07-01T08:00:00Z", "2026-07-01T08:01:00Z", 1, 10m, 10m, 10m, 10m, 10m, "pg-old-raw-001"),
             Raw("DEV-CNC-01", "temperature", "2026-07-02T08:00:00Z", "2026-07-02T08:01:00Z", 1, 40m, 40m, 40m, 40m, 40m, "pg-new-raw-001"));
@@ -135,10 +191,10 @@ public sealed class IndustrialTelemetryHistorianTests
             Rollup(TelemetryRollupGrain.Daily, "2026-07-01T00:00:00Z", "2026-07-02T00:00:00Z", "historian:daily:DEV-CNC-01:temperature:1782691200000"));
         await dbContext.SaveChangesAsync();
 
-        var indexes = await database.LoadIndustrialTelemetryIndexNamesAsync();
+        var indexes = await LoadIndustrialTelemetryIndexNamesAsync();
         Assert.Contains("IX_telemetry_raw_samples_hourly_window", indexes);
         Assert.Contains("IX_telemetry_rollups_daily_window", indexes);
-        var rawPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+        var rawPendingWindowPlan = await ExplainWithSeqScanDisabledAsync("""
             SELECT raw.organization_id, raw.environment_id, raw.device_asset_id, raw.tag_key, raw.hourly_window_start_utc
             FROM industrial_telemetry.telemetry_raw_samples AS raw
             WHERE raw.organization_id = 'org-001'
@@ -158,7 +214,7 @@ public sealed class IndustrialTelemetryHistorianTests
             LIMIT 1
             """);
         Assert.Contains(rawPendingWindowPlan, line => line.Contains("IX_telemetry_raw_samples_hourly_window", StringComparison.Ordinal));
-        var dailyPendingWindowPlan = await database.ExplainWithSeqScanDisabledAsync("""
+        var dailyPendingWindowPlan = await ExplainWithSeqScanDisabledAsync("""
             SELECT hourly.organization_id, hourly.environment_id, hourly.device_asset_id, hourly.tag_key, hourly.daily_window_start_utc
             FROM industrial_telemetry.telemetry_rollups AS hourly
             WHERE hourly.organization_id = 'org-001'
@@ -526,23 +582,80 @@ public sealed class IndustrialTelemetryHistorianTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static async Task WaitUntilAsync(Func<Task<bool>> predicate)
+    private static ApplicationDbContext CreateLaneDbContext()
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!await predicate())
-        {
-            timeout.Token.ThrowIfCancellationRequested();
-            await Task.Delay(10, timeout.Token);
-        }
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    private static async Task<string[]> LoadIndustrialTelemetryIndexNamesAsync()
     {
-        public override DateTimeOffset GetUtcNow()
+        await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT indexname
+            FROM pg_indexes
+            WHERE schemaname = 'industrial_telemetry'
+            ORDER BY indexname;
+            """;
+        var names = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            return utcNow;
+            names.Add(reader.GetString(0));
         }
+
+        return names.ToArray();
     }
+
+    private static async Task<string[]> ExplainWithSeqScanDisabledAsync(string sql)
+    {
+        await using var connection = new NpgsqlConnection(IndustrialTelemetryPostgresLaneDatabase.ConnectionString);
+        await connection.OpenAsync();
+        await using (var disableSeqScan = connection.CreateCommand())
+        {
+            disableSeqScan.CommandText = "SET enable_seqscan = off";
+            await disableSeqScan.ExecuteNonQueryAsync();
+        }
+
+        await using var explain = connection.CreateCommand();
+        explain.CommandText = "EXPLAIN (COSTS OFF) " + sql;
+        var plan = new List<string>();
+        await using var reader = await explain.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            plan.Add(reader.GetString(0));
+        }
+
+        return plan.ToArray();
+    }
+
+    private static ValueTask<(bool RollupExists, bool RawOldExists)> WaitForHistorianStateAsync(
+        string databaseName,
+        string rollupSourceSequence,
+        string rawOldSourceSequence) =>
+        Eventually.WaitAsync(
+            "historian creates the expected hourly rollup and removes the expired raw sample",
+            async cancellationToken =>
+            {
+                await using var assertionContext = CreateDbContext(databaseName);
+                var rollupExists = await assertionContext.TelemetryRollups
+                    .AnyAsync(x => x.SourceSequence == rollupSourceSequence, cancellationToken);
+                var rawOldExists = await assertionContext.TelemetryRawSamples
+                    .AnyAsync(x => x.SourceSequence == rawOldSourceSequence, cancellationToken);
+                return (rollupExists, rawOldExists);
+            },
+            observation => observation.rollupExists && !observation.rawOldExists,
+            observation => $"rollupExists={observation.rollupExists}; rawOldExists={observation.rawOldExists}",
+            new EventuallyOptions(
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromMilliseconds(10),
+                []));
 
     private sealed class NoopMediator : IMediator
     {

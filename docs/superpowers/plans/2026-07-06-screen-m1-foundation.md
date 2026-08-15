@@ -1,26 +1,26 @@
-# 大屏 M1 薄共享地基 Implementation Plan
+# 大屏 M1 薄共享地基实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** 为 M1 三屏落一层极薄的共享地基——类型化 fetcher seam、`useAccessScope` 权限上下文（mock persona，IAM-ready）、`/` 大屏选择页 + 多工厂切换、共享 masterdata/fixtures——使随后三屏可独立并行开发。
+**目标：**为 M1 三屏落一层极薄的共享地基——类型化 fetcher seam（获取器接缝）、`useAccessScope` 权限上下文（模拟角色，已为 IAM 接入做好准备）、`/` 大屏选择页 + 多工厂切换、共享主数据/fixture（夹具）——使随后三屏可独立并行开发。
 
-**Architecture:** 在既有 `apps/screen`（Vite-plus + Vue3 + vue-router auto-routes + Pinia + `screen-kit` + `@nerv-iip/ui` screen 层）之上新增 `src/data/`（contracts/mock/fetchers 三段式数据 seam）与 `src/access/`（scope）。`/` 改为权限驱动的大屏选择页；`/factory` 承接现有工厂 demo（Phase 1 再精修），`/equipment`、`/line` 先建"建设中"占位页，供 launcher 链接与 scope gating 落地。数据仍全 mock，`#570` 就绪后逐屏只换 `data/fetchers/*`。
+**架构：**在既有 `apps/screen`（Vite-plus + Vue3 + vue-router 自动路由 + Pinia + `screen-kit` + `@nerv-iip/ui` 大屏层）之上新增 `src/data/`（contracts/mock/fetchers 三段式数据接缝）与 `src/access/`（访问范围）。`/` 改为权限驱动的大屏选择页；`/factory` 承接现有工厂演示（阶段 1 再精修），`/equipment`、`/line` 先建“建设中”占位页，供启动器链接与访问范围门禁落地。数据仍全部使用 mock，`#570` 就绪后逐屏只替换 `data/fetchers/*`。
 
-**Tech Stack:** Vue 3.5 `<script setup>` + TS、Pinia 3、vue-router 5（auto-routes）、`@vueuse/core`、`lucide-vue-next`、`@nerv-iip/ui` screen 层、vitest（`vp test`）。
+**技术栈：**Vue 3.5 `<script setup>` + TS、Pinia 3、vue-router 5（自动路由）、`@vueuse/core`、`lucide-vue-next`、`@nerv-iip/ui` 大屏层、Vitest（`vp test`）。
 
-## Global Constraints
+## 全局约束
 
-来自 spec `docs/superpowers/specs/2026-07-06-screen-m1-core-dashboards-design.md`，每个任务都隐含遵守：
+以下要求来自设计规格 `docs/superpowers/specs/2026-07-06-screen-m1-core-dashboards-design.md`，每个任务都必须遵守：
 
 - **数据口径**：业务数据全走 mock，藏在类型化 fetcher 接口后；`#570` 就绪后逐屏换真实 `@nerv-iip/api-client`。仅轮询（`useScreenData`），无 SSE。
 - **契约漂移防线**：mock 形状对齐 `@nerv-iip/api-client` business-console `types.gen.ts`；**禁止 `as` / 内联标注绕过契约**；无对应真实端点的 🟠 字段显式注释 `// 🟠 待 #570`。
 - **设计哲学统一**（新建件硬门禁，依据 `frontend/packages/ui/src/components/screen/product.md` + `tokens.css`）：只用 `--sb-*` 令牌、无亮色模式；克制发光（辉光只给活数据）；动效只用 `--sb-ease` / `--sb-ease-emphasized`、press 收缩不回弹、每个动效有 `prefers-reduced-motion` 降级；数据驱动零 props 可渲染；不堆叠 `backdrop-filter`、不用大数字模板/侧边色条/渐变文字；shadcn/现有原版零改动，定制靠新建。
-- **组件基准（source of truth，§1.6）**：复用/新建前先读 design-system 文档站「大屏」分区 `frontend/apps/design-system/docs/components/screen/` + 组件源码 `frontend/packages/ui/src/components/screen/*.vue` 确认真实 props，不凭记忆。
+- **组件基准（权威来源，§1.6）**：复用/新建前先读设计系统文档站「大屏」分区 `frontend/apps/design-system/docs/components/screen/` + 组件源码 `frontend/packages/ui/src/components/screen/*.vue` 确认真实 props，不凭记忆。
 - **诚实标注**：占位指标（OEE 性能/质量率=1、综合 OEE≈可用率）统一走占位 badge/tooltip 标注「≈可用率」「待 #570」；`IsSourceFresh` 驱动失联灰条防假绿；无闭环能力（安灯）标注「待 MAN-322」。
-- **门禁（每任务/每屏）**：`pnpm -C frontend --filter @nerv-iip/screen typecheck && test && build` 全过；关键逻辑有 vitest；每屏另加 preview 实机截图确认。
+- **门禁（每任务/每屏）**：`pnpm -C frontend --filter @nerv-iip/screen typecheck && test && build` 全过；关键逻辑有 Vitest 测试；每屏另加预览实机截图确认。
 - **分支**：本地基单独分支 `feat/screen-m1-foundation`；随后三屏各自 `mang/man-314-*` / `mang/man-317-*` / `mang/man-316-*`。
-- **执行顺序（按依赖）**：**F2 → F1 → F3 → F4 → F5**（scope 依赖 masterdata，故 F2 先于 F1）。每个任务提交时全树必须可编译。
-- **测试命令**：统一跑整套 `pnpm -C frontend --filter @nerv-iip/screen test`（`vp test` 的名字过滤不保证透传；各任务 Run 里的过滤名仅示意定位）。
+- **执行顺序（按依赖）**：**F2 → F1 → F3 → F4 → F5**（访问范围依赖主数据，故 F2 先于 F1）。每个任务提交时全树必须可编译。
+- **测试命令**：统一运行整套 `pnpm -C frontend --filter @nerv-iip/screen test`（`vp test` 的名称过滤不保证透传；各任务“运行”项里的过滤名仅用于示意定位）。
 
 ---
 
@@ -54,24 +54,24 @@ frontend/apps/screen/src/
 
 ---
 
-## Task F1: 访问权限上下文 `useAccessScope`（mock persona）
+## 任务 F1：访问权限上下文 `useAccessScope`（模拟角色）
 
-**Files:**
-- Create: `frontend/apps/screen/src/data/mock/scope.ts`
-- Create: `frontend/apps/screen/src/access/useAccessScope.ts`
-- Test: `frontend/apps/screen/src/access/useAccessScope.test.ts`
+**文件：**
+- 创建：`frontend/apps/screen/src/data/mock/scope.ts`
+- 创建：`frontend/apps/screen/src/access/useAccessScope.ts`
+- 测试：`frontend/apps/screen/src/access/useAccessScope.test.ts`
 
-**Interfaces:**
-- Consumes: `frontend/apps/screen/src/data/mock/masterdata.ts` 的 `FACTORIES / WORKSHOPS / LINES / workshopsByFactory`（**Task F2 产出；本任务先用最小内联桩，F2 落地后切换**——为避免顺序耦合，F1 与 F2 可并行，但若先做 F1，则在 `scope.ts` 内联 2 个工厂/若干车间的最小常量，F2 完成后本文件改为从 `masterdata.ts` import 并删桩）。
-- Produces:
+**接口：**
+- 消费：`frontend/apps/screen/src/data/mock/masterdata.ts` 的 `FACTORIES / WORKSHOPS / LINES / workshopsByFactory`（**任务 F2 产出；本任务先用最小内联桩，F2 落地后切换**——为避免顺序耦合，F1 与 F2 可并行，但若先做 F1，则在 `scope.ts` 内联 2 个工厂/若干车间的最小常量，F2 完成后本文件改为从 `masterdata.ts` 导入并删桩）。
+- 产出：
   - `type ScreenKey = 'factory' | 'equipment' | 'line'`
   - `interface Persona { id: string; label: string; factoryIds: string[]; workshopIds: string[] | 'all'; lineIds: string[] | 'all'; allowedScreens: ScreenKey[] }`
   - `const PERSONAS: Persona[]`、`const DEFAULT_PERSONA_ID: string`
-  - `useAccessScope()` store → `{ persona, personaId, factories, currentFactoryId, visibleWorkshops, visibleLines, allowedScreens, canSeeScreen(k), switchFactory(id), setPersona(id) }`
+  - `useAccessScope()` 存储 → `{ persona, personaId, factories, currentFactoryId, visibleWorkshops, visibleLines, allowedScreens, canSeeScreen(k), switchFactory(id), setPersona(id) }`
 
-> **落地建议**：先做 **Task F2**（masterdata）再做 F1，可省去内联桩。以下按"F2 已在"书写。
+> **落地建议**：先做**任务 F2**（主数据）再做 F1，可省去内联桩。以下按“F2 已就绪”书写。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：编写失败测试**
 
 ```ts
 // frontend/apps/screen/src/access/useAccessScope.test.ts
@@ -112,12 +112,12 @@ describe('useAccessScope', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- useAccessScope`
-Expected: FAIL（`scope.ts` / `useAccessScope.ts` 尚不存在）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- useAccessScope`
+预期：失败（`scope.ts` / `useAccessScope.ts` 尚不存在）
 
-- [ ] **Step 3: 写 `scope.ts`**
+- [ ] **步骤 3：编写 `scope.ts`**
 
 ```ts
 // frontend/apps/screen/src/data/mock/scope.ts
@@ -158,7 +158,7 @@ export const PERSONAS: Persona[] = [
 export const DEFAULT_PERSONA_ID = 'plant-admin'
 ```
 
-- [ ] **Step 4: 写 `useAccessScope.ts`**
+- [ ] **步骤 4：编写 `useAccessScope.ts`**
 
 ```ts
 // frontend/apps/screen/src/access/useAccessScope.ts
@@ -228,12 +228,12 @@ export const useAccessScope = defineStore('screen-access-scope', () => {
 })
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [ ] **步骤 5：运行测试确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- useAccessScope`
-Expected: PASS（3 passed）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- useAccessScope`
+预期：通过（3 个测试通过）
 
-- [ ] **Step 6: 提交**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/apps/screen/src/data/mock/scope.ts frontend/apps/screen/src/access/useAccessScope.ts frontend/apps/screen/src/access/useAccessScope.test.ts
@@ -242,23 +242,23 @@ git commit -m "feat(screen): 访问权限上下文 useAccessScope（mock persona
 
 ---
 
-## Task F2: 共享 masterdata 映射字典 + fixtures
+## 任务 F2：共享主数据映射字典 + fixture（夹具）
 
-**Files:**
-- Create: `frontend/apps/screen/src/data/mock/masterdata.ts`
-- Create: `frontend/apps/screen/src/data/mock/fixtures.ts`
-- Test: `frontend/apps/screen/src/data/mock/masterdata.test.ts`
+**文件：**
+- 创建：`frontend/apps/screen/src/data/mock/masterdata.ts`
+- 创建：`frontend/apps/screen/src/data/mock/fixtures.ts`
+- 测试：`frontend/apps/screen/src/data/mock/masterdata.test.ts`
 
-**Interfaces:**
-- Produces（masterdata）：
+**接口：**
+- 产出（主数据）：
   - `interface FactoryRef { id; name }`、`interface WorkshopRef { id; code; name; factoryId; managerName }`、`interface LineRef { id; code; name; workshopId }`、`interface WorkCenterRef { id; code; name; workshopId; lineId }`、`interface DeviceRef { id; code; name; workshopId; lineId; workCenterId }`
   - 常量 `FACTORIES / WORKSHOPS / LINES / WORK_CENTERS / DEVICES`
-  - helpers：`workshopsByFactory(factoryId)`、`linesByWorkshop(workshopId)`、`devicesByWorkshop(workshopId)`、`devicesByLine(lineId)`、`workCentersByLine(lineId)`
-- Produces（fixtures）：`jitter(base, amp)`、`spark(n?)`、`clock(minsAgo?)`（`HH:mm`）、`seq(prefix, n, pad?)`
+  - 辅助函数：`workshopsByFactory(factoryId)`、`linesByWorkshop(workshopId)`、`devicesByWorkshop(workshopId)`、`devicesByLine(lineId)`、`workCentersByLine(lineId)`
+- 产出（fixture）：`jitter(base, amp)`、`spark(n?)`、`clock(minsAgo?)`（`HH:mm`）、`seq(prefix, n, pad?)`
 
-> **数据现实映射**（spec 硬约束）：真实平台无 workshop/line 聚合维度，最细到 WorkCenter/Device，靠 `WorkCenter.WorkshopCode`、`DeviceAsset.LineCode` 映射。本字典即前端聚合所需的映射真相源（mock），字段名对齐该语义。
+> **数据现实映射**（设计规格硬约束）：真实平台无车间/产线聚合维度，最细到 WorkCenter/Device，靠 `WorkCenter.WorkshopCode`、`DeviceAsset.LineCode` 映射。本字典即前端聚合所需的模拟映射权威来源，字段名对齐该语义。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：编写失败测试**
 
 ```ts
 // frontend/apps/screen/src/data/mock/masterdata.test.ts
@@ -296,12 +296,12 @@ describe('masterdata 映射字典', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- masterdata`
-Expected: FAIL（模块不存在）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- masterdata`
+预期：失败（模块不存在）
 
-- [ ] **Step 3: 写 `fixtures.ts`**
+- [ ] **步骤 3：编写 `fixtures.ts`**
 
 ```ts
 // frontend/apps/screen/src/data/mock/fixtures.ts
@@ -328,7 +328,7 @@ export function seq(prefix: string, n: number, pad = 4): string {
 }
 ```
 
-- [ ] **Step 4: 写 `masterdata.ts`**
+- [ ] **步骤 4：编写 `masterdata.ts`**
 
 ```ts
 // frontend/apps/screen/src/data/mock/masterdata.ts
@@ -441,12 +441,12 @@ export function devicesByWorkshop(workshopId: string): DeviceRef[] {
 }
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [ ] **步骤 5：运行测试确认通过**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- masterdata`
-Expected: PASS（3 passed）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- masterdata`
+预期：通过（3 个测试通过）
 
-- [ ] **Step 6: 提交**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/apps/screen/src/data/mock/masterdata.ts frontend/apps/screen/src/data/mock/fixtures.ts frontend/apps/screen/src/data/mock/masterdata.test.ts
@@ -455,25 +455,25 @@ git commit -m "feat(screen): 共享 masterdata 映射字典 + fixtures 工具"
 
 ---
 
-## Task F3: 数据 seam——工厂数据迁入 `data/`（contracts/mock/fetchers 三段式）
+## 任务 F3：数据接缝——工厂数据迁入 `data/`（契约/mock/fetcher 三段式）
 
-**Files:**
-- Create: `frontend/apps/screen/src/data/contracts/factory.ts`
-- Create: `frontend/apps/screen/src/data/mock/factory.ts`
-- Create: `frontend/apps/screen/src/data/fetchers/factory.ts`
-- Test: `frontend/apps/screen/src/data/fetchers/factory.test.ts`
-- （旧 `mock/factory.ts` 的删除与 `index.vue`/`factory.vue` 的 import 切换在 **F4** 做，保证本任务独立可编译）
+**文件：**
+- 创建：`frontend/apps/screen/src/data/contracts/factory.ts`
+- 创建：`frontend/apps/screen/src/data/mock/factory.ts`
+- 创建：`frontend/apps/screen/src/data/fetchers/factory.ts`
+- 测试：`frontend/apps/screen/src/data/fetchers/factory.test.ts`
+- （旧 `mock/factory.ts` 的删除与 `index.vue`/`factory.vue` 的导入切换在 **F4** 完成，保证本任务独立可编译）
 
-**Interfaces:**
-- Consumes: 无（迁移现有 `mock/factory.ts` 内容，`create*`→`build*`、`fetch*Mock`→`fetch*`）。
-- Produces:
-  - contracts：`KpiItem / WorkshopStatus / OeeItem / AlarmItem / FactoryOverview`（原样，来自现 `mock/factory.ts`）
+**接口：**
+- 消费：无（迁移现有 `mock/factory.ts` 内容，`create*`→`build*`、`fetch*Mock`→`fetch*`）。
+- 产出：
+  - 契约：`KpiItem / WorkshopStatus / OeeItem / AlarmItem / FactoryOverview`（原样，来自现有 `mock/factory.ts`）
   - mock：`buildFactoryOverview(): FactoryOverview`
-  - fetchers：`fetchFactoryOverview(): Promise<FactoryOverview>`
+  - fetcher：`fetchFactoryOverview(): Promise<FactoryOverview>`
 
-> 说明：本任务只做**无损迁移 + 命名规整**，确立三段式 seam 样板；工厂屏的**字段扩充（车间聚合/健康度色/超期工单等）与 bespoke 版式**在 Phase 1 做。
+> 说明：本任务只做**无损迁移 + 命名规整**，确立三段式接缝样板；工厂屏的**字段扩充（车间聚合/健康度色/超期工单等）与专属版式**在阶段 1 完成。
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：编写失败测试**
 
 ```ts
 // frontend/apps/screen/src/data/fetchers/factory.test.ts
@@ -492,12 +492,12 @@ describe('fetchFactoryOverview', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- fetchers/factory`
-Expected: FAIL（模块不存在）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- fetchers/factory`
+预期：失败（模块不存在）
 
-- [ ] **Step 3: 建 `data/contracts/factory.ts`**（把现 `mock/factory.ts` 的 interface 原样迁入）
+- [ ] **步骤 3：创建 `data/contracts/factory.ts`**（把现有 `mock/factory.ts` 的接口原样迁入）
 
 ```ts
 // frontend/apps/screen/src/data/contracts/factory.ts
@@ -538,7 +538,7 @@ export interface FactoryOverview {
 }
 ```
 
-- [ ] **Step 4: 建 `data/mock/factory.ts`**（迁 `createFactoryOverview`→`buildFactoryOverview`，改用 `fixtures` 的 `jitter/spark`）
+- [ ] **步骤 4：创建 `data/mock/factory.ts`**（迁移 `createFactoryOverview`→`buildFactoryOverview`，改用 `fixtures` 的 `jitter/spark`）
 
 ```ts
 // frontend/apps/screen/src/data/mock/factory.ts
@@ -581,7 +581,7 @@ export function buildFactoryOverview(): FactoryOverview {
 }
 ```
 
-- [ ] **Step 5: 建 `data/fetchers/factory.ts`**
+- [ ] **步骤 5：创建 `data/fetchers/factory.ts`**
 
 ```ts
 // frontend/apps/screen/src/data/fetchers/factory.ts
@@ -595,12 +595,12 @@ export async function fetchFactoryOverview(): Promise<FactoryOverview> {
 }
 ```
 
-- [ ] **Step 6: 跑测试确认通过（不删旧文件、不改 index.vue，保持可编译）**
+- [ ] **步骤 6：运行测试确认通过（不删旧文件、不改 index.vue，保持可编译）**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test`
-Expected: 全绿；新增 `fetchers/factory`(1) 通过。本任务**只新增 `data/` 文件**，不删 `mock/factory.ts`、不改 `pages/index.vue`，故全树可编译（`data/mock/factory.ts` 与旧 `mock/factory.ts` 暂重复，由 F4 删旧并切换 import）。
+运行：`pnpm -C frontend --filter @nerv-iip/screen test`
+预期：全部通过；新增的 `fetchers/factory`（1 个测试）通过。本任务**只新增 `data/` 文件**，不删除 `mock/factory.ts`、不修改 `pages/index.vue`，因此全树可编译（`data/mock/factory.ts` 与旧 `mock/factory.ts` 暂时重复，由 F4 删除旧文件并切换导入）。
 
-- [ ] **Step 7: 提交**
+- [ ] **步骤 7：提交**
 
 ```bash
 git add frontend/apps/screen/src/data/
@@ -609,27 +609,27 @@ git commit -m "refactor(screen): 新增 data/ 三段式 seam（工厂契约/mock
 
 ---
 
-## Task F4: `/` 大屏选择页 + 屏注册表 + scope 路由守卫 + 占位页
+## 任务 F4：`/` 大屏选择页 + 屏注册表 + 访问范围路由守卫 + 占位页
 
-**Files:**
-- Create: `frontend/apps/screen/src/data/screens.ts`
-- Create: `frontend/apps/screen/src/pages/factory.vue`（承接原 `index.vue` 工厂 demo，import 改 `@/data/*`）
-- Rewrite: `frontend/apps/screen/src/pages/index.vue`（launcher）
-- Create: `frontend/apps/screen/src/pages/equipment.vue`（占位）
-- Create: `frontend/apps/screen/src/pages/line/index.vue`（占位）
-- Create: `frontend/apps/screen/src/pages/line/[id].vue`（占位）
-- Modify: `frontend/apps/screen/src/router/index.ts`（scope 守卫）
-- Delete: `frontend/apps/screen/src/mock/factory.ts`（内容已在 F3 迁入 `data/`；本任务切换 import 后删除）
-- Test: `frontend/apps/screen/src/data/screens.test.ts`
+**文件：**
+- 创建：`frontend/apps/screen/src/data/screens.ts`
+- 创建：`frontend/apps/screen/src/pages/factory.vue`（承接原 `index.vue` 工厂演示，导入改为 `@/data/*`）
+- 改写：`frontend/apps/screen/src/pages/index.vue`（启动器）
+- 创建：`frontend/apps/screen/src/pages/equipment.vue`（占位）
+- 创建：`frontend/apps/screen/src/pages/line/index.vue`（占位）
+- 创建：`frontend/apps/screen/src/pages/line/[id].vue`（占位）
+- 修改：`frontend/apps/screen/src/router/index.ts`（访问范围守卫）
+- 删除：`frontend/apps/screen/src/mock/factory.ts`（内容已在 F3 迁入 `data/`；本任务切换导入后删除）
+- 测试：`frontend/apps/screen/src/data/screens.test.ts`
 
-**Interfaces:**
-- Consumes: `useAccessScope`（F1）、`SCREENS`（本任务）、`fetchFactoryOverview`/契约（F3）。
-- Produces:
+**接口：**
+- 消费：`useAccessScope`（F1）、`SCREENS`（本任务）、`fetchFactoryOverview`/契约（F3）。
+- 产出：
   - `interface ScreenDef { key: ScreenKey; route: string; title: string; desc: string; icon: string; accent: 'cyan'|'green'|'amber'|'red'|'indigo' }`
   - `const SCREENS: ScreenDef[]`
   - `screenForPath(path: string): ScreenKey | undefined`（纯函数，供守卫与测试）
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **步骤 1：编写失败测试**
 
 ```ts
 // frontend/apps/screen/src/data/screens.test.ts
@@ -654,14 +654,14 @@ describe('screens 注册表 + screenForPath', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：运行测试确认失败**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- screens`
-Expected: FAIL（模块不存在）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- screens`
+预期：失败（模块不存在）
 
-- [ ] **Step 3: 迁移工厂 demo 到 `pages/factory.vue`**
+- [ ] **步骤 3：将工厂演示迁移到 `pages/factory.vue`**
 
-把当前 `pages/index.vue` 的**全部内容**原样复制到新文件 `pages/factory.vue`，仅改数据 import 行：
+把当前 `pages/index.vue` 的**全部内容**原样复制到新文件 `pages/factory.vue`，只修改数据导入行：
 
 ```diff
 - import { createFactoryOverview, type FactoryOverview, fetchFactoryOverviewMock } from '@/mock/factory'
@@ -671,7 +671,7 @@ Expected: FAIL（模块不存在）
 ```
 并把用到处改名：`fetchFactoryOverviewMock`→`fetchFactoryOverview`、`createFactoryOverview`→`buildFactoryOverview`。其余模板/样式不动。
 
-- [ ] **Step 4: 写 `data/screens.ts`**
+- [ ] **步骤 4：编写 `data/screens.ts`**
 
 ```ts
 // frontend/apps/screen/src/data/screens.ts
@@ -699,9 +699,9 @@ export function screenForPath(path: string): ScreenKey | undefined {
 }
 ```
 
-- [ ] **Step 5: 改写 `pages/index.vue` 为 launcher**
+- [ ] **步骤 5：将 `pages/index.vue` 改写为启动器**
 
-> 视觉可在 preview 微调；此为可编译的起点，遵守 `--sb-*` / 克制发光 / reduced-motion。图标用 `lucide-vue-next` 动态组件。
+> 视觉可在预览中微调；此为可编译的起点，遵守 `--sb-*` / 克制发光 / 减弱动态效果。图标使用 `lucide-vue-next` 动态组件。
 
 ```vue
 <script setup lang="ts">
@@ -846,9 +846,9 @@ function iconOf(name: string): Component {
 </style>
 ```
 
-- [ ] **Step 6: 建 3 个占位页**
+- [ ] **步骤 6：创建 3 个占位页**
 
-`pages/equipment.vue`、`pages/line/index.vue`、`pages/line/[id].vue` 用同一占位骨架（各改 title）：
+`pages/equipment.vue`、`pages/line/index.vue`、`pages/line/[id].vue` 使用同一占位骨架（分别修改标题）：
 
 ```vue
 <!-- pages/equipment.vue（line/index.vue、line/[id].vue 同构，改 title/subtitle） -->
@@ -887,7 +887,7 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 （`line/[id].vue` 可用 `useRoute().params.id` 显示"产线 {id} · 建设中"，但占位阶段可省。）
 
-- [ ] **Step 7: 加 scope 路由守卫**
+- [ ] **步骤 7：添加访问范围路由守卫**
 
 ```ts
 // frontend/apps/screen/src/router/index.ts
@@ -915,15 +915,15 @@ if (import.meta.hot) {
 }
 ```
 
-- [ ] **Step 8: 跑测试 + 全门禁**
+- [ ] **步骤 8：运行测试 + 全部门禁**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen test -- screens`
-Expected: PASS（2 passed）
+运行：`pnpm -C frontend --filter @nerv-iip/screen test -- screens`
+预期：通过（2 个测试通过）
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen typecheck`
-Expected: 通过（无悬空 import）
+运行：`pnpm -C frontend --filter @nerv-iip/screen typecheck`
+预期：通过（无悬空导入）
 
-- [ ] **Step 9: 删除旧文件并提交**
+- [ ] **步骤 9：删除旧文件并提交**
 
 ```bash
 git rm frontend/apps/screen/src/mock/factory.ts
@@ -931,57 +931,57 @@ git add frontend/apps/screen/src/data/screens.ts frontend/apps/screen/src/data/s
 git commit -m "feat(screen): / 大屏选择页 + 屏注册表 + scope 路由守卫 + 占位页（工厂迁 /factory，删旧 mock）"
 ```
 
-> 提交前跑 `pnpm -C frontend --filter @nerv-iip/screen typecheck` 确认 `pages/index.vue` 已无 `@/mock/factory` 悬空 import、`pages/factory.vue` 已切到 `@/data/*`。
+> 提交前运行 `pnpm -C frontend --filter @nerv-iip/screen typecheck`，确认 `pages/index.vue` 已无 `@/mock/factory` 悬空导入，且 `pages/factory.vue` 已切换到 `@/data/*`。
 
 ---
 
-## Task F5: 地基验收（门禁 + 实机 preview）
+## 任务 F5：地基验收（门禁 + 实机预览）
 
-**Files:** 无新增（验证任务）。
+**文件：**无新增文件（验证任务）。
 
-- [ ] **Step 1: 全量门禁**
+- [ ] **步骤 1：全量门禁**
 
-Run: `pnpm -C frontend --filter @nerv-iip/screen typecheck && pnpm -C frontend --filter @nerv-iip/screen test && pnpm -C frontend --filter @nerv-iip/screen build`
-Expected: 三者全过；测试含 useAccessScope(3) + masterdata(3) + fetchers/factory(1) + screens(2) + 既有 screen-kit(13)。
+运行：`pnpm -C frontend --filter @nerv-iip/screen typecheck && pnpm -C frontend --filter @nerv-iip/screen test && pnpm -C frontend --filter @nerv-iip/screen build`
+预期：三者全部通过；测试包括 useAccessScope（3）+ masterdata（3）+ fetchers/factory（1）+ screens（2）+ 既有 screen-kit（13）。
 
-- [ ] **Step 2: 实机 preview 截图**
+- [ ] **步骤 2：实机预览截图**
 
-用 preview 工具起 `@nerv-iip/screen`（5128），核对：
-- `/` launcher 渲染三卡（plant-admin persona），多工厂切换器可点；
-- 点卡进入 `/factory`（现工厂 demo）、`/equipment`、`/line`（占位）；
-- 临时把 `DEFAULT_PERSONA_ID` 改 `workshop-lead` 验证：launcher 仅显示产线卡，直接访问 `/factory` 被重定向回 `/`（验证后改回 `plant-admin`）；
-- 零 console / server 报错。
+用预览工具启动 `@nerv-iip/screen`（5128），核对：
+- `/` 启动器渲染三张卡片（plant-admin 角色），多工厂切换器可点击；
+- 点击卡片进入 `/factory`（现有工厂演示）、`/equipment`、`/line`（占位）；
+- 临时把 `DEFAULT_PERSONA_ID` 改为 `workshop-lead` 验证：启动器只显示产线卡，直接访问 `/factory` 会被重定向回 `/`（验证后改回 `plant-admin`）；
+- 控制台和服务器均无报错。
 
-- [ ] **Step 3: 汇报并交回主控**
+- [ ] **步骤 3：汇报并交回主控**
 
-汇报门禁结果 + 截图；地基分支 `feat/screen-m1-foundation` 就绪，等待评审合入，随后三屏并行。
+汇报门禁结果和截图；地基分支 `feat/screen-m1-foundation` 已就绪，等待评审合入，随后三屏并行。
 
 ---
 
-## Self-Review（对照 spec）
+## 自审（对照设计规格）
 
-- **§1.1 fetcher seam**：F3 三段式（contracts/mock/fetchers）落地并以工厂为样板 ✅
-- **§1.2 useAccessScope + 多工厂 + 2 persona**：F1 ✅（gating 测试覆盖 plant-admin / workshop-lead）
-- **§1.3 `/` launcher + 工厂切换 + 现 index 内容迁 /factory**：F4 ✅
-- **§1.4 组件复用/新建门禁**：launcher 复用 `ScreenPanel`，新建件遵守 `--sb-*`/reduced-motion（Global Constraints）✅
-- **§1.5 诚实标注**：地基无占位指标；约定在 Global Constraints，屏阶段执行 ✅
-- **§1.6 source of truth**：Global Constraints 明确「动手前读文档站/源码」✅
-- **占位扫描**：无 TBD/TODO；`line/[id].vue` 占位为有意的 M1 Phase 3 前置，非计划占位 ✅
+- **§1.1 fetcher seam（获取器接缝）**：F3 三段式（contracts/mock/fetchers）落地并以工厂为样板 ✅
+- **§1.2 useAccessScope + 多工厂 + 2 个角色**：F1 ✅（门禁测试覆盖 plant-admin / workshop-lead）
+- **§1.3 `/` 启动器 + 工厂切换 + 现有 index 内容迁移至 /factory**：F4 ✅
+- **§1.4 组件复用/新建门禁**：启动器复用 `ScreenPanel`，新建件遵守 `--sb-*`/减弱动态效果（全局约束）✅
+- **§1.5 诚实标注**：地基无占位指标；约定已写入全局约束，在大屏阶段执行 ✅
+- **§1.6 权威来源**：全局约束明确“动手前读文档站/源码”✅
+- **占位扫描**：无 TBD/TODO；`line/[id].vue` 占位是有意的 M1 阶段 3 前置，不是计划占位 ✅
 - **类型一致**：`ScreenKey`/`Persona`/`ScreenDef`/`screenForPath` 在 F1/F4 定义与消费一致 ✅
 
 ---
 
-## 下游三屏子计划（独立子系统，各自执行前即时产出 code-exact 计划）
+## 下游三屏子计划（独立子系统，各自执行前即时产出代码精确计划）
 
-三屏是独立子系统（spec 决策），按 writing-plans Scope Check 各成一份计划，在其分支执行前基于**已落地地基接口** + §1.6 真实组件 + 首屏 preview 反馈即时产出，避免现在内联臆测组件 props。每份计划统一形态：
+三屏是独立子系统（设计规格决策），按 writing-plans 的范围检查各自形成一份计划；在对应分支执行前，根据**已落地地基接口** + §1.6 真实组件 + 首屏预览反馈即时产出，避免现在内联臆测组件 props。每份计划使用统一结构：
 
 1. **契约** `data/contracts/<screen>.ts`：按 spec 该屏 ✅/🟡/🟠 分层字段，🟠 显式 `// 🟠 待 #570`。
-2. **mock builder** `data/mock/<screen>.ts`：从 `masterdata`/`fixtures` 做**前端聚合真实算法**（车间/产线/设备 rollup、健康度色合成、状态计数、达成率、节拍反推），可 TDD。
+2. **mock 构建器** `data/mock/<screen>.ts`：从 `masterdata`/`fixtures` 实现**前端聚合真实算法**（车间/产线/设备汇总、健康度色合成、状态计数、达成率、节拍反推），可采用 TDD。
 3. **fetcher** `data/fetchers/<screen>.ts`：`useScreenData` 挂接；换真实 = 换本文件。
-4. **聚合单测**：rollup / 健康度色 / 状态计数 / 节拍等确定性逻辑。
-5. **页面 + bespoke 组合件** `pages/*` + `components/screen-blocks/*`：先读 §1.6 确认真实 props，复用优先、缺件按大屏风格新建；针对该屏内容单独设计版式（不模板化）；诚实标注。
-6. **门禁 + preview 截图**：typecheck/test/build + 实机远距可读性/五态色/诚实标注核对；单屏单分支单 PR。
+4. **聚合单测**：汇总 / 健康度色 / 状态计数 / 节拍等确定性逻辑。
+5. **页面 + 专属组合件** `pages/*` + `components/screen-blocks/*`：先读 §1.6 确认真实 props，复用优先、缺件按大屏风格新建；针对该屏内容单独设计版式（不模板化）；诚实标注。
+6. **门禁 + 预览截图**：typecheck/test/build + 实机远距可读性/五态色/诚实标注核对；单屏单分支单 PR。
 
-- **Phase 1 · 工厂总览**（MAN-314，分支 `mang/man-314-*`）：车间状态矩阵（6 🟡 字段 + 健康度色默认规则见 spec §二）+ 全厂 KPI 带 + 告警/停机流；工厂 scope 用 `useAccessScope.visibleWorkshops`。
-- **Phase 2 · 设备监控**（MAN-317，分支 `mang/man-317-*`）：设备状态全景墙（运行/待机/停机/报警/断线五态 + 计数）+ 未恢复报警表 + 维修进度 + 稼动率(≈可用率标注)/MTBF/MTTR + PM/点检；`deviceAssetIds≤50` 分批在契约体现。
-- **Phase 3 · 产线监控**（MAN-316，分支 `mang/man-316-*`）：`/line` 选择器（按 scope 收窄）+ `/line/[id]` 超大红绿灯 + 当班产量/达成环 + 停机/报警横幅 + 节拍偏差 + 距交付倒计时；诚实「监控屏非安灯，闭环待 MAN-322」。
+- **阶段 1 · 工厂总览**（MAN-314，分支 `mang/man-314-*`）：车间状态矩阵（6 个 🟡 字段 + 健康度色默认规则见设计规格 §二）+ 全厂 KPI 带 + 告警/停机流；工厂范围使用 `useAccessScope.visibleWorkshops`。
+- **阶段 2 · 设备监控**（MAN-317，分支 `mang/man-317-*`）：设备状态全景墙（运行/待机/停机/报警/断线五态 + 计数）+ 未恢复报警表 + 维修进度 + 稼动率（标注≈可用率）/MTBF/MTTR + PM/点检；`deviceAssetIds≤50` 分批策略在契约中体现。
+- **阶段 3 · 产线监控**（MAN-316，分支 `mang/man-316-*`）：`/line` 选择器（按访问范围收窄）+ `/line/[id]` 超大红绿灯 + 当班产量/达成环 + 停机/报警横幅 + 节拍偏差 + 距交付倒计时；诚实标注“监控屏非安灯，闭环待 MAN-322”。

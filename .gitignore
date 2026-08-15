@@ -25,3 +25,6 @@ frontend/apps/business-pda/android/
 # Runtime logs
 *.log
 !pnpm-lock.yaml
+
+# Impeccable 设计工具本机缓存（含绝对路径，不入库）
+.impeccable/

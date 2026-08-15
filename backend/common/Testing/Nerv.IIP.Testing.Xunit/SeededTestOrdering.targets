@@ -1,0 +1,13 @@
+<Project>
+
+  <!--
+    Import this next to the ProjectReference on Nerv.IIP.Testing.Xunit to opt a test assembly into
+    seeded case/collection ordering. The assembly-level attributes must be compiled into the
+    consuming assembly, so they are linked in rather than inherited from the referenced project.
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)assets\SeededTestOrderingAssemblyAttributes.cs"
+             Link="TestOrdering.cs" />
+  </ItemGroup>
+
+</Project>

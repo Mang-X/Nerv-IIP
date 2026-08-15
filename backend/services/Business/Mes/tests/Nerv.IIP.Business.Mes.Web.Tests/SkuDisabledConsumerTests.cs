@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using NetCorePal.Extensions.Primitives;
-using Npgsql;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -16,20 +15,19 @@ using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class SkuDisabledConsumerTests
 {
     [MesRealPostgresFact]
     public async Task PostgreSQL_consumer_persists_disabled_sku_and_changes_new_work_order_behavior()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         var changedAtUtc = DateTimeOffset.Parse("2026-07-18T08:00:00Z");
 
         await using (var consumerContext = CreateContext(options))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(consumerContext);
             await consumerContext.Database.MigrateAsync(CancellationToken.None);
             var handler = new SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability(
                 consumerContext,
@@ -63,13 +61,11 @@ public sealed class SkuDisabledConsumerTests
     [MesRealPostgresFact]
     public async Task PostgreSQL_concurrent_sku_disabled_events_converge_without_retry_poisoning()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         await using (var setup = CreateContext(options))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync(CancellationToken.None);
         }
 
@@ -225,13 +221,11 @@ public sealed class SkuDisabledConsumerTests
     [MesRealPostgresFact]
     public async Task PostgreSQL_disable_commit_serializes_before_new_work_order_creation()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(database.ConnectionString)
-            .Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         await using (var setup = CreateContext(options))
         {
+            MesPostgresLaneDatabase.AssertUsesGovernedDatabase(setup);
             await setup.Database.MigrateAsync(CancellationToken.None);
         }
 
@@ -257,12 +251,18 @@ public sealed class SkuDisabledConsumerTests
             commandContext,
             deadLetters,
             null,
-            new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext));
+            new PostgreSqlMesSkuAvailabilityScopeCoordinator(commandContext),
+            SingleOperationRoutingSnapshotProvider.Instance);
         var createTask = suggestionHandler.HandleAsync(
             PlanningSuggestionEvent(DateTimeOffset.Parse("2026-07-18T08:01:00Z")),
             CancellationToken.None);
 
-        await Task.Delay(250);
+        // Wait for the real edge instead of a settle window: the creating transaction is observably parked on
+        // the SKU-scope advisory lock held by the in-flight disable transaction.
+        await MesPostgresAdvisoryLockProbe.WaitForWaitersAsync(
+            MesPostgresLaneDatabase.ConnectionString,
+            expectedWaiters: 1,
+            scopeDescription: "the MES SKU-availability scope held by the in-flight disable transaction");
         Assert.False(createTask.IsCompleted, "Creation must wait for the in-flight disable transaction for the same SKU scope.");
         allowConsumerCommit.SetResult();
         await consumeTask;
@@ -414,42 +414,4 @@ public sealed class SkuDisabledConsumerTests
 
     private static ApplicationDbContext CreateContext(DbContextOptions<ApplicationDbContext> options) =>
         new(options, new NoopMediator());
-
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var databaseName = $"nerv_mes_sku_disabled_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-            return new TemporaryDatabase(
-                adminConnectionString,
-                databaseName,
-                new NpgsqlConnectionStringBuilder(baseConnectionString)
-                {
-                    Database = databaseName
-                }.ConnectionString);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-    }
 }

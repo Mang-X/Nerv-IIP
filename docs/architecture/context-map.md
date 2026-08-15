@@ -38,12 +38,12 @@
 - 是主平台关于“文件如何被保存、访问和治理”的事实源。
 - 二进制内容默认落到 MinIO 或等价对象存储，但对象存储内部 key 不作为公开业务契约。
 - tus、S3 multipart 和平台中转上传通过 Upload Provider 抽象接入，不成为业务服务依赖的领域模型。
-- filePurpose、大小限制、content type allowlist、scanStatus、保留策略和配额口径由 File Storage 统一治理。
+- filePurpose、大小限制、内容类型允许列表（content type allowlist）、scanStatus、保留策略和配额口径由 File Storage 统一治理。
 - 不解释文件的业务语义；KnowledgeSource、OperationTask、Application 等业务对象只通过 fileId 或 FileReference 关联文件。
 
 ### AppHub
 
-- 负责应用目录、版本、节点、能力声明、实例事实、实例存活与 reported state。
+- 负责应用目录、版本、节点、能力声明、实例事实、实例存活与上报状态（reported state）。
 - 是平台关于“当前管理了哪些应用和实例”的事实源。
 - 不负责任务执行、审批与审计闭环。
 
@@ -51,7 +51,7 @@
 
 - 负责动作任务、执行尝试、审计记录、失败分类、审批挂点与结果回传。
 - 所有会改变目标系统状态的动作都应进入 Ops 的任务闭环。
-- `RequiresApproval=true` 的高风险动作先由 Ops 自有 approval gate 决策，通过后才进入 Connector Host claim/execute 流程；BusinessApproval 不接管平台运维审批。
+- `RequiresApproval=true` 的高风险动作先由 Ops 自有审批门禁（approval gate）决策，通过后才进入 Connector Host 领取/执行（claim/execute）流程；BusinessApproval 不接管平台运维审批。
 - 不成为实例最终状态的真相源。
 
 ### Notification
@@ -85,12 +85,12 @@
 ### Platform SDK 与服务边界
 
 1. Platform SDK 是公开客户端能力集合，不是新的运行时中心。
-2. `Sdk.Auth` 可以处理 token、client credential 和认证头，但最终授权判断和会话事实仍归 IAM。
+2. `Sdk.Auth` 可以处理令牌（token）、客户端凭证（client credential）和认证头，但最终授权判断和会话事实仍归 IAM。
 3. `Sdk.ConnectorProtocol` 可以发送注册、心跳和状态快照，但本地资源发现仍归 Connector Host 与 Connector，应用与实例事实仍归 AppHub。
 4. `Sdk.FileStorage` 可以创建上传会话、获取上传指令和下载授权，但文件元数据与对象存储定位事实仍归 File Storage。
 5. `Sdk.Ops` 可以创建任务、查询任务和回传动作结果，但 OperationTask、OperationAttempt 与 AuditRecord 仍归 Ops。
 6. `Sdk.Notification` 可以提交通知意图、查询通知和标记已读，但 NotificationIntent、NotificationMessage、偏好和投递状态仍归 Notification。
-7. `Sdk.Observability` 可以提供 correlationId、trace context 和标准日志字段，但不替代平台日志采集、保留策略或审计落库。
+7. `Sdk.Observability` 可以提供 correlationId、追踪上下文（trace context）和标准日志字段，但不替代平台日志采集、保留策略或审计落库。
 8. SDK 模块之间只通过公开 DTO 和 `Sdk.Core` 协作，不通过服务端内部项目、数据库表或私有接口协作。
 
 ### IAM 与其它服务及外部应用
@@ -102,7 +102,7 @@
 
 ### File Storage 与其它服务
 
-1. File Storage 拥有文件元数据、上传下载授权、对象存储 key 和保留策略。
+1. File Storage 拥有文件元数据、上传下载授权、对象存储键（key）和保留策略。
 2. Knowledge、Ops、AppHub 和行业扩展只能通过 fileId、FileReference、File Storage API 或 Platform SDK 使用文件能力。
 3. Knowledge 拥有知识源、解析、分块、嵌入和索引事实；File Storage 只管理原始文件和派生附件的存储治理。
 4. Ops 拥有动作任务和审计事实；File Storage 只保存日志包、诊断包、备份包或审计附件的文件事实。
@@ -113,7 +113,7 @@
 
 1. AppHub 拥有应用、版本、节点、能力、实例、存活和状态事实。
 2. Ops 拥有动作任务、执行结果、审计与审批挂点。
-3. restart 一类动作由 Ops 创建任务并记录结果。
+3. restart（重启）一类动作由 Ops 创建任务并记录结果。
 4. 实例最终状态是否变化，由 Connector Host 后续状态同步驱动 AppHub 更新，而不是由 Ops 直接改写。
 
 ### Notification 与其它服务
@@ -178,7 +178,7 @@
 3. Connector 直接依赖 AppHub、Ops、IAM 的内部实现。
 4. AI Integration 直接维护知识索引。
 5. Ops 成为实例状态真相源。
-6. 业务服务、前端、外部应用或 Connector Host 绕过 File Storage 直接使用对象存储 key 作为长期业务契约。
+6. 业务服务、前端、外部应用或 Connector Host 绕过 File Storage 直接使用对象存储键（key）作为长期业务契约。
 7. Platform SDK 反向引用主平台服务 Domain、Infrastructure、数据库表或私有接口。
 8. Platform SDK 直接写入最终 AuditRecord、权限授予、会话撤销或应用实例事实。
 9. AppHub、Ops、AI Integration、Knowledge 或行业扩展各自直连外部通知通道，绕过 Notification 的接收人解析、偏好、去重、投递状态和审计挂点。

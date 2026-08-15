@@ -3,6 +3,55 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PutawayPage from './putaway.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const state = vi.hoisted(() => ({
   routeQuery: {
     inboundOrderNo: 'IB-1',
@@ -10,8 +59,10 @@ const state = vi.hoisted(() => ({
     create: '1',
   } as Record<string, unknown>,
   createPutaway: vi.fn(),
+  refreshPutawayTasks: vi.fn(async () => undefined),
   permissionCodes: ['business.wms.receipts.read', 'business.wms.receipts.manage'] as string[],
 }))
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: state.routeQuery }),
@@ -21,19 +72,76 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
+vi.mock('@/composables/useWmsWorkScope', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
+      filters.scopeKind = 'self'
+      filters.scopeId = 'emp049'
+      filters.skip = 0
+      return {
+        scopeKey: shallowRef('self:emp049'),
+        scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+        selectedScopeLabel: computed(() => '我的任务'),
+        hasSelection: computed(() => true),
+        pending: shallowRef(false),
+        error: shallowRef(undefined),
+        refresh: vi.fn(async () => undefined),
+      }
+    },
+  }
+})
+
 vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     useWmsPutawayTasks: () => ({
-      filters: reactive({ skip: 0, take: 100 }),
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 100,
+      }),
       putawayTasks: computed(() => []),
       putawayTasksError: shallowRef(undefined),
       putawayTasksPending: shallowRef(false),
       putawayTasksTotal: computed(() => 0),
-      refreshPutawayTasks: vi.fn(),
+      putawayTasksLastUpdatedAt: shallowRef('2026-07-28T10:20:30.000Z'),
+      refreshPutawayTasks: state.refreshPutawayTasks,
       createPutaway: state.createPutaway,
       createPutawayPending: shallowRef(false),
       createPutawayError: shallowRef(undefined),
+    }),
+    // 入库单选择器的目录来源：上架任务必须挂在已存在的入库单下。
+    useWmsInboundOrders: () => ({
+      filters: reactive({ skip: 0, take: 200 }),
+      inboundOrders: computed(() => [
+        { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'Open' },
+      ]),
+      inboundOrdersError: shallowRef(undefined),
+      inboundOrdersPending: shallowRef(false),
+      inboundOrdersTotal: computed(() => 1),
+      refreshInboundOrders: vi.fn(),
+    }),
+  }
+})
+
+// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
+vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
+  const { computed, shallowRef } = await import('vue')
+  return {
+    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
+    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
+    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
+    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
+    useWarehouseCodeCatalog: () => ({
+      locationOptions: computed(() => [
+        { value: 'STAGE-01', label: 'STAGE-01' },
+        { value: 'RACK-A-01-01', label: 'RACK-A-01-01' },
+      ]),
+      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
+      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
+      warehouseCatalogPending: shallowRef(false),
     }),
   }
 })
@@ -57,10 +165,7 @@ describe('WMS putaway route handoff', () => {
     const wrapper = mount(PutawayPage, {
       attachTo: document.body,
       global: {
-        stubs: {
-          BusinessLayout: { template: '<main><slot /></main>' },
-          WmsInventoryContextPanel: true,
-        },
+        stubs: wmsStubs(),
       },
     })
     await flushPromises()
@@ -120,18 +225,52 @@ describe('WMS putaway route handoff', () => {
     expect(wrapper.text()).not.toContain('新建上架任务')
     wrapper.unmount()
   })
+
+  it('刷新任务时同步刷新当前范围候选', async () => {
+    const wrapper = mountPutaway()
+    const refreshButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '刷新')
+
+    await refreshButton!.trigger('click')
+
+    expect(state.refreshPutawayTasks).toHaveBeenCalledOnce()
+    expect(candidateState.refresh).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
 })
 
 function mountPutaway() {
   return mount(PutawayPage, {
     attachTo: document.body,
     global: {
-      stubs: {
-        BusinessLayout: { template: '<main><slot /></main>' },
-        WmsInventoryContextPanel: true,
-      },
+      stubs: wmsStubs(),
     },
   })
+}
+
+/**
+ * 库位与入库单已从自由文本输入框改成只选的实体选择器。
+ * 这个用例关心的是「路由带参 → 提交体不变」，不是选择器自身的交互，
+ * 所以把选择器桩成一个带同名 id 的输入位，让下面的 setInput 仍然表达「选中了某个库位」。
+ */
+function wmsStubs() {
+  return {
+    BusinessLayout: { template: '<main><slot /></main>' },
+    WmsInventoryContextPanel: true,
+    NvEntityPicker: {
+      props: ['modelValue', 'options', 'id'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+    NvSearchSelect: {
+      props: ['modelValue', 'options', 'id'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
+  }
 }
 
 async function setInput(selector: string, value: string) {
@@ -141,3 +280,21 @@ async function setInput(selector: string, value: string) {
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await flushPromises()
 }
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
+})

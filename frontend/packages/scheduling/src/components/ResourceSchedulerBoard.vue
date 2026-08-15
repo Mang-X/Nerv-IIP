@@ -8,7 +8,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
-import type { ScheduleModel } from '../model/types'
+import type { LaneOrder, ScheduleModel } from '../model/types'
 import SchedulingCanvas from './SchedulingCanvas.vue'
 
 // 资源排产板:一资源一泳道,左轴维度可切换(设备 / 班组 / 产线 / 工作中心…)。
@@ -18,24 +18,37 @@ const props = defineProps<{
   readOnly?: boolean
   loading?: boolean
   engineKind?: 'auto' | 'dhtmlx'
+  groupBy?: string
+  laneOrder?: LaneOrder
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   taskSelect: [taskId: string]
   taskDragEnd: [payload: TaskDragPayload]
   conflictClick: [taskId: string]
   lockedDragAttempt: [taskId: string]
+  'update:groupBy': [groupBy: string]
 }>()
 
 const dimensions = computed(() => props.model?.groupDimensions ?? [])
-const groupBy = ref<string>(dimensions.value[0]?.key ?? 'workCenter')
+const localGroupBy = ref<string>(dimensions.value[0]?.key ?? 'workCenter')
+const groupBy = computed({
+  get: () => props.groupBy ?? localGroupBy.value,
+  set: (value: string) => {
+    localGroupBy.value = value
+    emit('update:groupBy', value)
+  },
+})
 watch(dimensions, (list) => {
   if (list.length && !list.some((d) => d.key === groupBy.value)) groupBy.value = list[0].key
 })
 
 const laneCount = computed(() => {
   const ops = (props.model?.tasks ?? []).filter((t) => t.type === 'operation')
-  const lanes = new Set(ops.map((t) => t.dimensions?.[groupBy.value]?.id ?? t.resourceId ?? '未分配'))
+  const lanes = new Set([
+    ...(props.model?.groupValues?.[groupBy.value]?.map((value) => value.id) ?? []),
+    ...ops.map((t) => t.dimensions?.[groupBy.value]?.id ?? t.resourceId ?? '未分配'),
+  ])
   return lanes.size
 })
 
@@ -49,17 +62,21 @@ defineExpose({ command })
 <template>
   <div class="flex h-full flex-col">
     <div
-      v-if="dimensions.length > 1"
+      v-if="dimensions.length > 1 && props.groupBy == null"
       class="flex items-center gap-2 border-b border-border/50 px-4 py-2"
     >
       <span class="text-xs font-medium text-muted-foreground">分组维度</span>
       <NvSelect v-model="groupBy">
-        <NvSelectTrigger class="h-7 w-28 border-border/70 text-xs" aria-label="分组维度"><NvSelectValue /></NvSelectTrigger>
+        <NvSelectTrigger class="h-7 w-28 border-border/70 text-xs" aria-label="分组维度"
+          ><NvSelectValue
+        /></NvSelectTrigger>
         <NvSelectContent>
-          <NvSelectItem v-for="d in dimensions" :key="d.key" :value="d.key">{{ d.label }}</NvSelectItem>
+          <NvSelectItem v-for="d in dimensions" :key="d.key" :value="d.key">{{
+            d.label
+          }}</NvSelectItem>
         </NvSelectContent>
       </NvSelect>
-      <span class="text-xs text-muted-foreground">·  共 {{ laneCount }} 条泳道</span>
+      <span class="text-xs text-muted-foreground">· 共 {{ laneCount }} 条泳道</span>
     </div>
     <div class="min-h-0 flex-1">
       <SchedulingCanvas
@@ -70,6 +87,7 @@ defineExpose({ command })
         :read-only="readOnly"
         :loading="loading"
         :group-by="groupBy"
+        :lane-order="laneOrder"
         :engine-kind="engineKind"
         @task-select="$emit('taskSelect', $event)"
         @task-drag-end="$emit('taskDragEnd', $event)"

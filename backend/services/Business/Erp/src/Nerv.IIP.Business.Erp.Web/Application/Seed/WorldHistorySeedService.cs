@@ -1,13 +1,19 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.GLAccountAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.OpportunityAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
@@ -50,12 +56,13 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         await SeedGlAccountsAsync(organizationId, environmentId, cancellationToken);
         var salesOrdersWritten = await SeedSalesHistoryAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
         var purchaseOrdersWritten = await SeedPurchaseHistoryAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
+        var payablesWritten = await SeedPayablesAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
         // fail-closed：对账不过 seed 就失败，绝不放一份账不平的历史进演示环境。
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
             .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
 
-        return new WorldHistorySeedReport(salesOrdersWritten, purchaseOrdersWritten, validation);
+        return new WorldHistorySeedReport(salesOrdersWritten, purchaseOrdersWritten, payablesWritten, validation);
     }
 
     private async Task SeedGlAccountsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
@@ -143,6 +150,24 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var orderCreatedAtUtc = MomentOn(timeline.OrderDate, plan.SalesOrderNo, "order");
         BackdateUtc(salesOrder, x => x.CreatedAtUtc, orderCreatedAtUtc);
 
+        // 报价已转出：登记订单引用，否则种子报价停留在「已批准未转出」，真机上还能再转一次产生重复单。
+        quotation.MarkConvertedToSalesOrder(plan.SalesOrderNo);
+        BackdateNullableUtc(quotation, x => x.ConvertedAtUtc, orderCreatedAtUtc);
+
+        // 大客户框架/新平台意向：每 40 单前置一个销售机会（销售机会页的历史故事）。
+        if (plan.Index % WorldHistoryErpSpec.OpportunityEveryNthSalesOrder == 1)
+        {
+            var opportunityDay = DayBefore(timeline.OrderDate, 10);
+            var opportunity = Opportunity.Open(
+                organizationId,
+                environmentId,
+                WorldHistoryErpSpec.OpportunityNo(plan.Index),
+                plan.CustomerCode,
+                $"「{plan.SkuCode}」批量供货框架意向");
+            dbContext.Opportunities.Add(opportunity);
+            BackdateUtc(opportunity, x => x.OpenedAtUtc, MomentOn(opportunityDay, plan.SalesOrderNo, "opportunity"));
+        }
+
         // 订单已开出，现在才把报价单有效期改回历史值（下单当日 +30 天）。
         BackdateValue(quotation, x => x.ExpiresOn, timeline.OrderDate.AddDays(30));
 
@@ -157,12 +182,36 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             return;
         }
 
+        if (plan.HasPendingShipment)
+        {
+            // #1374 · 已完工待发货：只开发货单，停在 released。
+            // 发运、应收、收入凭证一律留给**演示当场**在仓库完成发运后走真实路径产生——
+            // 种子若先把凭证挂上，演示那一下就变成毫无意义的重复过账。
+            WritePendingShipment(plan, timeline);
+            return;
+        }
+
         if (!plan.HasDelivery)
         {
             return;
         }
 
         WriteDeliveryAndFinance(organizationId, environmentId, plan, timeline);
+    }
+
+    /// <summary>已完工待发货：发货单已开、未发运，因而无应收、无凭证。</summary>
+    private void WritePendingShipment(WorldHistoryOrderPlan plan, WorldHistoryTimeline timeline)
+    {
+        var salesOrder = dbContext.SalesOrders.Local.Single(x => x.SalesOrderNo == plan.SalesOrderNo);
+        var deliveryOrder = DeliveryOrder.Release(
+            salesOrder,
+            WorldHistorySpec.DeliveryOrderNo(plan.Index),
+            [new DeliveryOrderLineDraft("10", plan.Quantity, DefaultLocationCode, $"LOT-{plan.WorkOrderNo}")]);
+        dbContext.DeliveryOrders.Add(deliveryOrder);
+        BackdateUtc(
+            deliveryOrder,
+            x => x.ReleasedAtUtc,
+            MomentOn(timeline.ShipDate, plan.SalesOrderNo, "delivery"));
     }
 
     private Quotation CreateBackdatedQuotation(
@@ -309,10 +358,151 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 .ToArrayAsync(cancellationToken);
             var existingSet = existing.ToHashSet(StringComparer.Ordinal);
 
+            // 后种日期重种时，上一轮的「在途申请」号会进入本轮已转化区间：加载后就地转化，不重号。
+            var requisitionNos = batch.Select(x => WorldHistoryErpSpec.PurchaseRequisitionNo(x.Index)).ToArray();
+            var existingRequisitions = await dbContext.PurchaseRequisitions
+                .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                    requisitionNos.Contains(x.RequisitionNo))
+                .ToDictionaryAsync(x => x.RequisitionNo, StringComparer.Ordinal, cancellationToken);
+
             var added = 0;
             foreach (var plan in batch.Where(plan => !existingSet.Contains(plan.PurchaseOrderNo)))
             {
-                WritePurchaseChain(organizationId, environmentId, plan);
+                WritePurchaseChain(organizationId, environmentId, plan, existingRequisitions);
+                added++;
+            }
+
+            if (added > 0)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                written += added;
+            }
+
+            dbContext.ChangeTracker.Clear();
+        }
+
+        await SeedOpenRequisitionsAsync(organizationId, environmentId, asOfDate, plans.Count, cancellationToken);
+
+        return written;
+    }
+
+    /// <summary>
+    /// 未转化的在途采购申请（采购申请页的「待处理」故事）：编号接在已转化段之后，
+    /// 需求日在 asOfDate 之后的近未来，状态保持 Open。
+    /// </summary>
+    private async Task SeedOpenRequisitionsAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        int totalPurchaseOrders,
+        CancellationToken cancellationToken)
+    {
+        var openCount = WorldHistoryErpSpec.OpenRequisitionCount(totalPurchaseOrders);
+        var requisitionNos = Enumerable.Range(1, openCount)
+            .Select(offset => WorldHistoryErpSpec.PurchaseRequisitionNo(totalPurchaseOrders + offset))
+            .ToArray();
+        var existing = await dbContext.PurchaseRequisitions
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                requisitionNos.Contains(x.RequisitionNo))
+            .Select(x => x.RequisitionNo)
+            .ToArrayAsync(cancellationToken);
+        var existingSet = existing.ToHashSet(StringComparer.Ordinal);
+
+        var added = false;
+        for (var offset = 1; offset <= openCount; offset++)
+        {
+            var index = totalPurchaseOrders + offset;
+            var requisitionNo = WorldHistoryErpSpec.PurchaseRequisitionNo(index);
+            if (existingSet.Contains(requisitionNo))
+            {
+                continue;
+            }
+
+            var random = new WorldHistoryRandom($"open-requisition:{requisitionNo}");
+            var category = random.PickWeighted(
+                WorldHistoryErpSpec.PurchaseCategories, WorldHistoryErpSpec.PurchaseCategoryWeights);
+            var requisition = PurchaseRequisition.CreateFromSuggestion(
+                organizationId,
+                environmentId,
+                requisitionNo,
+                WorldHistoryErpSpec.MrpSuggestionId(index),
+                random.Pick(category.MaterialSkuCodes),
+                category.UomCode,
+                WorldHistorySpec.SiteCode,
+                random.NextQuantity(category.MinQuantity, category.MaxQuantity, category.QuantityStep),
+                WorldHistoryCalendar.AddWorkingDays(asOfDate, random.NextInt(3, 11)));
+            dbContext.PurchaseRequisitions.Add(requisition);
+            BackdateUtc(requisition, x => x.CreatedAtUtc, MomentOn(DayBefore(asOfDate, 1), requisitionNo, "requisition"));
+            added = true;
+        }
+
+        if (added)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        dbContext.ChangeTracker.Clear();
+    }
+
+    /// <summary>
+    /// 应付账款：每张**已收货**的采购单派生一条 <c>AP-2026-####</c>，
+    /// 来源单据号 = 该采购单的收货单号，金额 / 供应商与采购单逐字对上——
+    /// 应收应付页的两栏因此对称（AR 走销售发货、AP 走采购收货），不再一边有数一边空白。
+    ///
+    /// 刻意做成**独立一遍**（而不是塞进 <see cref="WritePurchaseChain"/>）：
+    /// 早先版本落库的采购单不会被重写，独立遍能把缺失的应付补齐，不受采购单是否新写影响。
+    ///
+    /// 不写应付凭证：<c>JV-2026-*</c> 号段与销售侧收入 / 收款凭证的对账恒等式绑定，
+    /// 往里塞采购侧凭证会打破 <see cref="WorldHistoryConsistencyValidator"/> 的凭证配对口径。
+    /// 应付的账在应付表内部自洽（金额 = 已付 + 未付），与收货单可逐单追溯。
+    /// </summary>
+    private async Task<int> SeedPayablesAsync(
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        double scale,
+        CancellationToken cancellationToken)
+    {
+        var payablePlans = BuildPayablePlans(asOfDate, scale);
+        var written = 0;
+
+        for (var batchStart = 0; batchStart < payablePlans.Count; batchStart += BatchSize)
+        {
+            var batch = payablePlans.Skip(batchStart).Take(BatchSize).ToArray();
+            var payableNos = batch.Select(x => x.PayableNo).ToArray();
+            var existing = (await dbContext.AccountPayables
+                    .AsNoTracking()
+                    .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                        payableNos.Contains(x.PayableNo))
+                    .Select(x => x.PayableNo)
+                    .ToArrayAsync(cancellationToken))
+                .ToHashSet(StringComparer.Ordinal);
+
+            var added = 0;
+            foreach (var plan in batch.Where(plan => !existing.Contains(plan.PayableNo)))
+            {
+                var payable = AccountPayable.Create(
+                    organizationId,
+                    environmentId,
+                    plan.PayableNo,
+                    plan.SourceDocumentNo,
+                    plan.SupplierCode,
+                    plan.Amount,
+                    WorldHistorySpec.CurrencyCode,
+                    plan.InvoiceDate,
+                    plan.DueDate,
+                    plan.PaymentTermCode);
+                if (plan.PaidAmount > 0m)
+                {
+                    payable.RegisterPayment(plan.PaidAmount);
+                }
+
+                // 历史事实不驱动下游：AccountPayableCreatedDomainEvent 有跨服务集成事件转换器，
+                // 历史应付一旦派发会让下游把 7 个月前的账当成刚发生的事。
+                payable.ClearDomainEvents();
+                dbContext.AccountPayables.Add(payable);
+                BackdateUtc(payable, x => x.CreatedAtUtc, MomentOn(plan.InvoiceDate, plan.PayableNo, "payable"));
                 added++;
             }
 
@@ -328,7 +518,14 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         return written;
     }
 
-    private static IReadOnlyList<WorldHistoryPurchasePlan> BuildPurchasePlans(DateOnly asOfDate, double scale)
+    /// <summary>确定性应付计划流（校验器与测试按同一公式复算，公开为纯函数）。</summary>
+    public static IReadOnlyList<WorldHistoryPayablePlan> BuildPayablePlans(DateOnly asOfDate, double scale) =>
+        [.. BuildPurchasePlans(asOfDate, scale)
+            .Where(plan => plan.IsReceived)
+            .Select(plan => WorldHistoryErpSpec.BuildPayablePlan(plan, asOfDate))];
+
+    /// <summary>确定性采购计划流（校验器与测试按同一公式复算，公开为纯函数）。</summary>
+    public static IReadOnlyList<WorldHistoryPurchasePlan> BuildPurchasePlans(DateOnly asOfDate, double scale)
     {
         var plans = new List<WorldHistoryPurchasePlan>();
         var weeks = WorldHistoryCalendar.WeekCount(asOfDate);
@@ -349,8 +546,44 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         return plans;
     }
 
-    private void WritePurchaseChain(string organizationId, string environmentId, WorldHistoryPurchasePlan plan)
+    private void WritePurchaseChain(
+        string organizationId,
+        string environmentId,
+        WorldHistoryPurchasePlan plan,
+        IReadOnlyDictionary<string, PurchaseRequisition> existingRequisitions)
     {
+        // 采购申请先于采购单：MRP 建议 → 申请 → （周期性询比价）→ 下单转化（演示走查缺口：经营五页）。
+        var requisitionDay = RequisitionDayBefore(plan.OrderDate);
+        var requisitionNo = WorldHistoryErpSpec.PurchaseRequisitionNo(plan.Index);
+        if (existingRequisitions.TryGetValue(requisitionNo, out var openRequisition))
+        {
+            // 上一轮 asOfDate 留下的在途申请，本轮它对应的采购单已发生：就地转化，续写同一故事。
+            openRequisition.MarkConverted(plan.PurchaseOrderNo);
+            BackdateNullableUtc(openRequisition, x => x.ConvertedAtUtc, MomentOn(plan.OrderDate, plan.PurchaseOrderNo, "purchase"));
+        }
+        else
+        {
+            var requisition = PurchaseRequisition.CreateFromSuggestion(
+                organizationId,
+                environmentId,
+                requisitionNo,
+                WorldHistoryErpSpec.MrpSuggestionId(plan.Index),
+                plan.SkuCode,
+                plan.UomCode,
+                WorldHistorySpec.SiteCode,
+                plan.Quantity,
+                plan.PromisedDate);
+            requisition.MarkConverted(plan.PurchaseOrderNo);
+            dbContext.PurchaseRequisitions.Add(requisition);
+            BackdateUtc(requisition, x => x.CreatedAtUtc, MomentOn(requisitionDay, plan.PurchaseOrderNo, "requisition"));
+            BackdateNullableUtc(requisition, x => x.ConvertedAtUtc, MomentOn(plan.OrderDate, plan.PurchaseOrderNo, "purchase"));
+        }
+
+        if (plan.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1)
+        {
+            WriteSourcingChain(organizationId, environmentId, plan, requisitionDay);
+        }
+
         var approvalChainId = $"seed:world-history:{plan.PurchaseOrderNo}";
         var purchaseOrder = PurchaseOrder.Create(
             organizationId,
@@ -394,6 +627,83 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             ]);
         dbContext.PurchaseReceipts.Add(receipt);
         BackdateUtc(receipt, x => x.RecordedAtUtc, MomentOn(plan.ReceiptDate, plan.PurchaseReceiptNo, "receipt"));
+
+        // 部分已收货采购单进入成本归集候选（成本候选页的历史故事）。
+        if (plan.Index % WorldHistoryErpSpec.CostCandidateEveryNthReceipt == 0)
+        {
+            var candidate = CostCandidate.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryErpSpec.CostCandidateNo(plan.Index),
+                "purchase-receipt",
+                plan.PurchaseReceiptNo,
+                plan.TotalAmount,
+                WorldHistorySpec.CurrencyCode);
+            dbContext.CostCandidates.Add(candidate);
+            BackdateUtc(candidate, x => x.CreatedAtUtc, MomentOn(plan.ReceiptDate, plan.PurchaseReceiptNo, "cost-candidate"));
+        }
+    }
+
+    /// <summary>
+    /// 周期性询比价链：申请日发 RFQ 给品类内全部供应商，各家在下单前回报价；
+    /// 中标供应商（即采购单供应商）的报价价 == 采购单价，落败方报出确定性更高的价——
+    /// 「为什么选这家」在页面上可自洽讲通。
+    /// </summary>
+    private void WriteSourcingChain(
+        string organizationId,
+        string environmentId,
+        WorldHistoryPurchasePlan plan,
+        DateOnly requisitionDay)
+    {
+        var category = WorldHistoryErpSpec.CategoryOf(plan.SkuCode);
+        var rfq = RequestForQuotation.Create(
+            organizationId,
+            environmentId,
+            WorldHistoryErpSpec.RfqNo(plan.Index),
+            category.SupplierCodes,
+            [new RfqLineDraft("10", plan.SkuCode, plan.UomCode, plan.Quantity, WorldHistorySpec.SiteCode, plan.PromisedDate)]);
+        dbContext.RequestForQuotations.Add(rfq);
+        BackdateUtc(rfq, x => x.CreatedAtUtc, MomentOn(requisitionDay, plan.PurchaseOrderNo, "rfq"));
+
+        var quoteDay = WorldHistoryCalendar.SnapToWorkingDay(requisitionDay.AddDays(2));
+        if (quoteDay > plan.OrderDate)
+        {
+            quoteDay = plan.OrderDate;
+        }
+
+        for (var supplierOrdinal = 0; supplierOrdinal < category.SupplierCodes.Count; supplierOrdinal++)
+        {
+            var supplierCode = category.SupplierCodes[supplierOrdinal];
+            var random = new WorldHistoryRandom($"quote:{plan.PurchaseOrderNo}:{supplierCode}");
+            var unitPrice = string.Equals(supplierCode, plan.SupplierCode, StringComparison.Ordinal)
+                ? plan.UnitPrice
+                : decimal.Round(plan.UnitPrice * (1m + (random.NextInt(3, 13) / 100m)), 2);
+            var quotation = SupplierQuotation.Receive(
+                organizationId,
+                environmentId,
+                WorldHistoryErpSpec.SupplierQuotationNo(plan.Index, supplierOrdinal),
+                rfq.RfqNo,
+                supplierCode,
+                [new SupplierQuotationLineDraft("10", plan.SkuCode, plan.UomCode, plan.Quantity, unitPrice, plan.PromisedDate)]);
+            dbContext.SupplierQuotations.Add(quotation);
+            BackdateUtc(quotation, x => x.ReceivedAtUtc, MomentOn(quoteDay, quotation.QuotationNo, "supplier-quote"));
+        }
+    }
+
+    /// <summary>申请日 = 下单日往前 3 个自然日吸附到工作日，且不早于上线日。</summary>
+    private static DateOnly RequisitionDayBefore(DateOnly orderDate) => DayBefore(orderDate, 3);
+
+    /// <summary>目标日往前 <paramref name="days"/> 个自然日，吸附工作日、夹在 [上线日, 目标日] 内。</summary>
+    private static DateOnly DayBefore(DateOnly anchor, int days)
+    {
+        var candidate = anchor.AddDays(-days);
+        if (candidate < WorldHistoryCalendar.GoLiveDate)
+        {
+            candidate = WorldHistoryCalendar.GoLiveDate;
+        }
+
+        var snapped = WorldHistoryCalendar.SnapToWorkingDay(candidate);
+        return snapped > anchor ? anchor : snapped;
     }
 
     /// <summary>
@@ -454,4 +764,5 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 public sealed record WorldHistorySeedReport(
     int SalesOrdersWritten,
     int PurchaseOrdersWritten,
+    int PayablesWritten,
     WorldHistoryValidationReport Validation);

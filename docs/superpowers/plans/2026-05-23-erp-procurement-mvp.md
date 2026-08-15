@@ -1,44 +1,44 @@
-# ERP Procurement MVP Implementation Plan
+# ERP 采购 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向自主代理：**必须使用以下子技能之一逐项实施本计划：superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Implement #137 by creating the ERP service scaffold and Procurement/SRM-lite flow from planning suggestion to purchase receipt.
+**目标：**通过创建 ERP 服务骨架以及从计划建议到采购收货的采购/SRM-lite 流程来实施 #137。
 
-**Architecture:** ERP is a CleanDDD business service under `backend/services/Business/Erp`. This plan creates the service base and procurement facts only. Sales, Finance, AppHost registration and final ERP aggregation have separate plans.
+**架构：**ERP 是 `backend/services/Business/Erp` 下的 CleanDDD 业务服务。本计划只创建服务基础和采购事实。销售、财务、AppHost 注册和最终 ERP 聚合分别由其它计划负责。
 
-**Tech Stack:** .NET 10, NetCorePal CleanDDD template, FastEndpoints, EF Core PostgreSQL, xUnit, ADR 0011 integration event conversion, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、NetCorePal CleanDDD 模板、FastEndpoints、EF Core PostgreSQL、xUnit、ADR 0011 集成事件转换、`Nerv.IIP.Testing` 数据库 schema 约定辅助工具。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`.
+使用 `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/Nerv.IIP.Business.Erp.Domain.csproj`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseRequisitionAggregate/PurchaseRequisition.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/RequestForQuotationAggregate/RequestForQuotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierQuotationAggregate/SupplierQuotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseOrderAggregate/PurchaseOrder.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpProcurementDomainEvents.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/Procurement*.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/*.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Procurement/*.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpProcurementAggregateTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpProcurementEndpointContractTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpProcurementIntegrationEventTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/Nerv.IIP.Business.Erp.Domain.csproj`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseRequisitionAggregate/PurchaseRequisition.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/RequestForQuotationAggregate/RequestForQuotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierQuotationAggregate/SupplierQuotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseOrderAggregate/PurchaseOrder.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpProcurementDomainEvents.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/Procurement*.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/*.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Procurement/*.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpProcurementAggregateTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpProcurementEndpointContractTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpProcurementIntegrationEventTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
 
-Shared files requested from ERP-INTEG:
+需由 ERP-INTEG 处理的共享文件：
 
 - `backend/Nerv.IIP.sln`
 - `infra/aspire/Nerv.IIP.AppHost/Program.cs`
@@ -47,11 +47,11 @@ Shared files requested from ERP-INTEG:
 - `docs/architecture/implementation-readiness.md`
 - `scripts/verify-business-erp-procurement-mvp.ps1`
 
-## Task 1: Scaffold ERP Service Locally
+## 任务 1：在本地搭建 ERP 服务骨架
 
-- [ ] **Step 1: Create service projects**
+- [ ] **步骤 1：创建服务项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new netcorepal-web -n Nerv.IIP.Business.Erp -o backend/services/Business/Erp --Framework net10.0 --Database PostgreSQL --MessageQueue RabbitMQ --UseAspire false --IncludeCopilotInstructions false --UseAdmin false
@@ -59,52 +59,52 @@ dotnet new xunit -n Nerv.IIP.Business.Erp.Domain.Tests -o backend/services/Busin
 dotnet new xunit -n Nerv.IIP.Business.Erp.Web.Tests -o backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests --framework net10.0
 ```
 
-- [ ] **Step 2: Remove template demo code**
+- [ ] **步骤 2：删除模板演示代码**
 
-Run:
+运行：
 
 ```powershell
 rg -n "OrderAggregate|DeliverRecord|LoginEndpoint|ChatHub|LockEndpoint" backend/services/Business/Erp
 ```
 
-Expected: no matches.
+预期：无匹配项。
 
-## Task 2: Implement Procurement Domain
+## 任务 2：实施采购领域
 
-- [ ] **Step 1: Write failing aggregate tests**
+- [ ] **步骤 1：编写会失败的聚合测试**
 
-Cover:
+覆盖：
 
-1. Purchase requisition can be created from a DemandPlanning suggestion reference.
-2. RFQ must include at least one supplier and one requested item.
-3. Supplier quotation rejects non-positive quantity or price.
-4. Purchase order rejects empty lines.
-5. Purchase receipt cannot exceed open ordered quantity.
-6. Purchase receipt emits a domain event and is immutable after recording.
+1. 可以从 DemandPlanning 建议引用创建采购申请。
+2. RFQ 必须至少包含一个供应商和一个询价物料。
+3. 供应商报价拒绝非正数的数量或价格。
+4. 采购订单拒绝空行项目。
+5. 采购收货数量不得超过采购订单的未结数量。
+6. 采购收货会发出领域事件，并且记录后不可变。
 
-- [ ] **Step 2: Implement procurement aggregates and value objects**
+- [ ] **步骤 2：实施采购聚合和值对象**
 
-Use public codes or IDs for cross-service references: `suggestionId`, `supplierCode`, `skuCode`, `siteCode`, `purchaseOrderId`.
+跨服务引用使用公开编码或 ID：`suggestionId`、`supplierCode`、`skuCode`、`siteCode`、`purchaseOrderId`。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~ErpProcurementAggregateTests
 ```
 
-Expected: procurement domain tests pass.
+预期：采购领域测试通过。
 
-## Task 3: Add Persistence And Schema Guardrails
+## 任务 3：添加持久化和数据库 schema 防护门禁
 
-- [ ] **Step 1: Configure DbContext**
+- [ ] **步骤 1：配置 DbContext**
 
-Use schema `erp` and migrations history `erp.__EFMigrationsHistory`. Add DbSet mappings for procurement aggregates only. Add schema tests that reject stock-balance or warehouse-execution ownership leakage.
+使用数据库 schema `erp` 和迁移历史表 `erp.__EFMigrationsHistory`。只为采购聚合添加 DbSet 映射。添加数据库 schema 测试，拒绝库存余额或仓储执行所有权泄漏。
 
-- [ ] **Step 2: Generate initial migration**
+- [ ] **步骤 2：生成初始迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -112,21 +112,21 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add InitialErpProcurementSchema --project backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj --startup-project backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj --output-dir Migrations
 ```
 
-- [ ] **Step 3: Run schema tests**
+- [ ] **步骤 3：运行数据库 schema 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore --filter FullyQualifiedName~ErpSchemaConventionTests
 ```
 
-Expected: schema convention tests pass.
+预期：数据库 schema 约定测试通过。
 
-## Task 4: Add Procurement API And Events
+## 任务 4：添加采购 API 和事件
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Verify routes, operation IDs, permission codes and `InternalServiceAuthorizationPolicy.Name`:
+验证路由、operation ID（操作标识）、权限代码和 `InternalServiceAuthorizationPolicy.Name`：
 
 1. `POST /api/business/v1/erp/purchase-requisitions/from-suggestion`
 2. `POST /api/business/v1/erp/rfqs`
@@ -135,33 +135,33 @@ Verify routes, operation IDs, permission codes and `InternalServiceAuthorization
 5. `POST /api/business/v1/erp/purchase-receipts`
 6. `GET /api/business/v1/erp/purchase-orders`
 
-- [ ] **Step 2: Implement commands, queries and FastEndpoints**
+- [ ] **步骤 2：实施命令、查询和 FastEndpoints**
 
-Keep business logic in command handlers and domain aggregates. Startup must not map Minimal API routes.
+将业务逻辑保留在命令处理器和领域聚合中。启动过程不得映射 Minimal API 路由。
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Verify:
+验证：
 
 1. `erp.PurchaseRequisitionCreated`
 2. `erp.PurchaseOrderReleased`
 3. `erp.PurchaseReceiptRecorded`
 
-- [ ] **Step 4: Run Web tests**
+- [ ] **步骤 4：运行 Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore
 ```
 
-Expected: ERP Web tests pass.
+预期：ERP Web 测试通过。
 
-## Task 5: Handoff Shared Changes
+## 任务 5：移交共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -174,20 +174,20 @@ In the PR/session summary, include:
 - Reserve local port 5118 for `business-erp` unless the port matrix changes.
 ```
 
-- [ ] **Step 2: Run focused verification**
+- [ ] **步骤 2：运行聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两条命令均通过。
 
-## Self-Review Checklist
+## 自审清单
 
-1. Procurement accepts planning suggestion references without requiring DemandPlanning internals.
-2. Receipt quantity cannot exceed ordered quantity.
-3. ERP stores no Inventory balance, WMS task state or MES operation state.
-4. Shared changes are clearly handed to ERP-INTEG.
+1. 采购接受计划建议引用，不要求访问 DemandPlanning 内部实现。
+2. 收货数量不得超过订购数量。
+3. ERP 不存储 Inventory 余额、WMS 任务状态或 MES 工序状态。
+4. 共享变更已明确移交给 ERP-INTEG。

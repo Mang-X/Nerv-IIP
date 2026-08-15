@@ -7,7 +7,36 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!--
+      Eventually.IsAssertionShaped and BoundedObservationWindow are internal on purpose — they are the
+      mechanics behind the public primitives, not part of their surface — but the tests that pin their
+      contract have to reach them directly rather than inferring them from behaviour.
+    -->
+    <InternalsVisibleTo Include="Nerv.IIP.Testing.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DotNetCore.CAP" />
+    <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <!--
+      Eventually.AssertAsync retries assertion-shaped failures only, which means it has to recognise
+      Xunit.Sdk.XunitException, and TimerRegistrationObservingTimeProvider reports a lost fake-clock tick
+      as one. That type lives in xunit.assert, so this references xunit.assert alone rather than the
+      `xunit` metapackage (which would also drag in xunit.core and xunit.analyzers, neither of which this
+      library uses). The sibling Nerv.IIP.Testing.Xunit is *not* a narrower home for it: it carries
+      xunit.extensibility.core, whose xunit.core.dll does not contain XunitException at all, and moving
+      Eventually.AssertAsync there would split it from the Eventually.WaitAsync it delegates to while
+      leaving its three real consumers (Erp/Mes/Notification acceptance tests) unable to see it — they
+      reference Nerv.IIP.Testing, not Nerv.IIP.Testing.Xunit.
+
+      Boundary: 22 projects reference this library. 21 are xUnit test projects; the 22nd is
+      Nerv.IIP.Testing.PostgreSql, a shared test-support library under common/Testing that is itself only
+      consumed by test projects. No publishable/production assembly references any of them, which is the
+      invariant that matters here — not "every consumer is a test project", which is not true.
+    -->
+    <PackageReference Include="xunit.assert" />
   </ItemGroup>
 
 </Project>

@@ -11,9 +11,19 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import {
+  useBusinessMasterDataResources,
+  useBusinessWorkers,
+} from '@/composables/useBusinessMasterData'
+import {
+  APPROVAL_DECISION_ACTION_LABELS,
+  APPROVAL_DOCUMENT_TYPE_OPTIONS,
+  type ApprovalDecisionValue,
+} from '@/data/approvalReference'
+import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -24,7 +34,9 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvCombobox,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldError,
   NvFieldGroup,
@@ -52,11 +64,10 @@ import {
   FilePlus2Icon,
   RefreshCwIcon,
   RotateCcwIcon,
-  SendIcon,
   UserRoundPlusIcon,
   XCircleIcon,
 } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -94,7 +105,8 @@ const decisionTarget = shallowRef<BusinessConsoleApprovalTaskItem | null>(null)
 const decisionForm = reactive({
   chainId: '',
   stepNo: 0,
-  decision: 'Approve',
+  // 权威取值是小写 approve/reject/return（`APPROVAL_DECISION_VALUES`）——曾经写死大写导致一切裁决必 400（#1311）。
+  decision: 'approve' as ApprovalDecisionValue,
   comment: '',
 })
 
@@ -123,6 +135,105 @@ const templateForm = reactive({
 })
 const templateError = shallowRef('')
 
+// ── 模板 / 单据类型 / 审批人 的受控取值 ──────────────────────────
+const documentTypeOptions = APPROVAL_DOCUMENT_TYPE_OPTIONS
+/**
+ * 单据类型码值 → 中文。
+ *
+ * 两级查表：先查发起审批的受控值（措辞必须与新建下拉一致），再退到跨域显示词表——
+ * 审批列表会回显历史链路上的其它单据类型，那些不在受控值里，但同样不能把英文码印上屏。
+ */
+function documentTypeLabel(value?: string | null, fallback = '') {
+  const code = (value ?? '').trim()
+  if (!code) return fallback
+  const controlled = documentTypeOptions.find((option) => option.value === code)?.label
+  return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, fallback || code)
+}
+
+// 委托的「单据范围」可留空代表全部单据；NvSelect 不接受空串值，用 `all` 哨兵代理。
+const delegationDocumentType = computed({
+  get: () => (delegationForm.documentType.trim() ? delegationForm.documentType : 'all'),
+  set: (value: string) => {
+    delegationForm.documentType = value === 'all' ? '' : value
+  },
+})
+
+// 审批人类型是上游：换了类型，原来的审批人取值必然作废。
+watch(
+  () => templateForm.approverType,
+  () => {
+    templateForm.approverRef = ''
+  },
+)
+
+// 模板编码既可能复用已有模板（改版本 / 改步骤），也可能是本次新建的编码——
+// 给已有模板编码做建议，同时保留录入新编码的能力。
+const templateCodeSuggestions = computed(() => {
+  const byCode = new Map<string, { value: string; label: string; hint?: string }>()
+  for (const template of approval.templates.value) {
+    const code = template.templateCode?.trim()
+    if (!code || byCode.has(code)) continue
+    byCode.set(code, {
+      value: code,
+      label: code,
+      hint: [documentTypeLabel(template.documentType), `v${template.version ?? 1}`]
+        .filter(Boolean)
+        .join(' · '),
+    })
+  }
+  return [...byCode.values()]
+})
+
+// 审批人取值随「审批人类型」切换目录：人员走员工名录，部门走部门主数据；
+// 角色目录在平台管理台（IAM）维护，业务网关无读面，暂保留手工录入（后端缺口已登记）。
+const { workers, workersPending } = useBusinessWorkers()
+const { resources: departments, resourcesPending: departmentsPending } =
+  useBusinessMasterDataResources('department')
+
+const workerOptions = computed(() =>
+  workers.value
+    .filter((row) => !!row.userId && row.active !== false)
+    .map((row) => ({
+      value: row.userId as string,
+      label: row.displayName || (row.userId as string),
+      hint: [row.employeeNo, row.departmentName ?? row.departmentCode].filter(Boolean).join(' · '),
+    })),
+)
+const departmentOptions = computed(() =>
+  departments.value
+    .filter((row) => !!row.code && row.active !== false)
+    .map((row) => ({
+      value: row.code as string,
+      label: row.displayName || (row.code as string),
+      hint: row.code ?? undefined,
+    })),
+)
+// 代理人从员工名录里选；委托人固定为当前登录人（openDelegation 已带入），不做二次挑选。
+const delegateOptions = computed(() => {
+  const current = delegationForm.delegateActorRef.trim()
+  const options = workerOptions.value.filter(
+    (option) => option.value !== delegationForm.delegatorActorRef.trim(),
+  )
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
+
+const approverOptions = computed(() => {
+  const options =
+    templateForm.approverType === 'user'
+      ? workerOptions.value
+      : templateForm.approverType === 'department'
+        ? departmentOptions.value
+        : []
+  const current = templateForm.approverRef.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
+
 const taskColumns: NvDataTableColumn<BusinessConsoleApprovalTaskItem>[] = [
   { key: 'documentId', header: '单据', cellClass: 'font-medium', accessor: documentLabel },
   {
@@ -130,7 +241,11 @@ const taskColumns: NvDataTableColumn<BusinessConsoleApprovalTaskItem>[] = [
     header: '当前步骤',
     accessor: (row) => row.stepName ?? `第 ${row.stepNo ?? '—'} 步`,
   },
-  { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
+  {
+    key: 'documentType',
+    header: '单据类型',
+    accessor: (row) => documentTypeLabel(row.documentType, '—'),
+  },
   { key: 'dueAtUtc', header: '到期时间', accessor: (row) => formatDateTime(row.dueAtUtc) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
@@ -163,7 +278,7 @@ const delegationColumns: NvDataTableColumn<BusinessConsoleApprovalDelegationItem
   {
     key: 'documentType',
     header: '单据范围',
-    accessor: (row) => row.documentType ?? '全部业务单据',
+    accessor: (row) => documentTypeLabel(row.documentType, '全部业务单据'),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   {
@@ -181,7 +296,11 @@ const templateColumns: NvDataTableColumn<BusinessConsoleApprovalTemplateItem>[] 
     cellClass: 'font-medium',
     accessor: (row) => row.templateCode ?? '—',
   },
-  { key: 'documentType', header: '单据类型', accessor: (row) => row.documentType ?? '—' },
+  {
+    key: 'documentType',
+    header: '单据类型',
+    accessor: (row) => documentTypeLabel(row.documentType, '—'),
+  },
   { key: 'version', header: '版本', width: 'w-20', accessor: (row) => String(row.version ?? '—') },
   { key: 'isActive', header: '状态', width: 'w-24' },
   { key: 'steps', header: '步骤', accessor: (row) => `${row.steps?.length ?? 0} 步` },
@@ -200,6 +319,128 @@ const runningChains = computed(
       ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase()),
     ).length,
 )
+
+/**
+ * 五张读面表各自的状态。
+ *
+ * 五张表原本一律只有 `:loading` + `empty-message`，composable 早就导出了 `*Error`
+ * 却从没被消费——「接口 500」和「真的没有待办」渲染成同一句「当前没有…」，等于用故障
+ * 冒充"审批都清空了"。这里把「未选范围 / 在途 / 失败 / 真的 0 条」拆开。
+ *
+ * `contextReady` 必须单独判：上下文未就绪时查询 `enabled:false`，pinia-colada 的
+ * `asyncStatus` 停在 `idle`，`isLoading` 为 **false**，pending 兜不住这一态。
+ */
+interface ApprovalReadState {
+  trustworthy: boolean
+  tabCount: string
+  emptyMessage: string
+  error: unknown
+  errorMessage: string | undefined
+  awaitingScope: boolean
+}
+
+const APPROVAL_AWAITING_MESSAGE = '尚未选择业务范围，还没有发起查询——请先在顶部选择。'
+
+function approvalReadState(
+  noun: string,
+  pending: boolean,
+  error: unknown,
+  total: number,
+  emptyHint: string,
+): ApprovalReadState {
+  // 只有「没就绪 **且** 手上确实没有结果」才算未查询；已有行就按实际数据走。
+  if (!approval.contextReady.value && total === 0 && error == null) {
+    return {
+      trustworthy: false,
+      tabCount: '—',
+      emptyMessage: APPROVAL_AWAITING_MESSAGE,
+      error: undefined,
+      errorMessage: undefined,
+      awaitingScope: true,
+    }
+  }
+  if (error != null) {
+    return {
+      trustworthy: false,
+      tabCount: '取不到',
+      emptyMessage: `没有取到${noun}，无法判断当前是否有需要处理的事项。`,
+      error,
+      errorMessage: `没有取到${noun}，当前无法判断是否有待处理的审批。请重试，或稍后再看。`,
+      awaitingScope: false,
+    }
+  }
+  if (pending && total === 0) {
+    return {
+      trustworthy: false,
+      tabCount: '…',
+      emptyMessage: `正在读取${noun}…`,
+      error: undefined,
+      errorMessage: undefined,
+      awaitingScope: false,
+    }
+  }
+  return {
+    trustworthy: true,
+    tabCount: String(total),
+    emptyMessage: emptyHint,
+    error: undefined,
+    errorMessage: undefined,
+    awaitingScope: false,
+  }
+}
+
+const tasksState = computed(() =>
+  approvalReadState(
+    '审批任务',
+    approval.tasksPending.value,
+    approval.tasksError.value,
+    approval.tasksTotal.value,
+    '没有待你处理的审批任务。有单据流转到你这一步时会出现在这里。',
+  ),
+)
+const chainsState = computed(() =>
+  approvalReadState(
+    '审批流程',
+    approval.chainsPending.value,
+    approval.chainsError.value,
+    approval.chainsTotal.value,
+    '没有正在审批中的单据。发起审批后会在这里跟踪流转。',
+  ),
+)
+const decisionsState = computed(() =>
+  approvalReadState(
+    '审批决策记录',
+    approval.decisionsPending.value,
+    approval.decisionsError.value,
+    approval.decisionsTotal.value,
+    '还没有审批决策记录。任何一次通过或驳回都会在这里留痕。',
+  ),
+)
+const delegationsState = computed(() =>
+  approvalReadState(
+    '审批委托',
+    approval.delegationsPending.value,
+    approval.delegationsError.value,
+    approval.delegationsTotal.value,
+    '还没有审批委托。休假或出差前可在这里把审批权临时交出去。',
+  ),
+)
+const templatesState = computed(() =>
+  approvalReadState(
+    '审批模板',
+    approval.templatesPending.value,
+    approval.templatesError.value,
+    approval.templatesTotal.value,
+    '还没有审批模板。先配置单据类型的审批链路，之后的单据才能自动进入审批。',
+  ),
+)
+
+/** 页头读数：任务这一路取不到就直说，不显 0。 */
+const headerCount = computed(() => {
+  if (tasksState.value.awaitingScope) return '—'
+  if (!tasksState.value.trustworthy) return '待处理任务数取不到'
+  return `${approval.tasksTotal.value} 个待处理任务`
+})
 
 applyRouteApprovalFilters()
 
@@ -231,7 +472,8 @@ const decisionContextItems = computed(() => {
 
 function documentLabel(row: { documentType?: string | null; documentId?: string | null }) {
   const id = row.documentId ?? ''
-  return id ? `${row.documentType ?? '业务单据'} · ${id}` : (row.documentType ?? '业务单据')
+  const type = documentTypeLabel(row.documentType, '业务单据')
+  return id ? `${type} · ${id}` : type
 }
 
 function rowKey(row: Record<string, unknown>) {
@@ -278,7 +520,7 @@ function formatStatus(value?: boolean | string | null) {
   return value ?? '—'
 }
 
-function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string) {
+function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: ApprovalDecisionValue) {
   if (!canManageApprovals.value || !row.chainId || row.stepNo === undefined) return
   decisionTarget.value = row
   decisionForm.chainId = row.chainId
@@ -288,7 +530,10 @@ function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string
   taskDecisionOpen.value = true
 }
 
-async function quickResolveTask(row: BusinessConsoleApprovalTaskItem, decision: string) {
+async function quickResolveTask(
+  row: BusinessConsoleApprovalTaskItem,
+  decision: ApprovalDecisionValue,
+) {
   if (!canManageApprovals.value || !row.chainId || row.stepNo === undefined) return
   try {
     await approval.resolveTask({
@@ -299,7 +544,7 @@ async function quickResolveTask(row: BusinessConsoleApprovalTaskItem, decision: 
     })
     notifySuccess(`${documentLabel(row)} 已${decisionLabel(decision)}`)
   } catch (error) {
-    notifyError(error, '审批处理失败，请稍后重试。')
+    notifyOperationFailure('审批处理失败', error, '审批处理失败，请稍后重试。')
   }
 }
 
@@ -310,15 +555,12 @@ async function submitTaskDecision() {
     taskDecisionOpen.value = false
     notifySuccess(`审批任务已${decisionLabel(decisionForm.decision)}`)
   } catch (error) {
-    notifyError(error, '审批处理失败，请稍后重试。')
+    notifyOperationFailure('审批处理失败', error, '审批处理失败，请稍后重试。')
   }
 }
 
-function decisionLabel(decision: string) {
-  if (decision === 'Approve') return '通过'
-  if (decision === 'Reject') return '驳回'
-  if (decision === 'Resolve') return '处理'
-  return '处理'
+function decisionLabel(decision: ApprovalDecisionValue) {
+  return APPROVAL_DECISION_ACTION_LABELS[decision]
 }
 
 function viewChain(row: BusinessConsoleApprovalChainItem | BusinessConsoleApprovalTaskItem) {
@@ -362,7 +604,7 @@ async function submitDelegation() {
     delegationOpen.value = false
     notifySuccess('审批委托已生效')
   } catch (error) {
-    notifyError(error, '委托保存失败，请稍后重试。')
+    notifyOperationFailure('委托保存失败', error, '委托保存失败，请稍后重试。')
   }
 }
 
@@ -372,7 +614,7 @@ async function revokeDelegation(row: BusinessConsoleApprovalDelegationItem) {
     await approval.revokeDelegation(row.delegationId)
     notifySuccess('审批委托已撤销')
   } catch (error) {
-    notifyError(error, '委托撤销失败，请稍后重试。')
+    notifyOperationFailure('委托撤销失败', error, '委托撤销失败，请稍后重试。')
   }
 }
 
@@ -428,7 +670,7 @@ async function submitTemplate() {
     templateOpen.value = false
     notifySuccess('审批模板已保存')
   } catch (error) {
-    notifyError(error, '模板保存失败，请稍后重试。')
+    notifyOperationFailure('模板保存失败', error, '模板保存失败，请稍后重试。')
   }
 }
 
@@ -440,11 +682,7 @@ function toIsoFromLocalInput(value: string) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="审批中心"
-      :breadcrumbs="[{ label: '审批中心' }]"
-      :count="`${approval.tasksTotal.value} 个待处理任务`"
-    >
+    <NvPageHeader title="审批中心" :breadcrumbs="[{ label: '审批中心' }]" :count="headerCount">
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" @click="approval.refreshAll">
           <RefreshCwIcon aria-hidden="true" />
@@ -463,34 +701,47 @@ function toIsoFromLocalInput(value: string) {
 
     <template v-else>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+        <!-- 读不到任务时不许说"已清空"：那是在没有依据的情况下断言"没你的事"。 -->
         <NvMetricCard
           variant="alert"
           label="待我处理"
-          :value="pendingTasks"
-          unit="项"
-          :tone="pendingTasks > 0 ? 'warning' : 'neutral'"
+          :value="tasksState.trustworthy ? pendingTasks : '—'"
+          :unit="tasksState.trustworthy ? '项' : ''"
+          :tone="tasksState.trustworthy && pendingTasks > 0 ? 'warning' : 'neutral'"
           :status="
-            pendingTasks > 0
-              ? { label: '等待决策', tone: 'warning' }
-              : { label: '已清空', tone: 'success' }
+            !tasksState.trustworthy
+              ? { label: '无法判断', tone: 'neutral' }
+              : pendingTasks > 0
+                ? { label: '等待决策', tone: 'warning' }
+                : { label: '已清空', tone: 'success' }
           "
           :foot-start="
-            pendingTasks > 0
-              ? '单据在你这一步停着，下游的执行也会一起等。'
-              : '当前没有等你决策的审批。'
+            !tasksState.trustworthy
+              ? tasksState.emptyMessage
+              : pendingTasks > 0
+                ? '单据在你这一步停着，下游的执行也会一起等。'
+                : '当前没有等你决策的审批。'
           "
-          :action="pendingTasks > 0 ? { label: '去处理' } : undefined"
+          :action="tasksState.trustworthy && pendingTasks > 0 ? { label: '去处理' } : undefined"
           @action="activeTab = 'tasks'"
         />
         <NvMetricStrip
           :cells="[
-            { key: 'running', label: '进行中审批', value: runningChains, unit: '单' },
+            {
+              key: 'running',
+              label: '进行中审批',
+              value: chainsState.trustworthy ? runningChains : '—',
+              unit: chainsState.trustworthy ? '单' : '',
+              meta: chainsState.trustworthy ? undefined : chainsState.emptyMessage,
+            },
             {
               key: 'delegation',
               label: '生效中的委托',
-              value: activeDelegations,
-              unit: '条',
-              meta: '代批期间由被委托人决策',
+              value: delegationsState.trustworthy ? activeDelegations : '—',
+              unit: delegationsState.trustworthy ? '条' : '',
+              meta: delegationsState.trustworthy
+                ? '代批期间由被委托人决策'
+                : delegationsState.emptyMessage,
             },
           ]"
         />
@@ -506,19 +757,14 @@ function toIsoFromLocalInput(value: string) {
 
       <NvTabs v-model="activeTab">
         <NvTabsList>
-          <NvTabsTrigger value="tasks">我的任务 ({{ approval.tasksTotal.value }})</NvTabsTrigger>
-          <NvTabsTrigger value="chains"
-            >审批中的单据 ({{ approval.chainsTotal.value }})</NvTabsTrigger
-          >
-          <NvTabsTrigger value="decisions"
-            >决策记录 ({{ approval.decisionsTotal.value }})</NvTabsTrigger
-          >
+          <!-- 每个页签的数字各自独立：某一路取不到就显 `—` / 「取不到」，不显 0 -->
+          <NvTabsTrigger value="tasks">我的任务 ({{ tasksState.tabCount }})</NvTabsTrigger>
+          <NvTabsTrigger value="chains">审批中的单据 ({{ chainsState.tabCount }})</NvTabsTrigger>
+          <NvTabsTrigger value="decisions">决策记录 ({{ decisionsState.tabCount }})</NvTabsTrigger>
           <NvTabsTrigger value="delegations"
-            >委托设置 ({{ approval.delegationsTotal.value }})</NvTabsTrigger
+            >委托设置 ({{ delegationsState.tabCount }})</NvTabsTrigger
           >
-          <NvTabsTrigger value="templates"
-            >模板配置 ({{ approval.templatesTotal.value }})</NvTabsTrigger
-          >
+          <NvTabsTrigger value="templates">模板配置 ({{ templatesState.tabCount }})</NvTabsTrigger>
         </NvTabsList>
 
         <NvTabsContent value="tasks" class="grid gap-3">
@@ -533,7 +779,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.tasksPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有待处理审批任务。"
+            :empty-message="tasksState.emptyMessage"
+            :error="tasksState.error"
+            :error-message="tasksState.errorMessage"
+            :awaiting-scope="tasksState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="taskPager.page.value = $event"
             @update:page-size="(v) => (taskPager.pageSize.value = String(v))"
           >
@@ -545,24 +796,24 @@ function toIsoFromLocalInput(value: string) {
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="quickResolveTask(row, 'Approve')"
+                  @click="quickResolveTask(row, 'approve')"
                 >
                   <CheckCircle2Icon aria-hidden="true" />
                   通过
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="openTaskDecision(row, 'Reject')"
+                  @click="openTaskDecision(row, 'reject')"
                 >
                   <XCircleIcon aria-hidden="true" />
                   驳回
                 </NvDropdownMenuItem>
                 <NvDropdownMenuItem
                   v-if="canManageApprovals"
-                  @click="openTaskDecision(row, 'Resolve')"
+                  @click="openTaskDecision(row, 'return')"
                 >
-                  <SendIcon aria-hidden="true" />
-                  处理
+                  <RotateCcwIcon aria-hidden="true" />
+                  退回
                 </NvDropdownMenuItem>
               </NvRowActions>
             </template>
@@ -581,7 +832,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.chainsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批流程。"
+            :empty-message="chainsState.emptyMessage"
+            :error="chainsState.error"
+            :error-message="chainsState.errorMessage"
+            :awaiting-scope="chainsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="chainPager.page.value = $event"
             @update:page-size="(v) => (chainPager.pageSize.value = String(v))"
           >
@@ -632,11 +888,21 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.decisionsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批决策记录。"
+            :empty-message="decisionsState.emptyMessage"
+            :error="decisionsState.error"
+            :error-message="decisionsState.errorMessage"
+            :awaiting-scope="decisionsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="decisionPager.page.value = $event"
             @update:page-size="(v) => (decisionPager.pageSize.value = String(v))"
           >
-            <template #cell-decision="{ row }"><NvStatusBadge :value="row.decision" /></template>
+            <template #cell-decision="{ row }">
+              <NvStatusBadge
+                :value="row.decision"
+                :label="labelFor(APPROVAL_DECISION_LABELS, row.decision, '—')"
+              />
+            </template>
           </NvDataTable>
         </NvTabsContent>
 
@@ -658,7 +924,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.delegationsPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批委托。"
+            :empty-message="delegationsState.emptyMessage"
+            :error="delegationsState.error"
+            :error-message="delegationsState.errorMessage"
+            :awaiting-scope="delegationsState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="delegationPager.page.value = $event"
             @update:page-size="(v) => (delegationPager.pageSize.value = String(v))"
           >
@@ -696,7 +967,12 @@ function toIsoFromLocalInput(value: string) {
             :loading="approval.templatesPending.value"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前没有审批模板。"
+            :empty-message="templatesState.emptyMessage"
+            :error="templatesState.error"
+            :error-message="templatesState.errorMessage"
+            :awaiting-scope="templatesState.awaitingScope"
+            :awaiting-scope-message="APPROVAL_AWAITING_MESSAGE"
+            @retry="approval.refreshAll"
             @update:page="templatePager.page.value = $event"
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >
@@ -732,7 +1008,7 @@ function toIsoFromLocalInput(value: string) {
             </NvDialogClose>
             <NvButton
               type="submit"
-              :variant="decisionForm.decision === 'Reject' ? 'destructive' : 'default'"
+              :variant="decisionForm.decision === 'reject' ? 'destructive' : 'default'"
               :disabled="approval.resolveTaskPending.value"
             >
               <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
@@ -761,20 +1037,35 @@ function toIsoFromLocalInput(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegate">代理人</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="approval-delegate"
                 v-model="delegationForm.delegateActorRef"
-                autocomplete="off"
+                :options="delegateOptions"
+                title="选择代理人"
+                placeholder="选择代理人"
+                source-text="数据来自员工名录"
+                empty-text="暂无员工，请先在基础数据维护员工"
+                :loading="workersPending"
+                aria-label="代理人"
+                clearable
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegation-doc">单据范围</NvFieldLabel>
-              <NvInput
-                id="approval-delegation-doc"
-                v-model="delegationForm.documentType"
-                autocomplete="off"
-                placeholder="可选"
-              />
+              <NvSelect v-model="delegationDocumentType">
+                <NvSelectTrigger id="approval-delegation-doc">
+                  <NvSelectValue placeholder="全部单据" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem value="all">全部单据</NvSelectItem>
+                  <NvSelectItem
+                    v-for="option in documentTypeOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-delegation-from">开始时间</NvFieldLabel>
@@ -825,19 +1116,29 @@ function toIsoFromLocalInput(value: string) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="approval-template-code">模板</NvFieldLabel>
-              <NvInput
+              <NvCombobox
                 id="approval-template-code"
                 v-model="templateForm.templateCode"
-                autocomplete="off"
+                :suggestions="templateCodeSuggestions"
+                placeholder="选择已有模板或填写新模板编码"
+                empty-text="暂无已有模板，请填写新模板编码"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-doc">单据类型</NvFieldLabel>
-              <NvInput
-                id="approval-template-doc"
-                v-model="templateForm.documentType"
-                autocomplete="off"
-              />
+              <NvSelect v-model="templateForm.documentType">
+                <NvSelectTrigger id="approval-template-doc">
+                  <NvSelectValue placeholder="选择单据类型" />
+                </NvSelectTrigger>
+                <NvSelectContent>
+                  <NvSelectItem
+                    v-for="option in documentTypeOptions"
+                    :key="option.value"
+                    :value="option.value"
+                    >{{ option.label }}</NvSelectItem
+                  >
+                </NvSelectContent>
+              </NvSelect>
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-version">版本</NvFieldLabel>
@@ -892,10 +1193,34 @@ function toIsoFromLocalInput(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="approval-template-actor-ref">审批人</NvFieldLabel>
+              <NvEntityPicker
+                v-if="templateForm.approverType !== 'role'"
+                id="approval-template-actor-ref"
+                v-model="templateForm.approverRef"
+                :options="approverOptions"
+                :title="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
+                :placeholder="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
+                :source-text="
+                  templateForm.approverType === 'user' ? '数据来自员工名录' : '数据来自部门主数据'
+                "
+                :empty-text="
+                  templateForm.approverType === 'user'
+                    ? '暂无员工，请先在基础数据维护员工'
+                    : '暂无部门，请先在基础数据维护组织架构'
+                "
+                :loading="
+                  templateForm.approverType === 'user' ? workersPending : departmentsPending
+                "
+                aria-label="审批人"
+                clearable
+              />
+              <!-- 角色目录在平台管理台（IAM）维护，业务网关暂无角色读面，保留手工录入。 -->
               <NvInput
+                v-else
                 id="approval-template-actor-ref"
                 v-model="templateForm.approverRef"
                 autocomplete="off"
+                placeholder="填写角色标识"
               />
             </NvField>
             <NvField>

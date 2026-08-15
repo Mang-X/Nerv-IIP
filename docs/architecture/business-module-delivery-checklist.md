@@ -58,7 +58,7 @@
 - [x] 覆盖 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、StandardOperation、ProductionVersion、ECO/ECN。
 - [x] StandardOperation、ProductionVersion、release/归档/校验链路已有 Web/API contract 和测试事实。
 - [x] BusinessGateway 暴露 documents、items、EBOM、MBOM、routing、standard operations、production versions、ECO facade。
-- [ ] 还缺工程对象详情深度、版本 diff、ECO 生效计划可视化/影响分析、文档预览/签审和 FileStorage 深度产品化；后端已支持 future effective ECO scheduled release、取消和改期。
+- [ ] 还缺工程对象详情深度、版本 diff、ECO 生效计划可视化/影响分析、文档预览/签审和 FileStorage 深度产品化；后端已支持生效日期在未来的 ECO 进入 `Scheduled` 状态并到期发布，也支持取消和改期。
 
 ### DemandPlanning
 

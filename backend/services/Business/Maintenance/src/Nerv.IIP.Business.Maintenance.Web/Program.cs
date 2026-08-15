@@ -8,14 +8,15 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
+using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Application.Scheduling;
 using Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -24,8 +25,6 @@ using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
-using StackExchange.Redis;
-
 
 var isTesting = false;
 try
@@ -39,14 +38,22 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
-    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var industrialTelemetryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
     builder.Services.AddHttpClient(HttpIndustrialTelemetryAssetRuntimeHoursProvider.ClientName, client =>
     {
         client.BaseAddress = industrialTelemetryBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
-        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .AddFastEndpoints(o =>
+        {
+            if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+            {
+                o.Assemblies = [Assembly.GetExecutingAssembly()];
+                o.DisableAutoDiscovery = true;
+            }
+            o.IncludeAbstractValidators = true;
+        })
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>
@@ -70,6 +77,10 @@ try
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CompleteMaintenanceWorkOrderCommand>, CompleteMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<AssignMaintenanceWorkOrderCommand>, AssignMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<TransitionMaintenanceWorkOrderCommand>, TransitionMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<ApplyMaintenanceDeviceStateCommand>, ApplyMaintenanceDeviceStateCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenancePlanCommand>, CreateMaintenancePlanCommandLock>();
     builder.Services.AddScoped<ICommandLock<UpdateMaintenancePlanCommand>, UpdateMaintenancePlanCommandLock>();
@@ -94,11 +105,16 @@ try
         builder.Services.AddScoped<IAssetRuntimeHoursProvider, HttpIndustrialTelemetryAssetRuntimeHoursProvider>();
     }
 
-    AddMaintenanceDistributedLock(builder.Services, builder.Configuration, builder.Environment, isTesting);
+    builder.Services.AddNervIipCommandLocking(
+        builder.Configuration,
+        builder.Environment,
+        isTesting,
+        MaintenanceFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
     builder.Services.AddScoped<MaintenanceSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -126,7 +142,7 @@ try
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
-            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>))
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
             .AddKnownExceptionValidationBehavior()
             .AddUnitOfWorkBehaviors());
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = MaintenanceFacts.ServiceName)
@@ -166,16 +182,58 @@ try
         throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMaintenance in Development.");
     }
 
+    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration) && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("LeaderDemo:History:Enabled=true is only allowed for BusinessMaintenance in Development.");
+    }
+
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
         await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
             builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+
+        // 《工厂世界观设定集》L1 设备域历史（三期，Maintenance 侧）。校验器 fail-closed。
+        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
+        {
+            var historyStopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+                builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+                builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+            historyStopwatch.Stop();
+            app.Logger.LogInformation(
+                "World-history maintenance seed completed in {ElapsedSeconds:F1}s: {Reasons} downtime reasons, " +
+                "{Plans} maintenance plans, {Inspections} inspections, {WorkOrders} work orders, " +
+                "{SparePartLines} spare part lines, {DeviceStates} device states; validator checked " +
+                "{WorkOrdersChecked} work orders / {InspectionsChecked} inspections / {SparePartLinesChecked} spare " +
+                "part lines / {DeviceStatesChecked} device states, total completed downtime " +
+                "{DowntimeMinutes} min ({OpenWorkOrders} open-tail work orders).",
+                historyStopwatch.Elapsed.TotalSeconds,
+                report.DowntimeReasonsWritten,
+                report.MaintenancePlansWritten,
+                report.InspectionsWritten,
+                report.WorkOrdersWritten,
+                report.SparePartLinesWritten,
+                report.DeviceStatesWritten,
+                report.Validation.WorkOrdersChecked,
+                report.Validation.InspectionsChecked,
+                report.Validation.SparePartLinesChecked,
+                report.Validation.DeviceStatesChecked,
+                report.Validation.CompletedDowntimeMinutes,
+                report.Validation.OpenWorkOrders);
+            foreach (var line in report.Validation.Sample)
+            {
+                app.Logger.LogInformation("World-history maintenance sample: {Chain}", line);
+            }
+        }
     }
 
     app.UseNervIipRequestLocalization();
-    app.UseKnownExceptionHandler();
+    app.UseKnownExceptionHandler(_ => new() { KnownExceptionStatusCode = System.Net.HttpStatusCode.BadRequest });
+    app.UseMiddleware<MaintenanceLifecycleConflictMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -212,55 +270,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(IConfiguration configuration, string configurationKey, string fallback)
-{
-    var value = configuration[configurationKey];
-    return Uri.TryCreate(value, UriKind.Absolute, out var configured)
-        ? configured
-        : new Uri(fallback, UriKind.Absolute);
-}
-
-static void AddMaintenanceDistributedLock(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment, bool isTesting)
-{
-    if (isTesting)
-    {
-        services.AddInMemoryDistributedLock();
-        return;
-    }
-
-    var redisConnectionString = ResolveRedisConnectionString(configuration);
-    if (string.IsNullOrWhiteSpace(redisConnectionString))
-    {
-        if (environment.IsDevelopment())
-        {
-            services.AddInMemoryDistributedLock();
-            return;
-        }
-
-        throw new InvalidOperationException("BusinessMaintenance distributed command locks require a Redis connection string outside Development. Set ConnectionStrings:Redis, Messaging:Redis:ConnectionString, or Caching:Redis.");
-    }
-
-    services.AddSingleton<IConnectionMultiplexer>(_ =>
-    {
-        var options = ConfigurationOptions.Parse(redisConnectionString);
-        options.AbortOnConnectFail = false;
-        return ConnectionMultiplexer.Connect(options);
-    });
-    services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
-    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(
-        sp.GetRequiredService<IRedisCommandLockStore>(),
-        sp.GetRequiredService<TimeProvider>(),
-        logger: sp.GetRequiredService<ILogger<RedisMaintenanceDistributedLock>>()));
-}
-
-static string? ResolveRedisConnectionString(IConfiguration configuration)
-{
-    return configuration.GetConnectionString("Redis")
-        ?? configuration["Messaging:Redis:ConnectionString"]
-        ?? configuration["ConnectionStrings:Redis"]
-        ?? configuration["Caching:Redis"];
 }
 
 #pragma warning disable S1118

@@ -9,14 +9,7 @@ public sealed class BusinessGatewayNotificationOpenApiTests
     [Fact]
     public async Task Business_gateway_exports_the_PDA_notification_facade_on_the_existing_business_console_boundary()
     {
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-        });
-
-        using var document = JsonDocument.Parse(await factory.CreateClient().GetStringAsync("/swagger/v1/swagger.json"));
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
         var paths = document.RootElement.GetProperty("paths");
 
         AssertOperation(paths, "/api/business-console/v1/notifications/messages", "get", "listBusinessConsoleNotificationMessages");

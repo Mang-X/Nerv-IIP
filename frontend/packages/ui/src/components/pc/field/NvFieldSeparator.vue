@@ -13,7 +13,10 @@ const props = defineProps<{
     data-slot="nv-field-separator"
     :data-content="!!$slots.default"
     :class="
-      cn('-my-2 h-5 text-sm group-data-[variant=outline]/nv-field-group:-mb-2 relative', props.class)
+      cn(
+        '-my-2 h-5 text-sm group-data-[variant=outline]/nv-field-group:-mb-2 relative',
+        props.class,
+      )
     "
   >
     <Separator class="absolute inset-0 top-1/2" />

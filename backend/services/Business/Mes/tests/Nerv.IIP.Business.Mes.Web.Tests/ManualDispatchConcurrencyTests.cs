@@ -40,6 +40,40 @@ public sealed class ManualDispatchConcurrencyTests
     }
 
     [Fact]
+    public async Task Operation_action_pipeline_retries_a_provider_unique_idempotency_conflict()
+    {
+        await using var context = CreateContext(CreateInMemoryOptions());
+        var command = new ChangeOperationTaskStateCommand(
+            "org-001",
+            "env-dev",
+            "OP-IDEMP-001",
+            "start",
+            At(1),
+            "operation-intent-001");
+        var behavior =
+            new ManualDispatchConcurrencyRetryBehavior<ChangeOperationTaskStateCommand, MesOperationActionResponse>(
+                context);
+        var attempts = 0;
+
+        var result = await behavior.Handle(
+            command,
+            _ =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw new DbUpdateException("duplicate", new FakeSqliteUniqueException());
+                }
+
+                return Task.FromResult(new MesOperationActionResponse("OP-IDEMP-001", "inProgress", At(1)));
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.Equal("OP-IDEMP-001", result.OperationTaskId);
+    }
+
+    [Fact]
     public async Task Concurrent_manual_dispatch_assignments_reject_the_stale_revision()
     {
         await using var connection = await OpenConnectionAsync();
@@ -245,7 +279,7 @@ public sealed class ManualDispatchConcurrencyTests
     }
 
     [Fact]
-    public async Task Real_unit_of_work_pipeline_retries_completion_and_publishes_only_the_successful_attempt()
+    public async Task Internal_completion_retry_does_not_leave_a_frontline_intent_receipt_or_skip_the_successful_attempt()
     {
         var databaseName = $"mes-operation-state-pipeline-{Guid.CreateVersion7():N}";
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -262,6 +296,7 @@ public sealed class ManualDispatchConcurrencyTests
 
         await using var assertionContext = CreateContext(options);
         var persisted = await assertionContext.OperationTasks.SingleAsync();
+        Assert.Empty(await assertionContext.CodeIdempotencyKeys.ToListAsync());
         Assert.Equal(OperationTaskLifecycleStatus.Completed, persisted.Status);
         Assert.Equal(1, persisted.ManualDispatchRevision);
         Assert.Equal("device-winner", persisted.DeviceAssetId);
@@ -441,6 +476,11 @@ public sealed class ManualDispatchConcurrencyTests
     {
         public MesIntegrationEventContext GetContext() =>
             new("corr-manual-dispatch-concurrency", "cause-manual-dispatch-concurrency");
+    }
+
+    private sealed class FakeSqliteUniqueException : Exception
+    {
+        public int SqliteErrorCode => 19;
     }
 
 }

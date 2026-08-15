@@ -202,7 +202,11 @@ foreach ($target in $targets) {
 # 单据号，并注明「废弃单没有工单/发货侧单据」，由 reviewer 按各库实际存在与否核对。
 $crossDomainSample = @()
 $totalOrders = 0
-if ($summary.services.Contains('erp') -and $summary.services['erp'].metrics.Contains('orders')) {
+$erpServiceName = 'erp'
+$ordersMetricName = 'orders'
+$serviceNames = Get-NervStringSet -Values @($summary.services.Keys) -Comparer ([StringComparer]::Ordinal)
+$erpMetricNames = if ($serviceNames.Contains($erpServiceName)) { Get-NervStringSet -Values @($summary.services[$erpServiceName].metrics.Keys) -Comparer ([StringComparer]::Ordinal) } else { $null }
+if ($null -ne $erpMetricNames -and $erpMetricNames.Contains($ordersMetricName)) {
     [void][int]::TryParse($summary.services['erp'].metrics['orders'], [ref] $totalOrders)
 }
 

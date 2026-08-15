@@ -86,6 +86,117 @@ public static class WorldHistoryErpSpec
             IsReceived: !random.Chance(0.12));
     }
 
+    #region 经营对象（采购申请 / 询价 / 供应商报价 / 销售机会 / 成本候选）
+
+    /// <summary>采购申请号段：<c>PR-2026-</c> 已被收货单占用，申请单用 <c>PRQ-</c> 前缀。</summary>
+    public static string PurchaseRequisitionNo(int index) => $"PRQ-2026-{index:D4}";
+
+    public static string RfqNo(int index) => $"RFQ-2026-{index:D4}";
+
+    /// <summary>同一 RFQ 的多家报价用 -A/-B 区分（供应商按品类内顺序）。</summary>
+    public static string SupplierQuotationNo(int index, int supplierOrdinal) =>
+        $"SQ-2026-{index:D4}-{(char)('A' + supplierOrdinal)}";
+
+    public static string OpportunityNo(int index) => $"OPP-2026-{index:D4}";
+    public static string CostCandidateNo(int index) => $"COST-2026-{index:D4}";
+
+    /// <summary>采购申请的 MRP 建议引用：跨服务只靠业务编码引用 DemandPlanning 的建议流。</summary>
+    public static string MrpSuggestionId(int index) => $"MRP-SUG-2026-{index:D4}";
+
+    /// <summary>每 6 张采购单走一次询价→报价流程（框架内直采为主、周期性询比价为辅）。</summary>
+    public const int RfqEveryNthPurchase = 6;
+
+    /// <summary>每 40 张销售订单前置一个销售机会（大客户框架/新平台意向）。</summary>
+    public const int OpportunityEveryNthSalesOrder = 40;
+
+    /// <summary>每 8 张已收货采购单进入一次成本归集候选。</summary>
+    public const int CostCandidateEveryNthReceipt = 8;
+
+    /// <summary>未转化的在途采购申请条数：随规模缩放，至少 3 条（列表页的"待处理"故事）。</summary>
+    public static int OpenRequisitionCount(int totalPurchaseOrders) =>
+        Math.Max(3, (int)Math.Round(totalPurchaseOrders * 0.03, MidpointRounding.AwayFromZero));
+
+    /// <summary>按物料码回查采购品类（各品类物料码不相交）。</summary>
+    public static WorldHistoryPurchaseCategory CategoryOf(string skuCode) =>
+        PurchaseCategories.Single(category => category.MaterialSkuCodes.Contains(skuCode));
+
+    #endregion
+
+    #region 应付账款（erp.account_payables）
+
+    /// <summary>
+    /// 应付号段（ERP 独有，设定集 §9 二期补登记）。
+    /// 与销售侧 <c>AR-2026-#####</c> 显式分段：应付按采购单序号（4 位）编号，一张已收货采购单一条应付。
+    /// </summary>
+    public const string PayableNumberPrefix = "AP-2026-";
+
+    public static string PayableNo(int index) => $"{PayableNumberPrefix}{index:D4}";
+
+    /// <summary>账期候选（自然日）：与 <c>NET30/NET45/NET60</c> 付款条件一一对应。</summary>
+    public static readonly IReadOnlyList<int> PayableTermDays = [30, 45, 60];
+
+    /// <summary>到期后多久算「本该早已付掉」——早于此线的应付默认已付清。</summary>
+    public const int PayableSettleGraceDays = 5;
+
+    /// <summary>已过账期仍未付的比例（与供应商对账争议 / 质量索赔挂账）——应付账龄表上的逾期样本。</summary>
+    public const double PayableOverdueUnpaidProbability = 0.06;
+
+    /// <summary>刚到期那一档的已付比例（财务按周批量付款，到期当周有先有后）。</summary>
+    public const double PayableJustDueSettledProbability = 0.6;
+
+    /// <summary>未到期应付里提前部分付款（预付 30%）的比例。</summary>
+    public const double PayablePartialPrepayProbability = 0.15;
+
+    /// <summary>提前部分付款的比例（预付款 30%）。</summary>
+    public const decimal PayablePrepayRatio = 0.3m;
+
+    /// <summary>
+    /// 单条历史应付的确定性内容：只从**已收货**的采购单派生，
+    /// 金额 / 供应商 / 来源单据号逐字取自该采购单的收货事实，因此应付页能一路追到收货单与采购单。
+    ///
+    /// 注意：<paramref name="asOfDate"/> 只影响付款进度（越老的账越可能已付清），
+    /// 不影响号码与金额——所以在更晚的日期重跑时，已落库的应付不会与本函数冲突（幂等按号跳过）。
+    /// </summary>
+    public static WorldHistoryPayablePlan BuildPayablePlan(WorldHistoryPurchasePlan purchase, DateOnly asOfDate)
+    {
+        ArgumentNullException.ThrowIfNull(purchase);
+        var payableNo = PayableNo(purchase.Index);
+        var random = new WorldHistoryRandom($"payable:{payableNo}");
+        var termDays = random.Pick(PayableTermDays);
+        var invoiceDate = purchase.ReceiptDate;
+        var dueDate = invoiceDate.AddDays(termDays);
+        var amount = decimal.Round(purchase.TotalAmount, 2);
+
+        decimal paidAmount;
+        if (dueDate.AddDays(PayableSettleGraceDays) <= asOfDate)
+        {
+            paidAmount = random.Chance(PayableOverdueUnpaidProbability) ? 0m : amount;
+        }
+        else if (dueDate <= asOfDate)
+        {
+            paidAmount = random.Chance(PayableJustDueSettledProbability) ? amount : 0m;
+        }
+        else
+        {
+            paidAmount = random.Chance(PayablePartialPrepayProbability)
+                ? decimal.Round(amount * PayablePrepayRatio, 2)
+                : 0m;
+        }
+
+        return new WorldHistoryPayablePlan(
+            Index: purchase.Index,
+            PayableNo: payableNo,
+            SourceDocumentNo: purchase.PurchaseReceiptNo,
+            SupplierCode: purchase.SupplierCode,
+            Amount: amount,
+            PaidAmount: paidAmount,
+            InvoiceDate: invoiceDate,
+            DueDate: dueDate,
+            PaymentTermCode: FormattableString.Invariant($"NET{termDays}"));
+    }
+
+    #endregion
+
     #region 中文科目表
 
     public const string ReceivableAccountCode = "1122";
@@ -135,3 +246,22 @@ public sealed record WorldHistoryPurchasePlan(
 }
 
 public sealed record WorldHistoryGlAccount(string Code, string Name, GLAccountType Type);
+
+/// <summary>单条历史应付账款（派生自一张已收货采购单）。</summary>
+public sealed record WorldHistoryPayablePlan(
+    int Index,
+    string PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    decimal PaidAmount,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode)
+{
+    public decimal OpenAmount => Amount - PaidAmount;
+
+    public bool IsSettled => PaidAmount >= Amount;
+
+    public bool IsPartiallyPaid => PaidAmount > 0m && PaidAmount < Amount;
+}

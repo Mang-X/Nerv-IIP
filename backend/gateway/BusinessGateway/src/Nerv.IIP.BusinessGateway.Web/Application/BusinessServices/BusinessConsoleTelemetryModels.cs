@@ -236,7 +236,8 @@ public sealed record BusinessConsoleTelemetryAlarmListRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? AlarmEventId = null);
 
 public sealed record BusinessConsoleTelemetryAlarmEventListResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
@@ -270,7 +271,8 @@ public sealed record BusinessConsoleEquipmentAlarmListRequest(
     string? Status,
     int Skip = 0,
     int Take = 100,
-    string? DeviceAssetIds = null);
+    string? DeviceAssetIds = null,
+    string? AlarmEventId = null);
 
 public sealed record BusinessConsoleEquipmentAlarmListPageResponse(
     IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
@@ -280,7 +282,8 @@ public sealed record BusinessConsoleAcknowledgeAlarmRequest(
     string OrganizationId,
     string EnvironmentId,
     DateTimeOffset AcknowledgedAtUtc,
-    string AcknowledgedBy);
+    string AcknowledgedBy,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleShelveAlarmRequest(
     string OrganizationId,
@@ -294,9 +297,12 @@ public sealed record BusinessConsoleShelveAlarmRequest(
 public sealed record BusinessConsoleUnshelveAlarmRequest(
     string OrganizationId,
     string EnvironmentId,
-    DateTimeOffset? UnshelvedAtUtc);
+    DateTimeOffset? UnshelvedAtUtc,
+    string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleAlarmLifecycleResponse(string AlarmEventId);
+public sealed record BusinessConsoleAlarmLifecycleResponse(
+    string AlarmEventId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
 
 public sealed record BusinessConsoleTelemetryHistoryRequest(
     string OrganizationId,

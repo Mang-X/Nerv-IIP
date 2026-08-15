@@ -84,8 +84,14 @@ describe('generated route nesting', () => {
       const loader = withComponent[0]?.components?.default as () => Promise<{ default: unknown }>
       const [loaded, expected] = await Promise.all([loader(), page()])
       expect(loaded.default).toBe(expected.default)
-      // Loading a real page SFC pulls in the whole block library — allow for the transform.
-    }, 60_000)
+      /**
+       * 加载一个真实页面 SFC 会把整个 block 库拖进来，第一条用例独自承担这份冷启动
+       * transform 成本（同包并行跑时更慢）。原来的 60s 预算贴着实测值（单跑 ~59s），
+       * 稍微多几行 import 就翻红——那是**基建耗时**，不是这条用例要断言的东西：
+       * 它断言的是路由不被同名父级吞掉，与快慢无关。预算放宽到不会误报的量级，
+       * 免得下次有人为了让它变绿去改产品代码。
+       */
+    }, 180_000)
   }
 
   it('never leaves a component-bearing parent route without a <RouterView/> outlet', () => {

@@ -24,18 +24,47 @@ public sealed class SourcePlanReference
         string sourceSystem,
         string sourceDocumentType,
         string sourceDocumentId,
-        string? sourceDemandReference)
+        string? sourceDemandReference,
+        IReadOnlyCollection<string>? sourceDemandReferences = null)
     {
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = DomainGuard.Required(sourceDocumentId, nameof(sourceDocumentId));
         SourceDemandReference = string.IsNullOrWhiteSpace(sourceDemandReference) ? null : sourceDemandReference.Trim();
+        var references = new List<string>();
+        if (SourceDemandReference is not null)
+        {
+            references.Add(SourceDemandReference);
+        }
+
+        foreach (var candidate in sourceDemandReferences ?? [])
+        {
+            var reference = candidate?.Trim();
+            if (string.IsNullOrEmpty(reference) || references.Contains(reference, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            references.Add(reference);
+        }
+
+        // AsReadOnly：`IReadOnlyList<string>` 只是静态类型上的只读，直接交出 List 实例
+        // 调用方一个向下转型就能绕过聚合、在 EF 变更跟踪背后改掉这条追溯链。
+        SourceDemandReferences = references.AsReadOnly();
     }
 
     public string SourceSystem { get; private set; } = string.Empty;
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string? SourceDemandReference { get; private set; }
+
+    /// <summary>
+    /// 来源建议 peg 到的全部需求源引用（含主引用，按传入顺序去重）。
+    /// 合批建议一张工单对应多张需求源单据；单值 <see cref="SourceDemandReference"/> 只能点亮其中一张，
+    /// 追溯读面按本集合为每个需求源生成 pegged-to-plan 边。
+    /// 升级前的历史行本列为 null，读面回退单值引用；新建工单恒为非空集合。
+    /// </summary>
+    public IReadOnlyList<string>? SourceDemandReferences { get; private set; }
 }
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
@@ -48,6 +77,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string ClosedStatus = "closed";
     public const string CancelledStatus = "cancelled";
     public const string ScrappedStatus = "scrapped";
+    public const string MaterialRequirementSnapshotCapturedStatus = "captured";
+    public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
 
     private WorkOrder()
     {
@@ -102,6 +133,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public DateTimeOffset? ClosedAtUtc { get; private set; }
     public string? HoldReason { get; private set; }
     public string? CancelReason { get; private set; }
+    public string? MaterialRequirementSnapshotStatus { get; private set; }
+    public DateTimeOffset? MaterialRequirementSnapshotEvaluatedAtUtc { get; private set; }
+    public string? MaterialRequirementSnapshotProductionVersionId { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
 
@@ -194,6 +228,29 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ProductionVersionId = normalizedProductionVersionId;
     }
 
+    public void RecordMaterialRequirementSnapshot(string status, DateTimeOffset evaluatedAtUtc)
+    {
+        var normalizedStatus = DomainGuard.Required(status, nameof(status)).ToLowerInvariant();
+        if (normalizedStatus is not MaterialRequirementSnapshotCapturedStatus
+            and not MaterialRequirementSnapshotNoRequirementsStatus)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(status),
+                status,
+                "Unsupported material requirement snapshot status.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ProductionVersionId))
+        {
+            throw new InvalidOperationException(
+                "A production version is required before material readiness can be proven.");
+        }
+
+        MaterialRequirementSnapshotStatus = normalizedStatus;
+        MaterialRequirementSnapshotEvaluatedAtUtc = evaluatedAtUtc;
+        MaterialRequirementSnapshotProductionVersionId = ProductionVersionId;
+    }
+
     public void RebindProductionVersionForEngineeringChange(string productionVersionId)
     {
         var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
@@ -203,6 +260,9 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         ProductionVersionId = normalizedProductionVersionId;
+        MaterialRequirementSnapshotStatus = null;
+        MaterialRequirementSnapshotEvaluatedAtUtc = null;
+        MaterialRequirementSnapshotProductionVersionId = null;
     }
 
     private void ThrowIfCannotRelease()
@@ -300,10 +360,19 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order is not executable.");
         }
 
-        var maxQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
+        var configuredMaximumQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
+        var hardMaximumQuantity = Quantity * 1.2m;
+        var maxQuantity = Math.Min(configuredMaximumQuantity, hardMaximumQuantity);
         if (CompletedQuantity + ScrapQuantity + goodQuantity + scrapQuantity > maxQuantity)
         {
-            throw new InvalidOperationException("Reported quantity exceeds work order tolerance.");
+            if (hardMaximumQuantity < configuredMaximumQuantity)
+            {
+                throw new InvalidOperationException(
+                    $"生产工单 {WorkOrderIdValue} 的累计报工数量超过计划量 {Quantity} 的 120% 硬上限 {hardMaximumQuantity}。请调整报工数量或工单计划量后重试。");
+            }
+
+            throw new InvalidOperationException(
+                $"生产工单 {WorkOrderIdValue} 的累计报工数量超过允许上限 {maxQuantity}。请调整报工数量或工单超产容差后重试。");
         }
 
         CompletedQuantity += goodQuantity;

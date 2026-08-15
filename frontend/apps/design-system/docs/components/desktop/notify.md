@@ -34,7 +34,7 @@ function fireNotification(kind) {
 
 两类反馈通道：`nvMessage` 顶部居中、单行、短暂自停；`nvNotification` 右上角卡片，带标题与描述。二者皆为命令式函数调用，需在应用根部挂载一次 `NvNotifierHost`。
 
-> 应用入口处放置 `<NvNotifierHost />`，本页 Demo 已内置。
+> 应用入口处放置 `<NvNotifierHost />`，本页示例已内置。
 
 ## 轻提示 Message
 
@@ -95,11 +95,11 @@ import { nvNotification } from '@nerv-iip/ui'
 
 ## API
 
-| 方法                                               | 说明           | 参数                                          |
-| -------------------------------------------------- | -------------- | --------------------------------------------- |
+| 方法                                              | 说明           | 参数                                          |
+| ------------------------------------------------- | -------------- | --------------------------------------------- |
 | `nvMessage.info / success / warning / error`      | 顶部轻提示     | `(title: string, { duration }?)`              |
 | `nvNotification.info / success / warning / error` | 右上角通知卡片 | `(title: string, { description, duration }?)` |
-| `dismissNotify`                                    | 主动关闭指定项 | `(id: number)`                                |
+| `dismissNotify`                                   | 主动关闭指定项 | `(id: number)`                                |
 
 ## 选项
 

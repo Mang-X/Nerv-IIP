@@ -2,7 +2,10 @@
 import type { BusinessConsoleErpQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpQuotations } from '@/composables/useBusinessErp'
+import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
+import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -15,6 +18,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -32,15 +36,27 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
-import { formatAmount, formatDate } from '../shared'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  UNAVAILABLE_TEXT,
+  erpReadState,
+  formatAmount,
+  formatDate,
+  pickerInvalidClass,
+  readCount,
+} from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售报价', requiredPermissions: ['business.erp.sales.read'] },
 })
 
 const quotations = useErpQuotations()
+// 客户与物料从主数据目录里选，报价一开出就挂在真实客户与真实物料上。
+const { customerOptions, partnersPending } = useErpPartnerCatalog()
+const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+// 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
+const { resolvePartner } = useBusinessPartnerNames()
 const { page, pageSize } = usePagedList(quotations.filters, {
   resetOn: [() => quotations.filters.status, () => quotations.filters.keyword],
 })
@@ -58,7 +74,11 @@ const columns: NvDataTableColumn<BusinessConsoleErpQuotationItem>[] = [
     cellClass: 'font-medium',
     accessor: (r) => r.quotationNo ?? '-',
   },
-  { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '-' },
+  {
+    key: 'customerCode',
+    header: '客户',
+    accessor: (r) => resolvePartner(r.customerCode) ?? r.customerCode ?? '-',
+  },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'expiresOn', header: '有效期至', width: 'w-32', accessor: (r) => formatDate(r.expiresOn) },
   {
@@ -77,19 +97,36 @@ const pendingApproval = computed(
 const amount = computed(() =>
   quotations.items.value.reduce((sum, q) => sum + (q.totalAmount ?? 0), 0),
 )
+const readState = computed(() =>
+  erpReadState({
+    noun: '报价单',
+    unit: '张',
+    ready: quotations.ready.value,
+    pending: quotations.pending.value,
+    error: quotations.error.value,
+    total: quotations.total.value,
+    filtered: Boolean(quotations.filters.keyword || quotations.filters.status),
+    emptyHint: '还没有报价单。可从销售机会或客户需求创建报价。',
+  }),
+)
+
 const quotationCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'pending',
     label: '待审报价',
-    value: pendingApproval.value,
-    unit: '单',
-    meta: '草稿报价，审批后可转销售订单',
+    value: readCount(readState.value, pendingApproval.value),
+    unit: readState.value.trustworthy ? '单' : '',
+    meta: readState.value.trustworthy
+      ? '草稿报价，审批后可转销售订单'
+      : readState.value.emptyMessage,
   },
   {
     key: 'amount',
     label: '报价金额',
-    value: formatAmount(amount.value),
-    meta: `当前列表 ${quotations.items.value.length} 张报价合计`,
+    value: readState.value.trustworthy ? formatAmount(amount.value) : UNAVAILABLE_TEXT,
+    meta: readState.value.trustworthy
+      ? `当前列表 ${quotations.items.value.length} 张报价合计`
+      : readState.value.emptyMessage,
   },
 ])
 
@@ -98,16 +135,27 @@ const form = reactive({
   customerCode: '',
   expiresOn: '',
   skuCode: '',
+  uomCode: '',
   quantity: '1',
   unitPrice: '0',
   requiredDate: '',
 })
+// 报价单位默认跟随物料的基本单位；用户仍可改成销售包装单位。
+// 曾踩坑：这里写死一个通用单位，遇到按 kg / l 计量的物料，后端单位换算找不到换算关系直接 500。
+watch(
+  () => form.skuCode,
+  (skuCode) => {
+    const baseUom = baseUomBySku.value.get(skuCode.trim())
+    if (baseUom) form.uomCode = baseUom
+  },
+)
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
   customerCode: !form.customerCode.trim(),
   expiresOn: !form.expiresOn,
   skuCode: !form.skuCode.trim(),
+  uomCode: !form.uomCode.trim(),
   requiredDate: !form.requiredDate,
   quantity: !(Number(form.quantity) > 0),
   unitPrice: !(Number(form.unitPrice) >= 0),
@@ -118,6 +166,7 @@ function openDialog() {
   form.customerCode = ''
   form.expiresOn = ''
   form.skuCode = ''
+  form.uomCode = ''
   form.quantity = '1'
   form.unitPrice = '0'
   form.requiredDate = ''
@@ -138,7 +187,7 @@ async function submit() {
         {
           lineNo: '10',
           skuCode: form.skuCode.trim(),
-          uomCode: 'EA',
+          uomCode: form.uomCode.trim(),
           quantity,
           unitPrice,
           requiredDate: form.requiredDate,
@@ -148,7 +197,11 @@ async function submit() {
     open.value = false
     notifySuccess('销售报价已创建')
   } catch (error) {
-    notifyError(quotations.createQuotationError.value ?? error, '创建报价失败，请稍后重试。')
+    notifyOperationFailure(
+      '创建报价失败',
+      quotations.createQuotationError.value ?? error,
+      '创建报价失败，请稍后重试。',
+    )
   }
 }
 
@@ -162,7 +215,11 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
     await quotations.approveQuotation(row.quotationNo)
     notifySuccess(`报价单 ${row.quotationNo} 已审批`)
   } catch (error) {
-    notifyError(quotations.approveQuotationError.value ?? error, '审批报价失败，请稍后重试。')
+    notifyOperationFailure(
+      '审批报价失败',
+      quotations.approveQuotationError.value ?? error,
+      '审批报价失败，请稍后重试。',
+    )
   }
 }
 </script>
@@ -172,7 +229,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
     <NvPageHeader
       title="销售报价"
       :breadcrumbs="[{ label: '经营管理' }, { label: '销售' }]"
-      :count="`${quotations.total.value} 张报价`"
+      :count="readState.count"
     >
       <template #actions>
         <NvButton
@@ -228,11 +285,31 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
       :loading="quotations.pending.value"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无报价。可从销售机会或客户需求创建报价。"
+      :empty-message="readState.emptyMessage"
+      :error="readState.error"
+      :error-message="readState.errorMessage"
+      :awaiting-scope="readState.awaitingScope"
+      :awaiting-scope-message="readState.awaitingScopeMessage"
+      @retry="quotations.refresh"
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
+      <template #cell-customerCode="{ row }">
+        <PartnerNameCell :code="row.customerCode" />
+      </template>
+      <template #cell-status="{ row }">
+        <div class="flex items-center gap-1.5">
+          <NvStatusBadge :value="row.status ?? '-'" />
+          <!-- 已转出报价：标注既有订单号；再次转订单后端会幂等返回这张单，不会新建。 -->
+          <span
+            v-if="row.convertedSalesOrderNo"
+            class="text-xs text-muted-foreground"
+            :title="`该报价已转出为销售订单 ${row.convertedSalesOrderNo}，重复转订单将返回同一张单`"
+          >
+            已转 {{ row.convertedSalesOrderNo }}
+          </span>
+        </div>
+      </template>
       <template #cell-totalAmount="{ row }"
         ><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template
       >
@@ -262,11 +339,17 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-customer">
                 客户 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-quo-customer"
                 v-model="form.customerCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.customerCode ? '' : undefined"
+                :options="customerOptions"
+                title="选择客户"
+                placeholder="选择客户"
+                source-text="数据来自基础数据业务伙伴（客户角色）"
+                empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
+                :loading="partnersPending"
+                aria-label="客户"
+                :class="pickerInvalidClass(showErrors && invalid.customerCode)"
               />
             </NvField>
             <NvField>
@@ -284,11 +367,34 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
               <NvFieldLabel for="erp-quo-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="erp-quo-sku"
                 v-model="form.skuCode"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.skuCode ? '' : undefined"
+                :options="skuOptions"
+                title="选择物料"
+                placeholder="选择物料"
+                source-text="数据来自基础数据物料主数据"
+                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
+                :loading="skusPending"
+                aria-label="物料"
+                :class="pickerInvalidClass(showErrors && invalid.skuCode)"
+              />
+            </NvField>
+            <NvField>
+              <NvFieldLabel for="erp-quo-uom">
+                单位 <span class="text-destructive">*</span>
+              </NvFieldLabel>
+              <NvEntityPicker
+                id="erp-quo-uom"
+                v-model="form.uomCode"
+                :options="uomOptions"
+                title="选择单位"
+                placeholder="选择报价单位"
+                source-text="数据来自基础数据计量单位；选定物料后默认带出基本单位"
+                empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
+                :loading="uomsPending"
+                aria-label="单位"
+                :class="pickerInvalidClass(showErrors && invalid.uomCode)"
               />
             </NvField>
             <NvField>
@@ -330,7 +436,7 @@ async function approve(row: BusinessConsoleErpQuotationItem) {
             </NvField>
           </NvFieldGroup>
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写客户、有效期、物料、需求日期，并给出正数数量与非负单价。
+            请选择客户、物料与单位，填写有效期与需求日期，并给出正数数量与非负单价。
           </p>
           <NvDialogFooter>
             <NvDialogClose as-child

@@ -1,6 +1,5 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
@@ -10,14 +9,16 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(MesPostgresLaneDatabase.CollectionName)]
 public sealed class TelemetryProductionReportCandidatePostgresTests
 {
     [MesRealPostgresFact]
     public async Task Status_scope_time_predicates_and_source_uniqueness_are_enforced_by_postgres()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options;
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        var options = MesPostgresLaneDatabase.CreateOptions();
         await using var db = new ApplicationDbContext(options, new NoopMediator());
+        MesPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
         await db.Database.MigrateAsync();
         var start = DateTimeOffset.Parse("2026-07-12T01:00:00Z");
         db.TelemetryProductionReportCandidates.Add(TelemetryProductionReportCandidate.CreateDraft("org-001", "env-dev", "source-001", "DEV-01", "count", 2m, start, start.AddMinutes(1), "WC-01", "WO-01", "OP-10"));
@@ -55,24 +56,6 @@ public sealed class TelemetryProductionReportCandidatePostgresTests
         public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
-
-    private sealed class TemporaryDatabase(string adminConnectionString, string databaseName, string connectionString) : IAsyncDisposable
-    {
-        public string ConnectionString { get; } = connectionString;
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
-        {
-            var name = $"nerv_mes_candidates_{Guid.NewGuid():N}";
-            var admin = new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = "postgres" }.ConnectionString;
-            await using var connection = new NpgsqlConnection(admin); await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{name}\"", connection); await command.ExecuteNonQueryAsync();
-            return new(admin, name, new NpgsqlConnectionStringBuilder(baseConnectionString) { Database = name }.ConnectionString);
-        }
-        public async ValueTask DisposeAsync()
-        {
-            await using var connection = new NpgsqlConnection(adminConnectionString); await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection); await command.ExecuteNonQueryAsync();
-        }
     }
 
     private sealed class NoopMediator : IMediator

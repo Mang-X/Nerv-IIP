@@ -8,8 +8,15 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringChanges } from '@/composables/useProductEngineering'
+import {
+  useEngineeringChanges,
+  useEngineeringProductionVersions,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import {
+  ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE,
+  ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE,
+} from '@/data/approvalReference'
 import {
   NvButton,
   NvDataTable,
@@ -21,6 +28,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -45,7 +53,12 @@ import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -82,6 +95,36 @@ function versionKindLabel(kind?: string | null) {
   return VERSION_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? (kind || '—')
 }
 
+// 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
+// （ProductionVersionItem.productionVersionId），可以做成选择器；EBOM / MBOM / 工艺路线的
+// 列表读面只给 bomCode + revision、拿不到版本主键，暂时保留手工录入（后端缺口已登记）。
+const {
+  productionVersions,
+  productionVersionsPending,
+  filters: productionVersionFilters,
+} = useEngineeringProductionVersions()
+productionVersionFilters.take = 500
+const productionVersionOptions = computed(() =>
+  productionVersions.value
+    .filter((row) => !!row.productionVersionId)
+    .map((row) => ({
+      value: row.productionVersionId as string,
+      label: row.validFrom
+        ? `${row.skuCode ?? '未知物料'} · 生效 ${row.validFrom.slice(0, 10)}`
+        : (row.skuCode ?? '未知物料'),
+      ...(row.isDefault ? { hint: '默认版本' } : {}),
+    })),
+)
+function affectedVersionOptions(kind: string, current: string) {
+  if (kind !== 'ProductionVersion') return []
+  const options = productionVersionOptions.value
+  const trimmed = current.trim()
+  if (trimmed && !options.some((option) => option.value === trimmed)) {
+    return [{ value: trimmed, label: trimmed }, ...options]
+  }
+  return options
+}
+
 // 后端是一步发布（Open→Approve→Release），变更落库即为已发布状态——不假造草稿/待审。
 const STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'all' },
@@ -104,11 +147,29 @@ watch(
   { immediate: true },
 )
 
+// 工程变更状态词表：后端主链是一步发布（Open→Approve→Release），但历史/导入数据里
+// 仍会出现 Draft / Scheduled 这类生命周期取值，缺词就会把英文码印到「状态」列上。
+const ECO_STATUS_DISPLAY: Record<string, { label: string; tone: StatusTone }> = {
+  draft: { label: '草稿', tone: 'warning' },
+  open: { label: '待处理', tone: 'warning' },
+  submitted: { label: '已提交', tone: 'warning' },
+  approved: { label: '已批准', tone: 'info' },
+  scheduled: { label: '待生效', tone: 'info' },
+  released: { label: '已发布', tone: 'success' },
+  published: { label: '已发布', tone: 'success' },
+  effective: { label: '已生效', tone: 'success' },
+  archived: { label: '已归档', tone: 'neutral' },
+  cancelled: { label: '已取消', tone: 'neutral' },
+  rejected: { label: '已驳回', tone: 'danger' },
+}
+
 function ecoStatus(status?: string | null): { label: string; tone: StatusTone } {
-  const s = (status ?? '').toLowerCase()
-  if (s === 'released' || s === 'published') return { label: '已发布', tone: 'success' }
-  if (s === 'archived') return { label: '已归档', tone: 'neutral' }
-  return { label: status || '已发布', tone: 'success' }
+  const raw = (status ?? '').trim()
+  if (!raw) return { label: '已发布', tone: 'success' }
+  const hit = ECO_STATUS_DISPLAY[raw.toLowerCase().replace(/[-_\s]/g, '')]
+  if (hit) return hit
+  if (import.meta.env.DEV) console.warn(`[工程变更] 词表缺失: ${raw}，请补 ECO_STATUS_DISPLAY`)
+  return { label: raw, tone: 'neutral' }
 }
 
 const releasedCount = computed(() => changes.value.length)
@@ -162,6 +223,7 @@ interface AffectedRow {
   versionId: string
 }
 interface EcoForm {
+  changeNumber: string
   reason: string
   approvalReferenceId: string
   effectiveDate: string | null
@@ -172,6 +234,7 @@ function blankAffected(): AffectedRow {
 }
 function blankForm(): EcoForm {
   return {
+    changeNumber: '',
     reason: '',
     approvalReferenceId: '',
     effectiveDate: today(),
@@ -183,7 +246,20 @@ const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<EcoForm>(blankForm())
 
+// 对象种类是上游：换了种类，原来那条版本标识必然作废，清空重选。
+// 只在行数不变时比对，避免增删行导致的索引位移误清。
+watch(
+  () => form.affectedVersions.map((row) => row.versionKind),
+  (kinds, previousKinds) => {
+    if (!previousKinds || previousKinds.length !== kinds.length) return
+    kinds.forEach((kind, index) => {
+      if (previousKinds[index] !== kind) form.affectedVersions[index].versionId = ''
+    })
+  },
+)
+
 const reasonValid = computed(() => form.reason.trim().length > 0)
+const changeNumberValid = computed(() => form.changeNumber.trim().length > 0)
 const approvalValid = computed(() => form.approvalReferenceId.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function affectedValid(row: AffectedRow) {
@@ -193,7 +269,12 @@ const affectedListValid = computed(
   () => form.affectedVersions.length > 0 && form.affectedVersions.every(affectedValid),
 )
 const canSubmit = computed(
-  () => reasonValid.value && approvalValid.value && effectiveValid.value && affectedListValid.value,
+  () =>
+    changeNumberValid.value &&
+    reasonValid.value &&
+    approvalValid.value &&
+    effectiveValid.value &&
+    affectedListValid.value,
 )
 const canPreview = computed(() => effectiveValid.value && affectedListValid.value)
 const impactNodes = computed(() => impactPreview.value?.nodes ?? [])
@@ -229,7 +310,7 @@ async function previewFormImpact() {
       })),
     })
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('预览变更影响失败', error, '预览变更影响失败，请稍后重试。')
   }
 }
 
@@ -241,6 +322,7 @@ async function submitForm() {
   const body: BusinessConsoleReleaseEngineeringChangeRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
+    changeNumber: form.changeNumber.trim(),
     reason: form.reason.trim(),
     approvalReferenceId: form.approvalReferenceId.trim(),
     effectiveDate: form.effectiveDate ?? undefined,
@@ -255,7 +337,7 @@ async function submitForm() {
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('发布工程变更失败', error, '发布工程变更失败，请稍后重试。')
   }
 }
 
@@ -281,7 +363,7 @@ async function openView(row: BusinessConsoleEngineeringChangeItem) {
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 
 function impactNodeTypeLabel(type?: string | null) {
@@ -360,9 +442,29 @@ function riskTone(severity?: string | null): StatusTone {
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本 ID。
               </p>
+              <p
+                v-if="showErrors && !changeNumberValid"
+                class="text-sm text-destructive"
+                role="alert"
+              >
+                请先填写变更号，审批链必须绑定到同一个 ECO 单据。
+              </p>
 
               <FormSectionTitle>变更信息</FormSectionTitle>
               <NvFieldGroup class="grid gap-3">
+                <NvField :data-invalid="showErrors && !changeNumberValid">
+                  <NvFieldLabel for="eco-change-number"
+                    >变更号 <span class="text-destructive">*</span></NvFieldLabel
+                  >
+                  <NvInput
+                    id="eco-change-number"
+                    v-model="form.changeNumber"
+                    placeholder="例如 ECO-20260801-000001"
+                  />
+                  <p class="text-xs text-muted-foreground">
+                    先确定本次 ECO 号，审批链会以此单号绑定；审批通过后再发布变更。
+                  </p>
+                </NvField>
                 <NvField :data-invalid="showErrors && !reasonValid">
                   <NvFieldLabel for="eco-reason"
                     >变更原因 <span class="text-destructive">*</span></NvFieldLabel
@@ -377,8 +479,10 @@ function riskTone(severity?: string | null): StatusTone {
                   v-model="form.approvalReferenceId"
                   title="变更审批链"
                   source-service="product-engineering"
-                  document-type="engineering-change-order"
-                  :allow-start="false"
+                  :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
+                  :document-id="form.changeNumber || undefined"
+                  :preferred-template-code="ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE"
+                  :allow-start="true"
                 />
                 <p
                   v-if="showErrors && !approvalValid"
@@ -432,9 +536,23 @@ function riskTone(severity?: string | null): StatusTone {
                   </NvField>
                   <NvField :data-invalid="showErrors && !row.versionId.trim()">
                     <NvFieldLabel :for="`eco-vid-${index}`"
-                      >版本 ID <span class="text-destructive">*</span></NvFieldLabel
+                      >受影响版本 <span class="text-destructive">*</span></NvFieldLabel
                     >
+                    <NvEntityPicker
+                      v-if="row.versionKind === 'ProductionVersion'"
+                      :id="`eco-vid-${index}`"
+                      v-model="row.versionId"
+                      :options="affectedVersionOptions(row.versionKind, row.versionId)"
+                      title="选择生产版本"
+                      placeholder="选择生产版本"
+                      source-text="数据来自工程数据生产版本"
+                      empty-text="暂无生产版本，请先在工程数据维护"
+                      :loading="productionVersionsPending"
+                      aria-label="受影响版本"
+                      clearable
+                    />
                     <NvInput
+                      v-else
                       :id="`eco-vid-${index}`"
                       v-model="row.versionId"
                       placeholder="受影响的版本标识"
@@ -607,7 +725,7 @@ function riskTone(severity?: string | null): StatusTone {
               :model-value="viewTarget.approvalReferenceId ?? ''"
               title="变更审批链"
               source-service="product-engineering"
-              document-type="engineering-change-order"
+              :document-type="ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE"
               :document-id="viewTarget.changeNumber ?? undefined"
               :allow-start="false"
             />

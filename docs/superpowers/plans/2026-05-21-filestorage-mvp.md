@@ -1,53 +1,53 @@
-# FileStorage MVP Implementation Plan
+# FileStorage MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能代理工作者：** 必须使用子技能：采用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Build the first FileStorage MVP using a server-proxy metadata path, with PostgreSQL migration and schema convention coverage in the same phase.
+**目标：** 使用 server-proxy 元数据路径构建首个 FileStorage MVP，并在同一阶段覆盖 PostgreSQL 迁移和 schema 约定。
 
-**Architecture:** FileStorage owns generic file facts, upload sessions and download grants. The first provider is a server-proxy metadata stub so API, persistence and SDK work can proceed without MinIO deployment. tus comes after the core facts are stable and is the MVP complete binary-transfer path; MinIO/S3 multipart is post-MVP deployment integration.
+**架构：** FileStorage 拥有通用文件事实、上传会话和下载授权。首个提供程序是 server-proxy 元数据桩，使 API、持久化和 SDK 工作无需部署 MinIO 即可推进。tus 在核心事实稳定后接入，并作为 MVP 的完整二进制传输路径；MinIO/S3 multipart 属于 MVP 后的部署集成。
 
-**Tech Stack:** .NET 10, FastEndpoints, xUnit, EF Core, PostgreSQL, Nerv.IIP.Testing schema convention helpers.
+**技术栈：** .NET 10、FastEndpoints、xUnit、EF Core、PostgreSQL、Nerv.IIP.Testing schema 约定辅助工具。
 
 ---
 
-## File Structure
+## 文件结构
 
-Modify:
+修改：
 
-1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain/FileStorageBoundaries.cs` - replace skeleton records with MVP domain facts and simple policy helpers.
-2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs` - register the in-memory MVP store first, later register persistence.
-3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Boundaries/FileStorageBoundaryEndpoints.cs` - keep or update boundary diagnostic endpoint.
-4. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs` - convert skeleton coverage into behavior-focused API tests.
-5. `docs/architecture/file-storage-baseline.md` - update after implementation evidence exists.
+1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain/FileStorageBoundaries.cs` - 用 MVP 领域事实和简单策略辅助工具替换骨架记录类型。
+2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs` - 先注册内存 MVP 存储，之后再注册持久化。
+3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Boundaries/FileStorageBoundaryEndpoints.cs` - 保留或更新边界诊断端点。
+4. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs` - 将骨架覆盖转换为聚焦行为的 API 测试。
+5. `docs/architecture/file-storage-baseline.md` - 在实施证据存在后更新。
 
-Create in the API slice:
+在 API 纵切中新增：
 
 1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileUploadSessionEndpoints.cs`
 2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileMetadataEndpoints.cs`
 3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Services/InMemoryFileStorageStore.cs`
 
-Create in the persistence slice:
+在持久化纵切中新增：
 
 1. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/StoredFileEntityTypeConfiguration.cs`
 3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/UploadSessionEntityTypeConfiguration.cs`
 4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/DownloadGrantEntityTypeConfiguration.cs`
 5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/*`
-6. Schema convention tests under `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests`.
+6. `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests` 下的 schema 约定测试。
 
-## Task 1: Server-Proxy Metadata API
+## 任务 1：Server-Proxy 元数据 API
 
-**Files:**
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain/FileStorageBoundaries.cs`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
-- Modify: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileUploadSessionEndpoints.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileMetadataEndpoints.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Services/InMemoryFileStorageStore.cs`
+**文件：**
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Domain/FileStorageBoundaries.cs`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
+- 修改：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageSkeletonTests.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileUploadSessionEndpoints.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Endpoints/Files/FileMetadataEndpoints.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Services/InMemoryFileStorageStore.cs`
 
-- [x] **Step 1: Write failing API tests**
+- [x] **步骤 1：编写会失败的 API 测试**
 
-Add tests that:
+添加测试以验证：
 
 ```text
 POST /api/files/v1/upload-sessions creates a server-proxy session.
@@ -57,17 +57,17 @@ POST /api/files/v1/files/{fileId}/download-grants returns a short-lived grant.
 Metadata and grant JSON do not contain objectKey or object_key.
 ```
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 ```
 
-Expected before implementation: FAIL with missing endpoints or non-success status.
+实施前预期：因缺少端点或返回非成功状态而失败。
 
-- [x] **Step 2: Implement the minimum in-memory store and endpoints**
+- [x] **步骤 2：实现最小内存存储和端点**
 
-Implement only server-proxy metadata behavior:
+仅实现 server-proxy 元数据行为：
 
 ```text
 uploadMode = server-proxy
@@ -76,40 +76,40 @@ uploadUrl = /api/files/v1/upload-sessions/{uploadSessionId}/content
 downloadUrl = /api/files/v1/download-grants/{downloadGrantId}/content
 ```
 
-The internal object key can be deterministic:
+内部对象键可以是确定性的：
 
 ```text
 {organizationId}/{fileId}
 ```
 
-Do not expose that object key in public responses.
+不得在公共响应中暴露该对象键。
 
-- [x] **Step 3: Re-run FileStorage tests**
+- [x] **步骤 3：重新运行 FileStorage 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 2: PostgreSQL Migration And Schema Convention
+## 任务 2：PostgreSQL 迁移与 Schema 约定
 
-**Files:**
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Nerv.IIP.FileStorage.Infrastructure.csproj`
-- Modify: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
-- Modify: `backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs`
-- Create: `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/*`
-- Create: FileStorage schema convention tests.
+**文件：**
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Nerv.IIP.FileStorage.Infrastructure.csproj`
+- 修改：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs`
+- 修改：`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/ApplicationDbContext.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs`
+- 新增：`backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/*`
+- 新增：FileStorage schema 约定测试。
 
-- [x] **Step 1: Add DbContext and entity configurations**
+- [x] **步骤 1：添加 DbContext 和实体配置**
 
-Use schema `filestorage` and configure migrations history under the same schema.
+使用 schema `filestorage`，并将迁移历史配置在同一 schema 下。
 
-Tables:
+数据表：
 
 ```text
 stored_files
@@ -117,15 +117,15 @@ upload_sessions
 download_grants
 ```
 
-All business tables and business columns need comments. JSON/text compatibility comments are required for any JSON/text payload fields.
+所有业务表和业务列都需要注释。任何 JSON/text 载荷字段都必须添加 JSON/text 兼容性注释。
 
-- [x] **Step 2: Generate initial migration**
+- [x] **步骤 2：生成初始迁移**
 
-Run the repo-local EF tool pattern used by AppHub/Ops/IAM, setting provider to PostgreSQL.
+采用 AppHub/Ops/IAM 使用的仓库本地 EF 工具模式，并将提供程序设置为 PostgreSQL。
 
-- [x] **Step 3: Add schema convention tests**
+- [x] **步骤 3：添加 schema 约定测试**
 
-Reuse `Nerv.IIP.Testing` helpers. Cover:
+复用 `Nerv.IIP.Testing` 辅助工具。覆盖：
 
 ```text
 table comments
@@ -135,34 +135,34 @@ migrations history schema
 object_key remains persistence-only
 ```
 
-- [x] **Step 4: Run FileStorage persistence tests**
+- [x] **步骤 4：运行 FileStorage 持久化测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 ```
 
-Expected: PASS.
+预期：通过。
 
-## Task 3: Documentation And Verification
+## 任务 3：文档与验证
 
-**Files:**
-- Modify: `docs/architecture/file-storage-baseline.md`
-- Modify: `docs/architecture/implementation-readiness.md`
-- Modify: `docs/superpowers/plans/2026-05-21-next-stage-stabilization-and-readiness.md`
+**文件：**
+- 修改：`docs/architecture/file-storage-baseline.md`
+- 修改：`docs/architecture/implementation-readiness.md`
+- 修改：`docs/superpowers/plans/2026-05-21-next-stage-stabilization-and-readiness.md`
 
-- [x] **Step 1: Update docs from actual diff**
+- [x] **步骤 1：根据实际差异更新文档**
 
-Document that first FileStorage MVP uses server-proxy metadata stub first, tus as the complete MVP transfer path, and MinIO/S3 multipart only as post-MVP deployment integration.
+记录首个 FileStorage MVP 先使用 server-proxy 元数据桩，tus 作为完整 MVP 传输路径，而 MinIO/S3 multipart 仅作为 MVP 后的部署集成。
 
-- [x] **Step 2: Run verification**
+- [x] **步骤 2：运行验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/Nerv.IIP.FileStorage.Web.Tests.csproj --no-restore
 dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --no-restore
 ```
 
-Expected: both pass.
+预期：两项均通过。

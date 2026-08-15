@@ -63,7 +63,7 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "../..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
-if ($EnvironmentName -ne "Development") {
+if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), [StringComparison]::OrdinalIgnoreCase))) {
     if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
         throw "-IamJwtSigningKeyId is required outside Development."
     }
@@ -132,7 +132,7 @@ if ($UsePostgreSql) {
 }
 
 if ($AutoMigrate) {
-    if ($EnvironmentName -ne "Development") {
+    if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), [StringComparison]::OrdinalIgnoreCase))) {
         throw "-AutoMigrate is only allowed in Development."
     }
 

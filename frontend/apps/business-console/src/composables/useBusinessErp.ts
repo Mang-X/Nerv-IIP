@@ -20,11 +20,14 @@ import {
   listBusinessConsoleErpReceivablesQueryOptions,
   listBusinessConsoleErpRequestsForQuotationQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
+  listBusinessConsoleErpSupplierQuotationsQueryOptions,
   openBusinessConsoleErpOpportunityMutationOptions,
   postBusinessConsoleErpJournalVoucherMutationOptions,
   receiveBusinessConsoleErpSupplierQuotationMutationOptions,
   recordBusinessConsoleErpPurchaseReceiptMutationOptions,
   releaseBusinessConsoleErpDeliveryOrderMutationOptions,
+  releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions,
+  type BusinessConsoleCreateErpSalesOrderResponse,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
   type BusinessConsoleErpDeliveryOrderItem,
@@ -49,6 +52,8 @@ import {
   type BusinessConsoleErpRequestForQuotationListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
+  type BusinessConsoleErpSupplierQuotationItem,
+  type BusinessConsoleErpSupplierQuotationListEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
@@ -142,6 +147,12 @@ function useErpDocumentList<
     filters,
     organizationId: computed(() => businessContext.organizationId),
     environmentId: computed(() => businessContext.environmentId),
+    /**
+     * 业务上下文是否就绪 = 查询是否真的发出去了。
+     * 未就绪时 `enabled:false`，pinia-colada 的 `asyncStatus` 停在 `idle`，`isLoading`
+     * 为 **false**——页面只看 pending/error 会把「压根没查」当成「查过了、是 0」。
+     */
+    ready: computed(() => hasBusinessContext(businessContext)),
     items: computed<TItem[]>(() => unwrapItems(query.data.value as TEnvelope | undefined)),
     total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
     error: query.error,
@@ -183,6 +194,7 @@ export function useBusinessErp() {
 
   return {
     filters,
+    ready: computed(() => hasBusinessContext(businessContext)),
     purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
       unwrapItems(
         purchaseRequisitionsQuery.data.value as
@@ -295,17 +307,68 @@ export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpLi
   }
 }
 
-export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  const rfqs = useErpRequestsForQuotation(initialFilters)
+export interface BusinessErpSupplierQuotationFilters {
+  rfqNo?: string
+  supplierCode?: string
+  keyword?: string
+  skip: number
+  take: number
+}
+
+/**
+ * 供应商报价读面。
+ *
+ * 这里查的是**真正的报价单**（`erp.supplier_quotations`），不是询价单列表——
+ * 早先本 composable 直接复用 `useErpRequestsForQuotation`，导致「提交一条报价、刷新页面报价就消失」。
+ * 过滤维度按服务端读面：询价单 / 供应商 / 关键字；报价聚合上没有状态字段，故不提供 status。
+ */
+export function useErpSupplierQuotations(
+  initialFilters: Partial<BusinessErpSupplierQuotationFilters> = {},
+) {
+  const businessContext = useBusinessContextStore()
+  const filters = reactive<BusinessErpSupplierQuotationFilters>({
+    skip: 0,
+    take: DEFAULT_TAKE,
+    ...initialFilters,
+  })
+  const query = useQuery(() => ({
+    ...listBusinessConsoleErpSupplierQuotationsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        rfqNo: filters.rfqNo,
+        supplierCode: filters.supplierCode,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(businessContext),
+  }))
+  const refresh = () => refetchWithBusinessContext(businessContext, query)
   const receiveMutation = useMutation({
     ...receiveBusinessConsoleErpSupplierQuotationMutationOptions(),
     onSuccess() {
-      void rfqs.refresh()
+      void refresh()
     },
   })
+  const organizationId = computed(() => businessContext.organizationId)
+  const environmentId = computed(() => businessContext.environmentId)
 
   return {
-    ...rfqs,
+    filters,
+    organizationId,
+    environmentId,
+    ready: computed(() => hasBusinessContext(businessContext)),
+    items: computed<BusinessConsoleErpSupplierQuotationItem[]>(() =>
+      unwrapItems(query.data.value as BusinessConsoleErpSupplierQuotationListEnvelope | undefined),
+    ),
+    total: computed(() =>
+      unwrapTotal(query.data.value as BusinessConsoleErpSupplierQuotationListEnvelope | undefined),
+    ),
+    error: query.error,
+    pending: query.isLoading,
+    refresh,
     receiveSupplierQuotation: (payload: {
       rfqNo: string
       supplierCode: string
@@ -321,8 +384,8 @@ export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpList
     }) =>
       receiveMutation.mutateAsync({
         body: {
-          organizationId: rfqs.organizationId.value,
-          environmentId: rfqs.environmentId.value,
+          organizationId: organizationId.value,
+          environmentId: environmentId.value,
           quotationNo: payload.quotationNo || null,
           rfqNo: payload.rfqNo,
           supplierCode: payload.supplierCode,
@@ -393,7 +456,8 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
     recordPurchaseReceipt: (payload: {
       purchaseOrderNo: string
       purchaseReceiptNo?: string
-      lines: { purchaseOrderLineNo: string; receivedQuantity: number }[]
+      // qualityStatus 是 ERP 收货命令的必填业务决策点（#1345），缺失会被后端 400 拒绝。
+      lines: { purchaseOrderLineNo: string; receivedQuantity: number; qualityStatus: string }[]
     }) =>
       recordMutation.mutateAsync({
         body: {
@@ -435,8 +499,17 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     },
   })
 
+  // 信用冻结解冻复核：提交后走审批中心，审批通过订单才恢复 released，因此这里只刷新列表不改本地状态。
+  const releaseCreditHoldMutation = useMutation({
+    ...releaseBusinessConsoleErpSalesOrderCreditHoldMutationOptions(),
+    onSuccess() {
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
+    },
+  })
+
   return {
     filters,
+    ready: computed(() => hasBusinessContext(businessContext)),
     salesOrders: computed<BusinessConsoleErpSalesOrderItem[]>(() =>
       unwrapItems(
         salesOrdersQuery.data.value as BusinessConsoleErpSalesOrderListEnvelope | undefined,
@@ -450,8 +523,13 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
     refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
-    createSalesOrder: (payload: { quotationNo: string; siteCode: string; salesOrderNo?: string }) =>
-      createMutation.mutateAsync({
+    // 返回转换结果：reusedExistingOrder 为 true 表示报价已转出，本次幂等带回既有订单号而未新建。
+    createSalesOrder: async (payload: {
+      quotationNo: string
+      siteCode: string
+      salesOrderNo?: string
+    }): Promise<BusinessConsoleCreateErpSalesOrderResponse | null> => {
+      const envelope = await createMutation.mutateAsync({
         body: {
           organizationId: businessContext.organizationId,
           environmentId: businessContext.environmentId,
@@ -460,9 +538,22 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
           salesOrderNo: payload.salesOrderNo || null,
           idempotencyKey: makeIdempotencyKey(),
         },
-      }),
+      })
+      return envelope?.data ?? null
+    },
     createSalesOrderPending: createMutation.isLoading,
     createSalesOrderError: createMutation.error,
+    // salesOrderNo 走路由参数；请求体只带组织范围（StartedBy 由 Gateway 从 principal 注入）。
+    releaseCreditHold: (payload: { salesOrderNo: string }) =>
+      releaseCreditHoldMutation.mutateAsync({
+        path: { salesOrderNo: payload.salesOrderNo },
+        body: {
+          organizationId: businessContext.organizationId,
+          environmentId: businessContext.environmentId,
+        },
+      }),
+    releaseCreditHoldPending: releaseCreditHoldMutation.isLoading,
+    releaseCreditHoldError: releaseCreditHoldMutation.error,
   }
 }
 
@@ -602,6 +693,7 @@ export function useErpFinanceSummary() {
   }))
 
   return {
+    ready: computed(() => hasBusinessContext(businessContext)),
     summary: computed<BusinessConsoleErpFinanceSummaryResponse | undefined>(() =>
       unwrapData(summaryQuery.data.value as BusinessConsoleErpFinanceSummaryEnvelope | undefined),
     ),

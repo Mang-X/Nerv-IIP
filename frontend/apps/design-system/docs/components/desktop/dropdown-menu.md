@@ -23,7 +23,7 @@ import {
 
 # NvDropdownMenu 动作菜单
 
-为表格行、卡片等收纳「更多操作」。`NvDropdownMenu` 提供模糊浮层与缩放入场，由 Label / Item / Separator 组合操作项，破坏性操作以 `variant="destructive"` 标红。
+为表格行、卡片等收纳「更多操作」。`NvDropdownMenu` 提供模糊浮层与缩放入场，由标签、操作项与分隔线组合操作项，破坏性操作以 `variant="destructive"` 标红。
 
 ## 基础用法
 

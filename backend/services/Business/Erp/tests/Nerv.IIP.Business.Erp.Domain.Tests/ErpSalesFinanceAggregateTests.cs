@@ -15,6 +15,23 @@ namespace Nerv.IIP.Business.Erp.Domain.Tests;
 
 public sealed class ErpSalesFinanceAggregateTests
 {
+    /// <summary>
+    /// 报价单有效期。**必须相对今天算**——<c>Quotation.EnsureCanCreateSalesOrder</c> 按
+    /// <c>ExpiresOn &lt; today</c> 判过期，写死日期就是定时炸弹。
+    ///
+    /// <para>
+    /// 实际炸过：这些用例原来写死 <c>2026-08-01</c>，日期一翻到 8 月 2 日，五条用例集体红成
+    /// 「Expired quotations cannot create sales orders」，而前一天 CI 还是绿的——当天提 PR 的人
+    /// 背锅，且怎么读 diff 都看不出关系（本次实际发生：main 绿、分支红，两边代码在 ERP 上一字未改）。
+    /// </para>
+    /// <para>
+    /// 同文件里本来就有相对写法（<c>DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10))</c>），
+    /// 只是没铺开。这里收成一处常量，免得下一次又写死一个。
+    /// </para>
+    /// </summary>
+    private static DateOnly QuotationValidUntil =>
+        DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30));
+
     [Fact]
     public void Sales_order_lifecycle_raises_versioned_release_change_and_cancel_facts()
     {
@@ -23,7 +40,7 @@ public sealed class ErpSalesFinanceAggregateTests
             "env-dev",
             "QT-DEMAND-001",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            QuotationValidUntil,
             [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
 
@@ -53,7 +70,7 @@ public sealed class ErpSalesFinanceAggregateTests
             "env-dev",
             "QT-DEMAND-HOLD",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            QuotationValidUntil,
             [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
         var order = SalesOrder.CreateFromQuotation(
@@ -118,6 +135,38 @@ public sealed class ErpSalesFinanceAggregateTests
 
         Assert.Equal(QuotationStatus.Approved, quotation.Status);
         Assert.Throws<InvalidOperationException>(() => quotation.Approve());
+    }
+
+    [Fact]
+    public void Quotation_tracks_converted_sales_order_reference_exactly_once()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-CONVERT-001",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
+
+        // 未批准不能登记转出。
+        Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-001"));
+
+        quotation.Approve();
+        Assert.False(quotation.IsConverted);
+        quotation.MarkConvertedToSalesOrder("SO-001");
+
+        Assert.True(quotation.IsConverted);
+        Assert.Equal("SO-001", quotation.ConvertedSalesOrderNo);
+        Assert.NotNull(quotation.ConvertedAtUtc);
+
+        // 已转出：不能二次登记，也不能再创建销售订单。
+        var markAgain = Assert.Throws<InvalidOperationException>(() => quotation.MarkConvertedToSalesOrder("SO-002"));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var exception = Assert.Throws<InvalidOperationException>(() => quotation.EnsureCanCreateSalesOrder(today));
+        Assert.Contains("SO-001", exception.Message, StringComparison.Ordinal);
+        // 两道关卡是同一条规则：拒绝理由必须逐字一致，且都要带上既有订单号（#1314）。
+        Assert.Equal(exception.Message, markAgain.Message);
+        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation("SO-002", "SITE-001", quotation));
     }
 
     [Fact]
@@ -263,7 +312,7 @@ public sealed class ErpSalesFinanceAggregateTests
             "env-dev",
             "QT-SHIP-001",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            QuotationValidUntil,
             [
                 new QuotationLineDraft("10", "SKU-A", "EA", 3m, 10m, new DateOnly(2026, 8, 15)),
                 new QuotationLineDraft("20", "SKU-B", "EA", 2m, 20m, new DateOnly(2026, 8, 15)),
@@ -305,7 +354,7 @@ public sealed class ErpSalesFinanceAggregateTests
             "env-dev",
             "QT-SHIP-INVALID",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            QuotationValidUntil,
             [new QuotationLineDraft("10", "SKU-A", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
         var order = SalesOrder.CreateFromQuotation("SO-SHIP-INVALID", "SITE-001", quotation);
@@ -336,7 +385,7 @@ public sealed class ErpSalesFinanceAggregateTests
             "env-dev",
             "QT-SHIP-CANCEL",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            QuotationValidUntil,
             [new QuotationLineDraft("10", "SKU-A", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
         var order = SalesOrder.CreateFromQuotation("SO-SHIP-CANCEL", "SITE-001", quotation);

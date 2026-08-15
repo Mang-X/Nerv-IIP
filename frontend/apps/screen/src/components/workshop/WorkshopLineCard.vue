@@ -106,7 +106,7 @@ const nf = new Intl.NumberFormat('en-US')
     flex-direction: column;
     padding: 13px 17px 11px;
     border-radius: var(--nv-scr-radius);
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     border: 1px solid var(--nv-scr-line);
     border-top-color: rgba(255, 255, 255, 0.09);
     transition:
@@ -154,11 +154,7 @@ const nf = new Intl.NumberFormat('en-US')
     padding: 2px 8px;
     border-radius: 5px;
     border: 1px dashed rgba(255, 255, 255, 0.24);
-    background: repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.04) 0 6px,
-      transparent 6px 12px
-    );
+    background: rgba(255, 255, 255, 0.035);
     font-size: 11.5px;
     color: var(--nv-scr-muted);
   }

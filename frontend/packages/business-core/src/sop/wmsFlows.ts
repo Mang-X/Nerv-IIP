@@ -1,7 +1,14 @@
 import { defineStepFlow } from './defineStepFlow'
 
-export interface InboundReceiveCtx { orderId?: string; completed?: boolean }
-export interface OutboundReviewCtx { orderId?: string; packReviewNo?: string; completed?: boolean }
+export interface InboundReceiveCtx {
+  orderId?: string
+  completed?: boolean
+}
+export interface OutboundReviewCtx {
+  orderId?: string
+  packReviewNo?: string
+  completed?: boolean
+}
 
 export const inboundReceiveFlow = defineStepFlow<InboundReceiveCtx>({
   id: 'wms.inbound.receive',
@@ -20,7 +27,11 @@ export const outboundReviewFlow = defineStepFlow<OutboundReviewCtx>({
   ],
 })
 
-export interface CountExecCtx { countExecutionId?: string; countEntered?: boolean; completed?: boolean }
+export interface CountExecCtx {
+  countExecutionId?: string
+  countEntered?: boolean
+  completed?: boolean
+}
 
 export const countExecutionFlow = defineStepFlow<CountExecCtx>({
   id: 'wms.count',

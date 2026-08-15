@@ -5,6 +5,7 @@ using Nerv.IIP.ConnectorHost.Connectors.Docker;
 using Nerv.IIP.ConnectorHost.Connectors.Modbus;
 using Nerv.IIP.ConnectorHost.Connectors.Mqtt;
 using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
+using Nerv.IIP.ConnectorHost.Connectors.Simulated;
 using Nerv.IIP.ConnectorHost.Host;
 using Nerv.IIP.Sdk.Auth;
 using Nerv.IIP.Sdk.ConnectorProtocol;
@@ -67,6 +68,16 @@ if (builder.Configuration.GetValue("Mqtt:Enabled", false))
     builder.Services.AddSingleton<MqttConnector>();
     builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<MqttConnector>());
     builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<MqttConnector>());
+}
+if (builder.Configuration.GetValue("Simulated:Enabled", false))
+{
+    builder.Services.AddSingleton(_ => SimulatedConnectorOptions.Bind(
+        builder.Configuration.GetSection("Simulated")));
+    builder.Services.AddSingleton<SimulatedConnector>();
+    builder.Services.AddSingleton<IConnector>(sp => sp.GetRequiredService<SimulatedConnector>());
+    builder.Services.AddSingleton<IIndustrialTelemetryCollectionConnector>(sp => sp.GetRequiredService<SimulatedConnector>());
+    builder.Services.AddSingleton<IConnectorConnectionMonitor>(sp => sp.GetRequiredService<SimulatedConnector>());
+    builder.Services.AddSingleton<IConnectorOperationExecutor>(sp => sp.GetRequiredService<SimulatedConnector>());
 }
 builder.Services.AddSingleton<IReadOnlyList<IConnector>>(sp => sp.GetServices<IConnector>().ToList());
 builder.Services.AddSingleton<IReadOnlyList<IConnectorOperationExecutor>>(sp => sp.GetServices<IConnectorOperationExecutor>().ToList());

@@ -6,6 +6,7 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <ProjectReference Include="..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
+    <ProjectReference Include="..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

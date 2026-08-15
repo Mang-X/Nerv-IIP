@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
+using Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.Planning;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -18,7 +19,6 @@ using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Newtonsoft.Json;
 using Prometheus;
-
 
 var isTesting = false;
 try
@@ -32,11 +32,11 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
-    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
-    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-    var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
-    var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
-    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+    var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+    var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    var mesBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
     builder.Services.AddHttpClient<IPlanningParameterSnapshotClient, HttpPlanningMasterDataPlanningParameterSnapshotClient>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -86,6 +86,7 @@ try
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<DemandPlanningCodingService>();
+    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     if (string.Equals(builder.Configuration["Planning:InputProvider"], "Fixture", StringComparison.OrdinalIgnoreCase))
@@ -96,6 +97,9 @@ try
     {
         builder.Services.AddScoped<IPlanningInputSnapshotProvider, DemandPlanningUpstreamInputSnapshotProvider>();
     }
+    // MRP 异步任务模式（#1306）：受理端点入队，后台 worker 在独立事务中执行计算。
+    builder.Services.AddSingleton<IMrpRunExecutionQueue, MrpRunExecutionQueue>();
+    builder.Services.AddHostedService<MrpRunWorker>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -114,6 +118,7 @@ try
         builder.Services.AddCap(x =>
         {
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.TopicNamePrefix = builder.Configuration["Cap:TopicNamePrefix"] ?? string.Empty;
             x.UseConfiguredRecovery(builder.Configuration);
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
@@ -144,6 +149,41 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // 《工厂世界观设定集》L1 背景历史（计划域侧）。校验器 fail-closed：对账不平就让启动失败。
+    var worldHistoryEnabled = WorldHistoryConfiguration.IsEnabled(builder.Configuration);
+    if (worldHistoryEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "LeaderDemo:History:Enabled=true is only allowed for BusinessDemandPlanning in Development.");
+    }
+
+    if (worldHistoryEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
+            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
+            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
+        app.Logger.LogInformation(
+            "World-history planning seed completed: {Demands} demand sources, {Forecasts} forecast inputs, " +
+            "{MpsBuckets} MPS buckets, {MrpRuns} MRP runs, {Suggestions} planning suggestions; " +
+            "validator checked {CheckedDemands} demands / {CheckedSuggestions} suggestions " +
+            "({CheckedAccepted} accepted into MES work orders).",
+            report.DemandSourcesWritten,
+            report.ForecastInputsWritten,
+            report.MpsBucketsWritten,
+            report.MrpRunsWritten,
+            report.PlanningSuggestionsWritten,
+            report.Validation.DemandSourcesChecked,
+            report.Validation.PlanningSuggestionsChecked,
+            report.Validation.AcceptedSuggestionsChecked);
+        foreach (var line in report.Validation.Sample)
+        {
+            app.Logger.LogInformation("World-history planning sample: {Chain}", line);
+        }
     }
 
     app.UseNervIipRequestLocalization();
@@ -183,26 +223,6 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
-}
-
-static Uri ResolveServiceBaseAddress(
-    IConfiguration configuration,
-    IWebHostEnvironment environment,
-    string configurationKey,
-    string developmentFallback)
-{
-    var configuredBaseUrl = configuration[configurationKey];
-    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
-    {
-        return new Uri(configuredBaseUrl, UriKind.Absolute);
-    }
-
-    if (environment.IsDevelopment())
-    {
-        return new Uri(developmentFallback, UriKind.Absolute);
-    }
-
-    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

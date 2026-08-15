@@ -1,11 +1,13 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using NetCorePal.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -13,7 +15,7 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 《工厂世界观设定集》L1 背景历史引擎（ERP 侧）的形状、确定性、隔离性与幂等性证据。
 /// 真实 PostgreSQL 的全量耗时实测在 <c>WorldHistorySeedPostgresTests</c>。
 /// </summary>
-public sealed class WorldHistorySeedServiceTests
+public sealed class WorldHistorySeedServiceTests(ITestOutputHelper output)
 {
     private static readonly DateOnly AsOfDate = new(2026, 7, 26);
 
@@ -35,9 +37,13 @@ public sealed class WorldHistorySeedServiceTests
         Assert.NotEmpty(report.Validation.Sample);
 
         // 已发货的单必有发货单 + 应收 + 收入凭证；已收款的单再加收款单 + 收款凭证。
+        // #1374：已完工待发货的单也有发货单（停在 released），但**不确认收入**——
+        // 因此发货单数 = 已发运 + 待发运，应收/凭证只跟着已发运走。
         var delivered = plans.Count(plan => plan.HasDelivery);
+        var pendingShipment = plans.Count(plan => plan.HasPendingShipment);
         var collected = plans.Count(plan => plan.IsCollected);
-        Assert.Equal(delivered, await dbContext.DeliveryOrders.CountAsync());
+        Assert.Equal(WorldHistorySpec.PendingShipmentOrderCount, pendingShipment);
+        Assert.Equal(delivered + pendingShipment, await dbContext.DeliveryOrders.CountAsync());
         Assert.Equal(delivered, await dbContext.AccountReceivables.CountAsync());
         Assert.Equal(collected, await dbContext.CashReceipts.CountAsync());
         Assert.Equal(delivered + collected, await dbContext.JournalVouchers.CountAsync());
@@ -46,6 +52,160 @@ public sealed class WorldHistorySeedServiceTests
         Assert.Equal(
             WorldHistoryErpSpec.TotalPurchaseOrders(AsOfDate, TestScale),
             report.PurchaseOrdersWritten);
+    }
+
+    /// <summary>
+    /// 经营五页（采购申请/询价/供应商报价/销售机会/成本候选，演示走查缺口）：
+    /// 历史链路必须为五个聚合落数且与采购/销售计划配对，对任意 asOfDate 成立
+    /// （含周日后首日与春节段，防 #1151 单日期盲区）。校验器 fail-closed 已在 SeedAsync 内跑过，
+    /// 这里再抽形状断言防校验器与引擎同错。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task History_seed_writes_the_business_objects_for_any_as_of_date(int year, int month, int day)
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var asOfDate = new DateOnly(year, month, day);
+
+        await new WorldHistorySeedService(dbContext).SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var purchasePlans = WorldHistorySeedService.BuildPurchasePlans(asOfDate, TestScale);
+        var salesPlans = WorldHistorySpec.BuildOrderPlans(asOfDate, TestScale);
+
+        // 采购申请：每张采购单一条已转化 + 公式化的在途条数。
+        Assert.Equal(
+            purchasePlans.Count + WorldHistoryErpSpec.OpenRequisitionCount(purchasePlans.Count),
+            await dbContext.PurchaseRequisitions.CountAsync());
+        var openRequisitions = await dbContext.PurchaseRequisitions
+            .Where(x => x.Status == PurchaseRequisitionStatus.Open)
+            .ToArrayAsync();
+        Assert.Equal(WorldHistoryErpSpec.OpenRequisitionCount(purchasePlans.Count), openRequisitions.Length);
+        Assert.All(openRequisitions, requisition => Assert.True(requisition.RequiredDate > asOfDate));
+
+        // 询比价：每 6 张采购单一单 RFQ，品类内每家供应商一份报价，中标价 == 采购单价。
+        var expectedRfqs = purchasePlans.Count(x => x.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1);
+        Assert.Equal(expectedRfqs, await dbContext.RequestForQuotations.CountAsync());
+        var sampledPlan = purchasePlans.First(x => x.Index % WorldHistoryErpSpec.RfqEveryNthPurchase == 1);
+        var sampledQuotes = await dbContext.SupplierQuotations
+            .Include(x => x.Lines)
+            .Where(x => x.RfqNo == WorldHistoryErpSpec.RfqNo(sampledPlan.Index))
+            .ToArrayAsync();
+        Assert.Equal(WorldHistoryErpSpec.CategoryOf(sampledPlan.SkuCode).SupplierCodes.Count, sampledQuotes.Length);
+        var winning = Assert.Single(sampledQuotes, x => x.SupplierCode == sampledPlan.SupplierCode);
+        Assert.Equal(sampledPlan.UnitPrice, winning.Lines.Single().UnitPrice);
+
+        // 成本候选：每 8 张已收货采购单一条，引用真实收货单号。
+        Assert.Equal(
+            purchasePlans.Count(x => x.IsReceived && x.Index % WorldHistoryErpSpec.CostCandidateEveryNthReceipt == 0),
+            await dbContext.CostCandidates.CountAsync());
+
+        // 销售机会：每 40 单一条，客户与订单计划一致。
+        Assert.Equal(
+            salesPlans.Count(x => x.Index % WorldHistoryErpSpec.OpportunityEveryNthSalesOrder == 1),
+            await dbContext.Opportunities.CountAsync());
+    }
+
+    /// <summary>
+    /// 应付账款（<c>erp.account_payables</c>）：应收应付页两栏必须对称——AR 走销售发货、AP 走采购收货。
+    /// 5 个 asOfDate 覆盖周一 / 周日次日 / 未来周日 / 春节段 / 月末冲量段（防 #1151 单日期盲区）。
+    /// </summary>
+    [Theory]
+    [InlineData(2026, 7, 27)]
+    [InlineData(2026, 7, 26)]
+    [InlineData(2026, 8, 2)]
+    [InlineData(2026, 2, 16)]
+    [InlineData(2026, 7, 31)]
+    public async Task History_seed_writes_payables_for_every_received_purchase_order(int year, int month, int day)
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var asOfDate = new DateOnly(year, month, day);
+        var seed = new WorldHistorySeedService(dbContext);
+
+        var first = await seed.SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+        var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, TestScale);
+
+        var purchasePlans = WorldHistorySeedService.BuildPurchasePlans(asOfDate, TestScale);
+        var payablePlans = WorldHistorySeedService.BuildPayablePlans(asOfDate, TestScale);
+        var received = purchasePlans.Count(x => x.IsReceived);
+
+        // 一张已收货采购单一条应付；未收货的一条都不能有。
+        Assert.Equal(received, payablePlans.Count);
+        Assert.True(received > 0, "所选 asOfDate 下应至少有一张已收货采购单。");
+        Assert.Equal(received, first.PayablesWritten);
+        Assert.Equal(0, second.PayablesWritten);
+        Assert.Equal(received, await dbContext.AccountPayables.CountAsync());
+
+        var payables = await dbContext.AccountPayables.AsNoTracking().ToArrayAsync();
+        var receiptNos = purchasePlans.Where(x => x.IsReceived)
+            .ToDictionary(x => WorldHistoryErpSpec.PayableNo(x.Index), StringComparer.Ordinal);
+        var lowerBound = WorldHistoryCalendar.GoLiveDate.ToDateTime(TimeOnly.MinValue).AddDays(-1);
+        var upperBound = asOfDate.ToDateTime(TimeOnly.MaxValue);
+
+        Assert.All(payables, payable =>
+        {
+            // 号段隔离：AP-2026-* 不与固定演示 / 规模块相交。
+            Assert.StartsWith(WorldHistoryErpSpec.PayableNumberPrefix, payable.PayableNo, StringComparison.Ordinal);
+            Assert.DoesNotContain("-DEMO-", payable.PayableNo, StringComparison.Ordinal);
+            Assert.DoesNotContain("-SCALE-", payable.PayableNo, StringComparison.Ordinal);
+
+            // 跨单据对账：来源单据号 = 真实收货单号，金额 / 供应商与采购单逐字对上。
+            var purchase = receiptNos[payable.PayableNo];
+            Assert.Equal(purchase.PurchaseReceiptNo, payable.SourceDocumentNo);
+            Assert.Equal(purchase.SupplierCode, payable.SupplierCode);
+            Assert.Equal(decimal.Round(purchase.TotalAmount, 2), payable.Amount);
+            Assert.Equal("CNY", payable.CurrencyCode);
+
+            // 账期与已付：付款条件与到期日一致，已付不越界，时间戳回填到历史窗内。
+            Assert.Contains(payable.PaymentTermCode, new[] { "NET30", "NET45", "NET60" });
+            Assert.InRange(payable.PaidAmount, 0m, payable.Amount);
+            Assert.True(payable.DueDate > payable.InvoiceDate);
+            Assert.InRange(payable.InvoiceDate, WorldHistoryCalendar.GoLiveDate, asOfDate);
+            Assert.InRange(payable.CreatedAtUtc, lowerBound, upperBound);
+        });
+
+        // 未收货的采购单没有应付。
+        var unreceived = purchasePlans.Where(x => !x.IsReceived).Select(x => WorldHistoryErpSpec.PayableNo(x.Index));
+        var payableNos = payables.Select(x => x.PayableNo).ToHashSet(StringComparer.Ordinal);
+        Assert.All(unreceived, no => Assert.DoesNotContain(no, payableNos));
+    }
+
+    [Fact]
+    public void Payable_payment_progress_spreads_across_settled_open_and_overdue()
+    {
+        // 全量规模下应付账龄必须有层次：已付清为主、未付一批、还有少量提前预付——
+        // 否则应付页的账龄卡会是一根光秃秃的柱子。
+        var plans = WorldHistorySeedService.BuildPayablePlans(AsOfDate, 1.0d);
+
+        Assert.InRange(plans.Count, 350, 550);
+        output.WriteLine($"erp-world-history-payables={plans.Count}");
+        output.WriteLine($"erp-world-history-payables-settled={plans.Count(x => x.IsSettled)}");
+        output.WriteLine($"erp-world-history-payables-open={plans.Count(x => x.PaidAmount == 0m)}");
+        output.WriteLine($"erp-world-history-payables-partial={plans.Count(x => x.IsPartiallyPaid)}");
+        output.WriteLine(FormattableString.Invariant($"erp-world-history-payables-amount={plans.Sum(x => x.Amount):0.00}"));
+        var settled = plans.Count(x => x.IsSettled);
+        var open = plans.Count(x => x.PaidAmount == 0m);
+        var partial = plans.Count(x => x.IsPartiallyPaid);
+        var overdueUnpaid = plans.Count(x => x.PaidAmount == 0m && x.DueDate < AsOfDate);
+
+        Assert.True(settled > plans.Count / 2, $"已付清应占多数，实际 {settled}/{plans.Count}。");
+        Assert.True(open > 0, "应付里必须留有未付的账。");
+        Assert.True(partial > 0, "应付里必须留有部分预付的账。");
+        Assert.True(overdueUnpaid > 0, "应付账龄表需要逾期未付的样本。");
+
+        // 应付合计 = 已收货采购单金额合计（应付页金额卡的对账口径）。
+        var purchaseTotal = WorldHistorySeedService.BuildPurchasePlans(AsOfDate, 1.0d)
+            .Where(x => x.IsReceived)
+            .Sum(x => decimal.Round(x.TotalAmount, 2));
+        Assert.Equal(purchaseTotal, plans.Sum(x => x.Amount));
+        Assert.All(plans, plan => Assert.Equal(plan.Amount - plan.PaidAmount, plan.OpenAmount));
     }
 
     [Fact]

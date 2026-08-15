@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
+import { displayValue, isEmptyValue } from '../../../lib/empty'
 import { cn } from '../../../lib/utils'
 import type { StatusTone } from '../../blocks/status-badge/statusMap'
 import NvCard from '../card/NvCard.vue'
@@ -60,7 +61,13 @@ const progressPct = computed(() =>
     <dl v-if="meta && meta.length" class="grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-3">
       <div v-for="(m, i) in meta" :key="i" class="min-w-0">
         <dt class="truncate text-xs text-muted-foreground">{{ m.label }}</dt>
-        <dd class="mt-0.5 truncate text-sm font-medium tabular-nums">{{ m.value }}</dd>
+        <!-- 有 dt 就必须有可见的 dd：值为空时给占位符，不留「有标签没值」的空洞。 -->
+        <dd
+          class="mt-0.5 truncate text-sm font-medium tabular-nums"
+          :class="isEmptyValue(m.value) && 'text-muted-foreground'"
+        >
+          {{ displayValue(m.value) }}
+        </dd>
       </div>
     </dl>
 

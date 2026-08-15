@@ -42,7 +42,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -100,8 +100,11 @@ watch(
   { immediate: true },
 )
 
+// 非 Error 形态的 rejection 也必须显示出来，否则错误横幅整条消失、页面退化成空态把故障吞掉。
 const listErrorMessage = computed(() =>
-  categoriesError.value instanceof Error ? categoriesError.value.message : '',
+  categoriesError.value
+    ? friendlyErrorMessage(categoriesError.value, '产品分类加载失败，请刷新重试。')
+    : '',
 )
 
 const columns: NvDataTableColumn<ProductCategoryItem>[] = [
@@ -192,7 +195,7 @@ async function submitForm() {
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存产品分类失败', error, '保存产品分类失败，请稍后重试。')
   }
 }
 
@@ -213,7 +216,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用产品分类失败', error, '停用产品分类失败，请稍后重试。')
   }
 }
 </script>

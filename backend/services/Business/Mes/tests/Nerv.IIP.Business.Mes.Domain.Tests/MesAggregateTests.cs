@@ -277,7 +277,8 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             workOrder.RecordProductionProgress(11m, 0m, DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
 
-        Assert.Contains("tolerance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("生产工单 WO-OVER", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单超产容差", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,7 +300,34 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<InvalidOperationException>(() =>
             workOrder.RecordProductionProgress(95m, 10m, DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
 
-        Assert.Contains("tolerance", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("生产工单 WO-SCRAP", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单超产容差", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkOrder_rejects_progress_above_twenty_percent_even_when_configured_tolerance_is_higher()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-HARD-OVER-LIMIT",
+            "SKU-001",
+            "PV-001",
+            100m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            overReceiptTolerancePercent: 50m);
+        workOrder.MarkReleased();
+        workOrder.Start(DateTimeOffset.Parse("2026-05-23T08:00:00Z"));
+
+        workOrder.RecordProductionProgress(120m, 0m, DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            workOrder.RecordProductionProgress(0.000001m, 0m, DateTimeOffset.Parse("2026-05-23T09:01:00Z")));
+
+        Assert.Contains("生产工单 WO-HARD-OVER-LIMIT", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("120", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调整报工数量或工单计划量", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(120m, workOrder.CompletedQuantity);
     }
 
     [Fact]
@@ -341,7 +369,10 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
-        Assert.Empty(request.GetDomainEvents());
+        // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
+        Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
     }
 
     [Fact]
@@ -359,7 +390,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         request.ClearDomainEvents();
 
-        request.ConfirmLineSideReceipt(
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, 
             DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
             2m,
             "LOT-001");
@@ -371,6 +402,45 @@ public sealed class MesAggregateTests
         Assert.Equal(2m, issueEvent.IssuedQuantity);
         Assert.Same(request, receiptEvent.MaterialIssueRequest);
         Assert.Equal(2m, receiptEvent.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_waits_for_every_split_warehouse_posting_before_receipt_is_received()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SPLIT",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(
+            new MaterialTransferLocations(
+                "SITE-001",
+                "WH-WB-RM-01",
+                "SITE-001",
+                "WH-WB-LINE-01",
+                [
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-RM-01", "LOT-A", 3m),
+                    new MaterialTransferAllocation("SITE-001", "WH-WB-SF-01", "LOT-B", 2m),
+                ]),
+            DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
+            5m,
+            "LOT-WO");
+
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 0);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, DateTimeOffset.Parse("2026-05-23T08:32:00Z"));
+        Assert.Equal(0m, request.ReceivedQuantity);
+
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 1);
+
+        Assert.Equal(5m, request.ReceivedQuantity);
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
     }
 
     [Fact]
@@ -387,7 +457,7 @@ public sealed class MesAggregateTests
             5m,
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
         // A line-side receipt may be confirmed without a material lot.
-        request.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
+        request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, DateTimeOffset.Parse("2026-05-23T08:30:00Z"), 5m);
         request.ClearDomainEvents();
 
         // Received material without a lot cannot be returned to warehouse stock (#557); cancelling
@@ -634,5 +704,23 @@ public sealed class MesAggregateTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => workOrder.MarkReleased());
         Assert.Contains("closed", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // 需求源引用是履约追溯链的持久事实。`IReadOnlyList<string>` 只是静态类型上的只读，
+    // 直接交出内部 List 时一个向下转型就能在 EF 变更跟踪背后改掉它。
+    [Fact]
+    public void SourcePlanReference_demand_references_are_not_mutable_through_a_downcast()
+    {
+        var reference = new SourcePlanReference(
+            "demand-planning",
+            "planning-suggestion",
+            "PS-001",
+            "DEMAND-001",
+            ["DEMAND-002"]);
+
+        Assert.Equal(new[] { "DEMAND-001", "DEMAND-002" }, reference.SourceDemandReferences);
+        Assert.Throws<NotSupportedException>(() =>
+            ((IList<string>)reference.SourceDemandReferences!).Add("DEMAND-003"));
+        Assert.Equal(2, reference.SourceDemandReferences!.Count);
     }
 }

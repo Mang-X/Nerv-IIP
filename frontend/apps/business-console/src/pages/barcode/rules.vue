@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeRules } from '@/composables/useBusinessBarcode'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -42,13 +42,38 @@ definePage({
   },
 })
 
+/**
+ * 适用场景（`BarcodeRule.AllowedSourceDocumentTypes`）。
+ *
+ * 后端存自由字符串、没有枚举，实际落库的是**源单据类型**——权威清单是
+ * `WorldHistoryLabelSpec` 的六个常量（purchase-receipt / material-issue /
+ * finished-goods-receipt / work-order / work-center / delivery-order）。
+ * 下面前四条 `xxx.yyy` 形态是早期前端自定的扫码动作口径，存量规则里仍在用，一并保留。
+ */
 const SOURCE_DOCUMENT_OPTIONS = [
+  { value: 'purchase-receipt', label: '采购收货' },
+  { value: 'material-issue', label: '生产领料' },
+  { value: 'finished-goods-receipt', label: '完工入库' },
+  { value: 'work-order', label: '生产工单' },
+  { value: 'work-center', label: '工位挂牌' },
+  { value: 'delivery-order', label: '发货装箱' },
   { value: 'inventory.receipt', label: '收货入库' },
   { value: 'production.report', label: '生产报工' },
   { value: 'quality.inspection', label: '质量检验' },
   { value: 'inventory.count', label: '库存盘点' },
   { value: 'wms.receiving', label: '仓储收货' },
 ]
+
+/**
+ * 不上屏的技术标识。
+ *
+ * 只收**查证过的**值：`facade` 在全后端源码里零命中（源单据类型常量只有六个业务值），
+ * 是历史联调时绕过界面直接写进开发库的残留，现场看到它只会困惑，所以展示时滤掉。
+ * 这里刻意不塞一堆猜测性的技术词——滤掉一个真实存在的业务场景，
+ * 比多显示一个陌生标识危险得多。查不到词表的值一律照原样显示并在开发期告警。
+ * 只影响展示：编辑时仍原样带出，保存不丢数据。
+ */
+const NON_BUSINESS_SOURCE_TYPES = new Set(['facade'])
 
 const BARCODE_TYPE_OPTIONS = [
   { value: 'code128', label: 'Code 128' },
@@ -60,6 +85,13 @@ const BARCODE_TYPE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: 'active', label: '启用' },
   { value: 'disabled', label: '停用' },
+]
+
+// 校验规则是受控枚举：后端只识别 `gs1-mod10`（GS1 类条码强制），其余一律按不校验处理，
+// 所以这里只给这两项，不编造平台并不执行的校验算法。
+const CHECKSUM_RULE_OPTIONS = [
+  { value: 'none', label: '不校验' },
+  { value: 'gs1-mod10', label: 'GS1 Mod10 校验位' },
 ]
 
 const {
@@ -153,9 +185,7 @@ watch(statusFilter, (value) => {
   page.value = 1
 })
 
-const errorMessage = computed(() =>
-  rulesError.value instanceof Error ? rulesError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(rulesError.value))
 const isGs1 = computed(() => form.barcodeType.toLowerCase().includes('gs1'))
 // 编辑态由所选行带出的只读上下文（规则编码是身份，不可改）。
 const carriedItems = computed(() => [{ label: '规则编码', value: editingRuleCode.value }])
@@ -177,9 +207,16 @@ function typeLabel(value?: string | null) {
 
 function sourceLabels(values?: readonly string[] | null) {
   if (!values?.length) return '暂未限定'
-  return values
-    .map((value) => SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === value)?.label ?? value)
-    .join('、')
+  const labels = values.flatMap((value) => {
+    const raw = value.trim()
+    if (!raw || NON_BUSINESS_SOURCE_TYPES.has(raw.toLowerCase())) return []
+    const label = SOURCE_DOCUMENT_OPTIONS.find((o) => o.value === raw)?.label
+    if (label === undefined && import.meta.env.DEV) {
+      console.warn(`[条码规则] 词表缺失: ${raw}，请补 SOURCE_DOCUMENT_OPTIONS`)
+    }
+    return [label ?? raw]
+  })
+  return labels.length ? labels.join('、') : '暂未限定'
 }
 
 function statusLabel(value?: string | null) {
@@ -259,7 +296,7 @@ async function submitRule() {
     open.value = false
     resetForm()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存条码规则失败', error, '保存条码规则失败，请稍后重试。')
   }
 }
 </script>
@@ -372,11 +409,19 @@ async function submitRule() {
                   <NvFieldLabel for="barcode-rule-checksum"
                     >校验规则 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-rule-checksum"
-                    v-model="form.checksumRule"
-                    autocomplete="off"
-                  />
+                  <NvSelect v-model="form.checksumRule">
+                    <NvSelectTrigger id="barcode-rule-checksum">
+                      <NvSelectValue placeholder="选择校验规则" />
+                    </NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in CHECKSUM_RULE_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
                 <NvField :data-invalid="showErrors && isGs1 && !form.gs1CompanyPrefixLength">
                   <NvFieldLabel for="barcode-rule-gs1-prefix">GS1 公司前缀长度</NvFieldLabel>

@@ -1,29 +1,49 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 
 import ProductionReportDialog from './ProductionReportDialog.vue'
 
 const spies = vi.hoisted(() => ({
-  recordProductionReport: vi.fn(async (_body: Record<string, unknown>) => ({
-    data: { reportNo: 'PRPT-2026-0001' },
-  })),
+  recordProductionReport: vi.fn(
+    async (_body: Record<string, unknown>, options?: { onCommandAttempt?: () => void }) => {
+      options?.onCommandAttempt?.()
+      return { data: { reportNo: 'PRPT-2026-0001' } }
+    },
+  ),
+  makeIdempotencyKey: vi.fn(),
+  readProductionQuantitySnapshot: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
+  notifyOperationFailure: vi.fn(),
+}))
+const scopeState = vi.hoisted(() => ({
+  message: '',
+  pending: false,
+  ready: true,
 }))
 
 vi.mock('@/composables/useBusinessMes', () => ({
-  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  makeIdempotencyKey: spies.makeIdempotencyKey,
   useMesProductionReporting: () => ({
     recordProductionReport: spies.recordProductionReport,
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+    reportScopeMessage: ref(scopeState.message),
+    reportScopePending: ref(scopeState.pending),
+    reportScopeReady: ref(scopeState.ready),
+    readProductionQuantitySnapshot: spies.readProductionQuantitySnapshot,
+    refreshProductionReportState: vi.fn(async () => undefined),
   }),
 }))
 
-vi.mock('@/utils/notify', () => ({
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: spies.notifySuccess,
   notifyError: spies.notifyError,
+  notifyOperationFailure: spies.notifyOperationFailure,
 }))
 
 const stubs = {
@@ -34,7 +54,12 @@ const stubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
   NvButton: { template: '<button v-bind="$attrs"><slot /></button>' },
-  NvCheckbox: { template: '<input type="checkbox" />' },
+  NvCheckbox: {
+    props: ['disabled', 'modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input type="checkbox" :disabled="disabled" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+  },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
@@ -47,18 +72,19 @@ const stubs = {
   Spinner: true,
 }
 
-const context = {
+const context: ProductionReportContext = {
   workOrderId: 'WO-2026-0007',
   workOrderNo: 'WO-2026-0007',
   operationTaskId: 'WO-2026-0007-OP-20',
   operationTaskNo: 'WO-2026-0007-OP-20',
   operationSequence: 20,
+  operationStatus: 'InProgress',
   workCenterLabel: '精加工一线',
   skuLabel: '减速机壳体',
   plannedQuantity: 200,
 }
 
-function mountDialog(ctx: typeof context | null = context) {
+function mountDialog(ctx: ProductionReportContext | null = context) {
   return mount(ProductionReportDialog, {
     props: { open: true, context: ctx },
     global: { stubs },
@@ -68,8 +94,25 @@ function mountDialog(ctx: typeof context | null = context) {
 describe('ProductionReportDialog — 带出式录入', () => {
   beforeEach(() => {
     spies.recordProductionReport.mockClear()
+    spies.recordProductionReport.mockImplementation(
+      async (_body: Record<string, unknown>, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        return { data: { reportNo: 'PRPT-2026-0001' } }
+      },
+    )
+    let keyIndex = 0
+    spies.makeIdempotencyKey.mockReset()
+    spies.makeIdempotencyKey.mockImplementation((prefix: string) => `${prefix}-test-${++keyIndex}`)
+    spies.readProductionQuantitySnapshot.mockReset()
+    spies.readProductionQuantitySnapshot.mockResolvedValue({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 0,
+    })
     spies.notifySuccess.mockClear()
     spies.notifyError.mockClear()
+    scopeState.message = ''
+    scopeState.pending = false
+    scopeState.ready = true
   })
 
   it('带出的上下文只读呈现，且不提供工单/工序的输入位', () => {
@@ -120,6 +163,18 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(wrapper.emitted('reported')).toHaveLength(1)
   })
 
+  it('重新报工缺少工序实时状态时默认普通报工，并禁用再次完工', async () => {
+    const wrapper = mountDialog({ ...context, operationStatus: undefined })
+
+    expect(wrapper.get('#report-complete').attributes('disabled')).toBeDefined()
+    await wrapper.find('#report-good').setValue('6')
+    await wrapper.find('form').trigger('submit')
+    await wrapper.vm.$nextTick()
+
+    expect(spies.recordProductionReport).toHaveBeenCalledOnce()
+    expect(spies.recordProductionReport.mock.calls[0]![0].completesOperation).toBe(false)
+  })
+
   it('合计数量为 0 时点提交只标红、不发请求', async () => {
     const wrapper = mountDialog()
 
@@ -132,9 +187,115 @@ describe('ProductionReportDialog — 带出式录入', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
+  it('累计合格数量超过计划量时先醒目确认，二次确认才提交', async () => {
+    spies.readProductionQuantitySnapshot.mockResolvedValueOnce({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 40,
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+    await wrapper.find('#report-good').setValue('180')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('生产工单 WO-2026-0007')
+    expect(wrapper.text()).toContain('本次提交后累计合格数量 220')
+    expect(wrapper.text()).toContain('已超计划 10%')
+    expect(wrapper.text()).toContain('确认继续')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).toHaveBeenCalledOnce()
+    expect(spies.recordProductionReport.mock.calls[0]![0].goodQuantity).toBe(180)
+  })
+
+  it('累计合格数量超过计划量 120% 时拒绝并提示调整数量或计划量', async () => {
+    spies.readProductionQuantitySnapshot.mockResolvedValueOnce({
+      plannedQuantity: 200,
+      reportedGoodQuantity: 40,
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+    await wrapper.find('#report-good').setValue('201')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('生产工单 WO-2026-0007')
+    expect(wrapper.text()).toContain('累计合格数量 241')
+    expect(wrapper.text()).toContain('硬上限 240')
+    expect(wrapper.text()).toContain('请调整本次合格数量或工单计划量')
+  })
+
+  it('未选择服务端授权作业范围时禁用提交并且不发请求', async () => {
+    scopeState.ready = false
+    scopeState.message = '尚未选择已授权作业范围，当前操作已禁用。'
+    const wrapper = mountDialog()
+
+    expect(wrapper.get('[data-testid="report-scope-message"]').text()).toContain(
+      '尚未选择已授权作业范围',
+    )
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('form').trigger('submit')
+
+    expect(spies.recordProductionReport).not.toHaveBeenCalled()
+    expect(spies.notifyError).toHaveBeenCalledWith(expect.stringContaining('尚未选择'))
+  })
+
   it('没有带出上下文时不渲染录入表单（无法凭空报工）', () => {
     const wrapper = mountDialog(null)
 
     expect(wrapper.find('form').exists()).toBe(false)
+  })
+
+  it('确定性拒绝后编辑业务输入会换新键并按 initial 意图重新提交', async () => {
+    spies.recordProductionReport.mockImplementationOnce(
+      async (_body, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        throw { success: false, code: 422, message: '报工数量不符合规则' }
+      },
+    )
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('5')
+    await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const first = spies.recordProductionReport.mock.calls[0]![0]
+    await wrapper.find('#report-good').setValue('6')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const second = spies.recordProductionReport.mock.calls[1]![0]
+    expect(second.goodQuantity).toBe(6)
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+  })
+
+  it('结果未知后锁定录入项，并只按冻结 payload/key 原样重放', async () => {
+    spies.recordProductionReport.mockImplementationOnce(
+      async (_body, options?: { onCommandAttempt?: () => void }) => {
+        options?.onCommandAttempt?.()
+        throw new TypeError('Failed to fetch')
+      },
+    )
+    const wrapper = mountDialog()
+
+    await wrapper.find('#report-good').setValue('5')
+    await wrapper.find('#report-scrap').setValue('1')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const first = spies.recordProductionReport.mock.calls[0]![0]
+    expect(wrapper.get<HTMLInputElement>('#report-good').element.disabled).toBe(true)
+    expect(wrapper.text()).toContain('原内容重试')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const second = spies.recordProductionReport.mock.calls[1]![0]
+    expect(second).toEqual(first)
   })
 })

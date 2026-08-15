@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
@@ -16,6 +18,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Auth;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
+using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -24,18 +27,233 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceEndpointContractTests
 {
+    [Fact]
+    public void Work_order_list_validator_accepts_400_authority_aliases_and_rejects_401()
+    {
+        var validator = new ListMaintenanceWorkOrdersRequestValidator();
+
+        Assert.True(validator.Validate(new ListMaintenanceWorkOrdersRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 400).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
+        Assert.False(validator.Validate(new ListMaintenanceWorkOrdersRequest(
+            "org-001", "env-dev", DeviceAssetReferences: Enumerable.Range(0, 401).Select(index => $"DEVICE-{index}").ToArray())).IsValid);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_accepts_200_devices_as_400_body_aliases_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        factory.UseKestrel(0);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var deviceIds = Enumerable.Range(0, 200).Select(_ => Guid.CreateVersion7().ToString()).ToArray();
+        var aliases = deviceIds.SelectMany((id, index) => new[] { id, $"DEVICE-{index:000}" }).ToArray();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest(
+                "org-001",
+                "env-dev",
+                DeviceAssetReferences: aliases));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(aliases, sender.LastRequest?.DeviceAssetReferences);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_rejects_missing_service_auth_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest("org-001", "env-dev", DeviceAssetReferences: ["DEVICE-001"]));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(sender.LastRequest);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_accepts_400_aliases_and_rejects_401_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var aliases = Enumerable.Range(0, 401).Select(index => $"DEVICE-{index:000}").ToArray();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new ListMaintenanceWorkOrdersRequest("org-001", "env-dev", DeviceAssetReferences: aliases));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(sender.LastRequest);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_accepts_bounded_assignment_csv_and_legacy_empty_separators_over_real_kestrel()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var boundaryTokens = Enumerable.Range(0, 200)
+            .Select(index => $"{index:000}{new string('x', 147)}")
+            .ToArray();
+        var boundaryCsv = string.Join(',', boundaryTokens);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deviceAssetReferences = new[] { "DEVICE-001" },
+                assignedTechnicianUserIds = boundaryCsv,
+                assignedTeamIds = $"{boundaryTokens[0]},, ,{boundaryTokens[1]}",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(boundaryCsv, sender.LastRequest?.AssignedTechnicianUserIds);
+        Assert.Equal($"{boundaryTokens[0]},, ,{boundaryTokens[1]}", sender.LastRequest?.AssignedTeamIds);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_rejects_unbounded_or_unsupported_csv_before_handler_over_real_kestrel()
+    {
+        (string FieldName, string Value)[] invalidFields =
+        [
+            ("deviceAssetIds", "DEVICE-001"),
+            ("assignedTechnicianUserIds", string.Join(',', Enumerable.Range(0, 201).Select(index => $"user-{index:000}"))),
+            ("assignedTeamIds", new string('t', 151)),
+            ("assignedTeamIds", new string('t', 30_200)),
+        ];
+
+        foreach (var invalid in invalidFields)
+        {
+            var sender = new RecordingWorkOrderListSender();
+            await using var factory = CreateWorkOrderListKestrelFactory(sender);
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+            var payload = new Dictionary<string, object?>
+            {
+                ["organizationId"] = "org-001",
+                ["environmentId"] = "env-dev",
+                ["deviceAssetReferences"] = new[] { "DEVICE-001" },
+                [invalid.FieldName] = invalid.Value,
+            };
+
+            var response = await client.PostAsJsonAsync(
+                "/api/business/internal/v1/maintenance/work-orders/query",
+                payload);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Null(sender.LastRequest);
+        }
+    }
+
+    [Theory]
+    [InlineData("""{"organizationId":null,"environmentId":"env-dev","deviceAssetReferences":["DEVICE-001"]}""")]
+    [InlineData("""{"organizationId":" ","environmentId":"env-dev","deviceAssetReferences":["DEVICE-001"]}""")]
+    [InlineData("""{"organizationId":"org-001","environmentId":null,"deviceAssetReferences":["DEVICE-001"]}""")]
+    [InlineData("""{"organizationId":"org-001","environmentId":" ","deviceAssetReferences":["DEVICE-001"]}""")]
+    [InlineData("""{"organizationId":"org-001","environmentId":"env-dev","deviceAssetReferences":null}""")]
+    [InlineData("""{"organizationId":"org-001","environmentId":"env-dev","deviceAssetReferences":[]}""")]
+    [InlineData("""{"organizationId":"org-001","environmentId":"env-dev","deviceAssetReferences":[" "]}""")]
+    public async Task Internal_work_order_query_rejects_incomplete_tenant_or_alias_body_before_handler_over_real_kestrel(string body)
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(sender.LastRequest);
+    }
+
+    [Fact]
+    public async Task Internal_work_order_query_does_not_return_another_tenant_over_real_kestrel()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenanceWorkOrders.AddRange(
+            MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEVICE-SHARED", "ALARM-ORG-001", "critical"),
+            MaintenanceWorkOrder.OpenFromAlarm("org-002", "env-dev", "DEVICE-SHARED", "ALARM-ORG-002", "critical"));
+        await dbContext.SaveChangesAsync();
+        var sender = new QueryHandlerWorkOrderListSender(new ListMaintenanceWorkOrdersQueryHandler(dbContext));
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/internal/v1/maintenance/work-orders/query",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                deviceAssetReferences = new[] { "DEVICE-SHARED" },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        Assert.Equal("ALARM-ORG-001", Assert.Single(data.GetProperty("items").EnumerateArray()).GetProperty("sourceAlarmId").GetString());
+    }
+
+    [Fact]
+    public async Task Public_work_order_get_keeps_scalar_only_filter_compatibility_without_aliases()
+    {
+        var sender = new RecordingWorkOrderListSender();
+        await using var factory = CreateWorkOrderListKestrelFactory(sender);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var response = await client.GetAsync(
+            "/api/business/v1/maintenance/work-orders?organizationId=org-001&environmentId=env-dev&status=open&keyword=DEVICE-001");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("org-001", sender.LastRequest?.OrganizationId);
+        Assert.Equal("env-dev", sender.LastRequest?.EnvironmentId);
+        Assert.Equal("open", sender.LastRequest?.Status);
+        Assert.Equal("DEVICE-001", sender.LastRequest?.Keyword);
+        Assert.Null(sender.LastRequest?.DeviceAssetReferences);
+    }
+
     [Fact]
     public void Maintenance_endpoints_expose_issue_130_routes_permissions_policies_and_operation_ids()
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(21, contracts.Length);
+        Assert.Equal(26, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/maintenance/work-orders/query" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "queryInternalMaintenanceWorkOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "assignMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "probeMaintenanceWorkOrderAssignmentReplay");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/actions" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "transitionMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/plans/{planId}" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "updateMaintenancePlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
@@ -90,7 +308,7 @@ public sealed class MaintenanceEndpointContractTests
                 "fixed",
                 "equipment-failure",
                 10,
-                [new MaintenanceSparePartInput("SKU-BEARING", tooLargeForNumeric18Scale6, "EA")],
+                [new MaintenanceSparePartInput("SKU-BEARING", tooLargeForNumeric18Scale6, "pcs")],
                 SparePartCostAmount: tooLargeForNumeric18Scale6,
                 ExternalServiceCostAmount: tooLargeForNumeric18Scale6,
                 CostCurrencyCode: "CNY"));
@@ -102,6 +320,76 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "External service cost amount must fit numeric(18,6).");
         Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part quantity must fit numeric(18,6).");
+    }
+
+    [Fact]
+    public async Task Assignment_replay_probe_is_read_only_and_returns_only_exact_receipts()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual(
+            "org-001", "env-dev", "DEV-REPLAY-PROBE", "high", "reporter-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        var assignment = new AssignMaintenanceWorkOrderCommand(
+            "org-001",
+            "env-dev",
+            workOrder.Id,
+            "dispatcher-001",
+            "technician-001",
+            "team-001",
+            "dispatch",
+            "assignment-probe-key",
+            0);
+        var originalReceipt = await new AssignMaintenanceWorkOrderCommandHandler(dbContext)
+            .Handle(assignment, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var versionBeforeProbes = workOrder.Version;
+        var eventsBeforeProbes = await dbContext.MaintenanceWorkOrderLifecycleEvents.CountAsync();
+        var handler = new ProbeMaintenanceWorkOrderAssignmentReplayQueryHandler(dbContext);
+
+        var exact = await handler.Handle(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+            assignment.OrganizationId,
+            assignment.EnvironmentId,
+            assignment.WorkOrderId,
+            assignment.ActorPrincipalId,
+            assignment.TechnicianUserId,
+            assignment.TeamId,
+            assignment.Reason,
+            assignment.IdempotencyKey,
+            assignment.ExpectedVersion), CancellationToken.None);
+        Assert.True(exact.Found);
+        Assert.Equal(originalReceipt, exact.Receipt);
+
+        var notFound = await handler.Handle(new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+            assignment.OrganizationId,
+            assignment.EnvironmentId,
+            assignment.WorkOrderId,
+            assignment.ActorPrincipalId,
+            assignment.TechnicianUserId,
+            assignment.TeamId,
+            assignment.Reason,
+            "unused-assignment-key",
+            assignment.ExpectedVersion), CancellationToken.None);
+        Assert.False(notFound.Found);
+        Assert.Null(notFound.Receipt);
+
+        await Assert.ThrowsAsync<MaintenanceIdempotencyConflictException>(() => handler.Handle(
+            new ProbeMaintenanceWorkOrderAssignmentReplayQuery(
+                assignment.OrganizationId,
+                assignment.EnvironmentId,
+                assignment.WorkOrderId,
+                assignment.ActorPrincipalId,
+                "different-technician",
+                assignment.TeamId,
+                assignment.Reason,
+                assignment.IdempotencyKey,
+                assignment.ExpectedVersion),
+            CancellationToken.None));
+
+        Assert.Equal(versionBeforeProbes, workOrder.Version);
+        Assert.Equal(eventsBeforeProbes, await dbContext.MaintenanceWorkOrderLifecycleEvents.CountAsync());
+        Assert.False(dbContext.ChangeTracker.HasChanges());
     }
 
     [Fact]
@@ -131,7 +419,9 @@ public sealed class MaintenanceEndpointContractTests
 
         Assert.True(valid.IsValid);
         Assert.Contains(missingTrigger.Errors, x => x.ErrorMessage == "Maintenance plan must have a calendar interval, a runtime-hour interval, or both.");
-        Assert.Contains(invalidRuntimeInterval.Errors, x => x.PropertyName == nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval));
+        Assert.Contains(
+            invalidRuntimeInterval.Errors,
+            x => string.Equals(x.PropertyName, nameof(UpdateMaintenancePlanCommand.RuntimeHourInterval), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -184,7 +474,9 @@ public sealed class MaintenanceEndpointContractTests
                 [],
                 ActualTechnicianUserId: new string('x', 151)));
 
-        Assert.Contains(result.Errors, x => x.PropertyName == nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId));
+        Assert.Contains(
+            result.Errors,
+            x => string.Equals(x.PropertyName, nameof(CompleteMaintenanceWorkOrderCommand.ActualTechnicianUserId), StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -618,7 +910,7 @@ public sealed class MaintenanceEndpointContractTests
         await dbContext.SaveChangesAsync();
 
         var sparePartId = await new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
-            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+            new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -632,7 +924,7 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(workOrder.Id, item.WorkOrderId);
         Assert.Equal("SPARE-001", item.SkuCode);
         Assert.Equal(2m, item.Quantity);
-        Assert.Equal("EA", item.UomCode);
+        Assert.Equal("pcs", item.UomCode);
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
     }
 
@@ -647,7 +939,7 @@ public sealed class MaintenanceEndpointContractTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new CreateMaintenanceSparePartCommandHandler(dbContext).Handle(
-                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "EA"),
+                new CreateMaintenanceSparePartCommand("org-001", "env-dev", workOrder.Id, "SPARE-001", 2m, "pcs"),
                 CancellationToken.None));
 
         Assert.Equal("Completed maintenance work orders are immutable.", exception.Message);
@@ -1113,10 +1405,18 @@ public sealed class MaintenanceEndpointContractTests
         var handler = new CompleteMaintenanceWorkOrderCommandHandler(dbContext);
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "unknown-reason", 10, []),
+            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "unknown-reason", 10, [], IdempotencyKey: "complete-missing-reason"),
             CancellationToken.None));
 
-        await handler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", " equipment-failure ", 10, []), CancellationToken.None);
+        await handler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                " equipment-failure ",
+                10,
+                [],
+                IdempotencyKey: "complete-existing-reason"),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var reason = await dbContext.DowntimeReasons.SingleAsync();
@@ -1138,7 +1438,13 @@ public sealed class MaintenanceEndpointContractTests
             Options.Create(new MaintenanceCompletionOptions { RequireActualLaborMinutes = true }));
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []),
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                IdempotencyKey: "complete-missing-labor"),
             CancellationToken.None));
 
         await handler.Handle(
@@ -1151,7 +1457,8 @@ public sealed class MaintenanceEndpointContractTests
                 ActualLaborMinutes: 75,
                 SparePartCostAmount: 120.50m,
                 ExternalServiceCostAmount: 35m,
-                CostCurrencyCode: "CNY"),
+                CostCurrencyCode: "CNY",
+                IdempotencyKey: "complete-with-labor"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -1191,7 +1498,15 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
-        await completeHandler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []), CancellationToken.None);
+        await completeHandler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                IdempotencyKey: "complete-referenced-reason"),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         await Assert.ThrowsAsync<KnownException>(() => deleteHandler.Handle(new DeleteDowntimeReasonCommand("org-001", "env-dev", "equipment-failure"), CancellationToken.None));
@@ -1460,6 +1775,7 @@ public sealed class MaintenanceEndpointContractTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
             });
         using var client = factory.CreateClient();
@@ -1634,6 +1950,24 @@ public sealed class MaintenanceEndpointContractTests
         return Assert.IsType<string>(property.GetValue(workOrder));
     }
 
+    private static WebApplicationFactory<Program> CreateWorkOrderListKestrelFactory(ISender sender)
+    {
+        var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(sender);
+                });
+            });
+        factory.UseKestrel(0);
+        return factory;
+    }
+
     private sealed class NoopMediator : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -1676,5 +2010,50 @@ public sealed class MaintenanceEndpointContractTests
             _ = cancellationToken;
             throw new NotSupportedException("Noop mediator cannot stream requests.");
         }
+    }
+
+    private sealed class RecordingWorkOrderListSender : ISender
+    {
+        public ListMaintenanceWorkOrdersQuery? LastRequest { get; private set; }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            LastRequest = Assert.IsType<ListMaintenanceWorkOrdersQuery>(request);
+            object response = new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], 0, 100, 0);
+            return Task.FromResult((TResponse)response);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class QueryHandlerWorkOrderListSender(ListMaintenanceWorkOrdersQueryHandler handler) : ISender
+    {
+        public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            var query = Assert.IsType<ListMaintenanceWorkOrdersQuery>(request);
+            object response = await handler.Handle(query, cancellationToken);
+            return (TResponse)response;
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

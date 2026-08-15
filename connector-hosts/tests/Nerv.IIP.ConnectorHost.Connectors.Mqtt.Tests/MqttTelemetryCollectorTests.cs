@@ -1,30 +1,38 @@
+using Nerv.IIP.ConnectorHost.Connectors.Abstractions;
 using Nerv.IIP.ConnectorHost.Connectors.Mqtt;
-using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
+using Nerv.IIP.ConnectorHost.TestUtilities;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.Mqtt.Tests;
 
+[Collection(ConnectorTimeoutCollection.Name)]
 public sealed class MqttTelemetryCollectorTests
 {
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Connection_stays_unknown_until_subscription_acknowledgement_then_becomes_alive()
     {
         var mqtt = new AcknowledgementControlledMqttClient();
         var connector = CreateConnector(mqtt, new RecordingIndustrialTelemetrySamplesClient());
 
         var cycle = connector.RunCollectionCycleAsync(CancellationToken.None);
-        await mqtt.WaitForSubscribeAsync();
+        await BoundedObservation.ObserveAsync(
+            mqtt.WaitForSubscribeAsync(),
+            "the MQTT client to enter subscription",
+            () => $"subscribe started={mqtt.SubscribeStarted}");
 
         var pending = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
         Assert.Equal("unknown", pending.Connection!.Status);
 
         mqtt.AcknowledgeSubscription();
-        await cycle;
+        await BoundedObservation.ObserveAsync(
+            cycle,
+            "the MQTT collection cycle to finish after subscription acknowledgement",
+            () => $"subscribe started={mqtt.SubscribeStarted}, acknowledged={mqtt.IsAcknowledged}");
 
         var acknowledged = Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!;
         Assert.Equal("alive", acknowledged.Connection!.Status);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Disconnected_callback_marks_lost_immediately_and_resubscribe_recovers()
     {
         var mqtt = new AcknowledgementControlledMqttClient(autoAcknowledge: true);
@@ -47,7 +55,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Null(recovered.DisconnectedSinceUtc);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Disconnect_during_subscription_completion_is_not_overwritten_by_stale_alive()
     {
         var mqtt = new AcknowledgementControlledMqttClient(autoAcknowledge: true, disconnectBeforeReturn: true);
@@ -60,7 +68,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("mqtt.disconnected", connection.DiagnosticCode);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Discover_uses_configured_collection_connector_id_for_instance_and_health()
     {
         var connector = CreateConnector(new FakeMqttSubscriptionClient(), new RecordingIndustrialTelemetrySamplesClient(), collectionConnectorId: "line-a-primary");
@@ -71,7 +79,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("line-a-primary", target.CollectionHealth!.ConnectorId);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task One_inbound_message_is_received_once_even_when_multiple_mappings_accept_it()
     {
         var message = new MqttInboundMessage("factory/line-1/temperature", """{"temperature":10}""", new DateTimeOffset(2026, 7, 5, 9, 0, 10, TimeSpan.Zero));
@@ -90,7 +98,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal(1, connector.CurrentState.ReceivedSamples);
         Assert.Equal(0, connector.CurrentState.DroppedSamples);
     }
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_subscribes_topics_maps_json_path_payload_and_posts_bucketed_sample()
     {
         var now = new DateTimeOffset(2026, 7, 5, 9, 1, 1, TimeSpan.Zero);
@@ -135,7 +143,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal(new DateTimeOffset(2026, 7, 5, 9, 0, 40, TimeSpan.Zero), health.LastSampleAtUtc);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_drops_messages_that_do_not_match_topic_or_json_path_mapping()
     {
         var mqtt = new FakeMqttSubscriptionClient(
@@ -151,7 +159,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("alive", Assert.Single(await connector.DiscoverAsync(CancellationToken.None)).CollectionHealth!.Connection!.Status);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Run_cycle_restores_bucket_after_downstream_failure_so_retry_keeps_same_source_sequence()
     {
         var mqtt = new SequencedMqttSubscriptionClient(
@@ -173,7 +181,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal(1, connector.CurrentState.ErrorCount);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Environment_credential_resolver_resolves_broker_credentials_without_storing_secret_in_options()
     {
         using var variables = new TemporaryEnvironmentVariables(
@@ -188,7 +196,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.Equal("secret-value", credential.Password);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Disabled_mapping_is_reported_but_not_subscribed()
     {
         var mqtt = new FakeMqttSubscriptionClient();
@@ -209,7 +217,7 @@ public sealed class MqttTelemetryCollectorTests
         Assert.DoesNotContain("secret-reference", entry.ProtocolAddress ?? string.Empty, StringComparison.Ordinal);
     }
 
-    [Fact]
+    [Fact(Timeout = ConnectorTimeoutCollection.TestTimeoutMilliseconds)]
     public async Task Activation_failure_reports_sanitized_error_without_exception_details()
     {
         var connector = CreateConnector(new FailingMqttSubscriptionClient(), new RecordingIndustrialTelemetrySamplesClient());
@@ -319,6 +327,9 @@ public sealed class MqttTelemetryCollectorTests
         private TaskCompletionSource _acknowledgement = CreateAcknowledgement(autoAcknowledge);
         private Action? _onDisconnected;
 
+        public bool SubscribeStarted => _subscribeStarted.Task.IsCompleted;
+        public bool IsAcknowledged => _acknowledgement.Task.IsCompleted;
+
         public Task ConnectAndSubscribeAsync(
             MqttConnectionOptions options,
             IReadOnlyList<string> topicFilters,
@@ -344,7 +355,7 @@ public sealed class MqttTelemetryCollectorTests
             }
         }
 
-        public Task WaitForSubscribeAsync() => _subscribeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        public Task WaitForSubscribeAsync() => _subscribeStarted.Task;
 
         public void AcknowledgeSubscription() => _acknowledgement.TrySetResult();
 

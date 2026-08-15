@@ -4,6 +4,55 @@ import { computed, nextTick, shallowRef } from 'vue'
 
 import AlarmsPage from './alarms.vue'
 
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
 const alarmState = vi.hoisted(() => ({
   alarms: [] as Array<Record<string, unknown>>,
   acknowledgeAlarm: vi.fn((..._args: unknown[]) => Promise.resolve()),
@@ -74,6 +123,7 @@ function seedAlarms() {
   alarmState.alarms = [
     {
       alarmEventId: 'ALM-1',
+      externalAlarmId: 'ALM-1',
       deviceAssetId: 'DEV-OIL-01',
       alarmCode: 'TEMP-HIGH',
       severity: 'critical',
@@ -85,6 +135,7 @@ function seedAlarms() {
     },
     {
       alarmEventId: 'ALM-2',
+      externalAlarmId: 'ALM-2',
       deviceAssetId: 'DEV-OIL-02',
       alarmCode: 'VIB-HIGH',
       severity: 'warning',
@@ -93,6 +144,7 @@ function seedAlarms() {
     },
     {
       alarmEventId: 'ALM-3',
+      externalAlarmId: 'ALM-3',
       deviceAssetId: 'DEV-PACK-01',
       alarmCode: 'PRESSURE-LOW',
       severity: 'warning',
@@ -103,6 +155,7 @@ function seedAlarms() {
     },
     {
       alarmEventId: 'ALM-4',
+      externalAlarmId: 'ALM-4',
       deviceAssetId: 'DEV-PACK-02',
       alarmCode: 'DOOR-OPEN',
       severity: 'info',
@@ -114,6 +167,7 @@ function seedAlarms() {
     {
       // Escalated AND acknowledged — 升级与处置正交:必须仍归入「已确认」且显示确认人。
       alarmEventId: 'ALM-5',
+      externalAlarmId: 'ALM-5',
       deviceAssetId: 'DEV-CNC-09',
       alarmCode: 'SPINDLE-OVERTEMP',
       severity: 'critical',
@@ -128,6 +182,7 @@ function seedAlarms() {
     {
       // Shelved AND acknowledged — 处置列必须同时显示搁置与确认两个事实。
       alarmEventId: 'ALM-6',
+      externalAlarmId: 'ALM-6',
       deviceAssetId: 'DEV-BOIL-03',
       alarmCode: 'LEVEL-LOW',
       severity: 'warning',
@@ -157,6 +212,26 @@ describe('alarm ops depth (MAN-441 #795)', () => {
     alarmState.refreshAlarms.mockReset().mockResolvedValue(undefined)
     resetRouter()
     seedAlarms()
+  })
+
+  // alarmEventId 是系统 GUID（后端 AlarmEventId : IGuidStronglyTypedId），
+  // 屏上必须显现场认的外部报警号；把 GUID 摆出来既没人看得懂、也查不到任何东西。
+  it('shows the external alarm number and never puts the internal GUID on screen', () => {
+    const guid = '3f1c8d2a-77b4-4f0e-9a61-0c5e2b8d4a19'
+    alarmState.alarms = [
+      {
+        alarmEventId: guid,
+        externalAlarmId: 'ALM-2026-0731',
+        deviceAssetId: 'DEV-OIL-01',
+        alarmCode: 'TEMP-HIGH',
+        severity: 'critical',
+        status: 'raised',
+        raisedAtUtc: '2026-07-12T01:00:00Z',
+      },
+    ]
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+    expect(wrapper.text()).toContain('ALM-2026-0731')
+    expect(wrapper.text()).not.toContain(guid)
   })
 
   it('marks every escalated row with a red icon and never dims escalated rows', () => {
@@ -320,6 +395,8 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(run2).toHaveLength(1)
     expect(run2[0][0]).toBe('ALM-2')
     expect(keyOf(run2, 'ALM-2')).toBe(alm2Key1)
+    expect(run1.every((call) => (call[4] as { attempt?: string }).attempt === 'initial')).toBe(true)
+    expect((run2[0][4] as { attempt?: string }).attempt).toBe('retry')
   })
 
   it('commits the locked retry state even when the post-batch refresh fails', async () => {
@@ -340,6 +417,44 @@ describe('alarm ops — shelve validation + batch retry (attaches to body for te
     expect(q('[data-slot=nv-dialog-content]')).not.toBeNull()
     expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(true)
     expect(document.body.textContent).toContain('放弃重试')
+  })
+
+  it('keeps ordinary 422 failures editable and rotates them to a new intent', async () => {
+    alarmState.shelveAlarm.mockRejectedValue({
+      success: false,
+      code: 422,
+      message: '搁置原因不符合规则',
+    })
+
+    await openBatchShelve(['ALM-1', 'ALM-2'])
+    await setInput('#shelve-reason', '原原因')
+    await nextTick()
+    nativeClick(dialogConfirmBtn() ?? null)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    const firstCalls = [...alarmState.shelveAlarm.mock.calls]
+    const firstKey = (firstCalls[0]?.[4] as { idempotencyKey?: string }).idempotencyKey
+    expect(q('[data-slot=nv-dialog-content]')).not.toBeNull()
+    expect(q<HTMLInputElement>('#shelve-reason')?.disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('放弃重试')
+
+    alarmState.shelveAlarm.mockClear()
+    alarmState.shelveAlarm.mockResolvedValue(undefined)
+    await setInput('#shelve-reason', '修正原因')
+    nativeClick(dialogConfirmBtn() ?? null)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+
+    expect(alarmState.shelveAlarm).toHaveBeenCalledTimes(2)
+    const secondKey = (alarmState.shelveAlarm.mock.calls[0]?.[4] as { idempotencyKey?: string })
+      .idempotencyKey
+    expect(secondKey).not.toBe(firstKey)
+    expect(
+      alarmState.shelveAlarm.mock.calls.every(
+        (call) => (call[4] as { attempt?: string }).attempt === 'initial',
+      ),
+    ).toBe(true)
   })
 
   it('exposes aria-invalid + aria-describedby on the native input when the duration is invalid', async () => {
@@ -411,6 +526,7 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     // 15 raised alarms + 1 escalated so 全部 paginates; 已升级 has a single row.
     const many = Array.from({ length: 15 }, (_, i) => ({
       alarmEventId: `BULK-${i + 1}`,
+      externalAlarmId: `BULK-${i + 1}`,
       deviceAssetId: 'DEV-X',
       alarmCode: `C-${i + 1}`,
       severity: 'warning',
@@ -421,6 +537,7 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
       ...many,
       {
         alarmEventId: 'ESC-1',
+        externalAlarmId: 'ESC-1',
         deviceAssetId: 'DEV-Y',
         alarmCode: 'ESC',
         severity: 'critical',

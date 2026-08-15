@@ -147,25 +147,28 @@ function reset() {
           </NvSelectContent>
         </NvSelect>
 
+        <!-- 宽度写法跟同排的搜索框 (`w-full sm:w-64`) / 下拉框 (`w-full sm:w-44`) 对齐：
+             窄屏一律占满，到 sm 断点才收成固定宽度，避免筛选条在窄屏错位。 -->
         <NvDatePicker
           v-else-if="field.type === 'date'"
           :model-value="modelValue[field.key] ?? null"
           :placeholder="field.placeholder ?? field.label"
+          class="w-full sm:w-48"
           @update:model-value="(v) => setField(field.key, v || undefined)"
         />
 
-        <div v-else class="flex items-center gap-1.5">
+        <div v-else class="flex w-full items-center gap-1.5 sm:w-auto">
           <NvDatePicker
             :model-value="modelValue[field.key]?.from ?? null"
             :placeholder="`${field.label} · 起`"
-            class="w-40"
+            class="w-full sm:w-40"
             @update:model-value="(v) => setRangePart(field.key, 'from', v)"
           />
-          <span class="text-sm text-muted-foreground" aria-hidden="true">~</span>
+          <span class="shrink-0 text-sm text-muted-foreground" aria-hidden="true">~</span>
           <NvDatePicker
             :model-value="modelValue[field.key]?.to ?? null"
             :placeholder="`${field.label} · 止`"
-            class="w-40"
+            class="w-full sm:w-40"
             @update:model-value="(v) => setRangePart(field.key, 'to', v)"
           />
         </div>

@@ -1,36 +1,36 @@
-# Business Main-Platform Integration Readiness Implementation Plan
+# 业务主平台集成就绪实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行者：**必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐项实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Make the minimum main-platform SDK and public contracts ready for Business Platform implementation without turning the SDK into a business runtime.
+**目标：**使最小化的主平台 SDK 和公开契约为业务平台实施做好准备，同时不把 SDK 变成业务运行时。
 
-**Architecture:** Keep Business services as independent CleanDDD services that consume main-platform capabilities only through public APIs, public contracts, integration events and IAM authorization context. Strengthen `Sdk.Core`, `Sdk.Auth`, `Sdk.FileStorage`, add minimal `Sdk.Notification` and `Sdk.Observability`, and add business connector ingestion contracts for telemetry and WCS callbacks. Do not put ERP, MES, WMS, MRP, PDM/PLM, IIoT or CMMS domain rules inside main-platform SDKs.
+**架构：**将业务服务保持为独立的 CleanDDD 服务，仅通过公开 API、公开契约、集成事件和 IAM 授权上下文消费主平台能力。强化 `Sdk.Core`、`Sdk.Auth`、`Sdk.FileStorage`，添加最小化的 `Sdk.Notification` 和 `Sdk.Observability`，并为遥测及 WCS 回调添加业务连接器摄取契约。不得将 ERP、MES、WMS、MRP、PDM/PLM、IIoT 或 CMMS 领域规则放入主平台 SDK。
 
-**Tech Stack:** .NET 10, HttpClient, System.Text.Json, xUnit, FastEndpoints contract tests, existing IAM/FileStorage/AppHub/Ops/Notification boundaries.
+**技术栈：**.NET 10、HttpClient、System.Text.Json、xUnit、FastEndpoints 契约测试，以及现有 IAM、FileStorage（文件存储）、AppHub（应用中心）、Ops（运维）和 Notification（通知）边界。
 
 ---
 
-## Why This Plan Exists
+## 制定本计划的原因
 
-Business Platform slices can start with domain services, but later slices require stable main-platform touchpoints:
+业务平台切片可以从领域服务开始，但后续切片需要稳定的主平台接入点：
 
-1. ProductEngineering and Quality need File Storage references and upload/download client support.
-2. IndustrialTelemetry and WMS automation need Connector Host or external-client write authentication.
-3. BusinessApproval, EngineeringChange, MRP, Maintenance and WMS failures need Notification intent support.
-4. Cross-service acceptance needs correlation ID, trace context, organization/environment headers and idempotency key propagation.
-5. Business services need IAM authorization context and permission checks without directly reading IAM tables.
+1. ProductEngineering（产品工程）和 Quality（质量）需要文件存储引用以及上传/下载客户端支持。
+2. IndustrialTelemetry（工业遥测）和 WMS 自动化需要 Connector Host（连接器宿主）或外部客户端写入认证。
+3. BusinessApproval（业务审批）、EngineeringChange（工程变更）、MRP、Maintenance（维护）和 WMS 失败场景需要 Notification（通知）意图支持。
+4. 跨服务验收需要传播关联 ID、跟踪上下文、组织/环境请求头和幂等键。
+5. 业务服务需要 IAM 授权上下文和权限检查，但不得直接读取 IAM 数据表。
 
-This plan is a readiness gate before telemetry-heavy and full-chain work. MasterData can start before this plan is fully implemented, but Full-Chain Acceptance must not start until this plan passes.
+本计划是遥测密集型工作和全链路工作开始前的就绪门禁。MasterData（主数据）可以在本计划完全实施前启动，但全链路验收必须在本计划通过后才能开始。
 
-## Boundaries
+## 边界
 
-1. Do not add Business domain concepts to SDK modules.
-2. Do not let SDK write final platform facts directly; all writes go through public APIs.
-3. Do not let Connector Host bypass IAM authorization when writing telemetry, alarms or WCS callbacks.
-4. Do not expose object storage keys, long-lived download URLs, refresh tokens or service database identifiers through SDK DTOs.
-5. Do not make `PlatformGateway` or `Platform SDK` own Business Platform rules.
+1. 不得向 SDK 模块添加业务领域概念。
+2. 不得让 SDK 直接写入最终平台事实；所有写入都必须通过公开 API。
+3. 不得让 Connector Host（连接器宿主）在写入遥测、报警或 WCS 回调时绕过 IAM 授权。
+4. 不得通过 SDK DTO 暴露对象存储键、长期下载 URL、刷新令牌或服务数据库标识符。
+5. 不得让 `PlatformGateway` 或 `Platform SDK` 持有业务平台规则。
 
-## File Structure Map
+## 文件结构图
 
 ```text
 backend/common/Sdk/Nerv.IIP.Sdk.Core/
@@ -76,21 +76,21 @@ README.md
 scripts/verify-business-main-platform-integration-readiness.ps1
 ```
 
-## Task 1: Strengthen SDK Core Request Context
+## 任务 1：强化 SDK 核心请求上下文
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Sdk/Nerv.IIP.Sdk.Core/SdkCore.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Core/PlatformApiClient.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Core/PlatformRequestContext.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/PlatformApiClientTests.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/ObservabilityContextTests.cs`
-- Modify: `backend/Nerv.IIP.sln`
+- 修改：`backend/common/Sdk/Nerv.IIP.Sdk.Core/SdkCore.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Core/PlatformApiClient.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Core/PlatformRequestContext.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/PlatformApiClientTests.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/ObservabilityContextTests.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create SDK test project**
+- [ ] **步骤 1：创建 SDK 测试项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new xunit -n Nerv.IIP.Sdk.Tests -o backend/tests/Nerv.IIP.Sdk.Tests --framework net10.0
@@ -98,11 +98,11 @@ dotnet add backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj reference 
 dotnet sln backend/Nerv.IIP.sln add backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj
 ```
 
-Expected: project is added to `backend/Nerv.IIP.sln`.
+预期结果：项目已添加到 `backend/Nerv.IIP.sln`。
 
-- [ ] **Step 2: Write failing request context tests**
+- [ ] **步骤 2：编写失败的请求上下文测试**
 
-Create tests that assert `PlatformApiClient` applies:
+创建测试，断言 `PlatformApiClient` 应用以下请求头：
 
 ```text
 X-Nerv-IIP-Sdk-Version
@@ -113,7 +113,7 @@ Idempotency-Key
 traceparent
 ```
 
-The test request context is:
+测试请求上下文如下：
 
 ```csharp
 var context = new PlatformRequestContext(
@@ -124,11 +124,11 @@ var context = new PlatformRequestContext(
     TraceParent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00");
 ```
 
-Expected: FAIL because `PlatformApiClient` and `PlatformRequestContext` do not exist yet.
+预期结果：失败，因为 `PlatformApiClient` 和 `PlatformRequestContext` 尚不存在。
 
-- [ ] **Step 3: Implement request context and client helper**
+- [ ] **步骤 3：实现请求上下文和客户端辅助工具**
 
-Add:
+添加：
 
 ```csharp
 public sealed record PlatformRequestContext(
@@ -148,44 +148,44 @@ public static class PlatformApiClient
 }
 ```
 
-Rules:
+规则：
 
-1. `OrganizationId` and `EnvironmentId` are required.
-2. `CorrelationId` is generated when omitted.
-3. `Idempotency-Key` is only added when a value is provided.
-4. `traceparent` is only added when a value is provided.
-5. `X-Nerv-IIP-Sdk-Version` always comes from `PlatformApiOptions.SdkVersion`.
+1. `OrganizationId` 和 `EnvironmentId` 为必填项。
+2. 省略 `CorrelationId` 时生成该值。
+3. 仅在提供值时添加 `Idempotency-Key`。
+4. 仅在提供值时添加 `traceparent`。
+5. `X-Nerv-IIP-Sdk-Version` 始终来自 `PlatformApiOptions.SdkVersion`。
 
-- [ ] **Step 4: Run Core tests**
+- [ ] **步骤 4：运行核心测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore --filter "FullyQualifiedName~PlatformApiClientTests|FullyQualifiedName~ObservabilityContextTests"
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Commit Core readiness**
+- [ ] **步骤 5：提交核心就绪实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/common/Sdk/Nerv.IIP.Sdk.Core backend/tests/Nerv.IIP.Sdk.Tests
 git commit -m "feat: add platform sdk request context"
 ```
 
-## Task 2: Extend SDK Auth Beyond Connector Host Headers
+## 任务 2：扩展 SDK 认证，使其不限于 Connector Host（连接器宿主）请求头
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Sdk/Nerv.IIP.Sdk.Auth/SdkAuth.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Auth/PlatformTokenAuthentication.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/PlatformTokenAuthenticationTests.cs`
+- 修改：`backend/common/Sdk/Nerv.IIP.Sdk.Auth/SdkAuth.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Auth/PlatformTokenAuthentication.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/PlatformTokenAuthenticationTests.cs`
 
-- [ ] **Step 1: Write failing authentication tests**
+- [ ] **步骤 1：编写失败的认证测试**
 
-Tests must cover:
+测试必须涵盖：
 
 ```csharp
 PlatformBearerToken.Apply(request, "access-token-001");
@@ -193,50 +193,50 @@ ExternalClientCredential.Apply(request, new ExternalClientCredential("client-001
 ConnectorHostAuthentication.Apply(request, new ConnectorHostCredential("host-001", "secret-001", "org-001", "env-dev"));
 ```
 
-Expected headers:
+预期请求头：
 
-| Method | Required headers |
+| 方法 | 必需请求头 |
 | --- | --- |
 | `PlatformBearerToken.Apply` | `Authorization: Bearer access-token-001` |
-| `ExternalClientCredential.Apply` | `Authorization: ExternalClient client-001`, `X-External-Client-Id`, `X-External-Client-Secret`, organization, environment |
-| `ConnectorHostAuthentication.Apply` | existing connector host headers remain unchanged |
+| `ExternalClientCredential.Apply` | `Authorization: ExternalClient client-001`, `X-External-Client-Id`, `X-External-Client-Secret`、组织、环境 |
+| `ConnectorHostAuthentication.Apply` | 现有 Connector Host（连接器宿主）请求头保持不变 |
 
-Expected: FAIL because bearer/external-client helpers do not exist.
+预期结果：失败，因为持有者令牌/外部客户端辅助工具尚不存在。
 
-- [ ] **Step 2: Implement auth helpers**
+- [ ] **步骤 2：实现认证辅助工具**
 
-Add immutable records and static helper methods. Validate blank token, client secret or connector secret with `PlatformApiResult<T>.Failure(...)`.
+添加不可变记录和静态辅助方法。使用 `PlatformApiResult<T>.Failure(...)` 校验空白令牌、客户端密钥或连接器密钥。
 
-- [ ] **Step 3: Run auth tests**
+- [ ] **步骤 3：运行认证测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore --filter FullyQualifiedName~PlatformTokenAuthenticationTests
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 4: Commit auth readiness**
+- [ ] **步骤 4：提交认证就绪实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Sdk/Nerv.IIP.Sdk.Auth backend/tests/Nerv.IIP.Sdk.Tests
 git commit -m "feat: extend platform sdk auth helpers"
 ```
 
-## Task 3: Implement File Storage SDK Client Minimum
+## 任务 3：实现最小化文件存储 SDK 客户端
 
-**Files:**
+**文件：**
 
-- Modify: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/FileStorageClientTests.cs`
+- 修改：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageSdk.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.FileStorage/FileStorageClient.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/FileStorageClientTests.cs`
 
-- [ ] **Step 1: Write failing File Storage client tests**
+- [ ] **步骤 1：编写失败的文件存储客户端测试**
 
-Use a fake `HttpMessageHandler` and assert:
+使用模拟的 `HttpMessageHandler` 并断言：
 
 ```csharp
 await client.CreateUploadSessionAsync(new CreateUploadSessionRequest(
@@ -250,19 +250,19 @@ await client.CompleteUploadAsync("upload-session-001", "file-001", context, canc
 await client.CreateDownloadGrantAsync("file-001", "engineering-preview", context, cancellationToken);
 ```
 
-Expected routes:
+预期路由：
 
-| Method | Route |
+| 方法 | 路由 |
 | --- | --- |
 | POST | `/api/files/v1/upload-sessions` |
 | POST | `/api/files/v1/upload-sessions/{uploadSessionId}/complete` |
 | POST | `/api/files/v1/files/{fileId}/download-grants` |
 
-Expected: FAIL because `FileStorageClient` does not exist.
+预期结果：失败，因为 `FileStorageClient` 不存在。
 
-- [ ] **Step 2: Implement File Storage client contracts**
+- [ ] **步骤 2：实现文件存储客户端契约**
 
-Use these request/response records:
+使用以下请求/响应记录：
 
 ```csharp
 public sealed record CreateUploadSessionRequest(string Purpose, string FileName, string ContentType, long SizeBytes);
@@ -271,41 +271,41 @@ public sealed record CompleteUploadRequest(string FileId);
 public sealed record CreateDownloadGrantRequest(string Purpose);
 ```
 
-Return existing `FileReference`, `UploadInstruction` and `DownloadGrant` records. Do not expose object storage key or long-lived URL.
+返回现有 `FileReference`、`UploadInstruction` 和 `DownloadGrant` 记录。不得暴露对象存储键或长期 URL。
 
-- [ ] **Step 3: Run File Storage SDK tests**
+- [ ] **步骤 3：运行文件存储 SDK 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore --filter FullyQualifiedName~FileStorageClientTests
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 4: Commit File Storage readiness**
+- [ ] **步骤 4：提交文件存储就绪实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/common/Sdk/Nerv.IIP.Sdk.FileStorage backend/tests/Nerv.IIP.Sdk.Tests
 git commit -m "feat: add file storage sdk client"
 ```
 
-## Task 4: Add Notification and Observability SDK Minimum
+## 任务 4：添加最小化通知和可观测性 SDK
 
-**Files:**
+**文件：**
 
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Notification/Nerv.IIP.Sdk.Notification.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Notification/NotificationClient.cs`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Observability/Nerv.IIP.Sdk.Observability.csproj`
-- Create: `backend/common/Sdk/Nerv.IIP.Sdk.Observability/ObservabilityContext.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/NotificationClientTests.cs`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Notification/Nerv.IIP.Sdk.Notification.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Notification/NotificationClient.cs`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Observability/Nerv.IIP.Sdk.Observability.csproj`
+- 创建：`backend/common/Sdk/Nerv.IIP.Sdk.Observability/ObservabilityContext.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/NotificationClientTests.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create SDK projects**
+- [ ] **步骤 1：创建 SDK 项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new classlib -n Nerv.IIP.Sdk.Notification -o backend/common/Sdk/Nerv.IIP.Sdk.Notification --framework net10.0
@@ -319,9 +319,9 @@ dotnet sln backend/Nerv.IIP.sln add backend/common/Sdk/Nerv.IIP.Sdk.Notification
 dotnet sln backend/Nerv.IIP.sln add backend/common/Sdk/Nerv.IIP.Sdk.Observability/Nerv.IIP.Sdk.Observability.csproj
 ```
 
-- [ ] **Step 2: Write failing Notification client tests**
+- [ ] **步骤 2：编写失败的通知客户端测试**
 
-Assert `NotificationClient.SubmitIntentAsync(...)` posts to `/api/notifications/v1/intents` with request:
+断言 `NotificationClient.SubmitIntentAsync(...)` 使用以下请求向 `/api/notifications/v1/intents` 发起 POST：
 
 ```csharp
 public sealed record SubmitNotificationIntentRequest(
@@ -334,11 +334,11 @@ public sealed record SubmitNotificationIntentRequest(
     IReadOnlyCollection<string> SuggestedRecipientRefs);
 ```
 
-The client must include organization, environment, correlation and idempotency headers from `PlatformRequestContext`.
+客户端必须包含来自 `PlatformRequestContext` 的组织、环境、关联和幂等请求头。
 
-- [ ] **Step 3: Implement Notification and Observability SDKs**
+- [ ] **步骤 3：实现通知和可观测性 SDK**
 
-`ObservabilityContext` provides:
+`ObservabilityContext` 提供：
 
 ```csharp
 public static PlatformRequestContext CreateRequestContext(
@@ -347,41 +347,41 @@ public static PlatformRequestContext CreateRequestContext(
     string? idempotencyKey = null);
 ```
 
-It reads `Activity.Current?.Id` into `TraceParent` and generates a correlation ID when the caller does not supply one.
+它将 `Activity.Current?.Id` 读入 `TraceParent`，并在调用方未提供关联 ID 时生成该值。
 
-- [ ] **Step 4: Run tests**
+- [ ] **步骤 4：运行测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore --filter "FullyQualifiedName~NotificationClientTests|FullyQualifiedName~ObservabilityContextTests"
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Commit Notification and Observability readiness**
+- [ ] **步骤 5：提交通知和可观测性就绪实现**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/common/Sdk/Nerv.IIP.Sdk.Notification backend/common/Sdk/Nerv.IIP.Sdk.Observability backend/tests/Nerv.IIP.Sdk.Tests
 git commit -m "feat: add notification and observability sdk minimum"
 ```
 
-## Task 5: Add Business Integration Contracts for Connector Scenarios
+## 任务 5：为连接器场景添加业务集成契约
 
-**Files:**
+**文件：**
 
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/Nerv.IIP.Contracts.BusinessIntegration.csproj`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessTelemetryContracts.cs`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessWcsContracts.cs`
-- Create: `backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessNotificationContracts.cs`
-- Create: `backend/tests/Nerv.IIP.Sdk.Tests/BusinessIntegrationContractJsonTests.cs`
-- Modify: `backend/Nerv.IIP.sln`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/Nerv.IIP.Contracts.BusinessIntegration.csproj`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessTelemetryContracts.cs`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessWcsContracts.cs`
+- 创建：`backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/BusinessNotificationContracts.cs`
+- 创建：`backend/tests/Nerv.IIP.Sdk.Tests/BusinessIntegrationContractJsonTests.cs`
+- 修改：`backend/Nerv.IIP.sln`
 
-- [ ] **Step 1: Create contracts project**
+- [ ] **步骤 1：创建契约项目**
 
-Run:
+运行：
 
 ```powershell
 dotnet new classlib -n Nerv.IIP.Contracts.BusinessIntegration -o backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration --framework net10.0
@@ -389,9 +389,9 @@ dotnet add backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj reference 
 dotnet sln backend/Nerv.IIP.sln add backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/Nerv.IIP.Contracts.BusinessIntegration.csproj
 ```
 
-- [ ] **Step 2: Add telemetry contracts**
+- [ ] **步骤 2：添加遥测契约**
 
-Create:
+创建：
 
 ```csharp
 public sealed record CreateTelemetryTagRequest(string DeviceAssetId, string TagKey, string ValueType, string Unit, string SamplingPolicy);
@@ -399,11 +399,11 @@ public sealed record RecordTelemetrySampleRequest(string TagId, string Value, Da
 public sealed record RaiseAlarmRequest(string DeviceAssetId, string AlarmCode, string Severity, DateTimeOffset OccurredAtUtc, string ExternalAlarmId);
 ```
 
-These contracts are used by IndustrialTelemetry public APIs. They do not contain PLC/DCS control commands.
+这些契约供 IndustrialTelemetry（工业遥测）公开 API 使用。它们不包含 PLC/DCS 控制命令。
 
-- [ ] **Step 3: Add WCS callback contracts**
+- [ ] **步骤 3：添加 WCS 回调契约**
 
-Create:
+创建：
 
 ```csharp
 public sealed record DispatchWcsTaskRequest(string WarehouseTaskId, string AdapterType, string PayloadJson);
@@ -411,57 +411,57 @@ public sealed record CompleteWcsTaskRequest(string ExternalTaskId, string Result
 public sealed record FailWcsTaskRequest(string ExternalTaskId, string FailureCode, string DiagnosticMessage, DateTimeOffset OccurredAtUtc);
 ```
 
-These contracts are used by WMS public APIs and connector callbacks. They do not model WCS internal scheduling.
+这些契约供 WMS 公开 API 和连接器回调使用。它们不建模 WCS 内部调度。
 
-- [ ] **Step 4: Add JSON compatibility tests**
+- [ ] **步骤 4：添加 JSON 兼容性测试**
 
-Serialize every contract with `JsonSerializerDefaults.Web`. Assert JSON contains camelCase names such as `deviceAssetId`, `sourceSequence`, `externalTaskId`, `failureCode`.
+使用 `JsonSerializerDefaults.Web` 序列化每个契约。断言 JSON 包含 `deviceAssetId`、`sourceSequence`、`externalTaskId`、`failureCode` 等 camelCase 名称。
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore --filter FullyQualifiedName~BusinessIntegrationContractJsonTests
 ```
 
-Expected: PASS.
+预期结果：通过。
 
-- [ ] **Step 5: Commit contracts**
+- [ ] **步骤 5：提交契约**
 
-Run:
+运行：
 
 ```powershell
 git add backend/Nerv.IIP.sln backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration backend/tests/Nerv.IIP.Sdk.Tests
 git commit -m "feat: add business integration connector contracts"
 ```
 
-## Task 6: Update Documentation and Verification
+## 任务 6：更新文档和验证
 
-**Files:**
+**文件：**
 
-- Modify: `docs/architecture/platform-sdk-baseline.md`
-- Modify: `docs/architecture/business-platform-domain-architecture.md`
-- Modify: `docs/superpowers/specs/2026-05-20-business-platform-domain-design.md`
-- Create: `scripts/verify-business-main-platform-integration-readiness.ps1`
-- Modify: `README.md`
+- 修改：`docs/architecture/platform-sdk-baseline.md`
+- 修改：`docs/architecture/business-platform-domain-architecture.md`
+- 修改：`docs/superpowers/specs/2026-05-20-business-platform-domain-design.md`
+- 创建：`scripts/verify-business-main-platform-integration-readiness.ps1`
+- 修改：`README.md`
 
-- [ ] **Step 1: Update SDK baseline documentation**
+- [ ] **步骤 1：更新 SDK 基线文档**
 
-Document current implementation status for:
+记录以下项目的当前实施状态：
 
-1. `Sdk.Core` request context and header injection.
-2. `Sdk.Auth` bearer, external-client and connector-host helpers.
-3. `Sdk.FileStorage` upload/download client.
-4. `Sdk.Notification` notification intent client.
-5. `Sdk.Observability` correlation and trace context helper.
-6. `Contracts.BusinessIntegration` telemetry and WCS callback contracts.
+1. `Sdk.Core` 请求上下文和请求头注入。
+2. `Sdk.Auth` 持有者令牌、外部客户端和 Connector Host（连接器宿主）辅助工具。
+3. `Sdk.FileStorage` 上传/下载客户端。
+4. `Sdk.Notification` 通知意图客户端。
+5. `Sdk.Observability` 关联和跟踪上下文辅助工具。
+6. `Contracts.BusinessIntegration` 遥测和 WCS 回调契约。
 
-- [ ] **Step 2: Update Business Platform docs**
+- [ ] **步骤 2：更新业务平台文档**
 
-Add one sentence to the Business Platform architecture and spec handoff: Business slices consume main-platform capabilities through this readiness plan and must not reference main-platform service Domain or Infrastructure projects.
+在业务平台架构和规格交接说明中添加一句话：业务切片通过本就绪计划消费主平台能力，并且不得引用主平台服务的领域或基础设施项目。
 
-- [ ] **Step 3: Add verification script**
+- [ ] **步骤 3：添加验证脚本**
 
-The script runs:
+脚本运行：
 
 ```powershell
 dotnet test backend/tests/Nerv.IIP.Sdk.Tests/Nerv.IIP.Sdk.Tests.csproj --no-restore
@@ -473,31 +473,31 @@ dotnet build backend/common/Sdk/Nerv.IIP.Sdk.Observability/Nerv.IIP.Sdk.Observab
 dotnet build backend/common/Contracts/Nerv.IIP.Contracts.BusinessIntegration/Nerv.IIP.Contracts.BusinessIntegration.csproj --no-restore
 ```
 
-- [ ] **Step 4: Run final verification**
+- [ ] **步骤 4：运行最终验证**
 
-Run:
+运行：
 
 ```powershell
 scripts/verify-business-main-platform-integration-readiness.ps1
 git diff --check
 ```
 
-Expected: both commands exit `0`.
+预期结果：两条命令均以 `0` 退出。
 
-- [ ] **Step 5: Commit docs and verification**
+- [ ] **步骤 5：提交文档和验证**
 
-Run:
+运行：
 
 ```powershell
 git add docs/architecture/platform-sdk-baseline.md docs/architecture/business-platform-domain-architecture.md docs/superpowers/specs/2026-05-20-business-platform-domain-design.md scripts/verify-business-main-platform-integration-readiness.ps1 README.md
 git commit -m "docs: record business platform integration readiness"
 ```
 
-## Self-Review Checklist
+## 自审清单
 
-1. No SDK module references `backend/services/*` or `backend/gateway/*` Web, Domain or Infrastructure projects.
-2. No Business domain type appears in SDK module names or DTO names except neutral integration contracts for telemetry and WCS callbacks.
-3. File Storage SDK returns file IDs, references and short-lived grants only.
-4. Notification SDK submits intents only; it does not implement delivery providers.
-5. Connector Host and external-client scenarios still require IAM-authenticated public APIs.
-6. Full-Chain Acceptance lists this readiness script as a prerequisite.
+1. 任何 SDK 模块都不得引用 `backend/services/*` 或 `backend/gateway/*` 的 Web、领域或基础设施项目。
+2. 除遥测和 WCS 回调的中性集成契约外，任何业务领域类型都不得出现在 SDK 模块名或 DTO 名称中。
+3. 文件存储 SDK 仅返回文件 ID、引用和短期授权。
+4. 通知 SDK 仅提交意图；它不实现交付提供程序。
+5. Connector Host（连接器宿主）和外部客户端场景仍需要通过 IAM 认证的公开 API。
+6. 全链路验收将此就绪脚本列为前置条件。

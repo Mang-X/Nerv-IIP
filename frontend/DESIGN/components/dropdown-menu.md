@@ -1,11 +1,10 @@
-# DropdownMenu (NvDropdownMenu)
+# 下拉菜单（NvDropdownMenu）
 
-Contextual action menu. Primary use: row actions in tables, topbar user menu.
-App code uses the `NvDropdownMenu*` family from `@nerv-iip/ui`; the
-un-prefixed `DropdownMenu*` parts are the shadcn 原版 primitives —
-library-internal only.
+上下文操作菜单。主要用于表格行操作和顶栏用户菜单。应用代码使用
+`NvDropdownMenu*` 系列，它们来自 `@nerv-iip/ui`；无前缀的 `DropdownMenu*` 部件是
+shadcn 原版 primitives，仅限组件库内部使用。
 
-## Usage
+## 用法
 
 ```vue
 <!-- Table row actions (the standard pattern) -->
@@ -51,14 +50,13 @@ library-internal only.
 </NvDropdownMenu>
 ```
 
-## Destructive items
+## 破坏性菜单项
 
-Use `variant="destructive"` on `NvDropdownMenuItem` for irreversible actions.
-The item should only open a confirm `NvAlertDialog` — never call the API
-directly.
+对于不可逆操作，使用 `variant="destructive"` 的目标必须是 `NvDropdownMenuItem`。
+该菜单项只能打开确认用的 `NvAlertDialog`，不得直接调用 API。
 
-## Do NOT
+## 禁止
 
-- Do not put more than ~6 items in a dropdown menu — consider a dialog/sheet with a form instead.
-- Do not put navigation items in a dropdown menu — use `RouterLink` directly.
-- Do not use `NvDropdownMenuCheckboxItem` for filter toggles in a toolbar — use `NvSelect` (or `NvDataTable` column filters) instead.
+- 不得在下拉菜单中放入超过约 6 个项目；应考虑使用带表单的对话框/抽屉。
+- 不得将导航项目放入下拉菜单；应直接使用 `RouterLink`。
+- 不得将 `NvDropdownMenuCheckboxItem` 用于工具栏中的筛选切换；应使用 `NvSelect`（或 `NvDataTable` 列筛选器）。

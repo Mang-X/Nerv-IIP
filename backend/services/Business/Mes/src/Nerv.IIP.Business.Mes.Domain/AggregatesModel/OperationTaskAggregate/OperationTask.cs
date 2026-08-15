@@ -82,7 +82,23 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     /// <summary>Display name of the assigned worker captured when the task was dispatched.</summary>
     public string? AssignedUserName { get; private set; }
     public string? DeviceAssetId { get; private set; }
+
+    /// <summary>
+    /// MasterData shift public id (e.g. EARLY / MIDDLE). This is the *shift* dimension — the working
+    /// window — and must never carry a team code: a shift and a team are distinct MasterData aggregates
+    /// and a team already references the shift it works.
+    /// </summary>
     public string? ShiftId { get; private set; }
+
+    /// <summary>MasterData team public id (e.g. TEAM-WB-MC-A) captured by MES dispatch.</summary>
+    public string? TeamId { get; private set; }
+
+    /// <summary>
+    /// Display name of the assigned team captured when the task was dispatched. Snapshot, like
+    /// <see cref="AssignedUserName"/>: a dispatch record states who it was at the time, and MES must not
+    /// read MasterData to render its own read face.
+    /// </summary>
+    public string? TeamName { get; private set; }
     public DateTimeOffset? AssignedAtUtc { get; private set; }
     public long ManualDispatchRevision { get; private set; }
     public bool HasActiveManualDispatch { get; private set; }
@@ -274,7 +290,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string? shiftId,
         DateTimeOffset assignedAtUtc,
         string actor = "system:mes",
-        string? assignedUserName = null)
+        string? assignedUserName = null,
+        string? teamId = null,
+        string? teamName = null)
     {
         if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
         {
@@ -318,6 +336,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AssignedUserName = AssignedUserId is null ? null : NormalizeOptional(assignedUserName);
         DeviceAssetId = normalizedDeviceAssetId;
         ShiftId = NormalizeOptional(shiftId);
+        TeamId = NormalizeOptional(teamId);
+        TeamName = TeamId is null ? null : NormalizeOptional(teamName);
         AssignedAtUtc = assignedAtUtc;
         HasActiveManualDispatch = isManualDispatch;
 

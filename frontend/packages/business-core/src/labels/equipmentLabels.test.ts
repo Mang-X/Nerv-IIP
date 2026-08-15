@@ -5,8 +5,13 @@ import {
   alarmSeverityLabel,
   equipmentStateLabel,
   inspectionResultLabel,
+  isMaintenanceWorkOrderStatusCode,
+  maintenanceWorkOrderActionLabel,
+  maintenanceWorkOrderBlockReasonLabel,
   maintenancePriorityLabel,
   maintenanceWorkOrderStatusLabel,
+  maintenanceWorkOrderStatusOptions,
+  normalizeMaintenanceWorkOrderStatusFilter,
 } from './equipmentLabels'
 
 describe('alarmSeverityLabel', () => {
@@ -82,30 +87,91 @@ describe('equipmentStateLabel', () => {
 })
 
 describe('maintenancePriorityLabel', () => {
-  it('maps known priorities to Chinese', () => {
+  it('maps every production maintenance priority to Chinese', () => {
+    expect(maintenancePriorityLabel('critical')).toBe('紧急')
+    expect(maintenancePriorityLabel('urgent')).toBe('紧急')
     expect(maintenancePriorityLabel('high')).toBe('高')
     expect(maintenancePriorityLabel('medium')).toBe('中')
+    expect(maintenancePriorityLabel('normal')).toBe('中')
     expect(maintenancePriorityLabel('low')).toBe('低')
+    expect(maintenancePriorityLabel('planned')).toBe('计划保养')
   })
 
   it('falls back for unknown / empty values', () => {
-    expect(maintenancePriorityLabel('urgent')).toBe('未知优先级')
+    expect(maintenancePriorityLabel('future-priority')).toBe('未知优先级')
     expect(maintenancePriorityLabel(undefined)).toBe('未知优先级')
   })
 })
 
 describe('maintenanceWorkOrderStatusLabel', () => {
-  it('maps known work order statuses to Chinese', () => {
+  it('maps the complete maintenance lifecycle and exposes one typed filter catalog', () => {
     expect(maintenanceWorkOrderStatusLabel('open')).toBe('待处理')
+    expect(maintenanceWorkOrderStatusLabel('accepted')).toBe('已接单')
     expect(maintenanceWorkOrderStatusLabel('inProgress')).toBe('处理中')
+    expect(maintenanceWorkOrderStatusLabel('paused')).toBe('已暂停')
+    expect(maintenanceWorkOrderStatusLabel('waitingForParts')).toBe('等待备件')
     expect(maintenanceWorkOrderStatusLabel('completed')).toBe('已完成')
+    expect(maintenanceWorkOrderStatusLabel('verified')).toBe('已验证')
     expect(maintenanceWorkOrderStatusLabel('closed')).toBe('已关闭')
     expect(maintenanceWorkOrderStatusLabel('cancelled')).toBe('已取消')
+    expect(maintenanceWorkOrderStatusOptions.map(({ value }) => value)).toEqual([
+      'open',
+      'accepted',
+      'inProgress',
+      'paused',
+      'waitingForParts',
+      'completed',
+      'verified',
+      'closed',
+      'cancelled',
+    ])
   })
 
   it('falls back for unknown / empty values', () => {
     expect(maintenanceWorkOrderStatusLabel('frozen')).toBe('未知状态')
     expect(maintenanceWorkOrderStatusLabel(null)).toBe('未知状态')
+  })
+
+  it('validates restored filter values against the shared lifecycle catalog', () => {
+    expect(isMaintenanceWorkOrderStatusCode('accepted')).toBe(true)
+    expect(isMaintenanceWorkOrderStatusCode('frozen')).toBe(false)
+    expect(normalizeMaintenanceWorkOrderStatusFilter('inProgress')).toBe('inProgress')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(' frozen ')).toBe('')
+    expect(normalizeMaintenanceWorkOrderStatusFilter(undefined)).toBe('')
+  })
+})
+
+describe('maintenance work-order action and block-reason labels', () => {
+  it('maps every MAN-631 lifecycle action', () => {
+    expect(
+      [
+        'assign',
+        'accept',
+        'start',
+        'pause',
+        'waitForParts',
+        'resume',
+        'complete',
+        'verify',
+        'close',
+        'cancel',
+      ].map(maintenanceWorkOrderActionLabel),
+    ).toEqual(['指派', '接单', '开工', '暂停', '等待备件', '恢复', '完成', '验证', '关闭', '取消'])
+  })
+
+  it('maps service and gateway block reasons without leaking raw reason codes', () => {
+    expect(maintenanceWorkOrderBlockReasonLabel('terminal-status')).toContain('终态')
+    expect(maintenanceWorkOrderBlockReasonLabel('completion-data-incomplete')).toContain('完工数据')
+    expect(maintenanceWorkOrderBlockReasonLabel('assigned-technician-required')).toContain(
+      '维修人员',
+    )
+    expect(maintenanceWorkOrderBlockReasonLabel('manage-permission-required')).toContain('权限')
+    expect(maintenanceWorkOrderBlockReasonLabel('work-scope-required')).toContain('工作范围')
+    expect(maintenanceWorkOrderBlockReasonLabel('work-scope-not-authorized')).toContain('工作范围')
+    expect(maintenanceWorkOrderBlockReasonLabel('unknown-status')).toContain('无法识别')
+    expect(maintenanceWorkOrderBlockReasonLabel('new-server-code')).toBe(
+      '当前不可执行操作，具体原因暂不可识别。',
+    )
   })
 })
 

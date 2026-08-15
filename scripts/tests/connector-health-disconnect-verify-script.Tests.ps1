@@ -19,82 +19,82 @@ $simulator = Get-Content -LiteralPath $simulatorPath -Raw
 $appHost = Get-Content -LiteralPath $appHostPath -Raw
 $connectorHostProgram = Get-Content -LiteralPath $connectorHostProgramPath -Raw
 
-Assert-Contract ($verify.Contains("scripts/lib/ScriptAutomation.ps1")) 'Verify script must dot-source ScriptAutomation.ps1.'
-Assert-Contract ($verify.Contains("scripts/lib/FullStackSessionState.ps1")) 'Verify script must use the governed full-stack session state.'
-Assert-Contract ($verify.Contains('Start-ManagedBackgroundProcess')) 'Verify script must start the simulator with Start-ManagedBackgroundProcess.'
-Assert-Contract ($verify.Contains('[System.Diagnostics.Stopwatch]::StartNew()')) 'Disconnect deadline must use a monotonic Stopwatch.'
-Assert-Contract ($verify.Contains('DisconnectDeadlineMilliseconds = 10000')) 'Disconnect deadline must remain fixed at 10 seconds.'
-Assert-Contract ($verify.Contains('DisconnectRequestTimeoutSeconds = 3')) 'Disconnect polling requests must use a timeout shorter than the 10-second assertion window.'
-Assert-Contract ($verify.Contains('$disconnectedSinceUtc.UtcTicks -ge $script:disconnectStartUtc.UtcTicks')) 'Disconnect ordering must compare absolute UTC ticks rather than offset-bearing DateTimeOffset values.'
-Assert-Contract ($verify.Contains('[DateTimeOffset] $lost.connection.disconnectedSinceUtc')) 'Disconnect evidence must preserve the JSON timestamp precision without a culture-formatted string round trip.'
-Assert-Contract (-not $verify.Contains('[DateTimeOffset]::Parse("$($lost.connection.disconnectedSinceUtc)")')) 'Disconnect evidence must not truncate fractional seconds through string interpolation.'
-Assert-Contract ($verify.Contains('disconnectStartUtc = if ($null -eq $script:disconnectStartUtc)')) 'Failure diagnostics must preserve the exact disconnect start instant.'
-Assert-Contract ($verify.Contains("`$_['elapsedMilliseconds']")) 'Evidence aggregation must read ordered dictionary values through their explicit key.'
-Assert-Contract (-not $verify.Contains('Measure-Object -Property elapsedMilliseconds')) 'Evidence aggregation must not rely on OrderedDictionary property adaptation.'
-Assert-Contract ($verify.Contains('finally')) 'Verify script must clean the simulator and full-stack session in finally.'
-Assert-Contract ($verify.Contains('disconnectStartUtc')) 'Evidence must include disconnectStartUtc.'
-Assert-Contract ($verify.Contains('connectionObservedAtUtc')) 'Evidence must include connectionObservedAtUtc.'
-Assert-Contract ($verify.Contains('gatewayObservedAtUtc')) 'Evidence must include gatewayObservedAtUtc.'
-Assert-Contract ($verify.Contains('elapsedMilliseconds')) 'Evidence must include elapsedMilliseconds.'
-Assert-Contract ($verify.Contains('detectionElapsedMilliseconds')) 'Evidence must split protocol detection time from downstream visibility time.'
-Assert-Contract ($verify.Contains('postDetectionVisibilityMilliseconds')) 'Evidence must record post-detection Gateway visibility time.'
-Assert-Contract ($verify.Contains('lastHeartbeatAtUtc')) 'Evidence must include lastHeartbeatAtUtc.'
-Assert-Contract ($verify.Contains('recoveryObservedAtUtc')) 'Evidence must include a recovery timestamp.'
-Assert-Contract ($verify.Contains('neverSampled')) 'Evidence must prove a configured but never-sampled mapping.'
-Assert-Contract ($verify.Contains('disconnectedSinceUtc')) 'Each disconnect observation must include the explicit disconnected-since timestamp.'
-Assert-Contract ($verify.Contains('maximumElapsedMilliseconds')) 'Root evidence must summarize the maximum elapsed disconnect time.'
-Assert-Contract ($verify.Contains('$disconnectedSinceUtc -le $gatewayObservedAtUtc')) 'Disconnect time must not follow the Gateway observation.'
+Assert-Contract ($verify.Contains("scripts/lib/ScriptAutomation.ps1", [StringComparison]::Ordinal)) 'Verify script must dot-source ScriptAutomation.ps1.'
+Assert-Contract ($verify.Contains("scripts/lib/FullStackSessionState.ps1", [StringComparison]::Ordinal)) 'Verify script must use the governed full-stack session state.'
+Assert-Contract ($verify.Contains('Start-ManagedBackgroundProcess', [StringComparison]::Ordinal)) 'Verify script must start the simulator with Start-ManagedBackgroundProcess.'
+Assert-Contract ($verify.Contains('[System.Diagnostics.Stopwatch]::StartNew()', [StringComparison]::Ordinal)) 'Disconnect deadline must use a monotonic Stopwatch.'
+Assert-Contract ($verify.Contains('DisconnectDeadlineMilliseconds = 10000', [StringComparison]::Ordinal)) 'Disconnect deadline must remain fixed at 10 seconds.'
+Assert-Contract ($verify.Contains('DisconnectRequestTimeoutSeconds = 3', [StringComparison]::Ordinal)) 'Disconnect polling requests must use a timeout shorter than the 10-second assertion window.'
+Assert-Contract ($verify.Contains('$disconnectedSinceUtc.UtcTicks -ge $script:disconnectStartUtc.UtcTicks', [StringComparison]::Ordinal)) 'Disconnect ordering must compare absolute UTC ticks rather than offset-bearing DateTimeOffset values.'
+Assert-Contract ($verify.Contains('[DateTimeOffset] $lost.connection.disconnectedSinceUtc', [StringComparison]::Ordinal)) 'Disconnect evidence must preserve the JSON timestamp precision without a culture-formatted string round trip.'
+Assert-Contract (-not $verify.Contains('[DateTimeOffset]::Parse("$($lost.connection.disconnectedSinceUtc)")', [StringComparison]::Ordinal)) 'Disconnect evidence must not truncate fractional seconds through string interpolation.'
+Assert-Contract ($verify.Contains('disconnectStartUtc = if ($null -eq $script:disconnectStartUtc)', [StringComparison]::Ordinal)) 'Failure diagnostics must preserve the exact disconnect start instant.'
+Assert-Contract ($verify.Contains("`$_['elapsedMilliseconds']", [StringComparison]::Ordinal)) 'Evidence aggregation must read ordered dictionary values through their explicit key.'
+Assert-Contract (-not $verify.Contains('Measure-Object -Property elapsedMilliseconds', [StringComparison]::Ordinal)) 'Evidence aggregation must not rely on OrderedDictionary property adaptation.'
+Assert-Contract ($verify.Contains('finally', [StringComparison]::Ordinal)) 'Verify script must clean the simulator and full-stack session in finally.'
+Assert-Contract ($verify.Contains('disconnectStartUtc', [StringComparison]::Ordinal)) 'Evidence must include disconnectStartUtc.'
+Assert-Contract ($verify.Contains('connectionObservedAtUtc', [StringComparison]::Ordinal)) 'Evidence must include connectionObservedAtUtc.'
+Assert-Contract ($verify.Contains('gatewayObservedAtUtc', [StringComparison]::Ordinal)) 'Evidence must include gatewayObservedAtUtc.'
+Assert-Contract ($verify.Contains('elapsedMilliseconds', [StringComparison]::Ordinal)) 'Evidence must include elapsedMilliseconds.'
+Assert-Contract ($verify.Contains('detectionElapsedMilliseconds', [StringComparison]::Ordinal)) 'Evidence must split protocol detection time from downstream visibility time.'
+Assert-Contract ($verify.Contains('postDetectionVisibilityMilliseconds', [StringComparison]::Ordinal)) 'Evidence must record post-detection Gateway visibility time.'
+Assert-Contract ($verify.Contains('lastHeartbeatAtUtc', [StringComparison]::Ordinal)) 'Evidence must include lastHeartbeatAtUtc.'
+Assert-Contract ($verify.Contains('recoveryObservedAtUtc', [StringComparison]::Ordinal)) 'Evidence must include a recovery timestamp.'
+Assert-Contract ($verify.Contains('neverSampled', [StringComparison]::Ordinal)) 'Evidence must prove a configured but never-sampled mapping.'
+Assert-Contract ($verify.Contains('disconnectedSinceUtc', [StringComparison]::Ordinal)) 'Each disconnect observation must include the explicit disconnected-since timestamp.'
+Assert-Contract ($verify.Contains('maximumElapsedMilliseconds', [StringComparison]::Ordinal)) 'Root evidence must summarize the maximum elapsed disconnect time.'
+Assert-Contract ($verify.Contains('$disconnectedSinceUtc -le $gatewayObservedAtUtc', [StringComparison]::Ordinal)) 'Disconnect time must not follow the Gateway observation.'
 Assert-Contract ($verify.IndexOf('$gatewayObservedAtUtc = [DateTimeOffset]::UtcNow', [StringComparison]::Ordinal) -ge 0) 'Gateway observation must be captured after the lost state is observed.'
-Assert-Contract ($verify.Contains('diagnostics.json')) 'Verify script must persist stage diagnostics independently of success evidence.'
-Assert-Contract ($verify.Contains('currentStage')) 'Diagnostics must identify the current acceptance stage.'
-Assert-Contract ($verify.Contains('lastRequestError')) 'Diagnostics must preserve the last health or coverage request error.'
-Assert-Contract ($verify.Contains('Write-AcceptanceDiagnostics')) 'Verify script must update diagnostics while it runs and when it fails.'
-Assert-Contract ($verify.Contains("status = 'failed'")) 'Verify script must persist an explicit failed terminal status.'
-Assert-Contract ($verify.Contains('Protect-NervFullStackDiagnosticText')) 'Diagnostic exceptions must redact governed and run-specific sensitive values.'
-Assert-Contract (-not $verify.Contains('catch { }')) 'Verify script must not silently swallow request or state-observation failures.'
-Assert-Contract ($verify.Contains('Start-DetachedManagedProcess')) 'Full-stack start must be detached so Aspire descendants cannot hold the verification pipe open.'
-Assert-Contract ($verify.Contains('Wait-FullStackSessionRunning')) 'Verify script must wait on the governed session manifest instead of start-process EOF.'
-Assert-Contract ($verify.Contains('Test-NervProcessIdentity')) 'Detached start cleanup must verify the exact process identity.'
-Assert-Contract ($verify.Contains('function Stop-FullStackStartProcess')) 'Verify script must own explicit detached-wrapper cleanup.'
+Assert-Contract ($verify.Contains('diagnostics.json', [StringComparison]::Ordinal)) 'Verify script must persist stage diagnostics independently of success evidence.'
+Assert-Contract ($verify.Contains('currentStage', [StringComparison]::Ordinal)) 'Diagnostics must identify the current acceptance stage.'
+Assert-Contract ($verify.Contains('lastRequestError', [StringComparison]::Ordinal)) 'Diagnostics must preserve the last health or coverage request error.'
+Assert-Contract ($verify.Contains('Write-AcceptanceDiagnostics', [StringComparison]::Ordinal)) 'Verify script must update diagnostics while it runs and when it fails.'
+Assert-Contract ($verify.Contains("status = 'failed'", [StringComparison]::Ordinal)) 'Verify script must persist an explicit failed terminal status.'
+Assert-Contract ($verify.Contains('Protect-NervFullStackDiagnosticText', [StringComparison]::Ordinal)) 'Diagnostic exceptions must redact governed and run-specific sensitive values.'
+Assert-Contract (-not $verify.Contains('catch { }', [StringComparison]::Ordinal)) 'Verify script must not silently swallow request or state-observation failures.'
+Assert-Contract ($verify.Contains('Start-DetachedManagedProcess', [StringComparison]::Ordinal)) 'Full-stack start must be detached so Aspire descendants cannot hold the verification pipe open.'
+Assert-Contract ($verify.Contains('Wait-FullStackSessionRunning', [StringComparison]::Ordinal)) 'Verify script must wait on the governed session manifest instead of start-process EOF.'
+Assert-Contract ($verify.Contains('Test-NervProcessIdentity', [StringComparison]::Ordinal)) 'Detached start cleanup must verify the exact process identity.'
+Assert-Contract ($verify.Contains('function Stop-FullStackStartProcess', [StringComparison]::Ordinal)) 'Verify script must own explicit detached-wrapper cleanup.'
 Assert-Contract (
     $verify.LastIndexOf('try { Stop-FullStackStartProcess', [StringComparison]::Ordinal) -ge 0 -and
     $verify.LastIndexOf('$manifestPath = Get-NervFullStackManifestPath', [StringComparison]::Ordinal) -ge 0 -and
     $verify.LastIndexOf('try { Stop-FullStackStartProcess', [StringComparison]::Ordinal) -lt
         $verify.LastIndexOf('$manifestPath = Get-NervFullStackManifestPath', [StringComparison]::Ordinal)
 ) 'Finally must stop the exact detached start wrapper before stopping the governed full-stack session.'
-Assert-Contract ($verify.Contains('start.stdout.log') -and $verify.Contains('start.stderr.log')) 'Detached full-stack start must preserve stdout and stderr artifacts.'
-Assert-Contract ($verify.Contains("'Failed', 'CleanupFailed'")) 'Manifest wait must fail explicitly when startup enters a terminal failure state.'
+Assert-Contract ($verify.Contains('start.stdout.log', [StringComparison]::Ordinal) -and $verify.Contains('start.stderr.log', [StringComparison]::Ordinal)) 'Detached full-stack start must preserve stdout and stderr artifacts.'
+Assert-Contract ($verify.Contains("'Failed', 'CleanupFailed'", [StringComparison]::Ordinal)) 'Manifest wait must fail explicitly when startup enters a terminal failure state.'
 
 foreach ($forbidden in @('dotnet ', 'docker ', 'pnpm ', 'pwsh ', 'Start-Process')) {
     Assert-Contract (-not $verify.Contains($forbidden, [StringComparison]::OrdinalIgnoreCase)) "Verify script contains forbidden direct command '$forbidden'."
 }
 
-Assert-Contract ($simulator.Contains('TcpListener')) 'Simulator must bind a real loopback TCP listener.'
-Assert-Contract ($simulator.Contains('127.0.0.1')) 'Simulator must bind loopback only.'
-Assert-Contract ($simulator.Contains('ready')) 'Simulator must publish ready JSON.'
-Assert-Contract ($simulator.Contains('ConvertTo-Json')) 'Simulator ready record must be JSON.'
-Assert-Contract ($simulator.Contains('StopRequested')) 'Simulator must support a governed stop request.'
-Assert-Contract ($simulator.Contains('.Stop()')) 'Simulator must stop its listener so the same port can be rebound.'
+Assert-Contract ($simulator.Contains('TcpListener', [StringComparison]::Ordinal)) 'Simulator must bind a real loopback TCP listener.'
+Assert-Contract ($simulator.Contains('127.0.0.1', [StringComparison]::Ordinal)) 'Simulator must bind loopback only.'
+Assert-Contract ($simulator.Contains('ready', [StringComparison]::Ordinal)) 'Simulator must publish ready JSON.'
+Assert-Contract ($simulator.Contains('ConvertTo-Json', [StringComparison]::Ordinal)) 'Simulator ready record must be JSON.'
+Assert-Contract ($simulator.Contains('StopRequested', [StringComparison]::Ordinal)) 'Simulator must support a governed stop request.'
+Assert-Contract ($simulator.Contains('.Stop()', [StringComparison]::Ordinal)) 'Simulator must stop its listener so the same port can be rebound.'
 
-Assert-Contract ($appHost.Contains('ConnectorHealthAcceptance:Enabled')) 'AppHost must have an explicit acceptance-only opt-in.'
-Assert-Contract ($appHost.Contains('Platform__IndustrialTelemetryBaseUrl')) 'Acceptance wiring must inject the IndustrialTelemetry URL into Connector Host.'
-Assert-Contract ($appHost.Contains('InternalService__BearerToken')) 'Acceptance wiring must inject the session internal token into Connector Host.'
-Assert-Contract ($appHost.Contains('Modbus__Registers__0__TagKey')) 'Acceptance wiring must configure the sampled Modbus mapping.'
-Assert-Contract ($appHost.Contains('Modbus__Registers__1__TagKey')) 'Acceptance wiring must configure the never-sampled Modbus mapping.'
-Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__0__DataType", "UInt16")')) 'Acceptance wiring must fully override the sampled mapping data type inherited from development configuration.'
-Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__0__WordOrder", "BigEndian")')) 'Acceptance wiring must fully override the sampled mapping word order inherited from development configuration.'
-Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__1__DataType", "Float32")')) 'Never-sampled mapping must bind as Float32.'
-Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__1__RegisterCount", "2")')) 'Never-sampled Float32 mapping must bind exactly two registers.'
-Assert-Contract (-not $appHost.Contains('.WithEnvironment("Modbus__Registers__1__BucketSeconds", "3600")')) 'Never-sampled proof must not depend on an hour-long open bucket.'
-Assert-Contract ($connectorHostProgram.Contains('section.GetValue<ushort>("RegisterCount", 1)')) 'Connector Host must bind the configured Modbus register count.'
-Assert-Contract ($connectorHostProgram.Contains('section["DataType"]')) 'Connector Host must bind the configured Modbus data type.'
+Assert-Contract ($appHost.Contains('ConnectorHealthAcceptance:Enabled', [StringComparison]::Ordinal)) 'AppHost must have an explicit acceptance-only opt-in.'
+Assert-Contract ($appHost.Contains('Platform__IndustrialTelemetryBaseUrl', [StringComparison]::Ordinal)) 'Acceptance wiring must inject the IndustrialTelemetry URL into Connector Host.'
+Assert-Contract ($appHost.Contains('InternalService__BearerToken', [StringComparison]::Ordinal)) 'Acceptance wiring must inject the session internal token into Connector Host.'
+Assert-Contract ($appHost.Contains('Modbus__Registers__0__TagKey', [StringComparison]::Ordinal)) 'Acceptance wiring must configure the sampled Modbus mapping.'
+Assert-Contract ($appHost.Contains('Modbus__Registers__1__TagKey', [StringComparison]::Ordinal)) 'Acceptance wiring must configure the never-sampled Modbus mapping.'
+Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__0__DataType", "UInt16")', [StringComparison]::Ordinal)) 'Acceptance wiring must fully override the sampled mapping data type inherited from development configuration.'
+Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__0__WordOrder", "BigEndian")', [StringComparison]::Ordinal)) 'Acceptance wiring must fully override the sampled mapping word order inherited from development configuration.'
+Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__1__DataType", "Float32")', [StringComparison]::Ordinal)) 'Never-sampled mapping must bind as Float32.'
+Assert-Contract ($appHost.Contains('.WithEnvironment("Modbus__Registers__1__RegisterCount", "2")', [StringComparison]::Ordinal)) 'Never-sampled Float32 mapping must bind exactly two registers.'
+Assert-Contract (-not $appHost.Contains('.WithEnvironment("Modbus__Registers__1__BucketSeconds", "3600")', [StringComparison]::Ordinal)) 'Never-sampled proof must not depend on an hour-long open bucket.'
+Assert-Contract ($connectorHostProgram.Contains('section.GetValue<ushort>("RegisterCount", 1)', [StringComparison]::Ordinal)) 'Connector Host must bind the configured Modbus register count.'
+Assert-Contract ($connectorHostProgram.Contains('section["DataType"]', [StringComparison]::Ordinal)) 'Connector Host must bind the configured Modbus data type.'
 
 function Wait-ReadyRecord([string] $Path, [int] $TimeoutSeconds = 10) {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
             $ready = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-            if ("$($ready.state)" -eq 'ready') { return $ready }
+            if ([string]::Equals([string]("$($ready.state)"), [string]('ready'), [StringComparison]::OrdinalIgnoreCase)) { return $ready }
         }
         Start-Sleep -Milliseconds 25
     }
@@ -145,7 +145,7 @@ try {
         Assert-Contract (-not ($normal.Body[2] -eq 0x7f -and $normal.Body[3] -eq 0xc0)) 'Normal mapping must return a finite register value.'
         $nan = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 2, 0, 0, 0, 6, 1, 3, 0, 1, 0, 2))
         Assert-Contract ($nan.Header[1] -eq 2 -and $nan.Body[0] -eq 3 -and $nan.Body[1] -eq 4) 'NaN mapping response frame is invalid.'
-        Assert-Contract (@($nan.Body[2..5]) -join ',' -eq '127,192,0,0') 'NaN mapping must return IEEE754 quiet NaN bytes 7F C0 00 00.'
+        Assert-Contract ([string]::Equals([string](@($nan.Body[2..5]) -join ','), [string]('127,192,0,0'), [StringComparison]::OrdinalIgnoreCase)) 'NaN mapping must return IEEE754 quiet NaN bytes 7F C0 00 00.'
         $unsupported = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 3, 0, 0, 0, 6, 1, 6, 0, 0, 0, 1))
         Assert-Contract ($unsupported.Header[1] -eq 3 -and $unsupported.Body[0] -eq 0x86 -and $unsupported.Body[1] -eq 1) 'Unsupported function codes must return Modbus exception 01 without terminating the simulator.'
         $afterException = Invoke-ModbusRead -Stream $stream -Request ([byte[]] @(0, 4, 0, 0, 0, 6, 1, 3, 0, 0, 0, 1))
@@ -168,7 +168,7 @@ try {
         -LogDirectory (Join-Path $simulatorTestRoot 'restart-logs')
     $managedProcesses.Add([pscustomobject]@{ Managed = $restart; StopPath = $restartStopPath })
     $restartReady = Wait-ReadyRecord -Path $restartReadyPath
-    Assert-Contract ([int] $restartReady.port -eq $port) 'Simulator must restart ready on the exact same port.'
+    Assert-Contract ((([int] $restartReady.port) -eq ($port))) 'Simulator must restart ready on the exact same port.'
 }
 finally {
     foreach ($record in $managedProcesses) {

@@ -4,8 +4,88 @@ import { describe, expect, it, vi } from 'vitest'
 
 import SchedulesPage from './schedules.vue'
 
+const historyRow = {
+  scheduleVersion: 43,
+  trigger: 'RushOrder',
+  scheduledAtUtc: '2026-07-04T08:00:00Z',
+  assignmentCount: 1,
+  affectedWorkOrderCount: 1,
+  affectedWorkOrderIds: ['WO-002'],
+  assignments: [
+    {
+      workOrderId: 'WO-002',
+      operationTaskId: 'OP-20',
+      workCenterId: 'WC-02',
+      startUtc: '2026-07-04T09:00:00Z',
+      endUtc: '2026-07-04T10:00:00Z',
+      reason: '急件插单重排',
+    },
+  ],
+}
+
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
+
+// 排程页用它把工作中心标识解析成名称；名录不是本用例被测对象，给稳定桩。
+vi.mock('@/composables/mes/useMesDisplayNames', () => ({
+  useMesDisplayNames: () => ({
+    resolveSku: (v?: string | null) => v ?? undefined,
+    resolveSkuLabel: (v?: string | null) => v ?? '未指定物料',
+    resolveWorkCenter: (v?: string | null) => v ?? undefined,
+    resolveShiftLabel: (v?: string | null) => v ?? '未排班',
+    resolveWorker: () => undefined,
+  }),
+}))
+
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesSchedules: () => ({
+    filters: { organizationId: 'org', environmentId: 'dev', skip: 0, take: 20 },
     lastSchedule: computed(() => ({
       scheduleVersion: 42,
       trigger: 'Manual',
@@ -22,6 +102,11 @@ vi.mock('@/composables/useBusinessMes', () => ({
       ],
       affectedWorkOrderIds: ['WO-001'],
     })),
+    scheduleHistory: computed(() => [historyRow]),
+    scheduleHistoryTotal: computed(() => 72),
+    scheduleHistoryError: ref(undefined),
+    scheduleHistoryPending: ref(false),
+    refreshScheduleHistory: vi.fn(),
     runSchedule: vi.fn(),
     runScheduleError: ref(undefined),
     runSchedulePending: ref(false),
@@ -44,7 +129,8 @@ const stubs = {
   },
   NvDataTable: {
     props: ['rows', 'columns', 'emptyMessage'],
-    template: '<section>{{ emptyMessage }}<div v-for="row in rows" :key="row.operationTaskId">{{ row.workOrderId }} {{ row.workCenterId }}</div></section>',
+    template:
+      '<section>{{ emptyMessage }}<div v-for="(row, index) in rows" :key="index">{{ row.workOrderId }} {{ row.workCenterId }} {{ row.scheduleVersion }} {{ row.trigger }}</div></section>',
   },
   NvDialog: {
     props: ['open'],
@@ -114,14 +200,19 @@ const stubs = {
 }
 
 describe('MES rule scheduling page IA copy', () => {
-  it('states the transition boundary and links formal APS/Gantt work to Scheduling', () => {
+  it('uses business-facing source copy and links to the scheduling workbench', () => {
     const wrapper = mount(SchedulesPage, { global: { stubs } })
     const text = wrapper.text()
 
-    expect(text).toContain('规则排程（过渡）')
-    expect(text).toContain('正式 APS / 甘特')
+    expect(text).toContain('规则排程')
     expect(text).toContain('排产工作台')
-    expect(text).not.toContain('APS 权威')
+    expect(text).not.toContain('过渡')
+    expect(text).not.toContain('正式 APS')
+
+    // 历史排程结果来自服务端读面，不再只有「本次会话刚跑的那一次」。
+    expect(text).toContain('历史排程运行')
+    expect(text).toContain('共 72 次')
+    expect(text).toContain('WO-002')
 
     const schedulingLink = wrapper
       .findAll('[data-router-link]')

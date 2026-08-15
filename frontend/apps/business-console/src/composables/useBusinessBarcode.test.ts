@@ -12,7 +12,12 @@ import {
   listBusinessConsoleBarcodeTemplatesQueryOptions,
   recordBusinessConsoleBarcodeScanMutationOptions,
 } from '@nerv-iip/api-client'
-import { useBarcodePrintBatches, useBarcodeRules, useBarcodeScans, useBarcodeTemplates } from './useBusinessBarcode'
+import {
+  useBarcodePrintBatches,
+  useBarcodeRules,
+  useBarcodeScans,
+  useBarcodeTemplates,
+} from './useBusinessBarcode'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
@@ -20,7 +25,9 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/composables/businessContextBinding', () => ({
-  bindBusinessContext: <T extends { organizationId: string, environmentId: string }>(filters: T) => {
+  bindBusinessContext: <T extends { organizationId: string; environmentId: string }>(
+    filters: T,
+  ) => {
     filters.organizationId = 'org-001'
     filters.environmentId = 'env-dev'
     return filters
@@ -93,7 +100,12 @@ describe('business barcode composables', () => {
       data: {
         total: 2,
         rules: [
-          { barcodeRuleId: 'rule-1', ruleCode: 'GS1-CASE', barcodeType: 'gs1-128', status: 'active' },
+          {
+            barcodeRuleId: 'rule-1',
+            ruleCode: 'GS1-CASE',
+            barcodeType: 'gs1-128',
+            status: 'active',
+          },
         ],
       },
     })
@@ -147,7 +159,12 @@ describe('business barcode composables', () => {
       data: {
         total: 1,
         templates: [
-          { templateId: 'tpl-1', templateCode: 'SKU_BOX', templateName: '外箱标签', status: 'active' },
+          {
+            templateId: 'tpl-1',
+            templateCode: 'SKU_BOX',
+            templateName: '外箱标签',
+            status: 'active',
+          },
         ],
       },
     })
@@ -209,7 +226,9 @@ describe('business barcode composables', () => {
           sourceDocumentId: 'WO-001',
           requestedQuantity: 2,
           status: 'completed',
-          items: [{ sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' }],
+          items: [
+            { sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' },
+          ],
         },
       },
     })

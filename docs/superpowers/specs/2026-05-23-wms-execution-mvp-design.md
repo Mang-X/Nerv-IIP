@@ -1,84 +1,84 @@
-# WMS Execution MVP Design
+# WMS 执行 MVP 设计
 
-## Goal
+## 目标
 
-Build WMS as the warehouse execution fact source for inbound, outbound, putaway, picking, count execution and WCS adapter task mapping.
+将 WMS 构建为入库、出库、上架、拣货、盘点执行和 WCS 适配器任务映射的仓库执行事实来源。
 
-WMS owns warehouse workflow state. Inventory remains the only stock balance and stock movement fact source.
+WMS 拥有仓库工作流状态。Inventory 仍是库存余额和库存移动的唯一事实来源。
 
-## Current State
+## 当前状态
 
-WMS has no service directory. Wave 1 now provides Inventory stock movement/availability and MES finished-goods receipt request facts. BarcodeLabel will be added in Wave 2 for scan records, but WMS can keep scan references as source device/value strings until BarcodeLabel is available.
+WMS 尚无服务目录。第 1 波现已提供 Inventory 库存移动/可用量和 MES 成品入库请求事实。第 2 波将加入 BarcodeLabel 以记录扫码，但在 BarcodeLabel 可用之前，WMS 可以将扫码引用保留为来源设备/值字符串。
 
-## Owned Facts
+## 所有权事实
 
-WMS owns:
+WMS 拥有：
 
-1. InboundOrder: receiving/inbound execution header, source document reference and inbound lines.
-2. PutawayTask: warehouse task for moving inbound goods to a stock location.
-3. OutboundOrder: shipment/outbound execution header, source document reference and outbound lines.
-4. PickingTask: warehouse task for picking outbound goods.
-5. PackReview: outbound verification and packaging completion result.
-6. CountExecution: warehouse count execution facts and variance output.
-7. WcsTask: adapter task mapping, external task ID, payload, status, retry and diagnostic facts.
-8. InventoryMovementRequest: WMS-owned request metadata for posting Inventory movements through public boundaries.
+1. InboundOrder：收货/入库执行单头、来源单据引用和入库行。
+2. PutawayTask：将入库货物移至库存位置的仓库任务。
+3. OutboundOrder：发货/出库执行单头、来源单据引用和出库行。
+4. PickingTask：拣取出库货物的仓库任务。
+5. PackReview：出库复核和包装完成结果。
+6. CountExecution：仓库盘点执行事实和差异输出。
+7. WcsTask：适配器任务映射、外部任务 ID、载荷、状态、重试和诊断事实。
+8. InventoryMovementRequest：WMS 所有的请求元数据，用于通过公开边界过账 Inventory 移动。
 
-WMS does not own:
+WMS 不拥有：
 
-1. Inventory stock balances, stock ledgers or stock movement facts.
-2. ERP purchase, sales, invoice or finance state.
-3. MES work order or production report state.
-4. Quality inspection result ownership.
-5. External WCS scheduling internals.
+1. Inventory 库存余额、库存台账或库存移动事实。
+2. ERP 采购、销售、发票或财务状态。
+3. MES 工单或生产报工状态。
+4. Quality 检验结果所有权。
+5. 外部 WCS 排程内部状态。
 
-## Inventory Boundary
+## Inventory 边界
 
-WMS posts Inventory changes only through public boundaries:
+WMS 仅通过公开边界过账 Inventory 变更：
 
-1. Inbound completion requests an Inventory inbound movement with an idempotency key.
-2. Outbound completion requests an Inventory outbound movement with an idempotency key.
-3. Outbound picking reserves stock through Inventory's public reservation API and stores only the returned public reservation id; outbound completion carries that id so Inventory allocates the reservation during posting.
-4. Count completion can request an Inventory count adjustment or emit a count variance event for Inventory/Approval to process.
-5. WMS never reads or writes Inventory tables.
-6. WMS tests should use an in-process Inventory client fake and verify the request payload shape.
+1. 入库完成时请求带幂等键的 Inventory 入库移动。
+2. 出库完成时请求带幂等键的 Inventory 出库移动。
+3. 出库拣货通过 Inventory 的公开预留 API 预留库存，并且只存储返回的公开预留 ID；出库完成时携带该 ID，使 Inventory 在过账过程中核销预留。
+4. 盘点完成时可以请求 Inventory 盘点调整，或发出盘点差异事件供 Inventory/Approval 处理。
+5. WMS 绝不读写 Inventory 数据表。
+6. WMS 测试应当使用进程内 Inventory 客户端替身，并校验请求载荷形状。
 
-## API Surface
+## API 接口面
 
-| API | Purpose | Permission |
+| API | 用途 | 权限 |
 | --- | --- | --- |
-| `POST /api/business/v1/wms/inbound-orders` | Create inbound order from purchase receipt, production receipt request or manual source. | `business.wms.receipts.manage` |
-| `GET /api/business/v1/wms/inbound-orders` | List inbound orders. | `business.wms.receipts.read` |
-| `POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks` | Create putaway tasks. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/complete` | Complete inbound and request Inventory movement. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/outbound-orders` | Create outbound order from delivery request or manual source. | `business.wms.shipments.manage` |
-| `GET /api/business/v1/wms/outbound-orders` | List outbound orders. | `business.wms.shipments.read` |
-| `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks` | Create picking tasks. | `business.wms.shipments.manage` |
-| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | Record putaway/picking task executed quantity. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | Complete putaway/picking task by setting executed quantity to planned quantity. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/complete` | Complete pack review and request Inventory movement. | `business.wms.shipments.manage` |
-| `POST /api/business/v1/wms/count-executions` | Create count execution. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/count-executions/{countExecutionId}/complete` | Complete count and produce variance output. | `business.wms.receipts.manage` |
-| `POST /api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch` | Dispatch WCS adapter task. | `business.wms.automation.manage` |
-| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/complete` | Record WCS completion callback. | `business.wms.automation.manage` |
-| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/fail` | Record WCS failure callback. | `business.wms.automation.manage` |
+| `POST /api/business/v1/wms/inbound-orders` | 根据采购收货、生产入库请求或人工来源创建入库单。 | `business.wms.receipts.manage` |
+| `GET /api/business/v1/wms/inbound-orders` | 列出入库单。 | `business.wms.receipts.read` |
+| `POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks` | 创建上架任务。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/complete` | 完成入库并请求 Inventory 移动。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/outbound-orders` | 根据交货请求或人工来源创建出库单。 | `business.wms.shipments.manage` |
+| `GET /api/business/v1/wms/outbound-orders` | 列出出库单。 | `business.wms.shipments.read` |
+| `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks` | 创建拣货任务。 | `business.wms.shipments.manage` |
+| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | 记录上架/拣货任务的已执行数量。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | 将已执行数量设为计划数量，以完成上架/拣货任务。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/complete` | 完成包装复核并请求 Inventory 移动。 | `business.wms.shipments.manage` |
+| `POST /api/business/v1/wms/count-executions` | 创建盘点执行。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/count-executions/{countExecutionId}/complete` | 完成盘点并产生差异输出。 | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch` | 派发 WCS 适配器任务。 | `business.wms.automation.manage` |
+| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/complete` | 记录 WCS 完成回调。 | `business.wms.automation.manage` |
+| `POST /api/business/v1/wms/wcs-tasks/{externalTaskId}/fail` | 记录 WCS 失败回调。 | `business.wms.automation.manage` |
 
-## Rules
+## 规则
 
-1. Completed inbound/outbound orders are immutable.
-2. Completion requires an idempotency key.
-3. Picked quantity cannot exceed requested outbound quantity.
-4. Putaway quantity cannot exceed received inbound quantity.
-5. WCS dispatch is idempotent by warehouse task and adapter type.
-6. WCS failures store diagnostic code and message and remain compensatable.
-7. No WMS table may contain on-hand, available or stock-balance columns.
-8. Inventory posting failures must be visible through WMS movement request status.
-9. Inventory business posting rejection is represented by public `inventory.StockMovementPostingFailed`; WMS consumes it and marks the matching movement request `Failed`.
-10. WMS may persist Inventory public reservation ids for outbound allocation, but must not maintain on-hand, available or reserved balance columns.
-11. WCS complete/fail callbacks must match by organization, environment and external task id.
+1. 已完成的入库单/出库单不可变。
+2. 完成操作必须提供幂等键。
+3. 已拣数量不得超过请求出库数量。
+4. 上架数量不得超过已收货入库数量。
+5. WCS 派发按仓库任务和适配器类型实现幂等。
+6. WCS 失败存储诊断编码和消息，并保持可补偿。
+7. 任何 WMS 数据表都不得包含现有量、可用量或库存余额列。
+8. Inventory 过账失败必须通过 WMS 移动请求状态可见。
+9. Inventory 业务过账拒绝由公开的 `inventory.StockMovementPostingFailed` 表示；WMS 消费该事件，并将匹配的移动请求标记为 `Failed`。
+10. WMS 可以持久化 Inventory 公开预留 ID 以进行出库分配，但不得维护现有量、可用量或预留余额列。
+11. WCS 完成/失败回调必须按组织、环境和外部任务 ID 匹配。
 
-## Events
+## 事件
 
-WMS publishes ADR 0011 envelope events:
+WMS 发布符合 ADR 0011 信封格式的事件：
 
 1. `wms.InboundOrderCompleted`
 2. `wms.OutboundOrderCompleted`
@@ -86,11 +86,11 @@ WMS publishes ADR 0011 envelope events:
 4. `wms.WcsTaskDispatched`
 5. `wms.WcsTaskFailed`
 
-Events carry public order/task references, SKU/UOM/location dimensions, quantities and correlation IDs. They must not carry Inventory database IDs or external WCS secrets.
+事件携带公开订单/任务引用、SKU/UOM/位置维度、数量和相关 ID。事件不得携带 Inventory 数据库 ID 或外部 WCS 密钥。
 
-## Permissions
+## 权限
 
-Initial permission codes:
+初始权限编码：
 
 1. `business.wms.receipts.read`
 2. `business.wms.receipts.manage`
@@ -98,11 +98,11 @@ Initial permission codes:
 4. `business.wms.shipments.manage`
 5. `business.wms.automation.manage`
 
-## Persistence
+## 持久化
 
-Default schema: `wms`.
+默认 schema：`wms`。
 
-Required tables:
+必需的数据表：
 
 1. `inbound_orders`
 2. `inbound_order_lines`
@@ -113,57 +113,41 @@ Required tables:
 7. `wcs_tasks`
 8. `inventory_movement_requests`
 
-Each table and business column requires schema comments. PostgreSQL migrations history must use `wms.__EFMigrationsHistory`.
+每张表和每个业务列都必须具有 schema 注释。PostgreSQL 迁移历史记录必须使用 `wms.__EFMigrationsHistory`。
 
-## Testing
+## 测试
 
-Acceptance requires:
+验收要求：
 
-1. Domain tests for inbound completion, putaway bounds, outbound picking, pack review, immutability and idempotency.
-2. Domain tests for WCS dispatch/complete/fail lifecycle and diagnostics.
-3. Web tests for route shape, authorization, validation and operation IDs.
-4. Inventory client fake tests verifying movement request payload and idempotency key shape.
-5. Schema convention tests using `Nerv.IIP.Testing`.
-6. Integration event converter/serialization tests for WMS events.
-7. Tests proving WMS schema does not introduce stock balance columns.
+1. 覆盖入库完成、上架边界、出库拣货、包装复核、不可变性和幂等性的领域测试。
+2. 覆盖 WCS 派发/完成/失败生命周期和诊断信息的领域测试。
+3. 覆盖路由形状、授权、校验和 operation ID 的 Web 测试。
+4. 校验移动请求载荷和幂等键形状的 Inventory 客户端替身测试。
+5. 使用 `Nerv.IIP.Testing` 的 schema 约定测试。
+6. 覆盖 WMS 事件的集成事件转换器/序列化测试。
+7. 证明 WMS schema 未引入库存余额列的测试。
 
-## Receiving quality-gate product flow
+## 收货质量门产品流程
 
-The Business Console receiving page consumes the WMS quality-gate read model as
-the source of truth for the operator-facing flow. Each inbound order presents
-a server-fact path such as `收货 → 待检 → 合格上架/不合格隔离退供` (or
-`收货 → 免检 → 上架`):
+Business Console 收货页面以 WMS 质量门读模型作为操作员流程的事实来源。每张入库单展示
+`收货 → 待检 → 合格上架/不合格隔离退供`（或 `收货 → 免检 → 上架`）等服务端事实路径：
 
-1. Only the WMS gate statuses `pending`, `passed`, `conditional-release`,
-   `rejected` and `not-required` are trusted. Unknown values fail closed.
-   `pending` blocks putaway and explains that inspection must be completed
-   before the action is available.
-2. `not-required` honestly skips the inspection step and releases the line for
-   putaway; no inspection task is invented for exempt lines.
-3. `conditional-release` keeps putaway available only as a visibly restricted
-   action and states that it is not unconditional acceptance.
-4. `rejected` blocks putaway and displays the real quarantine location,
-   disposition reason and supplier-return number when WMS has returned one.
-   The action also requires the inbound read model's
-   `isReleasedForPutaway=true`; the UI never derives that permission locally.
-5. While any line is still `pending`, the inspection-task link uses the stable
-   source-document contract
-   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`. Completed
-   gates link to `/quality/inspections` only when WMS returns a real
-   `inspectionRecordId`; exempt lines show that no inspection task exists. The
-   UI does not infer a task or record from SKU or line data.
+1. 仅信任 WMS 质量门状态 `pending`、`passed`、`conditional-release`、
+   `rejected` 和 `not-required`。未知值按失败关闭处理。`pending` 会阻止上架，
+   并说明必须先完成检验才能执行该操作。
+2. `not-required` 如实跳过检验步骤并放行该行上架；不得为免检行虚构检验任务。
+3. `conditional-release` 仅以明显受限的操作形式保持上架可用，并说明这不是无条件接收。
+4. `rejected` 会阻止上架，并在 WMS 已返回相关信息时显示真实隔离位置、处置原因和
+   供应商退货编号。该操作还要求入库读模型的 `isReleasedForPutaway=true`；UI 绝不在本地推导该权限。
+5. 只要仍有任一行处于 `pending`，检验任务链接便使用稳定的来源单据契约
+   `/quality/inspection-tasks?sourceDocumentNo=<inboundOrderNo>`。已完成质量门链接至
+   `/quality/inspections` 的前提是 WMS 返回真实的 `inspectionRecordId`；免检行显示不存在检验任务。
+   UI 不根据 SKU 或行数据推断任务或记录。
 
-After a receiving mutation, the page refreshes inbound orders, quality gates
-and supplier returns from the server. The same reads auto-refetch while the
-page is open so an external Quality result converges without a manual reload.
-Quality and return list reads follow all server pages before the page filters by
-the real inbound order number. It never uses local optimistic status to claim
-that a gate or putaway has completed. The enabled putaway action carries both
-the real inbound order number and `inboundOrderId` to the existing
-`/wms/putaway` flow, which opens the create form with the server identifier
-prefilled. Both the handoff and the create form require
-`business.wms.receipts.manage`, and creation requires the positive quantity
-enforced by the Gateway request validator. Inspection-task and record links
-require `business.quality.inspection-records.read`; otherwise the page explains
-the unavailable cross-domain action instead of exposing a dead or unauthorized
-link. The create mutation remains the source of truth for completion.
+收货变更后，页面从服务端刷新入库单、质量门和供应商退货。页面保持打开期间，相同读取会自动重新拉取，
+使外部 Quality 结果无需人工重新加载即可收敛。Quality 和退货列表读取会遍历所有服务端分页，随后页面才按
+真实入库单号筛选。页面绝不使用本地乐观状态声称质量门或上架已完成。启用的上架操作同时携带真实入库单号和
+`inboundOrderId` 进入现有 `/wms/putaway` 流程；该流程打开创建表单，并预填服务端标识符。交接操作和创建表单
+都要求 `business.wms.receipts.manage`，且创建操作要求满足 Gateway 请求校验器强制执行的正数数量。
+检验任务和记录链接要求 `business.quality.inspection-records.read`；否则页面说明跨领域操作不可用，而不是暴露
+失效或未授权链接。创建变更仍是完成状态的事实来源。

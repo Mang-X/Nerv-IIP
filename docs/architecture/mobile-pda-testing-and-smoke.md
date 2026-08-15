@@ -12,34 +12,73 @@ PDA 测试基线分两层，职责互补、不重叠（真实栈仿真走查见�
 
 1. **jsdom 单元/组件测试**（`vp test run src`）
    - 跑在 jsdom，无真实浏览器。覆盖：组件标记/行为/事件、store 逻辑、登录/首页页面的渲染与守卫断言。
+   - 本工作台补充覆盖：任务页不发起伪个人 MES 查询、`workOrderId + operationTaskId` 强 ID 深链、
+     Profile loading/error/partial/ready、WMS 授权/当前选择、远端登出撤销成功/失败/超时，以及
+     工序页同组件 query 切换的旧对象清理、单边/越权 pair fail closed，以及 `NvCell` 的动作语义回归。
    - 快、确定性高；但**测不到真实布局/计算样式、触控尺寸、安全区、暗色渲染、跨页导航**。
 
-2. **Playwright e2e**（`playwright test`，真实 Chromium，移动视口 390×844 / Pixel 5）
+2. **Playwright e2e**（`playwright test`，真实 Chromium，默认移动视口 390×844 / Pixel 5；
+   导航、任务列表、报修与 WMS 数字键盘 overlay 等关键路径显式覆盖 375×812）
    - 全程 `page.route` Mock BusinessGateway/console 网关（见 `e2e/fixtures.ts`），**无需后端**。
    - `seedStoredSession` 注入 `localStorage`（auth key `nerv-iip.business-pda.auth` + 可选
      `nerv-iip-color-mode`）跳过登录表单，直达受保护路由。
-   - 覆盖：登录→首页真实流程、首页扫码条/应用墙/我的任务空态、`@nerv-iip/ui-mobile` 全部 5 个组件
+   - 覆盖：登录→首页真实流程、首页扫码条/权限应用墙且无伪个人任务、固定四入口跨页、个人中心与退出，`@nerv-iip/ui-mobile` 全部 5 个组件
      （AppShellMobile / ScanBar / ListRow / BottomSheet / Result，经 `/design-system/gallery` 画廊页载体）
      的真实交互、WMS/MES/设备运维三域业务链路 smoke，以及视觉/布局 smoke。
 
-### e2e spec 清单（5 个 spec / 27 个用例）
+### e2e spec 清单（6 个 spec / 57 个用例）
 
-- `e2e/app-flow.spec.ts`（5）：登录落地工作台；登录失败留在登录路由并透出错误；
-  首页扫码条/空态/应用墙 + 无溢出 + 触控尺寸；应用墙入口跳转作业页；
-  首页扫码 type+Enter 页内回显、不跳死路由。
+- `e2e/app-flow.spec.ts`（8）：登录落地工作台；登录失败留在登录路由并透出错误；
+  首页扫码条/权限应用墙且无伪个人 dispatch 行 + 无溢出 + 触控尺寸；任务/扫码作业入口以真实
+  `a[href]` 提供可读名称、focus-visible、Enter 原生导航及 Space 保持链接语义；应用墙入口跳转作业页；
+  首页扫码 type+Enter 页内回显、不跳死路由；375×812 下四入口串行走查任务/扫码/个人中心，
+  核验可读角色与范围、键盘 Tab 焦点可见；退出清理 PDA 会话并回登录。
 - `e2e/ui-mobile.spec.ts`（8）：5 组件渲染 + 无溢出 + 触控尺寸；ScanBar 键盘楔入（type+Enter）发值；
   ScanBar blur 后回抢焦点；ScanBar 浮层打开时不抢焦、关闭后重新武装（S3）；
   ListRow 仅交互行触发 select；BottomSheet 打开 + Escape 关闭；
   AppShellMobile 安全区 fallback 最小内边距；暗色 token 接线（`.dark` + body 深色背景）。
-- `e2e/wms.spec.ts`（4）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
-  拣货只读中文状态（无裸 code/GUID）；首页应用墙 → `/wms/inbound`。
-- `e2e/mes.spec.ts`（5）：工序执行完成（二次确认）→ 成功结果；报工全链 → 成功结果；
-  领料列表渲染；完工入库列表渲染；首页应用墙 → `/mes/operation`。
-- `e2e/equipment.spec.ts`（5）：报修提交 → 成功结果；点检提交 → 成功结果；
-  报警行详情「去报修」带参穿透报修页；首页应用墙 → `/equipment/repair`；
+- `e2e/wms.spec.ts`（6）：收货入库选单确认 → 成功结果；盘点录数确认 → 成功结果；
+  拣货只读中文状态（无裸 code/GUID）；拣货、上架分别在 375×812 下先通过状态筛选 UI 从
+  “待执行”切换到“执行中”，再以普通点击验证 BottomSheet 内数字键盘的数字、删除、背板和
+  “完成”交互不会误关业务抽屉，关闭业务抽屉时键盘同步卸载；首页应用墙 → `/wms/inbound`。
+- `e2e/mes.spec.ts`（19）：任务列表壳 375×812 服务端筛选、20 条分页与返回深滚动状态恢复
+  （目标超出首屏高度时自动续页）；深恢复次页持续失败时停止自动重试，只有用户显式重试一次后
+  才继续加载并恢复目标位置；
+  工序执行按双强 ID 绑定，但生产形态 fixture 的可选工序任务号保持缺失，详情明确提示未提供并展示设备、
+  SOP、服务端门禁时间和前序/齐套/设备/质量阻塞；前序原因显示“工序 N”，375×812 断言当前/前序 raw ID 均不出现；按钮只消费
+  `allowedActions`，覆盖完成（二次确认）→ confirmed 成功、409 刷新撤销旧动作、accepted/unconfirmed
+  不成功和完成态只读；375×812 还测量页头返回按钮不低于 44 px，单元测试另以具名用例覆盖非空 `operationTaskNo`。首次动作与重试的延迟 success/error 在 route、principal、组织/环境或 manage scope 漂移后均被丢弃并刷新当前上下文；未知结果点击重试前已发生的 principal、organization、environment、manage-scope 漂移则在 mutation 前安全拒绝，显示显式 determinate 上下文冲突并保留原 result/context/key。四类回归在恢复安全 identity 后先等待 watcher 与 promises 落稳，再断言冲突和 retry 入口仍存在及原 key/context 被复用；完整 deep-link 额外等待 auto-open 落稳，证明不会调用 `openSheet` 清理保留意图。未知 A 结果切到同 route 的 B pair 或不完整 query 后点击 retry 必须零 mutation、零旧成功结果；回到 A 并落稳后才可复用原 key/context。另锁定身份类冲突 route 换 pair、用户返回改选任务会清理，普通 determinate error 不跨 identity 保留，且无 query 的普通列表选择不受误伤。页面单元测试还覆盖不换 URL 的列表选择 A→B（initial/retry × success/error），证明 A 的旧结果不会关闭或覆盖 B，并覆盖任务数据先到、manage scope 后就绪时最终只打开当前 identity 的精确 pair；complete command/service/PDA 回归同时锁定“工序 N / 等 N 道”且不含 raw task ID；工序执行同组件 query push 与
+  浏览器 back/forward 始终关闭旧 sheet 并只打开当前 `workOrderId + operationTaskId`，且以超过 20 个
+  同工单子串碰撞项证明完整 deep link 使用 exact `operationTaskId`；报工全链 → 成功结果并
+  核对 POST 的工单/工序 pair 与真实回执；携带 `workOrderId + operationTaskId` 的 router
+  pair 切换、延迟旧详情请求及浏览器 back/forward 重绑；详情前 500 项不含目标时，
+  以同工单分页精确解析第 501 个工序任务；领料列表渲染；完工入库列表渲染；首页应用墙
+  → `/mes/operation`。URL history 用例在单测试内部显式控制旧详情请求的启动与释放，
+  通过已挂载应用的 router 创建 A/B history entries，并在失败路径也释放拦截请求；无需降低
+  默认并行度。
+- `e2e/equipment.spec.ts`（13）：维修人员 Self 队列覆盖服务端状态/设备/关键字筛选、20 条分页，逐页核对响应
+  `skip/take` 为安全整数且与请求精确一致；HTTP 200 + `success:false` 或错页响应显式错误与重试
+  （不渲染空态、不保留旧行，也不缓存错页）、强 `workOrderId` 详情重校验与只读生命周期；工单设备引用可为
+  设备公开 ID 或设备编码，设备位置查询只接收当前组织/环境下响应 `DeviceAssetId` 或 `Code` 与请求引用
+  精确相等的当前事实，并覆盖编码与 Guid 不同的两种请求路径；人员与班组通过当前组织/环境下的
+  MasterData 精确契约解析为可读名称，资料失败时不回退显示裸 ID；缺少设备位置读取权限时
+  fail closed，维修队列与设备目录请求均为 0；主体 ID 缺失时列表、详情和设备目录请求也均为 0，
+  且单元回归覆盖 Self scope/筛选/路由 A→B→A 时拒绝旧 A cache、403 前不闪回旧详情、迟到旧请求不污染
+  当前 generation，设备/人员/班组 enrichment 只消费 fresh 权威详情；结构化 query key 覆盖冒号、逗号和
+  unit-separator 碰撞；只有 MasterData 明确返回的强 `DeviceAssetId` 做 Guid 小写 canonicalize，未标注设备引用与
+  `Code` 只 trim 并保持 Ordinal，因此大写 Guid-shaped Code 在筛选、详情权威查询和报修提交中均不被改写；
+  且只呈现业务可理解的不可用空态、不声称“我的工单”；清除设备筛选实际触点高度 ≥48px，详情返回按钮实际触点高度 ≥44px；
+  终态详情不提供写动作。报警行详情「去报修」后，从已确认创建回执取得强 `workOrderId`，但创建默认
+  未指派，首次同一 principal 的 Self GET 返回 403，成功态仅显示等待派工且无详情入口；测试模拟外部
+  权威派工给当前 principal 后，用户显式点击“重新核验指派状态”，Self GET 成功才显示“查看工单详情”
+  并保留报警来源上下文，同时回读设备目录位置，不自动指派。报修在 375×812 下覆盖报警路由预填 → 扫码覆盖 →
+  设备 facade 服务端 keyword/分页选择稳定 ID、优先级 ActionSheet、48px 触点、无横向溢出，
+  并用缩短 viewport 的 mock Chromium 证据验证 textarea 聚焦后提交动作仍可达且仅产生一次 POST
+  （不等同 Android/iOS 真 IME）；点检提交 → 成功结果；首页应用墙 → `/equipment/repair`；
   点检数字键盘录入（MAN-458 #812）——特性/单位**真实 tap + fill**（ScanBar 编辑期
   opt-out 回焦，非原生 setter）、`±` 负号录 -80、超差即时红警示、提交前「N 项超差」确认、
   上下限校验、触点 ≥44px、无横向溢出。**拍照取证已裁剪至 #924**（本 PR 无拍照 UI）。
+- `e2e/quality.spec.ts`（4）：质检任务服务端筛选、领取、逐特性录入、两段回读（task/record 强 ID）与 403/409/422 错误提示稳定渲染。375×812 下完整覆盖服务端筛选（状态/来源类型/来源服务/关键字/超期条件）→ 领取 → 数字键盘逐特性录入 → 提交 → 按 `inspectionTaskId` 回读 → 按 `inspectionRecordId` 回读权威 passed 结果；以及领取越权（403）、生命周期冲突（409）、已被领取（422）错误时稳定文案提示并留在列表。
 
 ## 2. 运行命令
 
@@ -50,9 +89,9 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright install chromiu
 # 全量 e2e（mobile project，自动起 vp dev webServer，端口 5176）
 pnpm -C frontend --filter @nerv-iip/business-pda e2e
 
-# 单文件
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- app-flow.spec.ts
-pnpm -C frontend --filter @nerv-iip/business-pda e2e -- ui-mobile.spec.ts
+# 单文件（直接调用包内 Playwright，避免把 `--` 误传成测试路径）
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test app-flow.spec.ts
+pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test ui-mobile.spec.ts
 
 # 不启浏览器，仅发现/解析 spec（浏览器不可用时的最低验证）
 pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
@@ -99,7 +138,7 @@ pnpm -C frontend --filter @nerv-iip/business-pda exec playwright test --list
   （BusinessGateway/PlatformGateway `HealthEndpoint`），栈不可达时**直接 throw
   报环境阻塞**（先 `nerv.ps1 dev` 起栈），绝不 `test.skip` 静默跳过。
 - **M2 网络/超时韧性**（`e2e-live/network-resilience.spec.ts`，方案 §4.2 / §8 M2）：
-  3 个独立场景，全部只读（载体 = /quality/tasks 列表 + 选中任务触发的检验计划特性 GET；
+  3 个独立场景，业务结果保持只读（载体 = /quality/tasks Self 列表 + 当前已领取任务触发的检验计划特性 GET；
   真实登录、真实数据加载完成后才注入**传输层故障**，不 mock 任何业务数据）——
   1. **离线预检**：`context.setOffline(true)`（只仿真 `navigator.onLine=false`，不代表
      Wi-Fi 抖动/DNS/TLS）→ `OfflineError` 类型化文案「当前离线，请检查网络连接后重试」

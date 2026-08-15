@@ -36,7 +36,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         decimal quantity,
         string? inventoryReservationId,
         DateOnly? productionDate,
-        DateOnly? expiryDate)
+        DateOnly? expiryDate,
+        bool publishCreatedEvent = true)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -59,7 +60,10 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         ExpiryDate = expiryDate;
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
-        this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
+        if (publishCreatedEvent)
+        {
+            this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -133,6 +137,46 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             inventoryReservationId,
             ProductionDate,
             ExpiryDate);
+    }
+
+    public static InventoryMovementRequest RecordPosted(
+        string organizationId,
+        string environmentId,
+        string movementType,
+        string sourceDocumentId,
+        string idempotencyKey,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string qualityStatus,
+        string ownerType,
+        decimal quantity,
+        string inventoryMovementId)
+    {
+        var receipt = new InventoryMovementRequest(
+            organizationId,
+            environmentId,
+            movementType,
+            sourceDocumentId,
+            null,
+            idempotencyKey,
+            skuCode,
+            uomCode,
+            siteCode,
+            locationCode,
+            null,
+            null,
+            qualityStatus,
+            ownerType,
+            null,
+            quantity,
+            null,
+            null,
+            null,
+            publishCreatedEvent: false);
+        receipt.MarkPosted(inventoryMovementId);
+        return receipt;
     }
 
     public void MarkPosted(string inventoryMovementId)

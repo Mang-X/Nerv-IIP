@@ -26,10 +26,14 @@ export function usePagedList(filters: PagedListFilters, options: UsePagedListOpt
     watch(options.resetOn, resetPage)
   }
 
-  watch([page, pageSize], () => {
-    filters.skip = (page.value - 1) * pageSizeNumber.value
-    filters.take = pageSizeNumber.value
-  }, { immediate: true })
+  watch(
+    [page, pageSize],
+    () => {
+      filters.skip = (page.value - 1) * pageSizeNumber.value
+      filters.take = pageSizeNumber.value
+    },
+    { immediate: true },
+  )
 
   return {
     page,

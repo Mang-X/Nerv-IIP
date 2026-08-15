@@ -112,7 +112,10 @@ public sealed class ErpSalesOrderDemandIntegrationEventTests
             "env-dev",
             "QT-DEMAND-001",
             "CUST-001",
-            new DateOnly(2026, 8, 1),
+            // 报价有效期必须相对今天：写死会在那天到来时把用例变成定时炸弹
+            // （EnsureCanCreateSalesOrder 判 `ExpiresOn < today`）。
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
+            // 行需求日是**纯值断言**（下游快照要逐字带出），不与今天比较，保持写死。
             [new QuotationLineDraft("10", "SKU-FG", "EA", 2m, 10m, new DateOnly(2026, 8, 15))]);
         quotation.Approve();
         return SalesOrder.CreateFromQuotation("SO-DEMO-001", "SITE-001", quotation);

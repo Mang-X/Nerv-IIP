@@ -10,11 +10,11 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@lucide/vue": "1.24.0",
     "@nerv-iip/api-client": "workspace:*",
     "@nerv-iip/scheduling": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@nerv-iip/ui-mobile": "workspace:*",
-    "@lucide/vue": "1.24.0",
     "vue": "3.5.39"
   },
   "devDependencies": {

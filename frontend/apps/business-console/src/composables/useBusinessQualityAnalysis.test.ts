@@ -6,10 +6,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
-import {
-  buildQualityAnalysisSummary,
-  useQualitySpcAnalysis,
-} from './useBusinessQualityAnalysis'
+import { buildQualityAnalysisSummary, useQualitySpcAnalysis } from './useBusinessQualityAnalysis'
 
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
@@ -117,7 +114,11 @@ describe('business quality analysis summary', () => {
       },
     ])
     expect(summary.bySku[0]).toMatchObject({ label: 'SKU-A', count: 2, defectQuantity: 5 })
-    expect(summary.bySourceType[0]).toMatchObject({ label: 'operation', count: 2, defectQuantity: 5 })
+    expect(summary.bySourceType[0]).toMatchObject({
+      label: 'operation',
+      count: 2,
+      defectQuantity: 5,
+    })
   })
 
   it('queries SPC chart and capability only with the required business scope', () => {

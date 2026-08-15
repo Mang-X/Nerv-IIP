@@ -1,45 +1,45 @@
-# FileStorage MVP Design
+# FileStorage MVP 设计
 
-## Goal
+## 目标
 
-Move FileStorage from boundary skeleton to a usable platform capability without making object-storage deployment a prerequisite for the first implementation slice.
+在不把 object-storage 部署作为首个实现切片前置条件的情况下，将 FileStorage 从边界骨架推进为可用的平台能力。
 
-## Scope
+## 范围
 
-The first FileStorage MVP implements the platform-owned file metadata and authorization flow:
+首个 FileStorage MVP 实现由平台拥有的文件元数据与授权流程：
 
-1. Create upload sessions.
-2. Complete upload sessions into stored file metadata.
-3. Read file metadata by `fileId`.
-4. Create short-lived download grants.
-5. Persist FileStorage facts in PostgreSQL under the `filestorage` schema.
-6. Enforce the same schema convention tests already used by AppHub, Ops and IAM.
+1. 创建上传会话。
+2. 完成上传会话并生成已存储文件元数据。
+3. 按 `fileId` 读取文件元数据。
+4. 创建短期 download grants。
+5. 在 PostgreSQL 的 `filestorage` schema 下持久化 FileStorage 事实。
+6. 强制执行 AppHub、Ops 和 IAM 已使用的相同 schema 约定测试。
 
-The first contract slice proved the platform contract, persistence model, authorization-shaped API, and no-leak boundary for internal object keys. The MVP now also includes a local tus transfer path for binary upload/download without requiring MinIO/S3 deployment.
+首个 contract 切片已验证平台 contract、持久化模型、具备授权形态的 API，以及内部 object key 不泄漏的边界。MVP 现在还包含用于二进制上传/下载的本地 tus 传输路径，且不要求部署 MinIO/S3。
 
-## Provider Order
+## Provider 顺序
 
-1. **First: server-proxy metadata stub**
-   - Use `server-proxy` as the selected `uploadMode` and provider label.
-   - Return platform-controlled upload instructions.
-   - Store an internal `objectKey`, but never expose it through public API responses.
-   - This allows API, persistence, SDK and Console/API-client work to progress without MinIO deployment.
+1. **第一步：server-proxy 元数据 stub**
+   - 使用 `server-proxy` 作为选定的 `uploadMode` 和 provider 标签。
+   - 返回由平台控制的上传指令。
+   - 存储内部 `objectKey`，但绝不通过公共 API 响应暴露。
+   - 这样无需部署 MinIO，API、持久化、SDK 和 Console/API-client 工作即可推进。
 
-2. **Second: tus**
-   - Add resumable upload semantics after the core FileStorage facts are stable.
-   - Treat tus as the complete binary-transfer capability for the FileStorage MVP.
-   - Keep tus behind the same Upload Provider abstraction.
-   - FileStorage remains the owner of session creation, completion validation, metadata and grants.
+2. **第二步：tus**
+   - 核心 FileStorage 事实稳定后，增加断点续传语义。
+   - 将 tus 视为 FileStorage MVP 的完整二进制传输能力。
+   - 将 tus 保持在同一个 Upload Provider 抽象之后。
+   - FileStorage 继续拥有会话创建、完成校验、元数据和 grants。
 
-3. **Post-MVP: MinIO/S3 multipart**
-   - Do not include MinIO/S3 multipart in the FileStorage MVP.
-   - Add only when object-storage deployment and integration testing are ready.
-   - Treat MinIO/S3 as an infrastructure adapter, not as the FileStorage public contract.
-   - Use short-lived instructions or presigned URLs only; no long-lived object storage credentials or object keys leave FileStorage.
+3. **MVP 之后：MinIO/S3 multipart**
+   - FileStorage MVP 不包含 MinIO/S3 multipart。
+   - 仅在 object-storage 部署和集成测试就绪后增加。
+   - 将 MinIO/S3 视为基础设施 adapter，而不是 FileStorage 公共 contract。
+   - 只能使用短期指令或 presigned URLs；任何长期 object storage 凭据或 object key 都不得离开 FileStorage。
 
 ## API Contract
 
-The MVP endpoints are:
+MVP endpoints 如下：
 
 ```text
 POST /api/files/v1/upload-sessions
@@ -51,25 +51,25 @@ PATCH /api/files/v1/tus/{uploadSessionId}
 GET  /api/files/v1/download-grants/{downloadGrantId}/content
 ```
 
-`CreateUploadSession` accepts organization/environment context, owner reference, file purpose, file name, content type, expected size and optional checksum. It returns `uploadSessionId`, `fileId`, `uploadMode`, provider name, expiry and upload instructions.
+`CreateUploadSession` 接收 organization/environment 上下文、owner reference、文件用途、文件名、content type、预期大小和可选 checksum。它返回 `uploadSessionId`、`fileId`、`uploadMode`、provider 名称、过期时间和上传指令。
 
-`CompleteUploadSession` marks a pending session as completed and creates stored file metadata. The first slice validates session state, expiry, purpose and caller context. It records an internal object key but does not verify a MinIO/S3 object yet.
+`CompleteUploadSession` 将 pending 会话标记为 completed，并创建已存储文件元数据。首个切片校验会话状态、过期时间、用途和调用方上下文。它记录内部 object key，但暂不验证 MinIO/S3 object。
 
-`GetFileMetadata` returns public file facts only: `fileId`, organization/environment, owner reference, purpose, file name, content type, size, checksum, scan status, status and timestamps. It must not return `objectKey`.
+`GetFileMetadata` 仅返回公共文件事实：`fileId`、organization/environment、owner reference、用途、文件名、content type、大小、checksum、scan status、status 和 timestamps。它不得返回 `objectKey`。
 
-`CreateDownloadGrant` returns a short-lived platform download URL. With `FileStorage:UploadProvider=tus`, the content endpoint reads locally stored tus bytes; it must not return `objectKey`.
+`CreateDownloadGrant` 返回短期平台下载 URL。使用 `FileStorage:UploadProvider=tus` 时，content endpoint 读取本地存储的 tus bytes；它不得返回 `objectKey`。
 
-## Persistence
+## 持久化
 
-Add FileStorage PostgreSQL persistence in the same release slice:
+在同一个发布切片中增加 FileStorage PostgreSQL 持久化：
 
-1. `ApplicationDbContext` in `Nerv.IIP.FileStorage.Infrastructure`.
-2. EF Core entity configurations for stored files, upload sessions and download grants.
-3. Initial migration under the `filestorage` schema.
-4. `__EFMigrationsHistory` configured under the `filestorage` schema.
-5. Schema convention tests using existing `Nerv.IIP.Testing` helpers.
+1. 在 `Nerv.IIP.FileStorage.Infrastructure` 中增加 `ApplicationDbContext`。
+2. 为 stored files、upload sessions 和 download grants 增加 EF Core entity configurations。
+3. 在 `filestorage` schema 下增加初始 migration。
+4. 将 `__EFMigrationsHistory` 配置在 `filestorage` schema 下。
+5. 使用现有 `Nerv.IIP.Testing` helpers 的 schema 约定测试。
 
-The first schema should include at least:
+首个 schema 至少应包含：
 
 ```text
 stored_files
@@ -77,33 +77,33 @@ upload_sessions
 download_grants
 ```
 
-`object_key` is stored only in FileStorage-owned persistence. Public request/response contracts, SDK DTOs and Gateway facade responses must not expose it.
+`object_key` 仅存储在 FileStorage 拥有的持久化中。公共 request/response contracts、SDK DTOs 和 Gateway facade 响应均不得暴露它。
 
-## Boundaries
+## 边界
 
-FileStorage owns generic file facts and access grants. It does not interpret business meaning beyond `ownerService`, `ownerType`, `ownerId` and `filePurpose`.
+FileStorage 拥有通用文件事实和 access grants。除 `ownerService`、`ownerType`、`ownerId` 和 `filePurpose` 外，它不解释业务含义。
 
-IAM-backed authorization can be integrated through Gateway or service auth in later slices. The MVP keeps request shapes compatible with organization/environment and principal context so permission enforcement can be added without changing public contracts.
+后续切片可以通过 Gateway 或 service auth 集成 IAM-backed authorization。MVP 保持 request shapes 与 organization/environment 和 principal context 兼容，以便在不改变公共 contracts 的情况下增加权限强制执行。
 
-## Testing
+## 测试
 
-The first implementation must follow TDD:
+首次实现必须遵循 TDD：
 
-1. Web tests for each endpoint.
-2. Tests proving `objectKey` does not appear in metadata or download grant responses.
-3. Domain/application tests for session completion rules.
-4. PostgreSQL schema convention tests for `filestorage`.
-5. Existing skeleton boundary tests either remain compatible or are replaced by behavior-focused tests.
+1. 为每个 endpoint 编写 Web tests。
+2. 编写测试，证明 `objectKey` 不会出现在 metadata 或 download grant 响应中。
+3. 为会话完成规则编写 Domain/application tests。
+4. 为 `filestorage` 编写 PostgreSQL schema 约定测试。
+5. 现有骨架边界测试应保持兼容，或替换为聚焦行为的测试。
 
-## Acceptance
+## 验收
 
-The first FileStorage MVP is accepted when:
+满足以下条件时，首个 FileStorage MVP 才可验收：
 
-1. A client can create an upload session.
-2. With the tus provider enabled, the client can upload bytes with offset tracking and resume by querying `HEAD`.
-3. The same session can be completed into stored file metadata.
-4. The stored file can be read by `fileId`.
-5. A download grant can be created and used to read the local tus bytes.
-6. Public responses do not expose internal object keys.
-7. FileStorage PostgreSQL migration and schema convention tests pass.
-8. Backend solution tests and AppHost build still pass.
+1. client 可以创建上传会话。
+2. 启用 tus provider 后，client 可以在跟踪 offset 的情况下上传 bytes，并通过查询 `HEAD` 继续上传。
+3. 同一会话可以完成并生成已存储文件元数据。
+4. 可以按 `fileId` 读取已存储文件。
+5. 可以创建 download grant，并用它读取本地 tus bytes。
+6. 公共响应不暴露内部 object keys。
+7. FileStorage PostgreSQL migration 和 schema 约定测试通过。
+8. Backend solution 测试和 AppHost build 仍然通过。

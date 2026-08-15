@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -111,9 +111,7 @@ watch(pageSize, () => {
   page.value = 1
 })
 
-const errorMessage = computed(() =>
-  templatesError.value instanceof Error ? templatesError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(templatesError.value))
 // 编辑态由所选行带出的只读上下文（模板编码是身份，不可改）。
 const carriedItems = computed(() => [{ label: '模板编码', value: editingTemplateCode.value }])
 const canSubmit = computed(
@@ -159,17 +157,75 @@ function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
   open.value = true
 }
 
+/**
+ * 模板变量名 → 中文说明。
+ *
+ * 只在模板 JSON 用旧的 `{fields:[...]}` 形态（没带 label）时才需要：种子写的
+ * `{variables:[{name,label}]}` 自带中文 label，走 label 就够了。
+ */
+const TEMPLATE_FIELD_LABELS: Record<string, string> = {
+  gtin: 'GTIN',
+  skucode: '物料编码',
+  skuname: '物料名称',
+  lotno: '批次号',
+  serialno: '序列号',
+  serialprefix: '序列号前缀',
+  quantity: '数量',
+  uomcode: '计量单位',
+  suppliercode: '供应商编码',
+  customercode: '客户编码',
+  workordercode: '工单号',
+  workorderno: '工单号',
+  workcentercode: '工作中心编码',
+  workcentername: '工作中心名称',
+  sitecode: '厂区',
+  sourcedocumentid: '来源单号',
+  expirydate: '有效期',
+  productiondate: '生产日期',
+  printedon: '打印日期',
+}
+function templateFieldLabel(name: string) {
+  return TEMPLATE_FIELD_LABELS[name.toLowerCase().replace(/[-_\s]/g, '')] ?? name
+}
+
+/**
+ * 「字段说明」列的取文。
+ *
+ * 模板 JSON 有两种形态：现网种子写的是 `{version, variables:[{name,label,type}]}`
+ * （`WorldHistoryLabelSpec.BuildSchema`，**label 本来就是中文**），旧表单默认值写的是
+ * `{fields:[...]}`。之前只认后者，前者整段落到 `return value`，于是把 `version`、
+ * `variables`、`gtin`、`lotNo` 这些 JSON 字段名连同花括号一起摊到了列上。
+ * 现在优先取 `variables[].label`（没有 label 才退回 `name`），拿不到结构才认为是未配置。
+ */
 function fieldSummary(value?: string | null) {
   if (!value) return '未配置字段'
   try {
-    const parsed = JSON.parse(value) as { fields?: unknown }
-    if (Array.isArray(parsed.fields)) {
-      return parsed.fields.map(String).join('、')
+    const parsed = JSON.parse(value) as {
+      fields?: unknown
+      variables?: unknown
+    }
+    if (Array.isArray(parsed.variables)) {
+      const names = parsed.variables.flatMap((variable) => {
+        if (typeof variable === 'string') return [templateFieldLabel(variable)]
+        if (variable && typeof variable === 'object') {
+          const entry = variable as { label?: unknown; name?: unknown }
+          // label 是模板作者写的中文说明，直接用；只有退回 name 时才查词表。
+          if (typeof entry.label === 'string' && entry.label.trim()) return [entry.label.trim()]
+          if (typeof entry.name === 'string' && entry.name.trim()) {
+            return [templateFieldLabel(entry.name.trim())]
+          }
+        }
+        return []
+      })
+      if (names.length) return names.join('、')
+    }
+    if (Array.isArray(parsed.fields) && parsed.fields.length) {
+      return parsed.fields.map((field) => templateFieldLabel(String(field))).join('、')
     }
   } catch {
-    return value
+    return '字段说明格式有误'
   }
-  return value
+  return '未配置字段'
 }
 
 function statusLabel(value?: string | null) {
@@ -196,7 +252,7 @@ async function submitTemplate() {
     open.value = false
     resetForm()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存标签模板失败', error, '保存标签模板失败，请稍后重试。')
   }
 }
 </script>

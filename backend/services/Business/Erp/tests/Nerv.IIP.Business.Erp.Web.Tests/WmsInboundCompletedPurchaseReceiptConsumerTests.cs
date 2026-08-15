@@ -360,7 +360,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
                     "company",
                     null)
             ]);
-        inbound.Complete($"wms-complete:{inboundOrderNo}");
+        inbound.Complete($"wms-complete:{inboundOrderNo}", inbound.Version);
         return new InboundOrderCompletedIntegrationEventConverter()
             .Convert(new InboundOrderCompletedDomainEvent(inbound));
     }

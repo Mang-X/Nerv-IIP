@@ -21,7 +21,12 @@ withDefaults(
     data-slot="nv-card"
     :class="
       cn(
-        'nv-card relative rounded-xl bg-card text-card-foreground',
+        // `flex flex-col gap-4 py-4` 对齐原版 Card 的纵向节奏。NvCard 此前只有圆角和
+        // 背景，纵向内边距全靠调用点自己补 —— 补漏了内容就直接贴着卡片上下边缘
+        // （走查里的「版本解析卡片内容贴边」就是这么来的）。
+        // 已经自带 `p-*` 的调用点（NvRecordCard 的 p-4、NvMetricComparison 的 p-5）
+        // 不受影响：props.class 排在后面，tailwind-merge 后写优先。
+        'nv-card relative flex flex-col gap-4 rounded-xl bg-card py-4 text-card-foreground',
         interactive && 'nv-card-interactive',
         $props.class,
       )

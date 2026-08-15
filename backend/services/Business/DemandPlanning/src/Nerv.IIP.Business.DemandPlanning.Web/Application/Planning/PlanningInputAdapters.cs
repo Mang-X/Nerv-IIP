@@ -901,10 +901,10 @@ public sealed class HttpPlanningMesScheduledReceiptSnapshotClient(HttpClient htt
 
             using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var body = await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<MesWorkOrdersResponse>(
+            var body = await OptionalPlanningSnapshotHttp.ReadDataOrRootAsync<MesWorkOrdersResponse>(
                 response,
                 "MES returned an invalid work order response.",
-                "MES returned an empty work order response envelope.",
+                "MES returned an empty work order response.",
                 cancellationToken);
             workOrders.AddRange(body.Items);
             skip += PageSize;
@@ -1261,6 +1261,34 @@ internal static class OptionalPlanningSnapshotHttp
     {
         var envelope = await ReadEnvelopeAsync<T>(response, invalidResponseMessage, cancellationToken);
         return envelope?.Data;
+    }
+
+    public static async Task<T> ReadDataOrRootAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        string emptyResponseMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            var payload = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
+                ? data
+                : root;
+            return payload.Deserialize<T>(JsonSerializerOptions.Web)
+                ?? throw new OptionalPlanningSnapshotException(emptyResponseMessage);
+        }
+        catch (JsonException ex)
+        {
+            throw new OptionalPlanningSnapshotException(invalidResponseMessage, ex);
+        }
+        catch (NotSupportedException ex)
+        {
+            throw new OptionalPlanningSnapshotException(invalidResponseMessage, ex);
+        }
     }
 
     private static async Task<ResponseDataEnvelope<T>?> ReadEnvelopeAsync<T>(

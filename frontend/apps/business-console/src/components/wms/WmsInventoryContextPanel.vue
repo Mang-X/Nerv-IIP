@@ -2,6 +2,8 @@
 import type { BusinessConsoleWmsInventoryContext } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 
 const props = withDefaults(
   defineProps<{
@@ -41,6 +43,15 @@ const skuValue = computed(() => props.skuCode || props.context?.skuCode || '')
 const uomValue = computed(() => props.uomCode || props.context?.uomCode || '')
 const siteValue = computed(() => props.siteCode || props.context?.siteCode || '')
 const locationValue = computed(() => props.locationCode || props.context?.locationCode || '')
+// 上下文只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+/** 展示串：中文名优先，名录查不到就只显编码，不编名字。 */
+const skuDisplay = computed(() => resolveSkuName(skuValue.value) ?? skuValue.value)
+function locationLabel(code?: string | null) {
+  if (!code) return '无'
+  return resolveLocation(code) ?? code
+}
 const lotValue = computed(() => props.lotNo || props.context?.lotNo || '')
 const serialValue = computed(() => props.serialNo || props.context?.serialNo || '')
 
@@ -105,9 +116,9 @@ function formatQuantity(value?: number | null) {
           {{ title }}
         </h2>
         <p class="text-muted-foreground">
-          <span v-if="skuValue">{{ skuValue }}</span>
+          <span v-if="skuValue">{{ skuDisplay }}</span>
           <span v-if="siteValue"> · {{ siteValue }}</span>
-          <span v-if="locationValue"> · {{ locationValue }}</span>
+          <span v-if="locationValue"> · {{ locationLabel(locationValue) }}</span>
           <span v-if="!skuValue && !siteValue && !locationValue">暂无库存明细</span>
         </p>
       </div>
@@ -168,7 +179,7 @@ function formatQuantity(value?: number | null) {
         :key="`${line.locationCode ?? 'loc'}-${line.lotNo ?? 'lot'}-${line.serialNo ?? 'serial'}`"
         class="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground"
       >
-        <span>库位 {{ line.locationCode ?? '无' }}</span>
+        <span>库位 {{ locationLabel(line.locationCode) }}</span>
         <span>批次 {{ line.lotNo ?? '无批次' }}</span>
         <span>序列号 {{ line.serialNo ?? '无序列号' }}</span>
         <span>预留 {{ formatQuantity(line.reservedQuantity) }}</span>

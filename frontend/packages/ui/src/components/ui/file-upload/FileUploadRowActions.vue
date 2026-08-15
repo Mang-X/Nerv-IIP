@@ -7,13 +7,16 @@ import { AnimatePresence, motion } from 'motion-v'
 import { Button } from '../button'
 import { fileUploadMotion } from './motion'
 
-const props = withDefaults(defineProps<{
-  row: FileUploadRow
-  class?: HTMLAttributes['class']
-  initialX?: number
-}>(), {
-  initialX: 6,
-})
+const props = withDefaults(
+  defineProps<{
+    row: FileUploadRow
+    class?: HTMLAttributes['class']
+    initialX?: number
+  }>(),
+  {
+    initialX: 6,
+  },
+)
 
 const emits = defineEmits<{
   pause: [id: string]
@@ -28,11 +31,26 @@ const MotionSpan = motion.span
 const activeAction = computed(() => {
   switch (props.row.status) {
     case 'uploading':
-      return { key: 'pause', icon: PauseIcon, label: `暂停 ${props.row.fileName}`, event: 'pause' as const }
+      return {
+        key: 'pause',
+        icon: PauseIcon,
+        label: `暂停 ${props.row.fileName}`,
+        event: 'pause' as const,
+      }
     case 'paused':
-      return { key: 'resume', icon: PlayIcon, label: `继续 ${props.row.fileName}`, event: 'resume' as const }
+      return {
+        key: 'resume',
+        icon: PlayIcon,
+        label: `继续 ${props.row.fileName}`,
+        event: 'resume' as const,
+      }
     case 'failed':
-      return { key: 'retry', icon: RotateCcwIcon, label: `重试 ${props.row.fileName}`, event: 'retry' as const }
+      return {
+        key: 'retry',
+        icon: RotateCcwIcon,
+        label: `重试 ${props.row.fileName}`,
+        event: 'retry' as const,
+      }
     case 'completed':
     case 'queued':
     case 'rejected':

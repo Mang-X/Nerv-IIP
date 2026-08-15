@@ -15,6 +15,13 @@ public static class WorldBibleSpec
     public const string ModbusConnectorId = "CONN-MODBUS-01";
     public const string MqttConnectorId = "CONN-MQTT-01";
 
+    /// <summary>
+    /// 控制通道绑定的 Connector Host 标识：与本地 AppHub 注册凭据
+    /// （<c>ConnectorHostCredential:*</c>，connector-host-001）同一口径；InstanceKey 用
+    /// <c>CONN-*</c> 连接器 id——#1149 模拟连接器按 ConnectorId 路由命令，写错则下发必挂。
+    /// </summary>
+    public const string ControlConnectorHostId = "connector-host-001";
+
     /// <summary>清单登记时间锚定平台上线日（设定集 §1），保证重复执行结果确定。</summary>
     public static readonly DateTimeOffset ManifestObservedAtUtc = new(2026, 1, 5, 0, 0, 0, TimeSpan.Zero);
 

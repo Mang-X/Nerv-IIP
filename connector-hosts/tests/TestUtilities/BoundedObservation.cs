@@ -1,0 +1,138 @@
+namespace Nerv.IIP.ConnectorHost.TestUtilities;
+
+/// <summary>
+/// Bounded waits for asynchronously produced observations. Every await in a test that depends on a
+/// background loop goes through here, so a lost fake-clock tick, a collector that never resumes, or
+/// a child process that never reaches EOF surfaces as a reported failure instead of parking the
+/// test — and therefore the whole test host — forever (the MAN-799 failure mode).
+///
+/// Every failure reports the four facts the repository's determinism rules require: the redacted
+/// condition, the elapsed time, the attempt count, and the last observation.
+/// </summary>
+internal static class BoundedObservation
+{
+    /// <summary>Default budget for a single edge-triggered observation.</summary>
+    public static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Awaits an edge-triggered completion signal under a bound. The observation is a signal rather
+    /// than a poll, so a single bounded await is the whole attempt budget; that is reported
+    /// explicitly instead of being left implicit.
+    /// </summary>
+    public static async Task ObserveAsync(
+        Task observation,
+        string condition,
+        Func<string> lastObservation,
+        TimeSpan? budget = null)
+    {
+        var effectiveBudget = GetEffectiveBudget(budget);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
+                + $"await on a completion signal); last observation: {lastObservation()}");
+        }
+
+        await observation;
+    }
+
+    /// <summary>
+    /// Awaits an edge-triggered completion signal that returns a value under the same diagnostic
+    /// contract as <see cref="ObserveAsync(Task,string,Func{string},TimeSpan?)"/>.
+    /// </summary>
+    public static async Task<T> ObserveAsync<T>(
+        Task<T> observation,
+        string condition,
+        Func<string> lastObservation,
+        TimeSpan? budget = null)
+    {
+        var effectiveBudget = GetEffectiveBudget(budget);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        if (!await CompletesWithinBudgetAsync(observation, effectiveBudget))
+        {
+            throw new Xunit.Sdk.XunitException(
+                $"Timed out waiting for {condition} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                + $"(budget {effectiveBudget.TotalSeconds:0.###}s, attempts 1/1 — single bounded "
+                + $"await on a completion signal); last observation: {lastObservation()}");
+        }
+
+        return await observation;
+    }
+
+    private static async Task<bool> CompletesWithinBudgetAsync(Task observation, TimeSpan budget)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var budgetTask = Task.Delay(budget, cancellation.Token);
+        var completedTask = await Task.WhenAny(observation, budgetTask);
+        if (!ReferenceEquals(completedTask, observation))
+        {
+            ConsumeLateFault(observation);
+            return false;
+        }
+
+        await cancellation.CancelAsync();
+        return true;
+    }
+
+    private static TimeSpan GetEffectiveBudget(TimeSpan? budget)
+    {
+        var effectiveBudget = budget ?? DefaultBudget;
+        if (effectiveBudget < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(budget),
+                budget,
+                "The observation budget must be non-negative.");
+        }
+
+        return effectiveBudget;
+    }
+
+    /// <summary>
+    /// The source is no longer awaited after the observation budget wins, so consume any eventual fault
+    /// where it occurs instead of surfacing it against an unrelated test during a later finalization pass.
+    /// </summary>
+    private static void ConsumeLateFault(Task abandoned) =>
+        _ = abandoned.ContinueWith(
+            static observed => _ = observed.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+    /// <summary>
+    /// Polls <paramref name="condition"/> under a bound. Used only where no completion signal
+    /// exists (an out-of-process Host reporting over HTTP), and it reports its real attempt count
+    /// so the poll interval is never mistaken for a fixed sleep-before-assert.
+    /// </summary>
+    public static async Task PollAsync(
+        Func<bool> condition,
+        string description,
+        Func<string> lastObservation,
+        TimeSpan budget,
+        TimeSpan? interval = null)
+    {
+        var effectiveInterval = interval ?? TimeSpan.FromMilliseconds(50);
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        var attempts = 0;
+        while (true)
+        {
+            attempts++;
+            if (condition())
+            {
+                return;
+            }
+
+            if (elapsed.Elapsed >= budget)
+            {
+                throw new Xunit.Sdk.XunitException(
+                    $"Timed out waiting for {description} after {elapsed.Elapsed.TotalSeconds:0.###}s "
+                    + $"(budget {budget.TotalSeconds:0.###}s, attempts {attempts}, poll interval "
+                    + $"{effectiveInterval.TotalMilliseconds:0}ms); last observation: {lastObservation()}");
+            }
+
+            await Task.Delay(effectiveInterval);
+        }
+    }
+}

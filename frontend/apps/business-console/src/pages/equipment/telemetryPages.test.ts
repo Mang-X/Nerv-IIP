@@ -1,11 +1,60 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, nextTick, reactive, shallowRef } from 'vue'
+import { computed, nextTick, reactive, ref, shallowRef } from 'vue'
 
 import TelemetryAlarmRulesPage from './telemetry/alarm-rules.vue'
 import TelemetryHistoryPage from './telemetry/history.vue'
 import TelemetryOeePage from './telemetry/oee.vue'
 import TelemetryTagsPage from './telemetry/tags.vue'
+
+// 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
+// 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
+vi.mock('@/composables/useSkuNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useSkuNames: () => ({
+      resolveSkuName: () => undefined,
+      resolveSkuLabel: (code?: string | null) => code ?? '未指定物料',
+      skuByCode: computed(() => new Map<string, string>()),
+      skusPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useBusinessPartnerNames', async () => {
+  const { computed } = await import('vue')
+  return {
+    useBusinessPartnerNames: () => ({
+      resolvePartner: () => undefined,
+      resolvePartnerLabel: (code?: string | null, fallback = '未指定') => code ?? fallback,
+      partnerByCode: computed(() => new Map<string, string>()),
+      partners: computed(() => []),
+      partnersPending: computed(() => false),
+    }),
+  }
+})
+vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+  const { computed } = await import('vue')
+  const emptyIndex = computed(() => new Map<string, string>())
+  return {
+    useMasterDataDisplayNames: () => ({
+      resolveDevice: () => undefined,
+      resolveLocation: () => undefined,
+      resolveWorkCenter: () => undefined,
+      resolveTeam: () => undefined,
+      resolveUom: () => undefined,
+      resolveWorkshop: () => undefined,
+      resolveLine: () => undefined,
+      formatUom: (code?: string | null, fallback = '') => code ?? fallback,
+      deviceByCode: emptyIndex,
+      locationByCode: emptyIndex,
+      workCenterByCode: emptyIndex,
+      teamByCode: emptyIndex,
+      uomByCode: emptyIndex,
+      workshopByCode: emptyIndex,
+      lineByCode: emptyIndex,
+    }),
+  }
+})
 
 const telemetryPageMocks = vi.hoisted(() => ({
   historyError: undefined as unknown,
@@ -19,6 +68,19 @@ const telemetryPageMocks = vi.hoisted(() => ({
 vi.mock('@nerv-iip/ui', () => ({
   NvBadge: { template: '<span><slot /></span>' },
   NvButton: { template: '<button><slot /></button>' },
+  // 级联范围选择桩件：把三级选中值挂到 data-* 上便于断言路由 ↔ 范围的同步。
+  NvCascadePicker: {
+    props: ['modelValue', 'levels'],
+    emits: ['update:modelValue'],
+    template: `
+      <div
+        data-testid="cascade-picker"
+        :data-workshop="modelValue?.workshop ?? ''"
+        :data-line="modelValue?.line ?? ''"
+        :data-device="modelValue?.device ?? ''"
+      />
+    `,
+  },
   NvDataTable: {
     props: ['rows', 'columns'],
     template: `
@@ -40,6 +102,13 @@ vi.mock('@nerv-iip/ui', () => ({
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDropdownMenuItem: { template: '<div><slot /></div>' },
+  // 实体选择弹窗桩件：只关心取值，替成输入位（页面里它承担原来自由输入框的位置）。
+  NvEntityPicker: {
+    props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
   NvField: { template: '<div><slot /></div>' },
   NvFieldError: { props: ['errors'], template: '<div>{{ errors?.join(" ") }}</div>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
@@ -148,6 +217,51 @@ vi.mock('vue-router', async (importOriginal) => {
     useRouter: () => ({ replace: telemetryPageMocks.replaceRoute }),
   }
 })
+
+// 级联范围选择 composable：真实实现依赖主数据 facade（pinia + query），页面测试给可控桩。
+const scopeMocks = vi.hoisted(() => ({
+  devicesInScope: [] as Array<Record<string, unknown>>,
+}))
+
+vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+  useEquipmentScopeSelection: (initial?: { workshop?: string; line?: string; device?: string }) => {
+    const scope = ref({
+      workshop: initial?.workshop ?? '',
+      line: initial?.line ?? '',
+      device: initial?.device ?? '',
+    })
+    return {
+      scope,
+      levels: computed(() => []),
+      devicesInScope: computed(() => scopeMocks.devicesInScope),
+      scopeLabel: computed(() => '全厂'),
+      scopePending: shallowRef(false),
+      selectedDevice: computed(() => undefined),
+    }
+  },
+}))
+
+// 设备 / 采集标签 / 单位目录走真实读面（useQuery）；单测给确定目录，只验页面行为。
+vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  telemetryTagLabel: (tagKey: string) => tagKey,
+  useEquipmentDeviceCatalog: () => ({
+    deviceOptions: computed(() => [{ value: 'DEV-CNC-01', label: '五轴加工中心' }]),
+    devicesPending: shallowRef(false),
+  }),
+  useEquipmentUomCatalog: () => ({
+    uomOptions: computed(() => [{ value: 'CEL', label: '摄氏度' }]),
+    uomsPending: shallowRef(false),
+  }),
+  useTelemetryTagCatalog: () => ({
+    tagOptions: computed(() => [
+      { value: 'temperature', label: '温度' },
+      { value: 'spindle-temperature', label: '主轴温度' },
+      { value: 'pressure', label: '压力' },
+    ]),
+    tagsPending: shallowRef(false),
+    unitByTagKey: computed(() => new Map([['temperature', 'CEL']])),
+  }),
+}))
 
 vi.mock('@/composables/useBusinessTelemetry', () => ({
   describeTelemetryOeeDegradation: (reason: string) => reason,
@@ -357,6 +471,7 @@ describe('equipment telemetry pages', () => {
     ]
     telemetryPageMocks.replaceRoute.mockClear()
     telemetryPageMocks.saveAlarmRule.mockClear()
+    scopeMocks.devicesInScope = []
     ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {
       deviceAssetId: 'DEV-CNC-01',
       tagKey: 'temperature',
@@ -409,7 +524,7 @@ describe('equipment telemetry pages', () => {
 
     expect(wrapper.findAll('[data-testid="date-range"]')).toHaveLength(1)
     expect(wrapper.findAll('input[type="datetime-local"]')).toHaveLength(0)
-    await wrapper.findAll('input')[1]!.setValue('spindle-temperature')
+    await wrapper.findAll('input')[0]!.setValue('spindle-temperature')
     expect(telemetryPageMocks.replaceRoute).toHaveBeenCalledWith({
       query: expect.objectContaining({
         deviceAssetId: 'DEV-CNC-01',
@@ -430,9 +545,32 @@ describe('equipment telemetry pages', () => {
     }
     await nextTick()
 
-    const inputs = wrapper.findAll('input')
-    expect(inputs[0]?.element.value).toBe('DEV-PRESS-02')
-    expect(inputs[1]?.element.value).toBe('pressure')
+    // 设备改由级联范围选择承载：路由驱动的设备变化要反向同步回级联。
+    expect(wrapper.get('[data-testid="cascade-picker"]').attributes('data-device')).toBe(
+      'DEV-PRESS-02',
+    )
+    expect(wrapper.findAll('input')[0]?.element.value).toBe('pressure')
+  })
+
+  it('shows the scope device overview and drills down when no device is selected', async () => {
+    ;(telemetryPageMocks.route as { query: Record<string, string> }).query = {}
+    scopeMocks.devicesInScope = [
+      { code: 'DEV-CNC-01', displayName: '五轴加工中心', workshopCode: 'WS-01', lineCode: 'LN-01' },
+    ]
+    const wrapper = mount(TelemetryHistoryPage, { global: { stubs } })
+    await nextTick()
+
+    // 未下钻：不再是空态提示，而是范围设备总览 + 引导下钻。
+    expect(wrapper.text()).toContain('范围设备')
+    expect(wrapper.text()).toContain('DEV-CNC-01')
+    const drill = wrapper.findAll('button').find((b) => b.text().includes('查看趋势'))
+    expect(drill).toBeDefined()
+    await drill!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="cascade-picker"]').attributes('data-device')).toBe(
+      'DEV-CNC-01',
+    )
   })
 
   it('commits a picked local day range as an inclusive UTC window', async () => {
@@ -478,7 +616,7 @@ describe('equipment telemetry pages', () => {
 
   it.each([
     ['403 forbidden', '没有权限执行此操作。'],
-    ['network timeout', '网络异常，请检查连接后重试。'],
+    ['network timeout', '网络异常，操作结果可能尚未确认；请刷新列表核实后再重试。'],
   ])('shows a clear failure state for %s without an empty chart', (message, expected) => {
     telemetryPageMocks.historyError = new Error(message)
 

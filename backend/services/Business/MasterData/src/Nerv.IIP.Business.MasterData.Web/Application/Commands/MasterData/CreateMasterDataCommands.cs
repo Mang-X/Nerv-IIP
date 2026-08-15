@@ -14,6 +14,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
@@ -532,9 +533,13 @@ public sealed record CreateTeamCommand(
     string DepartmentCode,
     string ShiftCode,
     string? WorkshopCode = null,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateTeamCommandHandler(
+    ITeamRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateTeamCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateTeamCommand request, CancellationToken cancellationToken)
@@ -568,6 +573,20 @@ public sealed class CreateTeamCommandHandler(ITeamRepository repository, MasterD
             request.ShiftCode,
             request.WorkshopCode);
         await repository.AddAsync(team, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for team creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "team",
+            team.Id.ToString(),
+            team.Code,
+            new
+            {
+                workshopCode = team.WorkshopCode,
+                shiftCode = team.ShiftCode,
+                disabled = team.Disabled,
+            });
         return new MasterDataResourceResult("team", team.Code, team.Name);
     }
 }
@@ -678,9 +697,13 @@ public sealed record CreateSiteCommand(
     string? Code,
     string Name,
     string Timezone,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateSiteCommandHandler(ISiteRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateSiteCommandHandler(
+    ISiteRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateSiteCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateSiteCommand request, CancellationToken cancellationToken)
@@ -712,6 +735,15 @@ public sealed class CreateSiteCommandHandler(ISiteRepository repository, MasterD
             request.Name,
             request.Timezone);
         await repository.AddAsync(site, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for site creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "site",
+            site.Id.ToString(),
+            site.Code,
+            new { timezone = site.Timezone, disabled = site.Disabled });
         return new MasterDataResourceResult("site", site.Code, site.Name);
     }
 }
@@ -723,9 +755,13 @@ public sealed record CreateProductionLineCommand(
     string Name,
     string SiteCode,
     string? WorkshopCode = null,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateProductionLineCommandHandler(IProductionLineRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateProductionLineCommandHandler(
+    IProductionLineRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateProductionLineCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateProductionLineCommand request, CancellationToken cancellationToken)
@@ -758,6 +794,20 @@ public sealed class CreateProductionLineCommandHandler(IProductionLineRepository
             request.SiteCode,
             request.WorkshopCode);
         await repository.AddAsync(line, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for production line creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "production-line",
+            line.Id.ToString(),
+            line.Code,
+            new
+            {
+                siteCode = line.SiteCode,
+                workshopCode = line.WorkshopCode,
+                disabled = line.Disabled,
+            });
         return new MasterDataResourceResult("production-line", line.Code, line.Name);
     }
 }
@@ -830,9 +880,13 @@ public sealed record CreateWorkCenterCommand(
     decimal EfficiencyRate = 1m,
     int NumberOfCapacities = 1,
     string? CostCenterCode = null,
-    bool Bottleneck = false) : ICommand<MasterDataResourceResult>;
+    bool Bottleneck = false,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository repository, MasterDataCodingService? codingService = null)
+public sealed class CreateWorkCenterCommandHandler(
+    IWorkCenterRepository repository,
+    MasterDataCodingService? codingService = null,
+    ApplicationDbContext? dbContext = null)
     : ICommandHandler<CreateWorkCenterCommand, MasterDataResourceResult>
 {
     public async Task<MasterDataResourceResult> Handle(CreateWorkCenterCommand request, CancellationToken cancellationToken)
@@ -876,6 +930,21 @@ public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository reposit
             request.CostCenterCode,
             request.Bottleneck);
         await repository.AddAsync(workCenter, cancellationToken);
+        MasterDataScopeContextAudit.AddCreated(
+            dbContext ?? throw new KnownException("A scope audit store is required for work center creation."),
+            request.AuditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "work-center",
+            workCenter.Id.ToString(),
+            workCenter.Code,
+            new
+            {
+                plantCode = workCenter.PlantCode,
+                lineCode = workCenter.LineCode,
+                workshopCode = workCenter.WorkshopCode,
+                disabled = workCenter.Disabled,
+            });
         return new MasterDataResourceResult("work-center", workCenter.Code, workCenter.Name);
     }
 }
@@ -960,13 +1029,62 @@ public sealed record RegisterDeviceAssetCommand(
     DateOnly? RetiredOn = null,
     IReadOnlyCollection<DeviceAssetComponentDraft>? Components = null) : ICommand<MasterDataResourceResult>;
 
-public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository repository, MasterDataCodingService? codingService = null)
+public sealed class RegisterDeviceAssetCommandHandler
     : ICommandHandler<RegisterDeviceAssetCommand, MasterDataResourceResult>
 {
-    public async Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
+    private readonly IDeviceAssetRepository repository;
+    private readonly IDeviceAssetReferenceValidator? referenceValidator;
+    private readonly IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator;
+    private readonly MasterDataCodingService? codingService;
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.codingService = codingService;
+    }
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        IDeviceAssetReferenceValidator referenceValidator,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.referenceValidator = referenceValidator;
+        this.codingService = codingService;
+    }
+
+    public RegisterDeviceAssetCommandHandler(
+        IDeviceAssetRepository repository,
+        IDeviceAssetReferenceValidator referenceValidator,
+        IMasterDataReferenceScopeCoordinator referenceScopeCoordinator,
+        MasterDataCodingService? codingService = null)
+    {
+        this.repository = repository;
+        this.referenceValidator = referenceValidator;
+        this.referenceScopeCoordinator = referenceScopeCoordinator;
+        this.codingService = codingService;
+    }
+
+    public Task<MasterDataResourceResult> Handle(RegisterDeviceAssetCommand request, CancellationToken cancellationToken)
+    {
+        return referenceScopeCoordinator is null
+            ? HandleCoreAsync(request, cancellationToken)
+            : referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, token),
+                cancellationToken);
+    }
+
+    private async Task<MasterDataResourceResult> HandleCoreAsync(
+        RegisterDeviceAssetCommand request,
+        CancellationToken cancellationToken)
     {
         var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode);
         DeviceAssetCommandValidator.EnsureValidComponents(request.Components);
+        var references = await ValidateReferencesAsync(request, cancellationToken);
 
         var allocation = await MasterDataCodeGenerator.AllocateAsync(
             codingService,
@@ -993,11 +1111,11 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.PurchaseCost,
                 purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
-                request.SupplierPartnerCode,
+                references.SupplierPartnerCode,
                 request.SiteCode,
                 request.WorkshopCode,
                 request.StationCode,
-                request.ParentDeviceId,
+                references.ParentDeviceId,
                 request.RetiredOn,
                 request.Components?.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.Critical}") ?? []),
             cancellationToken);
@@ -1034,16 +1152,39 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.PurchaseCost,
                 purchaseCurrencyCode,
                 request.WarrantyExpiresOn,
-                request.SupplierPartnerCode ?? string.Empty,
+                references.SupplierPartnerCode,
                 request.SiteCode ?? string.Empty,
                 request.WorkshopCode ?? string.Empty,
                 request.LineCode,
                 request.StationCode ?? string.Empty,
-                request.ParentDeviceId,
+                references.ParentDeviceId,
                 request.RetiredOn)
             .ReplaceComponents(request.Components ?? []);
         await repository.AddAsync(asset, cancellationToken);
         return new MasterDataResourceResult("device-asset", asset.Code, asset.Model);
+    }
+
+    private Task<DeviceAssetReferenceValidationResult> ValidateReferencesAsync(
+        RegisterDeviceAssetCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (referenceValidator is not null)
+        {
+            return referenceValidator.ValidateForCreateAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SupplierPartnerCode,
+                request.ParentDeviceId,
+                cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SupplierPartnerCode) ||
+            !string.IsNullOrWhiteSpace(request.ParentDeviceId))
+        {
+            throw new KnownException("校验设备资产引用需要 MasterData 持久化上下文。");
+        }
+
+        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty));
     }
 }
 

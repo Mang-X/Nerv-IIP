@@ -166,6 +166,10 @@ export default defineConfig({
             { text: 'FileUpload 文件上传', link: '/components/desktop/file-upload' },
             { text: 'Select 选择器', link: '/components/desktop/select' },
             { text: 'Combobox 联想 / 搜索选择', link: '/components/desktop/combobox' },
+            {
+              text: 'EntityPicker 实体选择 / 级联',
+              link: '/components/desktop/entity-picker',
+            },
             { text: 'Checkbox 复选框', link: '/components/desktop/checkbox' },
             { text: 'Radio 单选框', link: '/components/desktop/radio' },
             { text: 'Switch 开关', link: '/components/desktop/switch' },
@@ -178,6 +182,7 @@ export default defineConfig({
           text: '数据展示',
           items: [
             { text: 'DataTable 数据表格', link: '/components/desktop/data-table' },
+            { text: 'GroupPanel 可折叠分组面板', link: '/components/desktop/group-panel' },
             { text: 'Descriptions 描述列表', link: '/components/desktop/descriptions' },
             { text: 'Timeline 时间线', link: '/components/desktop/timeline' },
             { text: 'Tabs 标签页', link: '/components/desktop/tabs' },

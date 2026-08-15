@@ -22,7 +22,7 @@ const sheetOpen = ref(false)
 
 # NvSheet 抽屉
 
-从屏幕边缘滑入的侧边面板，承载详情查看、高级筛选等不打断主流程的次级操作。`NvSheet` 默认从右侧滑入，由 Header / Title / Description / Footer 组合内容。
+从屏幕边缘滑入的侧边面板，承载详情查看、高级筛选等不打断主流程的次级操作。`NvSheet` 默认从右侧滑入，由头部、标题、说明与底部操作区组合内容。
 
 ## 基础用法
 

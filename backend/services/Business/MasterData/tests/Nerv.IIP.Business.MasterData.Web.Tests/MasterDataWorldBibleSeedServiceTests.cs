@@ -242,6 +242,47 @@ public sealed class MasterDataWorldBibleSeedServiceTests
         Assert.Equal("租户自维护产线", (await db.ProductionLines.SingleAsync(x => x.Code == "LINE-WB-ROD-01")).Name);
     }
 
+    [Fact]
+    public async Task Seed_backfills_customer_credit_limits_without_touching_tenant_values()
+    {
+        await using var db = CreateDbContext();
+        var seed = new WorldBibleSeedService(db);
+
+        // 预置两个既有客户：一个租户已维护额度（不许动），一个额度为空（该补）。
+        db.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create(
+            "org-001", "env-dev", "CUST-WB-001", "customer", "长三角整车一厂",
+            ["customer"], taxId: null, creditLimit: 5_000_000m, creditCurrencyCode: "CNY"));
+        db.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create(
+            "org-001", "env-dev", "CUST-WB-002", "customer", "长三角整车二厂"));
+        await db.SaveChangesAsync();
+
+        await seed.SeedAsync("org-001", "env-dev");
+
+        // 全部 7 家世界观客户都有信用额度档案（#1290：额度全空导致任何转订单必 400）。
+        var customers = await db.BusinessPartners
+            .Where(x => x.Code.StartsWith("CUST-WB-"))
+            .ToArrayAsync();
+        Assert.Equal(7, customers.Length);
+        Assert.All(customers, customer =>
+        {
+            Assert.NotNull(customer.CreditLimit);
+            Assert.Equal("CNY", customer.CreditCurrencyCode);
+        });
+
+        // 租户已维护的额度保持不变；空额度按档案补齐。
+        Assert.Equal(5_000_000m, customers.Single(x => x.Code == "CUST-WB-001").CreditLimit);
+        Assert.Equal(22_000_000m, customers.Single(x => x.Code == "CUST-WB-002").CreditLimit);
+
+        // 低额度演示客户（信用冻结场景）：路航售后连锁 / 华远国际贸易。
+        Assert.Equal(1_500_000m, customers.Single(x => x.Code == "CUST-WB-005").CreditLimit);
+        Assert.Equal(800_000m, customers.Single(x => x.Code == "CUST-WB-007").CreditLimit);
+
+        // 供应商不参与销售信用检查，不补额度。
+        var suppliers = await db.BusinessPartners.Where(x => x.Code.StartsWith("SUP-WB-")).ToArrayAsync();
+        Assert.Equal(10, suppliers.Length);
+        Assert.All(suppliers, supplier => Assert.Null(supplier.CreditLimit));
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

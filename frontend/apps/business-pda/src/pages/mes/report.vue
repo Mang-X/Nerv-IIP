@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { describeRequestError } from '@/api/request-timeout'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleMesWorkOrderItem,
@@ -6,6 +7,7 @@ import type {
 import {
   operationTaskStatusLabel,
   productionReportFlow,
+  statusActionGate,
   type ReportCtx,
   workOrderSubtitle,
   workOrderTitle,
@@ -17,18 +19,24 @@ import {
   NvMobileResult,
   NvMobileButton,
   NvMobileInput,
+  NvMobileToast,
   NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  useMesOperationTasks,
+  useMesExactOperationTask,
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
+  useMesWorkOrderDetail,
   useMesWorkOrders,
 } from '@/composables/useBusinessMes'
 import RetryableListError from '@/components/RetryableListError.vue'
+import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
 
 definePage({
   meta: {
@@ -41,6 +49,11 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 type Task = BusinessConsoleMesOperationTaskRow
 
 const router = useRouter()
+const route = useRoute()
+const routeWorkOrderId = computed(() => {
+  const value = route.query.workOrderId
+  return typeof value === 'string' ? value.trim() : ''
+})
 
 const {
   filters: workOrderFilters,
@@ -49,27 +62,82 @@ const {
   pending: workOrdersPending,
   error: workOrdersError,
   refresh: refreshWorkOrders,
+  lastUpdatedAt: workOrdersLastUpdatedAt,
+  hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
+  hasFailedResponse: workOrdersHasFailedResponse,
+  workOrderReadScope: workOrderListReadScope,
+  workOrderReadScopeMessage: workOrderListReadScopeMessage,
+  workOrderReadScopeReady: workOrderListReadScopeReady,
 } = useMesWorkOrders()
 
 const {
-  filters: taskFilters,
-  operationTasks,
-  total: taskTotal,
-  pending: tasksPending,
-  error: tasksError,
-  refresh: refreshTasks,
-} = useMesOperationTasks()
+  workOrder: workOrderDetail,
+  pending: workOrderDetailPending,
+  error: workOrderDetailError,
+  refresh: refreshWorkOrderDetail,
+  lastUpdatedAt: workOrderDetailLastUpdatedAt,
+  hasSuccessfulResponse: workOrderDetailHasSuccessfulResponse,
+  hasFailedResponse: workOrderDetailHasFailedResponse,
+  workOrderReadScope: workOrderDetailReadScope,
+  workOrderReadScopeMessage: workOrderDetailReadScopeMessage,
+} = useMesWorkOrderDetail(routeWorkOrderId)
+const routeOperationTaskId = computed(() => {
+  const value = route.query.operationTaskId
+  return typeof value === 'string' ? value.trim() : ''
+})
+const {
+  task: exactOperationTask,
+  pending: exactOperationTaskPending,
+  error: exactOperationTaskError,
+  refresh: refreshExactOperationTask,
+  reportingReadScopeMessage: exactOperationTaskScopeMessage,
+  reportingReadScopeReady: exactOperationTaskScopeReady,
+} = useMesExactOperationTask(routeWorkOrderId, routeOperationTaskId, workOrderDetail)
 
-const { recordReport } = useMesProductionReports()
+const {
+  selectedWorkOrder,
+  selectedTask,
+  visibleOperationTasks,
+  pair,
+  routeIssue,
+  chooseWorkOrder: bindWorkOrder,
+  chooseTask: bindTask,
+  clearTask,
+  clearIdentity,
+} = useMesReportIdentity({
+  workOrderDetail,
+  workOrderDetailPending,
+  workOrderDetailError,
+  exactOperationTask,
+  exactOperationTaskPending,
+  exactOperationTaskError,
+  exactOperationTaskScopeReady,
+  exactOperationTaskScopeMessage,
+})
+
+const { recordReport, reportScopeMessage, reportScopePending, reportScopeReady } =
+  useMesProductionReports()
 const telemetryQueue = useMesTelemetryProductionReportCandidates()
 const telemetryCandidateId = ref<string | null>(null)
 const telemetryWorkOrderId = ref('')
 const telemetryOperationTaskId = ref('')
 const telemetryDismissReason = ref('')
-function resetTelemetryAction() { telemetryWorkOrderId.value = ''; telemetryOperationTaskId.value = ''; telemetryDismissReason.value = '' }
-function toggleTelemetryCandidate(candidateId?: string) { resetTelemetryAction(); telemetryCandidateId.value = telemetryCandidateId.value === candidateId ? null : (candidateId ?? null) }
+function resetTelemetryAction() {
+  telemetryWorkOrderId.value = ''
+  telemetryOperationTaskId.value = ''
+  telemetryDismissReason.value = ''
+}
+function toggleTelemetryCandidate(candidateId?: string) {
+  resetTelemetryAction()
+  telemetryCandidateId.value =
+    telemetryCandidateId.value === candidateId ? null : (candidateId ?? null)
+}
 
-async function promoteTelemetryCandidate(candidate: { candidateId?: string; workOrderId?: string | null; operationTaskId?: string | null }) {
+async function promoteTelemetryCandidate(candidate: {
+  candidateId?: string
+  workOrderId?: string | null
+  operationTaskId?: string | null
+}) {
   if (!candidate.candidateId) return
   const workOrderId = telemetryWorkOrderId.value.trim() || candidate.workOrderId?.trim()
   const operationTaskId = telemetryOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
@@ -78,7 +146,12 @@ async function promoteTelemetryCandidate(candidate: { candidateId?: string; work
   telemetryCandidateId.value = null
   resetTelemetryAction()
 }
-async function dismissTelemetryCandidate(candidateId?: string) { if (!candidateId || !telemetryDismissReason.value.trim()) return; await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim()); telemetryCandidateId.value = null; resetTelemetryAction() }
+async function dismissTelemetryCandidate(candidateId?: string) {
+  if (!candidateId || !telemetryDismissReason.value.trim()) return
+  await telemetryQueue.dismiss(candidateId, telemetryDismissReason.value.trim())
+  telemetryCandidateId.value = null
+  resetTelemetryAction()
+}
 
 // --- 流程上下文（productionReportFlow 驱动当前步/进度）---
 const ctx = reactive<ReportCtx>({
@@ -90,18 +163,6 @@ const ctx = reactive<ReportCtx>({
 
 const currentStep = computed(() => productionReportFlow.currentStep(ctx).id)
 const progress = computed(() => productionReportFlow.progress(ctx))
-
-// 选中的工单 / 工序行（用于展示可读标签）
-const selectedWorkOrder = ref<WorkOrder | null>(null)
-const selectedTask = ref<Task | null>(null)
-
-// 工序查询按选中工单过滤
-watch(
-  () => selectedWorkOrder.value?.workOrderId,
-  (workOrderId) => {
-    taskFilters.workOrderId = workOrderId
-  },
-)
 
 // --- 数量录入 ---
 const goodQuantity = ref(0)
@@ -125,12 +186,61 @@ const sheetOpen = computed({
 
 // --- 结果反馈 ---
 type ResultState = { status: 'success' | 'error'; title: string; description?: string }
-const result = ref<ResultState | null>(null)
-const submitting = ref(false)
+interface ReportIntent {
+  attempt: symbol
+  workOrderId: string
+  operationTaskId: string
+  intentKey: string
+  payload: {
+    goodQuantity: number
+    scrapQuantity: number
+    completesOperation: boolean
+  }
+  status: 'pending' | 'success' | 'error'
+  result: ResultState | null
+}
+const intents = reactive(new Map<string, ReportIntent>())
+const pairKey = computed(() =>
+  pair.value ? `${pair.value.workOrderId}\u0000${pair.value.operationTaskId}` : '',
+)
+const currentIntent = computed(() => (pairKey.value ? intents.get(pairKey.value) : undefined))
+const result = computed(() => currentIntent.value?.result ?? null)
+const submitting = computed(() => currentIntent.value?.status === 'pending')
+const canCompleteSelectedTask = computed(
+  () =>
+    selectedTask.value !== null &&
+    statusActionGate({
+      domain: 'mes-operation-task',
+      action: 'report-complete',
+      facts: { status: selectedTask.value.status },
+    }).executable,
+)
 
-// 稳定的逐操作幂等键：在提交时铸造一次，重试复用同键；
-// 开始新报工（改选工单/工序、成功后回到起点）时清空 → 下次提交铸造新键。
-const operationKey = ref('')
+watch(
+  [() => selectedWorkOrder.value?.workOrderId, () => selectedTask.value?.operationTaskId],
+  ([workOrderId, operationTaskId], previousIdentity) => {
+    const [previousWorkOrderId, previousOperationTaskId] = previousIdentity ?? []
+    ctx.workOrderId = workOrderId
+    ctx.operationTaskId = operationTaskId
+    if (workOrderId !== previousWorkOrderId || operationTaskId !== previousOperationTaskId) {
+      goodQuantity.value = 0
+      scrapQuantity.value = 0
+      completesOperation.value = false
+      ctx.quantityEntered = false
+      ctx.recorded = currentIntent.value?.status === 'success'
+    }
+  },
+  { immediate: true },
+)
+watch(
+  () => currentIntent.value?.status,
+  (status) => {
+    ctx.recorded = status === 'success'
+  },
+)
+watch(canCompleteSelectedTask, (canComplete) => {
+  if (!canComplete) completesOperation.value = false
+})
 
 // ScanBar 仅在选工单步活跃；录数量/结果时不抢焦点
 const scanActive = computed(
@@ -152,99 +262,161 @@ function taskSubtitle(task: Task) {
   return parts.join(' · ')
 }
 
+const workScopeKindLabels: Record<string, string> = {
+  self: '本人',
+  team: '班组',
+  'work-center': '工作中心',
+  workshop: '车间',
+  organization: '组织',
+}
+function workScopeLabel(scope: { kind: string; id: string; displayName?: string } | undefined) {
+  if (!scope) return '当前主体授权工单范围未就绪'
+  const kind = workScopeKindLabels[scope.kind] ?? scope.kind
+  return `当前主体授权工单范围 · ${scope.displayName || scope.id}（${kind}）`
+}
+const workOrderScope = computed(() => workScopeLabel(workOrderListReadScope.value))
+const workOrderEmptyExplanation = computed(() =>
+  workOrderListReadScopeReady.value
+    ? '当前主体授权工单范围内暂无生产工单。'
+    : workOrderListReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
+)
+const showWorkOrdersEmpty = computed(
+  () =>
+    !workOrdersPending.value &&
+    !workOrdersError.value &&
+    !workOrdersHasFailedResponse.value &&
+    workOrdersHasSuccessfulResponse.value &&
+    workOrders.value.length === 0,
+)
+const operationTaskScope = computed(() => workScopeLabel(workOrderDetailReadScope.value))
+const operationTaskEmptyExplanation = computed(
+  () =>
+    workOrderDetailReadScopeMessage.value ||
+    '当前空态只代表所选授权工单返回的工序集合为空；接口未提供工序总数。',
+)
+
 // --- 步骤操作 ---
 function chooseWorkOrder(wo: WorkOrder) {
-  selectedWorkOrder.value = wo
-  ctx.workOrderId = wo.workOrderId
-  // 重置后续步状态 → 新报工操作，作废上一个幂等键
-  selectedTask.value = null
-  ctx.operationTaskId = undefined
-  ctx.quantityEntered = false
-  operationKey.value = ''
+  void bindWorkOrder(wo)
 }
 
 function chooseTask(task: Task) {
-  selectedTask.value = task
-  ctx.operationTaskId = task.operationTaskId
-  // 重置数量录入 → 新报工操作，作废上一个幂等键
-  goodQuantity.value = 0
-  scrapQuantity.value = 0
-  completesOperation.value = false
-  ctx.quantityEntered = false
-  operationKey.value = ''
+  void bindTask(task)
 }
 
 function closeSheet() {
-  selectedTask.value = null
-  ctx.operationTaskId = undefined
-  ctx.quantityEntered = false
-  operationKey.value = ''
+  void clearTask()
 }
 
 // 返回上一步
 function backToWorkOrders() {
-  selectedWorkOrder.value = null
-  ctx.workOrderId = undefined
-  selectedTask.value = null
-  ctx.operationTaskId = undefined
-  ctx.quantityEntered = false
-  operationKey.value = ''
+  void clearIdentity()
 }
 
+function resetReportIntent() {
+  if (pairKey.value) intents.delete(pairKey.value)
+  goodQuantity.value = 0
+  scrapQuantity.value = 0
+  completesOperation.value = false
+  ctx.quantityEntered = false
+  ctx.recorded = false
+  void clearIdentity()
+}
+
+const lifecycleRecovery = useLifecycleActionRecovery({
+  reset: resetReportIntent,
+  refresh: () =>
+    Promise.all([refreshWorkOrders(), refreshWorkOrderDetail(), refreshExactOperationTask()]),
+})
+
 async function submit() {
-  const workOrderId = ctx.workOrderId
-  const operationTaskId = selectedTask.value?.operationTaskId
-  if (!workOrderId || !operationTaskId) return
-  if (!quantityValid.value) return
-  ctx.quantityEntered = true
-  // 本次报工操作的稳定幂等键：首次提交铸造，重试复用同键。
-  if (operationKey.value === '') {
-    operationKey.value = makeIdempotencyKey()
+  if (!reportScopeReady.value) return
+  const identity = pair.value
+  const task = selectedTask.value
+  const workOrderId = identity?.workOrderId
+  const operationTaskId = identity?.operationTaskId
+  if (
+    !workOrderId ||
+    ctx.workOrderId !== workOrderId ||
+    !operationTaskId ||
+    ctx.operationTaskId !== operationTaskId ||
+    !task ||
+    task.workOrderId !== workOrderId
+  ) {
+    return
   }
-  submitting.value = true
-  // 关闭录数量面板（结果以 Result 呈现）
-  const good = goodQuantity.value
-  const scrap = scrapQuantity.value
-  const completes = completesOperation.value
-  selectedTask.value = null
-  try {
-    await recordReport({
+  const key = `${workOrderId}\u0000${operationTaskId}`
+  let intent = intents.get(key)
+  if (intent?.status === 'pending' || intent?.status === 'success') return
+  if (!intent) {
+    if (!quantityValid.value) return
+    intent = {
+      attempt: Symbol('mes-report-attempt'),
       workOrderId,
       operationTaskId,
-      goodQuantity: good,
-      scrapQuantity: scrap,
-      completesOperation: completes,
-      idempotencyKey: operationKey.value,
+      intentKey: makeIdempotencyKey(),
+      payload: {
+        goodQuantity: goodQuantity.value,
+        scrapQuantity: scrapQuantity.value,
+        completesOperation: completesOperation.value,
+      },
+      status: 'pending',
+      result: null,
+    }
+    intents.set(key, intent)
+    intent = intents.get(key)!
+  } else {
+    intent.attempt = Symbol('mes-report-retry')
+    intent.status = 'pending'
+    intent.result = null
+  }
+  ctx.quantityEntered = true
+  const attempt = intent.attempt
+  try {
+    const receiptEnvelope = await recordReport({
+      workOrderId,
+      operationTaskId,
+      ...intent.payload,
+      idempotencyKey: intent.intentKey,
     })
-    ctx.recorded = true
-    result.value = {
+    if (intent.attempt !== attempt) return
+    if (!receiptEnvelope?.success) {
+      throw new Error(receiptEnvelope?.message?.trim() || '报工回执无效，请重试。')
+    }
+    const receipt = receiptEnvelope.data
+    const reportNo = receipt?.reportNo?.trim()
+    const productionReportId = receipt?.productionReportId?.trim()
+    if (!reportNo || !productionReportId) {
+      throw new Error('报工回执缺少真实报工单号或回执 ID，已阻止成功确认。')
+    }
+    const description = [`${workOrderId} · ${operationTaskId}`]
+    description.push(`报工单号 ${reportNo}`)
+    description.push(`回执 ID ${productionReportId}`)
+    if (intent.payload.completesOperation) description.push('本工序已标记完工')
+    intent.status = 'success'
+    intent.result = {
       status: 'success',
       title: '报工成功',
-      description: completes ? '本工序已标记完工。' : undefined,
+      description: description.join('；'),
     }
   } catch (e) {
-    result.value = {
+    if (intent.attempt !== attempt) return
+    if (await lifecycleRecovery.handle(e)) return
+    intent.status = 'error'
+    intent.result = {
       status: 'error',
       title: '报工失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      description: describeRequestError(e, '请检查网络后重试。').message,
     }
-    // 失败保留工序选择以便重试
-    selectedTask.value =
-      operationTasks.value.find((t) => t.operationTaskId === operationTaskId) ?? null
-  } finally {
-    submitting.value = false
   }
 }
 
 function continueReport() {
-  // 重置整个流程，回到选工单
-  result.value = null
+  if (pairKey.value) intents.delete(pairKey.value)
   backToWorkOrders()
-  ctx.recorded = false
 }
 
 function goBack() {
-  result.value = null
   router.push('/').catch(() => {})
 }
 
@@ -313,17 +485,93 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <section v-if="telemetryQueue.candidates.value.length" class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
-        <div class="flex items-center justify-between"><h2 class="font-semibold">遥测待确认</h2><span class="text-xs text-muted-foreground">{{ telemetryQueue.total.value }} 条</span></div>
-        <div v-for="candidate in telemetryQueue.candidates.value" :key="candidate.candidateId" class="rounded-lg border border-border bg-card p-3">
-          <NvMobileButton variant="text" block class="h-auto justify-start p-0 text-left" @click="toggleTelemetryCandidate(candidate.candidateId)">
-            <span class="block font-medium">{{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件</span><span class="block text-xs text-muted-foreground">{{ candidate.suspensionReason ?? candidate.status }}</span>
+      <MesWorkScopeFilter permission-code="business.mes.work-orders.read" />
+      <p
+        v-if="reportScopeMessage"
+        data-testid="report-scope-message"
+        class="rounded-lg border border-destructive/40 px-4 py-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ reportScopeMessage }}
+      </p>
+      <p
+        v-if="routeIssue"
+        role="alert"
+        data-testid="report-route-issue"
+        class="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+      >
+        {{ routeIssue }}
+      </p>
+      <section
+        v-if="
+          currentStep === 'selectWorkOrder' &&
+          routeWorkOrderId &&
+          (workOrderDetailError || workOrderDetailHasFailedResponse)
+        "
+        class="space-y-2"
+      >
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工单详情服务（服务端按当前主体与所选授权工单范围校验）"
+          :loaded="0"
+          :total="0"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          failed
+          failure-explanation="工单详情服务未成功返回，请重试。"
+        />
+        <RetryableListError
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
+      </section>
+      <section
+        v-if="telemetryQueue.candidates.value.length"
+        class="space-y-3 rounded-lg border border-warning/40 bg-warning/5 p-3"
+      >
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold">遥测待确认</h2>
+          <span class="text-xs text-muted-foreground">{{ telemetryQueue.total.value }} 条</span>
+        </div>
+        <div
+          v-for="candidate in telemetryQueue.candidates.value"
+          :key="candidate.candidateId"
+          class="rounded-lg border border-border bg-card p-3"
+        >
+          <NvMobileButton
+            variant="text"
+            block
+            class="h-auto justify-start p-0 text-left"
+            @click="toggleTelemetryCandidate(candidate.candidateId)"
+          >
+            <span class="block font-medium"
+              >{{ candidate.deviceAssetId }} · {{ candidate.goodQuantity }} 件</span
+            ><span class="block text-xs text-muted-foreground">{{
+              candidate.suspensionReason ?? candidate.status
+            }}</span>
           </NvMobileButton>
           <div v-if="telemetryCandidateId === candidate.candidateId" class="mt-3 space-y-2">
-            <NvMobileInput v-model="telemetryWorkOrderId" :placeholder="candidate.workOrderId ?? '真实工单号'" />
-            <NvMobileInput v-model="telemetryOperationTaskId" :placeholder="candidate.operationTaskId ?? '真实工序任务号'" />
+            <NvMobileInput
+              v-model="telemetryWorkOrderId"
+              :placeholder="candidate.workOrderId ?? '真实工单号'"
+            />
+            <NvMobileInput
+              v-model="telemetryOperationTaskId"
+              :placeholder="candidate.operationTaskId ?? '真实工序任务号'"
+            />
             <NvMobileInput v-model="telemetryDismissReason" placeholder="忽略原因（忽略时必填）" />
-            <div class="grid grid-cols-2 gap-2"><NvMobileButton variant="primary" @click="promoteTelemetryCandidate(candidate)">确认转正</NvMobileButton><NvMobileButton variant="outline" :disabled="!telemetryDismissReason.trim()" @click="dismissTelemetryCandidate(candidate.candidateId)">忽略</NvMobileButton></div>
+            <div class="grid grid-cols-2 gap-2">
+              <NvMobileButton variant="primary" @click="promoteTelemetryCandidate(candidate)"
+                >确认转正</NvMobileButton
+              ><NvMobileButton
+                variant="outline"
+                :disabled="!telemetryDismissReason.trim()"
+                @click="dismissTelemetryCandidate(candidate.candidateId)"
+                >忽略</NvMobileButton
+              >
+            </div>
           </div>
         </div>
       </section>
@@ -331,16 +579,27 @@ function onScanWorkOrder(value: string) {
       <template v-if="currentStep === 'selectWorkOrder'">
         <NvScanBar placeholder="扫描工单号" :active="scanActive" @scan="onScanWorkOrder" />
         <p class="text-sm text-muted-foreground">选择报工的工单（共 {{ workOrderTotal }} 张）</p>
+        <ListScopeMeta
+          :scope="workOrderScope"
+          source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
+          :loaded="workOrders.length"
+          :total="workOrderTotal"
+          :updated-at="workOrdersLastUpdatedAt"
+          :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
+          failure-explanation="生产工单服务未成功返回，请刷新重试。"
+          :empty="!workOrderListReadScopeReady || showWorkOrdersEmpty"
+          :empty-explanation="workOrderEmptyExplanation"
+        />
         <RetryableListError
-          v-if="workOrdersError"
-          :error="workOrdersError"
+          v-if="workOrdersError || workOrdersHasFailedResponse"
+          :error="workOrdersError ?? '生产工单服务未成功返回'"
           :pending="workOrdersPending"
           fallback="加载工单失败，请下拉刷新或重试。"
           test-id="work-orders-error"
           @retry="() => refreshWorkOrders()"
         />
         <div
-          v-else-if="!workOrdersPending && workOrders.length === 0"
+          v-else-if="showWorkOrdersEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           暂无可报工的工单
@@ -377,24 +636,48 @@ function onScanWorkOrder(value: string) {
           </button>
         </div>
 
-        <p class="text-sm text-muted-foreground">选择要报工的工序（共 {{ taskTotal }} 道）</p>
-        <RetryableListError
-          v-if="tasksError"
-          :error="tasksError"
-          :pending="tasksPending"
-          fallback="加载工序失败，请下拉刷新或重试。"
-          test-id="tasks-error"
-          @retry="() => refreshTasks()"
+        <ListScopeMeta
+          :scope="operationTaskScope"
+          source="生产工序服务（当前主体授权工单详情返回集合，接口未提供服务总数）"
+          :loaded="visibleOperationTasks.length"
+          :total="visibleOperationTasks.length"
+          :updated-at="workOrderDetailLastUpdatedAt"
+          :failed="workOrderDetailHasFailedResponse || Boolean(workOrderDetailError)"
+          failure-explanation="工单详情服务未成功返回，请重试。"
+          :empty="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
+            selectedWorkOrder !== null &&
+            visibleOperationTasks.length === 0
+          "
+          :empty-explanation="operationTaskEmptyExplanation"
         />
+        <RetryableListError
+          v-if="workOrderDetailError || workOrderDetailHasFailedResponse"
+          :error="workOrderDetailError ?? '工单详情服务未成功返回'"
+          :pending="workOrderDetailPending"
+          fallback="加载工单详情失败，请重试。"
+          test-id="work-order-detail-error"
+          @retry="() => refreshWorkOrderDetail()"
+        />
+        <p class="text-sm text-muted-foreground">
+          选择要报工的工序（共 {{ visibleOperationTasks.length }} 道）
+        </p>
         <div
-          v-else-if="!tasksPending && operationTasks.length === 0"
+          v-if="
+            !workOrderDetailPending &&
+            !workOrderDetailError &&
+            workOrderDetailHasSuccessfulResponse &&
+            visibleOperationTasks.length === 0
+          "
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
           该工单暂无工序
         </div>
         <div v-else class="overflow-hidden rounded-lg border border-border">
           <NvListRow
-            v-for="task in operationTasks"
+            v-for="task in visibleOperationTasks"
             :key="task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`"
             :title="taskTitle(task)"
             :subtitle="taskSubtitle(task)"
@@ -447,9 +730,14 @@ function onScanWorkOrder(value: string) {
             v-model="completesOperation"
             data-testid="completes-operation"
             type="checkbox"
+            :disabled="!canCompleteSelectedTask"
             class="size-5"
           />
         </label>
+
+        <p v-if="!canCompleteSelectedTask" class="text-sm text-muted-foreground">
+          当前工序可报数量；仅执行中的工序可同时完工。
+        </p>
 
         <p v-if="!quantityValid" class="text-sm text-muted-foreground">
           良品数与次品数须为非负数，且合计大于 0。
@@ -458,7 +746,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="submit-report"
-          :disabled="!quantityValid || submitting"
+          :disabled="!quantityValid || submitting || reportScopePending || !reportScopeReady"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submit"
         >
@@ -474,5 +762,12 @@ function onScanWorkOrder(value: string) {
         </button>
       </div>
     </NvBottomSheet>
+
+    <NvMobileToast
+      :show="lifecycleRecovery.toast.value.show"
+      :message="lifecycleRecovery.toast.value.message"
+      :type="lifecycleRecovery.toast.value.type"
+      @update:show="lifecycleRecovery.setToastOpen"
+    />
   </NvAppShellMobile>
 </template>

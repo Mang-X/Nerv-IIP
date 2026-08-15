@@ -14,7 +14,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -140,9 +140,9 @@ const columns: NvDataTableColumn<ReceiptRow>[] = [
     key: 'requestNo',
     header: '入库单',
     cellClass: 'font-medium',
-    accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无',
+    accessor: (r) => r.requestNo?.trim() || '—',
   },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
@@ -165,7 +165,7 @@ async function retryRow(row: ReceiptRow) {
   try {
     await retryInventoryPosting(requestNo)
   } catch (error) {
-    notifyError(error, '重投入库过账失败，请稍后重试。')
+    notifyOperationFailure('重投入库过账失败', error, '重投入库过账失败，请稍后重试。')
     return
   }
   // 重投已成功：刷新失败不否定成功（列表错误态负责提示）。
@@ -191,7 +191,7 @@ function firstQueryValue(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -278,7 +278,7 @@ function isNonEmpty(value: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderNo ?? row.workOrderId }}
+          {{ row.workOrderNo?.trim() || '—' }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
@@ -324,7 +324,7 @@ function isNonEmpty(value: string) {
             <RotateCcwIcon v-else aria-hidden="true" />
             重试
           </NvButton>
-          <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
+          <NvRowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderNo ?? ''}`">
             <NvDropdownMenuItem
               :disabled="!row.workOrderId"
               @click="openWorkOrder(row.workOrderId)"

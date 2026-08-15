@@ -71,7 +71,12 @@ import {
 } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 
 definePage({
   meta: {
@@ -111,7 +116,7 @@ function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
   const kw = keyword.trim().toLowerCase()
@@ -232,7 +237,7 @@ async function submitShift() {
       shiftShowErrors.value = false
       shiftOpen.value = false
     } catch (error) {
-      notifyError(error)
+      notifyOperationFailure('更新班次失败', error, '更新班次失败，请稍后重试。')
     }
     return
   }
@@ -254,7 +259,7 @@ async function submitShift() {
     shiftShowErrors.value = false
     shiftOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存班次失败', error, '保存班次失败，请稍后重试。')
   }
 }
 
@@ -319,7 +324,7 @@ async function submitCal() {
     calShowErrors.value = false
     calOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存工作日历失败', error, '保存工作日历失败，请稍后重试。')
   }
 }
 
@@ -501,7 +506,7 @@ async function loadCalendarDetail(code: string) {
     exceptions.value = (d?.exceptions ?? []).map((e) => ({ ...e }))
     calDetailLoaded.value = true
   } catch (error) {
-    notifyError(error)
+    notifyError(error, '加载工作日历明细失败，请稍后重试。')
   } finally {
     calDetailLoading.value = false
   }
@@ -575,7 +580,7 @@ async function persistCalendar(successMsg: string) {
     })
     notifySuccess(successMsg)
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存工作日历失败', error, '保存工作日历失败，请稍后重试。')
   } finally {
     calBoardSaving.value = false
   }

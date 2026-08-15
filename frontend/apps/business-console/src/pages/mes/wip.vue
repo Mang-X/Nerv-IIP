@@ -1,14 +1,19 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
-import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
-import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { describeMesReadinessReasons, useMesWipSummary } from '@/composables/useBusinessMes'
+import {
+  mesOperationTaskStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
   NvDataTable,
+  NvInput,
   NvPageHeader,
   NvSelect,
   NvSelectContent,
@@ -20,6 +25,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, ref, shallowRef, watch } from 'vue'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -31,7 +37,11 @@ definePage({
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { resolveWorkCenter } = useMesDisplayNames()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { statusLabel } = useMesReferenceLabels()
+const { keyword } = useMesKeywordFilter(filters)
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.status, () => filters.keyword],
+})
 const statusFilter = shallowRef('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -73,7 +83,8 @@ function progressRatio(row: WipRow) {
   return Math.min(1, Math.max(0, (row.goodQuantity ?? 0) / planned))
 }
 function readinessList(reasons?: string[] | null) {
-  return (reasons ?? []).map(describeMesReadinessReason)
+  // 合并同码：同一工序两条「物料缺料」要并成一条并点名缺哪几项（#1418）。
+  return describeMesReadinessReasons(reasons)
 }
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
@@ -82,7 +93,7 @@ function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -109,6 +120,12 @@ function formatError(error: unknown) {
 
     <NvToolbar :show-search="false">
       <template #filters>
+        <NvInput
+          v-model="keyword"
+          class="h-9 w-56"
+          placeholder="工单 / 工序 / 工作中心"
+          aria-label="搜索在制行"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="在制状态"
             ><NvSelectValue
@@ -153,7 +170,9 @@ function formatError(error: unknown) {
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
-      <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }">
+        <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+      </template>
       <template #cell-progress="{ row }">
         <div class="flex flex-col gap-1">
           <span class="text-sm tabular-nums">
@@ -179,6 +198,7 @@ function formatError(error: unknown) {
             class="grid gap-0.5"
           >
             <NvStatusBadge :label="reason.label" tone="warning" />
+            <p v-if="reason.detail" class="text-xs text-foreground">{{ reason.detail }}</p>
             <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
           </div>
         </div>

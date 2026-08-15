@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   isScheduleInvalidated,
   scheduleInvalidationHint,
@@ -18,11 +19,14 @@ import {
 import { ExternalLinkIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { inlineErrorMessage } from '@/utils/notify'
 
 // 当前要速览的工单（null = 关闭）。任何页面只要 v-model:work-order-id 一个 ref 即可就地速览，不跳页。
 const workOrderId = defineModel<string | null>('workOrderId', { default: null })
 const router = useRouter()
 const { detail, detailError, detailPending, filters } = useMesWorkOrderDetail()
+// 工单详情只回物料标识；物料名在 SKU 主数据里，查不到显编码，是内部 GUID 则不上屏。
+const { resolveSkuLabel } = useMesDisplayNames()
 
 watch(
   workOrderId,
@@ -39,18 +43,14 @@ const open = computed({
   },
 })
 
-const errorMessage = computed(() =>
-  detailError.value instanceof Error ? detailError.value.message : '',
-)
+const errorMessage = computed(() => inlineErrorMessage(detailError.value))
 
 const operations = computed(() =>
   [...(detail.value?.operationTasks ?? [])].sort(
     (a, b) => (a.operationSequence ?? 0) - (b.operationSequence ?? 0),
   ),
 )
-const blockingReasons = computed(() =>
-  (detail.value?.blockingReasons ?? []).map(describeMesReadinessReason),
-)
+const blockingReasons = computed(() => describeMesReadinessReasons(detail.value?.blockingReasons))
 
 // 状态 / 就绪 / 工序状态统一交给共享 StatusBadge（:value）解析为中文标签 + 语义色，
 // 与各列表页同一口径，避免本组件再维护一份不全的映射而漏出英文裸值（如 created/Queued）。
@@ -99,7 +99,7 @@ function openFull() {
           </div>
           <div class="flex justify-between gap-3">
             <span class="text-muted-foreground">物料</span>
-            <span v-if="detail.skuId" class="font-medium">{{ detail.skuId }}</span>
+            <span v-if="detail.skuId" class="font-medium">{{ resolveSkuLabel(detail.skuId) }}</span>
             <span v-else class="text-muted-foreground">—</span>
           </div>
         </div>
@@ -113,7 +113,9 @@ function openFull() {
             >{{ blockingReasons.length }} 项卡点，需先处理：</span
           >
           <span v-for="(reason, i) in blockingReasons" :key="i" class="text-muted-foreground"
-            >· {{ reason.label }}（{{ reason.nextStep }}）</span
+            >· {{ reason.label }}{{ reason.detail ? `：${reason.detail}` : '' }}（{{
+              reason.nextStep
+            }}）</span
           >
         </div>
 

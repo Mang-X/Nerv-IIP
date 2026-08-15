@@ -1,8 +1,40 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
+import {
+  BadgeCheck,
+  Bell,
+  ClipboardCheck,
+  ClipboardList,
+  Cog,
+  FilePen,
+  ListChecks,
+  PackageCheck,
+  PackageMinus,
+  PackagePlus,
+  PackageSearch,
+  Wrench,
+} from '@lucide/vue'
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
-import { NvAppShellMobile, NvMobileBadge, NvScanBar } from '@nerv-iip/ui-mobile'
-import { ref } from 'vue'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import RetryableListError from '@/components/RetryableListError.vue'
+import {
+  HOME_PERMISSIONS,
+  usePdaIdentity,
+  usePendingInspectionSummary,
+  useWarehouseSummary,
+} from '@/composables/useWorkbenchHome'
+import {
+  NvAppShellMobile,
+  NvCell,
+  NvCellGroup,
+  NvMobileAvatar,
+  NvMobileGrid,
+  NvMobileTag,
+  NvScanBar,
+  type GridItem,
+} from '@nerv-iip/ui-mobile'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 definePage({
@@ -13,10 +45,14 @@ definePage({
 })
 
 const router = useRouter()
+const identity = usePdaIdentity()
+const warehouse = useWarehouseSummary()
+const inspection = usePendingInspectionSummary()
 
 // 工作台报警角标：服务端 status=raised total（全量未确认数，不受列表首页 take 上限影响），
-// 与「查看报警」入口联动（确认/搁置后经查询失效自动回落）。
-const { unacknowledgedCount } = useUnacknowledgedAlarmCount()
+// 与「查看报警」入口联动（确认/搁置后经查询失效自动回落）。仅有报警读权限时查询。
+const canSeeAlarms = computed(() => identity.can(HOME_PERMISSIONS.alarms))
+const { unacknowledgedCount } = useUnacknowledgedAlarmCount(canSeeAlarms)
 
 const lastScan = ref('')
 
@@ -26,8 +62,92 @@ function onScan(value: string) {
   lastScan.value = value
 }
 
-function openTask(route: string, ready: boolean) {
-  if (!ready) return
+/** 首页身份行：岗位 · 班组（都有才拼接，缺失不占位）。 */
+const identitySubtitle = computed(() => {
+  const worker = identity.worker.value
+  const parts = [worker?.jobTitle, worker?.teams?.[0]?.teamName].filter(Boolean)
+  return parts.join(' · ')
+})
+
+const INSPECTION_PREVIEW = 3
+const scopedInspectionTasks = computed(() =>
+  inspection.scopeReady.value ? inspection.tasks.value : [],
+)
+const scopedInspectionTotal = computed(() =>
+  inspection.scopeReady.value ? inspection.total.value : 0,
+)
+const inspectionPreview = computed(() => scopedInspectionTasks.value.slice(0, INSPECTION_PREVIEW))
+const inspectionEmptyExplanation = computed(() =>
+  inspection.scopeReady.value
+    ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
+    : '缺少组织或环境范围，未发起查询。',
+)
+const inspectionFailure = computed(() =>
+  inspection.error.value
+    ? inspection.error.value
+    : inspection.hasFailedResponse.value
+      ? new Error('待检任务服务未返回成功结果，请重试。')
+      : null,
+)
+
+/** 快捷应用按登录人权限裁剪：无读权限的入口不出现（点了也是 403）。 */
+const KIND_PERMISSIONS: Record<string, string> = {
+  'wms.inbound': 'business.wms.receipts.read',
+  'wms.putaway': 'business.wms.receipts.read',
+  'wms.pick': 'business.wms.shipments.read',
+  'wms.review': 'business.wms.receipts.read',
+  'wms.count': 'business.wms.counts.read',
+  'mes.report': 'business.mes.reporting.read',
+  'mes.issue': 'business.mes.materials.read',
+  'mes.receipt': 'business.mes.receipts.read',
+  'mes.operation': 'business.mes.operations.read',
+  'equipment.repair': 'business.maintenance.work-orders.read',
+  'equipment.inspect': 'business.maintenance.plans.read',
+  'equipment.alarms': 'business.iiot.alarms.read',
+  'quality.tasks': 'business.quality.inspection-records.read',
+}
+
+const KIND_ICONS: Record<string, Component> = {
+  'wms.inbound': PackageCheck,
+  'wms.putaway': PackagePlus,
+  'wms.pick': PackageSearch,
+  'wms.review': ClipboardCheck,
+  'wms.count': ListChecks,
+  'mes.report': FilePen,
+  'mes.issue': PackageMinus,
+  'mes.receipt': PackagePlus,
+  'mes.operation': Cog,
+  'equipment.repair': Wrench,
+  'equipment.inspect': ClipboardList,
+  'equipment.alarms': Bell,
+  'quality.tasks': BadgeCheck,
+}
+
+const visibleKinds = computed(() =>
+  PDA_TASK_KINDS.filter((kind) => {
+    const permission = KIND_PERMISSIONS[kind.id]
+    return kind.routeReady && (!permission || identity.can(permission))
+  }),
+)
+
+const gridItems = computed<GridItem[]>(() =>
+  visibleKinds.value.map((kind) => ({
+    key: kind.id,
+    text: kind.label,
+    icon: KIND_ICONS[kind.id],
+    badge:
+      kind.id === 'equipment.alarms' && canSeeAlarms.value && unacknowledgedCount.value > 0
+        ? unacknowledgedCount.value
+        : undefined,
+  })),
+)
+
+function onGridSelect(item: GridItem) {
+  const kind = visibleKinds.value.find((k) => k.id === item.key)
+  if (kind) router.push(kind.route).catch(() => {})
+}
+
+function openRoute(route: string) {
   router.push(route).catch(() => {})
 }
 </script>
@@ -35,50 +155,116 @@ function openTask(route: string, ready: boolean) {
 <template>
   <NvAppShellMobile>
     <template #header>
-      <div class="px-4 py-3">
-        <h1 class="text-lg font-semibold text-foreground">工作台</h1>
+      <div class="flex items-center gap-3 px-4 py-3">
+        <NvMobileAvatar :name="identity.displayName.value" size="md" />
+        <div class="min-w-0 flex-1">
+          <h1 class="truncate text-base font-semibold text-foreground" data-testid="home-name">
+            {{ identity.displayName.value || '工作台' }}
+          </h1>
+          <p v-if="identitySubtitle" class="truncate text-xs text-muted-foreground">
+            {{ identitySubtitle }}
+          </p>
+        </div>
+        <NvMobileTag v-if="identity.worker.value?.employeeNo" size="sm">
+          {{ identity.worker.value.employeeNo }}
+        </NvMobileTag>
       </div>
     </template>
 
-    <div class="space-y-6 p-4">
+    <div class="space-y-5 p-4">
       <NvScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
 
-      <p v-if="lastScan" data-testid="last-scan" class="-mt-3 text-sm text-foreground">
+      <p v-if="lastScan" data-testid="last-scan" class="-mt-2 text-sm text-foreground">
         已扫码：{{ lastScan }}
-        <span class="block text-xs text-muted-foreground">
-          扫码直达将在后续里程碑（M5）落地，当前仅回显扫码内容。
-        </span>
       </p>
 
-      <section>
-        <h2 class="mb-2 text-sm font-medium text-muted-foreground">我的任务</h2>
-        <div
-          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-        >
-          暂无分配给你的任务
+      <!-- 仓储任务（有 WMS 读权限的仓储角色可见） -->
+      <section v-if="warehouse.enabled.value" data-testid="home-warehouse">
+        <h2 class="mb-2 text-sm font-medium text-muted-foreground">仓储任务</h2>
+        <div class="grid grid-cols-4 gap-2">
+          <button
+            v-for="entry in warehouse.entries.value"
+            :key="entry.key"
+            type="button"
+            class="flex min-h-touch flex-col items-center justify-center gap-0.5 rounded-xl border border-border bg-card py-3 active:bg-accent"
+            @click="openRoute(entry.route)"
+          >
+            <span class="text-lg font-semibold tabular-nums text-foreground">{{
+              entry.count
+            }}</span>
+            <span class="text-xs text-muted-foreground">{{ entry.label }}</span>
+          </button>
         </div>
       </section>
 
-      <section>
-        <h2 class="mb-2 text-sm font-medium text-muted-foreground">快捷应用</h2>
-        <div class="grid grid-cols-3 gap-3">
-          <button
-            v-for="kind in PDA_TASK_KINDS"
-            :key="kind.id"
-            type="button"
-            :disabled="!kind.routeReady"
-            class="min-h-touch relative flex flex-col items-center justify-center gap-1 rounded-xl border border-border bg-card p-3 text-center text-sm text-foreground disabled:opacity-40"
-            @click="openTask(kind.route, kind.routeReady)"
-          >
-            <NvMobileBadge
-              v-if="kind.id === 'equipment.alarms' && unacknowledgedCount > 0"
-              data-testid="alarm-badge"
-              :count="unacknowledgedCount"
-              class="absolute right-2 top-2"
-            />
-            <span>{{ kind.label }}</span>
-          </button>
+      <!-- 检验任务（有质检读权限的检验员可见） -->
+      <section v-if="inspection.visible.value" data-testid="home-inspection">
+        <div class="mb-2 flex items-baseline justify-between">
+          <h2 class="text-sm font-medium text-muted-foreground">组织范围待检</h2>
+          <span class="text-xs text-muted-foreground">
+            共 <span class="font-semibold text-foreground">{{ inspection.total.value }}</span> 项
+          </span>
         </div>
+        <ListScopeMeta
+          :scope="
+            identity.organizationId.value && identity.environmentId.value
+              ? '当前登录组织 / 当前业务环境'
+              : '组织/环境范围未就绪'
+          "
+          source="质检待检任务服务（组织/环境范围，状态：待检）"
+          :loaded="scopedInspectionTasks.length"
+          :total="scopedInspectionTotal"
+          :updated-at="inspection.lastUpdatedAt.value"
+          :failed="inspection.hasFailedResponse.value"
+          failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
+          :empty="
+            !inspection.scopeReady.value ||
+            (!inspection.pending.value &&
+              !inspection.error.value &&
+              inspection.hasSuccessfulResponse.value &&
+              scopedInspectionTasks.length === 0)
+          "
+          :empty-explanation="inspectionEmptyExplanation"
+        />
+        <RetryableListError
+          v-if="inspectionFailure"
+          :error="inspectionFailure"
+          :pending="inspection.pending.value"
+          fallback="待检任务加载失败，请重试。"
+          test-id="home-inspection-error"
+          @retry="() => inspection.refresh()"
+        />
+        <NvCellGroup
+          v-if="inspectionPreview.length > 0"
+          class="overflow-hidden rounded-xl border border-border"
+        >
+          <NvCell
+            v-for="task in inspectionPreview"
+            :key="task.inspectionTaskId"
+            :title="task.skuCode || '检验任务'"
+            :note="task.batchNo ? `批次 ${task.batchNo}` : ''"
+            :value="task.quantity != null ? `${task.quantity} ${task.uomCode ?? ''}` : ''"
+            arrow
+            @click="openRoute('/quality/tasks')"
+          />
+        </NvCellGroup>
+        <div
+          v-else-if="
+            inspection.scopeReady.value &&
+            !inspection.pending.value &&
+            !inspection.error.value &&
+            inspection.hasSuccessfulResponse.value
+          "
+          class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
+        >
+          当前组织/环境范围暂无待检任务；此列表不是个人待检
+        </div>
+      </section>
+
+      <!-- 快捷应用（按权限裁剪） -->
+      <section data-testid="home-apps">
+        <h2 class="mb-2 text-sm font-medium text-muted-foreground">快捷应用</h2>
+        <NvMobileGrid :items="gridItems" :columns="4" bordered @select="onGridSelect" />
       </section>
     </div>
   </NvAppShellMobile>

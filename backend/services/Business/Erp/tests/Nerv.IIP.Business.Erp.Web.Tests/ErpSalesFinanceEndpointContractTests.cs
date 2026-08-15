@@ -29,7 +29,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     {
         var contracts = ErpSalesEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(13, contracts.Length);
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "openErpOpportunity");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/opportunities" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpOpportunities");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/quotations" && x.OperationId == "createErpQuotation");
@@ -38,6 +38,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders" && x.OperationId == "createErpSalesOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/lines/{lineNo}" && x.OperationId == "changeErpSalesOrderLine");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/cancel" && x.OperationId == "cancelErpSalesOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-orders/{salesOrderNo}/release-credit-hold" && x.HttpMethod == "POST" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "releaseErpSalesOrderCreditHold");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.OperationId == "releaseErpDeliveryOrder");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/sales-return-authorizations" && x.PermissionCode == ErpPermissionCodes.SalesManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createErpSalesReturnAuthorization");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/delivery-orders" && x.HttpMethod == "GET" && x.PermissionCode == ErpPermissionCodes.SalesRead && x.OperationId == "listErpDeliveryOrders");
@@ -254,9 +255,11 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);
@@ -457,6 +460,61 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Converting_an_already_converted_quotation_idempotently_returns_the_existing_order()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-CONVERT-ONCE", "CUST-001", "SKU-FG-001");
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QUO-CONVERT-ONCE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var first = await new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 1_000_000m, "CNY"))).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CONVERT-001", "QUO-CONVERT-ONCE", "SITE-001", "so-convert-key-1"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 重复转同一报价：新幂等键 + 新单号仍幂等返回既有订单。信用读取器返回 null 证明幂等路径完全不触发信用检查（否则会抛缺信用主数据）。
+        var second = await new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(null)).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CONVERT-002", "QUO-CONVERT-ONCE", "SITE-001", "so-convert-key-2"),
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.False(first.ReusedExistingOrder);
+        Assert.True(second.ReusedExistingOrder);
+        Assert.Equal(first.SalesOrderId, second.SalesOrderId);
+        Assert.Equal("SO-CONVERT-001", first.SalesOrderNo);
+        Assert.Equal("SO-CONVERT-001", second.SalesOrderNo);
+        // 只有一张订单：需求侧不会因为重复转出收到第二条 SalesOrderReleased 事件。
+        Assert.Single(dbContext.SalesOrders.Where(x => x.QuotationNo == "QUO-CONVERT-ONCE"));
+        var quotation = dbContext.Quotations.Single(x => x.QuotationNo == "QUO-CONVERT-ONCE");
+        Assert.Equal("SO-CONVERT-001", quotation.ConvertedSalesOrderNo);
+        Assert.NotNull(quotation.ConvertedAtUtc);
+    }
+
+    [Fact]
+    public async Task Quotation_list_projects_converted_sales_order_reference()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateReleasedSalesOrderAsync(dbContext, "SO-LIST-CONVERT", "QUO-LIST-CONVERT", "CUST-001", "SKU-FG-001");
+
+        var response = await new ListQuotationsQueryHandler(dbContext).Handle(
+            new ListQuotationsQuery("org-001", "env-dev", null, "QUO-LIST-CONVERT"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("SO-LIST-CONVERT", item.ConvertedSalesOrderNo);
+    }
+
+    [Fact]
     public async Task Create_sales_order_uses_master_data_credit_limit_and_holds_overrun()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -466,6 +524,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new ApproveQuotationCommandHandler(dbContext).Handle(
             new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-BLOCK"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-CREDIT", "CUST-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-CREDIT", "DO-CREDIT", "CUST-001", 50m, "CNY"),
             CancellationToken.None);
@@ -507,12 +566,15 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-002", "SUP-002");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-002", "RCV-002", "SUP-002", 225.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);
@@ -545,9 +607,11 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await ErpFinanceSourceDocumentFixtures.SeedPurchaseOrderAsync(dbContext, "RCV-001", "SUP-001");
         await new CreateAccountPayableCommandHandler(dbContext).Handle(
             new CreateAccountPayableCommand("org-001", "env-dev", "AP-001", "RCV-001", "SUP-001", 125.50m, "CNY"),
             CancellationToken.None);
+        await ErpFinanceSourceDocumentFixtures.SeedDeliveryOrderAsync(dbContext, "DO-001", "CUS-001");
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-001", "DO-001", "CUS-001", 250.75m, "CNY"),
             CancellationToken.None);

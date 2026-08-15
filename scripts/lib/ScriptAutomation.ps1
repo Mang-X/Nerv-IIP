@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: library
 #   SideEffects:
 #     - Provides shared script automation helpers
 #   Writes:
@@ -10,6 +10,11 @@
 #     - PowerShell 7
 
 Set-StrictMode -Version Latest
+
+$ordinalStringLibrary = Join-Path $PSScriptRoot 'OrdinalString.ps1'
+if (Test-Path -LiteralPath $ordinalStringLibrary -PathType Leaf) {
+    . $ordinalStringLibrary
+}
 
 $script:ScriptAutomationStreamDrainTimeoutMilliseconds = 5000
 
@@ -114,6 +119,15 @@ function Protect-ScriptAutomationText {
     }
 
     $redacted = $Text
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?is)-----BEGIN [^-\r\n]+-----.*?-----END [^-\r\n]+-----',
+        '<redacted-pem>')
+    $redacted = [regex]::Replace($redacted, '(?i)(https?://)[^/@\s]+@', '$1<redacted>@')
+    $redacted = [regex]::Replace(
+        $redacted,
+        '(?i)(["''](?:authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)["'']\s*:\s*["''])[^"'']*(["''])',
+        '$1<redacted>$2')
     $patterns = @(
         '(?i)(authorization\s*[:=]\s*bearer\s+)[^\s''"]+',
         '(?i)(password\s*=\s*)[^;\s]+',
@@ -121,6 +135,7 @@ function Protect-ScriptAutomationText {
         '(?i)(token\s*[:=]\s*)[^\s''";]+',
         '(?i)(secret\s*[:=]\s*)[^\s''";]+',
         '(?i)(client_secret\s*[:=]\s*)[^\s''";]+',
+        '(?i)((?:customerName|phone|email|address)\s*=\s*)[^;\s,}]+',
         '(?i)(user-secrets\s+set\s+["'']?[^"''\s]+["'']?\s+)[^\s]+',
         '(?i)(Host=[^;]+;Port=[^;]+;Database=[^;]+;Username=[^;]+;Password=)[^;]+'
     )
@@ -282,6 +297,38 @@ function Get-ScriptAutomationProcessTreeIds {
             }
         }
     }
+    elseif ($IsLinux) {
+        $children = [System.Collections.Generic.List[object]]::new()
+        foreach ($entry in [System.IO.Directory]::EnumerateDirectories('/proc')) {
+            $candidateProcessId = 0
+            if (-not [int]::TryParse([System.IO.Path]::GetFileName($entry), [ref] $candidateProcessId)) { continue }
+            try {
+                $stat = [System.IO.File]::ReadAllText((Join-Path $entry 'stat'))
+                $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
+                if ($commandEnd -lt 0 -or ($commandEnd + 2) -ge $stat.Length) { continue }
+                $fieldsAfterCommand = @($stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+                if ($fieldsAfterCommand.Count -lt 2) { continue }
+                $parentProcessId = 0
+                if (-not [int]::TryParse($fieldsAfterCommand[1], [ref] $parentProcessId)) { continue }
+                if ($parentProcessId -eq $ProcessId) {
+                    $children.Add([pscustomobject]@{
+                        ProcessId = $candidateProcessId
+                        ParentProcessId = $parentProcessId
+                    })
+                }
+            }
+            catch {
+                # A process may exit while /proc is being inspected.
+            }
+        }
+        foreach ($child in @($children)) {
+            foreach ($childId in Get-ScriptAutomationProcessTreeIds -ProcessId ([int] $child.ProcessId)) {
+                if (-not $ids.Contains($childId)) {
+                    $ids.Add($childId)
+                }
+            }
+        }
+    }
 
     if (-not $ids.Contains($ProcessId)) {
         $ids.Add($ProcessId)
@@ -317,6 +364,22 @@ function Stop-ProcessTree {
         catch {
             Write-Diagnostic -Level 'WARN' -Message "Failed to stop process $id for ${Reason}: $($_.Exception.Message)"
         }
+    }
+
+    $remaining = [System.Collections.Generic.List[int]]::new()
+    foreach ($id in $ids) {
+        $alive = $true
+        for ($attempt = 0; $attempt -lt 50; $attempt++) {
+            if ($null -eq (Get-Process -Id $id -ErrorAction SilentlyContinue)) {
+                $alive = $false
+                break
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        if ($alive) { $remaining.Add($id) }
+    }
+    if ($remaining.Count -ne 0) {
+        throw "Exact managed process tree cleanup left PID(s) $($remaining -join ', ') for ${Reason}."
     }
 
     return [pscustomobject]@{
@@ -655,20 +718,24 @@ function Invoke-NativeCommandOutput {
 
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             Stop-ProcessTree -ProcessId $process.Id -Reason "Timeout while reading output for $Command" | Out-Null
+            $timeoutLogDirectory = New-ScriptAutomationLogDirectory -Name $Name -LogDirectory $LogDirectory
             $drain = Complete-ScriptAutomationRedirectedStreamDrain `
                 -Process $process `
                 -StdoutTask $stdoutTask `
                 -StderrTask $stderrTask `
                 -Name $Name `
-                -LogDirectory $LogDirectory `
+                -LogDirectory $timeoutLogDirectory `
                 -StdoutCapture $stdoutCapture `
                 -StderrCapture $stderrCapture
             Write-ScriptAutomationStreamDrainDiagnostics -Name $Name -Drain $drain
-            if ($drain.TimedOut) {
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
-                Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput -UnfinishedStreams $drain.UnfinishedStreams
-            }
-            throw "Command '$Command' timed out after $TimeoutSeconds seconds while reading output."
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stdout.log') -Content $drain.Stdout -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            Write-ScriptAutomationProcessLog -Path (Join-Path $drain.LogDirectory 'stderr.log') -Content $drain.Stderr -PartialOutput:$drain.TimedOut -UnfinishedStreams $drain.UnfinishedStreams
+            $failure = [TimeoutException]::new("Command '$Command' timed out after $TimeoutSeconds seconds while reading output. Logs: $($drain.LogDirectory)")
+            $failure.Data['Stdout'] = $drain.Stdout
+            $failure.Data['Stderr'] = $drain.Stderr
+            $failure.Data['LogDirectory'] = "$($drain.LogDirectory)"
+            $failure.Data['PartialOutput'] = [bool] $drain.TimedOut
+            throw $failure
         }
 
         $exitCode = $process.ExitCode
@@ -899,23 +966,103 @@ function Invoke-AspireInteractive {
     Invoke-NativeCommandInteractive -Command (Get-AspireCliCommand) -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
 }
 
+function Resolve-PnpmDirArgument {
+    param(
+        [Parameter(Mandatory)]
+        [string] $BaseDirectory,
+
+        [Parameter(Mandatory)]
+        [string] $Target
+    )
+
+    if ([System.IO.Path]::IsPathRooted($Target)) {
+        return [System.IO.Path]::GetFullPath($Target)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $BaseDirectory $Target))
+}
+
+function Resolve-PnpmInvocation {
+    <#
+    .SYNOPSIS
+        规约 pnpm 调用的进程工作目录，根除 corepack 版本解析坑。
+    .DESCRIPTION
+        corepack 按“进程 cwd 就近 package.json 的 packageManager 字段”决定 pnpm 版本；
+        仓库根目录没有 package.json，从根目录（或其他无 package.json 的目录）调用会解析
+        到最新 pnpm，并因与 frontend/ 锁定版本不一致直接失败（pnpm -C 切目录发生在
+        corepack 解析之后，救不回来）。本函数集中处理两件事：
+        1. 参数中出现 -C/--dir <path> 时，把进程 cwd 对齐到该目标目录并剔除该参数对
+           （行为等价：pnpm -C 的语义就是“切到该目录再执行”）。-C 大小写敏感（小写
+           -c 是下游命令常见参数，不消费）；多次出现时各自基于原始 cwd 解析、末者胜；
+           遇到 -- 分隔符后停止扫描，其后参数原样透传给下游命令。
+        2. 未显式传 WorkingDirectory 时，默认以 <repoRoot>/frontend 为 cwd。
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [string] $WorkingDirectory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+        $WorkingDirectory = Join-Path (Get-ScriptAutomationRepoRoot) 'frontend'
+    }
+
+    $baseDirectory = $WorkingDirectory
+    $normalizedArguments = [System.Collections.Generic.List[string]]::new()
+    $index = 0
+    while ($index -lt $Arguments.Count) {
+        $argument = $Arguments[$index]
+        if ([string]::Equals($argument, '--', [StringComparison]::OrdinalIgnoreCase)) {
+            # -- 之后的参数属于下游命令（pnpm run/exec 透传），原样保留、停止扫描。
+            while ($index -lt $Arguments.Count) {
+                $normalizedArguments.Add($Arguments[$index])
+                $index += 1
+            }
+            break
+        }
+        # -C 必须大小写敏感：小写 -c 是下游命令（如 playwright test -c）常见参数。
+        if (([string]::Equals($argument, '-C', [StringComparison]::Ordinal) -or
+                [string]::Equals($argument, '--dir', [StringComparison]::OrdinalIgnoreCase)) -and
+            ($index + 1) -lt $Arguments.Count) {
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $baseDirectory -Target $Arguments[$index + 1]
+            $index += 2
+            continue
+        }
+        if ($argument -like '--dir=*') {
+            $WorkingDirectory = Resolve-PnpmDirArgument -BaseDirectory $baseDirectory -Target $argument.Substring('--dir='.Length)
+            $index += 1
+            continue
+        }
+        $normalizedArguments.Add($argument)
+        $index += 1
+    }
+
+    return [pscustomobject]@{
+        Arguments        = [string[]] $normalizedArguments.ToArray()
+        WorkingDirectory = $WorkingDirectory
+    }
+}
+
 function Invoke-Pnpm {
     param(
         [Parameter(Mandatory)]
         [string[]] $Arguments,
 
-        [string] $WorkingDirectory = (Get-Location).Path,
+        [string] $WorkingDirectory,
 
         [int] $TimeoutSeconds = 600,
 
         [string] $Name = 'pnpm'
     )
 
+    $invocation = Resolve-PnpmInvocation -Arguments $Arguments -WorkingDirectory $WorkingDirectory
+
     if ($IsWindows) {
-        return Invoke-NativeCommandWithTimeout -Command 'cmd' -Arguments (@('/d', '/s', '/c', 'pnpm') + $Arguments) -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+        return Invoke-NativeCommandWithTimeout -Command 'cmd' -Arguments (@('/d', '/s', '/c', 'pnpm') + $invocation.Arguments) -WorkingDirectory $invocation.WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
     }
 
-    Invoke-NativeCommandWithTimeout -Command 'pnpm' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
+    Invoke-NativeCommandWithTimeout -Command 'pnpm' -Arguments $invocation.Arguments -WorkingDirectory $invocation.WorkingDirectory -TimeoutSeconds $TimeoutSeconds -Name $Name
 }
 
 function Invoke-DockerCompose {
@@ -1264,6 +1411,49 @@ function Invoke-WithScopedEnvironment {
             }
         }
     }
+}
+
+function New-ExclusiveInvocationClaim {
+    <#
+    .SYNOPSIS
+        Atomically claims a single-owner invocation ID.
+    .DESCRIPTION
+        Uses FileMode.CreateNew so that exactly one caller can own a claim path. Concurrent callers
+        racing on the same ID lose deterministically at the file system level rather than through a
+        check-then-write window, so existing evidence can never be replaced by a rerun.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $ClaimPath,
+
+        [Parameter(Mandatory)]
+        [string] $InvocationId
+    )
+
+    $claimStream = $null
+    try {
+        $claimStream = [System.IO.FileStream]::new(
+            $ClaimPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::Read)
+        $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
+        $claimStream.Write($claimBytes, 0, $claimBytes.Length)
+        $claimStream.Flush($true)
+    }
+    catch [System.IO.IOException] {
+        if (Test-Path -LiteralPath $ClaimPath -PathType Leaf) {
+            throw "Evidence invocation '$InvocationId' is already claimed at $ClaimPath. Use a new invocation ID; reruns never replace prior evidence."
+        }
+        throw
+    }
+    finally {
+        if ($null -ne $claimStream) {
+            $claimStream.Dispose()
+        }
+    }
+
+    return $ClaimPath
 }
 
 function Assert-FacadeTypesGenExport {

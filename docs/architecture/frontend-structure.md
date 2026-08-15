@@ -40,6 +40,7 @@ frontend/
 
 - `apps/business-pda`：手持 PDA 一线作业（WMS/MES 扫码任务 + 轻量设备报修/点检），Capacitor 打包 Android APK；与 `business-console` 同源消费 `@nerv-iip/api-client` 的 business-console 稳定导出，当前只经 BusinessGateway `/api/business-console/v1/**` facade，不直连业务服务 URL，不复用 PC 菜单树。独立 `/api/mobile/v1/**` facade、mobile OpenAPI 快照和 `api-client/src/mobile.ts` 属于后续移动专用 API 轨道。
 - `packages/ui-mobile`：触摸/PDA 区块组件层（Reka UI + Tailwind + 复用 `@nerv-iip/ui` 的设计 token），按「原版零改、复制重建」doctrine 自建移动密度组件（ScanBar、TabBar、BottomSheet、ListRow 等），不 import PC FE-2 区块以避免桌面密度污染。
+- PDA 任务列表统一使用 app 内的 `TaskListShell` 组合 `NvPullRefresh` 与 `NvInfiniteList`：默认每页 20 条，筛选交给服务端，列表壳负责范围/来源/计数/更新时间、首屏与次页错误分流、会话内筛选和滚动恢复。各域 composable 只提供稳定的分页适配器；不得通过把 `take` 扩大到 100/200 冒充全量，也不得后台预取。`NvInfiniteList` 的 `parentScroll` 模式仅负责父滚动容器中的 sentinel，默认自有滚动行为保持兼容。
 - `packages/business-core`：与 PC 同源的内核——领域类型 + SOP/状态机 + 字典(CodeSet) + 命令构造器，由 `business-console` 现有 `src/data/*.ts` 有界抽取，PC 与移动端共用；PC 端逐步迁移消费，不一次性改写。
 
 `apps/business-workstation`（工位机/平板触摸操作台）为 roadmap 预留，v1 不实现。大屏只读看板已由 `apps/screen` 落地（取代原 `business-board` 占位命名，见 GitHub Epic #562）：独立 Vite app，全屏深色 `ScreenLayout` + `ScreenScaler` 等比缩放，复用 `ui` 的 screen 层组件与 `--nv-scr-*` token，不依赖 `ui-mobile`（展示态非触摸操作态）。
@@ -48,7 +49,7 @@ Business Console MVP 是第二个真实应用入口：`frontend/apps/business-co
 
 Console Auth + shadcn-vue Baseline 当前采用共享 `frontend/packages/auth` 方案：app 内 `src/stores/auth.ts` 只配置 storage key、Pinia store id、文案和注入后的 auth API；`src/api/auth.ts` 只包装 Gateway Auth facade 的稳定 `@nerv-iip/api-client` 导出；路由守卫、redirect sanitizer、unauthorized redirect、refresh orchestration 和 logout/session revoke 组合由 `@nerv-iip/auth` 提供。共享包不直接耦合某个页面或 app shell。
 
-第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的 Selected Baseline。
+第五阶段曾暂缓前端功能实施，避免后端 SDK、迁移发布和部署验证被控制台 UI 牵引。Phase 8 已把 Console Design System 基线推进到 Calm Control Plane 蓝色主题：`frontend/apps/console/src/assets/main.css` 中的 shadcn semantic tokens 负责蓝色主动作、focus ring、sidebar selected state 和 chart orientation；旧 `--legacy-color-*` 只作为兼容 token 保留。新的页面、组件皮肤、组件库迁移或 token 体系必须沿用 docs/architecture/frontend-design-system-planning.md 的“已选基线”。
 
 ## 配置分层
 
@@ -114,7 +115,7 @@ pnpm -C frontend build
 - src/pages：真实页面入口。
 - src/components：共享与局部视图组件。
 - src/composables：跨组件与跨页面复用逻辑。
-- src/stores：Pinia client state。
+- src/stores：Pinia 客户端状态。
 - src/api：应用侧 API 组装层。
 - src/plugins：应用级插件安装。
 - src/utils：纯函数工具。
@@ -238,7 +239,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 
 业务控制台的服务端状态统一放入 `src/composables/useBusinessMasterData.ts`、`useBusinessInventory.ts`、`useBusinessQuality.ts` 和 `useBusinessMes.ts`。这些 composable 只消费 `@nerv-iip/api-client` 的 business-console 稳定导出，不深 import generated，不手写业务服务 URL。
 
-Business Console focused verification commands:
+Business Console 定向验证命令：
 
 ```powershell
 pnpm -C frontend --filter @nerv-iip/business-console typecheck
@@ -258,7 +259,7 @@ scripts/verify-business-console-mes-pc-workbench.ps1 -E2E -ChromiumExecutablePat
 
 ADR 0014 后，APS/Gantt 不进入 `/mes/schedules` 页面内部。#206 负责后端 APS lite 排程契约和内核，#78 负责甘特/排产图展示；未来独立排程工作台应消费 APS 输出 DTO，并继续通过 BusinessGateway facade 访问业务数据。
 
-### Console IAM Admin
+### Console IAM 管理
 
 Phase 8 已交付 IAM Admin 控制台路由：
 

@@ -1,11 +1,20 @@
 <script setup lang="ts">
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import { LifecycleStateChangedError, recoverLifecycleAction } from '@/composables/lifecycleAction'
+import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -72,10 +81,26 @@ const {
   alarms,
   alarmsError,
   alarmsPending,
+  alarmsTotal,
+  alarmsOrganizationId,
+  alarmsEnvironmentId,
+  alarmsLastUpdatedAt,
+  alarmsHasSuccessfulResponse,
+  alarmsHasFailedResponse,
   refreshAlarms,
   shelveAlarm,
   unshelveAlarm,
 } = useBusinessEquipmentAlarms()
+const alarmScope = computed(() =>
+  alarmsOrganizationId && alarmsEnvironmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const alarmEmptyExplanation = computed(() =>
+  !alarmsOrganizationId || !alarmsEnvironmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前列表为组织范围的未解除设备报警，暂不支持按当前人员归属筛选；空态不代表个人报警。',
+)
 
 const errorMessage = computed(() => formatError(alarmsError.value))
 const criticalCount = computed(
@@ -151,14 +176,33 @@ function historyQuery(row: Alarm): LocationQueryRaw {
   }
 }
 
+// 报警读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
+function deviceLabel(code?: string | null, fallback = '无设备') {
+  if (!code) return fallback
+  return resolveDevice(code) ?? code
+}
+/** 报警单号：alarmEventId 是系统 GUID，屏上用现场认的外部报警号。 */
+function alarmNo(row: Alarm) {
+  return row.externalAlarmId ?? '无报警号'
+}
+
 const columns: NvDataTableColumn<Alarm>[] = [
   {
     key: 'alarmEventId',
     header: '报警',
     cellClass: 'font-medium',
-    accessor: (r) => r.alarmEventId ?? '无编号',
+    accessor: (r) => alarmNo(r),
   },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) =>
+      resolveDevice(r.deviceAssetId)
+        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
+        : (r.deviceAssetId ?? '无设备'),
+  },
   { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -300,8 +344,11 @@ function severityLabel(value?: string | null) {
     critical: '严重',
     info: '信息',
     warning: '预警',
+    major: '重要',
+    minor: '次要',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知级别」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知级别') : '未知'
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
@@ -315,8 +362,10 @@ function statusLabel(value?: string | null) {
     cleared: '已解除',
     raised: '已触发',
     shelved: '已搁置',
+    escalated: '已升级',
   }
-  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+  // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
+  return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
 function statusVariant(value?: string | null) {
   const status = value?.toLowerCase()
@@ -328,24 +377,28 @@ function statusVariant(value?: string | null) {
 function isShelved(row: Alarm) {
   return (row.status ?? '').toLowerCase() === 'shelved'
 }
+function alarmActionAllowed(row: Alarm, action: 'acknowledge' | 'shelve' | 'unshelve') {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action,
+    facts: {
+      status: row.status,
+      acknowledgedAtUtc: row.acknowledgedAtUtc,
+      shelvedAtUtc: row.shelvedAtUtc,
+      shelvedUntilUtc: row.shelvedUntilUtc,
+    },
+  }).executable
+}
 function canAcknowledge(row: Alarm) {
   return (
-    canManageAlarms.value &&
-    Boolean(row.alarmEventId) &&
-    !row.acknowledgedAtUtc &&
-    (row.status ?? '').toLowerCase() !== 'cleared'
+    canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'acknowledge')
   )
 }
 function canShelve(row: Alarm) {
-  return (
-    canManageAlarms.value &&
-    Boolean(row.alarmEventId) &&
-    !isShelved(row) &&
-    (row.status ?? '').toLowerCase() !== 'cleared'
-  )
+  return canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'shelve')
 }
 function canUnshelve(row: Alarm) {
-  return canManageAlarms.value && Boolean(row.alarmEventId) && isShelved(row)
+  return canManageAlarms.value && Boolean(row.alarmEventId) && alarmActionAllowed(row, 'unshelve')
 }
 // Disposition only. 升级 is surfaced separately by the row icon/tooltip (orthogonal). An alarm
 // can be BOTH shelved and acknowledged (canAcknowledge does not exclude shelved), so show both
@@ -375,6 +428,11 @@ const selectedKeys = ref<(string | number)[]>([])
 const selectedAlarms = computed(() =>
   alarms.value.filter((a) => selectedKeys.value.includes(alarmKey(a))),
 )
+function isLifecycleConflictResult(
+  result: PromiseSettledResult<unknown>,
+): result is PromiseRejectedResult {
+  return result.status === 'rejected' && result.reason instanceof LifecycleStateChangedError
+}
 const ackTargets = computed(() => selectedAlarms.value.filter(canAcknowledge))
 const shelveTargets = computed(() => selectedAlarms.value.filter(canShelve))
 function clearSelection() {
@@ -388,7 +446,16 @@ async function handleAcknowledge(row: Alarm) {
     notifySuccess('报警已确认。')
     await refreshAlarms().catch(() => {})
   } catch (error) {
-    notifyError(error, '报警确认失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: clearSelection,
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('报警确认失败', error, '报警确认失败，请稍后重试。')
   }
 }
 async function handleUnshelve(row: Alarm) {
@@ -398,7 +465,16 @@ async function handleUnshelve(row: Alarm) {
     notifySuccess('报警搁置已解除。')
     await refreshAlarms().catch(() => {})
   } catch (error) {
-    notifyError(error, '解除搁置失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: clearSelection,
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('解除搁置失败', error, '解除搁置失败，请稍后重试。')
   }
 }
 
@@ -418,11 +494,25 @@ async function confirmBatchAck() {
     )
     // Commit the failed-row retention before the best-effort refresh so a refresh failure
     // cannot strand it (A1 §5.2); acknowledge is first-write-wins, so re-confirming is safe.
-    const failed = targets.filter((_, i) => results[i].status === 'rejected')
+    const stale = results.filter(isLifecycleConflictResult)
+    const failed = targets.filter(
+      (_, i) => results[i].status === 'rejected' && !isLifecycleConflictResult(results[i]),
+    )
     selectedKeys.value = failed.length ? failed.map(alarmKey) : []
     batchAck.open = false
-    summarizeBatch('确认', results)
-    await refreshAlarms().catch(() => {})
+    const ordinaryResults = results.filter((result) => !isLifecycleConflictResult(result))
+    if (ordinaryResults.length) summarizeBatch('确认', ordinaryResults)
+    if (stale.length) {
+      await recoverLifecycleAction(stale[0]!.reason, {
+        reset: () => {
+          batchAck.open = false
+        },
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    } else {
+      await refreshAlarms().catch(() => {})
+    }
   } finally {
     batchAck.submitting = false
   }
@@ -434,6 +524,7 @@ const MAX_SHELVE_MINUTES = 24 * 60
 const shelve = reactive({
   open: false,
   targets: [] as Alarm[],
+  editableFailures: [] as Alarm[],
   duration: '30' as string,
   customMinutes: 60,
   reason: '',
@@ -455,8 +546,13 @@ const shelveContextItems = computed(() => {
   const target = shelve.targets[0]
   if (!target) return []
   return [
-    { label: '报警', value: target.alarmEventId },
-    { label: '设备', value: target.deviceAssetId },
+    { label: '报警', value: alarmNo(target) },
+    {
+      label: '设备',
+      value: resolveDevice(target.deviceAssetId)
+        ? `${resolveDevice(target.deviceAssetId)}（${target.deviceAssetId}）`
+        : target.deviceAssetId,
+    },
     { label: '报警代码', value: target.alarmCode },
     { label: '级别', value: severityLabel(target.severity) },
     { label: '发生时间', value: formatDateTime(target.raisedAtUtc) },
@@ -488,12 +584,40 @@ function openShelve(rows: Alarm[]) {
   shelve.customMinutes = 60
   shelve.reason = ''
   shelve.locked = false
+  shelve.editableFailures = []
   // Freeze the shelve instant for the whole batch intent: the backend derives the shelve
   // window from ShelvedAtUtc and de-dupes on the idempotency key (first-write-wins), so a
   // retry of the failed rows with the SAME frozen key is a no-op, not a re-shelve.
   shelve.batchAtUtc = new Date().toISOString()
   shelve.open = true
 }
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const candidate = error as {
+    code?: unknown
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  }
+  return [candidate.code, candidate.status, candidate.statusCode, candidate.response?.status].find(
+    (value): value is number => typeof value === 'number',
+  )
+}
+
+function isDefinitiveClientFailure(result: PromiseSettledResult<unknown>) {
+  if (result.status !== 'rejected') return false
+  const status = errorStatus(result.reason)
+  return status !== undefined && status >= 400 && status < 500 && status !== 409
+}
+
+function nextShelveIntentTimestamp(previous: string) {
+  const previousAt = Date.parse(previous)
+  return new Date(
+    Math.max(Date.now(), Number.isFinite(previousAt) ? previousAt + 1 : 0),
+  ).toISOString()
+}
+
 async function confirmShelve() {
   const targets = shelve.targets
   if (!targets.length || shelveInvalid.value) return
@@ -505,6 +629,7 @@ async function confirmShelve() {
     const results = await Promise.allSettled(
       targets.map((row) =>
         shelveAlarm(row.alarmEventId!, currentActor.value, minutes, reason, {
+          attempt: shelve.locked ? 'retry' : 'initial',
           shelvedAtUtc,
           idempotencyKey: `shelve:${row.alarmEventId}:${shelvedAtUtc}:${minutes}`,
         }),
@@ -515,18 +640,56 @@ async function confirmShelve() {
     // so a retry stays an idempotent no-op even if the first attempt actually succeeded on the
     // backend but the response was lost (A1 §5.2「失败行可定位」+ 稳定重试). Refresh is a
     // best-effort last step — its failure must never strand the retry state.
-    const failed = targets.filter((_, i) => results[i].status === 'rejected')
-    if (failed.length) {
-      shelve.targets = failed
-      selectedKeys.value = failed.map(alarmKey)
+    const stale = results.filter(isLifecycleConflictResult)
+    const uncertainFailures = targets.filter(
+      (_, i) =>
+        results[i].status === 'rejected' &&
+        !isLifecycleConflictResult(results[i]) &&
+        !isDefinitiveClientFailure(results[i]),
+    )
+    const definitiveFailures = targets.filter((_, i) => isDefinitiveClientFailure(results[i]))
+    const editableFailures = [...shelve.editableFailures, ...definitiveFailures].filter(
+      (row, index, rows) =>
+        rows.findIndex((candidate) => alarmKey(candidate) === alarmKey(row)) === index,
+    )
+    if (uncertainFailures.length) {
+      shelve.targets = uncertainFailures
+      shelve.editableFailures = editableFailures
+      selectedKeys.value = uncertainFailures.map(alarmKey)
       shelve.locked = true
+    } else if (editableFailures.length) {
+      // A definitive 4xx did not enter the ambiguous response-loss path. Keep the form
+      // editable, but rotate the frozen instant so a corrected payload is a new intent.
+      shelve.targets = editableFailures
+      shelve.editableFailures = []
+      selectedKeys.value = editableFailures.map(alarmKey)
+      shelve.locked = false
+      shelve.batchAtUtc = nextShelveIntentTimestamp(shelvedAtUtc)
     } else {
       clearSelection()
       shelve.locked = false
+      shelve.editableFailures = []
       shelve.open = false
     }
-    summarizeBatch('搁置', results)
-    await refreshAlarms().catch(() => {})
+    const ordinaryResults = results.filter((result) => !isLifecycleConflictResult(result))
+    if (ordinaryResults.length) summarizeBatch('搁置', ordinaryResults)
+    if (stale.length) {
+      await recoverLifecycleAction(stale[0]!.reason, {
+        reset: () => {
+          if (!uncertainFailures.length && !editableFailures.length) {
+            shelve.open = false
+            shelve.targets = []
+            shelve.locked = false
+            shelve.editableFailures = []
+            clearSelection()
+          }
+        },
+        refresh: refreshAlarms,
+        notify: (message) => notifyError(message),
+      })
+    } else {
+      await refreshAlarms().catch(() => {})
+    }
   } finally {
     shelve.submitting = false
   }
@@ -536,6 +699,7 @@ function abandonShelve() {
   shelve.locked = false
   shelve.batchAtUtc = ''
   shelve.targets = []
+  shelve.editableFailures = []
   clearSelection()
   shelve.open = false
 }
@@ -567,7 +731,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -599,6 +763,18 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
+
+    <ListScopeMeta
+      :scope="alarmScope"
+      source="设备报警服务（组织/环境范围）"
+      :loaded="alarms.length"
+      :total="alarmsTotal"
+      :updated-at="alarmsLastUpdatedAt"
+      :empty="alarmsHasSuccessfulResponse && !alarmsError && alarms.length === 0"
+      :failed="alarmsHasFailedResponse || Boolean(alarmsError)"
+      failure-explanation="设备报警服务未成功返回，请重试。"
+      :empty-explanation="alarmEmptyExplanation"
+    />
 
     <NvSectionCards :columns="2">
       <NvMetricRing
@@ -690,15 +866,19 @@ function formatError(error: unknown) {
               </NvTooltipContent>
             </NvTooltip>
           </NvTooltipProvider>
-          <span>{{ row.alarmEventId ?? '无编号' }}</span>
+          <span>{{ alarmNo(row) }}</span>
         </div>
       </template>
       <template #cell-deviceAssetId="{ row }">
         <RouterLink
           :to="`/equipment/${row.deviceAssetId}`"
-          class="text-brand underline-offset-4 hover:underline"
-          >{{ row.deviceAssetId ?? '无设备' }}</RouterLink
+          class="grid leading-tight text-brand underline-offset-4 hover:underline"
         >
+          <span>{{ deviceLabel(row.deviceAssetId) }}</span>
+          <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
+            row.deviceAssetId
+          }}</span>
+        </RouterLink>
       </template>
       <template #cell-severity="{ row }">
         <NvBadge class="rounded-sm" :variant="severityVariant(row.severity)">{{

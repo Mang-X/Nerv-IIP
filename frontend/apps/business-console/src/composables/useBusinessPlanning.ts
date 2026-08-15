@@ -1,5 +1,6 @@
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
@@ -26,12 +27,13 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, reactive } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
   withBusinessContextEnabled,
 } from './businessContextBinding'
+import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 export interface PlanningContextFilters {
   organizationId: string
@@ -83,6 +85,39 @@ export interface PlanningMpsForm {
 export interface PlanningSuggestionAcceptInput {
   suggestionId: string
   suggestionType: string
+}
+
+export interface PlanningSuggestionRejectInput {
+  suggestionId: string
+  reason: string
+}
+
+/** 拒绝原因上限（与网关请求契约一致）。 */
+export const SUGGESTION_REJECT_REASON_MAX_LENGTH = 128
+
+/**
+ * 运行 MRP 的异步跟踪状态（#1306）：提交即受理（202 + runId），
+ * 之后轮询运行列表读面直到终态；弹框全程可关闭，后台继续跑。
+ */
+export interface ActiveMrpRunState {
+  runId: string
+  /** '' = 无进行中的运行。polling-timeout = 轮询超时但任务可能仍在后台执行。 */
+  status: '' | 'queued' | 'running' | 'completed' | 'failed' | 'polling-timeout'
+  failureReason: string
+  suggestionCount: number | null
+}
+
+/** 轮询间隔与上限：MRP 实测十余秒量级，2s 步进、5 分钟封顶足够并且不刷爆网关。 */
+export const MRP_RUN_POLL_INTERVAL_MS = 2_000
+export const MRP_RUN_POLL_TIMEOUT_MS = 5 * 60 * 1_000
+
+function normalizeMrpRunStatus(status: string | null | undefined): ActiveMrpRunState['status'] {
+  const value = (status ?? '').toLowerCase()
+  if (value === 'completed') return 'completed'
+  if (value === 'failed') return 'failed'
+  if (value === 'running') return 'running'
+  // Created（服务端排队态）与未知值都按排队中处理，等待下一次轮询澄清。
+  return 'queued'
 }
 
 const PLANNING_QUERY_IDS = [
@@ -298,6 +333,10 @@ export function useBusinessPlanning() {
   const invalidatePlanningQueries = () =>
     queryCache.invalidateQueries({ predicate: isBusinessQuery(PLANNING_QUERY_IDS) })
 
+  const mrpRuns = computed<BusinessConsoleMrpRunItem[]>(() =>
+    unwrapItems(runsQuery.data.value as BusinessConsoleMrpRunListEnvelope | undefined),
+  )
+
   const createDemandMutation = useMutation({
     ...createOrUpdateBusinessConsolePlanningDemandMutationOptions(),
     onSuccess() {
@@ -310,6 +349,80 @@ export function useBusinessPlanning() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
   })
+
+  // —— 运行 MRP 异步跟踪（#1306）——提交受理后轮询运行列表直到终态。
+  const activeMrpRun = reactive<ActiveMrpRunState>({
+    runId: '',
+    status: '',
+    failureReason: '',
+    suggestionCount: null,
+  })
+  let mrpPollTimer: ReturnType<typeof setTimeout> | null = null
+  let mrpPollDeadline = 0
+
+  function stopMrpRunPolling() {
+    if (mrpPollTimer !== null) {
+      clearTimeout(mrpPollTimer)
+      mrpPollTimer = null
+    }
+  }
+
+  if (getCurrentScope()) {
+    onScopeDispose(stopMrpRunPolling)
+  }
+
+  function applyActiveRunSnapshot(run: BusinessConsoleMrpRunItem | undefined): boolean {
+    if (!run) {
+      return false
+    }
+
+    activeMrpRun.status = normalizeMrpRunStatus(run.status)
+    if (activeMrpRun.status === 'completed') {
+      activeMrpRun.suggestionCount = run.suggestionCount ?? 0
+    }
+    if (activeMrpRun.status === 'failed') {
+      activeMrpRun.failureReason = run.failureReason ?? ''
+    }
+    return activeMrpRun.status === 'completed' || activeMrpRun.status === 'failed'
+  }
+
+  async function pollActiveMrpRunOnce() {
+    mrpPollTimer = null
+    if (!activeMrpRun.runId) {
+      return
+    }
+
+    try {
+      await runsQuery.refetch()
+    } catch {
+      // 单次轮询失败不终止跟踪：网络抖动交给下一轮，超时判定兜底。
+    }
+
+    const run = mrpRuns.value.find((item) => item.runId === activeMrpRun.runId)
+    if (applyActiveRunSnapshot(run)) {
+      // 终态：建议/KPI 等读面统一失效重取。
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+      return
+    }
+
+    if (Date.now() >= mrpPollDeadline) {
+      // 轮询超时 ≠ 任务失败：后台可能仍在计算，把决定权还给用户（运行列表可回看）。
+      activeMrpRun.status = 'polling-timeout'
+      return
+    }
+
+    mrpPollTimer = setTimeout(() => void pollActiveMrpRunOnce(), MRP_RUN_POLL_INTERVAL_MS)
+  }
+
+  function trackMrpRun(runId: string) {
+    stopMrpRunPolling()
+    activeMrpRun.runId = runId
+    activeMrpRun.status = 'queued'
+    activeMrpRun.failureReason = ''
+    activeMrpRun.suggestionCount = null
+    mrpPollDeadline = Date.now() + MRP_RUN_POLL_TIMEOUT_MS
+    mrpPollTimer = setTimeout(() => void pollActiveMrpRunOnce(), MRP_RUN_POLL_INTERVAL_MS)
+  }
   const createMpsMutation = useMutation({
     ...createBusinessConsolePlanningMpsBucketMutationOptions(),
     onSuccess() {
@@ -336,6 +449,12 @@ export function useBusinessPlanning() {
   })
   const acceptSuggestionMutation = useMutation({
     ...acceptBusinessConsolePlanningSuggestionMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const rejectSuggestionMutation = useMutation({
+    ...rejectBusinessConsolePlanningSuggestionMutationOptions(),
     onSuccess() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
@@ -429,9 +548,7 @@ export function useBusinessPlanning() {
     mpsBucketsPending: mpsBucketsQuery.isLoading,
     mpsFilters,
     mpsForm,
-    mrpRuns: computed<BusinessConsoleMrpRunItem[]>(() =>
-      unwrapItems(runsQuery.data.value as BusinessConsoleMrpRunListEnvelope | undefined),
-    ),
+    mrpRuns,
     mrpRunsError: runsQuery.error,
     mrpRunsPending: runsQuery.isLoading,
     pegging: computed<BusinessConsoleMrpPeggingItem[]>(() =>
@@ -457,7 +574,37 @@ export function useBusinessPlanning() {
 
       await Promise.all(queries)
     },
-    runMrp: () => runMrpMutation.mutateAsync({ body: { ...runRequest } }),
+    rejectSuggestion: async (input: PlanningSuggestionRejectInput) => {
+      const reason = input.reason.trim()
+      if (!reason) {
+        throw new Error('请填写拒绝原因。')
+      }
+      if (reason.length > SUGGESTION_REJECT_REASON_MAX_LENGTH) {
+        throw new Error(`拒绝原因不能超过 ${SUGGESTION_REJECT_REASON_MAX_LENGTH} 字。`)
+      }
+      const envelope = await rejectSuggestionMutation.mutateAsync({
+        path: { suggestionId: input.suggestionId },
+        query: {
+          organizationId: suggestionFilters.organizationId,
+          environmentId: suggestionFilters.environmentId,
+        },
+        // actor 由网关按登录主体注入，前端不传。
+        body: { reason },
+      })
+      return assertEnvelopeSuccess(envelope, '计划建议拒绝失败，请稍后重试。')
+    },
+    rejectSuggestionError: rejectSuggestionMutation.error,
+    rejectSuggestionPending: rejectSuggestionMutation.isLoading,
+    activeMrpRun,
+    // 提交即受理（202 + runId）：受理成功后开始轮询运行状态直到终态；实际结果看 activeMrpRun。
+    runMrp: async () => {
+      const envelope = await runMrpMutation.mutateAsync({ body: { ...runRequest } })
+      const runId = envelope?.data?.runId?.trim() ?? ''
+      if (runId) {
+        trackMrpRun(runId)
+      }
+      return envelope
+    },
     runMrpError: runMrpMutation.error,
     runMrpPending: runMrpMutation.isLoading,
     runRequest,

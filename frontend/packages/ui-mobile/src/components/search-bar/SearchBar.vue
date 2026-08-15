@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils'
 withDefaults(
   defineProps<{
     placeholder?: string
+    ariaLabel?: string
     cancelable?: boolean
     class?: HTMLAttributes['class']
   }>(),
@@ -35,13 +36,14 @@ function cancel() {
 
 <template>
   <div data-slot="search-bar" :class="cn('flex items-center px-3 py-2', $props.class)">
-    <div class="flex h-9 flex-1 items-center gap-2 rounded-full bg-muted px-3.5">
+    <div class="min-h-touch flex flex-1 items-center gap-2 rounded-full bg-muted px-3.5">
       <Search class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <input
         v-model="model"
         type="search"
         :placeholder="placeholder"
-        class="h-full w-full min-w-0 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+        :aria-label="ariaLabel"
+        class="min-h-touch w-full min-w-0 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
         @focus="focused = true"
         @keydown.enter="emit('search', model)"
       />
@@ -49,18 +51,20 @@ function cancel() {
         <button
           v-if="model"
           type="button"
-          class="grid size-5 shrink-0 place-items-center rounded-full bg-muted-foreground/30 text-card active:opacity-70"
+          class="min-h-touch min-w-12 -my-1 -mr-3 grid shrink-0 place-items-center rounded-full text-card active:opacity-70"
           aria-label="清除"
           @click="clear"
         >
-          <X class="size-3.5" aria-hidden="true" />
+          <span class="grid size-5 place-items-center rounded-full bg-muted-foreground/30">
+            <X class="size-3.5" aria-hidden="true" />
+          </span>
         </button>
       </Transition>
     </div>
     <div v-if="cancelable" class="nv-m-sb-cancel" :class="expanded && 'is-open'">
       <button
         type="button"
-        class="px-1 text-[15px] whitespace-nowrap text-brand active:opacity-60"
+        class="min-h-touch min-w-12 text-[15px] whitespace-nowrap text-brand active:opacity-60"
         @click="cancel"
       >
         取消

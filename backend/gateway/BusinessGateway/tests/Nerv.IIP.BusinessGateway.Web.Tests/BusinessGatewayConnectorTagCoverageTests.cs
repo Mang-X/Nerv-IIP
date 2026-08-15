@@ -42,9 +42,9 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
                         null),
                 ]),
         };
-        await using var factory = CreateFactory(auth, telemetry);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(auth, telemetry);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/telemetry/connectors/opc-main/tag-coverage?organizationId=org-001&environmentId=env-dev");
@@ -88,9 +88,9 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
                 0,
                 []),
         };
-        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), telemetry);
-        var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), telemetry);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
 
         var response = await client.GetAsync(
             "/api/business-console/v1/telemetry/connectors/connector-empty/tag-coverage?organizationId=org-001&environmentId=env-dev");
@@ -117,27 +117,17 @@ public sealed class BusinessGatewayConnectorTagCoverageTests
         Assert.Contains(result.Errors, error => PropertyMatches(error.PropertyName, nameof(BusinessConsoleConnectorTagCoverageRequest.EnvironmentId)));
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(
+    private static BusinessGatewayTestHostLease LeaseHost(
         FakeBusinessGatewayAuthorizationClient auth,
         RecordingIndustrialTelemetryClient telemetry) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        BusinessGatewayTestHost.Lease(auth, services =>
         {
-            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
-            builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
-            builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IBusinessGatewayAuthorizationClient>();
-                services.AddSingleton<IBusinessGatewayAuthorizationClient>(auth);
-                services.RemoveAll<IBusinessIndustrialTelemetryClient>();
-                services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
-                services.RemoveAll<IInternalServiceTokenProvider>();
-                services.AddSingleton<IInternalServiceTokenProvider>(
-                    new TestInternalServiceTokenProvider("internal-telemetry-token"));
-            });
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-telemetry-token"));
         });
-
-    private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 
     private static bool PropertyMatches(string actual, string expected) =>
         string.Equals(

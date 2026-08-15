@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
@@ -22,36 +23,85 @@ using InboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAg
 using InboundOrderId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderId;
 using InboundOrderLineCapture = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineCapture;
 using InboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLineDraft;
+using InboundOrderStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderStatus;
 using OutboundOrder = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder;
 using OutboundOrderLineDraft = Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft;
 using CountExecution = Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate.CountExecution;
+using InventoryMovementRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate.InventoryMovementRequest;
 using WarehouseTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTask;
 using WarehouseTaskId = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskId;
+using WarehouseTaskStatus = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskStatus;
 using WarehouseTaskType = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate.WarehouseTaskType;
+using WarehouseWorkPool = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate.WarehouseWorkPool;
 using WcsTask = Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate.WcsTask;
 using SupplierReturnRequest = Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate.SupplierReturnRequest;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class WmsEndpointContractTests
 {
+    [Fact]
+    public async Task Lifecycle_conflict_endpoint_returns_409_with_safe_code()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<ISender>();
+                    services.AddSingleton<ISender>(new LifecycleConflictSender());
+                });
+            });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var inboundOrderId = Guid.CreateVersion7();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete",
+            new
+            {
+                inboundOrderId,
+                idempotencyKey = "wms-conflict",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Completed", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Wms_endpoints_expose_issue_136_routes_permissions_policies_and_operation_ids()
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(30, contracts.Length);
+        Assert.Equal(47, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsPutawayTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsPutawayTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "retryWmsInboundInventoryPosting");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/cancel-by-source" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "cancelWmsInboundOrdersForSource");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsOutboundOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "assignWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsPickingTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsPickingTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/assignment" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "assignWmsPickingTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/replenishment-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsReplenishmentTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "recordWmsWarehouseTaskProgress");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsWarehouseTask");
@@ -60,9 +110,10 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/backorder-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsBackorderOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/backorder-orders/{backorderOrderId}/close" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "closeWmsBackorderOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "retryWmsOutboundInventoryPosting");
-        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsCountExecution");
-        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
-        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsCountExecution");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == "business.inventory.counts.manage" && x.OperationId == "createWmsCountExecution");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "listWmsCountExecutions");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/assignment" && x.PermissionCode == "business.inventory.counts.manage" && x.OperationId == "assignWmsCountExecution");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions/{countExecutionId}/complete" && x.PermissionCode == "business.inventory.counts.manage" && x.OperationId == "completeWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "dispatchWmsWcsTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsDispatchCircuits");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/wcs-dispatch-circuits/reset" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "resetWmsWcsDispatchCircuit");
@@ -71,21 +122,80 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/wcs-tasks" && x.PermissionCode == WmsPermissionCodes.AutomationManage && x.OperationId == "listWmsWcsTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/receiving-quality-gates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsReceivingQualityGates");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/receipts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsReceiptWorkScopes");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/shipments" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "getWmsShipmentWorkScopes");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "getWmsCountWorkScopes");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/operational-candidates" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsOperationalCandidates");
         Assert.All(contracts, x => Assert.Equal(InternalServiceAuthorizationPolicy.Name, x.AuthorizationPolicy));
     }
 
     [Fact]
-    public void Complete_inbound_contract_accepts_optional_line_captures_without_changing_the_operation_id()
+    public void Operational_candidate_request_requires_trusted_scope_and_bounds_take()
+    {
+        var valid = new ListWarehouseOperationalCandidatesRequest(
+            "org-001",
+            "env-dev",
+            "worker-a",
+            ["SITE-A"],
+            "self",
+            "worker-a",
+            "receipts",
+            Take: 50);
+        var forgedEmptyContext = valid with
+        {
+            ActorPrincipalId = string.Empty,
+            AuthorizedSiteCodes = [],
+        };
+        var oversized = valid with { Take = 101 };
+        var unsupportedDomain = valid with { CandidateDomain = "all" };
+        var validator = new ListWarehouseOperationalCandidatesRequestValidator();
+
+        Assert.True(validator.Validate(valid).IsValid);
+        Assert.False(validator.Validate(forgedEmptyContext).IsValid);
+        Assert.False(validator.Validate(oversized).IsValid);
+        Assert.False(validator.Validate(unsupportedDomain).IsValid);
+    }
+
+    [Fact]
+    public void Complete_inbound_contract_requires_trusted_execution_context_and_preserves_line_captures()
     {
         var inboundOrderId = new InboundOrderId(Guid.CreateVersion7());
-        var legacyRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-legacy-001");
+        var legacyRequest = new CompleteInboundOrderRequest(
+            inboundOrderId,
+            "idem-legacy-001");
         var capture = new InboundOrderLineCapture("LINE-001", "LOT-001", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
-        var captureRequest = new CompleteInboundOrderRequest(inboundOrderId, "idem-capture-001", [capture]);
-        var command = new CompleteInboundOrderCommand(captureRequest.InboundOrderId, captureRequest.IdempotencyKey, captureRequest.Lines);
+        var captureRequest = new CompleteInboundOrderRequest(
+            inboundOrderId,
+            "idem-capture-001",
+            [capture],
+            "org-001",
+            "env-dev",
+            "operator-001",
+            ["SITE-01"],
+            "self",
+            "operator-001",
+            3);
+        var command = new CompleteInboundOrderCommand(
+            captureRequest.InboundOrderId,
+            captureRequest.IdempotencyKey,
+            captureRequest.Lines,
+            captureRequest.OrganizationId,
+            captureRequest.EnvironmentId,
+            captureRequest.ActorPrincipalId,
+            captureRequest.AuthorizedSiteCodes,
+            captureRequest.ScopeKind,
+            captureRequest.ScopeId,
+            captureRequest.ExpectedVersion);
 
-        Assert.Null(legacyRequest.Lines);
+        Assert.False(new CompleteInboundOrderRequestValidator().Validate(legacyRequest).IsValid);
+        Assert.True(new CompleteInboundOrderRequestValidator().Validate(captureRequest).IsValid);
         Assert.Equal([capture], captureRequest.Lines);
         Assert.Equal([capture], command.Lines);
+        Assert.Equal("operator-001", command.ActorPrincipalId);
+        Assert.Equal(["SITE-01"], command.AuthorizedSiteCodes);
+        Assert.Equal("self", command.ScopeKind);
+        Assert.Equal("operator-001", command.ScopeId);
+        Assert.Equal(3, command.ExpectedVersion);
         Assert.Equal(
             "completeWmsInboundOrder",
             WmsEndpointContracts.Get<CompleteInboundOrderEndpoint>().OperationId);
@@ -104,6 +214,21 @@ public sealed class WmsEndpointContractTests
             "org-001", "env-dev", "IN-PO-002", "purchase-order", "PO-002", "SITE-01",
             [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
         dbContext.InboundOrders.AddRange(matching, unrelated);
+        var activePutaway = WarehouseTask.CreatePutaway(
+            "org-001",
+            "env-dev",
+            "PUT-PO-001",
+            "IN-PO-001",
+            "10",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "STAGE-01",
+            "BIN-01",
+            3m,
+            assignedPoolCode: "POOL-PUTAWAY");
+        activePutaway.Start("user-001", activePutaway.Version, claimPoolAssignment: true);
+        dbContext.WarehouseTasks.Add(activePutaway);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var cancelled = await new CancelInboundOrdersForSourceCommandHandler(dbContext).Handle(
@@ -114,6 +239,7 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Cancelled", matching.Status.ToString());
         Assert.Equal("purchase-order-cancelled", matching.CancellationReason);
         Assert.Equal("Open", unrelated.Status.ToString());
+        Assert.Equal(WarehouseTaskStatus.Cancelled, activePutaway.Status);
     }
 
     [Theory]
@@ -184,7 +310,25 @@ public sealed class WmsEndpointContractTests
         using (var scope = factory.Services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var warehouseTask = WarehouseTask.CreatePutaway("org-acceptance", "env-acceptance", $"WT-{suffix}", $"IN-WCS-{suffix}", "10", $"SKU-WCS-{suffix}", "pcs", "SITE-01", "RECV-01", "STAGE-01", 3m);
+            var warehouseTask = WarehouseTask.CreatePutaway(
+                "org-acceptance",
+                "env-acceptance",
+                $"WT-{suffix}",
+                $"IN-WCS-{suffix}",
+                "10",
+                $"SKU-WCS-{suffix}",
+                "pcs",
+                "SITE-01",
+                "RECV-01",
+                "STAGE-01",
+                3m,
+                assignedPoolCode: "POOL-WCS");
+            dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+                "org-acceptance",
+                "env-acceptance",
+                "POOL-WCS",
+                "WCS 自动化池",
+                "SITE-01"));
             dbContext.WarehouseTasks.Add(warehouseTask);
             await dbContext.SaveChangesAsync(CancellationToken.None);
             warehouseTaskId = warehouseTask.Id;
@@ -193,6 +337,11 @@ public sealed class WmsEndpointContractTests
         await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
         {
             warehouseTaskId = warehouseTaskId.ToString(),
+            organizationId = "org-acceptance",
+            environmentId = "env-acceptance",
+            dispatcherPrincipalId = "user-wcs-manager",
+            authorizedSiteCodes = new[] { "SITE-01" },
+            expectedVersion = 1,
             adapterType = "agv",
             externalTaskId,
             payloadJson = """{"step":1}""",
@@ -208,6 +357,11 @@ public sealed class WmsEndpointContractTests
         await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{warehouseTaskId}/dispatch", new
         {
             warehouseTaskId = warehouseTaskId.ToString(),
+            organizationId = "org-acceptance",
+            environmentId = "env-acceptance",
+            dispatcherPrincipalId = "user-wcs-manager",
+            authorizedSiteCodes = new[] { "SITE-01" },
+            expectedVersion = 2,
             adapterType = "agv",
             externalTaskId = retryExternalTaskId,
             payloadJson = """{"step":2}""",
@@ -217,7 +371,7 @@ public sealed class WmsEndpointContractTests
             organizationId = "org-acceptance",
             environmentId = "env-acceptance",
             externalTaskId = retryExternalTaskId,
-            completionPayloadJson = """{"ok":true}""",
+            completionPayloadJson = """{"actualQuantity":3}""",
         });
 
         var diagnostics = await client.GetStringAsync($"/api/business/v1/wms/wcs-tasks?OrganizationId=org-acceptance&EnvironmentId=env-acceptance&ExternalTaskId={retryExternalTaskId}&WarehouseTaskId={warehouseTaskId}");
@@ -245,19 +399,38 @@ public sealed class WmsEndpointContractTests
                 "org-http", "env-http", "IN-CAPTURE-HTTP", "purchase-receipt", "PO-CAPTURE-HTTP", "SITE-01",
                 [new InboundOrderLineDraft("20", "SKU-CAPTURE", "pcs", 2m, "STAGE-01", "LOT-OLD", null, "qualified", "company", null)]);
             dbContext.InboundOrders.AddRange(legacyOrder, capturedOrder);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, legacyOrder);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, capturedOrder);
             await dbContext.SaveChangesAsync(CancellationToken.None);
         }
 
         await PostJsonAndAssertOkAsync(
             client,
             $"/api/business/v1/wms/inbound-orders/{legacyOrder.Id}/complete",
-            new { idempotencyKey = "idem-legacy-http" });
+            new
+            {
+                idempotencyKey = "idem-legacy-http",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
         await PostJsonAndAssertOkAsync(
             client,
             $"/api/business/v1/wms/inbound-orders/{capturedOrder.Id}/complete",
             new
             {
                 idempotencyKey = "idem-capture-http",
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
                 lines = new[]
                 {
                     new
@@ -288,26 +461,174 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
+    public async Task Completion_http_retries_replay_authoritative_v1_raw_and_line_receipts_after_key_upgrade()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var lineKey = new string('k', 129);
+        var rawKey = new string('r', 150);
+        InboundOrder inbound;
+        OutboundOrder outbound;
+        CountExecution count;
+        InventoryMovementRequest inboundAuthority;
+        InventoryMovementRequest outboundAuthority;
+        InventoryMovementRequest countAuthority;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            inbound = InboundOrder.Create(
+                "org-http", "env-http", "IN-V1-REPLAY", "purchase-receipt", "PO-V1-REPLAY", "SITE-01",
+                [
+                    new InboundOrderLineDraft("10", "SKU-IN-1", "pcs", 1m, "STAGE-01", null, null, "qualified", "company", null),
+                    new InboundOrderLineDraft("20", "SKU-IN-2", "pcs", 2m, "STAGE-02", null, null, "qualified", "company", null),
+                ]);
+            var inboundReceipts = inbound.Complete(lineKey, inbound.Version).OrderBy(x => x.SourceDocumentLineId).ToArray();
+            inboundAuthority = inboundReceipts[0];
+            inboundAuthority.MarkPosted("inventory-movement-in-v1");
+
+            outbound = OutboundOrder.Create(
+                "org-http", "env-http", "OUT-V1-REPLAY", "sales-delivery", "SO-V1-REPLAY", "SITE-01",
+                [new OutboundOrderLineDraft("10", "SKU-OUT-1", "pcs", 3m, "PICK-01", null, null, "qualified", "company", null)]);
+            outboundAuthority = Assert.Single(outbound.CompletePackReview(
+                "PACK-V1",
+                true,
+                rawKey,
+                outbound.Version));
+            outboundAuthority.MarkPosted("inventory-movement-out-v1");
+
+            count = CountExecution.Create("org-http", "env-http", "COUNT-V1-REPLAY", "SKU-COUNT-1", "pcs", "SITE-01", "COUNT-01", 10m);
+            count.Complete(8m, count.Version);
+            countAuthority = InventoryMovementRequest.RecordPosted(
+                "org-http",
+                "env-http",
+                "count-adjustment",
+                count.CountNo,
+                rawKey,
+                count.SkuCode,
+                count.UomCode,
+                count.SiteCode,
+                count.LocationCode,
+                "qualified",
+                "company",
+                -2m,
+                "inventory-movement-count-v1");
+
+            dbContext.InboundOrders.Add(inbound);
+            dbContext.OutboundOrders.Add(outbound);
+            dbContext.CountExecutions.Add(count);
+            dbContext.InventoryMovementRequests.AddRange(inboundReceipts);
+            dbContext.InventoryMovementRequests.AddRange(outboundAuthority, countAuthority);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, inbound);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, outbound);
+            TrustedWmsCompletionTestCommands.TrustFixture(dbContext, count);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var inboundResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/inbound-orders/{inbound.Id}/complete",
+            new
+            {
+                inboundOrderId = inbound.Id.ToString(),
+                idempotencyKey = lineKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
+        var outboundResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/outbound-orders/{outbound.Id}/complete",
+            new
+            {
+                outboundOrderId = outbound.Id.ToString(),
+                packReviewNo = "PACK-V1",
+                passed = true,
+                idempotencyKey = rawKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
+        var countResponse = await client.PostAsJsonAsync(
+            $"/api/business/v1/wms/count-executions/{count.Id}/complete",
+            new
+            {
+                countExecutionId = count.Id.ToString(),
+                countedQuantity = 8m,
+                idempotencyKey = rawKey,
+                organizationId = "org-http",
+                environmentId = "env-http",
+                actorPrincipalId = "completion-test-operator",
+                authorizedSiteCodes = new[] { "SITE-01" },
+                scopeKind = "self",
+                scopeId = "completion-test-operator",
+                expectedVersion = 1,
+            });
+
+        var inboundBody = await inboundResponse.Content.ReadAsStringAsync();
+        var outboundBody = await outboundResponse.Content.ReadAsStringAsync();
+        var countBody = await countResponse.Content.ReadAsStringAsync();
+        Assert.True(inboundResponse.IsSuccessStatusCode, inboundBody);
+        Assert.True(outboundResponse.IsSuccessStatusCode, outboundBody);
+        Assert.True(countResponse.IsSuccessStatusCode, countBody);
+        Assert.Contains(inboundAuthority.Id.ToString(), inboundBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-in-v1", inboundBody, StringComparison.Ordinal);
+        Assert.Contains(outboundAuthority.Id.ToString(), outboundBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-out-v1", outboundBody, StringComparison.Ordinal);
+        Assert.Contains(countAuthority.Id.ToString(), countBody, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("inventory-movement-count-v1", countBody, StringComparison.Ordinal);
+
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(4, await verifyDbContext.InventoryMovementRequests.CountAsync(CancellationToken.None));
+        Assert.Contains(
+            await verifyDbContext.InventoryMovementRequests.Select(x => x.IdempotencyKey).ToArrayAsync(CancellationToken.None),
+            key => key.StartsWith("wms-line:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Wcs_task_query_exposes_failure_retry_and_completion_diagnostics()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-001", "IN-001", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m);
-        var otherTenantTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-001", "IN-002", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m);
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-001", "IN-001", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m, assignedPoolCode: "POOL-WCS");
+        var otherTenantTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-001", "IN-002", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m, assignedPoolCode: "POOL-WCS");
+        AddWcsPool(dbContext, "org-001");
+        AddWcsPool(dbContext, "org-002");
         dbContext.WarehouseTasks.AddRange(warehouseTask, otherTenantTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext, new WcsTestTimeProvider(DateTimeOffset.UtcNow.AddMinutes(2)));
-        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
+        var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWcsAuthorizer(dbContext),
+            new WcsTestTimeProvider(DateTimeOffset.UtcNow.AddMinutes(2)));
+        await commandHandler.Handle(
+            WcsDispatchCommand(warehouseTask, "EXT-001", """{"step":1}""", 1),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("org-001", "env-dev", "EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-002", """{"step":2}"""), CancellationToken.None);
+        await commandHandler.Handle(
+            WcsDispatchCommand(
+                warehouseTask,
+                "EXT-002",
+                """{"step":2}""",
+                warehouseTask.Version),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-002", """{"ok":true}"""), CancellationToken.None);
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-002", """{"actualQuantity":10}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(otherTenantTask.Id, "agv", "EXT-003", """{"step":3}"""), CancellationToken.None);
+        await commandHandler.Handle(
+            WcsDispatchCommand(otherTenantTask, "EXT-003", """{"step":3}""", 1),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
@@ -331,8 +652,15 @@ public sealed class WmsEndpointContractTests
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var warehouseTask = WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "PACK-01", 6m);
+        var warehouseTask = WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "PACK-01", 6m, assignedPoolCode: "POOL-WCS");
+        AddWcsPool(dbContext, "org-001");
         dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWcsAuthorizer(dbContext)).Handle(
+            WcsDispatchCommand(warehouseTask, "EXT-PICK-001", "{}", 1),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new Application.Commands.RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
@@ -356,17 +684,25 @@ public sealed class WmsEndpointContractTests
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var orgOneTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-ORG1", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 1m);
-        var orgTwoTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-ORG2", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 1m);
+        var orgOneTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-ORG1", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 1m, assignedPoolCode: "POOL-WCS");
+        var orgTwoTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-ORG2", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 1m, assignedPoolCode: "POOL-WCS");
+        AddWcsPool(dbContext, "org-001");
+        AddWcsPool(dbContext, "org-002");
         dbContext.WarehouseTasks.AddRange(orgOneTask, orgTwoTask);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var dispatch = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
-        await dispatch.Handle(new Application.Commands.DispatchWcsTaskCommand(orgOneTask.Id, "agv", "EXT-SHARED", "{}"), CancellationToken.None);
-        await dispatch.Handle(new Application.Commands.DispatchWcsTaskCommand(orgTwoTask.Id, "agv", "EXT-SHARED", "{}"), CancellationToken.None);
+        var dispatch = new Application.Commands.DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWcsAuthorizer(dbContext));
+        await dispatch.Handle(
+            WcsDispatchCommand(orgOneTask, "EXT-SHARED", "{}", 1),
+            CancellationToken.None);
+        await dispatch.Handle(
+            WcsDispatchCommand(orgTwoTask, "EXT-SHARED", "{}", 1),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(
-            new Application.Commands.CompleteWcsTaskCommand("org-002", "env-dev", "EXT-SHARED", """{"ok":true}"""),
+            new Application.Commands.CompleteWcsTaskCommand("org-002", "env-dev", "EXT-SHARED", """{"actualQuantity":1}"""),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -383,20 +719,67 @@ public sealed class WmsEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.InboundOrders.AddRange(
-            CreateInboundOrder("IN-PAGE-001"),
-            CreateInboundOrder("IN-PAGE-002"),
-            CreateInboundOrder("IN-OTHER-001"),
-            CreateInboundOrder("IN-PAGE-CLOSED"));
+            CreateInboundOrder("IN-PAGE-001", assignedPoolCode: "POOL-TEST"),
+            CreateInboundOrder("IN-PAGE-002", assignedPoolCode: "POOL-TEST"),
+            CreateInboundOrder("IN-OTHER-001", assignedPoolCode: "POOL-TEST"),
+            CreateInboundOrder("IN-PAGE-CLOSED", assignedPoolCode: "POOL-TEST"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListInboundOrdersQueryHandler(dbContext).Handle(
-            new ListInboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "page",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
         Assert.Equal("IN-PAGE-001", item.InboundOrderNo);
         Assert.Equal("Open", item.Status);
+        Assert.True(item.Version > 0);
+    }
+
+    [Fact]
+    public async Task Inbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateInboundOrder("IN-EXACT-TARGET", assignedPoolCode: "POOL-TEST");
+        dbContext.InboundOrders.AddRange(
+            target,
+            CreateInboundOrder("IN-EXACT-OTHER", assignedPoolCode: "POOL-TEST"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListInboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                InboundOrderId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListInboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                InboundOrderId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).InboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
     }
 
     [Fact]
@@ -407,24 +790,30 @@ public sealed class WmsEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         var passed = CreateQualityGateInboundOrder("IN-GATE-PASS-001");
-        passed.Complete("idem-gate-pass-001");
+        passed.Complete("idem-gate-pass-001", passed.Version);
         passed.ApplyInspectionResult("quality.InspectionPassed", "QI-PASS-001", "SKU-FG-1000", "LOT-001", null, 5m, null);
         var productionDate = new DateOnly(2026, 1, 15);
         var expiryDate = new DateOnly(2027, 1, 15);
         var rejected = CreateQualityGateInboundOrder("IN-GATE-REJ-001", productionDate: productionDate, expiryDate: expiryDate);
-        rejected.Complete("idem-gate-rej-001");
+        rejected.Complete("idem-gate-rej-001", rejected.Version);
         rejected.ApplyInspectionResult("quality.InspectionRejected", "QI-REJ-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
         var pending = CreateQualityGateInboundOrder("IN-GATE-PEND-001");
-        pending.Complete("idem-gate-pend-001");
+        pending.Complete("idem-gate-pend-001", pending.Version);
         var notRequired = CreateInboundOrder("IN-GATE-NOGATE-001");
         var otherTenant = CreateQualityGateInboundOrder("IN-GATE-PASS-001", "org-002");
-        otherTenant.Complete("idem-gate-other-001");
+        otherTenant.Complete("idem-gate-other-001", otherTenant.Version);
         dbContext.InboundOrders.AddRange(passed, rejected, pending, notRequired, otherTenant);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new ListReceivingQualityGatesQueryHandler(dbContext);
         var all = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(3, all.Total);
@@ -432,7 +821,14 @@ public sealed class WmsEndpointContractTests
         Assert.DoesNotContain(all.Items, x => x.InboundOrderNo == "IN-GATE-NOGATE-001");
 
         var rejectedOnly = await handler.Handle(
-            new ListReceivingQualityGatesQuery("org-001", "env-dev", 0, 100, "rejected"),
+            new ListReceivingQualityGatesQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "rejected",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         var fact = Assert.Single(rejectedOnly.Items);
@@ -491,20 +887,66 @@ public sealed class WmsEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.OutboundOrders.AddRange(
-            CreateOutboundOrder("OUT-PAGE-001"),
-            CreateOutboundOrder("OUT-PAGE-002"),
-            CreateOutboundOrder("OUT-OTHER-001"),
-            CreateOutboundOrder("OUT-PAGE-CLOSED"));
+            CreateOutboundOrder("OUT-PAGE-001", assignedPoolCode: "POOL-TEST"),
+            CreateOutboundOrder("OUT-PAGE-002", assignedPoolCode: "POOL-TEST"),
+            CreateOutboundOrder("OUT-OTHER-001", assignedPoolCode: "POOL-TEST"),
+            CreateOutboundOrder("OUT-PAGE-CLOSED", assignedPoolCode: "POOL-TEST"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "page",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
         var item = Assert.Single(result.Items);
         Assert.Equal("OUT-PAGE-001", item.OutboundOrderNo);
         Assert.Equal("Open", item.Status);
+    }
+
+    [Fact]
+    public async Task Outbound_order_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CreateOutboundOrder("OUT-EXACT-TARGET", assignedPoolCode: "POOL-TEST");
+        dbContext.OutboundOrders.AddRange(
+            target,
+            CreateOutboundOrder("OUT-EXACT-OTHER", assignedPoolCode: "POOL-TEST"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListOutboundOrdersQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                OutboundOrderId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListOutboundOrdersQuery(
+                "org-002",
+                "env-dev",
+                OutboundOrderId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).OutboundOrderId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
     }
 
     [Fact]
@@ -520,8 +962,13 @@ public sealed class WmsEndpointContractTests
             "erp-delivery-order",
             "DO-FAILED-001",
             "finished-goods",
-            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)]);
-        var movementRequest = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)],
+            assignedPoolCode: "POOL-TEST");
+        var movementRequest = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            outbound.Version));
         movementRequest.MarkFailed("NEGATIVE_ON_HAND", "Stock movement would make on-hand quantity negative.");
         outbound.MarkInventoryPostingFailed();
         dbContext.OutboundOrders.Add(outbound);
@@ -529,7 +976,15 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 10, "InventoryPostingFailed", "DO-FAILED"),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                10,
+                "InventoryPostingFailed",
+                "DO-FAILED",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["finished-goods"]),
             CancellationToken.None);
 
         var item = Assert.Single(result.Items);
@@ -586,15 +1041,25 @@ public sealed class WmsEndpointContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.WarehouseTasks.AddRange(
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m),
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-002", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-02", "BIN-A", 3m),
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OTHER-001", "IN-003", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 3m),
-            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-PAGE-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "SHIP-01", 3m),
-            WarehouseTask.CreatePutaway("org-002", "env-dev", "PUT-PAGE-003", "IN-004", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m));
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-PAGE-002", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-02", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OTHER-001", "IN-003", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 3m, assignedPoolCode: "POOL-TEST"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-PAGE-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "SHIP-01", 3m, assignedPoolCode: "POOL-TEST"),
+            WarehouseTask.CreatePutaway("org-002", "env-dev", "PUT-PAGE-003", "IN-004", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 1, 1, "Open", "BIN-A", null, "page"),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                1,
+                1,
+                "Open",
+                "BIN-A",
+                "page",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -606,21 +1071,37 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public async Task Warehouse_task_query_returns_empty_when_operator_filter_is_supplied_until_assignment_field_exists()
+    public async Task Warehouse_task_query_filters_persisted_operator_assignment()
     {
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.WarehouseTasks.Add(
-            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-OPERATOR-001", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 3m));
+            WarehouseTask.CreatePutaway(
+                "org-001",
+                "env-dev",
+                "PUT-OPERATOR-001",
+                "IN-001",
+                "10",
+                "SKU-001",
+                "pcs",
+                "SITE-01",
+                "RECV-01",
+                "BIN-A",
+                3m,
+                assignedOperatorUserId: "user-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, null, null, "user-001", null),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                AssignedOperatorUserIds: ["user-001"]),
             CancellationToken.None);
 
-        Assert.Equal(0, result.Total);
-        Assert.Empty(result.Items);
+        Assert.Equal(1, result.Total);
+        Assert.Equal("user-001", Assert.Single(result.Items).AssignedOperatorUserId);
     }
 
     [Fact]
@@ -629,18 +1110,36 @@ public sealed class WmsEndpointContractTests
         await using var provider = WmsTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var completed = CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-CLOSED", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m);
-        completed.Complete(2m);
+        var completed = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-PAGE-CLOSED",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m,
+            assignedPoolCode: "POOL-TEST");
+        completed.Complete(2m, completed.Version);
         dbContext.CountExecutions.AddRange(
-            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-001", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m),
-            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-002", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m),
-            CountExecution.Create("org-001", "env-dev", "COUNT-OTHER-001", "SKU-001", "pcs", "SITE-01", "BIN-B", 3m),
+            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-001", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-PAGE-002", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-OTHER-001", "SKU-001", "pcs", "SITE-01", "BIN-B", 3m, assignedPoolCode: "POOL-TEST"),
             completed,
-            CountExecution.Create("org-002", "env-dev", "COUNT-PAGE-003", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m));
+            CountExecution.Create("org-002", "env-dev", "COUNT-PAGE-003", "SKU-001", "pcs", "SITE-01", "BIN-A", 3m, assignedPoolCode: "POOL-TEST"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
-            new ListCountExecutionsQuery("org-001", "env-dev", 1, 1, "Open", "BIN-A", "page"),
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                1,
+                1,
+                "Open",
+                "BIN-A",
+                "page",
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -649,6 +1148,122 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("Open", item.Status);
         Assert.Equal("BIN-A", item.LocationCode);
         Assert.Null(item.CountedQuantity);
+        Assert.True(item.Version > 0);
+    }
+
+    [Fact]
+    public async Task Count_execution_exact_id_filter_precedes_paging_and_keeps_tenant_scope()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var target = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-EXACT-TARGET",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m,
+            assignedPoolCode: "POOL-TEST");
+        dbContext.CountExecutions.AddRange(
+            target,
+            CountExecution.Create(
+                "org-001",
+                "env-dev",
+                "COUNT-EXACT-OTHER",
+                "SKU-001",
+                "pcs",
+                "SITE-01",
+                "BIN-A",
+                3m,
+                assignedPoolCode: "POOL-TEST"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ListCountExecutionsQueryHandler(dbContext);
+
+        var exact = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                Skip: 0,
+                Take: 1,
+                CountExecutionId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+        var crossTenant = await handler.Handle(
+            new ListCountExecutionsQuery(
+                "org-002",
+                "env-dev",
+                CountExecutionId: target.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+
+        Assert.Equal(1, exact.Total);
+        Assert.Equal(target.Id, Assert.Single(exact.Items).CountExecutionId);
+        Assert.Empty(crossTenant.Items);
+        Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Fact]
+    public async Task Count_execution_query_exposes_authoritative_inventory_posting_failure()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var count = CountExecution.Create(
+            "org-001",
+            "env-dev",
+            "COUNT-POSTING-FAILED",
+            "SKU-001",
+            "pcs",
+            "SITE-01",
+            "BIN-A",
+            3m,
+            assignedPoolCode: "POOL-TEST");
+        count.Complete(2m, count.Version);
+        var movement = InventoryMovementRequest.Create(
+            "org-001",
+            "env-dev",
+            "count-adjustment",
+            count.CountNo,
+            null,
+            "legacy-count-posting",
+            count.SkuCode,
+            count.UomCode,
+            count.SiteCode,
+            count.LocationCode,
+            null,
+            null,
+            "qualified",
+            "company",
+            null,
+            -1m);
+        movement.MarkFailed(
+            "NEGATIVE_ON_HAND",
+            "Stock movement would make on-hand quantity negative.");
+        dbContext.CountExecutions.Add(count);
+        dbContext.InventoryMovementRequests.Add(movement);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                CountExecutionId: count.Id,
+                AssignedPoolCodes: ["POOL-TEST"],
+                SiteCodes: ["SITE-01"]),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("Failed", item.InventoryPostingStatus);
+        Assert.Equal("NEGATIVE_ON_HAND", item.InventoryPostingFailureCode);
+        Assert.Equal(
+            "Stock movement would make on-hand quantity negative.",
+            item.InventoryPostingFailureMessage);
+        Assert.Null(item.InventoryMovementId);
     }
 
     [Fact]
@@ -671,16 +1286,39 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var inboundResult = await new ListInboundOrdersQueryHandler(dbContext).Handle(
-            new ListInboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            new ListInboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "0",
+                null,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var outboundResult = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
-            new ListOutboundOrdersQuery("org-001", "env-dev", 0, 100, "0", null),
+            new ListOutboundOrdersQuery(
+                "org-001",
+                "env-dev",
+                0,
+                100,
+                "0",
+                null,
+                OrganizationWideScope: true),
             CancellationToken.None);
         var warehouseResult = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
-            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, 0, 100, "2", null, null, null),
+            new ListWarehouseTasksQuery(
+                "org-001",
+                "env-dev",
+                WarehouseTaskType.Putaway,
+                Status: "2",
+                OrganizationWideScope: true),
             CancellationToken.None);
         var countResult = await new ListCountExecutionsQueryHandler(dbContext).Handle(
-            new ListCountExecutionsQuery("org-001", "env-dev", 0, 100, "0", null, null),
+            new ListCountExecutionsQuery(
+                "org-001",
+                "env-dev",
+                Status: "0",
+                OrganizationWideScope: true),
             CancellationToken.None);
         var wcsResult = await new ListWcsTasksQueryHandler(dbContext).Handle(
             new ListWcsTasksQuery("org-001", "env-dev", null, null, 0, 100, "2", null, null),
@@ -696,6 +1334,56 @@ public sealed class WmsEndpointContractTests
         Assert.Empty(countResult.Items);
         Assert.Equal(0, wcsResult.Total);
         Assert.Empty(wcsResult.Items);
+    }
+
+    [Fact]
+    public async Task Organization_scope_is_denied_and_legacy_unassigned_rows_stay_invisible()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.InboundOrders.AddRange(
+            CreateInboundOrder("IN-SELF", "user-001"),
+            CreateInboundOrder("IN-TEAM", assignedPoolCode: "POOL-A"),
+            CreateInboundOrder("IN-UNASSIGNED"));
+        dbContext.OutboundOrders.AddRange(
+            CreateOutboundOrder("OUT-SELF", "user-001"),
+            CreateOutboundOrder("OUT-TEAM", assignedPoolCode: "POOL-A"),
+            CreateOutboundOrder("OUT-UNASSIGNED"));
+        dbContext.WarehouseTasks.AddRange(
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-SELF", "IN-SELF", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedOperatorUserId: "user-001"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-TEAM", "IN-TEAM", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m, assignedPoolCode: "POOL-A"),
+            WarehouseTask.CreatePutaway("org-001", "env-dev", "PUT-UNASSIGNED", "IN-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-01", 1m),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-SELF", "OUT-SELF", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedOperatorUserId: "user-001"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-TEAM", "OUT-TEAM", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m, assignedPoolCode: "POOL-A"),
+            WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-UNASSIGNED", "OUT-UNASSIGNED", "10", "SKU-001", "pcs", "SITE-01", "BIN-01", "PACK-01", 1m));
+        dbContext.CountExecutions.AddRange(
+            CountExecution.Create("org-001", "env-dev", "COUNT-SELF", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, "user-001"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-TEAM", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m, assignedPoolCode: "POOL-A"),
+            CountExecution.Create("org-001", "env-dev", "COUNT-UNASSIGNED", "SKU-001", "pcs", "SITE-01", "BIN-01", 1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var inbound = await new ListInboundOrdersQueryHandler(dbContext).Handle(
+            new ListInboundOrdersQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+        var outbound = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
+            new ListOutboundOrdersQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+        var putaway = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Putaway, OrganizationWideScope: true),
+            CancellationToken.None);
+        var picking = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery("org-001", "env-dev", WarehouseTaskType.Picking, OrganizationWideScope: true),
+            CancellationToken.None);
+        var count = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", OrganizationWideScope: true),
+            CancellationToken.None);
+
+        Assert.Empty(inbound.Items);
+        Assert.Empty(outbound.Items);
+        Assert.Empty(putaway.Items);
+        Assert.Empty(picking.Items);
+        Assert.Empty(count.Items);
     }
 
     public static IEnumerable<object[]> EndpointTypes()
@@ -755,6 +1443,40 @@ public sealed class WmsEndpointContractTests
         }
     }
 
+    private sealed class LifecycleConflictSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(
+            IRequest<TResponse> request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return Task.FromException<TResponse>(
+                new WmsLifecycleConflictException(
+                    "complete-inbound",
+                    nameof(InboundOrderStatus.Completed)));
+        }
+
+        public Task Send<TRequest>(
+            TRequest request,
+            CancellationToken cancellationToken = default)
+            where TRequest : IRequest =>
+            throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
     {
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -763,7 +1485,40 @@ public sealed class WmsEndpointContractTests
         }
     }
 
-    private static InboundOrder CreateInboundOrder(string orderNo)
+    private static WarehouseWorkScopeAuthorizer CreateWcsAuthorizer(
+        ApplicationDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    private static void AddWcsPool(
+        ApplicationDbContext dbContext,
+        string organizationId) =>
+        dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+            organizationId,
+            "env-dev",
+            "POOL-WCS",
+            "WCS 自动化池",
+            "SITE-01"));
+
+    private static DispatchWcsTaskCommand WcsDispatchCommand(
+        WarehouseTask task,
+        string externalTaskId,
+        string payloadJson,
+        long expectedVersion) =>
+        new(
+            task.Id,
+            task.OrganizationId,
+            task.EnvironmentId,
+            "user-wcs-manager",
+            [task.SiteCode],
+            expectedVersion,
+            "agv",
+            externalTaskId,
+            payloadJson);
+
+    private static InboundOrder CreateInboundOrder(
+        string orderNo,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
         var order = InboundOrder.Create(
             "org-001",
@@ -772,10 +1527,12 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)]);
+            [new InboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "STAGE-01", null, null, "qualified", "company", null)],
+            assignedOperatorUserId,
+            assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
-            order.Complete($"idem-{orderNo}");
+            order.Complete($"idem-{orderNo}", order.Version);
         }
 
         return order;
@@ -794,7 +1551,8 @@ public sealed class WmsEndpointContractTests
             "purchase-receipt",
             $"PO-{orderNo}",
             "SITE-01",
-            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)]);
+            [new InboundOrderLineDraft("10", "SKU-FG-1000", "kg", 5m, "STAGE-01", "LOT-001", null, "quality", "company", null, productionDate, expiryDate)],
+            assignedPoolCode: "POOL-TEST");
     }
 
     private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
@@ -817,7 +1575,10 @@ public sealed class WmsEndpointContractTests
             "critical-defect");
     }
 
-    private static OutboundOrder CreateOutboundOrder(string orderNo)
+    private static OutboundOrder CreateOutboundOrder(
+        string orderNo,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
         var order = OutboundOrder.Create(
             "org-001",
@@ -826,10 +1587,16 @@ public sealed class WmsEndpointContractTests
             "sales-shipment",
             $"SO-{orderNo}",
             "SITE-01",
-            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)]);
+            [new OutboundOrderLineDraft("10", "SKU-001", "pcs", 3m, "BIN-01", null, null, "qualified", "company", null)],
+            assignedOperatorUserId,
+            assignedPoolCode);
         if (orderNo.Contains("CLOSED", StringComparison.Ordinal))
         {
-            order.CompletePackReview($"PACK-{orderNo}", true, $"idem-{orderNo}");
+            order.CompletePackReview(
+                $"PACK-{orderNo}",
+                true,
+                $"idem-{orderNo}",
+                order.Version);
         }
 
         return order;

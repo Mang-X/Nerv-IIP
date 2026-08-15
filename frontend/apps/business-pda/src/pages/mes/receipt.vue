@@ -20,6 +20,7 @@ import {
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
+import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 
@@ -35,7 +36,18 @@ type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
 
-const { filters, receipts, total, pending, error, refresh, createReceipt } = useMesReceipts()
+const {
+  filters,
+  receipts,
+  total,
+  pending,
+  error,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+  refresh,
+  createReceipt,
+} = useMesReceipts()
 
 const {
   filters: workOrderFilters,
@@ -61,6 +73,27 @@ function receiptSubtitle(req: Receipt) {
   if (req.requestNo) parts.push(`单号 ${req.requestNo}`)
   return parts.join(' · ')
 }
+
+const listScope = computed(() =>
+  filters.organizationId && filters.environmentId
+    ? '当前登录组织 / 当前业务环境'
+    : '组织/环境范围未就绪',
+)
+const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
+const scopedReceipts = computed(() => (scopeReady.value ? receipts.value : []))
+const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
+const emptyExplanation = computed(() =>
+  !filters.organizationId || !filters.environmentId
+    ? '缺少组织或环境范围，未发起查询。'
+    : '当前组织/环境范围暂无完工入库申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有入库任务。',
+)
+const listFailure = computed(() =>
+  error.value
+    ? error.value
+    : hasFailedResponse.value
+      ? new Error('完工入库申请服务未返回成功结果，请重试。')
+      : null,
+)
 
 function formatReceiptNumber(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
@@ -295,11 +328,24 @@ function onScanWorkOrder(value: string) {
     <div v-else class="space-y-4 p-4">
       <NvScanBar placeholder="扫描工单号 / 入库单" :active="scanActive" @scan="onScan" />
 
-      <p class="text-sm text-muted-foreground">共 {{ total }} 条完工入库申请</p>
+      <ListScopeMeta
+        :scope="listScope"
+        source="生产完工入库申请服务（组织/环境范围）"
+        :loaded="scopedReceipts.length"
+        :total="scopedTotal"
+        :updated-at="lastUpdatedAt"
+        :failed="hasFailedResponse"
+        failure-explanation="生产完工入库申请服务未成功返回，请刷新重试。"
+        :empty="
+          !scopeReady ||
+          (!pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0)
+        "
+        :empty-explanation="emptyExplanation"
+      />
 
       <RetryableListError
-        v-if="error"
-        :error="error"
+        v-if="listFailure"
+        :error="listFailure"
         :pending="pending"
         fallback="加载完工入库申请失败，请下拉刷新或重试。"
         test-id="receipt-error"
@@ -307,15 +353,20 @@ function onScanWorkOrder(value: string) {
       />
 
       <div
-        v-if="!pending && !error && receipts.length === 0"
+        v-if="
+          scopeReady && !pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0
+        "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        暂无完工入库申请
+        当前组织/环境范围暂无完工入库申请
       </div>
 
-      <div v-else class="overflow-hidden rounded-lg border border-border">
+      <div
+        v-else-if="scopeReady && scopedReceipts.length > 0"
+        class="overflow-hidden rounded-lg border border-border"
+      >
         <NvListRow
-          v-for="req in receipts"
+          v-for="req in scopedReceipts"
           :key="req.receiptRequestId ?? `${req.workOrderId}-${req.skuId}`"
           :title="receiptTitle(req)"
           :subtitle="receiptSubtitle(req)"

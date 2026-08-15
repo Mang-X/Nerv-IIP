@@ -2,7 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
-using Npgsql;
+using Nerv.IIP.Testing.PostgreSql;
 using System.Diagnostics;
 using Xunit.Abstractions;
 
@@ -22,7 +22,7 @@ public sealed class WorldHistorySeedPostgresTests(ITestOutputHelper output)
     [WorldHistoryPostgresFact]
     public async Task Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean()
     {
-        await using var database = await WorldHistoryTemporaryDatabase.CreateAsync(
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
             "nerv_erp_world_history");
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -68,7 +68,7 @@ public sealed class WorldHistorySeedPostgresTests(ITestOutputHelper output)
     [WorldHistoryPostgresFact]
     public async Task Scaled_down_history_seed_produces_a_tenth_of_the_volume()
     {
-        await using var database = await WorldHistoryTemporaryDatabase.CreateAsync(
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
             Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!,
             "nerv_erp_world_history_scaled");
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -97,38 +97,6 @@ public sealed class WorldHistorySeedPostgresTests(ITestOutputHelper output)
         public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
-}
-
-internal sealed class WorldHistoryTemporaryDatabase(string adminConnectionString, string databaseName, string connectionString)
-    : IAsyncDisposable
-{
-    public string ConnectionString { get; } = connectionString;
-
-    public static async Task<WorldHistoryTemporaryDatabase> CreateAsync(string baseConnectionString, string prefix)
-    {
-        var databaseName = $"{prefix}_{Guid.CreateVersion7():N}";
-        var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-        {
-            Database = "postgres"
-        }.ConnectionString;
-        await using var connection = new NpgsqlConnection(adminConnectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-        await command.ExecuteNonQueryAsync();
-        var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-        {
-            Database = databaseName
-        }.ConnectionString;
-        return new WorldHistoryTemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await using var connection = new NpgsqlConnection(adminConnectionString);
-        await connection.OpenAsync();
-        await using var command = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
-        await command.ExecuteNonQueryAsync();
     }
 }
 

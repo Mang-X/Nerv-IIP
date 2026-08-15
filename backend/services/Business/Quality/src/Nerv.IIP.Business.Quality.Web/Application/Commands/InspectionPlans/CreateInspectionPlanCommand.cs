@@ -81,7 +81,7 @@ public sealed class CreateInspectionPlanCommandHandler(IInspectionPlanRepository
     {
         if (await repository.CodeExistsAsync(request.OrganizationId, request.EnvironmentId, request.PlanCode, cancellationToken))
         {
-            throw new KnownException($"Inspection plan code '{request.PlanCode}' already exists.");
+            throw new KnownException($"检验方案编号 {request.PlanCode} 已存在，请在检验方案页更换编号后重新提交。");
         }
 
         var plan = InspectionPlan.Create(

@@ -1,80 +1,80 @@
-# Issue 411 ERP Business Gap Implementation Plan
+# Issue 411 ERP 业务缺口实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必需子技能：使用 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close the backend ERP business logic gaps called out in GitHub issue #411 with a minimal but real procure-to-pay and order-to-cash closure.
+**目标：**以最小但真实的采购到付款和订单到收款闭环，解决 GitHub issue #411 指出的后端 ERP 业务逻辑缺口。
 
-**Architecture:** Keep ERP as the source for procurement, sales and finance documents; keep Inventory as the only stock ledger; keep WMS as outbound execution authority. ERP will publish public Inventory/WMS contract events and will create matched AP/AR and subledger journal vouchers inside its own boundary.
+**架构：**ERP 继续作为采购、销售和财务单据的事实来源；Inventory 继续作为唯一库存台账；WMS 继续作为出库执行权威。ERP 将发布公开的 Inventory/WMS 契约事件，并在自身边界内创建已匹配的 AP/AR 和明细分类账记账凭证。
 
-**Tech Stack:** .NET 10, CleanDDD/NetCorePal, FastEndpoints, EF Core PostgreSQL migrations, CAP integration events, xUnit.
+**技术栈：**.NET 10、CleanDDD/NetCorePal、FastEndpoints、EF Core PostgreSQL migration、CAP 集成事件、xUnit。
 
 ---
 
-## Scope
+## 范围
 
-This plan intentionally closes the P0/P1 gaps named by #411 and leaves P2 tax/multi-currency/returns/ATP as separate future issues:
+本计划有意闭合 #411 指出的 P0/P1 缺口，并将 P2 税务/多币种/退货/ATP 留作独立的后续 issue：
 
-1. Supplier invoice + three-way match before AP creation.
-2. Purchase receipt publishes `InventoryMovementRequested` with SKU/UOM/site/location/quantity.
-3. Delivery order publishes a WMS outbound request contract with SKU/UOM/site/location/quantity.
-4. AP/AR due dates, aging buckets and clearing endpoints.
-5. Sales order credit check from customer limit minus open AR and active released orders.
-6. AP/AR/cost candidate creation posts subledger journal vouchers automatically.
+1. 创建 AP 前完成供应商发票三单匹配。
+2. 采购收货发布带 SKU/UOM/site/location/quantity 的 `InventoryMovementRequested`。
+3. 交货单发布带 SKU/UOM/site/location/quantity 的 WMS 出库请求契约。
+4. AP/AR 到期日、账龄桶和核销 endpoint。
+5. 销售订单信用检查以客户额度减去未结 AR 和有效已下达订单敞口计算。
+6. 创建 AP/AR/成本候选项时自动过账明细分类账记账凭证。
 
-## Files
+## 文件
 
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.Inventory/InventoryIntegrationEvents.cs`
-- Modify: `backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierInvoiceAggregate/SupplierInvoice.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpProcurementDomainEvents.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpSalesFinanceDomainEvents.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpProcurementEntityTypeConfigurations.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpSalesFinanceEntityTypeConfigurations.cs`
-- Create: EF migration under `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Sales/ErpSalesCommands.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesFinanceIntegrationEventConverters.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesFinanceEndpoints.cs`
-- Modify tests under `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/` and `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/`
-- Modify: `docs/architecture/business-platform-domain-architecture.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+- 修改： `backend/common/Contracts/Nerv.IIP.Contracts.Inventory/InventoryIntegrationEvents.cs`
+- 修改： `backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/PurchaseReceiptAggregate/PurchaseReceipt.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountPayableAggregate/AccountPayable.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/AccountReceivableAggregate/AccountReceivable.cs`
+- 创建： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SupplierInvoiceAggregate/SupplierInvoice.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpProcurementDomainEvents.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpSalesFinanceDomainEvents.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpProcurementEntityTypeConfigurations.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/ErpSalesFinanceEntityTypeConfigurations.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/` 下的 EF migration
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Sales/ErpSalesCommands.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesFinanceIntegrationEventConverters.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpProcurementEndpoints.cs`
+- 修改： `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesFinanceEndpoints.cs`
+- 修改 `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/` 和 `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/` 下的测试
+- 修改： `docs/architecture/business-platform-domain-architecture.md`
+- 修改： `docs/architecture/implementation-readiness.md`
 
-## Tasks
+## 任务
 
-- [ ] Write failing ERP domain tests for supplier invoice matching, receipt/delivery line dimensions, due dates, aging, clearing and credit checks.
-- [ ] Write failing ERP web tests for Inventory/WMS contract events, finance clearing endpoints, aging query and automatic vouchers.
-- [ ] Implement domain changes and new SupplierInvoice aggregate.
-- [ ] Implement ERP commands, queries, endpoints and event converters using only public contracts.
-- [ ] Add EF mapping and migration for supplier invoices plus AP/AR due-date fields.
-- [ ] Update focused architecture/readiness docs for #411 closure and remaining P2 non-goals.
-- [ ] Run ERP domain/web tests, contract tests touched by Inventory/WMS contract changes, ERP verify script and AppHost build where feasible.
-- [ ] Commit, push `codex/issue-411-erp-business-gap`, and create a draft PR with `Closes #411`.
+- [ ] 为供应商发票匹配、收货/交货行维度、到期日、账龄、核销和信用检查编写失败的 ERP 领域测试。
+- [ ] 为 Inventory/WMS 契约事件、财务核销 endpoint、账龄查询和自动凭证编写失败的 ERP Web 测试。
+- [ ] 实现领域变更和新的 SupplierInvoice 聚合。
+- [ ] 仅使用公开契约实现 ERP 命令、查询、endpoint 和事件转换器。
+- [ ] 为供应商发票以及 AP/AR 到期日字段添加 EF 映射和 migration。
+- [ ] 更新聚焦的架构/就绪文档，说明 #411 的闭环和剩余 P2 非目标。
+- [ ] 在可行情况下运行 ERP 领域/Web 测试、受 Inventory/WMS 契约变更影响的契约测试、ERP 验证脚本和 AppHost 构建。
+- [ ] 提交并推送 `codex/issue-411-erp-business-gap`，然后创建包含 `Closes #411` 的 draft PR。
 
-## Acceptance Checks
+## 验收检查
 
-1. AP can be created from a matched supplier invoice only when PO, receipt and invoice quantities/prices are within tolerance.
-2. A purchase receipt emits both ERP receipt fact and Inventory movement request fact with line-level stock dimensions.
-3. A delivery order emits both ERP delivery fact and WMS outbound request fact with line-level fulfillment dimensions.
-4. AP/AR clearing is reachable through endpoints, prevents over-clearing, updates open amount and posts balanced clearing vouchers.
-5. AP/AR list responses expose due dates and aging buckets.
-6. Sales order creation rejects customers whose credit limit is exceeded by open AR plus active released order exposure.
-7. AP/AR/cost candidate creation posts balanced subledger vouchers without direct cross-service writes.
+1. 只有当 PO、收货和发票的数量/价格处于容差范围内时，才能根据已匹配的供应商发票创建 AP。
+2. 采购收货同时发出 ERP 收货事实和 Inventory 移动请求事实，并携带行级库存维度。
+3. 交货单同时发出 ERP 交货事实和 WMS 出库请求事实，并携带行级履约维度。
+4. 可通过 endpoint 执行 AP/AR 核销；它会阻止过度核销、更新未结金额并过账平衡的核销凭证。
+5. AP/AR 列表响应公开到期日和账龄桶。
+6. 如果未结 AR 加有效已下达订单敞口超过客户信用额度，创建销售订单时必须拒绝该客户。
+7. 创建 AP/AR/成本候选项时过账平衡的明细分类账凭证，不直接跨服务写入。
 
-## Review Follow-up Scope
+## 审核后续范围
 
-The post-review correction keeps two #411 P1 items inside this PR instead of documenting them as risks:
+审核后的修正将两个 #411 P1 项保留在本 PR 中，而不是仅将其记录为风险：
 
-1. Purchase orders must start as approval-gated documents, not directly `Released`. ERP creates a pending PO, requests BusinessApproval through a public service contract, rejects receipts before release, and consumes Approval completed events to release or cancel the PO.
-2. Supplier invoices in `PaymentHeld` must have a minimal reachable path. ERP supports releasing a held invoice to create the AP/voucher after review, and voiding a held invoice so its quantities no longer consume cumulative invoiced quantity.
+1. 采购订单必须从受审批约束的单据开始，而不是直接处于 `Released`。ERP 创建待处理 PO，通过公开服务契约请求 BusinessApproval，在下达前拒绝收货，并消费 Approval 完成事件以将 PO 下达或取消。
+2. 处于 `PaymentHeld` 的供应商发票必须有最小可达路径。ERP 支持审核后解除发票的 PaymentHeld 挂起状态以创建 AP/凭证，也支持作废被挂起发票，使其数量不再占用累计已开票数量。

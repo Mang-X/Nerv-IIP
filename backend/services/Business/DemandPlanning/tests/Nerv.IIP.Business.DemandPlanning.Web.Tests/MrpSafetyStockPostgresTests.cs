@@ -15,16 +15,7 @@ public sealed class MrpSafetyStockPostgresTests
     {
         await using var database = await CreateDatabaseAsync();
         await using var context = CreateContext(database.ConnectionString);
-        var handler = new RunMrpCommandHandler(context, new FixedSnapshotProvider());
-
-        var result = await handler.Handle(
-            new RunMrpCommand(
-                "org-safety",
-                "env-test",
-                new DateOnly(2026, 6, 1),
-                new DateOnly(2026, 6, 30)),
-            CancellationToken.None);
-        await context.SaveChangesAsync();
+        var result = await ExecuteMrpAsync(context, new FixedSnapshotProvider());
         context.ChangeTracker.Clear();
 
         Assert.Equal(1, result.SuggestionCount);
@@ -56,16 +47,7 @@ public sealed class MrpSafetyStockPostgresTests
         var siteCode = new string('T', 64);
         await using var database = await CreateDatabaseAsync();
         await using var context = CreateContext(database.ConnectionString);
-        var handler = new RunMrpCommandHandler(context, new FixedSnapshotProvider(skuCode, siteCode));
-
-        await handler.Handle(
-            new RunMrpCommand(
-                "org-safety",
-                "env-test",
-                new DateOnly(2026, 6, 1),
-                new DateOnly(2026, 6, 30)),
-            CancellationToken.None);
-        await context.SaveChangesAsync();
+        await ExecuteMrpAsync(context, new FixedSnapshotProvider(skuCode, siteCode));
         context.ChangeTracker.Clear();
 
         var suggestion = await context.PlanningSuggestions
@@ -79,6 +61,25 @@ public sealed class MrpSafetyStockPostgresTests
         Assert.StartsWith("safety-stock:", safetyPegging.DemandSourceReference, StringComparison.Ordinal);
         Assert.NotEmpty(safetyPegging.DemandSourceReference);
         Assert.True(safetyPegging.DemandSourceReference.Length <= 128);
+    }
+
+    private static async Task<ExecuteMrpRunCommandResult> ExecuteMrpAsync(
+        ApplicationDbContext context,
+        IPlanningInputSnapshotProvider snapshotProvider)
+    {
+        var runId = await new RunMrpCommandHandler(context)
+            .Handle(
+                new RunMrpCommand(
+                    "org-safety",
+                    "env-test",
+                    new DateOnly(2026, 6, 1),
+                    new DateOnly(2026, 6, 30)),
+                CancellationToken.None);
+        await context.SaveChangesAsync();
+        var result = await new ExecuteMrpRunCommandHandler(context, snapshotProvider)
+            .Handle(new ExecuteMrpRunCommand(runId), CancellationToken.None);
+        await context.SaveChangesAsync();
+        return result;
     }
 
     private static Task<PostgreSqlTestDatabase> CreateDatabaseAsync()

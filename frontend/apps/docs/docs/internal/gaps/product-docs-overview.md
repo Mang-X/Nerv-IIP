@@ -8,7 +8,7 @@
 - `docs/architecture/implementation-readiness.md`
 - `frontend/apps/business-console/src/pages`
 
-## 建议 issue 标题
+## 建议 Issue 标题
 
 - `[Docs] 产品文档首页增加按角色入口和版本化能力矩阵`
 
@@ -28,7 +28,7 @@
 
 ### 术语不清
 
-- 当前能力边界依赖 readiness 文档人工维护，缺少可生成的产品能力矩阵来统一“已落地、过渡、后置”的口径。
+- 当前能力边界依赖实施就绪文档人工维护，缺少可生成的产品能力矩阵来统一“已落地、过渡、后置”的口径。
 
 ### 反馈不足
 

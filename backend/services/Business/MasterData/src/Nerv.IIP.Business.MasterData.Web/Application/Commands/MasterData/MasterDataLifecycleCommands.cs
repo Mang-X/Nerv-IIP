@@ -19,6 +19,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
+using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -130,7 +131,8 @@ public sealed record UpdateMasterDataResourceCommand(
     string? JobTitle = null,
     string? EmploymentStatus = null,
     string? Phone = null,
-    bool ClearCreditLimit = false) : ICommand<MasterDataResourceDetail>;
+    bool ClearCreditLimit = false,
+    MasterDataIntegrationEventContext? AuditContext = null) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
     string OrganizationId,
@@ -144,12 +146,36 @@ public sealed record SetMasterDataResourceEnabledCommand(
     string Reason = "",
     DateOnly? EffectiveFrom = null) : ICommand<MasterDataResourceDetail>;
 
-public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext dbContext, IReferenceDataCodeRepository referenceDataRepository)
+public sealed class UpdateMasterDataResourceCommandHandler(
+    ApplicationDbContext dbContext,
+    IReferenceDataCodeRepository referenceDataRepository,
+    IDeviceAssetReferenceValidator? deviceAssetReferenceValidator = null,
+    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null)
     : ICommandHandler<UpdateMasterDataResourceCommand, MasterDataResourceDetail>
 {
-    public async Task<MasterDataResourceDetail> Handle(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
+    private readonly IDeviceAssetReferenceValidator deviceAssetReferenceValidator =
+        deviceAssetReferenceValidator ?? new DeviceAssetReferenceValidator(dbContext);
+
+    public Task<MasterDataResourceDetail> Handle(
+        UpdateMasterDataResourceCommand request,
+        CancellationToken cancellationToken)
     {
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        var guardsSharedReferences = type is "device-asset" or "business-partner";
+        return guardsSharedReferences && referenceScopeCoordinator is not null
+            ? referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, type, token),
+                cancellationToken)
+            : HandleCoreAsync(request, type, cancellationToken);
+    }
+
+    private async Task<MasterDataResourceDetail> HandleCoreAsync(
+        UpdateMasterDataResourceCommand request,
+        string type,
+        CancellationToken cancellationToken)
+    {
         switch (type)
         {
             case "sku":
@@ -221,6 +247,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(conversion);
             case "business-partner":
                 var partner = await FindBusinessPartnerAsync(request, cancellationToken);
+                await deviceAssetReferenceValidator.EnsureSupplierRoleRemovalAllowedAsync(
+                    partner,
+                    partner.ResolveRolesForUpdate(request.PartnerType, request.PartnerRoles),
+                    cancellationToken);
                 var taxId = string.IsNullOrWhiteSpace(request.TaxId) ? null : request.TaxId.Trim();
                 if (taxId is not null &&
                     !string.Equals(taxId, partner.TaxId, StringComparison.Ordinal) &&
@@ -286,11 +316,19 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(site);
             case "workshop":
                 var workshop = await FindWorkshopAsync(request, cancellationToken);
+                var workshopSiteBefore = workshop.SiteCode;
                 workshop.Update(
                     request.Name ?? workshop.Name,
                     request.SiteCode ?? workshop.SiteCode,
                     request.ManagerUserId ?? workshop.ManagerUserId,
                     request.Description ?? workshop.Description);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    workshop.Id.ToString(),
+                    workshop.Code,
+                    new { siteCode = workshopSiteBefore },
+                    new { siteCode = workshop.SiteCode },
+                    !string.Equals(workshopSiteBefore, workshop.SiteCode, StringComparison.Ordinal));
                 return Detail(workshop);
             case "department":
                 var department = await FindDepartmentAsync(request, cancellationToken);
@@ -300,20 +338,40 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(department);
             case "team":
                 var team = await FindTeamAsync(request, cancellationToken);
+                var teamWorkshopBefore = team.WorkshopCode;
+                var teamShiftBefore = team.ShiftCode;
                 team.Update(
                     request.Name ?? team.Name,
                     request.DepartmentCode ?? team.DepartmentCode,
                     request.ShiftCode ?? team.ShiftCode,
                     request.WorkshopCode ?? team.WorkshopCode);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    team.Id.ToString(),
+                    team.Code,
+                    new { workshopCode = teamWorkshopBefore, shiftCode = teamShiftBefore },
+                    new { workshopCode = team.WorkshopCode, shiftCode = team.ShiftCode },
+                    !string.Equals(teamWorkshopBefore, team.WorkshopCode, StringComparison.Ordinal)
+                        || !string.Equals(teamShiftBefore, team.ShiftCode, StringComparison.Ordinal));
                 return Detail(team);
             case "worker":
                 var worker = await FindWorkerAsync(request, cancellationToken);
+                var workerStatusBefore = worker.EmploymentStatus;
                 worker.Update(
                     request.Name ?? worker.Name,
                     request.DepartmentCode ?? worker.DepartmentCode,
                     request.JobTitle ?? worker.JobTitle,
                     request.EmploymentStatus ?? worker.EmploymentStatus,
                     request.Phone ?? worker.Phone);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    worker.Id.ToString(),
+                    worker.Code,
+                    new { userId = worker.UserId, employmentStatus = workerStatusBefore, disabled = worker.Disabled },
+                    new { userId = worker.UserId, employmentStatus = worker.EmploymentStatus, disabled = worker.Disabled },
+                    !string.Equals(workerStatusBefore, worker.EmploymentStatus, StringComparison.Ordinal),
+                    "scope-availability-updated",
+                    "scope-availability-updated");
                 return Detail(worker);
             case "shift":
                 var shift = await FindShiftAsync(request, cancellationToken);
@@ -338,10 +396,23 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 return Detail(calendar);
             case "production-line":
                 var line = await FindProductionLineAsync(request, cancellationToken);
+                var lineSiteBefore = line.SiteCode;
+                var lineWorkshopBefore = line.WorkshopCode;
                 line.Update(request.Name ?? line.Name, request.SiteCode ?? line.SiteCode, request.WorkshopCode ?? line.WorkshopCode);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    line.Id.ToString(),
+                    line.Code,
+                    new { siteCode = lineSiteBefore, workshopCode = lineWorkshopBefore },
+                    new { siteCode = line.SiteCode, workshopCode = line.WorkshopCode },
+                    !string.Equals(lineSiteBefore, line.SiteCode, StringComparison.Ordinal)
+                        || !string.Equals(lineWorkshopBefore, line.WorkshopCode, StringComparison.Ordinal));
                 return Detail(line);
             case "work-center":
                 var workCenter = await FindWorkCenterAsync(request, cancellationToken);
+                var workCenterPlantBefore = workCenter.PlantCode;
+                var workCenterLineBefore = workCenter.LineCode;
+                var workCenterWorkshopBefore = workCenter.WorkshopCode;
                 workCenter.UpdateResource(
                     request.Name ?? workCenter.Name,
                     request.CapacityMinutesPerDay ?? workCenter.CapacityMinutesPerDay,
@@ -357,9 +428,33 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.NumberOfCapacities ?? workCenter.NumberOfCapacities,
                     request.CostCenterCode ?? workCenter.CostCenterCode,
                     request.Bottleneck ?? workCenter.Bottleneck);
+                AddScopeLineageAuditIfChanged(
+                    request,
+                    workCenter.Id.ToString(),
+                    workCenter.Code,
+                    new
+                    {
+                        plantCode = workCenterPlantBefore,
+                        lineCode = workCenterLineBefore,
+                        workshopCode = workCenterWorkshopBefore,
+                    },
+                    new
+                    {
+                        plantCode = workCenter.PlantCode,
+                        lineCode = workCenter.LineCode,
+                        workshopCode = workCenter.WorkshopCode,
+                    },
+                    !string.Equals(workCenterPlantBefore, workCenter.PlantCode, StringComparison.Ordinal)
+                        || !string.Equals(workCenterLineBefore, workCenter.LineCode, StringComparison.Ordinal)
+                        || !string.Equals(workCenterWorkshopBefore, workCenter.WorkshopCode, StringComparison.Ordinal));
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
+                var validatedReferences = await deviceAssetReferenceValidator.ValidateForUpdateAsync(
+                    device,
+                    request.SupplierPartnerCode,
+                    request.ParentDeviceId,
+                    cancellationToken);
                 var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode, device.PurchaseCurrencyCode);
                 DeviceAssetCommandValidator.EnsureValidComponents(request.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray());
                 device.UpdateCapability(
@@ -380,12 +475,12 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.PurchaseCost ?? device.PurchaseCost,
                     purchaseCurrencyCode,
                     request.WarrantyExpiresOn ?? device.WarrantyExpiresOn,
-                    request.SupplierPartnerCode ?? device.SupplierPartnerCode,
+                    validatedReferences.SupplierPartnerCode,
                     request.SiteCode ?? device.SiteCode,
                     request.WorkshopCode ?? device.WorkshopCode,
                     request.LineCode ?? device.LineCode,
                     request.StationCode ?? device.StationCode,
-                    request.ParentDeviceId ?? device.ParentDeviceId,
+                    validatedReferences.ParentDeviceId,
                     request.RetiredOn ?? device.RetiredOn);
                 if (request.Components is not null)
                 {
@@ -400,6 +495,39 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             default:
                 throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
         }
+    }
+
+    private void AddScopeLineageAuditIfChanged(
+        UpdateMasterDataResourceCommand request,
+        string resourceId,
+        string resourceCode,
+        object before,
+        object after,
+        bool changed,
+        string operationKindSuffix = "scope-lineage-updated",
+        string reason = "scope-lineage-updated")
+    {
+        if (!changed)
+        {
+            return;
+        }
+
+        var auditContext = request.AuditContext
+            ?? throw new KnownException("An authenticated audit context is required for scope lineage changes.");
+        var resourceType = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        MasterDataScopeContextAudit.Add(
+            dbContext,
+            auditContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            $"{resourceType}-{operationKindSuffix}",
+            resourceType,
+            resourceId,
+            resourceCode,
+            resourceCode,
+            before,
+            after,
+            reason);
     }
 
     private async Task<Sku> FindSkuAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -672,7 +800,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             Criticality: x.Criticality,
             Maintainable: x.Maintainable,
             TelemetryEnabled: x.TelemetryEnabled,
-            Status: x.Disabled ? "disabled" : "active");
+            Status: x.Disabled ? "disabled" : "active",
+            DeviceAssetId: x.Id.ToString());
 
     internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
         new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");
@@ -683,12 +812,18 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
 
 public sealed class SetMasterDataResourceEnabledCommandHandler(
     ApplicationDbContext dbContext,
-    IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null)
+    IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null,
+    IMasterDataReferenceScopeCoordinator? referenceScopeCoordinator = null,
+    IDeviceAssetReferenceValidator? deviceAssetReferenceValidator = null)
     : ICommandHandler<SetMasterDataResourceEnabledCommand, MasterDataResourceDetail>
 {
     private readonly IMasterDataDownstreamReferenceChecker downstreamReferenceChecker = downstreamReferenceChecker ?? NullMasterDataDownstreamReferenceChecker.Instance;
+    private readonly IDeviceAssetReferenceValidator deviceAssetReferenceValidator =
+        deviceAssetReferenceValidator ?? new DeviceAssetReferenceValidator(dbContext);
 
-    public async Task<MasterDataResourceDetail> Handle(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    public Task<MasterDataResourceDetail> Handle(
+        SetMasterDataResourceEnabledCommand request,
+        CancellationToken cancellationToken)
     {
         var reason = request.Reason.Trim();
         if (string.IsNullOrWhiteSpace(reason)) throw new KnownException("A lifecycle change reason is required.");
@@ -696,6 +831,24 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         if (string.IsNullOrWhiteSpace(request.ActorId)) throw new KnownException("A trusted lifecycle actor is required.");
         if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("A governed lifecycle operation identity is required.");
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
+        var guardsSharedReferences =
+            type == "device-asset" ||
+            (!request.Enabled && type == "business-partner");
+        return guardsSharedReferences && referenceScopeCoordinator is not null
+            ? referenceScopeCoordinator.ExecuteAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                token => HandleCoreAsync(request, type, reason, token),
+                cancellationToken)
+            : HandleCoreAsync(request, type, reason, cancellationToken);
+    }
+
+    private async Task<MasterDataResourceDetail> HandleCoreAsync(
+        SetMasterDataResourceEnabledCommand request,
+        string type,
+        string reason,
+        CancellationToken cancellationToken)
+    {
         var resourceIdentity = await ResolveLifecycleIdentityAsync(request, type, cancellationToken);
         var isReplay = await IsReplayAsync(request, type, resourceIdentity, reason, cancellationToken);
         switch (type)
@@ -807,7 +960,13 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
                 if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(device);
                 if (device.Disabled == !request.Enabled) { AddAudit(request, type, device.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(device); }
-                if (!request.Enabled)
+                if (request.Enabled)
+                {
+                    await deviceAssetReferenceValidator.ValidateStoredReferencesForEnableAsync(
+                        device,
+                        cancellationToken);
+                }
+                else
                 {
                     await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
                 }
@@ -988,21 +1147,29 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (referencedByDevice)
         {
-            throw new KnownException($"Business partner '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+            throw new KnownException(
+                $"业务伙伴 '{request.Code}' 仍被启用的设备资产作为供应商引用，不能停用。请先清除相关设备资产的供应商引用。");
         }
     }
 
     private async Task EnsureDeviceAssetIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, string publicId, CancellationToken cancellationToken)
     {
-        var referencedByChildDevice = await dbContext.DeviceAssets.AnyAsync(x =>
-            x.OrganizationId == request.OrganizationId &&
-            x.EnvironmentId == request.EnvironmentId &&
-            !x.Disabled &&
-            (x.ParentDeviceId == request.Code || x.ParentDeviceId == publicId),
-            cancellationToken);
+        var storedParentReferences = await dbContext.DeviceAssets
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                !x.Disabled &&
+                x.ParentDeviceId != string.Empty)
+            .Select(x => x.ParentDeviceId)
+            .ToArrayAsync(cancellationToken);
+        var parentPublicId = Guid.Parse(publicId);
+        var referencedByChildDevice = storedParentReferences.Any(stored =>
+            string.Equals(stored.Trim(), request.Code, StringComparison.Ordinal) ||
+            (Guid.TryParse(stored.Trim(), out var parsed) && parsed == parentPublicId));
         if (referencedByChildDevice)
         {
-            throw new KnownException($"Device asset '{request.Code}' cannot be disabled because it is referenced by active child device asset records.");
+            throw new KnownException(
+                $"设备资产 '{request.Code}' 仍被启用的子设备引用，不能停用。请先调整相关子设备的父设备引用。");
         }
     }
 }

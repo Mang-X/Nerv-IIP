@@ -71,7 +71,7 @@ procure-to-pay 与 order-to-cash 的跨服务推进按 [ADR 0017](../adr/0017-bu
 
 依赖方向只能从高层业务过程域指向低层能力域或主平台公开能力。业务服务之间不共享数据库表，不建跨 schema 外键。
 
-BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-data-governance.md`、`docs/architecture/business-master-data-field-matrix.md` 和 `docs/architecture/business-master-data-process-manufacturing-supplement.md`。MasterData Foundation 的原始计划是最小骨架；继续暴露 API 或让下游依赖前，必须先完成 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`。
+BusinessMasterData 的治理和字段口径见 `docs/adr/0013-business-master-data-governance.md`、`docs/architecture/business-master-data-field-matrix.md` 和 `docs/architecture/business-master-data-process-manufacturing-supplement.md`。MasterData 基础能力的原始计划是最小骨架；继续暴露 API 或让下游依赖前，必须先完成 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`。
 
 ## 服务与事实源
 
@@ -289,75 +289,75 @@ WCS 不是首批业务服务。WMS 预留 adapter、任务号、回执和失败�
 
 ## 首批实施顺序
 
-### Slice 0. 文档冻结
+### 纵切 0：文档冻结
 
 ADR 0012、本架构文档、业务 spec、README/repo layout/权限矩阵入口完成。
 
-### Slice 1. MasterData Foundation
+### 纵切 1：MasterData 基础
 
 建立 SKU、业务伙伴、组织业务属性、工作中心、工作日历、设备资产和资源主数据。
 
-2026-05-21 起，Slice 1 继续实施前必须先完成 MasterData realignment：补齐 UOM/换算、SKU 工业属性、资源层级、设备静态能力、流程型制造边界、下游 resolve 契约和 MasterData 变更事件。该步骤不把 Recipe/Formula、批次实例、库存余额、检验记录、批生产记录或实时采集数据移入 MasterData。
+2026-05-21 起，纵切 1 继续实施前必须先完成 MasterData 边界重整：补齐 UOM/换算、SKU 工业属性、资源层级、设备静态能力、流程型制造边界、下游 resolve 契约和 MasterData 变更事件。该步骤不把 Recipe/Formula、批次实例、库存余额、检验记录、批生产记录或实时采集数据移入 MasterData。
 
-### Slice 2. ProductEngineering MVP
+### 纵切 2：ProductEngineering MVP
 
 建立 CAD 文件引用、工程物料、EBOM、MBOM、工艺路线版本、ProductionVersion、ECO/ECN 和发布状态。工程物料和 EBOM 的兼容 `itemCode` 字段按 SKU code 使用；MBOM 发布时校验 EBOM parent/child SKU 与 MBOM 产出/物料 SKU 连续。ProductionVersion 绑定已发布 MBOM + Routing，并为 MRP/MES 提供 productionVersionId 解析契约。
 
-### Slice 3. Common Capability Foundation
+### 纵切 3：公共能力基础
 
 建立 Inventory、Quality、BarcodeLabel、BusinessApproval 的最小能力，尤其是库存移动唯一事实源和业务审批链。
 
-### Slice 4. DemandPlanning MVP
+### 纵切 4：DemandPlanning MVP
 
 建立需求来源、MPS、MRP run、净需求、计划采购建议、计划工单建议和 pegging。
 
-### Slice 5. ERP Procurement/Sales/Finance MVP
+### 纵切 5：ERP 采购/销售/财务 MVP
 
 建立 SRM-lite、CRM-lite、OMS-lite、采购、销售、应收、应付、凭证和成本核算最小闭环。
 
-### Slice 6. WMS Execution MVP
+### 纵切 6：WMS 执行 MVP
 
 建立收货、入库、上架、出库、拣货、复核、盘点执行和 WCS adapter 边界。
 
-### Slice 7. MES Execution MVP
+### 纵切 7：MES 执行 MVP
 
 建立工单、工序任务、报工、排程结果消费、完工入库请求和生产日报。
 
-### Slice 7.5. Scheduling / APS Lite
+### 纵切 7.5：Scheduling / APS Lite
 
 建立排程输入输出契约、有限产能启发式调度内核、资源负载、冲突解释、锁定任务和急单插入能力。高级优化器、仿真、自动重排和求解器级 APS 后置。
 
-### Slice 8. IndustrialTelemetry MVP
+### 纵切 8：IndustrialTelemetry MVP
 
 建立 tag 映射、设备状态、报警事件和时序摘要。
 
-### Slice 9. Maintenance MVP
+### 纵切 9：Maintenance MVP
 
 建立维修工单、保养计划、点检和停机原因，并消费 IndustrialTelemetry 报警事件。
 
-### Slice 10. Full-Chain Acceptance
+### 纵切 10：全链路验收
 
 验证工程到制造、计划到采购/生产、采购到库存到应付、订单到交付到应收、生产执行到成本、设备到维护到产能、仓储自动化 adapter 七条链路。
 
-## Issue Roadmap
+## Issue 路线图
 
 GitHub issue 是实施跟踪容器，不改变 ADR 0012/0013/0014 与本文档冻结的领域边界。#78 是甘特/RFC 参考，只覆盖前端图形渲染与交互；后端 APS 调度内核由 #206 跟踪，设备 IIoT 运行事实与 APS/MES 联动由 #207 跟踪。
 
-| Slice / 能力 | GitHub 跟踪 | 当前处理 |
+| 纵切 / 能力 | GitHub 跟踪 | 当前处理 |
 | --- | --- | --- |
 | 平台补齐与前置能力 | #70、#71、#141、#142、#143 | #70/#71/#141/#143 已关闭；FileStorage metadata/local+tus hardening、业务控制台组件、事件可靠性、部署、安全和性能基线已形成当前平台底座。#142 保持开放，作为 MinIO/S3 multipart/object storage post-MVP 补强项。 |
-| Slice 1. MasterData Foundation | #72 已关闭 | BusinessMasterData realignment 已落地并作为下游服务引用事实源；后续只承接跨服务接线。 |
-| Slice 2. ProductEngineering MVP | #127 已关闭 | EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 与 ProductionVersion 已形成 MVP 事实面；后续只补真实跨服务验收和业务 UI。 |
-| Slice 3. Common Capability Foundation | #73、#131、#132、#133、#134 已关闭 | Inventory、Quality inspection、BarcodeLabel、BusinessApproval 已拆分并落地；公共能力已纳入 #77 P0 验收口径，后续只做 hardening 与 UI 接线。 |
-| Slice 4. DemandPlanning MVP | #128 已关闭 | MPS/MRP、pegging 与计划建议 MVP 已落地；计划建议 accept 后对 ERP/MES downstream reference 的链路已纳入 #77 P0 验收 evidence。 |
-| Slice 5. ERP Procurement/Sales/Finance MVP | #76、#137、#138、#139 已关闭 | Procurement、Sales、Finance MVP 已接入 solution/AppHost/schema catalog/verify；完整总账月结、税务、银行与发布 bundle 后置。 |
-| Slice 6. WMS Execution MVP | #75、#136 已关闭 | WMS 入库、出库、盘点和 WCS adapter 边界已落地；Inventory posting 已演进为公共 `Nerv.IIP.Contracts.Inventory` movement-requested / stock-movement-posted 异步闭环，WCS 可观测事实由 public-surface focused tests 继续覆盖。 |
-| Slice 7. MES Execution MVP | #74、#135 已关闭；#194 开放 | MES 已从 in-memory Web 原型迁移到 CleanDDD Domain/Infrastructure/PostgreSQL；生产报工、完工入库请求和维护产能影响查询已纳入 #77 P0 支撑 surface。#194 继续补工单释放快照与执行生命周期。 |
-| Slice 7.5. Scheduling / APS Lite | #206 已落地基础能力；高级优化后续 | BusinessScheduling、`scheduling` schema、排程契约、有限产能 deterministic heuristic、资源负载、冲突解释、方案 preview/create/list/detail/gantt/release、BusinessGateway facade、IAM seed、AppHost 注册和 focused verify 已落地。后续只把全局优化器、仿真、自动重排、客户 release bundle 和更高级约束求解作为增量；#78 甘特图只消费排程输出，不承担算法。 |
-| Slice 8. IndustrialTelemetry MVP | #129 已关闭；#207 开放 | 设备状态、报警和摘要事实已进入独立服务，PLC/DCS/SCADA 继续保持外部系统边界。#207 继续补设备 IIoT 运行事实到 APS/MES readiness 的联动。 |
-| Slice 9. Maintenance MVP | #130 已关闭 | 维修工单、保养、点检、停机事实已落地，报警触发维修工单消费 #129 公共契约。 |
-| Slice 10. Full-Chain Acceptance | #77 P0 收口、#140 已关闭 | #140 已关闭；#77 P0 通过 governed verify 覆盖 WMS public-surface/event contract、MES/ERP 支撑 surface 与七条链路 acceptance evidence。真实 PostgreSQL/RabbitMQ/外部设备联调作为后续 hardening 扩展。 |
-| MES Operational Foundation Reset | #188 到 #207 开放 | 围绕汽车减振器 P0 场景重新排序：自动编号、主数据、工程资料、MRP、采购供应、库存/WMS 齐套、MES 生命周期、质量设备 readiness、PC 工作流、APS lite、设备 IIoT 联动。 |
+| 纵切 1：MasterData 基础 | #72 已关闭 | BusinessMasterData 边界重整已落地并作为下游服务引用事实源；后续只承接跨服务接线。 |
+| 纵切 2：ProductEngineering MVP | #127 已关闭 | EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、ECO/ECN 与 ProductionVersion 已形成 MVP 事实面；后续只补真实跨服务验收和业务 UI。 |
+| 纵切 3：公共能力基础 | #73、#131、#132、#133、#134 已关闭 | Inventory、Quality 检验、BarcodeLabel、BusinessApproval 已拆分并落地；公共能力已纳入 #77 P0 验收口径，后续只做强化与 UI 接线。 |
+| 纵切 4：DemandPlanning MVP | #128 已关闭 | MPS/MRP、pegging 与计划建议 MVP 已落地；计划建议接受后对 ERP/MES 下游引用的链路已纳入 #77 P0 验收证据。 |
+| 纵切 5：ERP 采购/销售/财务 MVP | #76、#137、#138、#139 已关闭 | 采购、销售、财务 MVP 已接入解决方案、AppHost、schema 目录和验证链路；完整总账月结、税务、银行与发布包后置。 |
+| 纵切 6：WMS 执行 MVP | #75、#136 已关闭 | WMS 入库、出库、盘点和 WCS 适配器边界已落地；Inventory 过账已演进为公共 `Nerv.IIP.Contracts.Inventory` movement-requested / stock-movement-posted 异步闭环，WCS 可观测事实由公开面专项测试继续覆盖。 |
+| 纵切 7：MES 执行 MVP | #74、#135 已关闭；#194 开放 | MES 已从内存型 Web 原型迁移到 CleanDDD Domain/Infrastructure/PostgreSQL；生产报工、完工入库请求和维护产能影响查询已纳入 #77 P0 支撑能力面。#194 继续补工单释放快照与执行生命周期。 |
+| 纵切 7.5：Scheduling / APS Lite | #206 已落地基础能力；高级优化后续 | BusinessScheduling、`scheduling` schema、排程契约、有限产能确定性启发式算法、资源负载、冲突解释、方案 preview/create/list/detail/gantt/release、BusinessGateway facade、IAM seed、AppHost 注册和专项验证已落地。后续只把全局优化器、仿真、自动重排、客户发布包和更高级约束求解作为增量；#78 甘特图只消费排程输出，不承担算法。 |
+| 纵切 8：IndustrialTelemetry MVP | #129 已关闭；#207 开放 | 设备状态、报警和摘要事实已进入独立服务，PLC/DCS/SCADA 继续保持外部系统边界。#207 继续补设备 IIoT 运行事实到 APS/MES 就绪性的联动。 |
+| 纵切 9：Maintenance MVP | #130 已关闭 | 维修工单、保养、点检、停机事实已落地，报警触发维修工单消费 #129 公共契约。 |
+| 纵切 10：全链路验收 | #77 P0 收口、#140 已关闭 | #140 已关闭；#77 P0 通过受治理验证覆盖 WMS 公开面/事件契约、MES/ERP 支撑能力面与七条链路验收证据。真实 PostgreSQL/RabbitMQ/外部设备联调作为后续强化扩展。 |
+| MES 运行基础重置 | #188 到 #207 开放 | 围绕汽车减振器 P0 场景重新排序：自动编号、主数据、工程资料、MRP、采购供应、库存/WMS 齐套、MES 生命周期、质量设备就绪性、PC 工作流、APS lite、设备 IIoT 联动。 |
 
 Wave 1 handoff 入口是 `docs/superpowers/specs/2026-05-23-business-wave-1-agent-session-design.md`，对应 #127、#131、#132、#135 和 #140，当前已完成。Wave 2 handoff 入口是 `docs/superpowers/specs/2026-05-23-business-wave-2-agent-session-design.md`，对应 #128、#133、#134 和 #136，当前已完成。Equipment Reliability closure 记录见 `docs/superpowers/specs/2026-05-23-business-wave-2-5-equipment-reliability-closure.md`，对应 #129 和 #130，当前已完成。
 

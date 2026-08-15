@@ -10,6 +10,7 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
+[Collection(IndustrialTelemetryPostgresLaneDatabase.CollectionName)]
 public sealed class IndustrialTelemetryDeviceControlReadFaceTests
 {
     private static readonly DateTimeOffset BaseTime = new(2026, 7, 8, 8, 0, 0, TimeSpan.Zero);
@@ -57,11 +58,12 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
     [RealPostgresFact]
     public async Task History_filters_by_device_status_and_time_window_on_postgres()
     {
-        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-        await using var database = await IndustrialTelemetryPostgresTestDatabase.CreateAsync(postgresConnectionString);
+        await IndustrialTelemetryPostgresLaneDatabase.ResetSchemaAsync();
 
-        await using (var setupContext = database.CreateContext())
+        await using (var setupContext = CreateLaneDbContext())
         {
+            IndustrialTelemetryPostgresLaneDatabase.AssertUsesGovernedDatabase(setupContext);
+            await setupContext.Database.MigrateAsync();
             setupContext.DeviceControlCommands.Add(NewCommand("op-pg-1", "DEV-PG-A", "approval-pending", BaseTime));
             setupContext.DeviceControlCommands.Add(NewCommand("op-pg-2", "DEV-PG-A", "succeeded", BaseTime.AddMinutes(10)));
             setupContext.DeviceControlCommands.Add(NewCommand("op-pg-3", "DEV-PG-B", "succeeded", BaseTime.AddMinutes(20)));
@@ -69,7 +71,7 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
             await setupContext.SaveChangesAsync();
         }
 
-        await using var queryContext = database.CreateContext();
+        await using var queryContext = CreateLaneDbContext();
         var result = await new ListDeviceControlCommandsQueryHandler(queryContext).Handle(
             new ListDeviceControlCommandsQuery(
                 "org-001",
@@ -294,6 +296,16 @@ public sealed class IndustrialTelemetryDeviceControlReadFaceTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName)
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ApplicationDbContext CreateLaneDbContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                IndustrialTelemetryPostgresLaneDatabase.ConnectionString,
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "industrial_telemetry"))
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

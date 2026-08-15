@@ -7,10 +7,7 @@ import { cn } from '../../lib/utils'
  * (logo / menu toggle), default slot (title or center nav), `#trailing`
  * (actions). Sticky + glass by default; turn off with `:sticky="false"`.
  */
-withDefaults(
-  defineProps<{ sticky?: boolean; class?: HTMLAttributes['class'] }>(),
-  { sticky: true },
-)
+withDefaults(defineProps<{ sticky?: boolean; class?: HTMLAttributes['class'] }>(), { sticky: true })
 </script>
 
 <template>

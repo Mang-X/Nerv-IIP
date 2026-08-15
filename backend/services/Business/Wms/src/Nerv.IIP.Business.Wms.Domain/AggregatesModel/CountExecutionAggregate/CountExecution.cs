@@ -24,7 +24,9 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string uomCode,
         string siteCode,
         string locationCode,
-        decimal expectedQuantity)
+        decimal expectedQuantity,
+        string? assignedOperatorUserId,
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -33,8 +35,11 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         UomCode = WmsText.Required(uomCode, nameof(uomCode));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
         LocationCode = WmsText.Required(locationCode, nameof(locationCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         ExpectedQuantity = expectedQuantity;
         Status = CountExecutionStatus.Open;
+        Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
     }
 
@@ -45,11 +50,14 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public string UomCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
     public string LocationCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public decimal ExpectedQuantity { get; private set; }
     public decimal? CountedQuantity { get; private set; }
     public decimal? VarianceQuantity { get; private set; }
     public string? InventoryCountTaskId { get; private set; }
     public CountExecutionStatus Status { get; private set; }
+    public long Version { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
 
@@ -61,9 +69,37 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         string uomCode,
         string siteCode,
         string locationCode,
-        decimal expectedQuantity)
+        decimal expectedQuantity,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
-        return new CountExecution(organizationId, environmentId, countNo, skuCode, uomCode, siteCode, locationCode, expectedQuantity);
+        return new CountExecution(
+            organizationId,
+            environmentId,
+            countNo,
+            skuCode,
+            uomCode,
+            siteCode,
+            locationCode,
+            expectedQuantity,
+            assignedOperatorUserId,
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        if (Status != CountExecutionStatus.Open)
+        {
+            throw new InvalidOperationException("Completed count executions cannot be reassigned.");
+        }
+
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
     }
 
     public void MarkInventoryCountTaskCreated(string inventoryCountTaskId)
@@ -77,17 +113,41 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         InventoryCountTaskId = normalizedCountTaskId;
     }
 
-    public void Complete(decimal countedQuantity)
+    public void Complete(decimal countedQuantity, long expectedVersion)
     {
+        EnsureExpectedVersion(expectedVersion);
         if (Status == CountExecutionStatus.Completed)
         {
             throw new InvalidOperationException("Completed count executions are immutable.");
+        }
+
+        if (countedQuantity < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(countedQuantity),
+                countedQuantity,
+                "Counted quantity cannot be negative.");
         }
 
         CountedQuantity = countedQuantity;
         VarianceQuantity = countedQuantity - ExpectedQuantity;
         Status = CountExecutionStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
+    }
+
+    private void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new InvalidOperationException(
+                $"Count execution version conflict: expected {expectedVersion}, actual {Version}.");
+        }
+    }
+
+    private void AdvanceVersion()
+    {
+        Version = checked(Version + 1);
     }
 }

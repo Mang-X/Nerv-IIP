@@ -3,16 +3,30 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  completeBusinessConsoleWmsCountExecution,
+  completeBusinessConsoleWmsInboundOrder,
+  completeBusinessConsoleWmsOutboundOrder,
+  listBusinessConsoleWmsCountExecutions,
+  listBusinessConsoleWmsCountExecutionsQueryOptions,
+  listBusinessConsoleWmsInboundOrders,
   listBusinessConsoleWmsReceivingQualityGates,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
+  listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsSupplierReturnRequests,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
 } from '@nerv-iip/api-client'
-import { useWmsInboundOrders, useWmsOutboundOrders, useWmsWcsTasks } from './useBusinessWms'
+import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
+import {
+  useWmsCountExecutions,
+  useWmsInboundOrders,
+  useWmsOutboundOrders,
+  useWmsWcsTasks,
+} from './useBusinessWms'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
+  confirmOperation: vi.fn(),
   queryDataById: new Map<string, unknown>(),
   queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean } & Record<string, unknown>>(),
@@ -20,6 +34,16 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  confirmBusinessConsoleOperation: (...args: unknown[]) => coladaState.confirmOperation(...args),
+  completeBusinessConsoleWmsCountExecution: vi.fn(),
+  completeBusinessConsoleWmsInboundOrder: vi.fn(),
+  completeBusinessConsoleWmsOutboundOrder: vi.fn(),
+  listBusinessConsoleWmsCountExecutions: vi.fn(),
+  listBusinessConsoleWmsInboundOrders: vi.fn(),
+  listBusinessConsoleWmsCountExecutionsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleWmsCountExecutions' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleWmsInboundOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsInboundOrders' }],
     query: vi.fn(),
@@ -38,6 +62,7 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWmsOutboundOrders' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleWmsOutboundOrders: vi.fn(),
   listBusinessConsoleWmsWcsTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleWmsWcsTasks' }],
     query: vi.fn(),
@@ -45,6 +70,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   completeBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
   completeBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
   completeBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
+  createBusinessConsoleWmsCountExecutionMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleWmsInboundOrderMutationOptions: vi.fn(() => ({})),
   createBusinessConsoleWmsOutboundOrderMutationOptions: vi.fn(() => ({})),
   dispatchBusinessConsoleWmsWcsTaskMutationOptions: vi.fn(() => ({})),
@@ -80,6 +106,7 @@ describe('business WMS composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    coladaState.confirmOperation.mockImplementation(async (value) => value)
     coladaState.queryDataById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
@@ -117,6 +144,49 @@ describe('business WMS composables', () => {
       | { autoRefetch?: () => number }
       | undefined
     expect(inboundQuery?.autoRefetch?.()).toBe(10_000)
+  })
+
+  it('passes the trusted work scope to list queries and gates pages that require it', () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+
+    useWmsInboundOrders({
+      workScopeRequired: true,
+      scopeKind: 'self',
+      scopeId: 'emp049',
+    })
+
+    expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({
+        scopeKind: 'self',
+        scopeId: 'emp049',
+      }),
+    })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(
+      true,
+    )
+
+    useWmsOutboundOrders({ workScopeRequired: true })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsOutboundOrders')?.enabled).toBe(
+      false,
+    )
+  })
+
+  it('exposes unsuccessful inbound and outbound envelopes as business-response failures', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    coladaState.queryDataById.set('listBusinessConsoleWmsInboundOrders', { success: false })
+    coladaState.queryDataById.set('listBusinessConsoleWmsOutboundOrders', { success: false })
+
+    const inbound = useWmsInboundOrders()
+    const outbound = useWmsOutboundOrders()
+
+    expect(inbound.inboundOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(inbound.inboundOrdersHasFailedResponse.value).toBe(true)
+    expect(outbound.outboundOrdersHasSuccessfulResponse.value).toBe(false)
+    expect(outbound.outboundOrdersHasFailedResponse.value).toBe(true)
   })
 
   it('reads receiving quality and supplier returns through all server pages', async () => {
@@ -327,6 +397,22 @@ describe('business WMS composables', () => {
     expect(result.wcsTasksTotal.value).toBe(9)
   })
 
+  it('fails closed when WCS dispatch has no authoritative warehouse-task version', async () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    const { dispatchWcs } = useWmsWcsTasks()
+
+    await expect(
+      dispatchWcs('warehouse-task-1', {
+        adapterType: 'mock',
+        externalTaskId: 'EXT-001',
+        payloadJson: '{}',
+      }),
+    ).rejects.toMatchObject({ source: 'preflight' })
+  })
+
   it('disables inbound order queries until business context is selected', () => {
     useWmsInboundOrders()
 
@@ -366,5 +452,233 @@ describe('business WMS composables', () => {
         environmentId: 'env-b',
       }),
     })
+  })
+
+  it('allows only a persisted completed-count retry with the frozen key', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.mocked(listBusinessConsoleWmsCountExecutions)
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [{ countExecutionId: 'count-1', status: 'Open', version: 7 }],
+            total: 1,
+          },
+        },
+      } as never)
+      .mockResolvedValue({
+        data: {
+          success: true,
+          data: {
+            items: [{ countExecutionId: 'count-1', status: 'Completed', version: 8 }],
+            total: 1,
+          },
+        },
+      } as never)
+    const receipt = {
+      success: true,
+      data: { countExecutionId: 'count-1', status: 'Completed', countedQuantity: 5 },
+    }
+    vi.mocked(completeBusinessConsoleWmsCountExecution)
+      .mockRejectedValueOnce(new TypeError('network interrupted'))
+      .mockResolvedValue({
+        data: receipt,
+        response: new Response(null, { status: 200 }),
+      } as never)
+    const { completeCountExecution, filters } = useWmsCountExecutions({
+      workScopeRequired: true,
+      scopeKind: 'self',
+      scopeId: 'emp049',
+    })
+
+    await expect(completeCountExecution('count-1', 5, 'KEY-CNT-FROZEN')).rejects.toThrow(
+      'network interrupted',
+    )
+    filters.scopeKind = 'site'
+    filters.scopeId = 'SITE-001'
+    await expect(
+      completeCountExecution('count-1', 5, 'KEY-CNT-FROZEN', { attempt: 'retry' }),
+    ).resolves.toBe(receipt)
+
+    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenCalledTimes(2)
+    expect(completeBusinessConsoleWmsCountExecution).toHaveBeenLastCalledWith({
+      path: { countExecutionId: 'count-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        countedQuantity: 5,
+        expectedVersion: 7,
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        idempotencyKey: 'KEY-CNT-FROZEN',
+      },
+      throwOnError: false,
+    })
+    expect(listBusinessConsoleWmsCountExecutions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({
+        scopeKind: 'self',
+        scopeId: 'emp049',
+      }),
+      throwOnError: false,
+    })
+  })
+
+  it.each([
+    {
+      kind: 'inbound',
+      useList: () =>
+        useWmsInboundOrders({
+          workScopeRequired: true,
+          scopeKind: 'work-pool',
+          scopeId: 'WMS-SITE-001-RECEIVING',
+        }),
+      list: listBusinessConsoleWmsInboundOrders,
+      complete: completeBusinessConsoleWmsInboundOrder,
+      idField: 'inboundOrderId',
+      id: 'inbound-1',
+      operation: (result: ReturnType<typeof useWmsInboundOrders>, id: string, key: string) =>
+        result.completeInbound(id, key),
+      expectedBusinessBody: {},
+    },
+    {
+      kind: 'outbound',
+      useList: () =>
+        useWmsOutboundOrders({
+          workScopeRequired: true,
+          scopeKind: 'work-pool',
+          scopeId: 'WMS-SITE-001-SHIPPING',
+        }),
+      list: listBusinessConsoleWmsOutboundOrders,
+      complete: completeBusinessConsoleWmsOutboundOrder,
+      idField: 'outboundOrderId',
+      id: 'outbound-1',
+      operation: (result: ReturnType<typeof useWmsOutboundOrders>, id: string, key: string) =>
+        result.completeOutbound(id, { packReviewNo: 'PR-001', passed: true }, key),
+      expectedBusinessBody: { packReviewNo: 'PR-001', passed: true },
+    },
+  ])('$kind completion freezes the catalog scope and authoritative version', async (testCase) => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    vi.mocked(testCase.list).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ [testCase.idField]: testCase.id, status: 'Open', version: 11 }],
+          total: 1,
+        },
+      },
+    } as never)
+    vi.mocked(testCase.complete).mockResolvedValue({
+      data: { success: true, data: { [testCase.idField]: testCase.id } },
+      response: new Response(null, { status: 200 }),
+    } as never)
+
+    const result = testCase.useList()
+    await testCase.operation(result as never, testCase.id, `KEY-${testCase.kind}`)
+
+    expect(testCase.complete).toHaveBeenCalledWith({
+      path: { [testCase.idField]: testCase.id },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        ...testCase.expectedBusinessBody,
+        expectedVersion: 11,
+        scopeKind: 'work-pool',
+        scopeId: testCase.kind === 'inbound' ? 'WMS-SITE-001-RECEIVING' : 'WMS-SITE-001-SHIPPING',
+        idempotencyKey: `KEY-${testCase.kind}`,
+      },
+      throwOnError: false,
+    })
+  })
+
+  it('fails closed before completion when the authoritative aggregate version is not positive', async () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    vi.mocked(listBusinessConsoleWmsInboundOrders).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ inboundOrderId: 'inbound-zero', status: 'Open', version: 0 }],
+          total: 1,
+        },
+      },
+    } as never)
+    const { completeInbound } = useWmsInboundOrders({
+      scopeKind: 'self',
+      scopeId: 'emp049',
+    })
+
+    await expect(completeInbound('inbound-zero', 'KEY-ZERO')).rejects.toMatchObject({
+      source: 'preflight',
+    })
+    expect(completeBusinessConsoleWmsInboundOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not combine a malformed restored scope with the currently selected scope', async () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    acquirePendingBusinessIntent(
+      {
+        principalId: 'unrestored-session',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        operationType: 'wms.inbound-order.complete',
+        payloadFingerprint: 'inbound-malformed',
+      },
+      () => 'KEY-MALFORMED',
+      { scopeKind: 'self', expectedVersion: 2 },
+    )
+    const { completeInbound } = useWmsInboundOrders({
+      scopeKind: 'site',
+      scopeId: 'SITE-001',
+    })
+
+    await expect(completeInbound('inbound-malformed', 'KEY-NEW')).rejects.toMatchObject({
+      source: 'preflight',
+    })
+    expect(listBusinessConsoleWmsInboundOrders).not.toHaveBeenCalled()
+  })
+
+  it('rotates the count intent key after an explicit 422 rejection', async () => {
+    useBusinessContextStore().patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    vi.mocked(listBusinessConsoleWmsCountExecutions).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          items: [{ countExecutionId: 'count-422', status: 'Open', version: 3 }],
+          total: 1,
+        },
+      },
+    } as never)
+    vi.mocked(completeBusinessConsoleWmsCountExecution).mockResolvedValue({
+      data: { success: true, data: { countExecutionId: 'count-422' } },
+      response: new Response(null, { status: 200 }),
+    } as never)
+    coladaState.confirmOperation
+      .mockRejectedValueOnce(Object.assign(new Error('validation failed'), { statusCode: 422 }))
+      .mockImplementation(async (value) => value)
+    const { completeCountExecution } = useWmsCountExecutions({
+      scopeKind: 'self',
+      scopeId: 'emp049',
+    })
+
+    await expect(completeCountExecution('count-422', 5, 'count-key-1')).rejects.toThrow(
+      'validation failed',
+    )
+    await completeCountExecution('count-422', 5, 'count-key-2')
+
+    expect(
+      vi
+        .mocked(completeBusinessConsoleWmsCountExecution)
+        .mock.calls.map(([request]) => request.body.idempotencyKey),
+    ).toEqual(['count-key-1', 'count-key-2'])
   })
 })

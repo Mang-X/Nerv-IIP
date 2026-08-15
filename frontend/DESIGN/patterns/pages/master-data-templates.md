@@ -6,7 +6,7 @@
 > 关联：
 >
 > - 应用守则：[`apps/business-console/AGENTS.md`](../../../apps/business-console/AGENTS.md)（§1.5 两轮自检、§3 区块、§4 区块与数据约定）
-> - 反馈规范：[`feedback-and-notifications.md`](../feedback-and-notifications.md)（toast vs 内联，单一事实源）
+> - 反馈规范：[`feedback-and-notifications.md`](../feedback-and-notifications.md)（toast 与内联，单一事实源）
 > - 列表基线：[`list-workbench.md`](./list-workbench.md)（FE-2 区块拼装）
 > - 创建/确认流：[`../flows/create-dialog.md`](../flows/create-dialog.md)、[`../flows/confirm-destroy.md`](../flows/confirm-destroy.md)
 > - 产品依据：[`docs/architecture/master-data-module-product-design.md`](../../../../docs/architecture/master-data-module-product-design.md) §6、[`master-data-dictionary-rules.md`](../../../../docs/architecture/master-data-dictionary-rules.md)
@@ -57,7 +57,7 @@ BusinessLayout
 6. **主题/设计 token**：颜色用 token（`--primary` / `bg-accent` / `text-muted-foreground`
    等）**跟随主题切换**（中性也是一种主题）；**不写死颜色**；**不堆 AI 味装饰**（无意义的
    竖条/光晕/渐变；高亮用 `--primary`）。
-7. **诚实数据**：系统编号 vs 人工编码如实呈现（编辑态显示真实编号，不写「保存后分配」之类
+7. **诚实数据**：系统编号与人工编码如实呈现（编辑态显示真实编号，不写「保存后分配」之类
    假话于已存在记录）；**不做假分页、不做假数据**；搜索若仅过滤当前页，占位与 hint 必须
    如实说「在当前页内筛选」。
 
@@ -378,7 +378,7 @@ form（@submit.prevent="submit"）
 - **字典字段实时取 + 常量兜底中文**：分类/单位/存储条件/条码规则等用 `NvSelect`（**不是
   自由文本**），选项**实时取字典**（`listReferenceDataByCodeSet`），失败/未就绪用
   `masterDataReference.ts` 常量**兜底**；旁置「去数据字典维护 →」链接。
-- **平台枚举 vs 工厂字典**：带系统行为语义的（materialType/批次/序列/保质期策略）= 前端
+- **平台枚举与工厂字典**：带系统行为语义的（materialType/批次/序列/保质期策略）= 前端
   常量枚举（只启停不改义）；偏业务的（product-category/storage-condition/barcode-rule/
   quality-reason）= 字典驱动可维护。
 - **砍范围要显式**：只做名称/先用兜底/某能力暂不做，**写进 Description 或 muted 提示让
@@ -403,7 +403,7 @@ form（@submit.prevent="submit"）
 
 ---
 
-## 6. 导航 vs 页内 Tab vs 树 的判定规则（IA，硬约束）
+## 6. 导航、页内 Tab 与树的判定规则（IA，硬约束）
 
 > 来自 AGENTS §1.5-A2 与产品文档 §3.2。**用错载体把层级拍平 = 评审打回。**
 > 本节整节即「判定」。

@@ -66,10 +66,7 @@ function toListQuery(filters: IamListFilters): IamListQuery {
   }
 }
 
-function optionalQuery<TKey extends keyof IamListQuery>(
-  key: TKey,
-  value: IamListQuery[TKey],
-) {
+function optionalQuery<TKey extends keyof IamListQuery>(key: TKey, value: IamListQuery[TKey]) {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
 
@@ -238,7 +235,9 @@ export function useIamSessions() {
     filters,
     refreshSessions: listQuery.refetch,
     revokeSession: revokeSessionMutation.mutateAsync,
-    revokeSessionError: computed(() => toOptionalConsoleIamError(revokeSessionMutation.error.value)),
+    revokeSessionError: computed(() =>
+      toOptionalConsoleIamError(revokeSessionMutation.error.value),
+    ),
     revokeSessionPending: revokeSessionMutation.isLoading,
     sessions: computed(() => listItems<ConsoleIamSessionResponse>(listQuery.data.value)),
     sessionsError: computed(() => toOptionalConsoleIamError(listQuery.error.value)),

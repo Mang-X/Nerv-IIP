@@ -127,7 +127,7 @@ function New-ReleaseRehearsalEnvironment {
         NERV_IIP_BUSINESS_CONSOLE_PORT = ($PortBase + 125).ToString()
     }
 
-    if ($Profile -eq "platform-smoke") {
+    if ([string]::Equals([string]($Profile), [string]("platform-smoke"), [StringComparison]::OrdinalIgnoreCase)) {
         $environment.ASPNETCORE_ENVIRONMENT = "Development"
         $environment.DOTNET_ENVIRONMENT = "Development"
         $environment.NERV_IIP_AUTO_MIGRATE = "true"
@@ -144,7 +144,7 @@ function Get-ReleaseRehearsalComposeArguments {
         "infra/compose/nerv-iip.dependencies.yml"
     )
 
-    if ($Profile -eq "platform-smoke") {
+    if ([string]::Equals([string]($Profile), [string]("platform-smoke"), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments += @(
             "-f",
             "infra/compose/nerv-iip.platform.yml"
@@ -155,7 +155,7 @@ function Get-ReleaseRehearsalComposeArguments {
 }
 
 function Get-ReleaseRehearsalServices {
-    if ($Profile -eq "dependencies") {
+    if ([string]::Equals([string]($Profile), [string]("dependencies"), [StringComparison]::OrdinalIgnoreCase)) {
         return @("postgres", "redis", "minio", "otel-collector")
     }
 
@@ -189,7 +189,7 @@ function Wait-ReleaseRehearsalHttpHealth {
     do {
         try {
             $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 5
-            if ([int] $response.StatusCode -ge 200 -and [int] $response.StatusCode -lt 300) {
+            if (((([int] $response.StatusCode) -ge (200))) -and ((([int] $response.StatusCode) -lt (300)))) {
                 Write-Diagnostic "Health check passed for $Name at $Uri."
                 return
             }
@@ -232,7 +232,7 @@ function Invoke-ReleaseRehearsalSmokeChecks {
 
     Wait-ReleaseRehearsalHttpHealth -Name "minio" -Uri "http://localhost:$($Environment.NERV_IIP_MINIO_API_PORT)/minio/health/live" -WaitSeconds 90
 
-    if ($Profile -ne "platform-smoke") {
+    if ((-not [string]::Equals([string]($Profile), [string]("platform-smoke"), [StringComparison]::OrdinalIgnoreCase))) {
         return
     }
 
@@ -290,7 +290,7 @@ try {
             $TimeoutSeconds.ToString()
         )
 
-        if ($Profile -eq "platform-smoke" -and -not $SkipBuild) {
+        if ([string]::Equals([string]($Profile), [string]("platform-smoke"), [StringComparison]::OrdinalIgnoreCase) -and -not $SkipBuild) {
             $upArguments += "--build"
         }
 

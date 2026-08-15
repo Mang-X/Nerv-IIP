@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, inject, provide, reactive, shallowRef } from 'vue'
 
 import RulesPage from './rules.vue'
 import TemplatesPage from './templates.vue'
@@ -13,6 +13,7 @@ const barcode = vi.hoisted(() => ({
   createPrintBatch: vi.fn(),
   recordScan: vi.fn(),
   printBatchSourceDocumentType: 'production.report',
+  printBatchStatus: 'completed',
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string; skip: number; take: number },
   templateFilters: undefined as undefined | { skip: number; take: number },
@@ -139,7 +140,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
           sourceDocumentType: barcode.printBatchSourceDocumentType,
           sourceDocumentId: 'WO-001',
           requestedQuantity: 2,
-          status: 'completed',
+          status: barcode.printBatchStatus,
           createdAtUtc: '2026-07-02T01:00:00Z',
         },
       ]),
@@ -152,7 +153,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
         sourceDocumentType: barcode.printBatchSourceDocumentType,
         sourceDocumentId: 'WO-001',
         requestedQuantity: 2,
-        status: 'completed',
+        status: barcode.printBatchStatus,
         items: [
           { sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' },
           { sequenceNo: 2, labelValue: '(01)06912345678901(10)L2408', fileId: null },
@@ -214,6 +215,18 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
   },
 }))
 
+// 扫码补录的设备/终端已改成设备资产主数据选择器；目录 composable 走 pinia + colada，测试给定选项。
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessMasterDataResources: () => ({
+    filters: reactive({ skip: 0, take: 200 }),
+    resources: computed(() => [{ code: 'PC-01', displayName: '工位一体机 PC-01', active: true }]),
+    resourcesError: shallowRef(undefined),
+    resourcesPending: shallowRef(false),
+    resourcesTotal: computed(() => 1),
+    refreshResources: vi.fn(),
+  }),
+}))
+
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
@@ -224,14 +237,46 @@ const dialogStubs = {
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
+/**
+ * 表单里的「只选」字段桩：
+ * - NvEntityPicker / NvSearchSelect 本身是弹层选择器，桩成带同名 id 的输入位，
+ *   让用例继续用 `setInput('#id', ...)` 表达「选中了某个候选」。
+ * - NvSelect 的 id 挂在 NvSelectTrigger 上（真实组件是 button），桩件里把它上提到
+ *   `<select>` 元素，`#id` 选择器与 `setValue` 语义都保持不变。
+ */
+const idInputStub = {
+  props: ['modelValue', 'options', 'id'],
+  emits: ['update:modelValue'],
+  template:
+    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+}
+
+const selectTriggerIdKey = Symbol('nv-select-stub-trigger-id')
+
 const selectStubs = {
+  NvEntityPicker: idInputStub,
+  NvSearchSelect: idInputStub,
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
+    setup() {
+      const triggerId = shallowRef<string | undefined>(undefined)
+      provide(selectTriggerIdKey, (id?: string) => {
+        triggerId.value = id
+      })
+      return { triggerId }
+    },
     template:
-      '<select v-bind="$attrs" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+      '<select v-bind="$attrs" :id="triggerId ?? $attrs.id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  NvSelectTrigger: { template: '<slot />' },
+  NvSelectTrigger: {
+    props: ['id'],
+    setup(props: { id?: string }) {
+      const register = inject<((id?: string) => void) | undefined>(selectTriggerIdKey, undefined)
+      register?.(props.id)
+    },
+    template: '<slot />',
+  },
   NvSelectValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
@@ -247,6 +292,7 @@ describe('barcode pages', () => {
     vi.clearAllMocks()
     barcode.route.query = {}
     barcode.printBatchSourceDocumentType = 'production.report'
+    barcode.printBatchStatus = 'completed'
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -478,11 +524,31 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('打印批次')
     expect(wrapper.text()).toContain('WO-001')
     expect(wrapper.text()).toContain('(01)06912345678901(10)L2407')
-    expect(wrapper.text()).toContain('file-label-1')
+    expect(wrapper.text()).toContain('已生成')
+    expect(wrapper.text()).not.toContain('file-label-1')
     expect(barcode.printBatchFilters?.sourceDocumentType).toBe('production.report')
     expect(barcode.printBatchFilters?.sourceDocumentId).toBe('WO-001')
     expect(barcode.printBatchFilters?.selectedPrintBatchId).toBe('pb-1')
     expect(barcode.printBatchFilters?.take).toBe(10)
+  })
+
+  it('uses business labels instead of internal print identifiers and raw enum values', async () => {
+    barcode.printBatchSourceDocumentType = 'purchase-receipt'
+    barcode.printBatchStatus = 'printed'
+    const wrapper = mount(PrintBatchesPage, {
+      global: {
+        stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('采购收货')
+    expect(wrapper.text()).toContain('已打印')
+    expect(wrapper.text()).not.toContain('purchase-receipt')
+    expect(wrapper.text()).not.toContain('printed')
+    expect(wrapper.text()).not.toContain('pb-1')
+    expect(wrapper.text()).not.toContain('tpl-1')
+    expect(wrapper.text()).not.toContain('file-label-1')
   })
 
   it('maps print batch source objects to scan workflow filters when drilling into scans', async () => {

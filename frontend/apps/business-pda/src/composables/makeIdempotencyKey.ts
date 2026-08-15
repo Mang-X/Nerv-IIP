@@ -12,6 +12,7 @@ export function makeIdempotencyKey(): string {
   }
 
   const perf = globalThis.performance
-  const tick = perf && typeof perf.now === 'function' ? Math.trunc(perf.now()) : (fallbackCounter += 1)
+  const tick =
+    perf && typeof perf.now === 'function' ? Math.trunc(perf.now()) : (fallbackCounter += 1)
   return `idem-${Date.now()}-${tick}`
 }

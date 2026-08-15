@@ -1,3 +1,5 @@
+using Nerv.IIP.Testing;
+
 namespace Nerv.IIP.Business.Performance.Tests;
 
 public sealed class ProcessMemorySamplerTests
@@ -12,11 +14,63 @@ public sealed class ProcessMemorySamplerTests
     public async Task StopAsync_supports_configurable_interval_and_concurrent_callers()
     {
         await using var sampler = ProcessMemorySampler.Start(TimeSpan.FromMilliseconds(10));
-        await Task.Delay(30);
+
+        // The loop runs on the real clock (it samples a real process), so the observable fact is the
+        // sample itself, not an elapsed duration guessed from the configured interval.
+        await TestTimeout.RunAsync(
+            "process-memory sampler to take its first interval sample",
+            async cancellationToken =>
+                await sampler.FirstIntervalSampleTaken.WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(10));
 
         await Task.WhenAll(sampler.StopAsync(), sampler.StopAsync());
 
+        Assert.True(sampler.IntervalSamplesTaken > 0);
         Assert.True(sampler.PeakWorkingSetBytes > 0);
         Assert.True(sampler.PeakManagedHeapBytes > 0);
+    }
+
+    /// <summary>
+    /// The sampling loop's <c>finally</c> block calls <c>TrySetCanceled</c> on the first-sample signal.
+    /// This pins down that it cannot turn into a trap for a later caller: once a sample has been taken the
+    /// signal is latched completed, so awaiting it after <c>StopAsync</c> returns normally instead of
+    /// throwing <see cref="TaskCanceledException"/>.
+    /// </summary>
+    [Fact]
+    public async Task FirstIntervalSampleTaken_stays_completed_after_the_sampler_is_stopped()
+    {
+        await using var sampler = ProcessMemorySampler.Start(TimeSpan.FromMilliseconds(10));
+        await TestTimeout.RunAsync(
+            "process-memory sampler to take its first interval sample",
+            async cancellationToken =>
+                await sampler.FirstIntervalSampleTaken.WaitAsync(cancellationToken),
+            TimeSpan.FromSeconds(10));
+
+        await sampler.StopAsync();
+
+        await sampler.FirstIntervalSampleTaken;
+        Assert.Equal(TaskStatus.RanToCompletion, sampler.FirstIntervalSampleTaken.Status);
+    }
+
+    /// <summary>
+    /// The other half of the same contract. The <c>finally</c> block's <c>TrySetCanceled</c> only bites
+    /// when the loop ended <em>before</em> its first tick, and then cancelling is the whole point: the
+    /// event can no longer happen, so a waiter must fail loudly instead of parking forever. A sampling
+    /// interval far longer than the test's own lifetime makes "never ticked" a structural fact rather than
+    /// a race.
+    /// </summary>
+    [Fact]
+    public async Task FirstIntervalSampleTaken_is_cancelled_when_the_sampler_stops_before_its_first_tick()
+    {
+        var sampler = ProcessMemorySampler.Start(TimeSpan.FromHours(1));
+
+        await sampler.StopAsync();
+
+        Assert.Equal(0, sampler.IntervalSamplesTaken);
+        Assert.Equal(TaskStatus.Canceled, sampler.FirstIntervalSampleTaken.Status);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await sampler.FirstIntervalSampleTaken);
+
+        await sampler.DisposeAsync();
     }
 }

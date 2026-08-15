@@ -5,6 +5,7 @@ import QualitySpcCharts from './QualitySpcCharts.vue'
 import QualityParetoPanel from './QualityParetoPanel.vue'
 import {
   buildParetoChartRows,
+  buildQualityBucketDetail,
   buildSpcChartPresentation,
   formatQualityQuantity,
   type QualityAnalysisBucket,
@@ -94,6 +95,71 @@ describe('quality analysis chart presentation', () => {
       'spc-violation-trend-increasing-2-5-2',
     ])
     expect(new Set(presentation.violationMarkers.map((marker) => marker.key)).size).toBe(2)
+  })
+})
+
+describe('buildQualityBucketDetail', () => {
+  const ncrs = [
+    {
+      id: 'ncr-1',
+      code: 'NCR-001',
+      status: 'open',
+      skuCode: 'SKU-001',
+      sourceType: 'operation',
+      defectReason: '尺寸超差',
+      defectQuantity: 6,
+    },
+    {
+      id: 'ncr-2',
+      code: 'NCR-002',
+      status: 'closed',
+      skuCode: 'SKU-001',
+      sourceType: 'receiving',
+      defectReason: '表面划伤',
+      defectQuantity: 2,
+    },
+    {
+      id: 'ncr-3',
+      code: 'NCR-003',
+      status: 'open',
+      skuCode: 'SKU-002',
+      sourceType: 'operation',
+      defectQuantity: 3,
+    },
+  ]
+
+  it('cross-tabs the SKU bucket from current-window records only', () => {
+    const detail = buildQualityBucketDetail(ncrs, 'sku', 'SKU-001')
+
+    expect(detail.ncrCount).toBe(2)
+    expect(detail.defectQuantity).toBe(8)
+    expect(detail.openNcrCount).toBe(1)
+    expect(detail.records.map((record) => record.code)).toEqual(['NCR-001', 'NCR-002'])
+    expect(detail.defectReasons).toEqual([
+      { label: '尺寸超差', count: 1, defectQuantity: 6, sharePercent: 75 },
+      { label: '表面划伤', count: 1, defectQuantity: 2, sharePercent: 25 },
+    ])
+  })
+
+  it('matches the 未填 bucket for records without the dimension value', () => {
+    const detail = buildQualityBucketDetail(
+      [...ncrs, { id: 'ncr-4', code: 'NCR-004', status: 'open', defectQuantity: 1 }],
+      'sku',
+      '未填',
+    )
+
+    expect(detail.ncrCount).toBe(1)
+    expect(detail.records[0]?.code).toBe('NCR-004')
+    expect(detail.defectReasons).toEqual([
+      { label: '未填', count: 1, defectQuantity: 1, sharePercent: 100 },
+    ])
+  })
+
+  it('slices the source-type dimension with the raw code as the bucket key', () => {
+    const detail = buildQualityBucketDetail(ncrs, 'sourceType', 'operation')
+
+    expect(detail.ncrCount).toBe(2)
+    expect(detail.records.map((record) => record.code)).toEqual(['NCR-001', 'NCR-003'])
   })
 })
 

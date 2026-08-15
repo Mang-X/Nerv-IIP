@@ -10,8 +10,10 @@ import {
   RotateCcwIcon,
   SearchIcon,
   Settings2Icon,
+  TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
+import { displayValue, isEmptyValue } from '../../../lib/empty'
 import { cn } from '../../../lib/utils'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table'
 import { Checkbox } from '../../ui/checkbox'
@@ -48,6 +50,26 @@ const props = withDefaults(
     title?: string
     description?: string
     emptyMessage?: string
+    /**
+     * 请求失败时传入错误（Error / 响应对象 / 现成的中文消息）。非空即进入**错误态**。
+     *
+     * 选型理由：这里刻意不引入统一的 `state: 'idle'|'loading'|'error'|'ready'` 枚举——
+     * 1) 已有 85 个调用点传的是布尔 `loading`，再加一个 `state` 会出现两套并存的真相
+     *    来源（`loading` 与 `state==='loading'`），互相打架且无法向后兼容；
+     * 2) 页面侧的数据来自 query composable，天然产出 `error` 对象与「范围是否选定」的
+     *    布尔量，离散 prop 可直接绑定，不必在每个调用点手写一层状态映射。
+     * 组件内部仍会归一成单一的 `bodyState`，优先级在 `bodyState` 处说明。
+     */
+    error?: unknown
+    /** 覆盖错误态正文；默认从 `error` 上取 message 文本。 */
+    errorMessage?: string
+    /**
+     * 业务范围尚未选定（还没查）。与「查了但 0 条」是两件事，必须分开表达，
+     * 否则用户看到「暂无数据」会以为真的没有数据。
+     */
+    awaitingScope?: boolean
+    /** 未查询态的引导语：一句话说清还需要选什么，别写成说明书。 */
+    awaitingScopeMessage?: string
     skeletonRows?: number
     /** Toolbar search box. */
     searchable?: boolean
@@ -94,6 +116,8 @@ const props = withDefaults(
   {
     loading: false,
     emptyMessage: '暂无数据',
+    awaitingScope: false,
+    awaitingScopeMessage: '请先在上方选择查询范围。',
     skeletonRows: 6,
     searchable: true,
     searchPlaceholder: '搜索…',
@@ -118,6 +142,12 @@ const emit = defineEmits<{
   'update:sort': [value: NvDataTableSort | null]
   'row-click': [row: T]
   refresh: []
+  /**
+   * 错误态里的「重新加载」。与 `refresh` 分开：`refresh` 是用户在**已有结果**上主动
+   * 要最新数据（工具栏刷新按钮），`retry` 是失败后的恢复动作——调用点往往要额外清错、
+   * 打点或换一条重试路径。组件不会把 `retry` 同时当作 `refresh` 发出去，两者不重叠。
+   */
+  retry: []
 }>()
 
 const alignClass: Record<'start' | 'center' | 'end', string> = {
@@ -369,7 +399,12 @@ const smallestPageSize = computed(() =>
 )
 const showPagination = computed(
   () =>
-    props.pagination && !props.loading && resolvedTotal.value > Math.max(1, smallestPageSize.value),
+    props.pagination &&
+    !props.loading &&
+    // 失败 / 未查询时页脚是假信息（manual 模式下 totalItems 还留着上一次的总数）。
+    !hasError.value &&
+    !props.awaitingScope &&
+    resolvedTotal.value > Math.max(1, smallestPageSize.value),
 )
 const pagedRows = computed(() => {
   // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
@@ -430,6 +465,28 @@ function clearSelection() {
   emit('update:selected', [])
 }
 
+// ── 表体状态机：加载 / 失败 / 未查询 / 有数据 / 空 ──
+// 失败最高优先：一次 500 与「真的 0 条」必须长得不一样，绝不允许失败落进空态。
+// `error` + `loading` 同时为真 = 正在重试，仍停在错误态，只把重试按钮切成进行中。
+const hasError = computed(() => {
+  const e = props.error
+  return e !== undefined && e !== null && e !== false && e !== ''
+})
+const resolvedErrorMessage = computed(() => {
+  if (props.errorMessage?.trim()) return props.errorMessage
+  const e = props.error
+  if (typeof e === 'string' && e.trim()) return e
+  const m = (e as { message?: unknown } | null | undefined)?.message
+  if (typeof m === 'string' && m.trim()) return m
+  return '请检查网络连接后重试；若持续失败请联系管理员。'
+})
+const bodyState = computed<'error' | 'loading' | 'awaiting' | 'rows' | 'empty'>(() => {
+  if (hasError.value) return 'error'
+  if (props.loading) return 'loading'
+  if (props.awaitingScope) return 'awaiting'
+  return pagedRows.value.length ? 'rows' : 'empty'
+})
+
 const colSpan = computed(() => visibleColumns.value.length + (props.selectable ? 1 : 0))
 const hasToolbar = computed(
   () =>
@@ -456,7 +513,11 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
       surface="plain"
       :title="title"
       :description="description"
-      :count="title != null ? resolvedTotal : undefined"
+      :count="
+        title != null && bodyState !== 'error' && bodyState !== 'awaiting'
+          ? resolvedTotal
+          : undefined
+      "
       :tabs="tabsWithCount"
       :searchable="searchable"
       :search-placeholder="searchPlaceholder"
@@ -728,7 +789,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 
         <TableBody>
           <!-- Loading skeleton -->
-          <template v-if="loading">
+          <template v-if="bodyState === 'loading'">
             <TableRow v-for="n in skeletonRows" :key="`sk-${n}`" class="nv-dt-row">
               <TableCell v-if="selectable" class="w-10 ps-3" :class="rowPad">
                 <Skeleton class="size-4 rounded-[4px]" />
@@ -747,7 +808,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
           </template>
 
           <!-- Rows -->
-          <template v-else-if="pagedRows.length">
+          <template v-else-if="bodyState === 'rows'">
             <TableRow
               v-for="row in pagedRows"
               :key="keyOf(row)"
@@ -767,9 +828,63 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                 :key="col.key"
                 :class="cn(rowPad, cellText, alignClass[col.align ?? 'start'], col.cellClass)"
               >
+                <!-- 兜底渲染统一走空值占位：空单元格此前渲染成完全空白的 <td>，
+                     读者分不清「没有值」还是「界面坏了」。插槽拿到的 `value`
+                     仍是原始值，调用点想自己处理空值不受影响。 -->
                 <slot :name="`cell-${col.key}`" :row="row" :value="valueOf(row, col)" :column="col">
-                  {{ valueOf(row, col) }}
+                  <span
+                    :class="isEmptyValue(valueOf(row, col)) ? 'text-muted-foreground' : undefined"
+                    >{{ displayValue(valueOf(row, col)) }}</span
+                  >
                 </slot>
+              </TableCell>
+            </TableRow>
+          </template>
+
+          <!-- 失败：红色警示 + 具体原因 + 重试。此处禁止出现任何安慰性措辞 -->
+          <template v-else-if="bodyState === 'error'">
+            <TableRow class="hover:bg-transparent">
+              <TableCell :colspan="colSpan" class="h-40 p-0">
+                <div class="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <slot name="error" :message="resolvedErrorMessage" :error="error">
+                    <div class="nv-dt-state-icon nv-dt-state-icon--error">
+                      <TriangleAlertIcon class="size-5" aria-hidden="true" />
+                    </div>
+                    <p class="text-sm font-medium text-destructive-strong">数据加载失败</p>
+                    <p class="max-w-md px-6 text-xs text-muted-foreground">
+                      {{ resolvedErrorMessage }}
+                    </p>
+                    <NvButton
+                      variant="outline"
+                      size="sm"
+                      class="mt-1"
+                      :disabled="loading"
+                      @click="emit('retry')"
+                    >
+                      <RotateCcwIcon aria-hidden="true" />
+                      {{ loading ? '重试中…' : '重新加载' }}
+                    </NvButton>
+                  </slot>
+                </div>
+              </TableCell>
+            </TableRow>
+          </template>
+
+          <!-- 未查询：还没查，不是没有数据。只说下一步该选什么 -->
+          <template v-else-if="bodyState === 'awaiting'">
+            <TableRow class="hover:bg-transparent">
+              <TableCell :colspan="colSpan" class="h-40 p-0">
+                <div class="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <slot name="awaiting">
+                    <div class="nv-dt-state-icon nv-dt-state-icon--awaiting">
+                      <ListFilterIcon class="size-5" aria-hidden="true" />
+                    </div>
+                    <p class="text-sm font-medium text-foreground">尚未发起查询</p>
+                    <p class="max-w-md px-6 text-xs text-muted-foreground">
+                      {{ awaitingScopeMessage }}
+                    </p>
+                  </slot>
+                </div>
               </TableCell>
             </TableRow>
           </template>
@@ -939,6 +1054,27 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     font-size: 0.6875rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 表体状态图章：空 / 失败 / 未查询三态在颜色与轮廓上就分得开，
+     不靠读文案区分（失败 = 警示描边的红章，未查询 = 虚线待办章）。 */
+  .nv-dt-state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 9999px;
+  }
+  .nv-dt-state-icon--error {
+    background-color: color-mix(in oklch, var(--destructive) 12%, transparent);
+    border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
+    color: var(--destructive);
+  }
+  .nv-dt-state-icon--awaiting {
+    background-color: transparent;
+    border: 1px dashed var(--border);
+    color: var(--muted-foreground);
   }
 
   .nv-dt-opt {

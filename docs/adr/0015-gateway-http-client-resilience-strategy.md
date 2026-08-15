@@ -1,9 +1,9 @@
-# ADR 0015: 网关 HTTP 客户端弹性策略
+# ADR 0015：网关 HTTP 客户端弹性策略
 
-- Status: Accepted
-- Date: 2026-05-28
+- 状态：已接受
+- 日期：2026-05-28
 
-## Context
+## 背景
 
 PlatformGateway 和 BusinessGateway 作为 BFF 层，聚合多个下游服务的 HTTP 调用。`Microsoft.Extensions.Http.Resilience` 提供了 `AddStandardResilienceHandler()`，包含 rate limiter → total request timeout → retry（默认 3 次指数退避）→ circuit breaker → attempt timeout 的完整管线。
 
@@ -11,14 +11,14 @@ PlatformGateway 和 BusinessGateway 作为 BFF 层，聚合多个下游服务的
 
 PlatformGateway 已经通过 `GatewayHttpClientResilience.AddGatewayNonIdempotentSafeResilience()` 区分了两类操作。BusinessGateway 在 Business Console MVP 落地时，6 个 HTTP 客户端全部使用了 `AddStandardResilienceHandler()`，未区分读写操作的弹性需求。
 
-## Decision
+## 决策
 
 ### 1. 按操作幂等性分类弹性策略
 
 | 操作类别 | 弹性策略 | 策略内容 | 适用场景 |
 | --- | --- | --- | --- |
-| 幂等读操作 | `AddStandardResilienceHandler()` | retry + circuit breaker + timeout | 授权检查、列表查询、详情查询 |
-| 非幂等写操作 | `AddGatewayNonIdempotentSafeResilience()` | timeout + circuit breaker（无 retry） | 创建、更新、删除、状态变更 |
+| 幂等读操作 | `AddStandardResilienceHandler()` | 重试 + 熔断器 + 超时 | 授权检查、列表查询、详情查询 |
+| 非幂等写操作 | `AddGatewayNonIdempotentSafeResilience()` | 超时 + 熔断器（无重试） | 创建、更新、删除、状态变更 |
 
 ### 2. 非幂等安全策略参数
 
@@ -34,8 +34,8 @@ pipeline
     });
 ```
 
-- **Timeout 10s**: 下游服务单次调用上限，超时直接失败返回，不重试。
-- **Circuit breaker**: 30 秒窗口内至少 10 次请求，失败率超过 50% 时熔断 15 秒。熔断期间快速失败，避免雪崩。
+- **超时 10 秒**：下游服务单次调用上限，超时直接失败返回，不重试。
+- **熔断器**：30 秒窗口内至少 10 次请求，失败率超过 50% 时熔断 15 秒。熔断期间快速失败，避免雪崩。
 
 ### 3. 网关客户端策略分配
 
@@ -74,7 +74,7 @@ pipeline
 
 每个 Gateway 必须有对应的弹性策略测试，验证非幂等客户端在收到 5xx 错误时不触发重试。参考 `GatewayHttpClientResilienceTests.Non_idempotent_gateway_clients_do_not_retry_server_errors`。
 
-## Consequences
+## 后果
 
 - BusinessGateway 的 5 个业务服务客户端改用 `NonIdempotentSafe` 策略后，写操作失败不再自动重试，避免重复记录风险。
 - 写操作的可用性略有降低（单次失败即返回错误），但这是正确的权衡：重复数据比暂时失败危害更大，客户端（Business Console）可以提示用户重试。

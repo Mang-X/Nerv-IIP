@@ -16,7 +16,7 @@ public sealed class WmsIntegrationEventTests
     public void Inbound_completed_event_uses_required_event_type()
     {
         var inbound = DomainWmsFactory.InboundOrder();
-        inbound.Complete("idem-in-001");
+        inbound.Complete("idem-in-001", inbound.Version);
 
         var integrationEvent = new InboundOrderCompletedIntegrationEventConverter().Convert(new InboundOrderCompletedDomainEvent(inbound));
         var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -30,7 +30,7 @@ public sealed class WmsIntegrationEventTests
     public void Inbound_completed_event_contains_all_completed_lines()
     {
         var inbound = DomainWmsFactory.MultiLineInboundOrder();
-        inbound.Complete("idem-in-001");
+        inbound.Complete("idem-in-001", inbound.Version);
 
         var integrationEvent = new InboundOrderCompletedIntegrationEventConverter().Convert(new InboundOrderCompletedDomainEvent(inbound));
         Assert.NotNull(integrationEvent.Payload.Lines);
@@ -51,7 +51,7 @@ public sealed class WmsIntegrationEventTests
     public void Outbound_completed_event_contains_all_completed_lines()
     {
         var outbound = DomainWmsFactory.MultiLineOutboundOrder();
-        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version);
 
         var integrationEvent = new OutboundOrderCompletedIntegrationEventConverter().Convert(new OutboundOrderCompletedDomainEvent(outbound));
         Assert.NotNull(integrationEvent.Payload.Lines);
@@ -76,6 +76,7 @@ public sealed class WmsIntegrationEventTests
             "PACK-001",
             true,
             "idem-out-001",
+            outbound.Version,
             new Dictionary<string, decimal>(StringComparer.Ordinal)
             {
                 ["LINE-001"] = 4m,
@@ -100,7 +101,7 @@ public sealed class WmsIntegrationEventTests
             "SITE-01",
             [new Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrderLineDraft(
                 "10", "SKU-FG-1000", "EA", 2m, "LOC-A-01", null, null, "qualified", "company", "CUST-001")]);
-        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version);
 
         var integrationEvent = new OutboundOrderCompletedIntegrationEventConverter()
             .Convert(new OutboundOrderCompletedDomainEvent(outbound));
@@ -113,11 +114,11 @@ public sealed class WmsIntegrationEventTests
     public void Outbound_count_and_wcs_events_use_required_event_types()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
-        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001", outbound.Version);
         var cancelledOutbound = DomainWmsFactory.OutboundOrder();
         cancelledOutbound.Cancel("customer-cancelled");
         var count = CountExecution.Create("org-001", "env-dev", "COUNT-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m);
-        count.Complete(8m);
+        count.Complete(8m, count.Version);
         var wcs = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
         wcs.Fail("E001", "blocked");
 

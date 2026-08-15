@@ -23,6 +23,8 @@ public static class CapMessagingConfiguration
     public const string RabbitMqConnectionStringFallbackKey = "ConnectionStrings:rabbitmq";
     public const string FailedRetryIntervalConfigurationKey = "Cap:FailedRetryInterval";
     public const string FallbackWindowLookbackSecondsConfigurationKey = "Cap:FallbackWindowLookbackSeconds";
+    public const string VersionConfigurationKey = "Cap:Version";
+    public const string TopicNamePrefixConfigurationKey = "Cap:TopicNamePrefix";
     private const string DevelopmentEnvironmentName = "Development";
     private const int MinimumFallbackWindowLookbackSeconds = 30;
 
@@ -80,6 +82,7 @@ public static class CapMessagingConfiguration
 
         if (string.Equals(provider, RedisProvider, StringComparison.OrdinalIgnoreCase))
         {
+            ApplyRedisSessionIsolation(options, configuration);
             var redisConnectionString = ReadRedisConnectionString(configuration);
             var redisConfiguration = ConfigurationOptions.Parse(redisConnectionString);
             redisConfiguration.AbortOnConnectFail = false;
@@ -89,6 +92,21 @@ public static class CapMessagingConfiguration
 
         throw new InvalidOperationException(
             $"Unsupported {ProviderConfigurationKey} '{provider}'. Supported values are '{InMemoryProvider}', '{RabbitMqProvider}' and '{RedisProvider}'.");
+    }
+
+    internal static void ApplyRedisSessionIsolation(CapOptions options, IConfiguration configuration)
+    {
+        var version = configuration[VersionConfigurationKey];
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            options.Version = version;
+        }
+
+        var topicNamePrefix = configuration[TopicNamePrefixConfigurationKey];
+        if (!string.IsNullOrWhiteSpace(topicNamePrefix))
+        {
+            options.TopicNamePrefix = topicNamePrefix;
+        }
     }
 
     /// <summary>

@@ -1,9 +1,13 @@
 # Script-Governance:
 #   Category: release-install
 #   SideEffects:
+#     - Mirrors the main worktree's installed agent skills into a fresh worktree (idempotent)
+#     - Installs skills in the MAIN worktree via the skills CLI only when they are missing there
 #     - Restores frontend pnpm dependencies for a freshly created worktree (idempotent)
 #     - Optionally restores backend/.NET solutions when NERV_SETUP_BACKEND=1
 #   Writes:
+#     - .agents/skills/**
+#     - .claude/skills/**
 #     - frontend/node_modules/**
 #     - backend/**/obj/**
 #     - connector-hosts/**/obj/**
@@ -33,6 +37,109 @@ function Write-SetupStep([string] $message) {
   Write-Host "[setup] $message"
 }
 
+# --- Agent skills ---------------------------------------------------------
+# `npx skills` installs the real skill payload into .agents/skills/ and exposes it to
+# each agent runtime through a directory of relative symlinks (.claude/skills/<name> ->
+# ../../.agents/skills/<name>). Both layers are gitignored, so a fresh worktree starts
+# with .claude/skills/ empty and every repo-level skill silently missing. Reinstalling
+# from the network per worktree costs minutes; the main worktree already holds a
+# resolved, hash-locked copy, so mirror that instead (same trick as the codex
+# .codex/environments/environment.toml [setup] block, which copies .agents/skills/).
+$agentSkillsRelative = '.agents/skills'
+$claudeSkillsRelative = '.claude/skills'
+
+function Test-SkillsPayloadPresent([string] $repoRoot) {
+  # Guard on content, not existence: a mirror that fails midway leaves an empty
+  # .agents/skills behind, and an existence check would treat that as "installed"
+  # forever after.
+  $payloadRoot = Join-Path $repoRoot $agentSkillsRelative
+  if (-not (Test-Path $payloadRoot)) { return $false }
+  return @(Get-ChildItem -LiteralPath $payloadRoot -Force).Count -gt 0
+}
+
+function Get-MainWorktreeRoot([string] $worktreeRoot) {
+  # A linked worktree's .git is a file pointing at <main>/.git/worktrees/<name>; the
+  # common git dir is always <main>/.git, so its parent is the main worktree root.
+  $result = Invoke-NativeCommandOutput -Command 'git' -Arguments @('rev-parse', '--path-format=absolute', '--git-common-dir') -WorkingDirectory $worktreeRoot -TimeoutSeconds 30 -Name 'worktree-git-common-dir'
+  $commonGitDir = $result.Stdout.Trim()
+  if ([string]::IsNullOrWhiteSpace($commonGitDir)) { return $worktreeRoot }
+  return (Split-Path -Parent $commonGitDir)
+}
+
+function Copy-SkillLinkLayer([string] $sourceRoot, [string] $targetRoot) {
+  # Recreate .claude/skills as links rather than copying it: the source entries are
+  # relative symlinks, and a plain copy would either dereference them (duplicating
+  # 9.5 MB a second time) or carry links that resolve outside the worktree.
+  $sourceLinkDir = Join-Path $sourceRoot $claudeSkillsRelative
+  if (-not (Test-Path $sourceLinkDir)) { return }
+
+  $targetLinkDir = Join-Path $targetRoot $claudeSkillsRelative
+  New-Item -ItemType Directory -Path $targetLinkDir -Force | Out-Null
+
+  foreach ($entry in Get-ChildItem -LiteralPath $sourceLinkDir -Force) {
+    $targetEntry = Join-Path $targetLinkDir $entry.Name
+    if (Test-Path -LiteralPath $targetEntry) { continue }
+
+    $payload = Join-Path (Join-Path $targetRoot $agentSkillsRelative) $entry.Name
+    if (-not (Test-Path -LiteralPath $payload)) { continue }
+
+    try {
+      New-Item -ItemType SymbolicLink -Path $targetEntry -Target (Join-Path '..' (Join-Path '..' (Join-Path $agentSkillsRelative $entry.Name))) -Force | Out-Null
+    }
+    catch {
+      # Windows without developer mode cannot create symlinks; a real copy still works.
+      Copy-Item -LiteralPath $payload -Destination $targetEntry -Recurse -Force
+    }
+  }
+}
+
+$mainRoot = $null
+try {
+  $mainRoot = Get-MainWorktreeRoot -worktreeRoot $root
+}
+catch {
+  Write-Warning "[setup] could not resolve the main worktree root: $($_.Exception.Message)"
+}
+
+if ($null -eq $mainRoot) {
+  Write-SetupStep 'skills: skipped (main worktree root unknown)'
+}
+elseif (Test-SkillsPayloadPresent -repoRoot $root) {
+  Write-SetupStep 'skills present - skipping'
+  Copy-SkillLinkLayer -sourceRoot $mainRoot -targetRoot $root
+}
+else {
+  $mainSkills = Join-Path $mainRoot $agentSkillsRelative
+  if (-not (Test-SkillsPayloadPresent -repoRoot $mainRoot)) {
+    # Only ever install in the main worktree, so every future worktree copies from it.
+    Write-SetupStep 'skills: npx skills experimental_install (main worktree)'
+    try {
+      Invoke-NativeCommandWithTimeout -Command 'npx' -Arguments @('skills', 'experimental_install') -WorkingDirectory $mainRoot -TimeoutSeconds 900 -Name 'worktree-skills-install' | Out-Null
+    }
+    catch {
+      Write-Warning "[setup] skills install failed: $($_.Exception.Message)"
+    }
+  }
+
+  if (Test-SkillsPayloadPresent -repoRoot $mainRoot) {
+    Write-SetupStep "skills: mirroring $agentSkillsRelative from the main worktree"
+    try {
+      $targetSkills = Join-Path $root $agentSkillsRelative
+      New-Item -ItemType Directory -Path $targetSkills -Force | Out-Null
+      foreach ($skill in Get-ChildItem -LiteralPath $mainSkills -Force) {
+        Copy-Item -LiteralPath $skill.FullName -Destination (Join-Path $targetSkills $skill.Name) -Recurse -Force
+      }
+      Copy-SkillLinkLayer -sourceRoot $mainRoot -targetRoot $root
+    }
+    catch {
+      Write-Warning "[setup] skills mirror failed: $($_.Exception.Message)"
+    }
+  }
+  else {
+    Write-SetupStep 'skills: unavailable in the main worktree - skipping'
+  }
+}
+
 # --- Frontend dependencies (needed for typecheck / test / build / preview) ---
 if (-not (Test-Path (Join-Path $root 'frontend/node_modules'))) {
   Write-SetupStep 'frontend: pnpm install --frozen-lockfile'
@@ -48,7 +155,7 @@ else {
 }
 
 # --- Backend (.NET) restore - opt-in (slow; not needed for frontend work) ---
-if ($env:NERV_SETUP_BACKEND -eq '1') {
+if ([string]::Equals([string]($env:NERV_SETUP_BACKEND), [string]('1'), [StringComparison]::OrdinalIgnoreCase)) {
   $marker = Join-Path $root 'backend/services/Iam/src/Nerv.IIP.Iam.Web/obj/project.assets.json'
   if (-not (Test-Path $marker)) {
     Write-SetupStep 'backend: dotnet restore (NERV_SETUP_BACKEND=1)'

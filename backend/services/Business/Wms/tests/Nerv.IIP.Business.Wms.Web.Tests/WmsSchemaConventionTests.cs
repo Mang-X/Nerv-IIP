@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskActionReceiptAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -43,6 +44,7 @@ public sealed class WmsSchemaConventionTests
             typeof(OutboundOrder),
             typeof(OutboundOrderLine),
             typeof(WarehouseTask),
+            typeof(WarehouseTaskActionReceipt),
             typeof(CountExecution),
             typeof(WcsTask),
             typeof(InventoryMovementRequest),
@@ -57,6 +59,65 @@ public sealed class WmsSchemaConventionTests
         failures.AddRange(NoStockBalanceColumns(fixture.DbContext));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
+    }
+
+    [Fact]
+    public void Wms_assignment_task_lifecycle_and_action_receipt_metadata_are_persisted_and_indexed()
+    {
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+
+        Assert.NotNull(fixture.DbContext.WarehouseTaskActionReceipts);
+        var warehouseTask = Assert.IsAssignableFrom<IEntityType>(model.FindEntityType(typeof(WarehouseTask)));
+        Assert.True(warehouseTask.FindProperty(nameof(WarehouseTask.Version))!.IsConcurrencyToken);
+        Assert.Contains(
+            warehouseTask.GetIndexes(),
+            index => IndexMatches(
+                index,
+                nameof(WarehouseTask.OrganizationId),
+                nameof(WarehouseTask.EnvironmentId),
+                nameof(WarehouseTask.TaskType),
+                nameof(WarehouseTask.Status),
+                nameof(WarehouseTask.SiteCode),
+                nameof(WarehouseTask.AssignedOperatorUserId),
+                nameof(WarehouseTask.CreatedAtUtc)));
+        Assert.Contains(
+            warehouseTask.GetIndexes(),
+            index => IndexMatches(
+                index,
+                nameof(WarehouseTask.OrganizationId),
+                nameof(WarehouseTask.EnvironmentId),
+                nameof(WarehouseTask.TaskType),
+                nameof(WarehouseTask.Status),
+                nameof(WarehouseTask.SiteCode),
+                nameof(WarehouseTask.AssignedPoolCode),
+                nameof(WarehouseTask.CreatedAtUtc)));
+        var wcsTask = Assert.IsAssignableFrom<IEntityType>(
+            model.FindEntityType(typeof(WcsTask)));
+        Assert.Contains(
+            wcsTask.GetIndexes(),
+            index => index.IsUnique
+                && IndexMatches(index, nameof(WcsTask.WarehouseTaskId)));
+
+        foreach (var aggregateType in new[] { typeof(InboundOrder), typeof(OutboundOrder), typeof(CountExecution) })
+        {
+            var aggregate = Assert.IsAssignableFrom<IEntityType>(model.FindEntityType(aggregateType));
+            Assert.True(aggregate.FindProperty("AssignedOperatorUserId")!.IsNullable);
+            Assert.True(aggregate.FindProperty("AssignedPoolCode")!.IsNullable);
+        }
+
+        var receipt = Assert.IsAssignableFrom<IEntityType>(
+            model.FindEntityType(typeof(WarehouseTaskActionReceipt)));
+        Assert.Contains(
+            receipt.GetIndexes(),
+            index => index.IsUnique
+                && IndexMatches(
+                    index,
+                    nameof(WarehouseTaskActionReceipt.OrganizationId),
+                    nameof(WarehouseTaskActionReceipt.EnvironmentId),
+                    nameof(WarehouseTaskActionReceipt.WarehouseTaskId),
+                    nameof(WarehouseTaskActionReceipt.Action),
+                    nameof(WarehouseTaskActionReceipt.IdempotencyKey)));
     }
 
     private static IEnumerable<string> NoStockBalanceColumns(ApplicationDbContext dbContext)
@@ -77,6 +138,9 @@ public sealed class WmsSchemaConventionTests
         services.AddWmsPostgreSqlPersistence("Host=localhost;Database=nerv_iip_schema_conventions;Username=nerv;Password=nerv");
         return new SchemaFixture(services.BuildServiceProvider());
     }
+
+    private static bool IndexMatches(IIndex index, params string[] propertyNames) =>
+        index.Properties.Select(property => property.Name).SequenceEqual(propertyNames, StringComparer.Ordinal);
 
     private sealed class SchemaFixture : IDisposable
     {

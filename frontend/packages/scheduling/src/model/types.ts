@@ -39,6 +39,17 @@ export interface DimensionValue {
   label: string
 }
 
+/**
+ * 泳道排序口径。
+ *
+ * `busiest` 是默认：按车间/产线分组时名录里的空泳道会排在前面，首屏看到的是没活的线，
+ * 演示第一眼像坏了（第五轮走查实测）。忙的排上面，一打开就是有活的。
+ *
+ * **`onlyScheduled` 不做默认**：空泳道保留是有意的设计——「这条线这周没活」本身就是
+ * 调度员要看的信息（#1428）。把它做成默认等于把那个决定悄悄撤销，所以只作为可选项。
+ */
+export type LaneOrder = 'busiest' | 'name' | 'onlyScheduled'
+
 export interface ScheduleTask {
   /** assignmentId 优先,缺则 `${orderId}:${operationId}`。 */
   id: string
@@ -88,6 +99,46 @@ export interface ScheduleTask {
   locked: boolean
   hasConflict: boolean
   conflictReason?: ConflictReason | null
+  /**
+   * 物料风险（软约束）：工序已排入计划，但开工前必须先备料。
+   * 齐套是开工门槛不是排产门槛——所以它只是标记，不是「未排」。
+   */
+  materialRisk?: MaterialRisk
+  /**
+   * 设备数据风险（软约束）：工序排在了运行时状态未知的设备上（无快照 / 快照过期 /
+   * 采集源不可达）。「不知道」不等于「不可用」——照排，但开工前需人工确认设备可用。
+   */
+  equipmentRisk?: EquipmentRisk
+}
+
+/** 单项物料缺口：缺哪个物料、需要多少、可用多少、缺口多少。 */
+export interface MaterialShortage {
+  materialId: string
+  materialLotId?: string | null
+  requiredQuantity: number
+  availableQuantity: number
+  shortageQuantity: number
+}
+
+/** 某工序的物料风险：缺口明细 + 已翻译成人话的提示。 */
+export interface MaterialRisk {
+  orderId: string
+  operationId: string
+  reasonCodes: string[]
+  shortages: MaterialShortage[]
+  /** 中文人话提示，读面直接展示（含「需在开工前完成备料」）。 */
+  message: string
+}
+
+/** 某工序的设备数据风险：状态盲区的原因 + 已翻译成人话的提示。 */
+export interface EquipmentRisk {
+  orderId: string
+  operationId: string
+  /** 该工序排到的设备（业务编码，如 DEV-CNC-01）。 */
+  resourceId: string
+  reasonCodes: string[]
+  /** 中文人话提示，读面直接展示（含「开工前请人工确认设备可用」）。 */
+  message: string
 }
 
 export interface ScheduleLink {
@@ -150,6 +201,22 @@ export interface ScheduleChange {
   taskId?: string
 }
 
+/** 单个班次工作窗口(窗口之外即非工作时间)。 */
+export interface ScheduleShiftWindow {
+  startUtc: string
+  endUtc: string
+  /** 班次码(如 early-shift / middle-shift),用于区分班次边界。 */
+  shiftCode: string
+}
+
+/** 工作日历:一份日历被哪些资源/工作中心使用,以及它的班次窗口。 */
+export interface ScheduleCalendar {
+  calendarId: string
+  resourceIds: string[]
+  workCenterIds: string[]
+  shiftWindows: ScheduleShiftWindow[]
+}
+
 export interface ScheduleModel {
   tasks: ScheduleTask[]
   links: ScheduleLink[]
@@ -157,10 +224,21 @@ export interface ScheduleModel {
   loads: ResourceLoadBucket[]
   conflicts: ScheduleConflict[]
   unscheduled: UnscheduledItem[]
+  /** 物料风险清单（软约束下已排但缺料的工序）。 */
+  materialRisks?: MaterialRisk[]
+  /** 设备数据风险清单（软约束下排在状态未知设备上的工序）。 */
+  equipmentRisks?: EquipmentRisk[]
   /** 重预览 diff。 */
   changes: ScheduleChange[]
   /** 资源排产板可用的分组维度(为空时默认按工作中心)。 */
   groupDimensions?: SchedulingDimension[]
+  /** 每个分组维度的全量泳道定义；用于保留当前时间窗内没有任务的泳道。 */
+  groupValues?: Record<string, DimensionValue[]>
+  /**
+   * 计划所依据的工作日历。有值时甘特按它画工作/非工作底纹与班次边界;
+   * 无值时引擎退回「周末 + 夜间」的通用作息假设。
+   */
+  calendars?: ScheduleCalendar[]
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }
 }

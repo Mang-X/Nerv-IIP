@@ -281,7 +281,7 @@ function Get-AppHostUserSecrets {
     }
     catch {
         $message = "$($_.Exception.Message)"
-        if ($message.Contains("Could not find the global property 'UserSecretsId'") -or $message.Contains('No UserSecretsId')) {
+        if ($message.Contains("Could not find the global property 'UserSecretsId'", [StringComparison]::Ordinal) -or $message.Contains('No UserSecretsId', [StringComparison]::Ordinal)) {
             return @{}
         }
 
@@ -405,7 +405,7 @@ function Initialize-LocalAppHostSecrets {
 
     if ($created.Count -gt 0) {
         Write-Diagnostic "Initialized missing local AppHost user secrets: $($created -join ', ')"
-        if ($adminPasswordWasGenerated -and $created.Contains('Parameters:iam-seed-admin-password')) {
+        if ($adminPasswordWasGenerated -and [Collections.Generic.HashSet[string]]::new([string[]]@($created), [StringComparer]::Ordinal).Contains([string]'Parameters:iam-seed-admin-password')) {
             Write-Diagnostic 'Generated a random local IAM seed admin password in user-secrets. Retrieve or override it with dotnet user-secrets before the first database seed if you need a known local login password.'
         }
     }

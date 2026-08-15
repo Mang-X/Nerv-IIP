@@ -8,7 +8,7 @@
 - `docs/architecture/frontend-structure.md`
 - `docs/architecture/implementation-readiness.md`
 
-## 建议 issue 标题
+## 建议 Issue 标题
 
 - `[Docs] 核心流程图拆分为可点击页面入口和能力状态矩阵`
 
@@ -16,7 +16,7 @@
 
 ### 能力缺失
 
-- 流程图是 Mermaid 静态图，节点下方虽有 Business Console 路由和 BusinessGateway facade 映射，但图本身不能直接跳转到页面，也不能显示权限状态。
+- 流程图是 Mermaid 静态图，节点下方虽有 Business Console 路由和 BusinessGateway 门面映射，但图本身不能直接跳转到页面，也不能显示权限状态。
 
 ### 操作不连贯
 
@@ -32,4 +32,4 @@
 
 ### 反馈不足
 
-- 后续可从路由表和 readiness 事实生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。
+- 后续可从路由表和实施就绪事实生成页面入口矩阵，减少文档漂移，并在构建时提示入口缺失。

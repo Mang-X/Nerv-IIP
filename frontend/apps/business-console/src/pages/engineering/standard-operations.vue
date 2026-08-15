@@ -45,7 +45,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { friendlyErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -113,8 +113,11 @@ watch(
   { immediate: true },
 )
 
+// 非 Error 形态的 rejection 也必须显示出来，否则错误横幅整条消失、页面退化成空态把故障吞掉。
 const listErrorMessage = computed(() =>
-  standardOperationsError.value instanceof Error ? standardOperationsError.value.message : '',
+  standardOperationsError.value
+    ? friendlyErrorMessage(standardOperationsError.value, '标准工序加载失败，请刷新重试。')
+    : '',
 )
 
 function formatMinutes(setup?: number | null, run?: number | null) {
@@ -131,6 +134,28 @@ const columns: NvDataTableColumn<BusinessConsoleStandardOperationItem>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
+
+// 控制键说人话。后端 `StandardOperation.ControlKey` 是自由字符串（无枚举、无 CodeSet），
+// 世界史种子与路线默认值都写 `standard`；不收词就把英文码印到「控制」列上。
+const CONTROL_KEY_LABELS: Record<string, string> = {
+  standard: '标准工序',
+  inhouse: '自制工序',
+  outsource: '外协工序',
+  outsourced: '外协工序',
+  inspection: '检验工序',
+  rework: '返工工序',
+  assembly: '装配工序',
+  packaging: '包装工序',
+}
+function controlKeyLabel(value?: string | null) {
+  const raw = (value ?? '').trim()
+  if (!raw) return ''
+  const label = CONTROL_KEY_LABELS[raw.toLowerCase().replace(/[-_\s]/g, '')]
+  if (label === undefined && import.meta.env.DEV) {
+    console.warn(`[标准工序] 词表缺失: ${raw}，请补 CONTROL_KEY_LABELS`)
+  }
+  return label ?? raw
+}
 
 // ── 新建 / 编辑表单 ─────────────────────────────────────────────
 interface StandardOperationForm {
@@ -282,7 +307,7 @@ async function submitForm() {
     editingCode.value = null
     editingRow.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存标准工序失败', error, '保存标准工序失败，请稍后重试。')
   }
 }
 
@@ -303,7 +328,7 @@ async function confirmArchive() {
     archiveOpen.value = false
     archiveTarget.value = null
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('停用工序失败', error, '停用工序失败，请稍后重试。')
   }
 }
 </script>
@@ -439,21 +464,21 @@ async function confirmArchive() {
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>需要报工</span>
-                  <NvCheckbox id="op-report" v-model:checked="form.requiresReporting" />
+                  <NvCheckbox id="op-report" v-model="form.requiresReporting" />
                 </label>
                 <label
                   for="op-inspect"
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>需要质检</span>
-                  <NvCheckbox id="op-inspect" v-model:checked="form.requiresQualityInspection" />
+                  <NvCheckbox id="op-inspect" v-model="form.requiresQualityInspection" />
                 </label>
                 <label
                   for="op-outsource"
                   class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm"
                 >
                   <span>外协工序</span>
-                  <NvCheckbox id="op-outsource" v-model:checked="form.isOutsourced" />
+                  <NvCheckbox id="op-outsource" v-model="form.isOutsourced" />
                 </label>
               </NvFieldGroup>
 
@@ -524,7 +549,7 @@ async function confirmArchive() {
             <NvStatusBadge v-if="row.isOutsourced" label="外协" tone="neutral" />
           </div>
           <span v-if="row.controlKey" class="text-xs text-muted-foreground">{{
-            row.controlKey
+            controlKeyLabel(row.controlKey)
           }}</span>
         </div>
       </template>

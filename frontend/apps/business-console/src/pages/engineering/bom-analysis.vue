@@ -6,18 +6,25 @@ import type {
   BusinessConsoleBomWhereUsedItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
-import { useBomAnalysis } from '@/composables/useProductEngineering'
+import {
+  useBomAnalysis,
+  useBomItemCatalog,
+  useBomVersionPickerCatalog,
+} from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
+import { friendlyErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
   NvDatePicker,
+  NvEntityPicker,
   NvField,
   NvFieldLabel,
   NvInput,
   NvMetricCard,
   NvPageHeader,
+  NvSearchSelect,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -90,10 +97,117 @@ const kindOptions = [
   { value: 'manufacturing', label: 'MBOM' },
 ]
 
+const {
+  engineeringEntries,
+  skuEntries,
+  pending: catalogPending,
+  load: loadCatalog,
+} = useBomItemCatalog()
+
 const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' : '产出物料'))
-const codePlaceholder = computed(() =>
-  form.kind === 'engineering' ? '如 FG-100' : '如 SKU-FG-100',
+// EBOM 分析吃工程物料 itemCode，MBOM 分析吃基础数据 skuCode —— 目录按 BOM 类型切换。
+const catalogEntries = computed(() =>
+  form.kind === 'engineering' ? engineeringEntries.value : skuEntries.value,
 )
+const catalogSourceText = computed(() =>
+  form.kind === 'engineering' ? '数据来自工程物料目录' : '数据来自基础数据物料主数据',
+)
+const catalogEmptyText = computed(() =>
+  form.kind === 'engineering'
+    ? '暂无工程物料，请先在工程数据维护物料修订'
+    : '暂无物料主数据，请先在基础数据维护物料',
+)
+
+function pickerOptions(current: string) {
+  const options = catalogEntries.value.map((entry) => ({
+    value: entry.code,
+    label: entry.name,
+    hint: entry.hint,
+  }))
+  // 深链 / 目录截断时，保住 URL 带进来的当前编码，避免选择器显示成未选。
+  const trimmed = current.trim()
+  if (trimmed && !options.some((option) => option.value === trimmed)) {
+    options.unshift({ value: trimmed, label: trimmed, hint: undefined })
+  }
+  return options
+}
+const rootPickerOptions = computed(() => pickerOptions(form.rootCode))
+const componentPickerOptions = computed(() => pickerOptions(form.componentCode))
+
+// ── BOM 版本选择（编码 ▸ 修订 联动）────────────────────────────
+// 修订从属于 BOM 编码：先选编码，修订只列该编码下已发布的修订；换了编码就清空下游修订。
+const { bomCodeOptions, revisionOptions, bomVersionsPending } = useBomVersionPickerCatalog()
+
+const bomVersionSourceText = computed(() =>
+  form.kind === 'engineering' ? '数据来自已发布 EBOM 版本' : '数据来自已发布 MBOM 版本',
+)
+const bomVersionEmptyText = computed(() =>
+  form.kind === 'engineering'
+    ? '暂无已发布 EBOM，请先在设计 BOM 发布版本'
+    : '暂无已发布 MBOM，请先在制造 BOM 发布版本',
+)
+
+const specifiedBomOptions = computed(() => bomCodeOptions(form.kind, form.bomCode))
+const specifiedRevisionOptions = computed(() =>
+  revisionOptions(form.kind, form.bomCode, form.revision),
+)
+const fromBomOptions = computed(() => bomCodeOptions(form.kind, form.fromBomCode))
+const fromRevisionOptions = computed(() =>
+  revisionOptions(form.kind, form.fromBomCode, form.fromRevision),
+)
+const toBomOptions = computed(() => bomCodeOptions(form.kind, form.toBomCode))
+const toRevisionOptions = computed(() =>
+  revisionOptions(form.kind, form.toBomCode, form.toRevision),
+)
+
+function syncRevision(bomKey: 'bomCode' | 'fromBomCode' | 'toBomCode') {
+  const revisionKey = (
+    { bomCode: 'revision', fromBomCode: 'fromRevision', toBomCode: 'toRevision' } as const
+  )[bomKey]
+  const code = form[bomKey].trim()
+  if (!code) {
+    form[revisionKey] = ''
+    return
+  }
+  const options = revisionOptions(form.kind, code)
+  // 目录尚未就绪 / 深链带进来的编码不在目录里：不动已选修订，免得清掉 URL 里的真值。
+  if (!options.length) return
+  if (form[revisionKey] && !options.some((option) => option.value === form[revisionKey])) {
+    form[revisionKey] = ''
+  }
+  if (!form[revisionKey] && options.length === 1) form[revisionKey] = options[0].value
+}
+
+watch(
+  () => form.bomCode,
+  () => syncRevision('bomCode'),
+)
+watch(
+  () => form.fromBomCode,
+  () => syncRevision('fromBomCode'),
+)
+watch(
+  () => form.toBomCode,
+  () => syncRevision('toBomCode'),
+)
+
+// 物料编码 → 名称（两套目录合并），结果表格名称列用；查不到显示「—」，不留空、不编造。
+const itemNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const entry of skuEntries.value) map.set(entry.code, entry.name)
+  for (const entry of engineeringEntries.value) map.set(entry.code, entry.name)
+  return map
+})
+function itemName(code?: string | null) {
+  if (!code) return '—'
+  return itemNameByCode.value.get(code) ?? '—'
+}
+function diffItemName(row: BusinessConsoleBomDiffLineItem) {
+  if (row.changeType?.toLowerCase() === 'replaced') {
+    return `${itemName(row.oldItemCode)} -> ${itemName(row.newItemCode)}`
+  }
+  return itemName(row.newItemCode || row.oldItemCode)
+}
 const canSubmit = computed(() => {
   if (form.view === 'diff') {
     return (
@@ -124,29 +238,102 @@ const warningCount = computed(
 const errorCount = computed(
   () => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() === 'error').length,
 )
+
+// 「没查」「查失败」都不是「没问题」：只有真的拿到本次分析的响应才允许下结论。
+// 当前视图对应的响应体缺席（首次进页、切换视图、请求失败）一律走中性/失败档，
+// 指标卡显 `—`、不显 0，也不给绿灯。
+const analysisResponse = computed(() => {
+  if (form.view === 'diff') return diff.value
+  if (form.view === 'where-used') return whereUsed.value
+  return explosion.value
+})
+const analysisState = computed<'idle' | 'loading' | 'error' | 'ready'>(() => {
+  if (pending.value) return 'loading'
+  if (error.value) return 'error'
+  return analysisResponse.value ? 'ready' : 'idle'
+})
+const isReady = computed(() => analysisState.value === 'ready')
+
+const idlePrompt = computed(() => {
+  if (form.view === 'diff') return '请选择来源与目标 BOM 版本后执行对比。'
+  if (form.view === 'where-used') return '请选择组件物料后执行反查。'
+  return '请先选择物料并执行分析。'
+})
+
 // 展开结果的可信度由诊断决定：有循环引用等阻断错误时整棵树都不能照单全收，
 // 所以命中行数与诊断结论放同一张告警卡，而不是三张互不相干的计数卡。
 const analysisTone = computed<'danger' | 'warning' | 'neutral'>(() => {
+  if (!isReady.value) return 'neutral'
   if (errorCount.value > 0) return 'danger'
   if (warningCount.value > 0) return 'warning'
   return 'neutral'
 })
 const diagnosticStatus = computed(() => {
+  if (analysisState.value === 'idle') return { label: '尚未分析', tone: 'neutral' as const }
+  if (analysisState.value === 'loading') return { label: '分析中', tone: 'neutral' as const }
+  if (analysisState.value === 'error') return { label: '分析失败', tone: 'danger' as const }
   if (errorCount.value > 0)
     return { label: `${errorCount.value} 项阻断错误`, tone: 'danger' as const }
   if (warningCount.value > 0)
     return { label: `${warningCount.value} 项警告`, tone: 'warning' as const }
-  return { label: '无诊断问题', tone: 'success' as const }
+  return { label: '本次分析未发现问题', tone: 'success' as const }
 })
 const diagnosticNote = computed(() => {
+  if (analysisState.value === 'idle') return idlePrompt.value
+  if (analysisState.value === 'loading') return '正在执行分析…'
+  if (analysisState.value === 'error') return '分析失败，无法判断 BOM 结构，请重试。'
   if (errorCount.value > 0) {
     return `存在循环引用等阻断问题，展开结果不完整，请先修正 BOM 结构${warningCount.value > 0 ? `；另有 ${warningCount.value} 项警告` : ''}。`
   }
   if (warningCount.value > 0) return '存在缺失下级版本等警告，部分分支可能展不开。'
   return '本次分析命中的行数。'
 })
+const blockerStatus = computed(() => {
+  if (analysisState.value === 'idle') return { label: '尚未分析', tone: 'neutral' as const }
+  if (analysisState.value === 'loading') return { label: '分析中', tone: 'neutral' as const }
+  if (analysisState.value === 'error') return { label: '无法判断', tone: 'neutral' as const }
+  return errorCount.value > 0
+    ? { label: '需先修正', tone: 'danger' as const }
+    : { label: '本次未发现阻断', tone: 'success' as const }
+})
+const blockerNote = computed(() => {
+  if (analysisState.value === 'idle') return '执行分析后给出循环引用等阻断结论。'
+  if (analysisState.value === 'loading') return '正在执行分析…'
+  if (analysisState.value === 'error') return '分析失败，未能判断结构是否可继续分析。'
+  return errorCount.value > 0 ? '循环引用等问题会使展开结果不完整。' : '本次分析的结构可继续使用。'
+})
+const warningStatus = computed(() => {
+  if (analysisState.value === 'idle') return { label: '尚未分析', tone: 'neutral' as const }
+  if (analysisState.value === 'loading') return { label: '分析中', tone: 'neutral' as const }
+  if (analysisState.value === 'error') return { label: '无法判断', tone: 'neutral' as const }
+  return warningCount.value > 0
+    ? { label: '建议核对', tone: 'warning' as const }
+    : { label: '本次未发现警告', tone: 'success' as const }
+})
+const warningNote = computed(() => {
+  if (analysisState.value === 'idle') return '执行分析后给出需人工核对的分支。'
+  if (analysisState.value === 'loading') return '正在执行分析…'
+  if (analysisState.value === 'error') return '分析失败，未能判断是否存在需核对的分支。'
+  return warningCount.value > 0
+    ? '缺失下级版本等警告可能影响部分分支。'
+    : '本次分析未发现需人工核对的分支。'
+})
 
-const errorMessage = computed(() => formatError(error.value))
+// 表格空态同样分档：未查询给引导、失败说失败，只有查完才敢说「未发现」。
+const tableEmptyMessage = computed(() => {
+  if (analysisState.value === 'error') return '分析失败，未能取到结果，请重试。'
+  if (analysisState.value === 'idle') return idlePrompt.value
+  if (form.view === 'diff') return '本次对比未发现两个版本之间的结构差异。'
+  if (form.view === 'where-used') return '本次反查未发现使用该物料的父项。'
+  if (form.view === 'explosion') return '本次分析未展开出任何层级。'
+  return '本次分析未展开出 BOM 树。'
+})
+
+const errorMessage = computed(() =>
+  error.value
+    ? `分析失败，无法判断 BOM 结构：${friendlyErrorMessage(error.value, '请稍后重试。')}`
+    : '',
+)
 
 const treeColumns: NvDataTableColumn<TreeRow>[] = [
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
@@ -157,6 +344,7 @@ const treeColumns: NvDataTableColumn<TreeRow>[] = [
 ]
 const explosionColumns: NvDataTableColumn<TreeRow>[] = [
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
+  { key: 'itemName', header: '名称' },
   { key: 'level', header: '层级', align: 'end', width: 'w-20' },
   { key: 'lineQuantity', header: '行数量', align: 'end', width: 'w-24' },
   { key: 'requiredQuantity', header: '滚算需求', align: 'end', width: 'w-28' },
@@ -165,6 +353,7 @@ const explosionColumns: NvDataTableColumn<TreeRow>[] = [
 ]
 const whereUsedColumns: NvDataTableColumn<BusinessConsoleBomWhereUsedItem>[] = [
   { key: 'parentItemCode', header: '父项', cellClass: 'font-medium' },
+  { key: 'parentItemName', header: '名称' },
   { key: 'bomCode', header: 'BOM 版本' },
   { key: 'lineQuantity', header: '用量', align: 'end', width: 'w-24' },
   { key: 'unitOfMeasureCode', header: '单位', width: 'w-24' },
@@ -174,6 +363,7 @@ const whereUsedColumns: NvDataTableColumn<BusinessConsoleBomWhereUsedItem>[] = [
 const diffColumns: NvDataTableColumn<BusinessConsoleBomDiffLineItem>[] = [
   { key: 'changeType', header: '变化', width: 'w-24' },
   { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
+  { key: 'itemName', header: '名称' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-32' },
   { key: 'uom', header: '单位', width: 'w-28' },
   { key: 'rates', header: '损耗/得率', align: 'end', width: 'w-40' },
@@ -201,6 +391,7 @@ watch(
 )
 
 onMounted(() => {
+  void loadCatalog()
   applyRouteQuery()
   if (canSubmit.value) {
     void submit()
@@ -290,6 +481,11 @@ async function submit() {
   }
   if (form.kind === 'engineering') await loadEngineeringExplosion(input)
   else await loadManufacturingExplosion(input)
+}
+
+// 失败原因已经由 errorMessage 呈现，这里吞掉 submit 的 rethrow，避免未处理的 Promise 拒绝。
+function retry() {
+  void submit().catch(() => {})
 }
 
 function flattenBom(
@@ -417,29 +613,41 @@ function diagnosticTone(severity?: string | null): StatusTone {
 function diagnosticLabel(severity?: string | null) {
   return (severity ?? '').toLowerCase() === 'error' ? '错误' : '警告'
 }
-
-function formatError(value: unknown) {
-  if (!value) return ''
-  if (value instanceof Error) return value.message
-  if (typeof value === 'string') return value
-  return '加载 BOM 分析失败，请稍后重试。'
-}
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader title="BOM 分析" description="多级 BOM 树、滚算爆炸、反查与版本对比" />
 
-    <NvMetricCard
-      class="sm:max-w-lg"
-      variant="alert"
-      label="分析结果行"
-      :value="resultCount"
-      unit="行"
-      :tone="analysisTone"
-      :status="diagnosticStatus"
-      :foot-start="diagnosticNote"
-    />
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <NvMetricCard
+        variant="alert"
+        label="分析结果"
+        :value="isReady ? resultCount : '—'"
+        :unit="isReady ? '行' : undefined"
+        :tone="analysisTone"
+        :status="diagnosticStatus"
+        :foot-start="diagnosticNote"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="阻断问题"
+        :value="isReady ? errorCount : '—'"
+        :unit="isReady ? '项' : undefined"
+        :tone="isReady && errorCount > 0 ? 'danger' : 'neutral'"
+        :status="blockerStatus"
+        :foot-start="blockerNote"
+      />
+      <NvMetricCard
+        variant="alert"
+        label="分析警告"
+        :value="isReady ? warningCount : '—'"
+        :unit="isReady ? '项' : undefined"
+        :tone="isReady && warningCount > 0 ? 'warning' : 'neutral'"
+        :status="warningStatus"
+        :foot-start="warningNote"
+      />
+    </div>
 
     <form class="grid gap-4 rounded-md border bg-background p-4" @submit.prevent="submit">
       <div class="flex flex-wrap items-center gap-2" role="group" aria-label="分析视图">
@@ -476,14 +684,36 @@ function formatError(value: unknown) {
           :data-invalid="submitted && !form.rootCode.trim()"
         >
           <NvFieldLabel for="bom-root">{{ codeLabel }}</NvFieldLabel>
-          <NvInput id="bom-root" v-model="form.rootCode" :placeholder="codePlaceholder" />
+          <NvEntityPicker
+            id="bom-root"
+            v-model="form.rootCode"
+            :options="rootPickerOptions"
+            title="选择物料"
+            placeholder="选择物料"
+            :source-text="catalogSourceText"
+            :empty-text="catalogEmptyText"
+            :loading="catalogPending"
+            :aria-label="codeLabel"
+            clearable
+          />
         </NvField>
         <NvField
           v-else-if="form.view === 'where-used'"
           :data-invalid="submitted && !form.componentCode.trim()"
         >
           <NvFieldLabel for="bom-component">组件物料</NvFieldLabel>
-          <NvInput id="bom-component" v-model="form.componentCode" placeholder="如 RM-200" />
+          <NvEntityPicker
+            id="bom-component"
+            v-model="form.componentCode"
+            :options="componentPickerOptions"
+            title="选择物料"
+            placeholder="选择物料"
+            :source-text="catalogSourceText"
+            :empty-text="catalogEmptyText"
+            :loading="catalogPending"
+            aria-label="组件物料"
+            clearable
+          />
         </NvField>
         <NvField v-else>
           <NvFieldLabel>对比对象</NvFieldLabel>
@@ -504,19 +734,59 @@ function formatError(value: unknown) {
       <div v-if="form.view === 'diff'" class="grid gap-3 md:grid-cols-[1fr_8rem_1fr_8rem_auto]">
         <NvField :data-invalid="submitted && !form.fromBomCode.trim()">
           <NvFieldLabel for="bom-from-code">来源 BOM</NvFieldLabel>
-          <NvInput id="bom-from-code" v-model="form.fromBomCode" placeholder="如 EBOM-FG" />
+          <NvEntityPicker
+            id="bom-from-code"
+            v-model="form.fromBomCode"
+            :options="fromBomOptions"
+            title="选择来源 BOM"
+            placeholder="选择来源 BOM"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="来源 BOM"
+            clearable
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.fromRevision.trim()">
           <NvFieldLabel for="bom-from-revision">来源修订</NvFieldLabel>
-          <NvInput id="bom-from-revision" v-model="form.fromRevision" placeholder="A" />
+          <NvSearchSelect
+            id="bom-from-revision"
+            v-model="form.fromRevision"
+            :options="fromRevisionOptions"
+            placeholder="选择修订"
+            :disabled="!form.fromBomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="来源修订"
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.toBomCode.trim()">
           <NvFieldLabel for="bom-to-code">目标 BOM</NvFieldLabel>
-          <NvInput id="bom-to-code" v-model="form.toBomCode" placeholder="如 EBOM-FG" />
+          <NvEntityPicker
+            id="bom-to-code"
+            v-model="form.toBomCode"
+            :options="toBomOptions"
+            title="选择目标 BOM"
+            placeholder="选择目标 BOM"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="目标 BOM"
+            clearable
+          />
         </NvField>
         <NvField :data-invalid="submitted && !form.toRevision.trim()">
           <NvFieldLabel for="bom-to-revision">目标修订</NvFieldLabel>
-          <NvInput id="bom-to-revision" v-model="form.toRevision" placeholder="B" />
+          <NvSearchSelect
+            id="bom-to-revision"
+            v-model="form.toRevision"
+            :options="toRevisionOptions"
+            placeholder="选择修订"
+            :disabled="!form.toBomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="目标修订"
+          />
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">
@@ -530,11 +800,31 @@ function formatError(value: unknown) {
       <div v-else-if="form.view !== 'where-used'" class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
         <NvField>
           <NvFieldLabel for="bom-code">指定 BOM</NvFieldLabel>
-          <NvInput id="bom-code" v-model="form.bomCode" placeholder="留空自动选择" />
+          <NvEntityPicker
+            id="bom-code"
+            v-model="form.bomCode"
+            :options="specifiedBomOptions"
+            title="选择 BOM 版本"
+            placeholder="留空自动选择"
+            :source-text="bomVersionSourceText"
+            :empty-text="bomVersionEmptyText"
+            :loading="bomVersionsPending"
+            aria-label="指定 BOM"
+            clearable
+          />
         </NvField>
         <NvField>
           <NvFieldLabel for="bom-revision">指定修订</NvFieldLabel>
-          <NvInput id="bom-revision" v-model="form.revision" placeholder="留空自动选择" />
+          <NvSearchSelect
+            id="bom-revision"
+            v-model="form.revision"
+            :options="specifiedRevisionOptions"
+            placeholder="留空自动选择"
+            :disabled="!form.bomCode"
+            :loading="bomVersionsPending"
+            empty-text="该 BOM 暂无已发布修订"
+            aria-label="指定修订"
+          />
         </NvField>
         <div class="flex items-end">
           <NvButton type="submit" :disabled="pending">
@@ -555,7 +845,16 @@ function formatError(value: unknown) {
       <p v-if="submitted && !canSubmit" class="text-sm text-destructive" role="alert">
         请填写当前视图需要的 BOM 版本或物料与有效日期。
       </p>
-      <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+      <div
+        v-if="errorMessage"
+        class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        role="alert"
+      >
+        <span>{{ errorMessage }}</span>
+        <NvButton type="button" size="sm" variant="outline" :disabled="pending" @click="retry">
+          重试
+        </NvButton>
+      </div>
     </form>
 
     <NvToolbar v-if="form.view !== 'where-used'" search-placeholder="按物料、BOM 或路径筛选" />
@@ -566,16 +865,17 @@ function formatError(value: unknown) {
       :rows="flattenedNodes"
       :row-key="(row) => row.key"
       :loading="pending"
-      empty-message="当前条件没有 BOM 树。"
+      :empty-message="tableEmptyMessage"
     >
       <template #cell-itemCode="{ row }">
         <div class="flex items-center gap-2" :style="{ paddingLeft: `${row.depth * 1.25}rem` }">
           <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
           <div class="flex flex-col gap-0.5">
             <span class="inline-flex items-center gap-2">
-              {{ row.itemCode || '无' }}
+              {{ itemName(row.itemCode) }}
               <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
             </span>
+            <span class="font-mono text-xs text-muted-foreground">{{ row.itemCode || '无' }}</span>
             <span v-if="row.parentItemCode" class="text-xs text-muted-foreground"
               >上级 {{ row.parentItemCode }}</span
             >
@@ -600,7 +900,7 @@ function formatError(value: unknown) {
       :rows="flattenedNodes"
       :row-key="(row) => row.key"
       :loading="pending"
-      empty-message="当前条件没有 BOM 爆炸结果。"
+      :empty-message="tableEmptyMessage"
     >
       <template #cell-itemCode="{ row }">
         <span
@@ -611,6 +911,7 @@ function formatError(value: unknown) {
           <NvStatusBadge v-if="isContextNode(row)" label="追溯节点" tone="info" />
         </span>
       </template>
+      <template #cell-itemName="{ row }">{{ itemName(row.itemCode) }}</template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
       <template #cell-requiredQuantity="{ row }">{{ formatQty(row.requiredQuantity) }}</template>
       <template #cell-yield="{ row }">
@@ -632,7 +933,7 @@ function formatError(value: unknown) {
       :rows="diffRows"
       :row-key="(row) => `${row.changeType}:${row.oldItemCode ?? ''}:${row.newItemCode ?? ''}`"
       :loading="pending"
-      empty-message="当前两个 BOM 版本没有结构差异。"
+      :empty-message="tableEmptyMessage"
     >
       <template #cell-changeType="{ row }">
         <NvStatusBadge
@@ -641,6 +942,7 @@ function formatError(value: unknown) {
         />
       </template>
       <template #cell-itemCode="{ row }">{{ diffItemLabel(row) }}</template>
+      <template #cell-itemName="{ row }">{{ diffItemName(row) }}</template>
       <template #cell-quantity="{ row }">
         {{ formatQuantityDiff(row) }}
       </template>
@@ -669,8 +971,9 @@ function formatError(value: unknown) {
       :rows="whereUsedRows"
       :row-key="(row) => `${row.bomKind}:${row.bomCode}:${row.revision}:${row.parentItemCode}`"
       :loading="pending"
-      empty-message="当前条件没有反查结果。"
+      :empty-message="tableEmptyMessage"
     >
+      <template #cell-parentItemName="{ row }">{{ itemName(row.parentItemCode) }}</template>
       <template #cell-bomCode="{ row }">{{ row.bomCode }} / {{ row.revision }}</template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
       <template #cell-effectiveDate="{ row }">{{ formatDate(row.effectiveDate) }}</template>

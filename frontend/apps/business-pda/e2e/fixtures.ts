@@ -1,6 +1,7 @@
 import { expect, type Page, type Route } from '@playwright/test'
 
 export const STORAGE_KEY = 'nerv-iip.business-pda.auth'
+export const CREATED_MAINTENANCE_WORK_ORDER_ID = '33333333-3333-3333-3333-333333333333'
 
 export const principal = {
   principalId: 'principal-1',
@@ -10,7 +11,68 @@ export const principal = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   permissionVersion: 1,
+  // 首页按权限裁剪板块/应用墙 —— e2e 主体给全量 PDA 读写权限（等价产线+仓储+质检复合）。
+  permissionCodes: [
+    'business.mes.dispatch.read',
+    'business.mes.work-orders.read',
+    'business.mes.operations.read',
+    'business.mes.reporting.read',
+    'business.mes.materials.read',
+    'business.mes.receipts.read',
+    'business.wms.receipts.read',
+    'business.wms.shipments.read',
+    'business.wms.counts.read',
+    'business.inventory.counts.manage',
+    'business.quality.inspection-records.read',
+    'business.iiot.alarms.read',
+    'business.maintenance.work-orders.read',
+    'business.maintenance.plans.read',
+    'business.masterdata.resources.read',
+  ],
+  roleIds: [],
 }
+
+/** 首页身份行的员工目录档案（master-data workers 精确查 userId 命中）。 */
+export const workerProfile = {
+  userId: principal.principalId,
+  employeeNo: 'EMP-012',
+  displayName: '李秀英',
+  jobTitle: '操作工',
+  employmentStatus: 'active',
+  active: true,
+  snapshotVersion: 'worker-v1',
+  teams: [{ teamCode: 'TEAM-WB-AS-A', teamName: '装配车间早班组' }],
+  skills: [],
+}
+
+const deviceAssets = [
+  {
+    deviceAssetId: '019f0000-0000-7000-8000-000000000001',
+    code: 'DEV-CNC-01',
+    displayName: '一号数控机床',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-9',
+  },
+  {
+    deviceAssetId: '019f0000-0000-7000-8000-000000000002',
+    code: 'DEV-LATHE-02',
+    displayName: '二号车床',
+    active: true,
+    workshopCode: 'WS-2',
+    lineCode: 'LINE-B',
+  },
+  {
+    deviceAssetId: '019f0000-0000-7000-8000-000000000003',
+    code: 'DEV-A',
+    displayName: '装配线冲压机',
+    active: true,
+    workshopCode: 'WS-1',
+    lineCode: 'LINE-A',
+    stationCode: 'ST-1',
+  },
+]
 
 export const session = {
   accessToken: 'access-token',
@@ -52,11 +114,67 @@ function listEnvelope<T>(items: T[]) {
 
 const nowUtc = '2026-06-11T00:00:00.000Z'
 
+/**
+ * 权威回执（#1219）：写操作必须回 `operationReceipt`，前端才敢把这次写认作已确认。
+ * `confirmed` 形态自证终局（stateConfirmed=true / readbackRequired=false），无需回读；
+ * operationType / resourceId / idempotencyKey 必须与调用方的业务意图逐字一致，否则前端
+ * 判为「结果不确定」。mock 不复刻这套语义，就等于把真实写路径整条绕开。
+ */
+function confirmedOperationReceipt(input: {
+  operationType: string
+  resourceType: string
+  resourceId: string
+  idempotencyKey: string
+  resourceStatus: string
+}) {
+  return {
+    ...input,
+    authority: 'business-gateway',
+    outcome: 'confirmed',
+    stateConfirmed: true,
+    readbackRequired: false,
+    readbackMethod: null,
+    readbackPath: null,
+    changedAtUtc: nowUtc,
+  }
+}
+
+/** 工序动作成功后的 canonical 落点状态（与 statusActionGate 的状态机一致）。 */
+const operationActionResultStatus: Record<string, string> = {
+  start: 'InProgress',
+  pause: 'Paused',
+  resume: 'InProgress',
+  complete: 'Completed',
+}
+
+/** 报工写操作的权威回执（fixtures 与 spec 内联覆盖共用同一份语义）。 */
+export function productionReportReceipt(productionReportId: string, idempotencyKey: string) {
+  return confirmedOperationReceipt({
+    operationType: 'mes.production-report.record',
+    resourceType: 'mes.production-report',
+    resourceId: productionReportId,
+    idempotencyKey,
+    resourceStatus: 'Recorded',
+  })
+}
+
 // Realistic WMS row shapes mirroring the real api-client item types — just enough
 // fields for the PDA pages to render business codes + Chinese status (no raw codes/GUIDs).
 const inboundOrders = [
-  { inboundOrderId: 'in-1', inboundOrderNo: 'IN-1', status: 'pending', createdAtUtc: nowUtc },
-  { inboundOrderId: 'in-2', inboundOrderNo: 'IN-2', status: 'pending', createdAtUtc: nowUtc },
+  {
+    inboundOrderId: 'in-1',
+    inboundOrderNo: 'IN-1',
+    status: 'open',
+    version: 1,
+    createdAtUtc: nowUtc,
+  },
+  {
+    inboundOrderId: 'in-2',
+    inboundOrderNo: 'IN-2',
+    status: 'open',
+    version: 1,
+    createdAtUtc: nowUtc,
+  },
 ]
 
 const outboundOrders = [
@@ -64,7 +182,29 @@ const outboundOrders = [
   { outboundOrderId: 'out-2', outboundOrderNo: 'OUT-2', status: 'pending', createdAtUtc: nowUtc },
 ]
 
-const pickingTasks = [
+interface WarehouseTaskFixture {
+  warehouseTaskId: string
+  taskNo: string
+  taskType: 'picking' | 'putaway'
+  sourceOrderNo: string
+  skuCode: string
+  fromLocationCode: string
+  toLocationCode: string
+  plannedQuantity: number
+  executedQuantity?: number
+  uomCode?: string
+  status: string
+  version?: number
+  assignedOperatorUserId?: string
+  assignedPoolCode?: string
+  siteCode?: string
+  lotNo?: string | null
+  allowedActions?: string[]
+  blockReasons?: string[]
+  createdAtUtc: string
+}
+
+const pickingTasks: WarehouseTaskFixture[] = [
   {
     warehouseTaskId: 'wt-pk-1',
     taskNo: 'PK-1',
@@ -74,12 +214,35 @@ const pickingTasks = [
     fromLocationCode: 'A1',
     toLocationCode: 'B2',
     plannedQuantity: 10,
-    status: 'pending',
+    status: 'Open',
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    createdAtUtc: nowUtc,
+  },
+  {
+    warehouseTaskId: 'wt-pk-exec-1',
+    taskNo: 'PK-EXEC-1',
+    taskType: 'picking',
+    sourceOrderNo: 'OUT-2',
+    skuCode: 'SKU-2',
+    fromLocationCode: 'A2',
+    toLocationCode: 'B3',
+    plannedQuantity: 10,
+    executedQuantity: 2,
+    uomCode: 'EA',
+    status: 'InProgress',
+    version: 2,
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    allowedActions: ['progress', 'exception', 'complete'],
+    blockReasons: [],
     createdAtUtc: nowUtc,
   },
 ]
 
-const putawayTasks = [
+const putawayTasks: WarehouseTaskFixture[] = [
   {
     warehouseTaskId: 'wt-pa-1',
     taskNo: 'PA-1',
@@ -89,8 +252,48 @@ const putawayTasks = [
     fromLocationCode: 'A1',
     toLocationCode: 'B2',
     plannedQuantity: 10,
-    status: 'pending',
+    status: 'Open',
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
     createdAtUtc: nowUtc,
+  },
+  {
+    warehouseTaskId: 'wt-pa-exec-1',
+    taskNo: 'PA-EXEC-1',
+    taskType: 'putaway',
+    sourceOrderNo: 'IN-2',
+    skuCode: 'SKU-2',
+    fromLocationCode: 'STG-02',
+    toLocationCode: 'A3',
+    plannedQuantity: 10,
+    executedQuantity: 2,
+    uomCode: 'EA',
+    status: 'InProgress',
+    version: 2,
+    assignedOperatorUserId: principal.principalId,
+    assignedPoolCode: 'POOL-001',
+    siteCode: 'SITE-001',
+    allowedActions: ['progress', 'exception', 'complete'],
+    blockReasons: [],
+    createdAtUtc: nowUtc,
+  },
+]
+
+// 收货单完整行投影（收货完成的 fail-closed 门禁依赖它：行数 0 → 判「不完整」禁止提交）。
+const receivingQualityGates = [
+  {
+    inboundOrderId: 'in-1',
+    inboundOrderLineId: 'in-1-l1',
+    inboundOrderNo: 'IN-1',
+    lineNo: '1',
+    skuCode: 'SKU-1',
+    uomCode: 'EA',
+    receivedQuantity: 10,
+    stagingLocationCode: 'STG-01',
+    lotNo: null,
+    qualityStatus: 'passed',
+    qualityGateStatus: 'not-required',
   },
 ]
 
@@ -101,30 +304,190 @@ const countExecutions = [
     skuCode: 'SKU-1',
     locationCode: 'A1',
     expectedQuantity: 100,
-    status: 'pending',
+    status: 'Open',
+    version: 1,
     createdAtUtc: nowUtc,
   },
 ]
 
 /**
+ * 该主体在 MES 侧的已授权作业范围清单（`/me/work-context` 的 authorizedScopes）。
+ * 用工序任务里真实出现的工作中心，保证「选了范围 → 看到的任务属于该范围」讲得通。
+ */
+export const authorizedWorkScopes = [
+  { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+  { kind: 'work-center', id: 'WC-B', displayName: '精加工二线' },
+]
+
+/**
  * Realistic MES list rows used by the operation/report flows. Shapes mirror the
  * generated `BusinessConsoleMesOperationTaskRow` / `BusinessConsoleMesWorkOrderItem`
- * so the pages render real titles/subtitles instead of empty states.
+ * so the pages render real titles/subtitles instead of empty states — 含前端
+ * fail-closed 校验实际要求的 canonical status 与 qualityStatus。
  */
 export const mesOperationTasks = [
   {
     operationTaskId: 'OP-1',
     workOrderId: 'WO-1',
-    status: 'Running',
+    status: 'InProgress',
     operationSequence: 10,
     workCenterId: 'WC-A',
+    // MES currently has no separate business work-order/task number or device display snapshot;
+    // public optional display fields stay null instead of echoing strong IDs.
+    workOrderNo: null,
+    operationTaskNo: null,
+    operationCode: 'OP-CUT',
+    deviceAssetId: 'device-asset-cnc-01',
+    deviceAssetCode: null,
+    deviceAssetName: null,
+    qualityStatus: 'Pending',
+    allowedActions: ['pause', 'complete', 'report'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:30:00.000Z',
   },
   {
     operationTaskId: 'OP-2',
     workOrderId: 'WO-1',
-    status: 'Ready',
+    status: 'Queued',
     operationSequence: 20,
     workCenterId: 'WC-B',
+    workOrderNo: null,
+    operationTaskNo: null,
+    operationCode: 'OP-ASSEMBLE',
+    deviceAssetId: 'device-asset-lathe-02',
+    deviceAssetCode: null,
+    deviceAssetName: null,
+    qualityStatus: 'Pending',
+    allowedActions: [],
+    blockReasons: [
+      'PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（工序 10）',
+      'MATERIAL_SHORTAGE: 物料 MAT-STEEL 缺口 2',
+      'equipment.activeAlarm: 工业遥测存在未解除报警，设备不可用于当前工序。',
+      'QUALITY_HOLD_ACTIVE: 工单存在有效质量保留，无法开工',
+    ],
+    evaluatedAtUtc: '2026-08-02T08:31:00.000Z',
+  },
+  {
+    operationTaskId: 'OP-3',
+    workOrderId: 'WO-2',
+    workOrderNo: null,
+    operationTaskNo: null,
+    status: 'Queued',
+    operationSequence: 10,
+    workCenterId: 'WC-C',
+    qualityStatus: 'Pending',
+    allowedActions: ['start'],
+    blockReasons: [],
+    evaluatedAtUtc: '2026-08-02T08:32:00.000Z',
+  },
+]
+
+const mesManyOperationTasks = Array.from({ length: 501 }, (_, index) => ({
+  operationTaskId: `OP-${index + 1}`,
+  workOrderId: 'WO-501',
+  workOrderNo: null,
+  operationTaskNo: null,
+  status: 'Queued',
+  operationSequence: index + 1,
+  workCenterId: 'WC-MANY',
+  qualityStatus: 'Pending',
+  allowedActions: ['start'],
+  blockReasons: [],
+  evaluatedAtUtc: '2026-08-02T08:33:00.000Z',
+}))
+
+function confirmedOperation(
+  operationType: string,
+  resourceId: string,
+  idempotencyKey: string,
+  resourceStatus: string,
+) {
+  return {
+    operationType,
+    authority: 'business-gateway',
+    resourceType: 'business-resource',
+    resourceId,
+    idempotencyKey,
+    outcome: 'confirmed',
+    stateConfirmed: true,
+    readbackRequired: false,
+    changedAtUtc: nowUtc,
+    resourceStatus,
+  }
+}
+
+function warehouseTaskListEnvelope(requestUrl: URL, items: WarehouseTaskFixture[]) {
+  let filtered = items
+  const scopeKind = (requestUrl.searchParams.get('scopeKind') ?? '').trim()
+  const scopeId = (requestUrl.searchParams.get('scopeId') ?? '').trim()
+  if (!scopeKind || !scopeId) {
+    filtered = []
+  } else if (scopeKind === 'self') {
+    filtered = filtered.filter((item) => item.assignedOperatorUserId === scopeId)
+  } else if (scopeKind === 'work-pool') {
+    filtered = filtered.filter((item) => item.assignedPoolCode === scopeId)
+  } else if (scopeKind === 'site') {
+    filtered = filtered.filter((item) => item.siteCode === scopeId)
+  } else {
+    filtered = []
+  }
+
+  const status = (requestUrl.searchParams.get('status') ?? '').trim().toLowerCase()
+  if (status) filtered = filtered.filter((item) => item.status.toLowerCase() === status)
+
+  const locationCode = (requestUrl.searchParams.get('locationCode') ?? '').trim()
+  if (locationCode) {
+    filtered = filtered.filter(
+      (item) => item.fromLocationCode === locationCode || item.toLocationCode === locationCode,
+    )
+  }
+
+  const lotNo = (requestUrl.searchParams.get('lotNo') ?? '').trim()
+  if (lotNo) filtered = filtered.filter((item) => item.lotNo === lotNo)
+
+  const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toUpperCase()
+  if (keyword) {
+    filtered = filtered.filter((item) =>
+      [item.taskNo, item.sourceOrderNo, item.skuCode].some((value) =>
+        value.toUpperCase().includes(keyword),
+      ),
+    )
+  }
+
+  const skip = Math.max(0, Number(requestUrl.searchParams.get('skip') ?? 0) || 0)
+  const requestedTake = Number(requestUrl.searchParams.get('take') ?? 100)
+  const take =
+    requestedTake <= 0 || !Number.isFinite(requestedTake)
+      ? 100
+      : Math.min(500, Math.floor(requestedTake))
+  return envelope({ items: filtered.slice(skip, skip + take), total: filtered.length })
+}
+
+/**
+ * Dispatch-task rows（首页「我的任务」）— shape mirrors `BusinessConsoleMesDispatchTaskRow`：
+ * 一条进行中 + 一条待开工，服务端按 assignedUserId 过滤后返回本人任务。
+ */
+export const mesDispatchTasks = [
+  {
+    operationTaskId: 'OT-1',
+    workOrderId: 'WO-1',
+    workOrderNo: 'WO-2026-00001',
+    status: 'InProgress',
+    operationCode: 'OP-30',
+    workCenterId: 'WC-A',
+    workCenterName: '装配一线',
+    assignedUserId: principal.principalId,
+    assignedUserName: '李秀英',
+  },
+  {
+    operationTaskId: 'OT-2',
+    workOrderId: 'WO-2',
+    workOrderNo: 'WO-2026-00002',
+    status: 'Queued',
+    operationCode: 'OP-10',
+    workCenterId: 'WC-B',
+    assignedUserId: principal.principalId,
+    assignedUserName: '李秀英',
   },
 ]
 
@@ -133,6 +496,18 @@ export const mesWorkOrders = [
     workOrderId: 'WO-1',
     skuId: 'SKU-1',
     quantity: 100,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-2',
+    skuId: 'SKU-2',
+    quantity: 50,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-501',
+    skuId: 'SKU-501',
+    quantity: 1,
     status: 'Released',
   },
 ]
@@ -197,20 +572,84 @@ export const mesReceiptRequests = [
  * with routeConsoleApi). Every endpoint a spec hits must be explicitly mocked here.
  */
 export async function routeBusinessConsoleApi(route: Route) {
-  const { pathname } = new URL(route.request().url())
+  const requestUrl = new URL(route.request().url())
+  const { pathname } = requestUrl
   const method = route.request().method()
   const isPost = method === 'POST'
 
   // ---- WMS（收货/复核/盘点 + 拣货/上架） ----
+  if (/\/wms\/work-scopes\/(receipts|shipments|counts)$/.test(pathname)) {
+    return fulfillJson(
+      route,
+      envelope({
+        actorPrincipalId: principal.principalId,
+        items: [
+          {
+            scopeKind: 'self',
+            scopeId: principal.principalId,
+            displayName: workerProfile.displayName,
+          },
+          {
+            scopeKind: 'work-pool',
+            scopeId: 'POOL-001',
+            displayName: '一号仓作业池',
+          },
+          { scopeKind: 'site', scopeId: 'SITE-001', displayName: '一号仓' },
+        ],
+      }),
+    )
+  }
+
+  if (/\/wms\/operational-candidates\/(receipts|shipments|counts)$/.test(pathname)) {
+    return fulfillJson(
+      route,
+      envelope({
+        scopeKind: requestUrl.searchParams.get('scopeKind'),
+        scopeId: requestUrl.searchParams.get('scopeId'),
+        locations: [],
+        lots: [],
+        asOfUtc: nowUtc,
+        freshnessUtc: nowUtc,
+        truncated: false,
+      }),
+    )
+  }
+
   // complete endpoints (POST .../{id}/complete) — match before the list paths.
   if (isPost && /\/wms\/inbound-orders\/[^/]+\/complete$/.test(pathname)) {
-    return fulfillJson(route, envelope({}))
+    const inboundOrderId = pathname.split('/').at(-2) ?? ''
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        inboundOrderId,
+        operationReceipt: confirmedOperation(
+          'wms.inbound-order.complete',
+          inboundOrderId,
+          body.idempotencyKey,
+          'completed',
+        ),
+      }),
+    )
   }
   if (isPost && /\/wms\/outbound-orders\/[^/]+\/complete$/.test(pathname)) {
     return fulfillJson(route, envelope({}))
   }
   if (isPost && /\/wms\/count-executions\/[^/]+\/complete$/.test(pathname)) {
-    return fulfillJson(route, envelope({}))
+    const countExecutionId = pathname.split('/').at(-2) ?? ''
+    const body = route.request().postDataJSON() as { idempotencyKey: string }
+    return fulfillJson(
+      route,
+      envelope({
+        countExecutionId,
+        operationReceipt: confirmedOperation(
+          'wms.count-execution.complete',
+          countExecutionId,
+          body.idempotencyKey,
+          'completed',
+        ),
+      }),
+    )
   }
 
   // list endpoints (GET).
@@ -221,20 +660,130 @@ export async function routeBusinessConsoleApi(route: Route) {
     return fulfillJson(route, listEnvelope(outboundOrders))
   }
   if (pathname.endsWith('/wms/picking-tasks')) {
-    return fulfillJson(route, listEnvelope(pickingTasks))
+    return fulfillJson(route, warehouseTaskListEnvelope(requestUrl, pickingTasks))
   }
   if (pathname.endsWith('/wms/putaway-tasks')) {
-    return fulfillJson(route, listEnvelope(putawayTasks))
+    return fulfillJson(route, warehouseTaskListEnvelope(requestUrl, putawayTasks))
   }
   if (pathname.endsWith('/wms/count-executions')) {
     return fulfillJson(route, listEnvelope(countExecutions))
   }
+  if (pathname.endsWith('/wms/receiving-quality-gates')) {
+    return fulfillJson(route, listEnvelope(receivingQualityGates))
+  }
 
   // ---- 设备运维（报修/点检/报警查看） ----
+  // 报修设备选择器：principal scope + 服务端 keyword/skip/take，有界返回。
+  if (pathname === '/api/business-console/v1/master-data/device-assets') {
+    const keyword = (requestUrl.searchParams.get('keyword') ?? '').trim().toLowerCase()
+    const skip = Math.max(0, Number(requestUrl.searchParams.get('skip') ?? 0))
+    const take = Math.max(1, Number(requestUrl.searchParams.get('take') ?? 20))
+    const matched = keyword
+      ? deviceAssets.filter(
+          (item) =>
+            item.deviceAssetId.toLowerCase().includes(keyword) ||
+            item.displayName.toLowerCase().includes(keyword) ||
+            item.code.toLowerCase().includes(keyword),
+        )
+      : deviceAssets
+    return fulfillJson(
+      route,
+      envelope({
+        resources: matched.slice(skip, skip + take),
+        total: matched.length,
+        truncated: skip + take < matched.length,
+        limit: take,
+      }),
+    )
+  }
+
+  const deviceDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/device-asset\/([^/]+)$/,
+  )
+  if (deviceDetailMatch) {
+    const requestedCode = decodeURIComponent(deviceDetailMatch[1])
+    const device = deviceAssets.find(
+      (item) => item.code === requestedCode || item.deviceAssetId === requestedCode,
+    )
+    return fulfillJson(
+      route,
+      envelope(
+        device
+          ? {
+              resourceType: 'device-asset',
+              deviceAssetId: device.deviceAssetId,
+              code: device.code,
+              displayName: device.displayName,
+              active: device.active,
+              workshopCode: device.workshopCode,
+              lineCode: device.lineCode,
+              stationCode: device.stationCode,
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      device ? 200 : 404,
+    )
+  }
+
+  const teamDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/master-data\/resources\/team\/([^/]+)$/,
+  )
+  if (teamDetailMatch) {
+    const requestedCode = decodeURIComponent(teamDetailMatch[1])
+    const teamName =
+      requestedCode === 'team-a'
+        ? '甲班'
+        : workerProfile.teams.find((team) => team.teamCode === requestedCode)?.teamName
+    return fulfillJson(
+      route,
+      envelope(
+        teamName
+          ? {
+              resourceType: 'team',
+              code: requestedCode,
+              displayName: teamName,
+              active: true,
+              organizationId: principal.organizationId,
+              environmentId: principal.environmentId,
+              snapshotVersion: 'v1',
+            }
+          : null,
+      ),
+      teamName ? 200 : 404,
+    )
+  }
+
+  if (
+    method === 'GET' &&
+    pathname ===
+      `/api/business-console/v1/maintenance/work-orders/${CREATED_MAINTENANCE_WORK_ORDER_ID}`
+  ) {
+    return fulfillJson(
+      route,
+      { success: false, message: '新建工单尚未指派给当前维修人员', data: null },
+      403,
+    )
+  }
+
   // 报修：维修工单 list / create
   if (pathname === '/api/business-console/v1/maintenance/work-orders') {
     if (method === 'POST') {
-      return fulfillJson(route, envelope({ workOrderId: 'WO-M-new' }))
+      const body = route.request().postDataJSON() as { idempotencyKey: string }
+      return fulfillJson(
+        route,
+        envelope({
+          workOrderId: CREATED_MAINTENANCE_WORK_ORDER_ID,
+          operationReceipt: confirmedOperation(
+            'maintenance.work-order.create',
+            CREATED_MAINTENANCE_WORK_ORDER_ID,
+            body.idempotencyKey,
+            'open',
+          ),
+        }),
+      )
     }
     return fulfillJson(
       route,
@@ -247,9 +796,12 @@ export async function routeBusinessConsoleApi(route: Route) {
             status: 'open',
             openedBy: principal.loginName,
             openedAtUtc: '2026-06-10T01:00:00.000Z',
+            assignedTechnicianUserId: principal.principalId,
           },
         ],
         total: 1,
+        skip: Number(requestUrl.searchParams.get('skip') ?? 0),
+        take: Number(requestUrl.searchParams.get('take') ?? 20),
       }),
     )
   }
@@ -299,27 +851,154 @@ export async function routeBusinessConsoleApi(route: Route) {
     )
   }
 
+  // ---- 首页（员工档案 / 我的任务 / 待检任务） ----
+  if (pathname === '/api/business-console/v1/master-data/workers') {
+    return fulfillJson(
+      route,
+      envelope({ pageIndex: 1, pageSize: 1, totalCount: 1, items: [workerProfile] }),
+    )
+  }
+  if (pathname === '/api/business-console/v1/quality/inspection-tasks') {
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+
+  // ---- 主体作业上下文（MES scope gate 的第一跳，#1297） ----
+  // 与 BusinessGateway 契约同构：不带 scopeKind/scopeId 只回授权清单、selectedScope 为 null；
+  // 带参且命中清单才回填「服务端已核验」的选择；越权选择 403。前端只有走完
+  // 「清单 → 选择 → 带参重核验」才拿得到 selectedScope，工序/报工读查询才会发出。
+  if (pathname === '/api/business-console/v1/me/work-context') {
+    const scopeKind = (requestUrl.searchParams.get('scopeKind') ?? '').trim()
+    const scopeId = (requestUrl.searchParams.get('scopeId') ?? '').trim()
+    const selectedScope =
+      scopeKind && scopeId
+        ? authorizedWorkScopes.find((scope) => scope.kind === scopeKind && scope.id === scopeId)
+        : undefined
+    if (scopeKind && scopeId && !selectedScope) {
+      return fulfillJson(route, { success: false, message: '所选作业范围未授权', data: null }, 403)
+    }
+    return fulfillJson(
+      route,
+      envelope({
+        organizationId: principal.organizationId,
+        environmentId: principal.environmentId,
+        applicablePermissionCode: requestUrl.searchParams.get('permissionCode') ?? '',
+        resolvedAtUtc: '2026-07-31T12:00:00.000Z',
+        principal: {
+          id: principal.principalId,
+          principalType: principal.principalType,
+          loginName: principal.loginName,
+          roles: [{ id: 'role-pda-operator', displayName: 'PDA 操作员' }],
+        },
+        resolutionStatus: 'resolved',
+        worker: {
+          id: 'worker-012',
+          userId: principal.principalId,
+          employeeNo: workerProfile.employeeNo,
+          name: workerProfile.displayName,
+          departmentName: '生产部',
+          jobTitle: workerProfile.jobTitle,
+          employmentStatus: 'active',
+        },
+        teams: [{ id: 'team-a', name: workerProfile.teams[0]?.teamName ?? '', isLeader: false }],
+        authorizedScopes: authorizedWorkScopes,
+        availableScopeKinds: ['work-center'],
+        selectedScope: selectedScope ?? null,
+        issues: [],
+      }),
+    )
+  }
+
   // ---- MES（工序执行/报工/领料/完工入库） ----
   const base = '/api/business-console/v1/mes'
 
-  // Operation-task actions: start/pause/resume/complete → success envelope.
-  if (
-    method === 'POST' &&
-    /\/mes\/operation-tasks\/[^/]+\/(start|pause|resume|complete)$/.test(pathname)
-  ) {
-    return fulfillJson(route, envelope({}))
+  if (pathname === `${base}/dispatch-tasks`) {
+    return fulfillJson(route, envelope({ items: mesDispatchTasks, total: mesDispatchTasks.length }))
   }
-  if (pathname === `${base}/operation-tasks`) {
+
+  if (pathname === `${base}/operation-sops/current`) {
+    return fulfillJson(route, envelope({ items: [] }))
+  }
+
+  // Operation-task actions: start/pause/resume/complete → 成功信封 + 权威回执。
+  const operationActionMatch = pathname.match(
+    /\/mes\/operation-tasks\/([^/]+)\/(start|pause|resume|complete)$/,
+  )
+  if (method === 'POST' && operationActionMatch) {
+    const operationTaskId = decodeURIComponent(operationActionMatch[1])
+    const action = operationActionMatch[2]
+    const body = (route.request().postDataJSON() ?? {}) as { idempotencyKey?: string }
     return fulfillJson(
       route,
-      envelope({ items: mesOperationTasks, total: mesOperationTasks.length }),
+      envelope({
+        operationReceipt: confirmedOperationReceipt({
+          operationType: `mes.operation-task.${action}`,
+          resourceType: 'mes.operation-task',
+          resourceId: operationTaskId,
+          idempotencyKey: body.idempotencyKey ?? '',
+          resourceStatus: operationActionResultStatus[action],
+        }),
+      }),
     )
+  }
+  // 可报工工序精确回读（报工写前的权威事实来源）——与工序任务列表同一份数据、同样的分页。
+  if (pathname === `${base}/reportable-operation-tasks` || pathname === `${base}/operation-tasks`) {
+    const workOrderId = requestUrl.searchParams.get('workOrderId')
+    const operationTaskId = requestUrl.searchParams.get('operationTaskId')?.trim()
+    const workOrderScopedItems =
+      workOrderId === 'WO-501'
+        ? mesManyOperationTasks
+        : workOrderId
+          ? mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+          : mesOperationTasks
+    const scopedItems = operationTaskId
+      ? workOrderScopedItems.filter((task) => task.operationTaskId === operationTaskId)
+      : workOrderScopedItems
+    const skip = Number(requestUrl.searchParams.get('skip') ?? 0)
+    const take = Number(requestUrl.searchParams.get('take') ?? 100)
+    const items = scopedItems.slice(skip, skip + take)
+    return fulfillJson(route, envelope({ items, total: scopedItems.length }))
   }
   if (pathname === `${base}/work-orders`) {
     return fulfillJson(route, envelope({ items: mesWorkOrders, total: mesWorkOrders.length }))
   }
+  const workOrderDetailMatch = pathname.match(
+    /^\/api\/business-console\/v1\/mes\/work-orders\/([^/]+)$/,
+  )
+  if (method === 'GET' && workOrderDetailMatch) {
+    const workOrderId = decodeURIComponent(workOrderDetailMatch[1])
+    const workOrder = mesWorkOrders.find((candidate) => candidate.workOrderId === workOrderId)
+    if (!workOrder) {
+      return fulfillJson(route, { success: false, message: '工单不存在', data: null })
+    }
+    return fulfillJson(
+      route,
+      envelope({
+        ...workOrder,
+        readinessStatus: 'ready',
+        blockingReasons: [],
+        operationTasks: (workOrderId === 'WO-501'
+          ? mesManyOperationTasks
+          : mesOperationTasks.filter((task) => task.workOrderId === workOrderId)
+        ).slice(0, 500),
+      }),
+    )
+  }
   if (pathname === `${base}/production-reports`) {
-    if (method === 'POST') return fulfillJson(route, envelope({}))
+    if (method === 'POST') {
+      const body = (route.request().postDataJSON() ?? {}) as { idempotencyKey?: string }
+      const productionReportId = '019f-e2e-production-report'
+      return fulfillJson(
+        route,
+        envelope({
+          productionReportId,
+          reportNo: 'RPT-E2E-0001',
+          operationReceipt: productionReportReceipt(productionReportId, body.idempotencyKey ?? ''),
+        }),
+      )
+    }
+    return fulfillJson(route, envelope({ items: [], total: 0 }))
+  }
+  if (pathname === `${base}/telemetry-production-report-candidates`) {
     return fulfillJson(route, envelope({ items: [], total: 0 }))
   }
   if (pathname === `${base}/material-issue-requests`) {

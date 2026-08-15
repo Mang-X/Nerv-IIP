@@ -31,8 +31,10 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
                     OrganizationId(req),
                     EnvironmentId(req),
                     ResourceType(req),
-                    ResourceId(req)))
+                    ResourceId(req),
+                    IncludePrincipalContext))
                 .ToArray(),
+            AuthorizationContinuityMode,
             ct);
         if (bearerToken is null)
         {
@@ -41,6 +43,7 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
 
         try
         {
+            req = BusinessGatewayIdempotencyKey.Resolve(HttpContext, req);
             var response = await ForwardAsync(req, bearerToken, ct);
             await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCode, response, ct, ResponseJsonOptions);
         }
@@ -57,6 +60,13 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     protected virtual int StatusCode => StatusCodes.Status200OK;
 
     protected virtual JsonSerializerOptions? ResponseJsonOptions => null;
+
+    protected virtual bool IncludePrincipalContext => false;
+
+    protected virtual BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        HttpMethods.IsGet(HttpContext.Request.Method)
+            ? BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed
+            : BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
     protected virtual string? ResourceType(TRequest request) => null;
 
@@ -90,6 +100,31 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     {
         var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
         return BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
+    }
+
+    protected string RequireAuthorizedPrincipalId()
+    {
+        var principalId = AuthorizationResult?.PrincipalId;
+        return string.IsNullOrWhiteSpace(principalId)
+            ? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "principal-unresolved")
+            : principalId;
+    }
+
+    protected BusinessServiceAuditContext RequireAuditContext(object? request)
+    {
+        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
+        correlationId = string.IsNullOrWhiteSpace(correlationId)
+            ? Guid.CreateVersion7().ToString("N")
+            : correlationId.Trim();
+        var causationId = HttpContext.Request.Headers["X-Causation-Id"].FirstOrDefault();
+        causationId = string.IsNullOrWhiteSpace(causationId)
+            ? correlationId
+            : causationId.Trim();
+        return new BusinessServiceAuditContext(
+            RequireAuthorizedPrincipalActorReference(),
+            correlationId,
+            causationId,
+            BusinessGatewayIdempotencyKey.ResolveForAudit(HttpContext, request));
     }
 
     protected abstract string OrganizationId(TRequest request);

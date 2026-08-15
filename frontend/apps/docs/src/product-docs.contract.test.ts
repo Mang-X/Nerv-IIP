@@ -185,7 +185,7 @@ describe('product docs app contract', () => {
     }
 
     expect(processContent.match(/```mermaid/g)?.length ?? 0).toBeGreaterThanOrEqual(6)
-    expect(processContent).toContain('BusinessGateway facade')
+    expect(processContent).toContain('BusinessGateway 门面')
     expect(processContent).toContain('当前缺口')
   })
 
@@ -240,7 +240,7 @@ describe('product docs app contract', () => {
       const content = readFileSync(file, 'utf8')
 
       expect(content).toContain('## 证据页面')
-      expect(content).toContain('## 建议 issue 标题')
+      expect(content).toContain('## 建议 Issue 标题')
 
       for (const section of requiredGapSections) {
         expect(content, `${file} should include ${section}`).toContain(`### ${section}`)

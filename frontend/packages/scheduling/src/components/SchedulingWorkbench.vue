@@ -34,14 +34,23 @@ const props = withDefaults(
 const emit = defineEmits<{ fix: [orderId: string, operationId: string] }>()
 
 const EMPTY_MODEL: ScheduleModel = {
-  tasks: [], links: [], resources: [], loads: [], conflicts: [], unscheduled: [], changes: [],
-  horizon: { startUtc: '', endUtc: '' }, meta: { planId: '', status: 'preview', algorithmVersion: '' },
+  tasks: [],
+  links: [],
+  resources: [],
+  loads: [],
+  conflicts: [],
+  unscheduled: [],
+  changes: [],
+  horizon: { startUtc: '', endUtc: '' },
+  meta: { planId: '', status: 'preview', algorithmVersion: '' },
 }
 
 const workingModel = ref<ScheduleModel>(props.model ?? EMPTY_MODEL)
 watch(
   () => props.model,
-  (m) => { if (m) workingModel.value = cloneModel(m) },
+  (m) => {
+    if (m) workingModel.value = cloneModel(m)
+  },
   { immediate: true },
 )
 
@@ -49,7 +58,10 @@ const view = ref<'order' | 'resource'>(props.defaultView)
 const showLegend = ref(true)
 const scale = ref<TimeScale>('auto')
 const readOnly = ref(props.readOnly)
-watch(() => props.readOnly, (v) => (readOnly.value = v))
+watch(
+  () => props.readOnly,
+  (v) => (readOnly.value = v),
+)
 
 const selectedTask = ref<ScheduleTask>()
 const sidebarOpen = ref(true)
@@ -125,7 +137,9 @@ async function onRelease() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-[480px] flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
+  <div
+    class="flex h-full min-h-[480px] flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
+  >
     <SchedulingToolbar
       :scale="scale"
       :read-only="readOnly"
@@ -222,8 +236,17 @@ async function onRelease() {
           :aria-hidden="!sidebarOpen"
         >
           <div class="flex items-center justify-between px-3 pt-2.5">
-            <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
-            <NvButton size="icon" variant="ghost" class="size-7 text-muted-foreground" :tabindex="sidebarOpen ? 0 : -1" aria-label="收起侧栏" @click="sidebarOpen = false">
+            <span class="text-xs font-semibold tracking-wide text-muted-foreground"
+              >详情与排程</span
+            >
+            <NvButton
+              size="icon"
+              variant="ghost"
+              class="size-7 text-muted-foreground"
+              :tabindex="sidebarOpen ? 0 : -1"
+              aria-label="收起侧栏"
+              @click="sidebarOpen = false"
+            >
               <PanelRightCloseIcon class="size-4" aria-hidden="true" />
             </NvButton>
           </div>
@@ -251,6 +274,12 @@ async function onRelease() {
       </aside>
     </div>
 
-    <SchedulingLegend v-if="showLegend" :categories="legendCategories" :view="view" />
+    <SchedulingLegend
+      v-if="showLegend"
+      :categories="legendCategories"
+      :view="view"
+      :model="workingModel"
+      :scale="scale"
+    />
   </div>
 </template>

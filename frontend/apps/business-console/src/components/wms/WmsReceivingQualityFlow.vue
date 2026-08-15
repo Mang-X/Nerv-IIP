@@ -7,6 +7,8 @@ import { NvButton, NvStatusBadge } from '@nerv-iip/ui'
 import { AlertCircleIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/useSkuNames'
 
 const props = defineProps<{
   inboundOrderId?: string
@@ -198,6 +200,19 @@ const lineFacts = computed(() =>
   orderGates.value.map((gate) => ({ gate, supplierReturn: returnFor(gate) })),
 )
 
+// 门禁行只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+/** 物料展示串：中文名优先，名录查不到就只显编码，不编名字。 */
+function skuLabel(code?: string | null) {
+  if (!code) return '未指定物料'
+  return resolveSkuName(code) ?? code
+}
+function locationLabel(code?: string | null) {
+  if (!code) return '未指定库位'
+  return resolveLocation(code) ?? code
+}
+
 function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
   const category = gateCategory(gate.qualityGateStatus)
   if (category === 'not-required') return '免检'
@@ -212,7 +227,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
 <template>
   <div class="grid gap-2 rounded-lg border bg-muted/20 p-3" data-testid="receiving-quality-flow">
     <div class="flex flex-wrap items-center gap-2">
-      <NvStatusBadge :value="summary.label" />
+      <NvStatusBadge :value="summary.value" :label="summary.label" />
       <span class="text-sm font-medium">{{ flowLabel }}</span>
       <span class="text-sm text-muted-foreground">{{ summary.description }}</span>
     </div>
@@ -259,7 +274,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
         :key="location"
         class="inline-flex items-center gap-1"
       >
-        <MapPinIcon class="size-3.5" aria-hidden="true" />{{ location }}
+        <MapPinIcon class="size-3.5" aria-hidden="true" />{{ locationLabel(location) }}
       </span>
     </div>
 
@@ -268,8 +283,10 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       :key="line.gate.inboundOrderLineId"
       class="flex flex-wrap items-center gap-2 text-xs"
     >
-      <span class="font-medium">第 {{ line.gate.lineNo }} 行 · {{ line.gate.skuCode }}</span>
-      <NvStatusBadge :value="gateLabel(line.gate)" />
+      <span class="font-medium">
+        第 {{ line.gate.lineNo }} 行 · {{ skuLabel(line.gate.skuCode) }}
+      </span>
+      <NvStatusBadge :value="line.gate.qualityGateStatus" :label="gateLabel(line.gate)" />
       <span
         v-if="gateCategory(line.gate.qualityGateStatus) === 'rejected'"
         class="text-destructive"
@@ -279,7 +296,7 @@ function gateLabel(gate: BusinessConsoleWmsReceivingQualityGateItem) {
       <template v-if="line.supplierReturn">
         <span class="text-destructive"
           >退供应商 {{ line.supplierReturn.supplierReturnNo }} · 隔离
-          {{ line.supplierReturn.locationCode }}</span
+          {{ locationLabel(line.supplierReturn.locationCode) }}</span
         >
       </template>
       <span

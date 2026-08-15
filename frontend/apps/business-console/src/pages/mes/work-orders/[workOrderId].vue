@@ -1,9 +1,25 @@
 <script setup lang="ts">
+import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
-import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import {
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
+  useCanScheduleSingleOrder,
+} from '@/composables/useSingleOrderScheduling'
+import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import {
+  describeMaterialShortageStage,
+  MATERIAL_READINESS_SCOPE_NOTE,
+} from '@/composables/mes/materialReadinessScope'
+import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import { useSkuNames } from '@/composables/useSkuNames'
+import { labelFor, operationQualityStatusLabel } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
@@ -11,7 +27,13 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -40,6 +62,7 @@ import {
   Spinner,
 } from '@nerv-iip/ui'
 import {
+  CalendarCogIcon,
   ClipboardCheckIcon,
   LockIcon,
   PackageCheckIcon,
@@ -48,7 +71,7 @@ import {
   XCircleIcon,
 } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({
   meta: {
@@ -67,18 +90,27 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  confirmLineSideReceipt,
+  confirmLineSideReceiptPending,
+  createMaterialIssueRequest,
+  createMaterialIssueRequestPending,
   detail,
   detailError,
   detailPending,
   filters,
   finishedGoodsReceiptRequests,
   materialIssueRequests,
+  materialIssueRequestsPending,
   materialReadiness,
   materialReadinessError,
   materialReadinessPending,
   refreshDetail,
+  refreshMaterialIssueRequests,
   refreshMaterialReadiness,
   retryCancelPreview,
+  workOrderManageScopeMessage,
+  workOrderManageScopeReady,
+  workOrderReadScopeMessage,
 } = useMesWorkOrderDetail()
 
 watch(
@@ -89,7 +121,9 @@ watch(
   { immediate: true },
 )
 
-const { resolveSkuLabel } = useMesDisplayNames()
+// 工序行的班次只有标识，班次名在主数据里（shifts: true 才会拉这份名录）。
+const { resolveShiftLabel, resolveSkuLabel } = useMesDisplayNames({ shifts: true })
+const { statusLabel } = useMesReferenceLabels()
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 // 人工强制释放质量保留需 business.mes.quality.write（网关 MesQualityWrite），无权则只读时间线。
@@ -102,6 +136,7 @@ const canReadInspectionRecords = computed(() =>
 )
 
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
+const workOrderLabel = computed(() => readFaceText(filters.workOrderId, '未编号工单'))
 // 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
 // 已释放周期保留在列表里，使强制释放后面板不卸载、释放时间/方式与时间线仍可见（issue 验收「时间线完整」）。
 const qualityHolds = computed(() =>
@@ -114,12 +149,18 @@ const qualityHolds = computed(() =>
 const activeQualityHoldCount = computed(
   () => qualityHolds.value.filter((hold) => hold.isActive).length,
 )
-const materialRows = computed(() => materialReadiness.value?.items ?? [])
+// 缺口环节（#1291）随行预计算：每行只算一次，模板里直接读，不在单元格里反复调用。
+const materialRows = computed(() =>
+  (materialReadiness.value?.items ?? []).map((row) => ({
+    ...row,
+    stage: describeMaterialShortageStage(row),
+  })),
+)
 const blockingReasons = computed(() => [
   ...(detail.value?.blockingReasons ?? []),
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
-const blockingReasonDisplays = computed(() => blockingReasons.value.map(describeMesReadinessReason))
+const blockingReasonDisplays = computed(() => describeMesReadinessReasons(blockingReasons.value))
 const errorMessage = computed(
   () => formatError(detailError.value) || formatError(materialReadinessError.value),
 )
@@ -144,11 +185,17 @@ const workOrderTone = computed<NvMetricTone>(() => {
   if (status === 'hold' || status === 'cancelled') return 'warning'
   return 'neutral'
 })
-const workOrderStatusPill = computed<NvMetricStatus>(() =>
-  blockingReasons.value.length
-    ? { label: `${blockingReasons.value.length} 项阻塞`, tone: 'danger' }
-    : { label: '无阻塞', tone: 'success' },
-)
+// 「无阻塞」是一个安全结论：工单详情或用料齐套任一读面没取到，都不许下这个结论
+// （作业范围未就绪整页拒载时曾反显「无阻塞」假文案，#1288）。
+const workOrderStatusPill = computed<NvMetricStatus>(() => {
+  if (blockingReasons.value.length) {
+    return { label: `${blockingReasons.value.length} 项阻塞`, tone: 'danger' }
+  }
+  if (!detail.value || !materialReadiness.value) {
+    return { label: '结论未取得', tone: 'neutral' }
+  }
+  return { label: '无阻塞', tone: 'success' }
+})
 const materialShortageCount = computed(
   () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
 )
@@ -163,7 +210,7 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     key: 'operationTaskId',
     header: '任务',
     cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskId ?? '无',
+    accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -174,11 +221,26 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
     width: 'w-16',
     accessor: (r) => r.operationSequence ?? 0,
   },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
-  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
+  // 读面已回 *Name / *Code（见 MesOperationTaskRow）；两者都缺时显占位，不回吐内部标识。
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => r.workCenterName?.trim() || r.workCenterCode?.trim() || '—',
+  },
+  {
+    key: 'deviceAssetId',
+    header: '设备',
+    accessor: (r) => r.deviceAssetName?.trim() || r.deviceAssetCode?.trim() || '未指定',
+  },
+  { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
-  { key: 'qualityStatus', header: '质量', accessor: (r) => r.qualityStatus ?? '未检' },
+  {
+    key: 'qualityStatus',
+    header: '质量',
+    // 这一列会收到总体判定值（ready/warning/blocked），走库存质量状态表会把 `Ready`
+    // 原样上屏（#1418）——统一走判定优先的口径。
+    accessor: (r) => operationQualityStatusLabel(r.qualityStatus),
+  },
 ]
 
 type MaterialRow = (typeof materialRows)['value'][number]
@@ -187,15 +249,167 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
     key: 'materialId',
     header: '物料',
     cellClass: 'font-medium',
-    accessor: (r) => r.materialId ?? '无',
+    // 齐套读面只回物料标识，物料名在 SKU 主数据里；主数据缺就显编码，是 GUID 则不上屏。
+    accessor: (r) => resolveSkuLabel(r.materialId),
   },
-  { key: 'materialLotId', header: '批次', accessor: (r) => r.materialLotId ?? '未指定' },
+  {
+    key: 'materialLotId',
+    header: '批次',
+    accessor: (r) => readFaceText(r.materialLotId, '未指定'),
+  },
   { key: 'requiredQuantity', header: '需求', align: 'end', width: 'w-20' },
-  { key: 'availableQuantity', header: '可用', align: 'end', width: 'w-20' },
+  { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
   { key: 'shortageQuantity', header: '短缺', align: 'end', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
+  // 缺口卡在哪个环节 + 下一步动作（#1291：齐套页要能讲清「缺什么、缺在哪个环节、下一步动作」）。
+  { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
+  { key: 'actions', header: '操作', width: 'w-28' },
 ]
+
+// --- 发起领料 / 线边收料（#1324）---
+// 齐套区的「下一步动作」以前指向一个 PC 上并不存在的动作（只有 PDA 能发起）。这里补齐两处入口，
+// 语义与校验与 PDA 侧同源：领料必须指定物料且数量>0；收料数量可省（默认收齐），指定时必须>0。
+const canManageMaterials = computed(() => permissionCodes.value.includes(P.mesMaterialsManage))
+// 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs）。界面写死一个占位单位会被 MES 直接拒收，
+// 也无法在库存腿上换算——取不到主档单位就阻断提交并说明原因，绝不猜（#1294 同款姿势）。
+const { resolveBaseUom, skusPending } = useSkuNames()
+const OPEN_ISSUE_STATUSES = new Set(['requested', 'partiallyreceived'])
+const issueOpen = ref(false)
+const issueForm = reactive({
+  materialId: '',
+  quantity: '',
+  operationTaskId: '',
+  idempotencyKey: '',
+})
+const receiveOpen = ref(false)
+const receiveError = ref('')
+const receiveForm = reactive({
+  requestId: '',
+  quantity: '',
+  materialLotId: '',
+  idempotencyKey: '',
+})
+
+function newMaterialIdempotencyKey(scope: string) {
+  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+const materialIssueRows = computed(() => materialIssueRequests.value)
+type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
+const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
+  {
+    key: 'requestId',
+    header: '领料单',
+    cellClass: 'font-medium',
+    accessor: (r) => readFaceText(r.requestId),
+  },
+  {
+    key: 'materialId',
+    header: '物料',
+    accessor: (r) => resolveSkuLabel(r.materialCode ?? r.materialId),
+  },
+  { key: 'requestedQuantity', header: '申请量', align: 'end', width: 'w-20' },
+  { key: 'receivedQuantity', header: '已收', align: 'end', width: 'w-20' },
+  { key: 'status', header: '状态', width: 'w-24' },
+  // WMS 回写的出库单号：没有回写就是「仓库还没接单」，不能用空白冒充已发料。
+  { key: 'wmsRequestId', header: '出库单', width: 'w-32' },
+  { key: 'actions', header: '操作', width: 'w-28' },
+]
+
+const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))
+const issueUomBlockReason = computed(() => {
+  if (!issueForm.materialId.trim()) return ''
+  if (issueUomCode.value) return ''
+  return skusPending.value
+    ? '正在读取物料主档单位，请稍候。'
+    : '物料主档没有基本计量单位，无法发起领料。请先在物料主数据补齐该物料的基本计量单位。'
+})
+const canSubmitIssue = computed(() => {
+  if (!canManageMaterials.value) return false
+  if (!issueForm.materialId.trim()) return false
+  if (!issueUomCode.value) return false
+  if (!issueForm.quantity.trim()) return true
+  const quantity = Number(issueForm.quantity)
+  return Number.isFinite(quantity) && quantity > 0
+})
+const canSubmitReceipt = computed(() => {
+  if (!canManageMaterials.value) return false
+  if (!receiveForm.requestId) return false
+  if (!receiveForm.quantity.trim()) return true
+  const quantity = Number(receiveForm.quantity)
+  return Number.isFinite(quantity) && quantity > 0
+})
+
+function openIssueDialog(materialId?: string) {
+  if (!canManageMaterials.value) return
+  issueForm.materialId = materialId ?? ''
+  issueForm.quantity = ''
+  issueForm.operationTaskId = ''
+  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+    `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
+  )
+  issueOpen.value = true
+}
+
+function canReceive(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    OPEN_ISSUE_STATUSES.has((row.status ?? '').toLowerCase().replace(/[^a-z]/g, ''))
+  )
+}
+
+function openReceiveDialog(row: MaterialIssueRow) {
+  if (!canReceive(row)) return
+  receiveError.value = ''
+  receiveForm.requestId = row.requestId ?? ''
+  receiveForm.quantity = ''
+  receiveForm.materialLotId = row.materialLotId ?? ''
+  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
+  receiveOpen.value = true
+}
+
+async function submitIssue() {
+  if (!canSubmitIssue.value || createMaterialIssueRequestPending.value) return
+  const quantity = issueForm.quantity.trim() ? Number(issueForm.quantity) : undefined
+  try {
+    const uomCode = issueUomCode.value
+    if (!uomCode) return
+    await createMaterialIssueRequest({
+      materialId: issueForm.materialId.trim(),
+      uomCode,
+      quantity,
+      operationTaskId: issueForm.operationTaskId.trim() || undefined,
+      // 写面重试要落在同一张领料单上：幂等键在打开弹窗时冻结，成功后才换新。
+      idempotencyKey: issueForm.idempotencyKey,
+    })
+    issueOpen.value = false
+    notifySuccess('已发起领料，仓库出库单生成后会回写到本页。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    // 分层透传（#1298）：后端拒绝原因原样上屏，不用「操作失败」吞掉缺料/状态冲突的真因。
+    notifyOperationFailure('发起领料失败', error, '发起领料失败，请稍后重试。')
+  }
+}
+
+async function submitReceipt() {
+  if (!canSubmitReceipt.value || confirmLineSideReceiptPending.value) return
+  receiveError.value = ''
+  const receivedQuantity = receiveForm.quantity.trim() ? Number(receiveForm.quantity) : undefined
+  try {
+    await confirmLineSideReceipt(receiveForm.requestId, {
+      receivedQuantity,
+      materialLotId: receiveForm.materialLotId.trim() || undefined,
+      idempotencyKey: receiveForm.idempotencyKey,
+    })
+    receiveOpen.value = false
+    notifySuccess('已确认线边收料。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
+    notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+  }
+}
 
 // --- 取消工单（破坏性动作，原因必填 + 补偿预览，A1 §2/§4） ---
 const CANCELLABLE_STATUSES = new Set(['created', 'released', 'hold'])
@@ -221,9 +435,36 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
-const canCancel = computed(() => CANCELLABLE_STATUSES.has(currentStatus.value))
+
+// 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
+// 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
+const scheduleOpen = ref(false)
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleDisabledReason = computed(() => {
+  if (!detail.value) return '工单信息加载中，请稍候。'
+  if (!isSchedulableWorkbenchCandidate(detail.value)) {
+    return detail.value.productionVersionId
+      ? '工单已处于终态，不能再排产。'
+      : '工单没有生产版本，排程无法展开工艺路线。'
+  }
+  if (!canScheduleSingleOrder.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
+  return ''
+})
+const canCancel = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    CANCELLABLE_STATUSES.has(currentStatus.value) &&
+    statusActionGate({
+      domain: 'mes-work-order',
+      action: 'cancel',
+      facts: { status: detail.value?.status },
+    }).executable,
+)
 const cancelDisabledReason = computed(() => {
   if (!detail.value) return '工单信息加载中，请稍候。'
+  if (!workOrderManageScopeReady.value) {
+    return workOrderManageScopeMessage.value || '尚未取得当前主体的工单管理范围。'
+  }
   if (canCancel.value) return ''
   const reasons: Record<string, string> = {
     started: '工单已开工，无法取消；请先处理在制工序。',
@@ -308,7 +549,7 @@ const remarkMaxLength = computed(() =>
 )
 const canSubmitCancel = computed(() => {
   // 破坏性动作：两项补偿预览成功拿到数据前禁用确认（慢网/失败时不允许在空数据上确认）。
-  if (!cancelPreviewReady.value) return false
+  if (!workOrderManageScopeReady.value || !cancelPreviewReady.value) return false
   // 存在无批次却可退的已收料申请时，后端会拒绝整单取消——前置阻断，不允许确认。
   if (unreturnableNoLotRows.value.length > 0) return false
   if (!cancelForm.reasonCode) return false
@@ -319,7 +560,7 @@ const canSubmitCancel = computed(() => {
 
 // 取消弹窗的只读上下文：全部来自当前工单详情，操作员只补原因与备注。
 const cancelContextItems = computed(() => [
-  { label: '工单', value: filters.workOrderId },
+  { label: '工单', value: workOrderLabel.value },
   { label: '状态', value: formatStatus(detail.value?.status) },
   { label: '物料', value: skuLabel.value },
   { label: '计划数量', value: formatQuantity(detail.value?.quantity) },
@@ -349,10 +590,22 @@ async function submitCancel() {
     cancelOpen.value = false
     resetCancelForm()
     notifySuccess(
-      `已取消工单 ${filters.workOrderId}：${releasedCount} 项预留释放、${returnCount} 项退料指引生成。`,
+      `已取消工单 ${workOrderLabel.value}：${releasedCount} 项预留释放、${returnCount} 项退料指引生成。`,
     )
   } catch (error) {
-    notifyError(error, '取消工单失败，请稍后重试。')
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          cancelOpen.value = false
+          resetCancelForm()
+        },
+        refresh: refreshDetail,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('取消工单失败', error, '取消工单失败，请稍后重试。')
   }
 }
 
@@ -395,17 +648,42 @@ function formatStatus(value?: string | null) {
   return value ? (map[value.toLowerCase()] ?? value) : '未知'
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="`工单 ${filters.workOrderId}`"
+      :title="`工单 ${workOrderLabel}`"
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
+        <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
+        <NvButton
+          v-if="!scheduleDisabledReason"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="work-order-schedule-single"
+          @click="scheduleOpen = true"
+        >
+          <CalendarCogIcon aria-hidden="true" />
+          对该单排产
+        </NvButton>
+        <NvTooltipProvider v-else>
+          <NvTooltip>
+            <NvTooltipTrigger as-child>
+              <span tabindex="0">
+                <NvButton size="sm" type="button" variant="outline" disabled>
+                  <CalendarCogIcon aria-hidden="true" />
+                  对该单排产
+                </NvButton>
+              </span>
+            </NvTooltipTrigger>
+            <NvTooltipContent>{{ scheduleDisabledReason }}</NvTooltipContent>
+          </NvTooltip>
+        </NvTooltipProvider>
         <NvButton
           size="sm"
           type="button"
@@ -466,6 +744,25 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
+    <!-- v-if 按需挂载：关闭时不持有候选工单查询，也不残留上一次的窗口输入。 -->
+    <SingleOrderSchedulingDialog
+      v-if="scheduleOpen"
+      v-model:open="scheduleOpen"
+      :work-order-id="detail?.workOrderId ?? filters.workOrderId"
+      :context-label="`MES 工单 ${workOrderLabel}`"
+    />
+
+    <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->
+    <div
+      v-if="workOrderReadScopeMessage"
+      class="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/[0.04] p-3"
+      role="alert"
+      data-testid="work-order-read-scope-message"
+    >
+      <p class="text-sm text-destructive">{{ workOrderReadScopeMessage }}</p>
+      <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
+    </div>
+
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -486,20 +783,25 @@ function formatError(error: unknown) {
         :progress="taskProgress"
         :target-label="`共 ${operationTasks.length} 道`"
       />
+      <!-- 「已齐套」同样是安全结论：齐套读面没取到时只说未取得，不反显齐套假文案（#1288）。 -->
       <NvMetricCard
         variant="alert"
         label="用料齐套"
-        :value="formatStatus(materialReadiness?.readinessStatus)"
+        :value="materialReadiness ? formatStatus(materialReadiness.readinessStatus) : '未取得'"
         :tone="materialTone"
         :status="
-          materialShortageCount > 0
-            ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
-            : { label: '已齐套', tone: 'success' }
+          materialReadiness
+            ? materialShortageCount > 0
+              ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
+              : { label: '已齐套', tone: 'success' }
+            : { label: '结论未取得', tone: 'neutral' }
         "
         :foot-start="
-          materialShortageCount > 0
-            ? '缺料项需先由仓库补发，否则无法开工。'
-            : '用料已备齐，可按工序顺序开工。'
+          materialReadiness
+            ? materialShortageCount > 0
+              ? '缺料项需先由仓库补发，否则无法开工。'
+              : '用料已备齐，可按工序顺序开工。'
+            : '尚未取得用料齐套结论，先解决上方读取阻塞后刷新。'
         "
       />
     </div>
@@ -570,7 +872,9 @@ function formatError(error: unknown) {
         :searchable="false"
         :column-settings="false"
       >
-        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
         <template #cell-scheduleStatus="{ row }">
           <span
             v-if="resolveScheduleStatus(row).key === 'invalidated'"
@@ -595,7 +899,25 @@ function formatError(error: unknown) {
     </div>
 
     <div class="grid gap-2">
-      <span class="text-sm font-semibold text-foreground">用料齐套</span>
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold text-foreground">用料齐套</span>
+        <!-- 齐套区的「下一步动作」在 PC 上必须真的能执行：这里就是发起领料的入口（#1324）。 -->
+        <NvButton
+          v-if="canManageMaterials"
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="open-material-issue"
+          @click="openIssueDialog()"
+        >
+          <PackageCheckIcon aria-hidden="true" />
+          发起领料
+        </NvButton>
+      </div>
+      <!-- 口径自解释：齐套只认线边/备料范围，与 MRP 的全厂库存口径本来就不同（#1291）。 -->
+      <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
+        {{ MATERIAL_READINESS_SCOPE_NOTE }}
+      </p>
       <NvDataTable
         :columns="materialColumns"
         :rows="materialRows"
@@ -617,15 +939,230 @@ function formatError(error: unknown) {
         <template #cell-shortageQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template
         >
-        <template #cell-status="{ row }"><NvStatusBadge :value="row.status" /></template>
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
+        <template #cell-shortageStage="{ row }">
+          <div class="grid gap-0.5">
+            <NvStatusBadge
+              class="justify-self-start"
+              :value="row.stage.label"
+              :label="row.stage.label"
+              :tone="row.stage.tone"
+            />
+            <span class="text-xs text-muted-foreground">{{ row.stage.nextAction }}</span>
+          </div>
+        </template>
+        <template #cell-actions="{ row }">
+          <NvButton
+            v-if="canManageMaterials"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`issue-material-${row.materialId}`"
+            @click="openIssueDialog(row.materialId ?? '')"
+          >
+            发起领料
+          </NvButton>
+          <span v-else class="text-xs text-muted-foreground">无领料权限</span>
+        </template>
+      </NvDataTable>
+      <!-- 全厂库存对照入口：穿透到库存可用量页，核对「原料仓有没有货」。 -->
+      <RouterLink
+        v-if="materialShortageCount > 0"
+        class="justify-self-start text-sm font-medium text-brand hover:underline"
+        :to="{ path: '/inventory/availability' }"
+        >去库存可用量核对全厂是否有货</RouterLink
+      >
+    </div>
+
+    <!-- 领料与收料：本工单已发起的领料单、仓库出库单回写与线边收料入口（#1324）。 -->
+    <div class="grid gap-2">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-semibold text-foreground">领料与收料</span>
+        <NvButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          :disabled="materialIssueRequestsPending"
+          @click="refreshMaterialIssueRequests"
+        >
+          <RefreshCwIcon aria-hidden="true" />
+          刷新
+        </NvButton>
+      </div>
+      <NvDataTable
+        :columns="materialIssueColumns"
+        :rows="materialIssueRows"
+        :row-key="(r) => r.requestId ?? ''"
+        :loading="materialIssueRequestsPending"
+        empty-message="本工单还没有领料单。缺料时在上方「发起领料」，仓库接单后这里会出现出库单号。"
+        :searchable="false"
+        :column-settings="false"
+        data-testid="material-issue-requests"
+      >
+        <template #cell-requestedQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.requestedQuantity) }}</span></template
+        >
+        <template #cell-receivedQuantity="{ row }"
+          ><span class="tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</span></template
+        >
+        <template #cell-status="{ row }">
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+        </template>
+        <template #cell-wmsRequestId="{ row }">
+          <span v-if="row.wmsRequestId" class="font-medium">{{
+            readFaceText(row.wmsRequestId)
+          }}</span>
+          <span v-else class="text-xs text-muted-foreground">仓库尚未接单</span>
+        </template>
+        <template #cell-actions="{ row }">
+          <NvButton
+            v-if="canReceive(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`receive-material-${row.requestId}`"
+            @click="openReceiveDialog(row)"
+          >
+            线边收料
+          </NvButton>
+          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+        </template>
       </NvDataTable>
     </div>
+
+    <!-- 发起领料 -->
+    <NvAlertDialog v-model:open="issueOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>发起领料 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            领料发起后由仓库生成出库与拣货任务，出库单号回写到本页；物料到线边后再确认收料。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="issue-material">
+              物料 <span class="text-destructive">*</span>
+            </NvFieldLabel>
+            <NvInput id="issue-material" v-model="issueForm.materialId" placeholder="物料标识" />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-uom">单位</NvFieldLabel>
+            <!-- 单位来自物料主档，不给用户编辑，也不用占位值冒充。 -->
+            <p v-if="issueUomCode" class="text-sm text-foreground" data-testid="issue-uom">
+              {{ issueUomCode }}（取自物料主档基本计量单位）
+            </p>
+            <p v-else class="text-sm text-destructive" data-testid="issue-uom-blocked">
+              {{ issueUomBlockReason || '请先选择物料。' }}
+            </p>
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-quantity">数量</NvFieldLabel>
+            <NvInput
+              id="issue-quantity"
+              v-model="issueForm.quantity"
+              inputmode="decimal"
+              placeholder="留空表示按用料需求量领取"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="issue-operation">工序任务</NvFieldLabel>
+            <NvInput
+              id="issue-operation"
+              v-model="issueForm.operationTaskId"
+              placeholder="可留空，指定后领料归属该工序"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="createMaterialIssueRequestPending"
+            @click="issueOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="!canSubmitIssue || createMaterialIssueRequestPending"
+            data-testid="submit-material-issue"
+            @click="submitIssue"
+          >
+            <Spinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
+            确认发起领料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边收料 -->
+    <NvAlertDialog v-model:open="receiveOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle
+            >线边收料 · {{ readFaceText(receiveForm.requestId) }}</NvAlertDialogTitle
+          >
+          <NvAlertDialogDescription>
+            确认收料后线边可用量随即增加；数量留空表示按未收余量一次收齐。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="receiveError"
+            class="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
+            data-testid="line-side-receipt-error"
+            role="alert"
+          >
+            {{ receiveError }}
+          </p>
+          <NvField>
+            <NvFieldLabel for="receive-quantity">收料数量</NvFieldLabel>
+            <NvInput
+              id="receive-quantity"
+              v-model="receiveForm.quantity"
+              inputmode="decimal"
+              placeholder="留空表示收齐剩余数量"
+            />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="receive-lot">物料批次</NvFieldLabel>
+            <NvInput
+              id="receive-lot"
+              v-model="receiveForm.materialLotId"
+              placeholder="退料与追溯依赖批次，建议如实填写"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="confirmLineSideReceiptPending"
+            @click="receiveOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="!canSubmitReceipt || confirmLineSideReceiptPending"
+            data-testid="submit-line-side-receipt"
+            @click="submitReceipt"
+          >
+            <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
+            确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
 
     <!-- 取消工单确认（含补偿预览区），A1 §2 破坏性动作原因必填 -->
     <NvAlertDialog v-model:open="cancelOpen">
       <NvAlertDialogContent class="sm:max-w-lg">
         <NvAlertDialogHeader>
-          <NvAlertDialogTitle>取消工单 · {{ filters.workOrderId }}</NvAlertDialogTitle>
+          <NvAlertDialogTitle>取消工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
           <!-- 破坏性动作：保留一句后果陈述，明细由下方补偿预览给出。 -->
           <NvAlertDialogDescription>
             取消后将释放预留、生成退料指引，并取消未完成的入库请求与工序任务，操作不可撤销。
@@ -700,7 +1237,9 @@ function formatError(error: unknown) {
                   :key="`nolot-${row.requestId}`"
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
-                  <span class="truncate">{{ row.materialCode ?? row.materialId }}</span>
+                  <span class="truncate">{{
+                    resolveSkuLabel(row.materialCode ?? row.materialId)
+                  }}</span>
                   <span class="shrink-0 tabular-nums">{{
                     formatQuantity(returnableQuantityOf(row))
                   }}</span>
@@ -717,9 +1256,9 @@ function formatError(error: unknown) {
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
                   <span class="truncate"
-                    >{{ row.materialCode ?? row.materialId
+                    >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                      · {{ row.materialLotId }}</span
+                      · {{ readFaceText(row.materialLotId, '未指定批次') }}</span
                     ></span
                   >
                   <span class="shrink-0 tabular-nums">{{
@@ -738,9 +1277,9 @@ function formatError(error: unknown) {
                   class="flex items-center justify-between gap-2 px-2 py-1"
                 >
                   <span class="truncate"
-                    >{{ row.materialCode ?? row.materialId
+                    >{{ resolveSkuLabel(row.materialCode ?? row.materialId)
                     }}<span v-if="row.materialLotId" class="text-muted-foreground">
-                      · {{ row.materialLotId }}</span
+                      · {{ readFaceText(row.materialLotId, '未指定批次') }}</span
                     ></span
                   >
                   <span class="shrink-0 tabular-nums">{{

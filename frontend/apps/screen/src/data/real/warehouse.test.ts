@@ -295,19 +295,25 @@ describe('fetchRealWarehouseBoard', () => {
   })
 
   it('近 12h 失败柱只统计窗口内单据，同时保留当日过账失败总数', async () => {
+    const localEvening = new Date(NOW)
+    localEvening.setHours(20, 0, 0, 0)
+    vi.setSystemTime(localEvening)
+    const isoFromLocalEvening = (minAgo: number) =>
+      new Date(localEvening.getTime() - minAgo * 60_000).toISOString()
+
     vi.mocked(api.listBusinessConsoleWmsInboundOrders).mockImplementation(
       makeList([
         {
           inboundOrderId: 'IN-recent-failed',
           inboundOrderNo: 'ASN-recent',
           status: 'InventoryPostingFailed',
-          createdAtUtc: iso(60),
+          createdAtUtc: isoFromLocalEvening(60),
         },
         {
           inboundOrderId: 'IN-old-failed',
           inboundOrderNo: 'ASN-old',
           status: 'InventoryPostingFailed',
-          createdAtUtc: iso(13 * 60),
+          createdAtUtc: isoFromLocalEvening(13 * 60),
         },
       ]) as never,
     )

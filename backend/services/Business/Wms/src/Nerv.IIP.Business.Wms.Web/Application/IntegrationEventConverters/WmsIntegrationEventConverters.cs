@@ -33,6 +33,44 @@ public sealed class InventoryMovementRequestCreatedIntegrationEventConverter
     }
 }
 
+public sealed class MaterialIssueOutboundPreparedIntegrationEventConverter
+    : IIntegrationEventConverter<MaterialIssueOutboundPreparedDomainEvent, WmsMaterialIssueOutboundPreparedIntegrationEvent>
+{
+    public WmsMaterialIssueOutboundPreparedIntegrationEvent Convert(MaterialIssueOutboundPreparedDomainEvent domainEvent)
+    {
+        var order = domainEvent.OutboundOrder;
+        var line = order.Lines.First();
+        // One outbound document per material issue request, so the request number carries the identity
+        // of this acknowledgement across replays.
+        var idempotencyKey = EventIds.Idempotency(
+            "material-issue-outbound-prepared",
+            order.OrganizationId,
+            order.EnvironmentId,
+            domainEvent.MaterialIssueRequestNo);
+        return new WmsMaterialIssueOutboundPreparedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            WmsIntegrationEventTypes.MaterialIssueOutboundPrepared,
+            WmsIntegrationEventVersions.V1,
+            domainEvent.PreparedAtUtc,
+            WmsIntegrationEventSources.BusinessWms,
+            idempotencyKey,
+            domainEvent.MaterialIssueRequestNo,
+            order.OrganizationId,
+            order.EnvironmentId,
+            "system:wms",
+            idempotencyKey,
+            new WmsMaterialIssueOutboundPreparedPayload(
+                domainEvent.MaterialIssueRequestNo,
+                order.OutboundOrderNo,
+                domainEvent.PickingTaskNo,
+                order.SiteCode,
+                line.SkuCode,
+                line.UomCode,
+                line.RequestedQuantity,
+                domainEvent.PreparedAtUtc));
+    }
+}
+
 public sealed class InboundOrderCompletedIntegrationEventConverter
     : IIntegrationEventConverter<InboundOrderCompletedDomainEvent, WmsIntegrationEvent>
 {
@@ -82,7 +120,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
         var line = order.Lines.First();
         var status = order.Status.ToString();
         var publicQuantity = PublicOutboundQuantity(line);
-        var publicReference = string.Equals(order.SourceDocumentType, "erp-delivery-order", StringComparison.OrdinalIgnoreCase)
+        var publicReference = string.Equals(order.SourceDocumentType, WmsSourceDocumentTypes.DeliveryOrder, StringComparison.OrdinalIgnoreCase)
             ? order.SourceDocumentId
             : order.OutboundOrderNo;
         return WmsIntegrationEventFactory.NewEvent(

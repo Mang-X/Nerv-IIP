@@ -285,7 +285,9 @@ describe('master-data units page', () => {
     await flushPromises()
 
     expect(stub.createUom).toHaveBeenCalledTimes(1)
-    expect(stub.toastError).toHaveBeenCalledWith('服务暂时不可用，请稍后重试。')
+    expect(stub.toastError).toHaveBeenCalledWith(
+      '保存计量单位失败：服务暂时不可用，操作结果可能尚未确认；请刷新列表核实后再重试。',
+    )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置（仍可重试）：名称保留。
     expect((wrapper.find('#uom-name').element as HTMLInputElement).value).toBe('个')

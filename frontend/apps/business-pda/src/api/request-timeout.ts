@@ -22,8 +22,9 @@
  *    pre-check is NOT indeterminate — the request never left the device, so those
  *    pages keep a safe retry (the #814 offline actionable-error requirement).
  *
- * Business errors thrown by the gateway are plain objects/strings (not `Error`) → a
- * determinate failure the server actually responded to, so retrying them is safe.
+ * Explicit 4xx/business rejections are determinate. A proxy/gateway 5xx is still
+ * indeterminate for writes: the gateway may have failed after dispatching downstream,
+ * so callers retain the same intent key and verify/read back before retrying.
  */
 
 /** Hard ceiling for any single facade request. 车间 WiFi hangs must not block forever. */
@@ -244,6 +245,8 @@ export type RequestErrorKind = 'timeout' | 'offline' | 'network' | 'business' | 
 
 export interface DescribedRequestError {
   kind: RequestErrorKind
+  /** HTTP status when the gateway produced a determinate response. */
+  status?: number
   /** User-facing copy — the typed-error message for transport failures, else the server message. */
   message: string
   /**
@@ -273,10 +276,53 @@ function extractServerMessage(error: unknown): string | undefined {
 }
 
 /**
+ * 分层透传（#1298）判据：只有「人话」才值得替换本地指引——中文业务原因（如
+ * 「物料齐套未满足：MAT-OIL 缺口 5」）能指导操作工，而 `downstream-request-failed`
+ * 这类技术串只会让人困惑。与 PC 侧 friendlyErrorMessage 同一口径。
+ */
+function isOperatorFacingMessage(message: string | undefined): message is string {
+  if (!message) return false
+  const trimmed = message.trim()
+  return trimmed.length > 0 && trimmed.length <= 120 && /[\u4e00-\u9fa5]/.test(trimmed)
+}
+
+function extractHttpStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const record = error as Record<string, unknown>
+  for (const key of ['status', 'statusCode']) {
+    const value = record[key]
+    if (typeof value === 'number' && Number.isInteger(value)) return value
+  }
+  const response = record.response
+  if (typeof response === 'object' && response !== null) {
+    const status = (response as Record<string, unknown>).status
+    if (typeof status === 'number' && Number.isInteger(status)) return status
+  }
+  return undefined
+}
+
+function actionableHttpMessage(status: number): string | undefined {
+  if (status === 401) return '登录已失效，请重新登录'
+  if (status === 403) return '当前账号无此操作权限，请联系班组长或管理员'
+  if (status === 404) return '业务对象已不存在或不在当前作业范围，请刷新列表后重试'
+  if (status === 409) return '状态已变化，请刷新后按最新状态操作'
+  if (status === 422) return '提交内容未通过业务校验，请检查必填项和数值后重试'
+  if (status >= 500) return '服务暂时不可用，请稍后重试；写操作请先刷新核实结果'
+  return undefined
+}
+
+function businessFailureMessage(error: unknown, fallback: string): string {
+  const serverMessage = extractServerMessage(error)
+  if (isOperatorFacingMessage(serverMessage)) return serverMessage
+  return fallback
+}
+
+/**
  * Classify any error thrown by a facade call into a display message + a retry-safety
  * verdict. This is what lets pages tell timeout/offline (indeterminate — a
- * non-idempotent write must NOT auto-retry) apart from a definite server-side business
- * failure (safe to retry).
+ * non-idempotent write must NOT auto-retry) apart from a definite 4xx/business
+ * rejection. A server response alone is insufficient: gateway/proxy 5xx remains
+ * indeterminate because the downstream write may already have committed.
  *
  * `fallback` is the page's existing generic copy, kept for business errors without a
  * usable server message and for the unknown case.
@@ -285,6 +331,42 @@ export function describeRequestError(
   error: unknown,
   fallback = '操作失败，请重试',
 ): DescribedRequestError {
+  if (
+    error instanceof BusinessOperationFailedError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: unknown }).code === 'business-operation-failed')
+  ) {
+    const failureCode =
+      typeof error === 'object' && error !== null
+        ? String((error as { failureCode?: unknown }).failureCode ?? '')
+            .trim()
+            .toLowerCase()
+        : ''
+    // 分层透传（#1298）：只有本地能讲得更清楚的失败码才改写文案，其余一律回传服务端给的真因
+    // ——否则缺料这类拦截会被「操作失败」吞掉，操作工看不到缺哪个物料、缺多少。
+    const message =
+      failureCode === 'negative_on_hand' || failureCode === 'inventory-shortage'
+        ? '库存不足，无法完成本次库存过账，请核对数量后重试'
+        : businessFailureMessage(error, fallback)
+    return {
+      kind: 'business',
+      message,
+      indeterminate: false,
+    }
+  }
+  if (
+    error instanceof BusinessOperationUnconfirmedError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: unknown }).code === 'business-operation-unconfirmed')
+  ) {
+    return {
+      kind: 'business',
+      message: '操作已受理，但结果尚未核实。请刷新列表确认状态，勿重复提交',
+      indeterminate: true,
+    }
+  }
   if (error instanceof OfflineError) {
     // The offline pre-check throws BEFORE baseFetch — the request never left the device,
     // so there is no server-side effect and a retry is safe once back online.
@@ -298,13 +380,35 @@ export function describeRequestError(
   if (error instanceof TypeError) {
     return { kind: 'network', message: '网络连接失败，请检查网络后重试', indeterminate: true }
   }
+  const status = extractHttpStatus(error)
+  const actionableMessage = status === undefined ? undefined : actionableHttpMessage(status)
+  if (status !== undefined) {
+    const serverMessage = extractServerMessage(error)
+    // 分层透传（#1298）：业务拒绝（400/409/422…）的服务端原因永远比通用 HTTP 文案有用——
+    // 「物料齐套未满足：MAT-OIL 缺口 5」必须原样上屏，而不是「状态已变化，请刷新后按最新状态操作」。
+    // 401/403（登录/权限）与 5xx 仍用本地指引：那里的服务端文案对操作工没有可执行价值。
+    const prefersServerMessage =
+      isOperatorFacingMessage(serverMessage) && status < 500 && status !== 401 && status !== 403
+    return {
+      kind: 'business',
+      status,
+      message: prefersServerMessage
+        ? serverMessage
+        : (actionableMessage ?? serverMessage ?? fallback),
+      // A proxy/gateway 5xx can be produced after the downstream write was
+      // dispatched. Preserve the same idempotency key (or perform authoritative
+      // readback) instead of treating it as a definite failure.
+      indeterminate: status >= 500,
+    }
+  }
   // Any other Error: unknown shape, but it carries a stack → the request reached code,
   // not a transport hang; treat as a determinate failure.
   if (error instanceof Error) {
     return { kind: 'unknown', message: error.message || fallback, indeterminate: false }
   }
-  // Non-Error thrown value = the gateway's business/HTTP error body (object or string).
-  // The server responded, so no side effect is pending — safe to retry.
+  // A non-Error without an extractable HTTP status is an explicit gateway business
+  // envelope/string, not a transport/proxy 5xx; treat that business rejection as
+  // determinate. Status-bearing 5xx values were handled above as indeterminate.
   return {
     kind: 'business',
     message: extractServerMessage(error) ?? fallback,
@@ -316,3 +420,7 @@ export function describeRequestError(
 export function isIndeterminateError(error: unknown): boolean {
   return describeRequestError(error).indeterminate
 }
+import {
+  BusinessOperationFailedError,
+  BusinessOperationUnconfirmedError,
+} from '@nerv-iip/api-client'

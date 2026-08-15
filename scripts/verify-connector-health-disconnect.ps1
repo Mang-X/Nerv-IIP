@@ -93,10 +93,10 @@ function Wait-FullStackSessionRunning([int] $TimeoutSeconds = 900) {
         $manifestPath = Get-NervFullStackManifestPath -SessionId $sessionId
         if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
             $candidate = Read-NervFullStackManifest -SessionId $sessionId
-            if ("$($candidate.state)" -in @('Failed', 'CleanupFailed')) {
+            if ([Collections.Generic.HashSet[string]]::new([string[]]@(@('Failed', 'CleanupFailed')), [StringComparer]::OrdinalIgnoreCase).Contains([string]("$($candidate.state)"))) {
                 throw "Full-stack session '$sessionId' entered startup terminal state '$($candidate.state)': $($candidate.failure.message)"
             }
-            if ("$($candidate.state)" -eq 'Running') { return $candidate }
+            if ([string]::Equals([string]("$($candidate.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase)) { return $candidate }
         }
         if ($null -ne $fullStackStartIdentity -and
             -not (Test-NervProcessIdentity -ProcessId $fullStackStartIdentity.Pid -ProcessStartTimeUtc $fullStackStartIdentity.ProcessStartTimeUtc)) {
@@ -131,7 +131,7 @@ function Wait-ReadyJson([string] $Path, [int] $TimeoutSeconds = 10) {
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
             try {
                 $ready = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-                if ("$($ready.state)" -eq 'ready' -and [int] $ready.port -gt 0) { return $ready }
+                if ([string]::Equals([string]("$($ready.state)"), [string]('ready'), [StringComparison]::OrdinalIgnoreCase) -and ((([int] $ready.port) -gt (0)))) { return $ready }
             }
             catch {
                 $script:lastRequestError = "Simulator ready JSON '$Path' could not be read: $($_.Exception.Message)"
@@ -221,8 +221,8 @@ function Wait-InitialState([string] $BusinessGatewayUrl, [hashtable] $Headers) {
         try {
             $health = Get-Health -BusinessGatewayUrl $BusinessGatewayUrl -Headers $Headers
             $coverage = Get-Coverage -BusinessGatewayUrl $BusinessGatewayUrl -Headers $Headers
-            $neverSampled = @($coverage.items | Where-Object { "$($_.tagKey)" -eq $neverSampledTagKey -and $null -eq $_.lastSampleAtUtc })
-            if ("$($health.connection.status)" -eq 'alive' -and "$($coverage.manifestStatus)" -eq 'current' -and $neverSampled.Count -eq 1) {
+            $neverSampled = @($coverage.items | Where-Object { [string]::Equals([string]("$($_.tagKey)"), [string]($neverSampledTagKey), [StringComparison]::OrdinalIgnoreCase) -and $null -eq $_.lastSampleAtUtc })
+            if ([string]::Equals([string]("$($health.connection.status)"), [string]('alive'), [StringComparison]::OrdinalIgnoreCase) -and [string]::Equals([string]("$($coverage.manifestStatus)"), [string]('current'), [StringComparison]::OrdinalIgnoreCase) -and $neverSampled.Count -eq 1) {
                 return [pscustomobject]@{ Health = $health; Coverage = $coverage; NeverSampled = $neverSampled[0] }
             }
         }
@@ -261,7 +261,7 @@ try {
     }
     $manifest = Wait-FullStackSessionRunning
     Set-AcceptanceStage -Stage 'fullstack-running'
-    Assert-Acceptance ("$($manifest.state)" -eq 'Running') "Full-stack session '$sessionId' did not reach Running."
+    Assert-Acceptance ([string]::Equals([string]("$($manifest.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase)) "Full-stack session '$sessionId' did not reach Running."
     $gatewayUrl = Get-NervFullStackEndpointValue -Manifest $manifest -ResourceName 'gateway'
     $businessGatewayUrl = Get-NervFullStackEndpointValue -Manifest $manifest -ResourceName 'business-gateway'
     Set-AcceptanceStage -Stage 'gateway-login'
@@ -275,7 +275,7 @@ try {
     Set-AcceptanceStage -Stage 'initial-state-ready'
     for ($run = 1; $run -le $Runs; $run++) {
         $before = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
-        Assert-Acceptance ("$($before.connection.status)" -eq 'alive') "Run $run did not start from explicit alive state."
+        Assert-Acceptance ([string]::Equals([string]("$($before.connection.status)"), [string]('alive'), [StringComparison]::OrdinalIgnoreCase)) "Run $run did not start from explicit alive state."
         $previousConnectedSinceUtc = [DateTimeOffset] $before.connection.connectedSinceUtc
         $baselineHeartbeatUtc = [DateTimeOffset] $before.lastHeartbeatAtUtc
         $script:disconnectStartUtc = [DateTimeOffset]::UtcNow
@@ -289,10 +289,10 @@ try {
             try {
                 $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers -TimeoutSeconds $DisconnectRequestTimeoutSeconds
                 $heartbeatUtc = if ($candidate.lastHeartbeatAtUtc) { [DateTimeOffset] $candidate.lastHeartbeatAtUtc } else { [DateTimeOffset]::MinValue }
-                if ("$($candidate.connection.status)" -eq 'lost' -and
-                    "$($candidate.status)" -eq 'stale' -and
-                    "$($candidate.staleReason)" -eq 'offline' -and
-                    "$($candidate.offlineReason)" -eq 'field-connection' -and
+                if ([string]::Equals([string]("$($candidate.connection.status)"), [string]('lost'), [StringComparison]::OrdinalIgnoreCase) -and
+                    [string]::Equals([string]("$($candidate.status)"), [string]('stale'), [StringComparison]::OrdinalIgnoreCase) -and
+                    [string]::Equals([string]("$($candidate.staleReason)"), [string]('offline'), [StringComparison]::OrdinalIgnoreCase) -and
+                    [string]::Equals([string]("$($candidate.offlineReason)"), [string]('field-connection'), [StringComparison]::OrdinalIgnoreCase) -and
                     $candidate.connection.disconnectedSinceUtc -and
                     $heartbeatUtc -gt $baselineHeartbeatUtc) {
                     $lost = $candidate
@@ -316,14 +316,14 @@ try {
 
         Set-AcceptanceStage -Stage "run-$run-restarting"
         $simulator = Start-ModbusSimulator -Port $modbusPort -Generation $run
-        Assert-Acceptance ([int] $simulator.Ready.port -eq $modbusPort) "Run $run simulator did not restart on the same port."
+        Assert-Acceptance ((([int] $simulator.Ready.port) -eq ($modbusPort))) "Run $run simulator did not restart on the same port."
         $recoveryDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
         $recovered = $null
         do {
             try {
                 $candidate = Get-Health -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
-                if ("$($candidate.connection.status)" -eq 'alive' -and
-                    [DateTimeOffset] $candidate.connection.connectedSinceUtc -gt $previousConnectedSinceUtc) {
+                if ([string]::Equals([string]("$($candidate.connection.status)"), [string]('alive'), [StringComparison]::OrdinalIgnoreCase) -and
+                    ((([DateTimeOffset] $candidate.connection.connectedSinceUtc) -gt ($previousConnectedSinceUtc)))) {
                     $recovered = $candidate
                     break
                 }
@@ -335,9 +335,9 @@ try {
         } while ([DateTimeOffset]::UtcNow -lt $recoveryDeadline)
         Assert-Acceptance ($null -ne $recovered) "Run $run did not establish a new alive interval after simulator restart."
         $coverage = Get-Coverage -BusinessGatewayUrl $businessGatewayUrl -Headers $headers
-        $neverSampled = @($coverage.items | Where-Object { "$($_.tagKey)" -eq $neverSampledTagKey -and $null -eq $_.lastSampleAtUtc })
+        $neverSampled = @($coverage.items | Where-Object { [string]::Equals([string]("$($_.tagKey)"), [string]($neverSampledTagKey), [StringComparison]::OrdinalIgnoreCase) -and $null -eq $_.lastSampleAtUtc })
         Assert-Acceptance ($neverSampled.Count -eq 1) "Run $run lost the configured never-sampled tag from coverage."
-        Assert-Acceptance (@($coverage.items | Where-Object { "$($_.tagKey)" -eq $sampledTagKey -and $null -ne $_.lastSampleAtUtc }).Count -eq 1) "Run $run did not retain the sampled mapping fact."
+        Assert-Acceptance (@($coverage.items | Where-Object { [string]::Equals([string]("$($_.tagKey)"), [string]($sampledTagKey), [StringComparison]::OrdinalIgnoreCase) -and $null -ne $_.lastSampleAtUtc }).Count -eq 1) "Run $run did not retain the sampled mapping fact."
 
         $evidenceRuns.Add([ordered]@{
             run = $run

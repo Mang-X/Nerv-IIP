@@ -87,7 +87,10 @@ function pickToday() {
         :disabled="disabled"
         :class="
           cn(
-            'w-48 justify-between font-normal',
+            // 窄屏占满、到 sm 断点才收成固定宽度：跟 NvFilterBar 里搜索框 / 下拉框
+            // (`w-full sm:w-64` / `w-full sm:w-44`) 用同一套写法。此前是死的 `w-48`，
+            // 于是筛选条在窄屏上会出现「两个满宽控件 + 一个 12rem 残桩」的错位。
+            'w-full justify-between font-normal sm:w-48',
             !modelValue && 'text-muted-foreground',
             props.class,
           )

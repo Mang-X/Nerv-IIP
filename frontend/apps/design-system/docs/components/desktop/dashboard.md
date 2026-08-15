@@ -14,7 +14,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 
 # NvAppShellInset 应用外壳
 
-控制台页面的标准外壳 **block**:组合 `@nerv-iip/ui` 稳定导出的 Sidebar 系统(可折叠 / Rail / 移动抽屉)+ inset 内容区 + 顶部栏。搭一个控制台页面从它起步,而不是手拼分区件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
+控制台页面的标准外壳区块：组合 `@nerv-iip/ui` 稳定导出的 `Sidebar` 系统（可折叠 / `SidebarRail` / 移动抽屉）、inset 内容区与顶部栏。搭建控制台页面应从它起步，而不是手工拼装分区组件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
 
 ## 完整外壳
 

@@ -1,18 +1,18 @@
 # 统一排程可视化组件 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 子技能，逐任务实施本计划。步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** 新建 `@nerv-iip/scheduling` 包,提供引擎无关的统一接口,用 DHTMLX Gantt 试用版做 MVP 实现工单甘特与资源排产板两个组件,并接入 business-console,后续切换自研引擎只需替换适配器。
+**目标：** 新建 `@nerv-iip/scheduling` 包，提供引擎无关的统一接口，用 DHTMLX Gantt 试用版做 MVP，实现工单甘特与资源排产板两个组件并接入 business-console；后续切换自研引擎时只需替换适配器。
 
-**Architecture:** 三层——Vue 组件层(稳定 props/emits/slots)→ `SchedulingEngine` 适配器接口(DhtmlxEngine / NativeEngine)→ 数据契约层(`ScheduleModel` + `aps-mapper`)。两适配器共同通过一套引擎契约测试,保证可替换。
+**架构：** 分为三层——Vue 组件层（稳定的 props/emits/slots）→ `SchedulingEngine` 适配器接口（DhtmlxEngine / NativeEngine）→ 数据契约层（`ScheduleModel` + `aps-mapper`）。两个适配器共同通过一套引擎契约测试，保证可替换。
 
-**Tech Stack:** Vue 3 `<script setup lang="ts">` · Tailwind v4 + 设计系统 v2 token · `@nerv-iip/ui` 区块 · `@nerv-iip/api-client`(business-console scheduling facade)· vite-plus(`vp`)/ vitest · Playwright · DHTMLX Gantt 9.1.4(试用,可选依赖,动态 import)。
+**技术栈：** Vue 3 `<script setup lang="ts">` · Tailwind v4 + 设计系统 v2 令牌 · `@nerv-iip/ui` 区块 · `@nerv-iip/api-client`（business-console 排程 facade）· vite-plus（`vp`）/ vitest · Playwright · DHTMLX Gantt 9.1.4（试用、可选依赖、动态导入）。
 
-参考 spec:`docs/superpowers/specs/2026-06-10-unified-scheduling-gantt-design.md`。
+参考规格：`docs/superpowers/specs/2026-06-10-unified-scheduling-gantt-design.md`。
 
 ---
 
-## File Structure
+## 文件结构
 
 ```
 frontend/packages/scheduling/                 # 新包 @nerv-iip/scheduling
@@ -81,17 +81,17 @@ docs/architecture/implementation-readiness.md # 记一笔
 
 ---
 
-## Phase P0 — 接缝先行(契约 + 映射 + 引擎接口 + 契约测试 + NativeEngine)
+## 阶段 P0 — 接缝先行(契约 + 映射 + 引擎接口 + 契约测试 + NativeEngine)
 
-### Task 1: 包骨架
+### Task 1：包骨架
 
-**Files:**
-- Create: `frontend/packages/scheduling/package.json`
-- Create: `frontend/packages/scheduling/tsconfig.json`
-- Create: `frontend/packages/scheduling/.gitignore`
-- Create: `frontend/packages/scheduling/src/index.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/package.json`
+- 创建： `frontend/packages/scheduling/tsconfig.json`
+- 创建： `frontend/packages/scheduling/.gitignore`
+- 创建： `frontend/packages/scheduling/src/index.ts`
 
-- [ ] **Step 1: package.json**(镜像 `@nerv-iip/ui`)
+- [ ] **步骤 1：package.json**(镜像 `@nerv-iip/ui`)
 
 ```json
 {
@@ -121,7 +121,7 @@ docs/architecture/implementation-readiness.md # 记一笔
 }
 ```
 
-- [ ] **Step 2: tsconfig.json**
+- [ ] **步骤 2：tsconfig.json**
 
 ```json
 {
@@ -131,24 +131,24 @@ docs/architecture/implementation-readiness.md # 记一笔
 }
 ```
 
-- [ ] **Step 3: .gitignore**
+- [ ] **步骤 3：.gitignore**
 
 ```
 vendor/
 ```
 
-- [ ] **Step 4: src/index.ts**(占位,后续任务填充导出)
+- [ ] **步骤 4：src/index.ts**(占位,后续任务填充导出)
 
 ```ts
 export {}
 ```
 
-- [ ] **Step 5: 安装依赖并验证 workspace 链接**
+- [ ] **步骤 5：安装依赖并验证工作区链接**
 
-Run: `pnpm -C frontend install`
-Expected: 无错误,`@nerv-iip/scheduling` 出现在 workspace。
+运行：`pnpm -C frontend install`
+预期：无错误，`@nerv-iip/scheduling` 出现在工作区中。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/packages/scheduling frontend/pnpm-lock.yaml
@@ -157,12 +157,12 @@ git commit -m "feat(scheduling): scaffold @nerv-iip/scheduling package"
 
 ---
 
-### Task 2: 数据模型类型
+### Task 2：数据模型类型
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/model/types.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/model/types.ts`
 
-- [ ] **Step 1: 定义 ScheduleModel 及子类型 + 引擎契约类型**
+- [ ] **步骤 1：定义 ScheduleModel 及子类型 + 引擎契约类型**
 
 ```ts
 // 引擎无关的排程数据模型。所有字段为引擎可消费的归一化形态,不含任何引擎私有结构。
@@ -254,12 +254,12 @@ export interface ScheduleModel {
 }
 ```
 
-- [ ] **Step 2: typecheck**
+- [ ] **步骤 2：typecheck**
 
-Run: `pnpm -C frontend/packages/scheduling typecheck`
-Expected: PASS(无类型错误)。
+运行：`pnpm -C frontend/packages/scheduling typecheck`
+预期：PASS(无类型错误)。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/model/types.ts
@@ -268,14 +268,14 @@ git commit -m "feat(scheduling): add engine-agnostic ScheduleModel types"
 
 ---
 
-### Task 3: APS 映射(toModel) — TDD
+### Task 3：APS 映射（toModel）— TDD
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/model/fixtures.ts`
-- Create: `frontend/packages/scheduling/src/model/aps-mapper.ts`
-- Test: `frontend/packages/scheduling/src/model/aps-mapper.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/model/fixtures.ts`
+- 创建： `frontend/packages/scheduling/src/model/aps-mapper.ts`
+- 测试： `frontend/packages/scheduling/src/model/aps-mapper.test.ts`
 
-- [ ] **Step 1: fixtures.ts**(确定性样例,贴合 api-client 契约形状)
+- [ ] **步骤 1：fixtures.ts**(确定性样例,贴合 api-client 契约形状)
 
 ```ts
 import type { NervIipContractsSchedulingSchedulePlanContract } from '@nerv-iip/api-client'
@@ -313,7 +313,7 @@ export const samplePlan: NervIipContractsSchedulingSchedulePlanContract = {
 }
 ```
 
-- [ ] **Step 2: 写失败测试 aps-mapper.test.ts**
+- [ ] **步骤 2：写失败测试 aps-mapper.test.ts**
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -356,12 +356,12 @@ describe('toModel', () => {
 })
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [ ] **步骤 3：跑测试确认失败**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: FAIL("toModel is not a function")。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：FAIL("toModel is not a function")。
 
-- [ ] **Step 4: 实现 aps-mapper.ts**
+- [ ] **步骤 4：实现 aps-mapper.ts**
 
 ```ts
 import type {
@@ -466,12 +466,12 @@ export function toModel(plan: PlanContract): ScheduleModel {
 }
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [ ] **步骤 5：跑测试确认通过**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: PASS(4 个用例)。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：PASS(4 个用例)。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/model
@@ -480,13 +480,13 @@ git commit -m "feat(scheduling): map APS SchedulePlanContract to ScheduleModel"
 
 ---
 
-### Task 4: toLockedAssignments(重预览回传) — TDD
+### Task 4：toLockedAssignments（重预览回传）— TDD
 
-**Files:**
-- Modify: `frontend/packages/scheduling/src/model/aps-mapper.ts`
-- Test: `frontend/packages/scheduling/src/model/aps-mapper.test.ts`(追加)
+**文件：**
+- 修改： `frontend/packages/scheduling/src/model/aps-mapper.ts`
+- 测试： `frontend/packages/scheduling/src/model/aps-mapper.test.ts`(追加)
 
-- [ ] **Step 1: 追加失败测试**
+- [ ] **步骤 1：追加失败测试**
 
 ```ts
 import { toLockedAssignments } from './aps-mapper'
@@ -507,12 +507,12 @@ describe('toLockedAssignments', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：跑测试确认失败**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: FAIL("toLockedAssignments is not a function")。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：FAIL("toLockedAssignments is not a function")。
 
-- [ ] **Step 3: 实现(追加到 aps-mapper.ts)**
+- [ ] **步骤 3：实现(追加到 aps-mapper.ts)**
 
 ```ts
 import type { NervIipContractsSchedulingScheduleAssignmentContract as Assignment } from '@nerv-iip/api-client'
@@ -528,12 +528,12 @@ export function toLockedAssignments(model: ScheduleModel): Assignment[] {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：跑测试确认通过**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: PASS。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/model/aps-mapper.ts frontend/packages/scheduling/src/model/aps-mapper.test.ts
@@ -542,12 +542,12 @@ git commit -m "feat(scheduling): emit locked assignments for re-preview"
 
 ---
 
-### Task 5: SchedulingEngine 接口 + 命令/事件类型
+### Task 5：SchedulingEngine 接口 + 命令/事件类型
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/engine.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/engine.ts`
 
-- [ ] **Step 1: 定义接口**
+- [ ] **步骤 1：定义接口**
 
 ```ts
 import type { ScheduleModel, TimeScale } from '../model/types'
@@ -602,9 +602,9 @@ export interface SchedulingEngine {
 }
 ```
 
-- [ ] **Step 2: typecheck + Commit**
+- [ ] **步骤 2：typecheck + 提交**
 
-Run: `pnpm -C frontend/packages/scheduling typecheck` → PASS
+运行：`pnpm -C frontend/packages/scheduling typecheck` → PASS
 ```bash
 git add frontend/packages/scheduling/src/engine/engine.ts
 git commit -m "feat(scheduling): define headless SchedulingEngine interface"
@@ -612,12 +612,12 @@ git commit -m "feat(scheduling): define headless SchedulingEngine interface"
 
 ---
 
-### Task 6: 引擎契约测试套件
+### Task 6：引擎契约测试套件
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/conformance.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/conformance.ts`
 
-- [ ] **Step 1: 写可复用契约套件**(任意引擎工厂传入,断言可替换契约)
+- [ ] **步骤 1：写可复用契约套件**(任意引擎工厂传入,断言可替换契约)
 
 ```ts
 import { expect, it } from 'vitest'
@@ -681,7 +681,7 @@ export function runEngineConformance(makeEngine: () => SchedulingEngine) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **步骤 2：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/engine/conformance.ts
@@ -690,13 +690,13 @@ git commit -m "test(scheduling): add engine conformance suite"
 
 ---
 
-### Task 7: NativeEngine(SVG) — TDD via conformance
+### Task 7：NativeEngine（SVG）— 通过契约套件进行 TDD
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/native/NativeEngine.ts`
-- Test: `frontend/packages/scheduling/src/engine/native/NativeEngine.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/native/NativeEngine.ts`
+- 测试： `frontend/packages/scheduling/src/engine/native/NativeEngine.test.ts`
 
-- [ ] **Step 1: 写测试(跑 conformance)**
+- [ ] **步骤 1：编写测试（运行契约套件）**
 
 ```ts
 import { describe } from 'vitest'
@@ -708,27 +708,27 @@ describe('NativeEngine conformance', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **步骤 2：跑测试确认失败**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: FAIL("Cannot find module './NativeEngine'")。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：FAIL("Cannot find module './NativeEngine'")。
 
-- [ ] **Step 3: 实现 NativeEngine**(确定性 SVG;时间→x 线性映射;每 task 一个 `[data-task-id]` rect;行虚拟化留到性能任务)
+- [ ] **步骤 3：实现 NativeEngine**（确定性 SVG；时间→x 线性映射；每个任务一个 `[data-task-id]` 矩形；行虚拟化留到性能任务）
 
 要点(完整实现):
-- `mount`:在容器建 `<svg>` + 两个 `<g>`(grid, bars),记录 options,初始化事件总线 `Map<string, Set<cb>>`。
-- `setData`:按 `horizon` 计算时间窗 → x 比例;order 视图按 `tasks` 顺序排行(operation 缩进于其 order);每 task 画一个 `rect[data-task-id]`,冲突用 token `--destructive` 描边,选中用 `--brand`;resource 视图按 `resources` 排行,task 落到其 `resourceId` 行,另画 `loads` 直方图。点击 rect → emit `taskSelected`/`conflictClicked`。
-- `applyCommand`:`scaleTo`→存 scale + emit `scaleChanged` + 重画;`selectTask`→高亮 + emit `taskSelected`;`zoomIn/Out`→在 hour↔month 之间移动 scale;`setTheme`→重写 CSS 变量并重画;`setReadOnly`→存标志。
-- 拖拽(可编辑):rect 上 pointerdown→move→up,换算 Δt → 新 start/end(吸附到 scale 粒度)→ emit `taskDragEnd`{kind}。jsdom 下无真实指针,测试用 `applyCommand`/合成事件覆盖路径。
+- `mount`：在容器中创建 `<svg>` 和两个 `<g>`（网格、条形），记录 options，并初始化事件总线 `Map<string, Set<cb>>`。
+- `setData`：按 `horizon` 计算时间窗和 x 比例；工单视图按 `tasks` 顺序排列（operation 缩进到所属工单下）；每个任务绘制一个 `rect[data-task-id]`，冲突用令牌 `--destructive` 描边，选中状态使用 `--brand`；资源视图按 `resources` 排列，任务落到其 `resourceId` 行，并绘制 `loads` 直方图。点击矩形时发出 `taskSelected`/`conflictClicked` 事件。
+- `applyCommand`：`scaleTo`→存储刻度并发出 `scaleChanged` 事件后重绘；`selectTask`→高亮并发出 `taskSelected` 事件；`zoomIn/Out`→在 hour↔month 之间移动刻度；`setTheme`→重写 CSS 变量并重绘；`setReadOnly`→存储标志。
+- 拖拽（可编辑）：在矩形上依次触发 pointerdown→move→up，将 Δt 换算为新的 start/end（吸附到刻度粒度），再发出 `taskDragEnd`{kind}。jsdom 下没有真实指针，测试使用 `applyCommand`/合成事件覆盖此路径。
 - `getState`:`{ scale, selectedTaskId }`。
 - `destroy`:清空容器、清事件总线。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **步骤 4：跑测试确认通过**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: PASS(conformance 4 用例)。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：PASS(conformance 4 用例)。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/engine/native
@@ -737,15 +737,15 @@ git commit -m "feat(scheduling): implement deterministic NativeEngine (SVG)"
 
 ---
 
-## Phase P1 — DHTMLX MVP(适配器 + 皮肤 + 组件)
+## 阶段 P1 — DHTMLX MVP(适配器 + 皮肤 + 组件)
 
-### Task 8: DHTMLX loader + 可用性探测
+### Task 8：DHTMLX 加载器 + 可用性探测
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/dhtmlx/loader.ts`
-- Create: `frontend/packages/scheduling/README.md`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/dhtmlx/loader.ts`
+- 创建： `frontend/packages/scheduling/README.md`
 
-- [ ] **Step 1: loader.ts**(动态 import,缺失则返回 null)
+- [ ] **步骤 1：loader.ts**（动态导入，缺失时返回 null）
 
 ```ts
 // 动态加载 DHTMLX Gantt 试用核心。未安装时返回 null,使包在无许可环境仍可构建/测试。
@@ -768,13 +768,13 @@ export async function isDhtmlxAvailable(): Promise<boolean> {
 }
 ```
 
-- [ ] **Step 2: README.md**(引擎契约 + 装 DHTMLX + 换引擎说明)
+- [ ] **步骤 2：README.md**(引擎契约 + 装 DHTMLX + 换引擎说明)
 
-内容要点:`@nerv-iip/scheduling` 三层架构图;如何装 DHTMLX 试用(`npm config set @dhx:registry=https://npm.dhtmlx.com` + `pnpm add @dhx/trial-gantt`,或从 `gantt_trial/codebase` 拷到 `vendor/`);**许可:试用禁分发,文件不入 git**;如何换自研引擎(实现 `SchedulingEngine`,跑 `runEngineConformance`);默认引擎选择逻辑(检测到 DHTMLX 用之,否则 NativeEngine)。
+内容要点：`@nerv-iip/scheduling` 三层架构图；如何安装 DHTMLX 试用版（`npm config set @dhx:registry=https://npm.dhtmlx.com` + `pnpm add @dhx/trial-gantt`，或从 `gantt_trial/codebase` 复制到 `vendor/`）；**许可：试用版禁止分发，文件不进入 Git**；如何切换自研引擎（实现 `SchedulingEngine`，运行 `runEngineConformance`）；默认引擎选择逻辑（检测到 DHTMLX 时使用它，否则使用 NativeEngine）。
 
-- [ ] **Step 3: typecheck + Commit**
+- [ ] **步骤 3：typecheck + 提交**
 
-Run: `pnpm -C frontend/packages/scheduling typecheck` → PASS
+运行：`pnpm -C frontend/packages/scheduling typecheck` → PASS
 ```bash
 git add frontend/packages/scheduling/src/engine/dhtmlx/loader.ts frontend/packages/scheduling/README.md
 git commit -m "feat(scheduling): add DHTMLX dynamic loader and package README"
@@ -782,13 +782,13 @@ git commit -m "feat(scheduling): add DHTMLX dynamic loader and package README"
 
 ---
 
-### Task 9: 设计 token → DHTMLX 皮肤
+### Task 9：设计令牌 → DHTMLX 皮肤
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/dhtmlx/skin.ts`
-- Create: `frontend/packages/scheduling/src/styles/scheduling.css`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/dhtmlx/skin.ts`
+- 创建： `frontend/packages/scheduling/src/styles/scheduling.css`
 
-- [ ] **Step 1: skin.ts**(把 ThemeBinding 注入 DHTMLX 容器 scope 的 CSS 变量)
+- [ ] **步骤 1：skin.ts**（把 ThemeBinding 注入 DHTMLX 容器作用域的 CSS 变量）
 
 ```ts
 import type { ThemeBinding } from '../engine'
@@ -803,11 +803,11 @@ export function applySkin(container: HTMLElement, theme: ThemeBinding): void {
 }
 ```
 
-- [ ] **Step 2: scheduling.css**(token 化:bar/grid/today-line/histogram;`.nerv-dhx-scope .gantt_task_line` 等映射到 `var(--brand)` 等;NativeEngine 的 `.nerv-gantt-*` 也在此)
+- [ ] **步骤 2：scheduling.css**（令牌化：条形/网格/今日线/直方图；`.nerv-dhx-scope .gantt_task_line` 等映射到 `var(--brand)` 等；NativeEngine 的 `.nerv-gantt-*` 也在此）
 
-要点:所有颜色走 `var(--...)`,无裸 hex/palette;冲突 `var(--destructive)`;关键路径辉光用 `var(--brand)`;过载热度用 `color-mix(in oklch, var(--warning), var(--destructive) <pct>)`;遵守 `prefers-reduced-motion`。
+要点：所有颜色都使用 `var(--...)`，不得使用裸十六进制值或调色板颜色；冲突使用 `var(--destructive)`；关键路径辉光使用 `var(--brand)`；过载热度使用 `color-mix(in oklch, var(--warning), var(--destructive) <pct>)`；遵守 `prefers-reduced-motion`。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/engine/dhtmlx/skin.ts frontend/packages/scheduling/src/styles/scheduling.css
@@ -816,13 +816,13 @@ git commit -m "feat(scheduling): bind design tokens to engine skins"
 
 ---
 
-### Task 10: DhtmlxEngine 适配器
+### Task 10：DhtmlxEngine 适配器
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.ts`
-- Test: `frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.conformance.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.ts`
+- 测试： `frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.conformance.test.ts`
 
-- [ ] **Step 1: 写条件契约测试**(trial 存在才跑,否则 skip 带原因)
+- [ ] **步骤 1：编写条件契约测试**（试用包存在时才运行，否则跳过并说明原因）
 
 ```ts
 import { describe } from 'vitest'
@@ -836,21 +836,21 @@ describe.skipIf(!available)('DhtmlxEngine conformance (requires @dhx/trial-gantt
 })
 ```
 
-- [ ] **Step 2: 实现 DhtmlxEngine**(实现 `SchedulingEngine`;懒加载;config 映射;事件归一化)
+- [ ] **步骤 2：实现 DhtmlxEngine**（实现 `SchedulingEngine`；延迟加载；配置映射；事件归一化）
 
 要点(完整实现):
-- 字段:`gantt`(实例,延迟到 mount 后由 loadGantt 注入,mount 是 async 内部用一个 ready Promise;`setData`/`applyCommand` 在 ready 后执行,缓存最近一次入参)、事件总线、options。
+- 字段：`gantt`（实例，在 mount 后由 loadGantt 延迟注入；mount 为异步操作，内部使用就绪 Promise；`setData`/`applyCommand` 在就绪后执行，并缓存最近一次入参）、事件总线、options。
 - `mount`:`loadGantt()` → `Gantt.getGanttInstance()`;`applySkin(container, theme)`;config:`gantt.config.readonly=readOnly`、scale 映射、`gantt.config.layout`(order 视图标准,resource 视图加 resourcePanel + resourceLoad)、`gantt.plugins({ tooltip:true, marker:true, undo:true, critical_path: view==='order' })`;`gantt.init(container)`。绑定 DHTMLX 事件 → 归一化 emit:`onTaskClick`→taskSelected/conflictClicked;`onAfterTaskDrag`→taskDragEnd(读 `gantt.getTask`,算 kind);`onScaleAdjusted`/缩放→scaleChanged。每个 task 渲染后保证 DOM 有 `[data-task-id]`(用 `gantt.templates.task_class` 或 `task_attribute` 注入 data 属性)。
 - `setData`:`toGanttData(model)`(本任务内私有函数:tasks→{id,text,start_date,duration,parent,$custom},links→{id,source,target,type:'0'});`gantt.clearAll(); gantt.parse(data)`;resource 视图额外 `gantt.serverList('resources', ...)` + assignments。
 - `applyCommand`:scaleTo→改 `gantt.config.scales` + `gantt.render()` + emit;selectTask→`gantt.selectTask(id)`;zoomIn/Out→zoom 扩展或改 scale;fitToScreen→`gantt.ext.zoom`/render;setTheme→applySkin + render;scrollToToday→`gantt.showDate(new Date())`(注意:用模型 horizon 中点,避免 `Date.now` 不确定性影响测试)。
 - `getState`/`destroy`(`gantt.destructor()` + 清容器/总线)。
 
-- [ ] **Step 3: 跑测试**
+- [ ] **步骤 3：跑测试**
 
-Run: `pnpm -C frontend/packages/scheduling test`
-Expected: 未装 trial → DhtmlxEngine 套件 skip(其余 PASS);装了 trial → conformance PASS。
+运行：`pnpm -C frontend/packages/scheduling test`
+预期：未安装试用包 → 跳过 DhtmlxEngine 套件（其余测试通过）；已安装试用包 → 契约测试通过。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.ts frontend/packages/scheduling/src/engine/dhtmlx/DhtmlxEngine.conformance.test.ts
@@ -859,12 +859,12 @@ git commit -m "feat(scheduling): implement DHTMLX engine adapter"
 
 ---
 
-### Task 11: useEngine(引擎选择 + 生命周期)
+### Task 11：useEngine（引擎选择 + 生命周期）
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/components/useEngine.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/components/useEngine.ts`
 
-- [ ] **Step 1: 实现**
+- [ ] **步骤 1：实现**
 
 ```ts
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
@@ -926,9 +926,9 @@ export function useEngine(opts: {
 
 > 注:确认 `@nerv-iip/ui` 已导出 `useColorMode`(foundation.md 列出)。若导出名不同,实施时以 `frontend/packages/ui/src/index.ts` 实际导出为准。
 
-- [ ] **Step 2: typecheck + Commit**
+- [ ] **步骤 2：typecheck + 提交**
 
-Run: `pnpm -C frontend/packages/scheduling typecheck` → PASS
+运行：`pnpm -C frontend/packages/scheduling typecheck` → PASS
 ```bash
 git add frontend/packages/scheduling/src/components/useEngine.ts
 git commit -m "feat(scheduling): add useEngine composable with auto engine selection"
@@ -936,13 +936,13 @@ git commit -m "feat(scheduling): add useEngine composable with auto engine selec
 
 ---
 
-### Task 12: GanttChart.vue / ResourceSchedulerBoard.vue — TDD
+### Task 12：GanttChart.vue / ResourceSchedulerBoard.vue 组件 — TDD
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/components/GanttChart.vue`
-- Create: `frontend/packages/scheduling/src/components/ResourceSchedulerBoard.vue`
-- Test: `frontend/packages/scheduling/src/components/GanttChart.test.ts`
-- Test: `frontend/packages/scheduling/src/components/ResourceSchedulerBoard.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/components/GanttChart.vue`
+- 创建： `frontend/packages/scheduling/src/components/ResourceSchedulerBoard.vue`
+- 测试： `frontend/packages/scheduling/src/components/GanttChart.test.ts`
+- 测试： `frontend/packages/scheduling/src/components/ResourceSchedulerBoard.test.ts`
 
 公开 props/emits 契约(两组件一致):
 ```ts
@@ -960,7 +960,7 @@ defineEmits<{
 }>()
 ```
 
-- [ ] **Step 1: 写失败测试 GanttChart.test.ts**(用 `engineKind='native'`,jsdom)
+- [ ] **步骤 1：写失败测试 GanttChart.test.ts**(用 `engineKind='native'`,jsdom)
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -985,13 +985,13 @@ describe('GanttChart', () => {
 })
 ```
 
-- [ ] **Step 2: 跑测试确认失败** → `pnpm -C frontend/packages/scheduling test`(FAIL:组件不存在)
+- [ ] **步骤 2：跑测试确认失败** → `pnpm -C frontend/packages/scheduling test`(FAIL:组件不存在)
 
-- [ ] **Step 3: 实现 GanttChart.vue**(薄壳:容器 div + `useEngine({view:'order'})`,转发事件;loading 时出 `@nerv-iip/ui` Skeleton 带 `data-testid="gantt-skeleton"`;import `../styles/scheduling.css`)。`ResourceSchedulerBoard.vue` 同构,`view:'resource'`。
+- [ ] **步骤 3：实现 GanttChart.vue**（薄壳：容器 div + `useEngine({view:'order'})`，转发事件；加载时显示 `@nerv-iip/ui` 的 Skeleton，并带 `data-testid="gantt-skeleton"`；导入 `../styles/scheduling.css`）。`ResourceSchedulerBoard.vue` 使用同构实现，`view:'resource'`。
 
-- [ ] **Step 4: 跑测试确认通过** → PASS
+- [ ] **步骤 4：跑测试确认通过** → PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/components/GanttChart.vue frontend/packages/scheduling/src/components/ResourceSchedulerBoard.vue frontend/packages/scheduling/src/components/*.test.ts
@@ -1000,24 +1000,24 @@ git commit -m "feat(scheduling): add GanttChart and ResourceSchedulerBoard compo
 
 ---
 
-### Task 13: 侧栏面板 + 工具栏
+### Task 13：侧栏面板 + 工具栏
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/components/panels/SchedulingToolbar.vue`
-- Create: `frontend/packages/scheduling/src/components/panels/ConflictPanel.vue`
-- Create: `frontend/packages/scheduling/src/components/panels/UnscheduledPanel.vue`
-- Create: `frontend/packages/scheduling/src/components/panels/ChangeSummaryPanel.vue`
-- Create: `frontend/packages/scheduling/src/components/panels/InspectorSheet.vue`
-- Test: `frontend/packages/scheduling/src/components/panels/ConflictPanel.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/components/panels/SchedulingToolbar.vue`
+- 创建： `frontend/packages/scheduling/src/components/panels/ConflictPanel.vue`
+- 创建： `frontend/packages/scheduling/src/components/panels/UnscheduledPanel.vue`
+- 创建： `frontend/packages/scheduling/src/components/panels/ChangeSummaryPanel.vue`
+- 创建： `frontend/packages/scheduling/src/components/panels/InspectorSheet.vue`
+- 测试： `frontend/packages/scheduling/src/components/panels/ConflictPanel.test.ts`
 
 各面板契约(用 `@nerv-iip/ui` 区块:Button/Badge/StatusBadge/Sheet/ScrollArea;reason→中文业务文案映射):
-- `SchedulingToolbar`:props `{ scale, readOnly, canUndo, canRedo, dirty }`;emits `scaleChange / zoomIn / zoomOut / today / fit / undo / redo / repreview / release / toggleReadOnly`。
+- 工具栏 `SchedulingToolbar`:props `{ scale, readOnly, canUndo, canRedo, dirty }`;emits `scaleChange / zoomIn / zoomOut / today / fit / undo / redo / repreview / release / toggleReadOnly`。
 - `ConflictPanel`:props `{ conflicts }`;emit `select(taskId)`;每条 reason 芯片用业务语言(capacity→"产能不足"…)。
 - `UnscheduledPanel`:props `{ items }`;emit `fix(orderId, operationId)`;空态文案"全部工序已排产"。
-- `ChangeSummaryPanel`:props `{ changes }`;changeType→中文(moved→"已移动"…)+ tone。
+- `ChangeSummaryPanel`:props `{ changes }`;changeType→中文(moved→"已移动"…)+ 色调语义。
 - `InspectorSheet`:props `{ task, open }`;`v-model:open`;展示工单/工序/资源/起止/锁定/解释(业务语言)。
 
-- [ ] **Step 1: ConflictPanel 失败测试**
+- [ ] **步骤 1：ConflictPanel 失败测试**
 
 ```ts
 import { mount } from '@vue/test-utils'
@@ -1037,11 +1037,11 @@ describe('ConflictPanel', () => {
 })
 ```
 
-- [ ] **Step 2: 跑失败 → 实现各面板 → 跑通过**
+- [ ] **步骤 2：跑失败 → 实现各面板 → 跑通过**
 
-Run: `pnpm -C frontend/packages/scheduling test` → PASS
+运行：`pnpm -C frontend/packages/scheduling test` → PASS
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/components/panels
@@ -1050,21 +1050,21 @@ git commit -m "feat(scheduling): add toolbar, conflict, unscheduled, change, ins
 
 ---
 
-### Task 14: useSchedulingPlan / useSchedulingEdits 组合式
+### Task 14：useSchedulingPlan / useSchedulingEdits 组合式函数
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/composables/useSchedulingPlan.ts`
-- Create: `frontend/packages/scheduling/src/composables/useSchedulingEdits.ts`
-- Test: `frontend/packages/scheduling/src/composables/useSchedulingEdits.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/composables/useSchedulingPlan.ts`
+- 创建： `frontend/packages/scheduling/src/composables/useSchedulingEdits.ts`
+- 测试： `frontend/packages/scheduling/src/composables/useSchedulingEdits.test.ts`
 
-- [ ] **Step 1: useSchedulingPlan**(用 api-client business-console SDK 读 detail/gantt;返回 `{ model, loading, error, reload }`;internally `toModel`)。签名:
+- [ ] **步骤 1：useSchedulingPlan**（使用 api-client 的 business-console SDK 读取详情/甘特数据；返回 `{ model, loading, error, reload }`；内部调用 `toModel`）。签名：
 ```ts
 export function useSchedulingPlan(planId: Ref<string | undefined>): {
   model: Ref<ScheduleModel | undefined>; loading: Ref<boolean>; error: Ref<unknown>; reload: () => Promise<void>
 }
 ```
 
-- [ ] **Step 2: useSchedulingEdits 失败测试**(撤销/重做栈 + dirty + 乐观锁定;不打网络,注入一个 preview fn)
+- [ ] **步骤 2：useSchedulingEdits 失败测试**（撤销/重做栈 + dirty + 乐观锁定；不访问网络，注入一个预览函数）
 
 ```ts
 import { describe, expect, it } from 'vitest'
@@ -1090,9 +1090,9 @@ describe('useSchedulingEdits', () => {
 })
 ```
 
-- [ ] **Step 3: 跑失败 → 实现 useSchedulingEdits**(快照栈 push/pop;`onTaskDragEnd` 应用 Δ 到模型 + lock + push 历史 + dirty;`repreview()` 调注入的 `preview(toLockedAssignments)` 取回新计划 → `toModel` → 替换 + 记冲突/变更;`release()` 调注入 `release`;`undo/redo` 移动指针恢复快照)→ 跑通过。
+- [ ] **步骤 3：运行并确认失败 → 实现 useSchedulingEdits**（快照栈执行 push/pop；`onTaskDragEnd` 将 Δ 应用到模型 + lock + push 历史 + dirty；`repreview()` 调用注入的 `preview(toLockedAssignments)` 取回新计划 → `toModel` → 替换模型并记录冲突/变更；`release()` 调用注入的 `release`；`undo/redo` 移动指针以恢复快照）→ 运行并确认通过。
 
-- [ ] **Step 4: Commit**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add frontend/packages/scheduling/src/composables
@@ -1101,16 +1101,16 @@ git commit -m "feat(scheduling): add plan reading and edit/undo/repreview compos
 
 ---
 
-### Task 15: SchedulingWorkbench.vue + barrel 导出
+### Task 15：SchedulingWorkbench.vue + 汇总导出
 
-**Files:**
-- Create: `frontend/packages/scheduling/src/components/SchedulingWorkbench.vue`
-- Modify: `frontend/packages/scheduling/src/index.ts`
-- Test: `frontend/packages/scheduling/src/components/SchedulingWorkbench.test.ts`
+**文件：**
+- 创建： `frontend/packages/scheduling/src/components/SchedulingWorkbench.vue`
+- 修改： `frontend/packages/scheduling/src/index.ts`
+- 测试： `frontend/packages/scheduling/src/components/SchedulingWorkbench.test.ts`
 
-- [ ] **Step 1: SchedulingWorkbench.vue**(壳:`SchedulingToolbar` + 视图切换(工单甘特/资源排产板,用 `@nerv-iip/ui` 的 Tabs/ToggleGroup,**页内布局不进菜单**)+ 主体 GanttChart/ResourceSchedulerBoard + 右侧 ConflictPanel/UnscheduledPanel/ChangeSummaryPanel + InspectorSheet;接 `useSchedulingEdits` 事件)。props `{ planId?, model?, readOnly?, engineKind? }`。
+- [ ] **步骤 1：SchedulingWorkbench.vue**(壳:`SchedulingToolbar` + 视图切换(工单甘特/资源排产板,用 `@nerv-iip/ui` 的 Tabs/ToggleGroup,**页内布局不进菜单**)+ 主体 GanttChart/ResourceSchedulerBoard + 右侧 ConflictPanel/UnscheduledPanel/ChangeSummaryPanel + InspectorSheet;接 `useSchedulingEdits` 事件)。props `{ planId?, model?, readOnly?, engineKind? }`。
 
-- [ ] **Step 2: index.ts barrel**
+- [ ] **步骤 2：index.ts 汇总导出**
 
 ```ts
 export { default as GanttChart } from './components/GanttChart.vue'
@@ -1125,11 +1125,11 @@ export { runEngineConformance } from './engine/conformance'
 export { isDhtmlxAvailable } from './engine/dhtmlx/loader'
 ```
 
-- [ ] **Step 3: 测试(切换视图渲染对应组件)→ 跑通过**
+- [ ] **步骤 3：测试(切换视图渲染对应组件)→ 跑通过**
 
-- [ ] **Step 4: typecheck + test + Commit**
+- [ ] **步骤 4：typecheck + test + 提交**
 
-Run: `pnpm -C frontend/packages/scheduling typecheck && pnpm -C frontend/packages/scheduling test` → PASS
+运行：`pnpm -C frontend/packages/scheduling typecheck && pnpm -C frontend/packages/scheduling test` → PASS
 ```bash
 git add frontend/packages/scheduling/src/components/SchedulingWorkbench.vue frontend/packages/scheduling/src/index.ts frontend/packages/scheduling/src/components/SchedulingWorkbench.test.ts
 git commit -m "feat(scheduling): add SchedulingWorkbench shell and package barrel"
@@ -1137,23 +1137,23 @@ git commit -m "feat(scheduling): add SchedulingWorkbench shell and package barre
 
 ---
 
-## Phase P2 — business-console 接入
+## 阶段 P2 — business-console 接入
 
-### Task 16: alias + 依赖
+### Task 16：别名 + 依赖
 
-**Files:**
-- Modify: `frontend/apps/business-console/vite.config.ts:36`(alias 块)
-- Modify: `frontend/apps/business-console/package.json:17`(deps)
+**文件：**
+- 修改： `frontend/apps/business-console/vite.config.ts:36`（别名配置块）
+- 修改： `frontend/apps/business-console/package.json:17`（依赖项）
 
-- [ ] **Step 1: 加 alias**(在现有 `@nerv-iip/ui` alias 后)
+- [ ] **步骤 1：添加别名**（放在现有 `@nerv-iip/ui` 别名之后）
 
 ```ts
 '@nerv-iip/scheduling': fileURLToPath(new URL('../../packages/scheduling/src/index.ts', import.meta.url)),
 ```
 
-- [ ] **Step 2: 加依赖** `"@nerv-iip/scheduling": "workspace:*"` 到 dependencies;`pnpm -C frontend install`。
+- [ ] **步骤 2：添加依赖**：把 `"@nerv-iip/scheduling": "workspace:*"` 加入 dependencies；运行 `pnpm -C frontend install`。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/apps/business-console/vite.config.ts frontend/apps/business-console/package.json frontend/pnpm-lock.yaml
@@ -1162,24 +1162,24 @@ git commit -m "chore(business-console): wire @nerv-iip/scheduling alias and dep"
 
 ---
 
-### Task 17: useScheduling composable + 页面 + 导航
+### Task 17：useScheduling 组合式函数 + 页面 + 导航
 
-**Files:**
-- Create: `frontend/apps/business-console/src/composables/useScheduling.ts`
-- Create: `frontend/apps/business-console/src/pages/scheduling/index.vue`
-- Modify: `frontend/apps/business-console/src/navigation.ts`
-- Modify: `frontend/apps/business-console/src/pages/mes/schedules.vue`(导流提示)
+**文件：**
+- 创建： `frontend/apps/business-console/src/composables/useScheduling.ts`
+- 创建： `frontend/apps/business-console/src/pages/scheduling/index.vue`
+- 修改： `frontend/apps/business-console/src/navigation.ts`
+- 修改： `frontend/apps/business-console/src/pages/mes/schedules.vue`(导流提示)
 
-- [ ] **Step 1: useScheduling.ts**(包 `useSchedulingPlan/Edits`,提供默认 planId 来源:list 取最新 generated;无则空态)。
-- [ ] **Step 2: pages/scheduling/index.vue**(`definePage({ meta: { requiresAuth: true, title: '排产工作台' }})`;`BusinessLayout` + `PageHeader`(title 排产工作台,KPI SectionCards)+ `<SchedulingWorkbench :plan-id model ... />`;空态指引"去生成计划")。
-- [ ] **Step 3: navigation.ts** 增项(域 scheduling,路由 `/scheduling`,title 排产工作台,icon,`requiredPermissions` 与 `BusinessGatewayPermissions` 排程读权限对齐)。
-- [ ] **Step 4: schedules.vue** 顶部加 Alert/链接"前往排产工作台查看甘特与资源排产",保留规则排程触发。
-- [ ] **Step 5: typecheck + test**
+- [ ] **步骤 1：useScheduling.ts**（封装 `useSchedulingPlan/Edits`，提供默认 planId 来源：从列表取得最新的 generated 状态计划；没有计划时显示空态）。
+- [ ] **步骤 2：pages/scheduling/index.vue**(`definePage({ meta: { requiresAuth: true, title: '排产工作台' }})`;`BusinessLayout` + `PageHeader`(title 排产工作台,KPI SectionCards)+ `<SchedulingWorkbench :plan-id model ... />`;空态指引"去生成计划")。
+- [ ] **步骤 3：navigation.ts** 增项(域 scheduling,路由 `/scheduling`,title 排产工作台,icon,`requiredPermissions` 与 `BusinessGatewayPermissions` 排程读权限对齐)。
+- [ ] **步骤 4：schedules.vue** 顶部加 Alert/链接"前往排产工作台查看甘特与资源排产",保留规则排程触发。
+- [ ] **步骤 5：类型检查 + 测试**
 
-Run: `pnpm -C frontend/apps/business-console typecheck && pnpm -C frontend/apps/business-console test`
-Expected: PASS。
+运行：`pnpm -C frontend/apps/business-console typecheck && pnpm -C frontend/apps/business-console test`
+预期：PASS。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add frontend/apps/business-console/src
@@ -1188,24 +1188,24 @@ git commit -m "feat(business-console): add scheduling workbench page, nav, compo
 
 ---
 
-## Phase P3 — 测试与文档
+## 阶段 P3 — 测试与文档
 
-### Task 18: E2E(Playwright,NativeEngine 默认)
+### Task 18：E2E（Playwright，默认使用 NativeEngine）
 
-**Files:**
-- Create: `frontend/apps/business-console/e2e/scheduling.spec.ts`
-- Create: `frontend/packages/scheduling/e2e-fixtures/plan.fixture.ts`(确定性计划 JSON)
+**文件：**
+- 创建： `frontend/apps/business-console/e2e/scheduling.spec.ts`
+- 创建： `frontend/packages/scheduling/e2e-fixtures/plan.fixture.ts`(确定性计划 JSON)
 
-- [ ] **Step 1: 写 e2e**(沿用现有 mock 模式:seed session + `page.route('**/api/business-console/v1/scheduling/**')` 返回 fixture envelope;强制 `engineKind=native` via URL query 或 localStorage flag)
+- [ ] **步骤 1：编写 E2E 测试**（沿用现有模拟模式：预置会话 + `page.route('**/api/business-console/v1/scheduling/**')` 返回固定数据响应封装；通过 URL 查询参数或 localStorage 标志强制 `engineKind=native`）
 
 覆盖:`/scheduling` 标题"排产工作台"可见 → 甘特渲染出 `[data-task-id]` 节点 → 切换到资源排产板 → 点冲突芯片选中对应条 → 触发刻度切换(日→周)→ 拖动(合成)触发重预览出现变更摘要。
 
-- [ ] **Step 2: 跑 e2e**
+- [ ] **步骤 2：运行 E2E 测试**
 
-Run: `pnpm -C frontend/apps/business-console e2e`(需要 chromium;无则报环境不可用,不算代码失败)
-Expected: scheduling.spec PASS(desktop)。
+运行：`pnpm -C frontend/apps/business-console e2e`(需要 chromium;无则报环境不可用,不算代码失败)
+预期：scheduling.spec 在桌面端通过。
 
-- [ ] **Step 3: Commit**
+- [ ] **步骤 3：提交**
 
 ```bash
 git add frontend/apps/business-console/e2e/scheduling.spec.ts frontend/packages/scheduling/e2e-fixtures
@@ -1214,20 +1214,20 @@ git commit -m "test(scheduling): add e2e for workbench render and interactions"
 
 ---
 
-### Task 19: 视觉回归基线
+### Task 19：视觉回归基线
 
-**Files:**
-- Create: `frontend/apps/business-console/visual/scheduling.visual.spec.ts`
-- Modify: `frontend/apps/business-console/playwright.config.ts`(加 visual project / testDir 或 grep;snapshot 配置)
+**文件：**
+- 创建： `frontend/apps/business-console/visual/scheduling.visual.spec.ts`
+- 修改： `frontend/apps/business-console/playwright.config.ts`（添加视觉测试项目 / testDir 或 grep；配置快照）
 
-- [ ] **Step 1: 视觉 spec**(NativeEngine 确定性;每态 `expect(page).toHaveScreenshot()`):工单甘特 亮/暗、资源排产板 亮/暗、动态色变体、空态、冲突态。隐藏 now 线时间相关的不确定元素(用 fixture 固定 horizon,且 now 线在 NativeEngine 用 horizon 中点而非真实时钟)。
-- [ ] **Step 2: 生成基线**
+- [ ] **步骤 1：视觉规格**（NativeEngine 保证确定性；每个状态使用 `expect(page).toHaveScreenshot()`）：工单甘特亮/暗、资源排产板亮/暗、动态色变体、空态、冲突态。隐藏当前时间线等与时间相关的不确定元素（使用固定测试数据锁定 horizon，且 NativeEngine 的当前时间线使用 horizon 中点而非真实时钟）。
+- [ ] **步骤 2：生成基线**
 
-Run: `pnpm -C frontend/apps/business-console exec playwright test visual --update-snapshots`
-Expected: 基线生成。
+运行：`pnpm -C frontend/apps/business-console exec playwright test visual --update-snapshots`
+预期：基线生成。
 
-- [ ] **Step 3: 复跑确认稳定** → PASS
-- [ ] **Step 4: Commit**(含 `*-snapshots/`)
+- [ ] **步骤 3：复跑确认稳定** → PASS
+- [ ] **步骤 4：提交**（包含 `*-snapshots/`）
 
 ```bash
 git add frontend/apps/business-console/visual frontend/apps/business-console/playwright.config.ts
@@ -1236,16 +1236,16 @@ git commit -m "test(scheduling): add visual regression baselines (light/dark/acc
 
 ---
 
-### Task 20: 性能门禁
+### Task 20：性能门禁
 
-**Files:**
-- Create: `frontend/apps/business-console/perf/scheduling.perf.spec.ts`
-- Create: `frontend/packages/scheduling/src/model/perf-fixtures.ts`(生成 ~2k 工序/200 资源)
+**文件：**
+- 创建： `frontend/apps/business-console/perf/scheduling.perf.spec.ts`
+- 创建： `frontend/packages/scheduling/src/model/perf-fixtures.ts`(生成 ~2k 工序/200 资源)
 
-- [ ] **Step 1: perf-fixtures.ts**(纯函数生成大 ScheduleModel,确定性 seed)
-- [ ] **Step 2: perf spec**(Playwright;measure 首屏 `setData` 到节点出现耗时 + 滚动/缩放帧;`performance.mark`;写 JSONL 到 `frontend/apps/business-console/perf/results.jsonl`;阈值:首屏 < 1500ms(native),超阈值 fail)
-- [ ] **Step 3: 跑 + 看 JSONL** → PASS(阈值内)
-- [ ] **Step 4: Commit**
+- [ ] **步骤 1：perf-fixtures.ts**（以纯函数生成大型 ScheduleModel，使用确定性种子）
+- [ ] **步骤 2：性能规格**（Playwright；测量首屏从 `setData` 到节点出现的耗时，以及滚动/缩放帧；使用 `performance.mark`；将 JSONL 写入 `frontend/apps/business-console/perf/results.jsonl`；阈值：NativeEngine 首屏 < 1500ms，超出阈值则失败）
+- [ ] **步骤 3：跑 + 看 JSONL** → PASS(阈值内)
+- [ ] **步骤 4：提交**
 
 ```bash
 git add frontend/apps/business-console/perf frontend/packages/scheduling/src/model/perf-fixtures.ts
@@ -1254,21 +1254,21 @@ git commit -m "test(scheduling): add performance baseline with thresholds (JSONL
 
 ---
 
-### Task 21: 文档同步
+### Task 21：文档同步
 
-**Files:**
-- Create: `docs/architecture/scheduling-workbench-module-product-design.md`
-- Create: `frontend/DESIGN/components/gantt-chart.md`
-- Create: `frontend/DESIGN/components/resource-scheduler-board.md`
-- Create: `frontend/DESIGN/patterns/blocks/scheduling-workbench.md`
-- Modify: `frontend/DESIGN/index.md`(组件/路线图索引 + 区块表)
-- Modify: `docs/architecture/frontend-navigation-map.md`(新增 /scheduling 域 + 角色矩阵)
-- Modify: `docs/architecture/implementation-readiness.md`(记一笔:#78 甘特/排产前端 MVP 已落地,引擎可替换)
+**文件：**
+- 创建： `docs/architecture/scheduling-workbench-module-product-design.md`
+- 创建： `frontend/DESIGN/components/gantt-chart.md`
+- 创建： `frontend/DESIGN/components/resource-scheduler-board.md`
+- 创建： `frontend/DESIGN/patterns/blocks/scheduling-workbench.md`
+- 修改： `frontend/DESIGN/index.md`(组件/路线图索引 + 区块表)
+- 修改： `docs/architecture/frontend-navigation-map.md`(新增 /scheduling 域 + 角色矩阵)
+- 修改： `docs/architecture/implementation-readiness.md`(记一笔:#78 甘特/排产前端 MVP 已落地,引擎可替换)
 
-- [ ] **Step 1: 模块产品文档**(产品/IA/UX/分期/验收/角色/**后端缺口**:link 编辑、产能日历端点 → consolidated issue 占位)。
-- [ ] **Step 2: DESIGN 组件契约**(两组件:用途/props/emits/视觉 token/交互/可达性/Do-Don't;引擎适配器契约一节,指向包 README)。
-- [ ] **Step 3: 更新索引/导航图/readiness。**
-- [ ] **Step 4: Commit**
+- [ ] **步骤 1：模块产品文档**（产品/IA/UX/分期/验收/角色/**后端缺口**：依赖关系编辑端点、产能日历端点 → 汇总 Issue 占位）。
+- [ ] **步骤 2：DESIGN 组件契约**（两个组件：用途/props/emits/视觉令牌/交互/可达性/应做与不应做；增加引擎适配器契约一节，指向包 README）。
+- [ ] **步骤 3：更新索引/导航图/readiness。**
+- [ ] **步骤 4：提交**
 
 ```bash
 git add docs/architecture frontend/DESIGN
@@ -1277,25 +1277,25 @@ git commit -m "docs(scheduling): module product design, DESIGN contracts, nav, r
 
 ---
 
-### Task 22: 全门禁 + 后端缺口 issue
+### Task 22：全门禁 + 后端缺口 Issue
 
-- [ ] **Step 1: 全量门禁**
+- [ ] **步骤 1：全量门禁**
 
-Run:
+运行：
 ```
 pnpm -C frontend typecheck
 pnpm -C frontend test
 pnpm -C frontend build
 ```
-Expected: 全绿(若遇 AGENTS 记载的既有 check/fmt 预存问题,如实区分,不算本次回归)。
+预期：全绿(若遇 AGENTS 记载的既有 check/fmt 预存问题,如实区分,不算本次回归)。
 
-- [ ] **Step 2: 发后端缺口 consolidated issue**(link 编辑端点、资源产能日历端点),在模块文档「后端缺口」回填 issue 号。
+- [ ] **步骤 2：创建汇总后端缺口 Issue**（依赖关系编辑端点、资源产能日历端点），在模块文档「后端缺口」中回填 Issue 编号。
 
 ```bash
 gh issue create --title "Scheduling 前端 MVP 暴露的后端缺口:工序依赖编辑 + 资源产能日历" --body "..."
 ```
 
-- [ ] **Step 3: Commit**(文档回填)
+- [ ] **步骤 3：提交**（回填文档）
 
 ```bash
 git add docs/architecture/scheduling-workbench-module-product-design.md
@@ -1304,20 +1304,20 @@ git commit -m "docs(scheduling): backfill backend gap issue references"
 
 ---
 
-## Phase P4 — 成品确认
+## 阶段 P4 — 成品确认
 
-### Task 23: 浏览器可视化确认
+### Task 23：浏览器可视化确认
 
-- [ ] **Step 1: 启 business-console dev**(`vp dev --port 5125`),用 Claude_Preview/Chrome MCP 打开 `/scheduling`,截图工单甘特 + 资源排产板(亮/暗 + 动态色)。
-- [ ] **Step 2: 装 DHTMLX 试用**(`@dhx:registry` + `pnpm add @dhx/trial-gantt`,或从 `gantt_trial/codebase` 拷到 `vendor/`),切 `engineKind=dhtmlx`,验证真实 DHTMLX 渲染与 token 皮肤一致。
-- [ ] **Step 3: 向用户展示成品并确认**(满足高级/呼吸/创新;两视图、交互闭环、亮暗动态色)。
+- [ ] **步骤 1：启动 business-console 开发服务**（`vp dev --port 5125`），使用 Claude_Preview/Chrome MCP 打开 `/scheduling`，截取工单甘特 + 资源排产板的亮色、暗色和动态色截图。
+- [ ] **步骤 2：安装 DHTMLX 试用版**（`@dhx:registry` + `pnpm add @dhx/trial-gantt`，或从 `gantt_trial/codebase` 复制到 `vendor/`），切换到 `engineKind=dhtmlx`，验证真实 DHTMLX 渲染与基于设计令牌的皮肤一致。
+- [ ] **步骤 3：向用户展示成品并确认**(满足高级/呼吸/创新;两视图、交互闭环、亮暗动态色)。
 
 ---
 
-## Self-Review
+## 自审
 
-**Spec coverage:** §3 架构→Task 5/6/7/10/11;§3.2 模型→Task 2/3/4;§4 DHTMLX/许可→Task 8/9/10;§5 UI/IA/UX→Task 12/13/15/17;§6 编辑语义→Task 14/15;§7 打包→Task 1/16;§8 测试→Task 18/19/20 + 各 TDD;§9 文档→Task 21;§10 Done→Task 22;§11 分期→P0–P4 对应;§12 风险(NativeEngine 兜底/不入 git/token 皮肤/性能门禁/skip)分布于 Task 7/8/9/10/20。无遗漏。
+**规格覆盖：** §3 架构→Task 5/6/7/10/11；§3.2 模型→Task 2/3/4；§4 DHTMLX/许可→Task 8/9/10；§5 UI/IA/UX→Task 12/13/15/17；§6 编辑语义→Task 14/15；§7 打包→Task 1/16；§8 测试→Task 18/19/20 + 各 TDD；§9 文档→Task 21；§10 完成定义→Task 22；§11 分期→P0–P4 对应；§12 风险（NativeEngine 兜底/不进入 Git/基于设计令牌的皮肤/性能门禁/跳过）分布于 Task 7/8/9/10/20。无遗漏。
 
-**Placeholder scan:** 契约/映射/契约测试/关键 composable 给了完整代码;UI 组件给了 props/emits 契约 + 结构 + 测试代码(薄壳,逻辑在引擎层),不含"TBD/稍后实现"。
+**占位内容扫描：** 契约/映射/契约测试/关键组合式函数给出了完整代码；UI 组件给出了 props/emits 契约 + 结构 + 测试代码（薄壳，逻辑在引擎层），不含“TBD/稍后实现”。
 
-**Type consistency:** `toModel`/`toLockedAssignments`、`SchedulingEngine`(mount/setData/applyCommand/on/getState/destroy)、`EngineEvents`(taskSelected/taskDragEnd/scaleChanged/conflictClicked/viewportChanged)、`TaskDragPayload`(taskId/operationId/resourceId/startUtc/endUtc/kind)、`ScheduleModel` 字段在各任务间一致;barrel 导出与各文件定义一致。
+**类型一致性：** `toModel`/`toLockedAssignments`、`SchedulingEngine`（mount/setData/applyCommand/on/getState/destroy）、`EngineEvents`（taskSelected/taskDragEnd/scaleChanged/conflictClicked/viewportChanged）、`TaskDragPayload`（taskId/operationId/resourceId/startUtc/endUtc/kind）、`ScheduleModel` 字段在各任务间一致；汇总导出与各文件定义一致。

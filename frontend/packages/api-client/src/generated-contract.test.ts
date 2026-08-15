@@ -4,6 +4,8 @@ import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
+  BusinessConsoleAssignQualityInspectionTaskRequest,
+  BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleBarcodePrintBatchResponse,
   BusinessConsoleCancelScheduledEngineeringChangeRequest,
   BusinessConsoleConnectorCollectionHealthRequest,
@@ -42,6 +44,8 @@ import type {
   BusinessConsoleOpenNcrFromInspectionRequest,
   BusinessConsoleOpenNcrFromInspectionResponse,
   BusinessConsolePublishSopDocumentRequest,
+  BusinessConsolePrincipalWorkContextRequest,
+  BusinessConsolePrincipalWorkContextResponse,
   BusinessConsoleReleasedEngineeringVersionEnvelope,
   BusinessConsoleReleasedEngineeringVersionResponse,
   BusinessConsoleRescheduleEngineeringChangeRequest,
@@ -49,11 +53,29 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+  BusinessConsoleAssignWmsResourceRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
+  BusinessConsoleCreateInspectionRecordFromTaskRequest,
+  BusinessConsoleClaimQualityInspectionTaskRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  BusinessConsoleMesOperationTaskActionRequest,
+  BusinessConsoleRecordProductionReportRequest,
+  BusinessConsoleCompleteWmsWarehouseTaskRequest,
+  BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
+  BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
+  BusinessConsoleStartWmsWarehouseTaskRequest,
   BusinessConsoleWmsInboundLineCaptureInput,
   BusinessConsoleWmsInboundLineInput,
+  BusinessConsoleWmsLocationCandidate,
+  BusinessConsoleWmsLotCandidate,
+  BusinessConsoleWmsOperationalCandidatesEnvelope,
+  BusinessConsoleWmsOperationalCandidatesResponse,
   BusinessConsoleWmsReceivingQualityGateItem,
+  BusinessConsoleWmsWorkScopeCatalog,
+  BusinessConsoleWmsWorkScopeCatalogEnvelope,
   BusinessConsoleWorkbenchSummaryResponse,
+  BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
@@ -70,9 +92,15 @@ import type {
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
   GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData,
+  GetBusinessConsolePrincipalWorkContextData,
+  GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMesOperationTasksData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
+  ListBusinessConsoleWmsCountOperationalCandidatesData,
+  ListBusinessConsoleWmsReceiptOperationalCandidatesData,
+  ListBusinessConsoleWmsShipmentOperationalCandidatesData,
   OpenBusinessConsoleQualityNcrFromInspectionData,
   PreviewBusinessConsoleCodeRuleData,
   PublishBusinessConsoleEngineeringSopDocumentData,
@@ -113,6 +141,7 @@ import {
   getBusinessConsoleMesMaterialReadinessQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesProductionPlanReadinessQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
@@ -123,6 +152,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
+  listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
@@ -155,8 +185,118 @@ import {
   updateConsoleIamRolePermissionsMutationOptions,
   updateConsoleIamUserMutationOptions,
 } from './iam'
+import {
+  assignBusinessConsoleMaintenanceWorkOrder,
+  assignBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  transitionBusinessConsoleMaintenanceWorkOrder,
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  type AssignBusinessConsoleMaintenanceWorkOrderData,
+  type BusinessConsoleAssignMaintenanceWorkOrderRequest,
+  type BusinessConsoleMaintenanceWorkOrderAction,
+  type BusinessConsoleMaintenanceWorkOrderActionResponse,
+  type BusinessConsoleMaintenanceWorkOrderLifecycleEventItem,
+  type BusinessConsoleTransitionMaintenanceWorkOrderRequest,
+  type TransitionBusinessConsoleMaintenanceWorkOrderData,
+} from './business-console'
 
 describe('generated API client contract', () => {
+  it('exports the maintenance lifecycle API through the stable business-console barrel', () => {
+    expect(assignBusinessConsoleMaintenanceWorkOrder).toBeTypeOf('function')
+    expect(assignBusinessConsoleMaintenanceWorkOrderMutationOptions).toBeTypeOf('function')
+    expect(transitionBusinessConsoleMaintenanceWorkOrder).toBeTypeOf('function')
+    expect(transitionBusinessConsoleMaintenanceWorkOrderMutationOptions).toBeTypeOf('function')
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderAction>().toEqualTypeOf<
+      | 'accept'
+      | 'start'
+      | 'pause'
+      | 'waitForParts'
+      | 'resume'
+      | 'complete'
+      | 'verify'
+      | 'close'
+      | 'cancel'
+    >()
+    expectTypeOf<BusinessConsoleAssignMaintenanceWorkOrderRequest>().toMatchTypeOf<
+      AssignBusinessConsoleMaintenanceWorkOrderData['body']
+    >()
+    expectTypeOf<BusinessConsoleTransitionMaintenanceWorkOrderRequest>().toMatchTypeOf<
+      TransitionBusinessConsoleMaintenanceWorkOrderData['body']
+    >()
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
+    expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
+  })
+
+  it('requires optimistic versions for public quality assignment and claim mutations', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleAssignQualityInspectionTaskRequest, 'expectedVersion'>
+    >().toEqualTypeOf<{ expectedVersion: number }>()
+    expectTypeOf<
+      Pick<BusinessConsoleClaimQualityInspectionTaskRequest, 'expectedVersion'>
+    >().toEqualTypeOf<{ expectedVersion: number }>()
+  })
+
+  it('requires caller idempotency keys on all governed MAN-625 public write DTOs', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleMesOperationTaskActionRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleRecordProductionReportRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCreateInspectionRecordFromTaskRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCreateMaintenanceWorkOrderRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+    expectTypeOf<
+      Pick<BusinessConsoleCompleteMaintenanceWorkOrderRequest, 'idempotencyKey'>
+    >().toEqualTypeOf<{ idempotencyKey: string }>()
+  })
+
+  it('requires an explicit MAN-628 scope on MES task actions and production reports', () => {
+    type StartOperationOptions = Parameters<
+      typeof businessConsoleClient.startBusinessConsoleMesOperationTask
+    >[0]
+
+    expectTypeOf<Pick<StartOperationOptions['query'], 'scopeKind' | 'scopeId'>>().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
+    expectTypeOf<
+      Pick<BusinessConsoleRecordProductionReportRequest, 'scopeKind' | 'scopeId'>
+    >().toEqualTypeOf<{
+      scopeKind: string
+      scopeId: string
+    }>()
+  })
+
+  it('exports the current-principal work-context contract through the stable boundary', () => {
+    expectTypeOf<GetBusinessConsolePrincipalWorkContextData>().toBeObject()
+    expectTypeOf<
+      Pick<
+        BusinessConsolePrincipalWorkContextRequest,
+        'organizationId' | 'environmentId' | 'permissionCode' | 'scopeKind' | 'scopeId'
+      >
+    >().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      permissionCode: string
+      scopeKind?: string | null
+      scopeId?: string | null
+    }>()
+    expectTypeOf<
+      BusinessConsolePrincipalWorkContextResponse['availableScopeKinds']
+    >().toEqualTypeOf<string[] | undefined>()
+    expectTypeOf<BusinessConsoleAuthorizedWorkScope['authorizationPaths']>().toEqualTypeOf<
+      BusinessConsoleWorkScopeAuthorizationPath[] | undefined
+    >()
+    expectTypeOf<
+      Extract<keyof GetBusinessConsolePrincipalWorkContextErrors, 502 | 503>
+    >().toEqualTypeOf<502 | 503>()
+    expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
+    expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
+  })
+
   it('requires the governed ERP work-center cost-rate effective start', () => {
     expectTypeOf<
       {} extends Pick<BusinessConsoleConfigureErpWorkCenterCostRateRequest, 'effectiveFromUtc'>
@@ -234,6 +374,30 @@ describe('generated API client contract', () => {
     }>()
   })
 
+  it('keeps exact MES operation-task ids distinct in the generated query contract and key', () => {
+    const exactQuery: ListBusinessConsoleMesOperationTasksData['query'] = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      workOrderId: 'wo-001',
+      operationTaskId: 'ot-10',
+    }
+    const similarQuery: ListBusinessConsoleMesOperationTasksData['query'] = {
+      ...exactQuery,
+      operationTaskId: 'ot-100',
+    }
+
+    const exact = listBusinessConsoleMesOperationTasksQueryOptions({ query: exactQuery })
+    const similar = listBusinessConsoleMesOperationTasksQueryOptions({ query: similarQuery })
+
+    expect(exact.key[0]).toMatchObject({
+      query: { workOrderId: 'wo-001', operationTaskId: 'ot-10' },
+    })
+    expect(similar.key[0]).toMatchObject({
+      query: { workOrderId: 'wo-001', operationTaskId: 'ot-100' },
+    })
+    expect(exact.key).not.toEqual(similar.key)
+  })
+
   it('exports Console IAM Admin generated operations through stable api-client entry points', () => {
     expect(listConsoleIamUsersQueryOptions).toBeTypeOf('function')
     expect(createConsoleIamUserMutationOptions).toBeTypeOf('function')
@@ -285,6 +449,10 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
+      'function',
+    )
     expect(startBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(pauseBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(resumeBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
@@ -313,6 +481,183 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+  })
+
+  it('exports lifecycle-conflict SDK operations and mutation options through the stable boundary', () => {
+    const operations = [
+      'startBusinessConsoleMesOperationTask',
+      'pauseBusinessConsoleMesOperationTask',
+      'resumeBusinessConsoleMesOperationTask',
+      'completeBusinessConsoleMesOperationTask',
+      'releaseBusinessConsoleMesWorkOrder',
+      'holdBusinessConsoleMesWorkOrder',
+      'cancelBusinessConsoleMesWorkOrder',
+      'recordBusinessConsoleMesProductionReport',
+      'confirmBusinessConsoleMesLineSideMaterialReceipt',
+      'completeBusinessConsoleWmsInboundOrder',
+      'completeBusinessConsoleWmsOutboundOrder',
+      'completeBusinessConsoleWmsCountExecution',
+      'startBusinessConsoleWmsPutawayTask',
+      'recordBusinessConsoleWmsPutawayTaskProgress',
+      'reportBusinessConsoleWmsPutawayTaskException',
+      'completeBusinessConsoleWmsPutawayTask',
+      'startBusinessConsoleWmsPickingTask',
+      'recordBusinessConsoleWmsPickingTaskProgress',
+      'reportBusinessConsoleWmsPickingTaskException',
+      'completeBusinessConsoleWmsPickingTask',
+      'createBusinessConsoleQualityInspectionRecordFromTask',
+      'submitBusinessConsoleQualityNcrDisposition',
+      'closeBusinessConsoleQualityNcr',
+      'completeBusinessConsoleMaintenanceWorkOrder',
+      'acknowledgeBusinessConsoleEquipmentAlarm',
+      'shelveBusinessConsoleEquipmentAlarm',
+      'unshelveBusinessConsoleEquipmentAlarm',
+    ] as const
+
+    for (const operation of operations) {
+      expect((businessConsoleClient as Record<string, unknown>)[operation], operation).toBeTypeOf(
+        'function',
+      )
+      expect(
+        (businessConsoleClient as Record<string, unknown>)[`${operation}MutationOptions`],
+        `${operation}MutationOptions`,
+      ).toBeTypeOf('function')
+    }
+  })
+
+  it('exports the MAN-629 WMS action request contracts through the stable boundary', () => {
+    const governedOperations = [
+      'getBusinessConsoleWmsReceiptWorkScopes',
+      'getBusinessConsoleWmsShipmentWorkScopes',
+      'getBusinessConsoleWmsCountWorkScopes',
+      'listBusinessConsoleWmsReceiptOperationalCandidates',
+      'listBusinessConsoleWmsShipmentOperationalCandidates',
+      'listBusinessConsoleWmsCountOperationalCandidates',
+      'assignBusinessConsoleWmsInboundOrder',
+      'assignBusinessConsoleWmsPutawayTask',
+      'assignBusinessConsoleWmsOutboundOrder',
+      'assignBusinessConsoleWmsPickingTask',
+      'assignBusinessConsoleWmsCountExecution',
+    ] as const
+
+    for (const operation of governedOperations) {
+      expect((businessConsoleClient as Record<string, unknown>)[operation], operation).toBeTypeOf(
+        'function',
+      )
+    }
+    expect(businessConsoleClient.getBusinessConsoleWmsReceiptWorkScopesQueryOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.getBusinessConsoleWmsShipmentWorkScopesQueryOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.getBusinessConsoleWmsCountWorkScopesQueryOptions).toBeTypeOf(
+      'function',
+    )
+    expect(
+      businessConsoleClient.listBusinessConsoleWmsReceiptOperationalCandidatesQueryOptions,
+    ).toBeTypeOf('function')
+    expect(
+      businessConsoleClient.listBusinessConsoleWmsShipmentOperationalCandidatesQueryOptions,
+    ).toBeTypeOf('function')
+    expect(
+      businessConsoleClient.listBusinessConsoleWmsCountOperationalCandidatesQueryOptions,
+    ).toBeTypeOf('function')
+    expect(businessConsoleClient.assignBusinessConsoleWmsInboundOrderMutationOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.assignBusinessConsoleWmsPutawayTaskMutationOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.assignBusinessConsoleWmsOutboundOrderMutationOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.assignBusinessConsoleWmsPickingTaskMutationOptions).toBeTypeOf(
+      'function',
+    )
+    expect(businessConsoleClient.assignBusinessConsoleWmsCountExecutionMutationOptions).toBeTypeOf(
+      'function',
+    )
+    expectTypeOf<
+      Pick<
+        BusinessConsoleAssignWmsResourceRequest,
+        'poolCode' | 'operatorPrincipalId' | 'idempotencyKey' | 'expectedVersion'
+      >
+    >().toEqualTypeOf<{
+      poolCode: string
+      operatorPrincipalId?: string | null
+      idempotencyKey: string
+      expectedVersion: number
+    }>()
+    expectTypeOf<BusinessConsoleWmsWorkScopeCatalogEnvelope['data']>().toEqualTypeOf<
+      BusinessConsoleWmsWorkScopeCatalog | null | undefined
+    >()
+    expectTypeOf<ListBusinessConsoleWmsReceiptOperationalCandidatesData['query']>().toEqualTypeOf<
+      ListBusinessConsoleWmsShipmentOperationalCandidatesData['query']
+    >()
+    expectTypeOf<ListBusinessConsoleWmsCountOperationalCandidatesData['query']>().toEqualTypeOf<
+      ListBusinessConsoleWmsReceiptOperationalCandidatesData['query']
+    >()
+    expectTypeOf<
+      Pick<
+        ListBusinessConsoleWmsReceiptOperationalCandidatesData['query'],
+        'organizationId' | 'environmentId' | 'scopeKind' | 'scopeId' | 'skuCode' | 'locationCode'
+      >
+    >().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      scopeKind?: string | null
+      scopeId?: string | null
+      skuCode?: string | null
+      locationCode?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleWmsOperationalCandidatesEnvelope['data']>().toEqualTypeOf<
+      BusinessConsoleWmsOperationalCandidatesResponse | null | undefined
+    >()
+    expectTypeOf<BusinessConsoleWmsOperationalCandidatesResponse['locations']>().toEqualTypeOf<
+      BusinessConsoleWmsLocationCandidate[] | undefined
+    >()
+    expectTypeOf<BusinessConsoleWmsOperationalCandidatesResponse['lots']>().toEqualTypeOf<
+      BusinessConsoleWmsLotCandidate[] | undefined
+    >()
+    expectTypeOf<
+      Pick<BusinessConsoleStartWmsWarehouseTaskRequest, 'idempotencyKey' | 'expectedVersion'>
+    >().toEqualTypeOf<{
+      idempotencyKey: string
+      expectedVersion: number
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
+        'idempotencyKey' | 'expectedVersion' | 'executedQuantity'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey: string
+      expectedVersion: number
+      executedQuantity: number
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleReportWmsWarehouseTaskExceptionRequest,
+        'idempotencyKey' | 'expectedVersion' | 'exceptionCode' | 'reason'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey: string
+      expectedVersion: number
+      exceptionCode: string
+      reason: string
+    }>()
+    expectTypeOf<
+      Pick<
+        BusinessConsoleCompleteWmsWarehouseTaskRequest,
+        'idempotencyKey' | 'expectedVersion' | 'executedQuantity' | 'differenceReason'
+      >
+    >().toEqualTypeOf<{
+      idempotencyKey: string
+      expectedVersion: number
+      executedQuantity: number
+      differenceReason?: string | null
+    }>()
   })
 
   it('exposes the MAN-528 exact MES to Inventory link through the stable boundary', () => {

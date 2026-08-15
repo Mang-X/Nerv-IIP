@@ -97,8 +97,8 @@ function Stop-ProjectProcessesForCurrentRepo {
         $processName = "$($_.Name)".ToLowerInvariant()
         return (
             $commandLine.Contains($projectPath) -or
-            ($commandLine.Contains('nerv.iip.apphost') -and $commandLine.Contains($repoPath)) -or
-            ($commandLine.Contains('aspire') -and $commandLine.Contains('start') -and $commandLine.Contains($repoPath)) -or
+            ($commandLine.Contains('nerv.iip.apphost', [StringComparison]::Ordinal) -and $commandLine.Contains($repoPath)) -or
+            ($commandLine.Contains('aspire', [StringComparison]::Ordinal) -and $commandLine.Contains('start', [StringComparison]::Ordinal) -and $commandLine.Contains($repoPath)) -or
             ($commandLine.Contains($repoPath) -and @('dotnet.exe', 'dotnet', 'node.exe', 'node', 'pnpm.exe', 'pnpm').Contains($processName))
         )
     }
@@ -110,8 +110,7 @@ function Stop-ProjectProcessesForCurrentRepo {
     }
 }
 
-switch ($Action) {
-    'stop' {
+if ([string]::Equals([string]($Action), [string]('stop'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('stop', '--non-interactive', '--nologo')
         if ($All) {
             $arguments += '--all'
@@ -140,11 +139,11 @@ switch ($Action) {
 
         exit 0
     }
-    'status' {
+elseif ([string]::Equals([string]($Action), [string]('status'), [StringComparison]::OrdinalIgnoreCase)) {
         $result = Invoke-AspireInteractive -Arguments @('ps', '--non-interactive', '--nologo') -WorkingDirectory $root -Name 'aspire-status'
         exit $result.ExitCode
     }
-    'describe' {
+elseif ([string]::Equals([string]($Action), [string]('describe'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('describe')
         if (-not [string]::IsNullOrWhiteSpace($Resource)) {
             $arguments += $Resource
@@ -157,7 +156,7 @@ switch ($Action) {
         $result = Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory $root -Name 'aspire-describe'
         exit $result.ExitCode
     }
-    'logs' {
+elseif ([string]::Equals([string]($Action), [string]('logs'), [StringComparison]::OrdinalIgnoreCase)) {
         $arguments = @('logs')
         if (-not [string]::IsNullOrWhiteSpace($Resource)) {
             $arguments += $Resource
@@ -173,7 +172,7 @@ switch ($Action) {
         $result = Invoke-AspireInteractive -Arguments $arguments -WorkingDirectory $root -Name 'aspire-logs'
         exit $result.ExitCode
     }
-    'wait' {
+elseif ([string]::Equals([string]($Action), [string]('wait'), [StringComparison]::OrdinalIgnoreCase)) {
         if ([string]::IsNullOrWhiteSpace($Resource)) {
             throw 'Resource is required for wait. Example: .\nerv.ps1 wait gateway -Status up'
         }
@@ -181,4 +180,3 @@ switch ($Action) {
         Invoke-Aspire -Arguments @('wait', $Resource, '--status', $Status, '--timeout', "$TimeoutSeconds", '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds ($TimeoutSeconds + 20) -Name "aspire-wait-$Resource" | Out-Null
         exit 0
     }
-}

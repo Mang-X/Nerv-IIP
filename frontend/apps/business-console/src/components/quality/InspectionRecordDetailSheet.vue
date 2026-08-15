@@ -13,6 +13,7 @@ import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 
 import { useQualityInspectionRecordDetail } from '@/composables/useBusinessQuality'
+import { useSkuNames } from '@/composables/useSkuNames'
 import { notifyError } from '@/utils/notify'
 
 // 来源检验记录只读详情，从质检页抽出（路由页只负责按 ?inspectionRecordId= 编排开合，Vue best-practices §2）。
@@ -25,6 +26,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean]
 }>()
+
+// 读面只回 skuCode，成品名称在主数据里，前端按编码 join。
+// 特性行的 characteristicName 目前后端不下发、详情里也没有 planId 可反查，
+// 只能先显编码——已登记为后端缺口，不在这里编造名称。
+const { resolveSkuName } = useSkuNames()
 
 const openModel = computed({
   get: () => props.open,
@@ -75,7 +81,13 @@ watch(
             <dt class="text-muted-foreground">判定结论</dt>
             <dd><NvStatusBadge :value="record.result" /></dd>
             <dt class="text-muted-foreground">成品</dt>
-            <dd>{{ record.skuCode ?? '—' }}</dd>
+            <dd>
+              <template v-if="resolveSkuName(record.skuCode)">
+                {{ resolveSkuName(record.skuCode) }}
+                <span class="text-xs text-muted-foreground">{{ record.skuCode }}</span>
+              </template>
+              <template v-else>{{ record.skuCode ?? '—' }}</template>
+            </dd>
             <dt class="text-muted-foreground">来源单据</dt>
             <dd>{{ record.sourceDocumentId ?? '—' }}</dd>
             <dt class="text-muted-foreground">批次 / 序列号</dt>

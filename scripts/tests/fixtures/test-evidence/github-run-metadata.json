@@ -1,0 +1,25 @@
+{
+  "event": "push",
+  "headBranch": "main",
+  "runAttempt": 1,
+  "conclusion": "success",
+  "jobConclusion": "success",
+  "workflowRunId": "30819675007",
+  "jobId": "91706113150",
+  "headSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
+  "testedSha": "9dafb512c992b240222c8d9b5ada43e4bfc8ac3d",
+  "sourceUrl": "https://github.com/Mang-X/Nerv-IIP/actions/runs/30819675007",
+  "laneProvenance": [
+    {
+      "lane": "backend",
+      "jobName": "Backend Tests",
+      "runnerOs": "Linux",
+      "runnerImage": "ubuntu24@20260720.247.2",
+      "dotnetSdk": "10.0.302"
+    }
+  ],
+  "selectedLanes": ["backend"],
+  "sourceKind": "github-console",
+  "repository": "Mang-X/Nerv-IIP",
+  "generatorCommand": "pwsh scripts/generate-test-evidence-baseline.ps1 -Repository Mang-X/Nerv-IIP -GitHubRunId 30819675007 -GitHubJobId 91706113150 -OutputPath scripts/test-evidence-baseline.json"
+}

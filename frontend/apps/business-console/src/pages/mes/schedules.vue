@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleMesScheduleResultRow,
   BusinessConsoleRunScheduleRequest,
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import { labelFor, RULE_SCHEDULE_REASON_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -36,13 +39,24 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: '规则排程（过渡）',
+    title: '规则排程',
     requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'],
   },
 })
 
-const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
+const {
+  lastSchedule,
+  scheduleHistory,
+  scheduleHistoryTotal,
+  scheduleHistoryPending,
+  runSchedule,
+  runScheduleError,
+  runSchedulePending,
+} = useMesSchedules()
 const businessContext = useBusinessContextStore()
+// 排程结果里的工作中心是编码（后端 WorkCenterUnavailability.WorkCenterId 即编码口径），
+// 名称在主数据里，前端 join；工单 / 工序两列后端只回内部标识，暂无编码或名称可用。
+const { resolveWorkCenter } = useMesDisplayNames()
 
 const scheduleSheetOpen = shallowRef(false)
 
@@ -61,10 +75,30 @@ watch(
   { flush: 'sync', immediate: true },
 )
 
-const assignments = computed<BusinessConsoleScheduledOperation[]>(
-  () => lastSchedule.value?.assignments ?? [],
+// 选中的历史排程；未选时看最新一次。刚跑完那次会随历史重取出现在首行，
+// 重取到达前先用本次运行的即时结果兜底，页面不会闪空。
+const selectedVersion = shallowRef<number | undefined>()
+const selectedRun = computed<BusinessConsoleMesScheduleResultRow | undefined>(() => {
+  const rows = scheduleHistory.value
+  if (selectedVersion.value !== undefined) {
+    const matched = rows.find((row) => row.scheduleVersion === selectedVersion.value)
+    if (matched) return matched
+  }
+  return rows[0]
+})
+const activeVersion = computed(
+  () => selectedRun.value?.scheduleVersion ?? lastSchedule.value?.scheduleVersion,
 )
-const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
+const activeTrigger = computed(() => selectedRun.value?.trigger ?? lastSchedule.value?.trigger)
+const activeScheduledAtUtc = computed(
+  () => selectedRun.value?.scheduledAtUtc ?? lastSchedule.value?.scheduledAtUtc,
+)
+const assignments = computed<BusinessConsoleScheduledOperation[]>(
+  () => selectedRun.value?.assignments ?? lastSchedule.value?.assignments ?? [],
+)
+const affectedWorkOrderIds = computed(
+  () => selectedRun.value?.affectedWorkOrderIds ?? lastSchedule.value?.affectedWorkOrderIds ?? [],
+)
 const canRunSchedule = computed(
   () =>
     isNonEmpty(runForm.organizationId) &&
@@ -76,10 +110,8 @@ const scheduleCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'version',
     label: '规则版本',
-    value: lastSchedule.value?.scheduleVersion ?? '尚未运行',
-    meta: lastSchedule.value?.trigger
-      ? `${triggerLabel(lastSchedule.value.trigger)}触发`
-      : undefined,
+    value: activeVersion.value ?? '尚未运行',
+    meta: activeTrigger.value ? `${triggerLabel(activeTrigger.value)}触发` : undefined,
   },
   {
     key: 'assignments',
@@ -92,6 +124,12 @@ const scheduleCells = computed<NvMetricStripCell[]>(() => [
     label: '影响工单',
     value: affectedWorkOrderIds.value.length,
     unit: '张',
+  },
+  {
+    key: 'history',
+    label: '历史运行',
+    value: scheduleHistoryTotal.value,
+    unit: '次',
   },
 ])
 
@@ -114,10 +152,18 @@ const columns: NvDataTableColumn<BusinessConsoleScheduledOperation>[] = [
     accessor: (r) => r.workOrderId ?? '无',
   },
   { key: 'operationTaskId', header: '工序', accessor: (r) => r.operationTaskId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  {
+    key: 'workCenterId',
+    header: '工作中心',
+    accessor: (r) => resolveWorkCenter(r.workCenterId) ?? r.workCenterId ?? '无',
+  },
   { key: 'startUtc', header: '开始', width: 'w-44' },
   { key: 'endUtc', header: '结束', width: 'w-44' },
-  { key: 'reason', header: '原因', accessor: (r) => r.reason ?? '无' },
+  {
+    key: 'reason',
+    header: '分配依据',
+    accessor: (r) => labelFor(RULE_SCHEDULE_REASON_LABELS, r.reason) || '无',
+  },
 ]
 
 function triggerLabel(value?: string | null) {
@@ -141,8 +187,38 @@ async function submitScheduleRun() {
     scheduleSheetOpen.value = false
     notifySuccess(`规则排程已完成（版本 ${response?.data?.scheduleVersion ?? body.trigger}）。`)
   } catch (error) {
-    notifyError(error ?? runScheduleError.value, '运行规则排程失败，请稍后重试。')
+    notifyOperationFailure(
+      '运行规则排程失败',
+      error ?? runScheduleError.value,
+      '运行规则排程失败，请稍后重试。',
+    )
   }
+}
+
+const historyColumns: NvDataTableColumn<BusinessConsoleMesScheduleResultRow>[] = [
+  {
+    key: 'scheduleVersion',
+    header: '版本',
+    width: 'w-24',
+    cellClass: 'font-medium',
+    accessor: (r) => (r.scheduleVersion === undefined ? '无' : `v${r.scheduleVersion}`),
+  },
+  { key: 'trigger', header: '触发来源', width: 'w-32', accessor: (r) => triggerLabel(r.trigger) },
+  { key: 'scheduledAtUtc', header: '排程时间', width: 'w-48' },
+  { key: 'assignmentCount', header: '工序分配', accessor: (r) => `${r.assignmentCount ?? 0} 条` },
+  {
+    key: 'affectedWorkOrderCount',
+    header: '影响工单',
+    accessor: (r) => `${r.affectedWorkOrderCount ?? 0} 张`,
+  },
+]
+
+function historyRowKey(item: BusinessConsoleMesScheduleResultRow) {
+  return String(item.scheduleVersion ?? '')
+}
+function selectRun(item: BusinessConsoleMesScheduleResultRow) {
+  selectedVersion.value = item.scheduleVersion
+  page.value = 1
 }
 
 function rowKey(item: BusinessConsoleScheduledOperation) {
@@ -161,7 +237,7 @@ function isNonEmpty(value: string) {
 <template>
   <BusinessLayout>
     <NvPageHeader
-      title="规则排程（过渡）"
+      title="规则排程"
       :breadcrumbs="[{ label: '制造执行' }]"
       :count="`${assignments.length} 条分配`"
     >
@@ -179,18 +255,31 @@ function isNonEmpty(value: string) {
       </template>
     </NvPageHeader>
 
-    <p class="max-w-3xl text-sm leading-6 text-muted-foreground">
-      此页是车间现场的规则排程过渡入口，用于查看或手动触发一次工序分配。正式 APS /
-      甘特、方案发布和冲突治理请进入排产工作台。
-    </p>
-
     <NvMetricStrip :cells="scheduleCells" />
 
     <div class="flex items-center justify-between">
-      <span class="text-sm font-semibold text-foreground">规则排程结果</span>
-      <span class="text-sm text-muted-foreground">{{
-        formatDateTime(lastSchedule?.scheduledAtUtc)
-      }}</span>
+      <span class="text-sm font-semibold text-foreground">历史排程运行</span>
+      <span class="text-sm text-muted-foreground">共 {{ scheduleHistoryTotal }} 次</span>
+    </div>
+
+    <NvDataTable
+      :columns="historyColumns"
+      :rows="scheduleHistory"
+      :row-key="historyRowKey"
+      :loading="scheduleHistoryPending"
+      :searchable="false"
+      :column-settings="false"
+      empty-message="尚无历史排程运行记录。点击右上角「运行规则排程」后，本次结果会记入历史。"
+      @row-click="selectRun"
+    >
+      <template #cell-scheduledAtUtc="{ row }">{{ formatDateTime(row.scheduledAtUtc) }}</template>
+    </NvDataTable>
+
+    <div class="flex items-center justify-between">
+      <span class="text-sm font-semibold text-foreground">
+        工序分配{{ activeVersion === undefined ? '' : `（v${activeVersion}）` }}
+      </span>
+      <span class="text-sm text-muted-foreground">{{ formatDateTime(activeScheduledAtUtc) }}</span>
     </div>
 
     <NvDataTable
@@ -206,7 +295,7 @@ function isNonEmpty(value: string) {
       :loading="runSchedulePending"
       :searchable="false"
       :column-settings="false"
-      empty-message="尚无规则排程结果。运行规则排程后，这里会显示工序的工作中心与起止时间。"
+      empty-message="该次排程没有工序分配。在上方历史列表中选择另一次运行，或点击右上角重新运行规则排程。"
     >
       <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
@@ -228,7 +317,6 @@ function isNonEmpty(value: string) {
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>运行规则排程</NvDialogTitle>
-          <!-- 过渡入口的定位已写在页面上，弹窗里不再重复；此处仅供读屏播报。 -->
           <NvDialogDescription class="sr-only">重新计算车间的工序分配。</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">

@@ -1,5 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
@@ -10,6 +12,427 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
+
+public sealed record GetWarehouseWorkScopeCatalogQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes) : IQuery<WarehouseWorkScopeCatalog>;
+
+public sealed class GetWarehouseWorkScopeCatalogQueryHandler(
+    WarehouseWorkScopeAuthorizer authorizer)
+    : IQueryHandler<GetWarehouseWorkScopeCatalogQuery, WarehouseWorkScopeCatalog>
+{
+    public Task<WarehouseWorkScopeCatalog> Handle(
+        GetWarehouseWorkScopeCatalogQuery request,
+        CancellationToken cancellationToken) =>
+        authorizer.GetCatalogAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ActorPrincipalId,
+            request.AuthorizedSiteCodes,
+            cancellationToken);
+}
+
+public sealed record ListWarehouseOperationalCandidatesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string ScopeKind,
+    string ScopeId,
+    string CandidateDomain,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    string? Keyword = null,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    int Take = 50,
+    bool SiteWideScope = false) : IQuery<WarehouseOperationalCandidatesResponse>;
+
+public static class WarehouseOperationalCandidateDomains
+{
+    public const string Receipts = "receipts";
+    public const string Shipments = "shipments";
+    public const string Counts = "counts";
+
+    public static bool IsSupported(string? value) =>
+        value is not null
+        && (string.Equals(value.Trim(), Receipts, StringComparison.Ordinal)
+            || string.Equals(value.Trim(), Shipments, StringComparison.Ordinal)
+            || string.Equals(value.Trim(), Counts, StringComparison.Ordinal));
+}
+
+public sealed record WarehouseOperationalCandidatesResponse(
+    string SourceKind,
+    string ScopeKind,
+    string ScopeId,
+    DateTime AsOfUtc,
+    DateTime? FreshnessUtc,
+    bool Truncated,
+    IReadOnlyCollection<WarehouseLocationCandidate> Locations,
+    IReadOnlyCollection<WarehouseLotCandidate> Lots);
+
+public sealed record WarehouseLocationCandidate(
+    string SiteCode,
+    string LocationCode,
+    IReadOnlyCollection<string> SkuCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
+public sealed record WarehouseLotCandidate(
+    string SiteCode,
+    string SkuCode,
+    string LotNo,
+    IReadOnlyCollection<string> LocationCodes,
+    int ReferenceCount,
+    DateTime LastObservedAtUtc);
+
+public sealed class ListWarehouseOperationalCandidatesQueryHandler(
+    ApplicationDbContext dbContext,
+    TimeProvider timeProvider)
+    : IQueryHandler<
+        ListWarehouseOperationalCandidatesQuery,
+        WarehouseOperationalCandidatesResponse>
+{
+    public const string SourceKind = "wms-operational-facts";
+    private const string ReplenishmentPendingLocation =
+        "REPLENISHMENT-SOURCE-PENDING";
+
+    public async Task<WarehouseOperationalCandidatesResponse> Handle(
+        ListWarehouseOperationalCandidatesQuery request,
+        CancellationToken cancellationToken)
+    {
+        var asOfUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var empty = Empty(request, asOfUtc);
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId)
+            || string.IsNullOrWhiteSpace(request.ScopeKind)
+            || string.IsNullOrWhiteSpace(request.ScopeId)
+            || !WarehouseOperationalCandidateDomains.IsSupported(
+                request.CandidateDomain)
+            || !WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return empty;
+        }
+
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length == 0)
+        {
+            return empty;
+        }
+
+        var take = request.Take <= 0 ? 50 : Math.Clamp(request.Take, 1, 100);
+        var sourceTake = Math.Clamp(take * 20, 100, 1_000);
+        var candidateDomain = request.CandidateDomain.Trim();
+        var inbound = ApplyScope(
+                dbContext.InboundOrders
+                    .AsNoTracking()
+                    .Include(order => order.Lines)
+                    .Where(order =>
+                        order.OrganizationId == request.OrganizationId
+                        && order.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(order.SiteCode)),
+                ownershipScope);
+        var outbound = ApplyScope(
+                dbContext.OutboundOrders
+                    .AsNoTracking()
+                    .Include(order => order.Lines)
+                    .Where(order =>
+                        order.OrganizationId == request.OrganizationId
+                        && order.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(order.SiteCode)),
+                ownershipScope);
+        var warehouseTasks = ApplyScope(
+                dbContext.WarehouseTasks
+                    .AsNoTracking()
+                    .Where(task =>
+                        task.OrganizationId == request.OrganizationId
+                        && task.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(task.SiteCode)),
+                ownershipScope);
+        var counts = ApplyScope(
+                dbContext.CountExecutions
+                    .AsNoTracking()
+                    .Where(execution =>
+                        execution.OrganizationId == request.OrganizationId
+                        && execution.EnvironmentId == request.EnvironmentId
+                        && siteCodes.Contains(execution.SiteCode)),
+                ownershipScope);
+
+        var inboundPage = EmptyPage<InboundOrder>();
+        var outboundPage = EmptyPage<OutboundOrder>();
+        var taskPage = EmptyPage<WarehouseTask>();
+        var countPage = EmptyPage<CountExecution>();
+        switch (candidateDomain)
+        {
+            case WarehouseOperationalCandidateDomains.Receipts:
+                inboundPage = await ReadRecentAsync(
+                    inbound.OrderByDescending(order => order.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                taskPage = await ReadRecentAsync(
+                    warehouseTasks
+                        .Where(task => task.TaskType == WarehouseTaskType.Putaway)
+                        .OrderByDescending(task => task.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+            case WarehouseOperationalCandidateDomains.Shipments:
+                outboundPage = await ReadRecentAsync(
+                    outbound.OrderByDescending(order => order.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                taskPage = await ReadRecentAsync(
+                    warehouseTasks
+                        .Where(task => task.TaskType == WarehouseTaskType.Picking)
+                        .OrderByDescending(task => task.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+            case WarehouseOperationalCandidateDomains.Counts:
+                countPage = await ReadRecentAsync(
+                    counts.OrderByDescending(execution => execution.CreatedAtUtc),
+                    sourceTake,
+                    cancellationToken);
+                break;
+        }
+        var observations = inboundPage.Items
+            .SelectMany(order => order.Lines.Select(line => new CandidateObservation(
+                order.SiteCode,
+                line.StagingLocationCode,
+                line.SkuCode,
+                line.LotNo,
+                order.CreatedAtUtc)))
+            .Concat(outboundPage.Items.SelectMany(order =>
+                order.Lines.Select(line => new CandidateObservation(
+                    order.SiteCode,
+                    line.PickLocationCode,
+                    line.SkuCode,
+                    line.LotNo,
+                    order.CreatedAtUtc))))
+            .Concat(countPage.Items.Select(execution => new CandidateObservation(
+                execution.SiteCode,
+                execution.LocationCode,
+                execution.SkuCode,
+                LotNo: null,
+                execution.CreatedAtUtc)))
+            .Concat(taskPage.Items.SelectMany(task => new[]
+            {
+                new CandidateObservation(
+                    task.SiteCode,
+                    task.FromLocationCode,
+                    task.SkuCode,
+                    task.LotNo,
+                    task.CreatedAtUtc),
+                new CandidateObservation(
+                    task.SiteCode,
+                    task.ToLocationCode,
+                    task.SkuCode,
+                    task.LotNo,
+                    task.CreatedAtUtc),
+            }))
+            .Where(observation =>
+                !string.IsNullOrWhiteSpace(observation.LocationCode)
+                && !string.Equals(
+                    observation.LocationCode,
+                    ReplenishmentPendingLocation,
+                    StringComparison.Ordinal))
+            .ToArray();
+
+        var skuCode = Optional(request.SkuCode);
+        var locationCode = Optional(request.LocationCode);
+        var keyword = Optional(request.Keyword)?.ToUpperInvariant();
+        var filtered = observations
+            .Where(observation =>
+                skuCode is null
+                || string.Equals(
+                    observation.SkuCode,
+                    skuCode,
+                    StringComparison.Ordinal))
+            .Where(observation =>
+                locationCode is null
+                || string.Equals(
+                    observation.LocationCode,
+                    locationCode,
+                    StringComparison.Ordinal))
+            .Where(observation =>
+                keyword is null
+                || observation.LocationCode.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal)
+                || observation.SkuCode.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal)
+                || observation.LotNo?.ToUpperInvariant().Contains(
+                    keyword,
+                    StringComparison.Ordinal) == true)
+            .ToArray();
+
+        var locationCandidates = filtered
+            .GroupBy(
+                observation => (observation.SiteCode, observation.LocationCode))
+            .Select(group => new WarehouseLocationCandidate(
+                group.Key.SiteCode,
+                group.Key.LocationCode,
+                group.Select(observation => observation.SkuCode)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray(),
+                group.Count(),
+                group.Max(observation => observation.ObservedAtUtc)))
+            .OrderByDescending(candidate => candidate.LastObservedAtUtc)
+            .ThenBy(candidate => candidate.LocationCode, StringComparer.Ordinal)
+            .ToArray();
+        var lotCandidates = filtered
+            .Where(observation => !string.IsNullOrWhiteSpace(observation.LotNo))
+            .GroupBy(observation => (
+                observation.SiteCode,
+                observation.SkuCode,
+                LotNo: observation.LotNo!))
+            .Select(group => new WarehouseLotCandidate(
+                group.Key.SiteCode,
+                group.Key.SkuCode,
+                group.Key.LotNo,
+                group.Select(observation => observation.LocationCode)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray(),
+                group.Count(),
+                group.Max(observation => observation.ObservedAtUtc)))
+            .OrderByDescending(candidate => candidate.LastObservedAtUtc)
+            .ThenBy(candidate => candidate.LotNo, StringComparer.Ordinal)
+            .ToArray();
+        return new WarehouseOperationalCandidatesResponse(
+            SourceKind,
+            request.ScopeKind.Trim().ToLowerInvariant(),
+            request.ScopeId.Trim(),
+            asOfUtc,
+            observations.Length == 0
+                ? null
+                : observations.Max(observation => observation.ObservedAtUtc),
+            inboundPage.Truncated
+                || outboundPage.Truncated
+                || taskPage.Truncated
+                || countPage.Truncated
+                || locationCandidates.Length > take
+                || lotCandidates.Length > take,
+            locationCandidates.Take(take).ToArray(),
+            lotCandidates.Take(take).ToArray());
+    }
+
+    private static WarehouseOperationalCandidatesResponse Empty(
+        ListWarehouseOperationalCandidatesQuery request,
+        DateTime asOfUtc) =>
+        new(
+            SourceKind,
+            request.ScopeKind?.Trim().ToLowerInvariant() ?? string.Empty,
+            request.ScopeId?.Trim() ?? string.Empty,
+            asOfUtc,
+            FreshnessUtc: null,
+            Truncated: false,
+            Locations: [],
+            Lots: []);
+
+    private static IQueryable<InboundOrder> ApplyScope(
+        IQueryable<InboundOrder> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(order =>
+                order.AssignedOperatorUserId != null
+                && scope.Values.Contains(order.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(order =>
+                order.AssignedPoolCode != null
+                && scope.Values.Contains(order.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<OutboundOrder> ApplyScope(
+        IQueryable<OutboundOrder> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(order =>
+                order.AssignedOperatorUserId != null
+                && scope.Values.Contains(order.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(order =>
+                order.AssignedPoolCode != null
+                && scope.Values.Contains(order.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<WarehouseTask> ApplyScope(
+        IQueryable<WarehouseTask> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(task =>
+                task.AssignedOperatorUserId != null
+                && scope.Values.Contains(task.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(task =>
+                task.AssignedPoolCode != null
+                && scope.Values.Contains(task.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+
+    private static IQueryable<CountExecution> ApplyScope(
+        IQueryable<CountExecution> query,
+        WmsOwnershipScope scope) =>
+        scope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(execution =>
+                execution.AssignedOperatorUserId != null
+                && scope.Values.Contains(execution.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(execution =>
+                execution.AssignedPoolCode != null
+                && scope.Values.Contains(execution.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+
+    private static async Task<CandidatePage<T>> ReadRecentAsync<T>(
+        IQueryable<T> query,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var rows = await query
+            .Take(take + 1)
+            .ToArrayAsync(cancellationToken);
+        return new CandidatePage<T>(
+            rows.Take(take).ToArray(),
+            rows.Length > take);
+    }
+
+    private static CandidatePage<T> EmptyPage<T>() =>
+        new([], Truncated: false);
+
+    private static string? Optional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private sealed record CandidateObservation(
+        string SiteCode,
+        string LocationCode,
+        string SkuCode,
+        string? LotNo,
+        DateTime ObservedAtUtc);
+
+    private sealed record CandidatePage<T>(
+        IReadOnlyCollection<T> Items,
+        bool Truncated);
+}
 
 public sealed record ListBackorderOrdersQuery(
     string OrganizationId,
@@ -79,7 +502,15 @@ public sealed record ListInboundOrdersQuery(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null) : IQuery<ListInboundOrdersResponse>;
+    string? Keyword = null,
+    InboundOrderId? InboundOrderId = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListInboundOrdersResponse>;
 
 public sealed record ListInboundOrdersResponse(IReadOnlyCollection<InboundOrderListItem> Items, int Total);
 
@@ -91,7 +522,11 @@ public sealed record InboundOrderListItem(
     // 单据级派生质检状态（聚合全部收货行含免检；无行为空串）与上架放行判据，
     // 供 PDA/console 列表状态标与上架门禁一次查询即得，避免按分页门禁行跨页聚合错误。
     string QualityGateStatus,
-    bool IsReleasedForPutaway);
+    bool IsReleasedForPutaway,
+    string SiteCode,
+    string? AssignedOperatorUserId,
+    string? AssignedPoolCode,
+    long Version);
 
 internal static class InboundOrderQualityAggregate
 {
@@ -116,12 +551,46 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<ListInboundOrdersResponse> Handle(ListInboundOrdersQuery request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return new ListInboundOrdersResponse([], 0);
+        }
+
         var skip = Math.Max(0, request.Skip);
         var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var query = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.InboundOrderId == null || x.Id == request.InboundOrderId);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return new ListInboundOrdersResponse([], 0);
+        }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
         if (WmsListQueryFilters.TryParseStatus<InboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -137,6 +606,16 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             query = query.Where(x => x.InboundOrderNo.ToUpper().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.LocationCode))
+        {
+            query = query.Where(x => x.Lines.Any(line => line.StagingLocationCode == request.LocationCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LotNo))
+        {
+            query = query.Where(x => x.Lines.Any(line => line.LotNo == request.LotNo));
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
@@ -149,6 +628,10 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.InboundOrderNo,
                 Status = x.Status.ToString(),
                 x.CreatedAtUtc,
+                x.SiteCode,
+                x.AssignedOperatorUserId,
+                x.AssignedPoolCode,
+                x.Version,
                 HasAnyLine = x.Lines.Any(),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
@@ -163,7 +646,11 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.Status,
                 x.CreatedAtUtc,
                 InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending)))
+                InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending),
+                x.SiteCode,
+                x.AssignedOperatorUserId,
+                x.AssignedPoolCode,
+                x.Version))
             .ToArray();
         return new ListInboundOrdersResponse(items, total);
     }
@@ -175,7 +662,15 @@ public sealed record ListOutboundOrdersQuery(
     int Skip = 0,
     int Take = 100,
     string? Status = null,
-    string? Keyword = null) : IQuery<ListOutboundOrdersResponse>;
+    string? Keyword = null,
+    OutboundOrderId? OutboundOrderId = null,
+    string? LocationCode = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListOutboundOrdersResponse>;
 
 public sealed record ListOutboundOrdersResponse(IReadOnlyCollection<OutboundOrderListItem> Items, int Total);
 
@@ -189,7 +684,10 @@ public sealed record OutboundOrderListItem(
     string? FailureMessage,
     IReadOnlyCollection<OutboundOrderLineListItem> Lines,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    string? AssignedOperatorUserId,
+    string? AssignedPoolCode,
+    long Version);
 
 public sealed record OutboundOrderLineListItem(
     string LineNo,
@@ -212,12 +710,46 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<ListOutboundOrdersResponse> Handle(ListOutboundOrdersQuery request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return new ListOutboundOrdersResponse([], 0);
+        }
+
         var skip = Math.Max(0, request.Skip);
         var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var query = dbContext.OutboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.OutboundOrderId == null || x.Id == request.OutboundOrderId);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return new ListOutboundOrdersResponse([], 0);
+        }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
         if (WmsListQueryFilters.TryParseStatus<OutboundOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -231,6 +763,16 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
         {
             var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
             query = query.Where(x => x.OutboundOrderNo.ToUpper().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LocationCode))
+        {
+            query = query.Where(x => x.Lines.Any(line => line.PickLocationCode == request.LocationCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.LotNo))
+        {
+            query = query.Where(x => x.Lines.Any(line => line.LotNo == request.LotNo));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -249,6 +791,9 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 x.SiteCode,
                 x.CreatedAtUtc,
                 x.CompletedAtUtc,
+                x.AssignedOperatorUserId,
+                x.AssignedPoolCode,
+                x.Version,
                 Lines = x.Lines
                     .OrderBy(line => line.LineNo)
                     .Select(line => new
@@ -322,7 +867,10 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                 failedLine?.FailureMessage,
                 lineItems,
                 row.CreatedAtUtc,
-                row.CompletedAtUtc);
+                row.CompletedAtUtc,
+                row.AssignedOperatorUserId,
+                row.AssignedPoolCode,
+                row.Version);
         }).ToArray();
         return new ListOutboundOrdersResponse(items, total);
     }
@@ -369,8 +917,14 @@ public sealed record ListWarehouseTasksQuery(
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
-    string? OperatorUserId = null,
-    string? Keyword = null) : IQuery<ListWarehouseTasksResponse>;
+    string? Keyword = null,
+    string? LotNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false,
+    string? ActorPrincipalId = null,
+    bool SiteWideScope = false) : IQuery<ListWarehouseTasksResponse>;
 
 public sealed record ListWarehouseTasksResponse(IReadOnlyCollection<WarehouseTaskFact> Items, int Total);
 
@@ -387,27 +941,56 @@ public sealed record WarehouseTaskFact(
     string SiteCode,
     string FromLocationCode,
     string ToLocationCode,
+    string? AssignedOperatorUserId,
+    string? AssignedPoolCode,
+    string? LotNo,
+    string? SerialNo,
     decimal PlannedQuantity,
     decimal ExecutedQuantity,
     string Status,
+    long Version,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
 
 public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListWarehouseTasksQuery, ListWarehouseTasksResponse>
 {
     public async Task<ListWarehouseTasksResponse> Handle(ListWarehouseTasksQuery request, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(request.OperatorUserId))
-        {
-            return new ListWarehouseTasksResponse([], 0);
-        }
-
         var query = dbContext.WarehouseTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.TaskType == request.TaskType);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return new ListWarehouseTasksResponse([], 0);
+        }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
 
         if (WmsListQueryFilters.TryParseStatus<WarehouseTaskStatus>(request.Status, out var status))
         {
@@ -423,6 +1006,11 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             query = query.Where(x => x.FromLocationCode == request.LocationCode || x.ToLocationCode == request.LocationCode);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.LotNo))
+        {
+            query = query.Where(x => x.LotNo == request.LotNo);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
@@ -435,33 +1023,223 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
         var skip = Math.Max(0, request.Skip);
         var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.TaskNo)
             .Skip(skip)
             .Take(take)
-            .Select(x => new WarehouseTaskFact(
-                x.Id,
-                x.OrganizationId,
-                x.EnvironmentId,
-                x.TaskType.ToString(),
-                x.TaskNo,
-                x.SourceOrderNo,
-                x.SourceOrderLineNo,
-                x.SkuCode,
-                x.UomCode,
-                x.SiteCode,
-                x.FromLocationCode,
-                x.ToLocationCode,
-                x.PlannedQuantity,
-                x.ExecutedQuantity,
-                x.Status.ToString(),
-                x.CreatedAtUtc,
-                x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
+        var items = rows
+            .Select(x =>
+            {
+                var presentation = WarehouseTaskQueryPresentation.Evaluate(
+                    x,
+                    request.ActorPrincipalId);
+                return new WarehouseTaskFact(
+                    x.Id,
+                    x.OrganizationId,
+                    x.EnvironmentId,
+                    x.TaskType.ToString(),
+                    x.TaskNo,
+                    x.SourceOrderNo,
+                    x.SourceOrderLineNo,
+                    x.SkuCode,
+                    x.UomCode,
+                    x.SiteCode,
+                    x.FromLocationCode,
+                    x.ToLocationCode,
+                    x.AssignedOperatorUserId,
+                    x.AssignedPoolCode,
+                    x.LotNo,
+                    x.SerialNo,
+                    x.PlannedQuantity,
+                    x.ExecutedQuantity,
+                    x.Status.ToString(),
+                    x.Version,
+                    x.CreatedAtUtc,
+                    x.CompletedAtUtc,
+                    presentation.AllowedActions,
+                    presentation.BlockReasons);
+            })
+            .ToArray();
         return new ListWarehouseTasksResponse(items, total);
     }
 }
+
+internal sealed record WarehouseTaskActionPresentation(
+    IReadOnlyCollection<string> AllowedActions,
+    IReadOnlyCollection<string> BlockReasons);
+
+internal static class WarehouseTaskQueryPresentation
+{
+    public static WarehouseTaskActionPresentation Evaluate(
+        WarehouseTask task,
+        string? actorPrincipalId)
+    {
+        if (task.Status is not (
+            WarehouseTaskStatus.Open
+            or WarehouseTaskStatus.InProgress))
+        {
+            return Blocked("TASK_TERMINAL");
+        }
+
+        if (task.TaskType is not (
+            WarehouseTaskType.Putaway
+            or WarehouseTaskType.Picking))
+        {
+            return Blocked("TASK_TYPE_NOT_MANUALLY_EXECUTABLE");
+        }
+
+        var actor = WmsText.Optional(actorPrincipalId);
+        if (actor is null)
+        {
+            return Blocked("ACTOR_CONTEXT_MISSING");
+        }
+
+        var blockReasons = new List<string>();
+        if (string.IsNullOrWhiteSpace(task.AssignedPoolCode))
+        {
+            blockReasons.Add("TASK_NOT_ASSIGNED_TO_WORK_POOL");
+        }
+
+        if (!string.IsNullOrWhiteSpace(task.AssignedOperatorUserId)
+            && !string.Equals(
+                task.AssignedOperatorUserId,
+                actor,
+                StringComparison.Ordinal))
+        {
+            blockReasons.Add("TASK_ASSIGNED_TO_ANOTHER_OPERATOR");
+        }
+
+        switch (task.ExecutionChannel)
+        {
+            case WarehouseTaskExecutionChannel.Wcs:
+                blockReasons.Add("TASK_EXECUTION_CLAIMED_BY_WCS");
+                break;
+            case WarehouseTaskExecutionChannel.Manual
+                when !string.Equals(
+                    task.ExecutionClaimedBy,
+                    actor,
+                    StringComparison.Ordinal):
+                blockReasons.Add("TASK_EXECUTION_CLAIMED_BY_ANOTHER_OPERATOR");
+                break;
+            case WarehouseTaskExecutionChannel.LegacyUnclaimed
+                or WarehouseTaskExecutionChannel.Unclaimed
+                when task.Status == WarehouseTaskStatus.InProgress:
+                blockReasons.Add("TASK_EXECUTION_NOT_CLAIMED");
+                break;
+        }
+
+        if (blockReasons.Count > 0)
+        {
+            return new WarehouseTaskActionPresentation([], blockReasons);
+        }
+
+        return new WarehouseTaskActionPresentation(
+            task.Status switch
+            {
+                WarehouseTaskStatus.Open => ["start"],
+                WarehouseTaskStatus.InProgress => ["progress", "exception", "complete"],
+                _ => [],
+            },
+            []);
+    }
+
+    public static WarehouseTaskActionPresentation StateChangedSinceReceipt() =>
+        Blocked("TASK_STATE_CHANGED_SINCE_RECEIPT");
+
+    private static WarehouseTaskActionPresentation Blocked(string reason) =>
+        new([], [reason]);
+}
+
+internal static class WmsOwnershipQueryFilters
+{
+    public static string[] Normalize(IEnumerable<string>? values) =>
+        values?
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray()
+        ?? [];
+
+    /// <summary>
+    /// 归属模式是三选一，用一个枚举表达，不用两个布尔互相约束——布尔组合能拼出
+    /// 「既组织全量又站点整站」这种无意义状态，读代码的人要靠分支顺序才能反推真实语义。
+    /// </summary>
+    public static WmsOwnershipScopeMode ModeOf(
+        bool organizationWideScope,
+        bool siteWideScope) =>
+        organizationWideScope
+            ? WmsOwnershipScopeMode.OrganizationWide
+            : siteWideScope
+                ? WmsOwnershipScopeMode.SiteWide
+                : WmsOwnershipScopeMode.Assignment;
+
+    public static bool TryResolve(
+        IEnumerable<string>? operatorUserIds,
+        IEnumerable<string>? poolCodes,
+        IEnumerable<string>? siteCodes,
+        WmsOwnershipScopeMode mode,
+        out WmsOwnershipScope scope)
+    {
+        var operators = Normalize(operatorUserIds);
+        var pools = Normalize(poolCodes);
+        var sites = Normalize(siteCodes);
+        var assignmentModes = (operators.Length > 0 ? 1 : 0)
+            + (pools.Length > 0 ? 1 : 0);
+        switch (mode)
+        {
+            // 组织全量读面不成立，永远 fail closed。
+            case WmsOwnershipScopeMode.OrganizationWide:
+                scope = default;
+                return false;
+
+            // 站点范围：站内整站作业面，不再按作业池/操作人收窄，但必须有明确站点边界。
+            case WmsOwnershipScopeMode.SiteWide when sites.Length > 0 && assignmentModes == 0:
+                scope = new WmsOwnershipScope(WmsOwnershipScopeKind.Site, sites);
+                return true;
+
+            case WmsOwnershipScopeMode.SiteWide:
+                scope = default;
+                return false;
+
+            // 归属范围：操作人与作业池二选一，既不能同时给也不能都不给。
+            case WmsOwnershipScopeMode.Assignment when assignmentModes == 1:
+                scope = operators.Length > 0
+                    ? new WmsOwnershipScope(WmsOwnershipScopeKind.Operator, operators)
+                    : new WmsOwnershipScope(WmsOwnershipScopeKind.Pool, pools);
+                return true;
+
+            default:
+                scope = default;
+                return false;
+        }
+    }
+}
+
+internal enum WmsOwnershipScopeMode
+{
+    /// <summary>按 self / work-pool 归属收窄。</summary>
+    Assignment,
+
+    /// <summary>按 IAM 精确站点授权覆盖整站。</summary>
+    SiteWide,
+
+    /// <summary>组织全量——不成立，只用于显式拒绝。</summary>
+    OrganizationWide,
+}
+
+internal enum WmsOwnershipScopeKind
+{
+    Operator,
+    Pool,
+    Site,
+}
+
+internal readonly record struct WmsOwnershipScope(
+    WmsOwnershipScopeKind Kind,
+    string[] Values);
 
 public sealed record ListCountExecutionsQuery(
     string OrganizationId,
@@ -470,7 +1248,13 @@ public sealed record ListCountExecutionsQuery(
     int Take = 100,
     string? Status = null,
     string? LocationCode = null,
-    string? Keyword = null) : IQuery<ListCountExecutionsResponse>;
+    string? Keyword = null,
+    CountExecutionId? CountExecutionId = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool OrganizationWideScope = false,
+    bool SiteWideScope = false) : IQuery<ListCountExecutionsResponse>;
 
 public sealed record ListCountExecutionsResponse(IReadOnlyCollection<CountExecutionFact> Items, int Total);
 
@@ -488,7 +1272,14 @@ public sealed record CountExecutionFact(
     decimal? VarianceQuantity,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    string? InventoryPostingStatus = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    string? InventoryMovementId = null,
+    string? AssignedOperatorUserId = null,
+    string? AssignedPoolCode = null,
+    long Version = 0);
 
 public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCountExecutionsQuery, ListCountExecutionsResponse>
@@ -498,7 +1289,35 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
         var query = dbContext.CountExecutions
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => request.CountExecutionId == null || x.Id == request.CountExecutionId);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    request.OrganizationWideScope,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return new ListCountExecutionsResponse([], 0);
+        }
+        query = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => query.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => query.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => query,
+            _ => query.Where(_ => false),
+        };
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length > 0)
+        {
+            query = query.Where(x => siteCodes.Contains(x.SiteCode));
+        }
 
         if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
         {
@@ -545,9 +1364,40 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 x.VarianceQuantity,
                 x.Status.ToString(),
                 x.CreatedAtUtc,
-                x.CompletedAtUtc))
+                x.CompletedAtUtc,
+                null,
+                null,
+                null,
+                null,
+                x.AssignedOperatorUserId,
+                x.AssignedPoolCode,
+                x.Version))
             .ToArrayAsync(cancellationToken);
-        return new ListCountExecutionsResponse(items, total);
+        var countNumbers = items.Select(x => x.CountNo).ToArray();
+        var movementRequests = await dbContext.InventoryMovementRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.MovementType == "count-adjustment"
+                && countNumbers.Contains(x.SourceDocumentId)
+                && x.SourceDocumentLineId == null)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        var movementByCountNumber = movementRequests
+            .GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var projectedItems = items
+            .Select(item => movementByCountNumber.TryGetValue(item.CountNo, out var movement)
+                ? item with
+                {
+                    InventoryPostingStatus = movement.Status.ToString(),
+                    InventoryPostingFailureCode = movement.FailureCode,
+                    InventoryPostingFailureMessage = movement.FailureMessage,
+                    InventoryMovementId = movement.InventoryMovementId,
+                }
+                : item)
+            .ToArray();
+        return new ListCountExecutionsResponse(projectedItems, total);
     }
 }
 
@@ -673,7 +1523,11 @@ public sealed record ListReceivingQualityGatesQuery(
     bool IncludeNotRequired = false,
     // 精确单号过滤：PDA 收货明细按单取完整行，避免 keyword（同时命中 SKU/检验号）
     // 跨单串扰。与 keyword 互补——keyword 用于列表模糊搜。
-    string? InboundOrderNo = null) : IQuery<ListReceivingQualityGatesResponse>;
+    string? InboundOrderNo = null,
+    IReadOnlyCollection<string>? AssignedOperatorUserIds = null,
+    IReadOnlyCollection<string>? AssignedPoolCodes = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    bool SiteWideScope = false) : IQuery<ListReceivingQualityGatesResponse>;
 
 public sealed record ListReceivingQualityGatesResponse(IReadOnlyCollection<ReceivingQualityGateFact> Items, int Total);
 
@@ -707,13 +1561,83 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
 {
     public async Task<ListReceivingQualityGatesResponse> Handle(ListReceivingQualityGatesQuery request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.OrganizationId)
+            || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
         var skip = Math.Max(0, request.Skip);
         var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
-        var query = dbContext.InboundOrders
+        var orderQuery = dbContext.InboundOrders
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .SelectMany(order => order.Lines, (order, line) => new { order, line });
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        if (!WmsOwnershipQueryFilters.TryResolve(
+                request.AssignedOperatorUserIds,
+                request.AssignedPoolCodes,
+                request.SiteCodes,
+                WmsOwnershipQueryFilters.ModeOf(
+                    organizationWideScope: false,
+                    request.SiteWideScope),
+                out var ownershipScope))
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
+        var siteCodes = WmsOwnershipQueryFilters.Normalize(request.SiteCodes);
+        if (siteCodes.Length == 0)
+        {
+            return new ListReceivingQualityGatesResponse([], 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.InboundOrderNo))
+        {
+            var exactOrder = await orderQuery
+                .Where(x => x.InboundOrderNo == request.InboundOrderNo)
+                .Select(x => new
+                {
+                    x.AssignedOperatorUserId,
+                    x.AssignedPoolCode,
+                    x.SiteCode,
+                })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (exactOrder is not null)
+            {
+                var ownershipMatches = ownershipScope.Kind switch
+                {
+                    WmsOwnershipScopeKind.Operator =>
+                        exactOrder.AssignedOperatorUserId is not null
+                        && ownershipScope.Values.Contains(exactOrder.AssignedOperatorUserId),
+                    WmsOwnershipScopeKind.Pool =>
+                        exactOrder.AssignedPoolCode is not null
+                        && ownershipScope.Values.Contains(exactOrder.AssignedPoolCode),
+                    WmsOwnershipScopeKind.Site => true,
+                    _ => false,
+                };
+                if (!ownershipMatches || !siteCodes.Contains(exactOrder.SiteCode))
+                {
+                    throw WmsAuthorizationException.Forbidden(
+                        "resource-outside-selected-work-scope");
+                }
+            }
+        }
+
+        orderQuery = ownershipScope.Kind switch
+        {
+            WmsOwnershipScopeKind.Operator => orderQuery.Where(x =>
+                x.AssignedOperatorUserId != null
+                && ownershipScope.Values.Contains(x.AssignedOperatorUserId)),
+            WmsOwnershipScopeKind.Pool => orderQuery.Where(x =>
+                x.AssignedPoolCode != null
+                && ownershipScope.Values.Contains(x.AssignedPoolCode)),
+            WmsOwnershipScopeKind.Site => orderQuery,
+            _ => orderQuery.Where(_ => false),
+        };
+        orderQuery = orderQuery.Where(x => siteCodes.Contains(x.SiteCode));
+        var query = orderQuery.SelectMany(
+            order => order.Lines,
+            (order, line) => new { order, line });
 
         // 默认仅质检工作清单（排除免检行）；IncludeNotRequired=true 时返回全部收货行，
         // 供 PDA 收货明细展示/采集免检行的批号效期与「免检」状态标。

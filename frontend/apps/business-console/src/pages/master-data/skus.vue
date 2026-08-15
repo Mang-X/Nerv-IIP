@@ -42,7 +42,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   BARCODE_RULE_OPTIONS,
   BATCH_TRACKING_OPTIONS,
@@ -283,7 +283,7 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
     key: 'category',
     header: '产品分类',
     width: 'w-28',
-    accessor: (r) => labelOf(productCategoryOptions.value, r.category) || '无',
+    accessor: (r) => categoryLabel(r.category) || '无',
   },
   {
     key: 'materialType',
@@ -311,11 +311,25 @@ function labelOf(options: ReadonlyArray<{ value: string; label: string }>, value
   if (!value) return ''
   return options.find((o) => o.value === value)?.label ?? value
 }
+/**
+ * 产品分类显示名。
+ *
+ * 现存数据里有一批物料的 category 存的不是分类主数据的 `PCAT-*`，而是 `raw-material`
+ * 这类**物料类型** slug（后端 `Sku.Create` 六参重载把 category 同时赋给了 materialType，
+ * 种子又只传了物料类型，已作为后端种子缺陷单独移交）。分类目录里查不到时再用物料类型
+ * 常量兜一层中文，避免把英文码值印到界面上；两个词表都没有才原样显示。
+ */
+function categoryLabel(value?: string | null) {
+  if (!value) return ''
+  const fromCatalog = productCategoryOptions.value.find((o) => o.value === value)?.label
+  if (fromCatalog) return fromCatalog
+  return MATERIAL_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value
+}
 function skuDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '物料编码', value: row.code ?? '' },
     { label: '物料名称', value: row.displayName ?? '' },
-    { label: '产品分类', value: labelOf(productCategoryOptions.value, row.category) },
+    { label: '产品分类', value: categoryLabel(row.category) },
     { label: '物料类型', value: labelOf(materialTypeOptions.value, row.materialType) },
     { label: '基本单位', value: labelOf(baseUomOptions.value, row.baseUomCode) },
   ]
@@ -408,7 +422,7 @@ async function submitSku() {
     createShowErrors.value = false
     createOpen.value = false
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('保存物料失败', error, '保存物料失败，请稍后重试。')
   }
 }
 function openCreate() {
@@ -454,7 +468,7 @@ function syncContextFromFilters(open: boolean) {
   createForm.environmentId = filters.environmentId
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -596,7 +610,7 @@ function isNonEmpty(value: string) {
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>投产前需质检</span>
-                    <NvCheckbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
+                    <NvCheckbox id="sku-quality" v-model="createForm.qualityRequired" />
                   </label>
                 </NvField>
                 <NvField
@@ -713,8 +727,8 @@ function isNonEmpty(value: string) {
                       class="flex items-center gap-2 text-sm"
                     >
                       <NvCheckbox
-                        :checked="createForm.complianceTags.includes(option.value)"
-                        @update:checked="setComplianceTag(option.value, $event === true)"
+                        :model-value="createForm.complianceTags.includes(option.value)"
+                        @update:model-value="setComplianceTag(option.value, $event === true)"
                       />
                       {{ option.label }}
                     </label>
@@ -751,7 +765,7 @@ function isNonEmpty(value: string) {
     <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
       <template #filters>
         <label class="flex items-center gap-2 text-sm text-muted-foreground">
-          <NvCheckbox v-model:checked="includeDisabled" />
+          <NvCheckbox v-model="includeDisabled" />
           包含停用
         </label>
       </template>

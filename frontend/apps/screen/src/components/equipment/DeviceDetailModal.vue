@@ -175,7 +175,7 @@ function leaveSpark() {
                   </div>
                 </div>
               </div>
-              <p class="ddm-note">参数为演示数据流 · historian / 实时采集接入待 #570</p>
+              <p class="ddm-note">参数来自当前数据窗口，历史趋势以设备接入状态为准</p>
             </section>
 
             <!-- 下：维修 | 保养点检 两列 -->
@@ -277,7 +277,7 @@ function leaveSpark() {
     display: flex;
     flex-direction: column;
     border-radius: 10px;
-    background: linear-gradient(180deg, rgba(17, 26, 46, 0.97), rgba(8, 13, 25, 0.97));
+    background: rgba(13, 20, 36, 0.97);
     border: 1px solid rgba(148, 190, 255, 0.16);
     border-top-color: rgba(255, 255, 255, 0.14);
     box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9);

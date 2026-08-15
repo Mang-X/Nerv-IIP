@@ -1,5 +1,8 @@
 export { cn } from './lib/utils'
 
+// 空值占位统一约定（有标签的字段值为空时一律渲染 `—`，不留空白）。
+export { displayValue, EMPTY_TEXT, isEmptyValue } from './lib/empty'
+
 export {
   ACCENT_PRESETS,
   ACCENT_STORAGE_KEY,

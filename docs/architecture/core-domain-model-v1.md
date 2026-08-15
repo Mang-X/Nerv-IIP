@@ -63,7 +63,7 @@
 1. 复杂 ABAC 规则引擎
 2. 菜单编排细节
 3. 跨组织委派和临时授权流
-4. 完整第三方应用市场、复杂 OAuth/OIDC 协议矩阵和细粒度 consent 页面
+4. 完整第三方应用市场、复杂 OAuth/OIDC 协议矩阵和细粒度同意页面（consent page）
 5. 工厂、产线、设备、站点等行业组织模型；这些属于后续领域扩展，不进入主平台 IAM 核心事实。
 
 ## File Storage 一阶模型
@@ -116,13 +116,13 @@
 
 ### 关键边界
 
-1. File Storage 拥有文件元数据、对象存储 key 和访问授权事实，但不拥有业务对象本身。
+1. File Storage 拥有文件元数据、对象存储键（key）和访问授权事实，但不拥有业务对象本身。
 2. `objectKey`、预签名 URL 和底层存储凭证不进入长期业务契约；其它服务只保存 `fileId` 或 `FileReference`。
 3. 文件上传、下载、归档和删除都必须携带组织、环境、主体和用途上下文。
-4. 对象内容默认落到 MinIO 或等价对象存储，元数据和治理状态必须落到 File Storage 自身 schema。
+4. 对象内容默认落到 MinIO 或等价对象存储，元数据和治理状态必须落到 File Storage 自身数据库模式（schema）。
 5. Knowledge、Ops、AppHub 可以引用文件，但不能绕过 File Storage 直接把底层对象定位信息当成自己的事实源。
-6. tus、S3 multipart 和 server-proxy 只作为 Upload Provider 策略存在；UploadSession 记录 provider 与 uploadMode，StoredFile 不依赖具体上传协议。
-7. filePurpose、大小限制、content type allowlist、scanStatus、保留策略和过期清理属于 File Storage 治理事实，不应散落到业务服务中各自实现。
+6. tus、S3 multipart 和服务器代理（server-proxy）只作为 Upload Provider 策略存在；UploadSession 记录 provider 与 uploadMode，StoredFile 不依赖具体上传协议。
+7. filePurpose、大小限制、内容类型允许列表（content type allowlist）、scanStatus、保留策略和过期清理属于 File Storage 治理事实，不应散落到业务服务中各自实现。
 
 ## AppHub 一阶模型
 
@@ -164,7 +164,7 @@
 
 ### 关键边界
 
-1. AppHub 只维护 reported state，不维护运维 desired state。
+1. AppHub 只维护上报状态（reported state），不维护运维期望状态（desired state）。
 2. AppHub 可以记录实例当前是否可达，但不拥有重启、停止、备份等动作任务生命周期。
 3. AppHub 对外提供应用目录与实例事实查询，不直接生成运维任务。
 
@@ -253,7 +253,7 @@
 1. Notification 负责“如何通知、通知谁、是否重复、是否已读、是否投递成功”，不替业务服务决定业务事实是否成立。
 2. AppHub、Ops、AI Integration、Knowledge 和行业扩展只发布领域事实、待处理事项或通知意图，不各自直连邮件、短信、企业 IM 或 Webhook。
 3. Notification 通过 IAM 解析用户、角色、组织、环境和授权范围，但不维护平行权限模型。
-4. 站内通知是首批默认通道；邮件、短信、企业微信、钉钉和 Webhook 只作为后续 provider 扩展。
+4. 站内通知是首批默认通道；邮件、短信、企业微信、钉钉和 Webhook 只作为后续提供方（provider）扩展。
 5. 通知投递按最终一致性处理，外部通道失败不能回滚原业务事务。
 6. Notification 可以保存 sourceEventId、resourceRef、correlationId 和展示摘要，但不复制 AppHub、Ops、Knowledge 或 AI Integration 的领域模型。
 
@@ -316,12 +316,12 @@
 2. SourceDocument 归属于 KnowledgeSource，表示一个可处理来源文档，保存来源标识、fileId 或外部来源引用、版本指纹、解析状态、索引状态和引用元数据。
 3. Chunk 是 SourceDocument 下的分块实体，保存分块文本或摘要、位置、内容指纹、权限标签、索引引用和可重建元数据。
 4. EmbeddingJob 承载首次导入、增量同步、重建索引、删除同步和失败重试生命周期；状态至少覆盖 Pending、Running、PartiallySucceeded、Succeeded、Failed、Cancelled。
-5. RetrievalPolicy 保存检索范围、权限过滤口径、召回参数、rerank 开关和引用返回要求；它是 Knowledge 的检索治理事实，不属于 AI Integration 的 prompt 或工具治理。
+5. RetrievalPolicy 保存检索范围、权限过滤口径、召回参数、重排（rerank）开关和引用返回要求；它是 Knowledge 的检索治理事实，不属于 AI Integration 的提示词（prompt）或工具治理。
 6. CitationRecord 保存检索结果可回溯引用，至少能关联 KnowledgeSource、SourceDocument、Chunk、来源位置、权限上下文和可展示摘要。
 
 ### 关键边界
 
-1. Knowledge 只通过 File Storage 的 fileId、FileReference、受控下载授权或 Platform SDK 使用文件，不保存对象存储 key、预签名 URL 或底层存储凭证作为长期事实。
+1. Knowledge 只通过 File Storage 的 fileId、FileReference、受控下载授权或 Platform SDK 使用文件，不保存对象存储键（key）、预签名 URL 或底层存储凭证作为长期事实。
 2. 原始文件、派生附件、扫描状态、保留策略和物理删除归 File Storage；知识源状态、解析、分块、嵌入、索引和引用回显归 Knowledge。
 3. File Storage 文件归档、隔离或删除后，Knowledge 应通过集成事件或同步检查将相关 SourceDocument 标记为 Stale、Deleted 或不可检索，而不是直接改写 File Storage 状态。
 4. Knowledge 可以把可重建索引写入 Qdrant 或等价向量库，但关系库必须保留可解释的索引元数据、任务状态和引用事实。
@@ -332,7 +332,7 @@
 
 ### 目标职责
 
-- 拥有模型提供方配置、模型画像、MCP/Skill 工具定义、工具授权、AI 执行记录、审批与人工确认、prompt 模板版本和策略快照事实。
+- 拥有模型提供方配置、模型画像、MCP/Skill 工具定义、工具授权、AI 执行记录、审批与人工确认、提示词（prompt）模板版本和策略快照事实。
 - 作为模型调用、工具执行和高风险 AI 动作的人机治理边界，消费 IAM 的身份与授权事实，并通过 Notification 暴露待办或结果通知。
 - 不托管模型，不维护知识索引，不接管 Ops、AppHub、Knowledge 或 Notification 的领域事实。
 
@@ -395,14 +395,14 @@
 2. ModelProfile 表示可被选择的模型能力画像，保存模型用途、能力标签、上下文限制、成本口径、默认参数和启用范围。
 3. ToolDefinition 表示 MCP Server、Skill 或平台服务能力暴露出来的受治理工具，保存工具类型、输入输出契约、风险等级、目标服务和审计要求。
 4. ToolAuthorizationGrant 表示某个主体、外部客户端、角色或组织环境范围可使用哪些工具；授权判断必须消费 IAM 的身份、权限、组织、环境和外部授权事实。
-5. AiExecutionRecord 记录一次模型调用、工具调用或组合执行的请求上下文、模型画像、工具引用、结果摘要、token 或成本口径、失败分类、correlationId 和审计元数据。
+5. AiExecutionRecord 记录一次模型调用、工具调用或组合执行的请求上下文、模型画像、工具引用、结果摘要、词元（token）或成本口径、失败分类、correlationId 和审计元数据。
 6. ApprovalRequest 表示 AI Integration 自身的工具执行审批挂点；HumanConfirmation 表示执行前、执行中或结果采纳前的人工确认动作。
-7. PromptTemplate 拥有 PromptVersion；PromptVersion 发布时应捕获 PolicySnapshot，保证后续执行可以解释当时的 prompt、工具授权、模型画像和风险策略。
+7. PromptTemplate 拥有 PromptVersion；PromptVersion 发布时应捕获 PolicySnapshot，保证后续执行可以解释当时的提示词（prompt）、工具授权、模型画像和风险策略。
 
 ### 关键边界
 
 1. AI Integration 通过 IAM 获取身份、组织、环境、角色、权限和外部授权事实，但不维护平行权限模型。
-2. 工具授权、模型选择策略和 prompt 版本归 AI Integration；用户、角色、会话、外部客户端和基础授权授予仍归 IAM。
+2. 工具授权、模型选择策略和提示词（prompt）版本归 AI Integration；用户、角色、会话、外部客户端和基础授权授予仍归 IAM。
 3. 需要用户处理的审批、确认和执行失败应发布 AiApprovalRequested、HumanConfirmationRequested、AiExecutionFailed 或明确通知意图，由 Notification 解析接收人、偏好、去重和投递。
 4. Notification 可以保存待办和展示摘要，但不复制 ToolAuthorizationGrant、AiExecutionRecord、PromptVersion 或 PolicySnapshot。
 5. AI Integration 调用 Knowledge 时只消费检索片段和 CitationRecord，不创建或维护私有向量索引。
@@ -431,7 +431,7 @@
 
 ### 重启动作链路
 
-1. 控制台或 Gateway 发起 restart。
+1. 控制台或 Gateway 发起 restart（重启）动作。
 2. Ops 创建 OperationTask 与 AuditRecord。
 3. Connector Host 执行动作并回传结果。
 4. Ops 记录 OperationCompleted 或 OperationFailed。
@@ -448,10 +448,10 @@
 
 1. AppHub 拥有应用与实例事实，Ops 拥有动作与审计事实。
 2. 心跳和状态同步是两类不同契约，不能合并成一个万能上报接口。
-3. AppHub 记录 reported state，Ops 不维护实例事实真相源。
-4. restart 这类动作的成功与否由 Ops 记录，实例最终状态是否恢复由 AppHub 后续状态同步确认。
+3. AppHub 记录上报状态（reported state），Ops 不维护实例事实真相源。
+4. restart（重启）这类动作的成功与否由 Ops 记录，实例最终状态是否恢复由 AppHub 后续状态同步确认。
 5. IAM 首批先服务于组织、环境、权限上下文、用户会话、Connector Host 凭证和外部授权事实基线，不先扩展复杂委派、临时授权或完整第三方应用市场模型。
-6. File Storage 拥有文件元数据、对象存储定位、上传下载授权和保留策略；Knowledge、Ops、AppHub 只通过 fileId 或 FileReference 引用文件，不直接保存对象存储 key 作为业务事实。
+6. File Storage 拥有文件元数据、对象存储定位、上传下载授权和保留策略；Knowledge、Ops、AppHub 只通过 fileId 或 FileReference 引用文件，不直接保存对象存储键（key）作为业务事实。
 7. Notification 是主平台通用能力，拥有通知与待办事实；业务服务只表达事实或通知意图，不各自实现通知表或外部通道投递。
 8. Knowledge 拥有知识源、来源文档、分块、嵌入任务、检索策略和引用回显事实；AI Integration、Gateway 和平台服务只通过 Knowledge 检索接口消费知识。
-9. AI Integration 拥有模型接入、工具治理、AI 执行记录、审批确认、prompt 版本和策略快照事实；IAM 与 Notification 分别只提供身份授权事实和通知待办投递能力。
+9. AI Integration 拥有模型接入、工具治理、AI 执行记录、审批确认、提示词（prompt）版本和策略快照事实；IAM 与 Notification 分别只提供身份授权事实和通知待办投递能力。

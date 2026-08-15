@@ -1,184 +1,230 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 
-const push = vi.fn()
+const executeTask = vi.fn()
+const refresh = vi.fn()
+const loadMore = vi.fn()
+const loadMoreError = shallowRef<unknown>()
+const actionError = shallowRef<unknown>()
+const lastUpdatedAt = shallowRef('2026-08-01T08:00:00.000Z')
+const actionPending = shallowRef(false)
+const actionUnconfirmed = shallowRef(false)
+const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
+const routeGuardState = vi.hoisted(() => ({
+  guard: undefined as (() => boolean) | undefined,
+}))
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push }),
-  RouterView: { template: '<div />' },
+  onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
+    routeGuardState.guard = guard
+  }),
 }))
-
-// 真实组合式用真实的 ref/computed，贴合运行时解包行为。
-const wmsState = vi.hoisted(() => ({
-  filters: {
-    skip: 0,
-    take: 100,
-    status: undefined as string | undefined,
-    locationCode: undefined as string | undefined,
-  },
-  tasks: [
-    {
-      warehouseTaskId: '11111111-1111-1111-1111-111111111111',
-      taskType: 'picking',
-      taskNo: 'PK-2026-0001',
-      sourceOrderNo: 'OB-2026-0001',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-A',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'A-01',
-      toLocationCode: 'OUT-01',
-      plannedQuantity: 10,
-      executedQuantity: 0,
-      status: 'pending',
-      createdAtUtc: '2026-06-11T08:00:00Z',
-    },
-    {
-      warehouseTaskId: '22222222-2222-2222-2222-222222222222',
-      taskType: 'picking',
-      taskNo: 'PK-2026-0002',
-      sourceOrderNo: 'OB-2026-0002',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-B',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'A-02',
-      toLocationCode: 'OUT-01',
-      plannedQuantity: 5,
-      executedQuantity: 0,
-      status: 'inProgress',
-      createdAtUtc: '2026-06-11T09:00:00Z',
-    },
-  ],
-  error: null as unknown,
-  pending: false,
-  refresh: vi.fn(),
-}))
+const scopeKey = shallowRef('self:emp049')
+const filters = reactive({
+  status: 'Open' as string | undefined,
+  keyword: undefined as string | undefined,
+  locationCode: undefined as string | undefined,
+})
+const task = {
+  warehouseTaskId: 'task-1',
+  taskNo: 'PK-2026-0001',
+  status: 'Open',
+  version: 1,
+  allowedActions: ['start'],
+}
 
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsPicking: () => ({
-    filters: wmsState.filters,
-    tasks: computed(() => wmsState.tasks),
-    total: computed(() => wmsState.tasks.length),
-    pending: computed(() => wmsState.pending),
-    error: computed(() => wmsState.error),
-    refresh: wmsState.refresh,
+    filters,
+    scopeKey,
+    scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
+    tasks: computed(() => [task]),
+    total: computed(() => 2),
+    pending: shallowRef(false),
+    error: shallowRef(),
+    refreshing: shallowRef(false),
+    loadingMore: shallowRef(false),
+    loadMoreError,
+    actionError,
+    lastUpdatedAt,
+    actionPending,
+    actionUnconfirmed,
+    refresh,
+    loadMore,
+    executeTask,
   }),
 }))
+vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useWmsOperationalCandidates: () => ({
+      locationOptions: shallowRef([]),
+      lotOptions: shallowRef([]),
+      ready: shallowRef(true),
+      searchKeyword: shallowRef(''),
+      scanOverrides: shallowRef({}),
+      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
+      asOfUtc: shallowRef(),
+      freshnessUtc: shallowRef(),
+      truncated: shallowRef(false),
+      pending: shallowRef(false),
+      error: shallowRef(),
+      refresh: candidateState.refresh,
+    }),
+  }
+})
 
 import PickPage from './pick.vue'
 
-function freshTasks() {
-  return [
-    {
-      warehouseTaskId: '11111111-1111-1111-1111-111111111111',
-      taskType: 'picking',
-      taskNo: 'PK-2026-0001',
-      sourceOrderNo: 'OB-2026-0001',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-A',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'A-01',
-      toLocationCode: 'OUT-01',
-      plannedQuantity: 10,
-      executedQuantity: 0,
-      status: 'pending',
-      createdAtUtc: '2026-06-11T08:00:00Z',
-    },
-    {
-      warehouseTaskId: '22222222-2222-2222-2222-222222222222',
-      taskType: 'picking',
-      taskNo: 'PK-2026-0002',
-      sourceOrderNo: 'OB-2026-0002',
-      sourceOrderLineNo: '1',
-      skuCode: 'SKU-B',
-      uomCode: 'EA',
-      siteCode: 'S1',
-      fromLocationCode: 'A-02',
-      toLocationCode: 'OUT-01',
-      plannedQuantity: 5,
-      executedQuantity: 0,
-      status: 'inProgress',
-      createdAtUtc: '2026-06-11T09:00:00Z',
-    },
-  ]
-}
-
-function resetState() {
-  wmsState.filters.status = undefined
-  wmsState.filters.locationCode = undefined
-  wmsState.tasks = freshTasks()
-  wmsState.error = null
-  wmsState.pending = false
-  wmsState.refresh.mockClear()
-  push.mockClear()
-}
-
-describe('WMS 拣货（只读）', () => {
-  beforeEach(() => resetState())
-
-  it('渲染拣货任务行与中文状态（不出现原始状态码或 GUID）', () => {
-    const wrapper = mount(PickPage)
-    const text = wrapper.text()
-    expect(text).toContain('PK-2026-0001')
-    expect(text).toContain('PK-2026-0002')
-    expect(text).toContain('SKU-A')
-    expect(text).toContain('A-01')
-    expect(text).toContain('OUT-01')
-    // 中文状态
-    expect(text).toContain('待执行')
-    expect(text).toContain('执行中')
-    // 不暴露工程语言：原始状态码 / GUID
-    expect(text).not.toContain('pending')
-    expect(text).not.toContain('inProgress')
-    expect(text).not.toContain('11111111-1111-1111-1111-111111111111')
-    expect(text).not.toContain('22222222-2222-2222-2222-222222222222')
+describe('WMS 拣货作业页', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    filters.status = 'Open'
+    filters.keyword = undefined
+    filters.locationCode = undefined
+    scopeKey.value = 'self:emp049'
+    actionPending.value = false
+    actionUnconfirmed.value = false
+    actionError.value = { message: '拣货任务操作失败' }
+    routeGuardState.guard = undefined
   })
 
-  it('扫库位写入 filters.locationCode', async () => {
-    const wrapper = mount(PickPage)
-    const input = wrapper.get('input[placeholder*="库位"]')
-    await input.setValue('A-02')
-    await input.trigger('keydown.enter')
-    expect(wmsState.filters.locationCode).toBe('A-02')
+  function dispatchBeforeUnload() {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event
+  }
+
+  it('把范围、筛选、分页与任务交给移动作业视图', () => {
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            props: [
+              'title',
+              'taskType',
+              'tasks',
+              'total',
+              'status',
+              'scopeKey',
+              'scopeOptions',
+              'updatedAt',
+              'loadMoreError',
+              'actionError',
+            ],
+            template:
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}|{{ Boolean(actionError) }}</div>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
+      '拣货|picking|2|self:emp049|Open|PK-2026-0001|2026-08-01T08:00:00.000Z|false|true',
+    )
   })
 
-  it('清除筛选可重置 filters.locationCode', async () => {
-    wmsState.filters.locationCode = 'A-02'
-    const wrapper = mount(PickPage)
-    await wrapper.get('[data-testid="clear-filter"]').trigger('click')
-    expect(wmsState.filters.locationCode).toBeUndefined()
+  it('转发刷新、触底加载、筛选和真实任务动作', async () => {
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: [
+              'refresh',
+              'loadMore',
+              'update:locationCode',
+              'update:status',
+              'update:scopeKey',
+              'execute',
+            ],
+            template: `
+              <div>
+                <button data-testid="refresh" @click="$emit('refresh')" />
+                <button data-testid="load-more" @click="$emit('loadMore')" />
+                <button data-testid="scan" @click="$emit('update:locationCode', 'A-01')" />
+                <button data-testid="status" @click="$emit('update:status', 'InProgress')" />
+                <button data-testid="scope" @click="$emit('update:scopeKey', 'team:TEAM-WMS-01')" />
+                <button data-testid="execute" @click="$emit('execute', { action: 'start', task })" />
+              </div>`,
+            setup() {
+              return { task }
+            },
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="refresh"]').trigger('click')
+    await wrapper.get('[data-testid="load-more"]').trigger('click')
+    await wrapper.get('[data-testid="scan"]').trigger('click')
+    await wrapper.get('[data-testid="status"]').trigger('click')
+    await wrapper.get('[data-testid="scope"]').trigger('click')
+    await wrapper.get('[data-testid="execute"]').trigger('click')
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(candidateState.refresh).toHaveBeenCalledTimes(1)
+    expect(loadMore).toHaveBeenCalledTimes(1)
+    expect(filters.locationCode).toBe('A-01')
+    expect(filters.status).toBe('InProgress')
+    expect(scopeKey.value).toBe('team:TEAM-WMS-01')
+    expect(executeTask).toHaveBeenCalledWith({ action: 'start', task })
   })
 
-  it('错误时显示错误横幅而非空态', () => {
-    wmsState.error = new Error('boom')
-    wmsState.tasks = []
-    const wrapper = mount(PickPage)
-    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('暂无拣货任务')
+  it('开始成功后聚焦执行中任务，避免任务从待执行列表消失', async () => {
+    executeTask.mockResolvedValueOnce({ ...task, status: 'InProgress', version: 2 })
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['execute'],
+            template:
+              '<button data-testid="execute" @click="$emit(\'execute\', { action: \'start\', task })" />',
+            setup() {
+              return { task }
+            },
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="execute"]').trigger('click')
+    await Promise.resolve()
+
+    expect(filters.status).toBe('InProgress')
   })
 
-  it('刷新失败但已有任务时：错误横幅与任务列表共存（列表不被隐藏）', () => {
-    wmsState.error = new Error('boom')
-    wmsState.tasks = freshTasks()
-    const wrapper = mount(PickPage)
-    expect(wrapper.find('[data-testid="error-banner"]').exists()).toBe(true)
-    const text = wrapper.text()
-    expect(text).toContain('PK-2026-0001')
-    expect(text).toContain('PK-2026-0002')
-    expect(text).not.toContain('暂无拣货任务')
+  it('候选刷新失败也不阻断权威任务刷新后的执行中聚焦', async () => {
+    refresh.mockResolvedValueOnce({ confirmedAction: 'start' })
+    candidateState.refresh.mockRejectedValueOnce(new Error('candidate refresh failed'))
+    const wrapper = mount(PickPage, {
+      global: {
+        stubs: {
+          WarehouseTaskExecutionView: {
+            emits: ['refresh'],
+            template: '<button data-testid="refresh" @click="$emit(\'refresh\')" />',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('[data-testid="refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(filters.status).toBe('InProgress')
   })
 
-  it('无任务且无错误时显示空态', () => {
-    wmsState.tasks = []
-    const wrapper = mount(PickPage)
-    expect(wrapper.text()).toContain('暂无拣货任务')
-  })
+  it.each([
+    ['动作请求发送中', actionPending],
+    ['动作结果待核实', actionUnconfirmed],
+  ])('%s时阻止路由离开与浏览器刷新', async (_state, locked) => {
+    mount(PickPage)
+    locked.value = true
 
-  it('页面只读：无写操作按钮（无确认完成）', () => {
-    const wrapper = mount(PickPage)
-    expect(wrapper.find('[data-testid="confirm-complete"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('确认完成')
+    expect(routeGuardState.guard?.()).toBe(false)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true)
+
+    locked.value = false
+    expect(routeGuardState.guard?.()).toBe(true)
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false)
   })
 })

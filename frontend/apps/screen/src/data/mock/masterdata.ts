@@ -1,6 +1,12 @@
 // 工厂→车间→产线→工作中心→设备 映射字典（mock）。
 // 真实平台无 workshop/line 聚合维度，最细到 WorkCenter/Device；此处提供前端聚合所需映射真相源。
 // 见 spec §1.1「数据现实」。
+//
+// ⚠️ 本文件是《工厂世界观设定集》（docs/superpowers/plans/2026-07-26-factory-world-bible.md）
+// L0 主数据在大屏侧的镜像：编码与中文名**逐字**取自后端权威种子
+// `backend/services/Business/MasterData/.../Application/Seed/WorldBibleSpec.cs`
+// （SITE-001 一号工厂 / 3 车间 / 14 产线 / 17 工作中心 / 46 台设备）。
+// 领导会在 PC 控制台与大屏之间来回看，两边必须是同一家工厂 —— 改这里前先改设定集。
 
 export interface FactoryRef {
   id: string
@@ -9,8 +15,12 @@ export interface FactoryRef {
 export interface WorkshopRef {
   id: string
   code: string
+  /** L0 全名（与 PC 控制台一致），如「一车间 · 机加车间」 */
   name: string
+  /** 远视距短名（角标/事件流/chip 用），如「机加车间」 */
+  shortName: string
   factoryId: string
+  /** 车间主任（L0 §5：EMP-001..003） */
   managerName: string
 }
 export interface LineRef {
@@ -29,105 +39,241 @@ export interface WorkCenterRef {
 export interface DeviceRef {
   id: string
   code: string
+  /** 设备型号名（L0 §3），如「数控车床 CK6150」 */
   name: string
+  /** 设备类别键，参数模板与报警语义按它匹配 */
+  category: DeviceCategory
   workshopId: string
   lineId: string
   workCenterId: string
 }
 
-export const FACTORIES: FactoryRef[] = [
-  { id: 'F01', name: '华东智造基地' },
-  { id: 'F02', name: '华南制造中心' },
-]
+export type DeviceCategory =
+  | 'cnc'
+  | 'grinder'
+  | 'welding-robot'
+  | 'assembly-station'
+  | 'coating'
+  | 'test-bench'
+  | 'packaging-line'
+  | 'utility'
+
+// 设定集 §1：宁沪减振科技只有一个基地 SITE-001「一号工厂」——
+// 门厅的工厂切换器在只有一个工厂时自动隐藏（index.vue `factories.length > 1`）。
+export const FACTORIES: FactoryRef[] = [{ id: 'SITE-001', name: '宁沪减振 · 一号工厂' }]
+
+/** 默认工厂 id：各 build* 纯函数的缺省 scope。 */
+export const DEFAULT_FACTORY_ID = 'SITE-001'
 
 export const WORKSHOPS: WorkshopRef[] = [
-  { id: 'WS-STAMP', code: 'WS-STAMP', name: '冲压车间', factoryId: 'F01', managerName: '李国强' },
-  { id: 'WS-WELD', code: 'WS-WELD', name: '焊装车间', factoryId: 'F01', managerName: '王海涛' },
-  { id: 'WS-PAINT', code: 'WS-PAINT', name: '涂装车间', factoryId: 'F01', managerName: '陈晓东' },
-  { id: 'WS-ASSY', code: 'WS-ASSY', name: '总装车间', factoryId: 'F01', managerName: '赵敏' },
-  { id: 'WS-BATTERY', code: 'WS-BATTERY', name: '电池车间', factoryId: 'F01', managerName: '孙立军' },
-  { id: 'WS-INJECT', code: 'WS-INJECT', name: '注塑车间', factoryId: 'F02', managerName: '周文斌' },
-  { id: 'WS-MACH', code: 'WS-MACH', name: '机加车间', factoryId: 'F02', managerName: '吴俊' },
+  {
+    id: 'WS-01',
+    code: 'WS-01',
+    name: '一车间 · 机加车间',
+    shortName: '机加车间',
+    factoryId: DEFAULT_FACTORY_ID,
+    managerName: '王建国',
+  },
+  {
+    id: 'WS-02',
+    code: 'WS-02',
+    name: '二车间 · 装配车间',
+    shortName: '装配车间',
+    factoryId: DEFAULT_FACTORY_ID,
+    managerName: '李春梅',
+  },
+  {
+    id: 'WS-03',
+    code: 'WS-03',
+    name: '三车间 · 表面与包装车间',
+    shortName: '表面与包装车间',
+    factoryId: DEFAULT_FACTORY_ID,
+    managerName: '张玉兰',
+  },
 ]
 
-// 每车间 2–3 条产线（2026-07 生产走查：产线数扩至接近真实工厂规模，供监控屏滚动）
+// 设定集 §2：机加 5 + 装配 6 + 表面与包装 3 = 14 条产线。
+// ⚠️ 顺序即 L0 声明序，工单号推导（line/quality 两处 woOf 同式）依赖下标 ——
+// 新增产线一律追加尾部，中间插入会让跨屏工单号整体漂移。
 export const LINES: LineRef[] = [
-  { id: 'LN-STAMP-1', code: 'LN-STAMP-1', name: '冲压一线', workshopId: 'WS-STAMP' },
-  { id: 'LN-STAMP-2', code: 'LN-STAMP-2', name: '冲压二线', workshopId: 'WS-STAMP' },
-  { id: 'LN-STAMP-3', code: 'LN-STAMP-3', name: '冲压三线', workshopId: 'WS-STAMP' },
-  { id: 'LN-WELD-1', code: 'LN-WELD-1', name: '焊装一线', workshopId: 'WS-WELD' },
-  { id: 'LN-WELD-2', code: 'LN-WELD-2', name: '焊装二线', workshopId: 'WS-WELD' },
-  { id: 'LN-WELD-3', code: 'LN-WELD-3', name: '焊装三线', workshopId: 'WS-WELD' },
-  { id: 'LN-PAINT-1', code: 'LN-PAINT-1', name: '涂装一线', workshopId: 'WS-PAINT' },
-  { id: 'LN-PAINT-2', code: 'LN-PAINT-2', name: '面漆线', workshopId: 'WS-PAINT' },
-  { id: 'LN-ASSY-1', code: 'LN-ASSY-1', name: '总装一线', workshopId: 'WS-ASSY' },
-  { id: 'LN-ASSY-2', code: 'LN-ASSY-2', name: '总装二线', workshopId: 'WS-ASSY' },
-  { id: 'LN-ASSY-3', code: 'LN-ASSY-3', name: '总装三线', workshopId: 'WS-ASSY' },
-  { id: 'LN-BAT-1', code: 'LN-BAT-1', name: '电芯线', workshopId: 'WS-BATTERY' },
-  { id: 'LN-BAT-2', code: 'LN-BAT-2', name: 'PACK 线', workshopId: 'WS-BATTERY' },
-  { id: 'LN-INJ-1', code: 'LN-INJ-1', name: '注塑一线', workshopId: 'WS-INJECT' },
-  { id: 'LN-INJ-2', code: 'LN-INJ-2', name: '注塑二线', workshopId: 'WS-INJECT' },
-  { id: 'LN-MACH-1', code: 'LN-MACH-1', name: '机加线', workshopId: 'WS-MACH' },
-  // —— 2026-07 M2 走查扩容：多线车间场景（电池 5 线 / 焊装 4 线 / 机加 2 线）。
-  // ⚠️ 新线一律**追加数组尾部**：LINES 的下标参与工单号推导（line/quality 两处
-  // seq('WO', 1940 + index) 同式）与设备 DEV-xxx 全局序号 —— 中间插入会把
-  // 既有编号（如电芯线 WO-1951）整体漂移，跨屏叙事全断。
-  { id: 'LN-WELD-4', code: 'LN-WELD-4', name: '焊装四线', workshopId: 'WS-WELD' },
-  { id: 'LN-BAT-3', code: 'LN-BAT-3', name: '电芯二线', workshopId: 'WS-BATTERY' },
-  { id: 'LN-BAT-4', code: 'LN-BAT-4', name: '模组线', workshopId: 'WS-BATTERY' },
-  { id: 'LN-BAT-5', code: 'LN-BAT-5', name: 'PACK 二线', workshopId: 'WS-BATTERY' },
-  { id: 'LN-MACH-2', code: 'LN-MACH-2', name: '机加二线', workshopId: 'WS-MACH' },
+  { id: 'LINE-WB-ROD-01', code: 'LINE-WB-ROD-01', name: '活塞杆一线', workshopId: 'WS-01' },
+  { id: 'LINE-WB-ROD-02', code: 'LINE-WB-ROD-02', name: '活塞杆二线', workshopId: 'WS-01' },
+  { id: 'LINE-WB-TUB-01', code: 'LINE-WB-TUB-01', name: '缸筒一线', workshopId: 'WS-01' },
+  { id: 'LINE-WB-TUB-02', code: 'LINE-WB-TUB-02', name: '缸筒二线', workshopId: 'WS-01' },
+  { id: 'LINE-WB-GRD-01', code: 'LINE-WB-GRD-01', name: '精磨线', workshopId: 'WS-01' },
+  { id: 'LINE-WB-FA-01', code: 'LINE-WB-FA-01', name: '前减装配一线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-FA-02', code: 'LINE-WB-FA-02', name: '前减装配二线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-FA-03', code: 'LINE-WB-FA-03', name: '前减装配三线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-RA-01', code: 'LINE-WB-RA-01', name: '后减装配一线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-RA-02', code: 'LINE-WB-RA-02', name: '后减装配二线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-VA-01', code: 'LINE-WB-VA-01', name: '阀系预装线', workshopId: 'WS-02' },
+  { id: 'LINE-WB-CT-01', code: 'LINE-WB-CT-01', name: '电泳涂装线', workshopId: 'WS-03' },
+  { id: 'LINE-WB-TS-01', code: 'LINE-WB-TS-01', name: '性能检测线', workshopId: 'WS-03' },
+  { id: 'LINE-WB-PK-01', code: 'LINE-WB-PK-01', name: '包装线', workshopId: 'WS-03' },
 ]
 
-// 每产线 1 个工作中心（mock 简化）
-export const WORK_CENTERS: WorkCenterRef[] = LINES.map((l) => ({
-  id: `WC-${l.code.replace('LN-', '')}`,
-  code: `WC-${l.code.replace('LN-', '')}`,
-  name: `${l.name}工作中心`,
-  workshopId: l.workshopId,
-  lineId: l.id,
+// 设定集 §2：14 个产线工作中心 + 3 个车间级辅助动力工作中心（承载空压机/冷干机）。
+// 辅助工作中心的产线归属取该车间末道线 —— 与 L0 逐字一致（平台没有「公用工程」层）。
+const WORK_CENTER_DEFS: { code: string; name: string; lineId: string }[] = [
+  { code: 'WC-ROD-01', name: '活塞杆加工中心一线', lineId: 'LINE-WB-ROD-01' },
+  { code: 'WC-ROD-02', name: '活塞杆加工中心二线', lineId: 'LINE-WB-ROD-02' },
+  { code: 'WC-TUB-01', name: '缸筒加工中心一线', lineId: 'LINE-WB-TUB-01' },
+  { code: 'WC-TUB-02', name: '缸筒加工中心二线', lineId: 'LINE-WB-TUB-02' },
+  { code: 'WC-GRD-01', name: '精磨中心', lineId: 'LINE-WB-GRD-01' },
+  { code: 'WC-FA-01', name: '前减装配中心一线', lineId: 'LINE-WB-FA-01' },
+  { code: 'WC-FA-02', name: '前减装配中心二线', lineId: 'LINE-WB-FA-02' },
+  { code: 'WC-FA-03', name: '前减装配中心三线', lineId: 'LINE-WB-FA-03' },
+  { code: 'WC-RA-01', name: '后减装配中心一线', lineId: 'LINE-WB-RA-01' },
+  { code: 'WC-RA-02', name: '后减装配中心二线', lineId: 'LINE-WB-RA-02' },
+  { code: 'WC-VA-01', name: '阀系预装中心', lineId: 'LINE-WB-VA-01' },
+  { code: 'WC-CT-01', name: '电泳涂装中心', lineId: 'LINE-WB-CT-01' },
+  { code: 'WC-TS-01', name: '性能检测中心', lineId: 'LINE-WB-TS-01' },
+  { code: 'WC-PK-01', name: '包装中心', lineId: 'LINE-WB-PK-01' },
+  { code: 'WC-AUX-MC', name: '机加车间辅助动力', lineId: 'LINE-WB-GRD-01' },
+  { code: 'WC-AUX-AS', name: '装配车间辅助动力', lineId: 'LINE-WB-VA-01' },
+  { code: 'WC-AUX-SP', name: '表面与包装车间辅助动力', lineId: 'LINE-WB-PK-01' },
+]
+
+const workshopOfLine = new Map(LINES.map((l) => [l.id, l.workshopId]))
+
+export const WORK_CENTERS: WorkCenterRef[] = WORK_CENTER_DEFS.map((wc) => ({
+  id: wc.code,
+  code: wc.code,
+  name: wc.name,
+  lineId: wc.lineId,
+  workshopId: workshopOfLine.get(wc.lineId)!,
 }))
 
-// 每产线真实设备清单（数量/命名贴近真实产线，共 56 台；2026-07 生产走查：
-// 原「每线 2 台主/辅机」过于理想化，缺少大量设备场景）
-const LINE_DEVICES: Record<string, string[]> = {
-  'LN-STAMP-1': ['800T 压机 1#', '800T 压机 2#', '送料机器人', '模具清洗机', '板料对中台'],
-  'LN-STAMP-2': ['1000T 压机', '600T 压机', '上料机械手', '端拾器库'],
-  'LN-STAMP-3': ['1600T 压机', '送料机器人 2#', '落料线', '废料输送机'],
-  'LN-WELD-1': ['焊接机器人 R01', '焊接机器人 R02', '焊接机器人 R03', '点焊控制柜', '输送滚床 1#', '涂胶机'],
-  'LN-WELD-2': ['焊接机器人 R11', '焊接机器人 R12', '激光焊接站', '夹具切换台', '输送滚床 2#'],
-  'LN-WELD-3': ['焊接机器人 R21', '焊接机器人 R22', '螺柱焊机', '输送滚床 3#', '视觉检测站'],
-  'LN-PAINT-1': ['前处理线体', '电泳槽', '喷涂机器人 P01', '喷涂机器人 P02', '流平烘干炉', '空调送风机组'],
-  'LN-PAINT-2': ['面漆机器人 F01', '面漆机器人 F02', '烘干炉 2#', '喷房送风机'],
-  'LN-ASSY-1': ['拧紧工作站 1#', '拧紧工作站 2#', '油液加注机', '合装举升机', 'AGV 牵引车 01', '下线检测台'],
-  'LN-ASSY-2': ['拧紧工作站 3#', '内饰装配线体', 'AGV 牵引车 02', '风挡涂胶机', '四轮定位仪'],
-  'LN-ASSY-3': ['拧紧工作站 4#', '玻璃安装机器人', '注油机', '路试台'],
-  'LN-BAT-1': ['卷绕机 1#', '卷绕机 2#', '注液机', '化成柜 A', '化成柜 B', '分容柜'],
-  'LN-BAT-2': ['模组堆叠机', 'PACK 线体', '气密检测台', 'EOL 测试柜'],
-  'LN-INJ-1': ['注塑机 1600T', '注塑机 800T', '取件机械手', '原料干燥机'],
-  'LN-INJ-2': ['注塑机 1200T', '注塑机 650T', '机械手 2#', '混料机'],
-  'LN-MACH-1': ['加工中心 M01', '加工中心 M02', '车铣复合 M03', '零件清洗机', '三坐标测量机'],
-  // M2 扩容线（追加尾部，理由见 LINES 注释）
-  'LN-WELD-4': ['焊接机器人 R31', '焊接机器人 R32', '弧焊工作站', '输送滚床 4#'],
-  'LN-BAT-3': ['卷绕机 3#', '卷绕机 4#', '注液机 2#', '化成柜 C', '化成柜 D', '分容柜 2#'],
-  'LN-BAT-4': ['模组堆叠机 2#', '激光焊接机', 'BMS 装配台', '模组测试柜'],
-  'LN-BAT-5': ['PACK 线体 2#', '气密检测台 2#', 'EOL 测试柜 2#', '包装线'],
-  'LN-MACH-2': ['加工中心 M04', '加工中心 M05', '滚齿机', '去毛刺机'],
+// 设定集 §3 设备台账（46 台）：编码段 / 型号 / 工作中心归属与 L0 逐字一致。
+// CNC 10 + 磨床 4 + 装配台 12 + 焊接机器人 3 + 电泳 3 + 试验台 4 + 包装 2 + 辅助 8 = 46。
+const DEVICE_DEFS: { code: string; name: string; category: DeviceCategory; wc: string }[] = [
+  { code: 'DEV-CNC-01', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-01' },
+  { code: 'DEV-CNC-02', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-01' },
+  { code: 'DEV-CNC-03', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-01' },
+  { code: 'DEV-CNC-04', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-02' },
+  { code: 'DEV-CNC-05', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-02' },
+  { code: 'DEV-CNC-06', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-02' },
+  { code: 'DEV-CNC-07', name: '立式加工中心 VMC-850', category: 'cnc', wc: 'WC-TUB-01' },
+  { code: 'DEV-CNC-08', name: '立式加工中心 VMC-850', category: 'cnc', wc: 'WC-TUB-01' },
+  { code: 'DEV-CNC-09', name: '立式加工中心 VMC-850', category: 'cnc', wc: 'WC-TUB-02' },
+  { code: 'DEV-CNC-10', name: '立式加工中心 VMC-850', category: 'cnc', wc: 'WC-TUB-02' },
+  { code: 'DEV-GRD-01', name: '数控外圆磨床 MK1332', category: 'grinder', wc: 'WC-GRD-01' },
+  { code: 'DEV-GRD-02', name: '数控外圆磨床 MK1332', category: 'grinder', wc: 'WC-GRD-01' },
+  { code: 'DEV-GRD-03', name: '数控外圆磨床 MK1332', category: 'grinder', wc: 'WC-GRD-01' },
+  { code: 'DEV-GRD-04', name: '数控外圆磨床 MK1332', category: 'grinder', wc: 'WC-GRD-01' },
+  {
+    code: 'DEV-ASM-01',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-01',
+  },
+  {
+    code: 'DEV-ASM-02',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-01',
+  },
+  {
+    code: 'DEV-ASM-03',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-02',
+  },
+  {
+    code: 'DEV-ASM-04',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-02',
+  },
+  {
+    code: 'DEV-ASM-05',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-03',
+  },
+  {
+    code: 'DEV-ASM-06',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-FA-03',
+  },
+  {
+    code: 'DEV-ASM-07',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-RA-01',
+  },
+  {
+    code: 'DEV-ASM-08',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-RA-01',
+  },
+  {
+    code: 'DEV-ASM-09',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-RA-02',
+  },
+  {
+    code: 'DEV-ASM-10',
+    name: '减振器装配台（气动压装）',
+    category: 'assembly-station',
+    wc: 'WC-RA-02',
+  },
+  {
+    code: 'DEV-ASM-11',
+    name: '阀系预装台（伺服压装）',
+    category: 'assembly-station',
+    wc: 'WC-VA-01',
+  },
+  {
+    code: 'DEV-ASM-12',
+    name: '阀系预装台（伺服压装）',
+    category: 'assembly-station',
+    wc: 'WC-VA-01',
+  },
+  { code: 'DEV-WLD-01', name: '六轴焊接机器人', category: 'welding-robot', wc: 'WC-TUB-01' },
+  { code: 'DEV-WLD-02', name: '六轴焊接机器人', category: 'welding-robot', wc: 'WC-TUB-01' },
+  { code: 'DEV-WLD-03', name: '六轴焊接机器人', category: 'welding-robot', wc: 'WC-TUB-02' },
+  { code: 'DEV-CTG-01', name: '电泳前处理槽', category: 'coating', wc: 'WC-CT-01' },
+  { code: 'DEV-CTG-02', name: '电泳槽', category: 'coating', wc: 'WC-CT-01' },
+  { code: 'DEV-CTG-03', name: '固化炉', category: 'coating', wc: 'WC-CT-01' },
+  { code: 'DEV-TST-01', name: '电液伺服试验台', category: 'test-bench', wc: 'WC-TS-01' },
+  { code: 'DEV-TST-02', name: '电液伺服试验台', category: 'test-bench', wc: 'WC-TS-01' },
+  { code: 'DEV-TST-03', name: '电液伺服试验台', category: 'test-bench', wc: 'WC-TS-01' },
+  { code: 'DEV-TST-04', name: '电液伺服试验台', category: 'test-bench', wc: 'WC-TS-01' },
+  { code: 'DEV-PKG-01', name: '自动装箱线', category: 'packaging-line', wc: 'WC-PK-01' },
+  { code: 'DEV-PKG-02', name: '自动装箱线', category: 'packaging-line', wc: 'WC-PK-01' },
+  { code: 'DEV-AUX-01', name: '螺杆空压机 SA-75', category: 'utility', wc: 'WC-AUX-MC' },
+  { code: 'DEV-AUX-02', name: '螺杆空压机 SA-75', category: 'utility', wc: 'WC-AUX-MC' },
+  { code: 'DEV-AUX-03', name: '冷冻式干燥机 CD-20', category: 'utility', wc: 'WC-AUX-MC' },
+  { code: 'DEV-AUX-04', name: '螺杆空压机 SA-55', category: 'utility', wc: 'WC-AUX-AS' },
+  { code: 'DEV-AUX-05', name: '螺杆空压机 SA-55', category: 'utility', wc: 'WC-AUX-AS' },
+  { code: 'DEV-AUX-06', name: '冷冻式干燥机 CD-15', category: 'utility', wc: 'WC-AUX-AS' },
+  { code: 'DEV-AUX-07', name: '螺杆空压机 SA-37', category: 'utility', wc: 'WC-AUX-SP' },
+  { code: 'DEV-AUX-08', name: '冷冻式干燥机 CD-10', category: 'utility', wc: 'WC-AUX-SP' },
+]
+
+const workCenterById = new Map(WORK_CENTERS.map((wc) => [wc.id, wc]))
+
+export const DEVICES: DeviceRef[] = DEVICE_DEFS.map((d) => {
+  const wc = workCenterById.get(d.wc)!
+  return {
+    id: d.code,
+    code: d.code,
+    name: d.name,
+    category: d.category,
+    workCenterId: wc.id,
+    lineId: wc.lineId,
+    workshopId: wc.workshopId,
+  }
+})
+
+/** 同型号设备在一条线上有多台 —— 大屏必须能一眼分辨是哪一台，故显示名带编码。 */
+export function deviceLabel(d: Pick<DeviceRef, 'code' | 'name'>): string {
+  return `${d.code} ${d.name}`
 }
-let deviceSeq = 0
-export const DEVICES: DeviceRef[] = LINES.flatMap((l) =>
-  (LINE_DEVICES[l.id] ?? []).map((name) => {
-    deviceSeq += 1
-    return {
-      id: `DEV-${String(deviceSeq).padStart(3, '0')}`,
-      code: `DEV-${String(deviceSeq).padStart(3, '0')}`,
-      name,
-      workshopId: l.workshopId,
-      lineId: l.id,
-      workCenterId: `WC-${l.code.replace('LN-', '')}`,
-    }
-  }),
-)
 
 export function workshopsByFactory(factoryId: string): WorkshopRef[] {
   return WORKSHOPS.filter((w) => w.factoryId === factoryId)

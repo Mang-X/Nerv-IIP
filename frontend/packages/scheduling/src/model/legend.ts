@@ -1,0 +1,120 @@
+// 图例事实源:图例只讲图上真实出现过的语义。
+// 每一项都由当前 ScheduleModel + 视图推导,而不是写死一张"全量色板"——
+// 后端没带日历就不谈班次,方案里没有换型窗口就不列换型图例。
+
+import { BLOCK_KINDS, type BlockKind } from './blocks'
+import { resolveTimeScale, shiftBoundaryRendersAt } from './scale'
+import type { ScheduleModel, TimeScale } from './types'
+
+export interface SchedulingLegendSemantics {
+  /** 甘特语义(工单甘特):计划基线 / 依赖箭头 / 里程碑。 */
+  gantt: { baseline: boolean; link: boolean; milestone: boolean }
+  /** 卡片(资源排产板):优先级 / 插单 / 齐套 / 换型耗时 / 瓶颈。 */
+  card: {
+    priority: boolean
+    rush: boolean
+    kitting: boolean
+    changeover: boolean
+    bottleneck: boolean
+  }
+  /**
+   * 状态:冲突 / 锁定 / 物料风险。
+   * 物料风险是软约束的产物(工序已排入,但开工前必须备料),图上以「缺料待备」chip 呈现,
+   * 与「不可排」的冲突分开讲——所以图例也必须单列一项,不能混进冲突。
+   */
+  status: {
+    conflict: boolean
+    locked: boolean
+    materialRisk: boolean
+    /** 设备数据风险:排在状态未知设备上的工序(数据盲区,非阻断)。 */
+    equipmentRisk: boolean
+  }
+  /** 阻塞:方案里真实出现过的资源时间块类型(按固定顺序)。 */
+  blocks: BlockKind[]
+  /**
+   * 日历:非工作时段底纹恒在(有日历按日历、无日历按通用作息);
+   * 班次边界要后端带出日历**且当前刻度画得出那条线**才列(见 shiftBoundaryRendersAt);
+   * 「现在」线只在计划期覆盖当下时出现。
+   */
+  calendar: { nonWorking: boolean; shift: boolean; now: boolean }
+}
+
+const EMPTY: SchedulingLegendSemantics = {
+  gantt: { baseline: false, link: false, milestone: false },
+  card: { priority: false, rush: false, kitting: false, changeover: false, bottleneck: false },
+  status: { conflict: false, locked: false, materialRisk: false, equipmentRisk: false },
+  blocks: [],
+  calendar: { nonWorking: false, shift: false, now: false },
+}
+
+/**
+ * 「全部可能」的图例语义:只给没有模型可依据的场景用(组件库文档 / 演示挂载)。
+ * 有模型时一律走 deriveLegendSemantics——消费方不许自己手写一份形状。
+ */
+export const FULL_LEGEND_SEMANTICS: SchedulingLegendSemantics = {
+  gantt: { baseline: true, link: true, milestone: true },
+  card: { priority: true, rush: true, kitting: true, changeover: true, bottleneck: true },
+  status: { conflict: true, locked: true, materialRisk: true, equipmentRisk: true },
+  blocks: [...BLOCK_KINDS],
+  calendar: { nonWorking: true, shift: true, now: true },
+}
+
+/**
+ * @param scale 当前图上的时间刻度。班次边界这类**随刻度出现/消失**的语义必须知道刻度才能如实推导;
+ *   不传时按 `'auto'` 处理(与引擎同一套解析)。
+ */
+export function deriveLegendSemantics(
+  model?: ScheduleModel,
+  now: number = Date.now(),
+  scale?: TimeScale,
+): SchedulingLegendSemantics {
+  if (!model) return EMPTY
+  const tasks = model.tasks ?? []
+  const operations = tasks.filter((t) => t.type === 'operation' && !t.blockKind)
+  const blockKinds = new Set(tasks.map((t) => t.blockKind).filter(Boolean) as BlockKind[])
+
+  const horizonStart = Date.parse(model.horizon?.startUtc ?? '')
+  const horizonEnd = Date.parse(model.horizon?.endUtc ?? '')
+  // 走查台账 #41:此前只看「后端有没有带日历」,于是日级视图下图例照列「班次边界」,
+  // 而图面一条线都没有。改为按当前刻度下**真的画得出来**的班次起点推导。
+  const resolvedScale = resolveTimeScale(scale, model.horizon)
+  const shiftBoundaryVisible = (model.calendars ?? []).some((calendar) =>
+    calendar.shiftWindows.some((window) => shiftBoundaryRendersAt(window.startUtc, resolvedScale)),
+  )
+
+  return {
+    gantt: {
+      baseline: operations.some((t) => t.plannedStartUtc || t.plannedEndUtc),
+      link: (model.links ?? []).length > 0,
+      milestone: tasks.some((t) => t.isMilestone || t.milestoneLabel),
+    },
+    card: {
+      priority: operations.some((t) => !!t.priority),
+      rush: operations.some((t) => t.isRush),
+      kitting: operations.some((t) => typeof t.kitting === 'number'),
+      changeover: operations.some((t) => typeof t.changeoverMin === 'number'),
+      bottleneck:
+        (model.resources ?? []).some((r) => (r.utilization ?? 0) > 1) ||
+        (model.loads ?? []).some((l) => l.utilization > 1),
+    },
+    status: {
+      conflict: tasks.some((t) => t.hasConflict),
+      locked: operations.some((t) => t.locked),
+      // 有工序真的带物料风险才列;方案全齐套时图例里不出现「缺料待备」。
+      materialRisk: operations.some((t) => !!t.materialRisk),
+      // 同理:有工序真的排在状态未知设备上才列「设备状态未知」。
+      equipmentRisk: operations.some((t) => !!t.equipmentRisk),
+    },
+    blocks: BLOCK_KINDS.filter((kind) => blockKinds.has(kind)),
+    calendar: {
+      // 时间线底纹恒在:有日历按日历判定,无日历也会画周末/夜间。
+      nonWorking: true,
+      shift: shiftBoundaryVisible,
+      now:
+        Number.isFinite(horizonStart) &&
+        Number.isFinite(horizonEnd) &&
+        now >= horizonStart &&
+        now <= horizonEnd,
+    },
+  }
+}

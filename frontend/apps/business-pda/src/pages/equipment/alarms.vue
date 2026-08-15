@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import type { BusinessConsoleTelemetryAlarmEventItem } from '@nerv-iip/api-client'
-import { alarmLifecycleStatusLabel, alarmSeverityLabel } from '@nerv-iip/business-core'
+import {
+  alarmLifecycleStatusLabel,
+  alarmSeverityLabel,
+  statusActionGate,
+} from '@nerv-iip/business-core'
 import { describeRequestError } from '@/api/request-timeout'
-import RetryableListError from '@/components/RetryableListError.vue'
+import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
   ALARM_SHELVE_DURATIONS_MINUTES,
   useBusinessEquipmentAlarms,
 } from '@/composables/useBusinessEquipmentAlarms'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import {
+  isLifecycleActionUpdated,
+  LIFECYCLE_ACTION_UPDATED_MESSAGE,
+} from '@/composables/lifecycleActionRecovery'
 import {
   NvActionSheet,
   NvAppShellMobile,
@@ -15,10 +23,13 @@ import {
   NvListRow,
   NvMobileButton,
   NvMobileDialog,
+  NvMobileDropdownMenu,
+  NvMobileDropdownMenuItem,
   NvMobileTag,
   NvMobileToast,
   NvScanBar,
   type ActionItem,
+  type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { ChevronRight } from '@lucide/vue'
 import { computed, reactive, ref } from 'vue'
@@ -35,8 +46,58 @@ type Alarm = BusinessConsoleTelemetryAlarmEventItem
 
 const router = useRouter()
 
-const { filters, alarms, pending, error, refresh, acknowledge, shelve, actionPending } =
-  useBusinessEquipmentAlarms()
+const {
+  filters,
+  alarms,
+  total,
+  loaded,
+  loadingMore,
+  refreshing,
+  loadMoreError,
+  loadMore,
+  organizationId,
+  environmentId,
+  scopeReady,
+  lastUpdatedAt,
+  hasSuccessfulResponse,
+  hasFailedResponse,
+  pending,
+  error,
+  refresh,
+  acknowledge,
+  shelve,
+  actionPending,
+} = useBusinessEquipmentAlarms()
+const alarmScope = computed(() =>
+  scopeReady.value ? '当前登录组织 / 当前业务环境' : '组织/环境范围未就绪',
+)
+const alarmTotal = computed(() => total.value)
+const alarmScopeReady = computed(() => scopeReady.value)
+const alarmListError = computed(
+  () => error.value ?? (hasFailedResponse.value ? '设备报警服务未成功返回' : undefined),
+)
+const alarmFilterState = computed(() => ({
+  deviceAssetId: filters.deviceAssetId ?? '',
+  status: filters.status ?? '',
+}))
+const alarmStatusModel = computed<string | number>({
+  get: () => filters.status ?? '',
+  set: (value) => {
+    filters.status = String(value) || undefined
+  },
+})
+const alarmStatusOptions: DropdownOption[] = [
+  { label: '全部状态', value: '' },
+  { label: '未确认', value: 'raised' },
+  { label: '已确认', value: 'acknowledged' },
+  { label: '已搁置', value: 'shelved' },
+  { label: '已解除', value: 'cleared' },
+]
+
+function restoreAlarmState(state: { filters: Record<string, unknown> }) {
+  filters.deviceAssetId = String(state.filters.deviceAssetId ?? '') || undefined
+  filters.status = String(state.filters.status ?? '') || undefined
+}
 
 // 当前是否按设备过滤（用于展示/清除过滤）。
 const filteredDevice = computed(() => filters.deviceAssetId)
@@ -54,9 +115,34 @@ function statusOf(item: Alarm) {
   return (item.status ?? '').trim().toLowerCase()
 }
 
-// 未确认（raised）才提供行内 确认/搁置；已处理行灰显 + 状态标。
-function isRaised(item: Alarm) {
-  return statusOf(item) === 'raised'
+function alarmFacts(item: Alarm) {
+  return {
+    status: item.status,
+    acknowledgedAtUtc: item.acknowledgedAtUtc,
+    shelvedAtUtc: item.shelvedAtUtc,
+    shelvedUntilUtc: item.shelvedUntilUtc,
+    evaluatedAtUtc: new Date().toISOString(),
+  }
+}
+
+function canAcknowledge(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'acknowledge',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function canShelve(item: Alarm) {
+  return statusActionGate({
+    domain: 'iiot-alarm',
+    action: 'shelve',
+    facts: alarmFacts(item),
+  }).executable
+}
+
+function isActionable(item: Alarm) {
+  return canAcknowledge(item) || canShelve(item)
 }
 
 function timeText(iso?: string | null) {
@@ -118,7 +204,11 @@ const pendingAction = ref<PendingAction | null>(null)
 
 // 失败结果：确定性失败（无副作用）可复用同键重试；已发出但结果未知（超时/断网）不盲目重试，
 // 交给 verify（刷新列表核对是否已处理）。
-const actionError = ref<{ message: string; canRetry: boolean } | null>(null)
+const actionError = ref<{
+  message: string
+  canRetry: boolean
+  indeterminate?: boolean
+} | null>(null)
 
 async function runPending() {
   const p = pendingAction.value
@@ -134,13 +224,28 @@ async function runPending() {
     }
     pendingAction.value = null
   } catch (e) {
+    if (isLifecycleActionUpdated(e)) {
+      pendingAction.value = null
+      actionError.value = null
+      pendingAck.value = null
+      pendingShelve.value = null
+      detail.value = null
+      try {
+        await refresh()
+      } catch {
+        // 刷新失败不阻断固定冲突提示，用户可随后手动刷新列表。
+      }
+      showToast(LIFECYCLE_ACTION_UPDATED_MESSAGE, 'error')
+      return
+    }
     const info = describeRequestError(e, '操作失败，请重试')
     if (info.indeterminate) {
-      // 已发出、结果未知：不盲目重试，刷新列表引导核对。
+      // 已发出、结果未知：先刷新供核对，同时保留冻结 payload/key，只允许原样重放。
       void refresh()
       actionError.value = {
-        message: `${info.message}。已为你刷新列表，请核对该报警是否已处理，勿重复提交。`,
-        canRetry: false,
+        message: `${info.message}。已为你刷新列表，请先核对；如需重试，系统会按原内容安全处理，不会重复执行。`,
+        canRetry: true,
+        indeterminate: true,
       }
     } else {
       // 确定性失败：服务端已应答、无挂起副作用 → 复用同一 atUtc 安全重试。
@@ -265,68 +370,77 @@ function showToast(message: string, type: 'success' | 'error') {
       </div>
     </template>
 
-    <div class="space-y-4 p-4">
-      <!-- 按设备过滤 -->
-      <section class="space-y-2">
-        <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
-        <div
-          v-if="filteredDevice"
-          class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2 text-sm"
-        >
-          <span class="truncate text-foreground">仅显示设备 {{ filteredDevice }}</span>
-          <button
-            data-testid="clear-filter"
-            type="button"
-            class="ml-3 shrink-0 rounded-md border border-border px-3 py-1 text-sm text-foreground"
-            @click="clearFilter"
-          >
-            清除筛选
-          </button>
-        </div>
-      </section>
-
-      <!-- 报警列表 -->
-      <section class="space-y-2">
-        <h2 class="text-sm font-medium text-muted-foreground">设备报警</h2>
-
-        <RetryableListError
-          v-if="error"
-          :error="error"
-          :pending="pending"
-          fallback="报警加载失败，请稍后重试。"
-          test-id="alarms-error"
-          @retry="() => refresh()"
-        />
-
-        <div v-else-if="pending" class="px-4 py-6 text-center text-sm text-muted-foreground">
-          加载中…
-        </div>
-
-        <div
-          v-else-if="alarms.length === 0"
-          class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
-        >
-          暂无设备报警
-        </div>
+    <div class="flex min-h-0 flex-1 flex-col">
+      <TaskListShell
+        state-key="equipment-alarms"
+        :scope="alarmScope"
+        source="设备报警服务（组织/环境范围）"
+        :loaded="loaded"
+        :total="alarmTotal"
+        :updated-at="lastUpdatedAt"
+        :pending="pending"
+        :refreshing="refreshing"
+        :loading-more="loadingMore"
+        :error="alarmListError"
+        :load-more-error="loadMoreError"
+        error-test-id="alarms-error"
+        failure-explanation="设备报警服务未成功返回，请刷新重试。"
+        :filter-state="alarmFilterState"
+        :empty-description="
+          alarmScopeReady
+            ? '暂无设备报警（当前组织/环境范围没有符合筛选条件的记录）。'
+            : '缺少组织或环境范围，未发起查询。'
+        "
+        @refresh="refresh"
+        @retry="refresh"
+        @load-more="loadMore"
+        @retry-load-more="loadMore"
+        @restore="restoreAlarmState"
+      >
+        <template #filters>
+          <div class="space-y-2 p-3">
+            <NvScanBar placeholder="扫描设备码筛选报警" :active="scanActive" @scan="onScan" />
+            <div class="flex gap-2">
+              <NvMobileDropdownMenu class="min-w-0 flex-1">
+                <NvMobileDropdownMenuItem
+                  v-model="alarmStatusModel"
+                  data-testid="alarm-status-filter"
+                  title="报警状态"
+                  :options="alarmStatusOptions"
+                />
+              </NvMobileDropdownMenu>
+              <NvMobileButton
+                v-if="filteredDevice"
+                data-testid="clear-filter"
+                variant="outline"
+                size="sm"
+                @click="clearFilter"
+              >
+                清除设备
+              </NvMobileButton>
+            </div>
+          </div>
+        </template>
 
         <!-- 行非交互（避免行内交互控件嵌套在 role=button 行内导致键盘冒泡/辅助技术歧义）；
              确认/搁置/详情均为行内同级控件。 -->
-        <div v-else class="overflow-hidden rounded-lg border border-border">
+        <div class="overflow-hidden rounded-lg border border-border">
           <NvListRow
             v-for="item in alarms"
             :key="item.alarmEventId"
             :title="alarmTitle(item)"
             :subtitle="alarmSubtitle(item)"
             :interactive="false"
-            :class="isRaised(item) ? undefined : 'opacity-60'"
+            :class="isActionable(item) ? undefined : 'opacity-60'"
           >
             <template v-if="processedMeta(item)" #meta>
               <div class="truncate text-xs text-muted-foreground">{{ processedMeta(item) }}</div>
             </template>
             <template #trailing>
               <div class="flex shrink-0 items-center gap-2">
-                <template v-if="isRaised(item)">
+                <template v-if="isActionable(item)">
                   <NvMobileButton
+                    v-if="canAcknowledge(item)"
                     :data-testid="`ack-${item.alarmEventId}`"
                     variant="primary"
                     size="sm"
@@ -336,6 +450,7 @@ function showToast(message: string, type: 'success' | 'error') {
                     确认
                   </NvMobileButton>
                   <NvMobileButton
+                    v-if="canShelve(item)"
                     :data-testid="`shelve-${item.alarmEventId}`"
                     variant="outline"
                     size="sm"
@@ -346,7 +461,7 @@ function showToast(message: string, type: 'success' | 'error') {
                   </NvMobileButton>
                 </template>
                 <NvMobileTag
-                  v-else
+                  v-if="statusOf(item) !== 'raised'"
                   :data-testid="`status-${item.alarmEventId}`"
                   :variant="tagVariant(item)"
                 >
@@ -367,7 +482,7 @@ function showToast(message: string, type: 'success' | 'error') {
             </template>
           </NvListRow>
         </div>
-      </section>
+      </TaskListShell>
     </div>
 
     <!-- 确认弹层（轻量二次确认）-->
@@ -389,12 +504,12 @@ function showToast(message: string, type: 'success' | 'error') {
       @select="onShelveDuration"
     />
 
-    <!-- 失败对话框：确定性失败可重试（复用同键）；结果未知只提示核对 -->
+    <!-- 失败对话框：确定性失败可重试；结果未知仅允许按冻结内容安全重试 -->
     <NvMobileDialog
       :open="actionError !== null"
-      :title="actionError?.canRetry ? '操作失败' : '提交结果未知'"
+      :title="actionError?.indeterminate ? '提交结果未知' : '操作失败'"
       :description="actionError?.message ?? ''"
-      :confirm-text="actionError?.canRetry ? '重试' : '我知道了'"
+      :confirm-text="actionError?.indeterminate ? '按原内容重试' : '重试'"
       :show-cancel="actionError?.canRetry ?? false"
       cancel-text="取消"
       @update:open="

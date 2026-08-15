@@ -59,13 +59,15 @@ export interface BarcodeScanFilters extends BarcodeListFilters {
 }
 
 function defaultFilters<T extends BarcodeListFilters>(initial: Partial<T> = {}): T {
-  return bindBusinessContext(reactive({
-    organizationId: '',
-    environmentId: '',
-    skip: 0,
-    take: DEFAULT_TAKE,
-    ...initial,
-  }) as T)
+  return bindBusinessContext(
+    reactive({
+      organizationId: '',
+      environmentId: '',
+      skip: 0,
+      take: DEFAULT_TAKE,
+      ...initial,
+    }) as T,
+  )
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -97,7 +99,7 @@ function scanItems(envelope: BusinessConsoleBarcodeScanListEnvelope | undefined)
   return envelope.data?.scans ?? []
 }
 
-function total(envelope: { success?: boolean, data?: { total?: number } | null } | undefined) {
+function total(envelope: { success?: boolean; data?: { total?: number } | null } | undefined) {
   if (!envelope?.success) return 0
   return envelope.data?.total ?? 0
 }
@@ -105,16 +107,19 @@ function total(envelope: { success?: boolean, data?: { total?: number } | null }
 export function useBarcodeRules(initialFilters: Partial<BarcodeRuleFilters> = {}) {
   const filters = defaultFilters<BarcodeRuleFilters>(initialFilters)
   const rulesQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleBarcodeRulesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('status', filters.status),
-        ...optionalQuery('keyword', filters.keyword),
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleBarcodeRulesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+          ...optionalQuery('status', filters.status),
+          ...optionalQuery('keyword', filters.keyword),
+        },
+      }),
+      filters,
+    ),
   )
 
   const saveRuleMutation = useMutation({
@@ -141,15 +146,18 @@ export function useBarcodeRules(initialFilters: Partial<BarcodeRuleFilters> = {}
 export function useBarcodeTemplates(initialFilters: Partial<BarcodeListFilters> = {}) {
   const filters = defaultFilters<BarcodeListFilters>(initialFilters)
   const templatesQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleBarcodeTemplatesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('status', filters.status),
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleBarcodeTemplatesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+          ...optionalQuery('status', filters.status),
+        },
+      }),
+      filters,
+    ),
   )
 
   const saveTemplateMutation = useMutation({
@@ -161,7 +169,9 @@ export function useBarcodeTemplates(initialFilters: Partial<BarcodeListFilters> 
 
   return {
     filters,
-    templates: computed<BusinessConsoleBarcodeTemplateItem[]>(() => templateItems(templatesQuery.data.value)),
+    templates: computed<BusinessConsoleBarcodeTemplateItem[]>(() =>
+      templateItems(templatesQuery.data.value),
+    ),
     templatesError: templatesQuery.error,
     templatesPending: templatesQuery.isLoading,
     templatesTotal: computed(() => total(templatesQuery.data.value)),
@@ -176,29 +186,35 @@ export function useBarcodeTemplates(initialFilters: Partial<BarcodeListFilters> 
 export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatchFilters> = {}) {
   const filters = defaultFilters<BarcodePrintBatchFilters>(initialFilters)
   const printBatchesQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleBarcodePrintBatchesQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('sourceDocumentType', filters.sourceDocumentType),
-        ...optionalQuery('sourceDocumentId', filters.sourceDocumentId),
-        ...optionalQuery('status', filters.status),
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleBarcodePrintBatchesQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+          ...optionalQuery('sourceDocumentType', filters.sourceDocumentType),
+          ...optionalQuery('sourceDocumentId', filters.sourceDocumentId),
+          ...optionalQuery('status', filters.status),
+        },
+      }),
+      filters,
+    ),
   )
 
   const printBatchDetailQuery = useQuery(() => ({
-    ...withBusinessContextEnabled(getBusinessConsoleBarcodePrintBatchQueryOptions({
-      path: {
-        printBatchId: filters.selectedPrintBatchId ?? '',
-      },
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    }), filters),
+    ...withBusinessContextEnabled(
+      getBusinessConsoleBarcodePrintBatchQueryOptions({
+        path: {
+          printBatchId: filters.selectedPrintBatchId ?? '',
+        },
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+        },
+      }),
+      filters,
+    ),
     enabled: withBusinessContextEnabled({}, filters).enabled && !!filters.selectedPrintBatchId,
   }))
 
@@ -206,17 +222,22 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
     ...createBusinessConsoleBarcodePrintBatchMutationOptions(),
     onSuccess() {
       void refetchWithBusinessContext(filters, printBatchesQuery)
-      if (filters.selectedPrintBatchId && hasBusinessContext(filters)) void printBatchDetailQuery.refetch()
+      if (filters.selectedPrintBatchId && hasBusinessContext(filters))
+        void printBatchDetailQuery.refetch()
     },
   })
 
   return {
     filters,
-    printBatches: computed<BusinessConsoleBarcodePrintBatchItem[]>(() => printBatchItems(printBatchesQuery.data.value)),
+    printBatches: computed<BusinessConsoleBarcodePrintBatchItem[]>(() =>
+      printBatchItems(printBatchesQuery.data.value),
+    ),
     printBatchesError: printBatchesQuery.error,
     printBatchesPending: printBatchesQuery.isLoading,
     printBatchesTotal: computed(() => total(printBatchesQuery.data.value)),
-    printBatchDetail: computed<BusinessConsoleBarcodePrintBatchDetail | undefined>(() => printBatchDetail(printBatchDetailQuery.data.value)),
+    printBatchDetail: computed<BusinessConsoleBarcodePrintBatchDetail | undefined>(() =>
+      printBatchDetail(printBatchDetailQuery.data.value),
+    ),
     printBatchDetailError: printBatchDetailQuery.error,
     printBatchDetailPending: printBatchDetailQuery.isLoading,
     refreshPrintBatches: () => refetchWithBusinessContext(filters, printBatchesQuery),
@@ -234,18 +255,21 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
 export function useBarcodeScans(initialFilters: Partial<BarcodeScanFilters> = {}) {
   const filters = defaultFilters<BarcodeScanFilters>(initialFilters)
   const scansQuery = useQuery(() =>
-    withBusinessContextEnabled(listBusinessConsoleBarcodeScansQueryOptions({
-      query: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        skip: filters.skip,
-        take: filters.take,
-        ...optionalQuery('deviceCode', filters.deviceCode),
-        ...optionalQuery('scannedValue', filters.scannedValue),
-        ...optionalQuery('sourceWorkflow', filters.sourceWorkflow),
-        ...optionalQuery('sourceDocumentId', filters.sourceDocumentId),
-      },
-    }), filters),
+    withBusinessContextEnabled(
+      listBusinessConsoleBarcodeScansQueryOptions({
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          skip: filters.skip,
+          take: filters.take,
+          ...optionalQuery('deviceCode', filters.deviceCode),
+          ...optionalQuery('scannedValue', filters.scannedValue),
+          ...optionalQuery('sourceWorkflow', filters.sourceWorkflow),
+          ...optionalQuery('sourceDocumentId', filters.sourceDocumentId),
+        },
+      }),
+      filters,
+    ),
   )
 
   const recordScanMutation = useMutation({

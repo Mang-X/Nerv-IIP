@@ -33,6 +33,9 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
             Assert.Equal("PlanningSuggestion", root.GetProperty("sourceDocumentType").GetString());
             Assert.Equal(suggestion.Id.ToString(), root.GetProperty("sourceDocumentId").GetString());
             Assert.Equal("DEMAND-001", root.GetProperty("sourceDemandReference").GetString());
+            Assert.Equal(
+                ["DEMAND-001"],
+                root.GetProperty("sourceDemandReferences").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray());
             Assert.Equal("idem-001", root.GetProperty("idempotencyKey").GetString());
 
             return JsonResponse("""
@@ -54,6 +57,44 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
         Assert.Equal("BusinessMes", reference.DownstreamService);
         Assert.Equal("WorkOrder", reference.DownstreamDocumentType);
         Assert.Equal("WO-001", reference.DownstreamDocumentId);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Http_mes_bridge_carries_every_demand_reference_of_a_batched_suggestion_and_excludes_scheduled_receipts()
+    {
+        // #1286：合批建议 peg 到多张销售订单；桥接必须完整携带 demand 类型需求源引用（去重），
+        // 排除 scheduled-receipt 引用，主引用取第一个 demand 引用。
+        var suggestion = NewWorkOrderSuggestion();
+        suggestion.AddPeggingLink("demand", "SO-20260730-000005", "SKU-FG-1000", null, 120m, "PV-001", "MBOM-001", "ROUTING-001");
+        suggestion.AddPeggingLink("demand", "DEMAND-001", "SKU-FG-1000", null, 5m, "PV-001", "MBOM-001", "ROUTING-001");
+        suggestion.AddPeggingLink("scheduled-receipt", "erp:purchase-order:PO-0001", "SKU-FG-1000", null, 10m, null, null, null);
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var root = document.RootElement;
+            Assert.Equal("DEMAND-001", root.GetProperty("sourceDemandReference").GetString());
+            Assert.Equal(
+                ["DEMAND-001", "SO-20260730-000005"],
+                root.GetProperty("sourceDemandReferences").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray());
+
+            return JsonResponse("""
+                {
+                  "status": "accepted",
+                  "referenceId": "WO-002",
+                  "acceptedAtUtc": "2026-07-30T00:00:00Z"
+                }
+                """);
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.test") };
+        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+
+        var reference = await bridge.CreateDownstreamAsync(
+            suggestion,
+            new PlanningSuggestionDownstreamRequest("BusinessMes", "WorkOrder", null, "idem-002"),
+            CancellationToken.None);
+
+        Assert.Equal("WO-002", reference.DownstreamDocumentId);
         Assert.Single(handler.Requests);
     }
 

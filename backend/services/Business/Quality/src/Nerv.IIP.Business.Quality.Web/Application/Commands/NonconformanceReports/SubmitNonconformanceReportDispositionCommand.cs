@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -33,12 +34,17 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
-            ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+            ?? throw new KnownException($"找不到不合格报告 {request.NcrId}，请在不合格报告页确认单据存在后重试。");
+        if (ncr.Status != "open")
+        {
+            throw new QualityLifecycleConflictException("submit-ncr-disposition", ncr.Status);
+        }
+
         if (NonconformanceReport.RequiresCentralApproval(request.DispositionType))
         {
             if (string.IsNullOrWhiteSpace(request.DispositionApprovalChainId))
             {
-                throw new KnownException("NCR disposition requires an approved central approval chain.");
+                throw new KnownException($"不合格报告 {ncr.NcrCode} 的处置需要已批准的中央审批链，请在审批页面提交并批准后再提交处置。");
             }
 
             var isApproved = await approvalChainStatusClient.IsApprovedForNcrDispositionAsync(
@@ -49,15 +55,27 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
                 cancellationToken);
             if (!isApproved)
             {
-                throw new KnownException("NCR disposition approval chain is not approved.");
+                throw new KnownException($"不合格报告 {ncr.NcrCode} 的处置审批链 {request.DispositionApprovalChainId} 尚未批准，请在审批页面完成审批后再提交处置。");
             }
         }
 
-        ncr.SubmitDisposition(
-            request.DispositionType,
-            request.DispositionApprovalChainId,
-            request.AttachmentFileIds,
-            request.MrbReviews);
+        try
+        {
+            ncr.SubmitDisposition(
+                request.DispositionType,
+                request.DispositionApprovalChainId,
+                request.AttachmentFileIds,
+                request.MrbReviews);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException($"不合格报告 {ncr.NcrCode} 的处置条件未满足，请检查 MRB 审批、附件和处置类型后重试。");
+        }
+        catch (ArgumentException)
+        {
+            throw new KnownException($"不合格报告 {ncr.NcrCode} 的处置参数无效，请检查处置类型、审批链和附件后重试。");
+        }
+
         await capaAutomationService.OpenForDispositionIfRequiredAsync(ncr, cancellationToken);
     }
 }

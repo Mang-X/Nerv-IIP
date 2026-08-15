@@ -9,12 +9,14 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
+[Collection(QualityPostgresLaneDatabase.CollectionName)]
 public sealed class QualityReinspectionPostgresProfileTests
 {
     [QualityPostgresFact]
     public async Task Postgres_predecessor_conflict_reloads_the_committed_reinspection()
     {
-        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await QualityPostgresLaneDatabase.ResetSchemaAsync();
+        var connectionString = QualityPostgresLaneDatabase.ConnectionString;
         var services = new ServiceCollection();
         services.AddMediatR(configuration =>
             configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
@@ -25,7 +27,7 @@ public sealed class QualityReinspectionPostgresProfileTests
         using (var seedScope = provider.CreateScope())
         {
             var seedDb = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            await DropQualitySchemaAsync(seedDb);
+            QualityPostgresLaneDatabase.AssertUsesGovernedDatabase(seedDb);
             await seedDb.Database.MigrateAsync();
             var records = new InspectionRecordRepository(seedDb);
             predecessorId = await new CreateInspectionRecordCommandHandler(
@@ -127,12 +129,4 @@ public sealed class QualityReinspectionPostgresProfileTests
                 [])],
             null,
             []);
-
-    private static async Task DropQualitySchemaAsync(ApplicationDbContext dbContext)
-    {
-        await dbContext.Database.OpenConnectionAsync();
-        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"DROP SCHEMA IF EXISTS \"{QualityFacts.Schema}\" CASCADE";
-        await command.ExecuteNonQueryAsync();
-    }
 }

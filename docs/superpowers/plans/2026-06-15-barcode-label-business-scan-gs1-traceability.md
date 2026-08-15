@@ -1,64 +1,64 @@
-# BarcodeLabel Business Scan GS1 Traceability Implementation Plan
+# BarcodeLabel 业务扫码、GS1 与可追溯性实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必须使用子技能 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close #418 by adding GS1 parsing, serialized EPCIS traceability and a real inventory scan business-action route to BarcodeLabel.
+**目标：**通过为 BarcodeLabel 增加 GS1 解析、基于序列号的 EPCIS 可追溯能力和真实库存扫码业务动作路由，关闭 #418。
 
-**Architecture:** BarcodeLabel keeps ownership of label and scan facts, publishes a shared barcode scan envelope, and translates explicitly-supported inventory workflows into Inventory's existing movement-requested integration event. Inventory remains the inventory fact owner; no UI-only flow or cross-schema coupling is introduced.
+**架构：**BarcodeLabel 继续拥有标签与扫码事实，发布共享的条码扫码事件封装，并将显式支持的库存工作流转换为 Inventory 既有的库存移动请求集成事件。Inventory 仍是库存事实的所有者；不引入仅存在于 UI 的流程或跨 schema 耦合。
 
-**Tech Stack:** .NET 10, CleanDDD/NetCorePal, FastEndpoints, EF Core PostgreSQL, CAP integration events, xUnit, `Nerv.IIP.Contracts.Inventory`.
+**技术栈：**.NET 10、CleanDDD/NetCorePal、FastEndpoints、EF Core PostgreSQL、CAP 集成事件、xUnit、`Nerv.IIP.Contracts.Inventory`。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-06-15-barcode-label-business-scan-gs1-traceability-design.md`.
+使用 `docs/superpowers/specs/2026-06-15-barcode-label-business-scan-gs1-traceability-design.md`。
 
-## Tasks
+## 任务
 
-### Task 1: Shared Barcode Contracts
+### Task 1：共享条码契约
 
-- [ ] Create `backend/common/Contracts/Nerv.IIP.Contracts.BarcodeLabel` with `BarcodeScanAcceptedIntegrationEvent`, event type constants and payload records.
-- [ ] Add the project to `backend/Nerv.IIP.sln`.
-- [ ] Reference the contract from BarcodeLabel Web tests and Web project.
-- [ ] Add tests verifying event type, version and envelope fields.
+- [ ] 创建 `backend/common/Contracts/Nerv.IIP.Contracts.BarcodeLabel`，其中包含 `BarcodeScanAcceptedIntegrationEvent`、事件类型常量和载荷记录。
+- [ ] 将该项目加入 `backend/Nerv.IIP.sln`。
+- [ ] 在 BarcodeLabel Web 测试和 Web 项目中引用该契约。
+- [ ] 增加测试，验证事件类型、版本和信封字段。
 
-### Task 2: GS1 Domain Model
+### Task 2：GS1 领域模型
 
-- [ ] Add failing domain tests for GS1 mod-10, GS1 AI parsing and serialized label generation.
-- [ ] Implement `Gs1BarcodeValue`, `Gs1ApplicationIdentifierParser` and GS1 helpers under BarcodeLabel Domain.
-- [ ] Extend `BarcodeRule` to support `gs1-128`, `gs1-datamatrix` and `gs1-mod10`.
-- [ ] Extend `LabelPrintItem` and print batch creation to persist `gtin`, `lotNo`, `serialNumber` and `epcUri`.
-- [ ] Run BarcodeLabel Domain tests and keep existing deterministic custom-code tests green.
+- [ ] 为 GS1 mod-10、GS1 AI 解析和带序列号的标签生成增加预期失败的领域测试。
+- [ ] 在 BarcodeLabel Domain 下实现 `Gs1BarcodeValue`、`Gs1ApplicationIdentifierParser` 和 GS1 辅助组件。
+- [ ] 扩展 `BarcodeRule`，支持 `gs1-128`、`gs1-datamatrix` 和 `gs1-mod10`。
+- [ ] 扩展 `LabelPrintItem` 和打印批次创建流程，持久化 `gtin`、`lotNo`、`serialNumber` 和 `epcUri`。
+- [ ] 运行 BarcodeLabel Domain 测试，并确保既有的确定性自定义编码测试通过。
 
-### Task 3: EPCIS Persistence
+### Task 3：EPCIS 持久化
 
-- [ ] Add failing tests for commissioning and object-event EPCIS facts.
-- [ ] Add `EpcisEvent` aggregate/entity and `DbSet`.
-- [ ] Configure `epcis_events` and new label/scan columns with comments and indexes.
-- [ ] Add EF migration and update `docs/architecture/database-schema-catalog.md`.
-- [ ] Run schema convention tests.
+- [ ] 为 commissioning（启用）与 object-event（对象事件）EPCIS 事实增加预期失败的测试。
+- [ ] 增加 `EpcisEvent` 聚合/实体和 `DbSet`。
+- [ ] 配置 `epcis_events` 及新增的标签/扫码列，并添加注释和索引。
+- [ ] 增加 EF migration，并更新 `docs/architecture/database-schema-catalog.md`。
+- [ ] 运行 schema 约定测试。
 
-### Task 4: Scan Command Routing
+### Task 4：扫码命令路由
 
-- [ ] Add failing Web command tests for accepted `inventory.receipt` GS1 scans publishing `InventoryMovementRequestedIntegrationEvent`.
-- [ ] Extend `RecordScanCommand` and endpoint request with optional inventory context: `SkuCode`, `UomCode`, `SiteCode`, `LocationCode`, `QualityStatus`, `OwnerType`, `OwnerId`, `Quantity`.
-- [ ] Parse GS1 data into scan record fields.
-- [ ] Publish shared `BarcodeScanAcceptedIntegrationEvent` for accepted scans.
-- [ ] Publish `InventoryMovementRequestedIntegrationEvent` only for supported inventory workflows.
-- [ ] Reject unsupported accepted workflows and missing inventory context with `KnownException`.
-- [ ] Preserve rejected scan logging without downstream business action events.
+- [ ] 增加预期失败的 Web 命令测试，验证已接受的 `inventory.receipt` GS1 扫码会发布 `InventoryMovementRequestedIntegrationEvent`。
+- [ ] 扩展 `RecordScanCommand` 和 endpoint 请求，增加可选库存上下文：`SkuCode`、`UomCode`、`SiteCode`、`LocationCode`、`QualityStatus`、`OwnerType`、`OwnerId`、`Quantity`。
+- [ ] 将 GS1 数据解析到扫码记录字段中。
+- [ ] 针对已接受的扫码发布共享 `BarcodeScanAcceptedIntegrationEvent`。
+- [ ] 仅针对受支持的库存工作流发布 `InventoryMovementRequestedIntegrationEvent`。
+- [ ] 对已接受扫码中的不受支持工作流，以及缺少库存上下文的请求抛出 `KnownException`。
+- [ ] 保留被拒绝扫码的日志，但不发布下游业务动作事件。
 
-### Task 5: API, Docs And Verification
+### Task 5：API、文档与验证
 
-- [ ] Update BarcodeLabel endpoint contract tests for new request fields without changing route shape.
-- [ ] Update `docs/architecture/business-platform-domain-architecture.md`, `docs/architecture/api-contract-and-codegen.md` and `docs/architecture/implementation-readiness.md`.
-- [ ] Run:
+- [ ] 更新 BarcodeLabel endpoint 契约测试以覆盖新增请求字段，但不改变路由形状。
+- [ ] 更新 `docs/architecture/business-platform-domain-architecture.md`、`docs/architecture/api-contract-and-codegen.md` 和 `docs/architecture/implementation-readiness.md`。
+- [ ] 运行：
   - `dotnet test backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Domain.Tests/Nerv.IIP.Business.BarcodeLabel.Domain.Tests.csproj --no-restore`
   - `dotnet test backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests.csproj --no-restore`
   - `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore --filter FullyQualifiedName~InventoryMovementRequestedConsumerTests`
   - `pwsh scripts/verify-business-barcode-label-mvp.ps1`
 
-## Self-Review
+## 自审
 
-Spec coverage: all #418 requirements map to tasks. Placeholder scan: none. Type consistency: event and command names match existing service conventions and the Inventory movement-requested contract.
+规格覆盖情况：#418 的全部需求均映射到任务。占位符扫描：无。类型一致性：事件与命令名称符合既有服务约定及 Inventory 的库存移动请求契约。

@@ -1,87 +1,87 @@
-# ERP Sales MVP Implementation Plan
+# ERP 销售 MVP 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向自主代理：**必须使用以下子技能之一逐项实施本计划：superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Implement #138 by adding Sales/CRM-lite/OMS-lite facts to the ERP service.
+**目标：**通过向 ERP 服务添加销售/CRM-lite/OMS-lite 事实来实施 #138。
 
-**Architecture:** Sales extends `backend/services/Business/Erp` after the ERP scaffold from #137 exists. It owns opportunity, quotation, sales order and delivery order request facts. WMS owns warehouse execution; Inventory owns balances and movements.
+**架构：**在 #137 的 ERP 骨架已存在后，销售能力扩展 `backend/services/Business/Erp`。它拥有销售机会、报价单、销售订单和发货单请求事实。WMS 拥有仓储执行；Inventory 拥有余额和库存移动。
 
-**Tech Stack:** .NET 10, FastEndpoints, EF Core PostgreSQL, xUnit, ADR 0011 integration event conversion.
+**技术栈：**.NET 10、FastEndpoints、EF Core PostgreSQL、xUnit、ADR 0011 集成事件转换。
 
 ---
 
-## Specification
+## 规格
 
-Use `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`.
+使用 `docs/superpowers/specs/2026-05-23-erp-procurement-sales-finance-mvp-design.md`。
 
-## Prerequisites
+## 前置条件
 
-1. `backend/services/Business/Erp` exists.
-2. ERP Domain, Infrastructure and Web projects compile.
-3. Procurement plan has established ERP permission code, endpoint contract and schema convention patterns.
+1. `backend/services/Business/Erp` 已存在。
+2. ERP 的领域、基础设施和 Web 项目能够编译。
+3. 采购计划已建立 ERP 权限代码、端点契约和数据库 schema 约定模式。
 
-## Files
+## 文件
 
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/OpportunityAggregate/Opportunity.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/QuotationAggregate/Quotation.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpSalesDomainEvents.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/Sales*.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Sales/*.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Sales/*.cs`
-- Modify: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesIntegrationEventConverters.cs`
-- Create: `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesEndpoints.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpSalesAggregateTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSalesEndpointContractTests.cs`
-- Create: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSalesIntegrationEventTests.cs`
-- Modify: `backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/OpportunityAggregate/Opportunity.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/QuotationAggregate/Quotation.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/SalesOrderAggregate/SalesOrder.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/AggregatesModel/DeliveryOrderAggregate/DeliveryOrder.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Domain/DomainEvents/ErpSalesDomainEvents.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/ApplicationDbContext.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/EntityConfigurations/Sales*.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Auth/ErpPermissionCodes.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Sales/*.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/Sales/*.cs`
+- 修改：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEvents/ErpIntegrationEvents.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpSalesIntegrationEventConverters.cs`
+- 创建：`backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Endpoints/Erp/ErpSalesEndpoints.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/ErpSalesAggregateTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSalesEndpointContractTests.cs`
+- 创建：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSalesIntegrationEventTests.cs`
+- 修改：`backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/ErpSchemaConventionTests.cs`
 
-Shared files requested from ERP-INTEG:
+需由 ERP-INTEG 处理的共享文件：
 
-- IAM seed and authorization matrix additions for sales permissions.
-- Schema catalog additions for sales tables.
-- `scripts/verify-business-erp-sales-mvp.ps1`.
+- IAM 初始数据及授权矩阵中的销售权限补充项。
+- 数据库 schema 目录中的销售表补充项。
+- `scripts/verify-business-erp-sales-mvp.ps1`。
 
-## Task 1: Implement Sales Domain
+## 任务 1：实施销售领域
 
-- [ ] **Step 1: Write failing aggregate tests**
+- [ ] **步骤 1：编写会失败的聚合测试**
 
-Cover:
+覆盖：
 
-1. Opportunity requires customer reference and topic.
-2. Quotation requires lines and positive quantity/price.
-3. Unapproved quotation cannot create a sales order.
-4. Expired or rejected quotation cannot create a sales order.
-5. Delivery order quantity cannot exceed remaining sales order quantity.
-6. Delivery order emits `DeliveryOrderReleased` domain event.
+1. 销售机会必须包含客户引用和主题。
+2. 报价单必须包含行项目以及正数的数量/价格。
+3. 未批准的报价单不能创建销售订单。
+4. 已过期或已拒绝的报价单不能创建销售订单。
+5. 发货单数量不得超过销售订单的剩余数量。
+6. 发货单会发出 `DeliveryOrderReleased` 领域事件。
 
-- [ ] **Step 2: Implement sales aggregates**
+- [ ] **步骤 2：实施销售聚合**
 
-Use public IDs and document references only. Do not store WMS task state, Inventory balance or customer master data fields beyond stable references/snapshots.
+只使用公开 ID 和单据引用。除稳定引用/快照外，不得存储 WMS 任务状态、Inventory 余额或客户主数据字段。
 
-- [ ] **Step 3: Run domain tests**
+- [ ] **步骤 3：运行领域测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore --filter FullyQualifiedName~ErpSalesAggregateTests
 ```
 
-Expected: sales domain tests pass.
+预期：销售领域测试通过。
 
-## Task 2: Extend Persistence
+## 任务 2：扩展持久化
 
-- [ ] **Step 1: Add sales mappings**
+- [ ] **步骤 1：添加销售映射**
 
-Map opportunity, quotation, sales order and delivery order tables in schema `erp`.
+在数据库 schema `erp` 中映射销售机会、报价单、销售订单和发货单表。
 
-- [ ] **Step 2: Add migration**
+- [ ] **步骤 2：添加迁移**
 
-Run:
+运行：
 
 ```powershell
 $env:Persistence__Provider = "PostgreSQL"
@@ -89,21 +89,21 @@ dotnet tool restore
 dotnet tool run dotnet-ef migrations add AddErpSalesSchema --project backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Nerv.IIP.Business.Erp.Infrastructure.csproj --startup-project backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Nerv.IIP.Business.Erp.Web.csproj --output-dir Migrations
 ```
 
-- [ ] **Step 3: Run schema tests**
+- [ ] **步骤 3：运行数据库 schema 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore --filter FullyQualifiedName~ErpSchemaConventionTests
 ```
 
-Expected: schema tests pass.
+预期：数据库 schema 测试通过。
 
-## Task 3: Add Sales API And Events
+## 任务 3：添加销售 API 和事件
 
-- [ ] **Step 1: Add endpoint contract tests**
+- [ ] **步骤 1：添加端点契约测试**
 
-Verify:
+验证：
 
 1. `POST /api/business/v1/erp/opportunities`
 2. `POST /api/business/v1/erp/quotations`
@@ -112,32 +112,32 @@ Verify:
 5. `POST /api/business/v1/erp/delivery-orders`
 6. `GET /api/business/v1/erp/sales-orders`
 
-- [ ] **Step 2: Implement commands, queries and endpoints**
+- [ ] **步骤 2：实施命令、查询和端点**
 
-Keep approval state explicit. If BusinessApproval is later connected, store only the approval chain reference on quotation.
+保持审批状态显式。如果后续接入 BusinessApproval，只在报价单上存储审批链引用。
 
-- [ ] **Step 3: Add event converter tests**
+- [ ] **步骤 3：添加事件转换器测试**
 
-Verify:
+验证：
 
 1. `erp.DeliveryOrderReleased`
-2. optional `erp.SalesOrderCreated` if the implementation publishes it.
+2. 如果实现发布了 `erp.SalesOrderCreated`，则可选择验证该事件。
 
-- [ ] **Step 4: Run ERP Web tests**
+- [ ] **步骤 4：运行 ERP Web 测试**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore
 ```
 
-Expected: ERP Web tests pass.
+预期：ERP Web 测试通过。
 
-## Task 4: Handoff Shared Changes
+## 任务 4：移交共享变更
 
-- [ ] **Step 1: Record shared changes**
+- [ ] **步骤 1：记录共享变更**
 
-In the PR/session summary, include:
+在 PR/会话摘要中包含：
 
 ```markdown
 ## Shared Changes Needed
@@ -148,20 +148,20 @@ In the PR/session summary, include:
 - Confirm WMS outbound integration uses public delivery order references only.
 ```
 
-- [ ] **Step 2: Run focused verification**
+- [ ] **步骤 2：运行聚焦验证**
 
-Run:
+运行：
 
 ```powershell
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Domain.Tests/Nerv.IIP.Business.Erp.Domain.Tests.csproj --no-restore
 dotnet test backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/Nerv.IIP.Business.Erp.Web.Tests.csproj --no-restore
 ```
 
-Expected: both commands pass.
+预期：两条命令均通过。
 
-## Self-Review Checklist
+## 自审清单
 
-1. Sales release creates delivery request facts, not WMS execution facts.
-2. Delivery quantity cannot exceed ordered quantity.
-3. Quotation approval is explicit and test-covered.
-4. Shared changes are clearly handed to ERP-INTEG.
+1. 销售下达会创建发货请求事实，而不是 WMS 执行事实。
+2. 发货数量不得超过订购数量。
+3. 报价单审批是显式的，并且已由测试覆盖。
+4. 共享变更已明确移交给 ERP-INTEG。

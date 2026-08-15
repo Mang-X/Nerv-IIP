@@ -35,13 +35,46 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({ skus: ref([]) }),
 }))
 
+// 急单表单的物料 ▸ 生产版本目录走 colada 读面（需要 pinia），本用例只看紧急度徽章，整体打桩。
+vi.mock('@/composables/useMesPickerCatalog', () => ({
+  useMesMaterialVersionCatalog: () => ({
+    skuOptions: ref([]),
+    skusPending: ref(false),
+    productionVersionOptions: () => [],
+    productionVersionsPending: ref(false),
+  }),
+}))
+
 const workOrders = vi.hoisted(() => ({ items: [] as Array<Record<string, unknown>> }))
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: ref([]),
+    scopeSelectionValue: ref(undefined),
+    scopeReady: ref(true),
+    scopeMessage: ref(''),
+    scopePending: ref(false),
+    scopeUnavailable: ref(false),
+    selectedScope: ref(undefined),
+    principalIdentity: ref('principal-test'),
+    requireSelectedScope: vi.fn(),
+  }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
+  }),
+  // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
+  useMesOperationTasks: () => ({
+    filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),
+    operationTasks: ref([]),
+    operationTasksError: ref(undefined),
+    operationTasksPending: ref(false),
+    operationTasksTotal: ref(0),
+    refreshOperationTasks: vi.fn(),
+    completeOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -60,8 +93,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshWorkOrders: vi.fn(),
     workOrders: ref(workOrders.items),
     workOrdersError: ref(undefined),
+    workOrdersHasFailedResponse: ref(false),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00.000Z'),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(workOrders.items.length),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 
@@ -69,6 +112,8 @@ function mountList() {
   return mount(WorkOrdersListPage, {
     global: {
       stubs: {
+        // 行内工单抽屉自带一整套 MES 查询，本用例只看紧急度徽章，整体桩掉。
+        WorkOrderDetailSheet: true,
         BusinessLayout: { template: '<main><slot /></main>' },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
         NvToolbar: { template: '<div><slot name="filters" /><slot name="actions" /></div>' },

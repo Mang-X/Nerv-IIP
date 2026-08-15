@@ -35,7 +35,7 @@ const todo = ref('待派工单')
 
 ## 完整控制台侧栏
 
-工作区品牌头 + 分组导航（计数徽标、在线状态点、品牌强调）+ 用户区。点击任意项即切换激活态；`collapsible="icon"` 折叠为图标条，标题文本隐藏（非压缩），悬停图标显示 Tooltip。
+工作区品牌头 + 分组导航（计数徽标、在线状态点、品牌强调）+ 用户区。点击任意项即切换激活态；`collapsible="icon"` 折叠为图标条，标题文本隐藏（非压缩），悬停图标时显示文字提示。
 
 <Demo>
 <div class="nv-sb nv-nv-scr-collapse nv-nv-scr-tall">

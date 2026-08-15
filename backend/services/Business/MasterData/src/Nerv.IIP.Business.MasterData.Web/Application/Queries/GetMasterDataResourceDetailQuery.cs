@@ -128,7 +128,8 @@ public sealed record MasterDataResourceDetail(
     string? CreditCurrencyCode = null,
     string? JobTitle = null,
     string? EmploymentStatus = null,
-    string? Phone = null);
+    string? Phone = null,
+    string? DeviceAssetId = null);
 
 public sealed record GetMasterDataResourceDetailQuery(
     string OrganizationId,
@@ -210,7 +211,16 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
         if (Guid.TryParse(request.Code, out var parsedId))
         {
             var deviceAssetId = new DeviceAssetId(parsedId);
-            return await query.SingleOrDefaultAsync(x => x.Id == deviceAssetId || x.Code == request.Code, cancellationToken);
+            var matches = await query
+                .Where(x => x.Id == deviceAssetId || x.Code == request.Code)
+                .Take(2)
+                .ToArrayAsync(cancellationToken);
+            return matches.Length switch
+            {
+                0 => null,
+                1 => matches[0],
+                _ => throw new KnownException($"Master data device reference '{request.Code}' is ambiguous."),
+            };
         }
 
         return await query.SingleOrDefaultAsync(x => x.Code == request.Code, cancellationToken);

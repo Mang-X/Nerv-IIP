@@ -76,6 +76,9 @@ public interface IRoleRepository : IRepository<Role, RoleId>
     Task<Role?> GetByIdAsync(RoleId roleId, CancellationToken cancellationToken = default);
     Task<Role?> GetByNameAsync(string roleName, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Role>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Role>> ListByIdsAsync(
+        IReadOnlyCollection<RoleId> roleIds,
+        CancellationToken cancellationToken = default);
     Task AddAndSaveAsync(Role role, CancellationToken cancellationToken = default);
 }
 
@@ -114,6 +117,23 @@ public sealed class RoleRepository(ApplicationDbContext context)
             .AsNoTracking()
             .Include(x => x.Permissions)
             .Where(x => x.Deleted == NotDeleted)
+            .OrderBy(x => x.RoleName)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Role>> ListByIdsAsync(
+        IReadOnlyCollection<RoleId> roleIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (roleIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await DbContext.Roles
+            .AsNoTracking()
+            .Include(x => x.Permissions)
+            .Where(x => roleIds.Contains(x.Id) && x.Deleted == NotDeleted)
             .OrderBy(x => x.RoleName)
             .ToListAsync(cancellationToken);
     }
@@ -169,6 +189,12 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         UserId userId,
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PermissionDataScopeGrant>> ListPermissionDataScopeGrantsAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string permissionCode,
         CancellationToken cancellationToken = default);
     Task<bool> UserHasMembershipAsync(
         UserId userId,
@@ -283,6 +309,95 @@ public sealed class MembershipRepository(ApplicationDbContext context)
         return scopes.Select(x => new DataScopeBinding(x.ScopeType, x.ScopeCode)).ToArray();
     }
 
+    public async Task<IReadOnlyList<PermissionDataScopeGrant>> ListPermissionDataScopeGrantsAsync(
+        UserId userId,
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string permissionCode,
+        CancellationToken cancellationToken = default)
+    {
+        var roles = await (
+            from membership in DbContext.Memberships
+            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
+            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
+            join rolePermission in DbContext.RolePermissions on role.Id equals rolePermission.RoleId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+                && role.Deleted == NotDeleted
+                && rolePermission.PermissionCode == permissionCode
+            select role.Id)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var roleScopes = await (
+            from roleScope in DbContext.RoleDataScopes
+            where roles.Contains(roleScope.RoleId)
+            select new
+            {
+                RoleId = roleScope.RoleId,
+                roleScope.ScopeType,
+                roleScope.ScopeCode,
+            })
+            .ToListAsync(cancellationToken);
+
+        var membershipScopes = await (
+            from membership in DbContext.Memberships
+            join membershipScope in DbContext.MembershipDataScopes on membership.Id equals membershipScope.MembershipId
+            where membership.UserId == userId
+                && membership.OrganizationId == organizationId
+                && membership.EnvironmentId == environmentId
+            select new
+            {
+                MembershipId = membership.Id,
+                membershipScope.ScopeType,
+                membershipScope.ScopeCode,
+            })
+            .ToListAsync(cancellationToken);
+
+        var grants = roles
+            .SelectMany(roleIdValue =>
+            {
+                var scopes = roleScopes.Where(x => x.RoleId == roleIdValue).ToArray();
+                var roleId = roleIdValue.Id;
+                return scopes.Length == 0
+                    ? []
+                    : scopes.Select(scope => new PermissionDataScopeGrant(
+                        "role",
+                        roleId,
+                        scope.ScopeType,
+                        string.Equals(scope.ScopeType, DataScopeBinding.Self, StringComparison.Ordinal)
+                            ? userId.Id
+                            : scope.ScopeCode,
+                        [permissionCode],
+                        OrganizationWide: string.Equals(
+                                scope.ScopeType,
+                                DataScopeBinding.Organization,
+                                StringComparison.Ordinal)
+                            && string.Equals(scope.ScopeCode, organizationId.Id, StringComparison.Ordinal)));
+            })
+            .Concat(membershipScopes.Select(scope => new PermissionDataScopeGrant(
+                "membership",
+                scope.MembershipId.Id,
+                scope.ScopeType,
+                string.Equals(scope.ScopeType, DataScopeBinding.Self, StringComparison.Ordinal)
+                    ? userId.Id
+                    : scope.ScopeCode,
+                [permissionCode],
+                OrganizationWide: string.Equals(
+                        scope.ScopeType,
+                        DataScopeBinding.Organization,
+                        StringComparison.Ordinal)
+                    && string.Equals(scope.ScopeCode, organizationId.Id, StringComparison.Ordinal))))
+            .Distinct()
+            .OrderBy(x => x.SourceKind, StringComparer.Ordinal)
+            .ThenBy(x => x.SourceId, StringComparer.Ordinal)
+            .ThenBy(x => x.ScopeKind, StringComparer.Ordinal)
+            .ThenBy(x => x.ScopeId, StringComparer.Ordinal)
+            .ToArray();
+        return grants;
+    }
+
     public async Task<bool> UserHasMembershipAsync(
         UserId userId,
         OrganizationId organizationId,
@@ -311,10 +426,11 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
     Task<UserSession?> GetByRefreshTokenHashAsync(
         string refreshTokenHash,
         CancellationToken cancellationToken = default);
-    Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+    Task<bool> RotateActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
         string revokedReason,
+        UserSession rotatedSession,
         CancellationToken cancellationToken = default);
     Task<int> RevokeFamilyAsync(
         string tokenFamilyId,
@@ -356,6 +472,7 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         CancellationToken cancellationToken = default)
     {
         return await DbContext.UserSessions
+            .AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.RefreshTokenHash == refreshTokenHash && x.RevokedAtUtc == null && x.ExpiresAtUtc > now,
                 cancellationToken);
@@ -366,13 +483,15 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         CancellationToken cancellationToken = default)
     {
         return await DbContext.UserSessions
+            .AsNoTracking()
             .SingleOrDefaultAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
     }
 
-    public async Task<UserSession?> ConsumeActiveRefreshTokenAsync(
+    public async Task<bool> RotateActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
         string revokedReason,
+        UserSession rotatedSession,
         CancellationToken cancellationToken = default)
     {
         await using var transaction = DbContext.Database.CurrentTransaction is null
@@ -394,16 +513,17 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
                 await transaction.RollbackAsync(cancellationToken);
             }
 
-            return null;
+            return false;
         }
 
-        var session = await DbContext.UserSessions.SingleAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+        await DbContext.UserSessions.AddAsync(rotatedSession, cancellationToken);
+        await DbContext.SaveChangesAsync(cancellationToken);
         if (transaction is not null)
         {
             await transaction.CommitAsync(cancellationToken);
         }
 
-        return session;
+        return true;
     }
 
     public async Task<int> RevokeFamilyAsync(

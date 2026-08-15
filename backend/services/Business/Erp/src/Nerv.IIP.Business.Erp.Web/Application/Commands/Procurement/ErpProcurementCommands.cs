@@ -13,6 +13,8 @@ using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
+using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -320,9 +322,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                "erp-purchase-order-release",
+                ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -753,9 +755,9 @@ public sealed class CreatePurchaseOrderCommandHandler(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
                 request.EnvironmentId,
-                "erp-purchase-order-release",
+                ApprovalTemplateCodes.PurchaseOrderRelease,
                 "business-erp",
-                "purchase-order",
+                ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
                 "system:erp",
@@ -815,7 +817,12 @@ public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<Re
         {
             line.RuleFor(x => x.PurchaseOrderLineNo).NotEmpty().MaximumLength(100);
             line.RuleFor(x => x.ReceivedQuantity).GreaterThan(0);
-            line.RuleFor(x => x.QualityStatus).NotEmpty().MaximumLength(50);
+            // #1345：质检状态必须落在已知值域内。未知值原样落库会让应付计提被静默跳过。
+            line.RuleFor(x => x.QualityStatus)
+                .NotEmpty()
+                .MaximumLength(50)
+                .Must(ErpReceiptQualityStatuses.IsSupported)
+                .WithMessage("质检状态只能是 unrestricted（合格）、quality（待检）、blocked（冻结）之一或其已知别名。");
         });
     }
 }
@@ -1245,9 +1252,9 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                     new PurchaseOrderApprovalRequest(
                         request.OrganizationId,
                         request.EnvironmentId,
-                        "erp-purchase-order-release",
+                        ApprovalTemplateCodes.PurchaseOrderRelease,
                         "business-erp",
-                        "purchase-order",
+                        ApprovalDocumentTypes.PurchaseOrder,
                         request.PurchaseOrderNo,
                         null,
                         request.StartedBy,
@@ -1264,7 +1271,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
             var approval = await _approvalClient.StartApprovalAsync(
-                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, "erp-purchase-order-change", "business-erp", "purchase-order", request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, "business-erp", ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
             change.AssignApprovalChain(approval.ChainId);
             return approval.ChainId;

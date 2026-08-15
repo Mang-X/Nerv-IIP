@@ -8,11 +8,19 @@ import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
 } from '@/composables/useBusinessMes'
+import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import {
+  labelFor,
+  REPORT_SUSPENSION_REASON_LABELS,
+  TELEMETRY_CANDIDATE_STATUS_LABELS,
+} from '@/data/businessLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import {
   NvAlertDialog,
   NvAlertDialogContent,
@@ -68,6 +76,16 @@ const {
 } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
+// 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
+const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
+const { resolveSkuLabel } = useMesDisplayNames()
+type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
+/** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
+function candidateStateText(candidate: TelemetryCandidate) {
+  return candidate.suspensionReason
+    ? labelFor(REPORT_SUSPENSION_REASON_LABELS, candidate.suspensionReason)
+    : labelFor(TELEMETRY_CANDIDATE_STATUS_LABELS, candidate.status) || '未标注状态'
+}
 const candidateWorkOrderId = ref('')
 const candidateOperationTaskId = ref('')
 const dismissalReason = ref('')
@@ -342,7 +360,7 @@ async function submitReverse() {
     )
   } catch (error) {
     // 失败保留 key:同一确认框重试、或 Escape 关闭后重开,都复用同一 key 命中后端幂等重放,不产生第二次意图
-    notifyError(error, '冲销报工失败,请稍后重试。')
+    notifyOperationFailure('冲销报工失败', error, '冲销报工失败,请稍后重试。')
   }
 }
 
@@ -363,12 +381,12 @@ function reReport(row: ReportRow) {
 
 const columns: NvDataTableColumn<ReportRow>[] = [
   { key: 'reportNo', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
   {
     key: 'operationTaskId',
     header: '工序任务',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无',
+    accessor: (r) => r.operationTaskNo?.trim() || '—',
   },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
@@ -386,7 +404,7 @@ function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 async function promoteCandidate(candidate: {
   candidateId?: string
@@ -470,7 +488,7 @@ async function dismissCandidate(candidateId?: string) {
           @mouseleave="clearFocus"
         >
           <div class="flex items-center gap-1.5">
-            <span>{{ row.reportNo ?? row.productionReportId ?? '无' }}</span>
+            <span>{{ row.reportNo?.trim() || '—' }}</span>
             <NvStatusBadge v-if="isReversalRow(row)" label="负向冲销" tone="danger" />
             <NvStatusBadge v-else-if="isAlreadyReversed(row)" label="已冲销" tone="warning" />
           </div>
@@ -502,7 +520,7 @@ async function dismissCandidate(candidateId?: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderNo ?? row.workOrderId }}
+          {{ row.workOrderNo?.trim() || '—' }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
@@ -600,13 +618,13 @@ async function dismissCandidate(candidateId?: string) {
             <div class="flex justify-between gap-2">
               <dt class="text-muted-foreground">工单</dt>
               <dd class="font-medium">
-                {{ reverseTarget.workOrderNo ?? reverseTarget.workOrderId ?? '无' }}
+                {{ reverseTarget.workOrderNo?.trim() || '—' }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
               <dt class="text-muted-foreground">工序任务</dt>
               <dd class="font-medium">
-                {{ reverseTarget.operationTaskNo ?? reverseTarget.operationTaskId ?? '无' }}
+                {{ reverseTarget.operationTaskNo?.trim() || '—' }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
@@ -661,8 +679,8 @@ async function dismissCandidate(candidateId?: string) {
                 :key="`${lot.materialId}-${lot.materialLotId}-${lot.materialIssueRequestNo}`"
                 class="grid gap-1 rounded-md border px-3 py-2 text-xs sm:grid-cols-2"
               >
-                <span>物料：{{ lot.materialId ?? '无' }}</span>
-                <span>物料批次：{{ lot.materialLotId ?? '无' }}</span>
+                <span>物料：{{ resolveSkuLabel(lot.materialId) }}</span>
+                <span>物料批次：{{ readFaceText(lot.materialLotId, '未指定批次') }}</span>
                 <span>
                   数量：{{ formatQuantity(lot.consumedQuantity) }} {{ lot.uomCode ?? '' }}
                 </span>
@@ -774,10 +792,13 @@ async function dismissCandidate(candidateId?: string) {
         >
           <div class="flex flex-wrap justify-between gap-3">
             <div>
-              <p class="font-medium">{{ candidate.deviceAssetId }} · {{ candidate.tagKey }}</p>
+              <p class="font-medium">
+                {{ resolveDevice(candidate.deviceAssetId) ?? '未指定设备' }} ·
+                {{ candidate.tagKey }}
+              </p>
               <p class="text-sm text-muted-foreground">
                 {{ candidate.goodQuantity }} 件 · {{ formatDateTime(candidate.bucketEndUtc) }} ·
-                {{ candidate.suspensionReason ?? candidate.status }}
+                {{ candidateStateText(candidate) }}
               </p>
             </div>
             <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate.candidateId)"
@@ -791,13 +812,13 @@ async function dismissCandidate(candidateId?: string) {
             <label class="text-sm"
               >工单<NvInput
                 v-model="candidateWorkOrderId"
-                :placeholder="candidate.workOrderId ?? '输入真实工单号'"
+                :placeholder="readFaceText(candidate.workOrderId, '输入真实工单号')"
                 class="mt-1"
             /></label>
             <label class="text-sm"
               >工序任务<NvInput
                 v-model="candidateOperationTaskId"
-                :placeholder="candidate.operationTaskId ?? '输入真实工序任务号'"
+                :placeholder="readFaceText(candidate.operationTaskId, '输入真实工序任务号')"
                 class="mt-1"
             /></label>
             <label class="text-sm md:col-span-2"

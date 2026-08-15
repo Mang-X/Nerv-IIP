@@ -21,6 +21,10 @@ interface GeneratedApiClient {
       eject: (id: number) => void
       use: (handler: (response: Response) => Response) => number
     }
+    error: {
+      eject: (id: number) => void
+      use: (handler: (error: unknown, response?: Response) => unknown) => number
+    }
   }
   setConfig: (config: { baseUrl?: string; fetch?: typeof fetch; headers?: HeadersInit }) => void
 }
@@ -29,7 +33,30 @@ const clients: GeneratedApiClient[] = [platformClient, businessConsoleClient]
 
 let requestInterceptorIds: Array<number | undefined> = []
 let responseInterceptorIds: Array<number | undefined> = []
+let errorInterceptorIds: Array<number | undefined> = []
 let managedHeaderNames = new Set<string>()
+
+function wrapPrimitiveResponseError(error: unknown, response: Response) {
+  const wrapped = new Error(typeof error === 'string' ? error : String(error))
+  Object.defineProperties(wrapped, {
+    cause: {
+      configurable: true,
+      enumerable: false,
+      value: error,
+    },
+    response: {
+      configurable: true,
+      enumerable: false,
+      value: response,
+    },
+    status: {
+      configurable: true,
+      enumerable: false,
+      value: response.status,
+    },
+  })
+  return wrapped
+}
 
 export function configureApiClient(options: ConfigureApiClientOptions = {}): void {
   clients.forEach((client, index) => {
@@ -43,6 +70,12 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
     if (responseInterceptorId !== undefined) {
       client.interceptors.response.eject(responseInterceptorId)
       responseInterceptorIds[index] = undefined
+    }
+
+    const errorInterceptorId = errorInterceptorIds[index]
+    if (errorInterceptorId !== undefined) {
+      client.interceptors.error.eject(errorInterceptorId)
+      errorInterceptorIds[index] = undefined
     }
   })
 
@@ -89,6 +122,28 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
       }
 
       return response
+    }),
+  )
+
+  errorInterceptorIds = clients.map((client) =>
+    client.interceptors.error.use((error, response) => {
+      if (!response) return error
+      if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+        return wrapPrimitiveResponseError(error, response)
+      }
+
+      const candidate = error as { response?: unknown }
+      if (candidate.response !== undefined) return error
+      try {
+        Object.defineProperty(candidate, 'response', {
+          configurable: true,
+          enumerable: false,
+          value: response,
+        })
+        return error
+      } catch {
+        return error
+      }
     }),
   )
 }

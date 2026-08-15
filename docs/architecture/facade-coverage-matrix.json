@@ -536,6 +536,19 @@
       ]
     },
     {
+      "service": "DemandPlanning",
+      "method": "POST",
+      "route": "/api/business/v1/planning/suggestions/{suggestionId}/reject",
+      "operationId": "rejectPlanningSuggestion",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "rejectBusinessConsolePlanningSuggestion"
+      ]
+    },
+    {
       "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/delivery-orders",
@@ -1066,6 +1079,19 @@
     },
     {
       "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/supplier-quotations",
+      "operationId": "listErpSupplierQuotations",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleErpSupplierQuotations"
+      ]
+    },
+    {
+      "service": "Erp",
       "method": "POST",
       "route": "/api/business/v1/erp/rfqs",
       "operationId": "createErpRequestForQuotation",
@@ -1126,6 +1152,19 @@
       "operationId": "cancelErpSalesOrder",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; sales-order cancellation follows the ERP order-management Business Console menu phase."
+    },
+    {
+      "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/sales-orders/{salesOrderNo}/release-credit-hold",
+      "operationId": "releaseErpSalesOrderCreditHold",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "releaseBusinessConsoleErpSalesOrderCreditHold"
+      ]
     },
     {
       "service": "Erp",
@@ -1535,6 +1574,20 @@
     },
     {
       "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/directory",
+      "operationId": "listInventoryDirectory",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes owner-side scoped, keyword-searchable, paged location/batch/serial candidates through the unified searchable-directory facade.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
+    },
+    {
+      "service": "Inventory",
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks",
       "operationId": "createInventoryCountTask",
@@ -1544,6 +1597,34 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleInventoryCountTask"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/count-tasks",
+      "operationId": "listInventoryCountTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "库存盘点页此前只有写端点，表格数据挂在会话内本地队列上、刷新即空；本读面按组织/环境收敛并服务端分页，回传不受状态过滤影响的状态分布计数。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryCountTasks"
+      ]
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/count-adjustments",
+      "operationId": "listInventoryCountAdjustments",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "盘点调整读面，与盘点任务成对，展示差异→审批→过账的落地凭据（movementId / approvalChainId）。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryCountAdjustments"
       ]
     },
     {
@@ -1588,6 +1669,20 @@
       "operationId": "createOrUpdateInventoryLocation",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; inventory location master-setup UI is a later menu phase."
+    },
+    {
+      "service": "Inventory",
+      "method": "GET",
+      "route": "/api/inventory/v1/movements",
+      "operationId": "listInventoryMovements",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "库存移动页此前只能按单张源单据下钻（getInventoryStockBySource），列表只有会话内本地队列；本读面补上按物料/库位/批次/类型/日期区间过滤的历史流水分页。",
+      "gatewayOperationIds": [
+        "listBusinessConsoleInventoryMovements"
+      ]
     },
     {
       "service": "Inventory",
@@ -1687,8 +1782,14 @@
       "method": "GET",
       "route": "/api/business/v1/maintenance/downtime-reasons",
       "operationId": "listMaintenanceDowntimeReasons",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; downtime-reason catalog config UI is a later Maintenance menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "note": "MAN-632 exposes the authoritative downtime-reason catalog as both downtime-reason and an explicit maintenance-reason alias; category facts and authorityDirectoryType remain visible.",
+      "gatewayOperationIds": [
+        "listBusinessConsoleSearchableDirectory"
+      ]
     },
     {
       "service": "Maintenance",
@@ -1855,7 +1956,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMaintenanceWorkOrders"
-      ]
+      ],
+      "note": "The exposed list facade preserves legacy deviceAssetId/deviceAssetIds filters and accepts repeated deviceAssetReferences values for exact device codes (including commas) or canonical DeviceAssetIds. The public maximum of 200 is an application validation limit, not a guarantee that arbitrary maximum-length values fit an HTTP request target; after scope verification BusinessGateway uses the internal body-based batch query for exact aliases. BusinessGateway operationId: listBusinessConsoleMaintenanceWorkOrders."
     },
     {
       "service": "Maintenance",
@@ -1869,6 +1971,61 @@
       "gatewayOperationIds": [
         "createBusinessConsoleMaintenanceWorkOrder"
       ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "GET",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}",
+      "operationId": "getMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/actions",
+      "operationId": "transitionMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "transitionBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/v1/maintenance/work-orders/{workOrderId}/assignment",
+      "operationId": "assignMaintenanceWorkOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleMaintenanceWorkOrder"
+      ]
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/query",
+      "operationId": "queryInternalMaintenanceWorkOrders",
+      "classification": "internal",
+      "rationale": "Body-based service-to-service batch list used by BusinessGateway for up to 400 verified DeviceAssetId and code aliases without relying on request-target size; it reuses the list query handler and is not a public facade."
+    },
+    {
+      "service": "Maintenance",
+      "method": "POST",
+      "route": "/api/business/internal/v1/maintenance/work-orders/{workOrderId}/assignment-replay-probe",
+      "operationId": "probeMaintenanceWorkOrderAssignmentReplay",
+      "classification": "internal",
+      "rationale": "Read-only service contract used by BusinessGateway to distinguish an exact persisted assignment replay from a first assignment before validating mutable dispatch targets; it never creates a receipt or changes work-order state."
     },
     {
       "service": "Maintenance",
@@ -2033,6 +2190,19 @@
     },
     {
       "service": "MasterData",
+      "method": "GET",
+      "route": "/api/business/v1/master-data/principals/{userId}/work-context",
+      "operationId": "getBusinessMasterDataPrincipalWorkContext",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsolePrincipalWorkContext"
+      ]
+    },
+    {
+      "service": "MasterData",
       "method": "POST",
       "route": "/api/business/v1/master-data/personnel-skills",
       "operationId": "assignBusinessMasterDataPersonnelSkill",
@@ -2154,7 +2324,7 @@
       "route": "/api/business/v1/master-data/references/resolve",
       "operationId": "resolveBusinessMasterDataReferences",
       "classification": "internal",
-      "rationale": "Service-to-service batch reference-data resolve consumed by other business services."
+      "rationale": "Service-to-service batch reference-data and authoritative device-identity snapshot resolve (maximum 200 references) consumed by other business services."
     },
     {
       "service": "MasterData",
@@ -2174,7 +2344,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleMasterDataResources"
+        "listBusinessConsoleMasterDataResources",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -2460,7 +2631,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleWorkers"
+        "listBusinessConsoleWorkers",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -2678,7 +2850,8 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleMesOperationTasks"
-      ]
+      ],
+      "note": "The exposed facade preserves the MES exact operationTaskId filter together with workOrderId and principal-derived scope before paging; PDA action readback uses this strong-ID query instead of keyword search."
     },
     {
       "service": "Mes",
@@ -2839,6 +3012,19 @@
     {
       "service": "Mes",
       "method": "GET",
+      "route": "/api/business/v1/mes/reportable-operation-tasks",
+      "operationId": "listBusinessMesReportableOperationTasks",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesReportableOperationTasks"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
       "route": "/api/business/v1/mes/telemetry-production-report-candidates",
       "operationId": "listBusinessMesTelemetryProductionReportCandidates",
       "classification": "exposed",
@@ -2922,6 +3108,19 @@
       ],
       "gatewayOperationIds": [
         "runBusinessConsoleMesSchedule"
+      ]
+    },
+    {
+      "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/schedules",
+      "operationId": "listBusinessMesScheduleResults",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleMesScheduleResults"
       ]
     },
     {
@@ -3639,6 +3838,45 @@
     },
     {
       "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/calibration-records",
+      "operationId": "listBusinessQualityCalibrationRecords",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityCalibrationRecords"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/capas",
+      "operationId": "listBusinessQualityCapas",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityCapas"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/capas/{correctiveActionId}",
+      "operationId": "getBusinessQualityCapa",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityCapa"
+      ]
+    },
+    {
+      "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/capas",
       "operationId": "openBusinessQualityCapa",
@@ -3797,6 +4035,45 @@
     },
     {
       "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}",
+      "operationId": "getBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/assignment",
+      "operationId": "assignBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "POST",
+      "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/claim",
+      "operationId": "claimBusinessQualityInspectionTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "claimBusinessConsoleQualityInspectionTask"
+      ]
+    },
+    {
+      "service": "Quality",
       "method": "POST",
       "route": "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record",
       "operationId": "createBusinessQualityInspectionRecordFromTask",
@@ -3806,6 +4083,19 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleQualityInspectionRecordFromTask"
+      ]
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/measuring-devices",
+      "operationId": "listBusinessQualityMeasuringDevices",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualityMeasuringDevices"
       ]
     },
     {
@@ -3910,7 +4200,8 @@
         "business"
       ],
       "gatewayOperationIds": [
-        "listBusinessConsoleQualityReasonCodes"
+        "listBusinessConsoleQualityReasonCodes",
+        "listBusinessConsoleSearchableDirectory"
       ]
     },
     {
@@ -3993,6 +4284,19 @@
       "operationId": "lockBusinessQualitySpcControlChart",
       "classification": "deferred",
       "followUp": "BusinessGateway facade pending; SPC control-limit lock (write) follows the SPC analysis menu phase (#725)."
+    },
+    {
+      "service": "Quality",
+      "method": "GET",
+      "route": "/api/business/v1/quality/spc/control-charts",
+      "operationId": "listBusinessQualitySpcControlCharts",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleQualitySpcControlCharts"
+      ]
     },
     {
       "service": "Quality",
@@ -4195,6 +4499,21 @@
     {
       "service": "Wms",
       "method": "GET",
+      "route": "/api/business/v1/wms/operational-candidates",
+      "operationId": "listWmsOperationalCandidates",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "listBusinessConsoleWmsReceiptOperationalCandidates",
+        "listBusinessConsoleWmsShipmentOperationalCandidates",
+        "listBusinessConsoleWmsCountOperationalCandidates"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
       "route": "/api/business/v1/wms/count-executions",
       "operationId": "listWmsCountExecutions",
       "classification": "exposed",
@@ -4216,6 +4535,19 @@
       ],
       "gatewayOperationIds": [
         "createBusinessConsoleWmsCountExecution"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/count-executions/{countExecutionId}/assignment",
+      "operationId": "assignWmsCountExecution",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsCountExecution"
       ]
     },
     {
@@ -4264,6 +4596,19 @@
       "operationId": "cancelWmsInboundOrdersForSource",
       "classification": "internal",
       "rationale": "Service-to-service ERP purchase-order cancellation closes matching open WMS inbound expectations; it is not a direct console action."
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment",
+      "operationId": "assignWmsInboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsInboundOrder"
+      ]
     },
     {
       "service": "Wms",
@@ -4344,6 +4689,19 @@
     {
       "service": "Wms",
       "method": "POST",
+      "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/assignment",
+      "operationId": "assignWmsOutboundOrder",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsOutboundOrder"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
       "route": "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel",
       "operationId": "cancelWmsOutboundOrder",
       "classification": "deferred",
@@ -4403,6 +4761,71 @@
     },
     {
       "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/assignment",
+      "operationId": "assignWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPickingTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPickingTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPickingTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPickingTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/picking-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPickingTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPickingTask"
+      ]
+    },
+    {
+      "service": "Wms",
       "method": "GET",
       "route": "/api/business/v1/wms/replenishment-tasks",
       "operationId": "listWmsReplenishmentTasks",
@@ -4420,6 +4843,71 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleWmsPutawayTasks"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment",
+      "operationId": "assignWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "assignBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/complete",
+      "operationId": "completeWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "completeBusinessConsoleWmsPutawayTask"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/exception",
+      "operationId": "reportWmsPutawayTaskException",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reportBusinessConsoleWmsPutawayTaskException"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/progress",
+      "operationId": "recordWmsPutawayTaskProgress",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "recordBusinessConsoleWmsPutawayTaskProgress"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "POST",
+      "route": "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/start",
+      "operationId": "startWmsPutawayTask",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "startBusinessConsoleWmsPutawayTask"
       ]
     },
     {
@@ -4446,6 +4934,45 @@
       ],
       "gatewayOperationIds": [
         "listBusinessConsoleWmsSupplierReturnRequests"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/receipts",
+      "operationId": "getWmsReceiptWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsReceiptWorkScopes"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/shipments",
+      "operationId": "getWmsShipmentWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsShipmentWorkScopes"
+      ]
+    },
+    {
+      "service": "Wms",
+      "method": "GET",
+      "route": "/api/business/v1/wms/work-scopes/counts",
+      "operationId": "getWmsCountWorkScopes",
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "getBusinessConsoleWmsCountWorkScopes"
       ]
     },
     {

@@ -183,11 +183,7 @@ async function onSubmit() {
 
       <p v-if="errorMsg" class="err reveal" role="alert">{{ errorMsg }}</p>
       <p class="hint reveal" style="--d: 0.5s">
-        {{
-          IS_REAL_DATA
-            ? '请使用工厂账号登录（连接真实数据）'
-            : '演示模式 · 任意账号密码即可进入（数据为 mock）'
-        }}
+        {{ IS_REAL_DATA ? '请使用工厂账号登录' : '请输入账号密码进入' }}
       </p>
     </form>
   </div>
@@ -236,7 +232,7 @@ async function onSubmit() {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, transparent 70%, #050a15 99%);
+    background: rgba(5, 10, 21, 0.24);
   }
   /* 模块呼吸微光（叠在插画各模块上，克制） */
   .glow {
@@ -247,10 +243,10 @@ async function onSubmit() {
     animation: glow-breathe 5.6s ease-in-out infinite;
   }
   .glow.cyan {
-    background: radial-gradient(circle, rgba(74, 166, 238, 0.2), transparent 68%);
+    background: rgba(74, 166, 238, 0.12);
   }
   .glow.amber {
-    background: radial-gradient(circle, rgba(242, 193, 78, 0.16), transparent 68%);
+    background: rgba(242, 193, 78, 0.1);
   }
 
   /* ── 全屏氛围层：漂浮粒子 + 极淡流光 ── */
@@ -272,13 +268,13 @@ async function onSubmit() {
     animation-direction: alternate;
   }
   .p.cyan {
-    background: radial-gradient(circle, rgba(120, 190, 245, 0.55), transparent 70%);
+    background: rgba(120, 190, 245, 0.45);
   }
   .p.indigo {
-    background: radial-gradient(circle, rgba(139, 155, 230, 0.5), transparent 70%);
+    background: rgba(139, 155, 230, 0.4);
   }
   .p.amber {
-    background: radial-gradient(circle, rgba(242, 193, 78, 0.4), transparent 70%);
+    background: rgba(242, 193, 78, 0.32);
   }
   @keyframes p-float {
     from {
@@ -295,7 +291,7 @@ async function onSubmit() {
     width: 150px;
     height: 1px;
     left: -160px;
-    background: linear-gradient(90deg, transparent, rgba(74, 166, 238, 0.38), transparent);
+    background: rgba(74, 166, 238, 0.3);
     opacity: 0;
     animation: streak-move linear infinite;
   }
@@ -379,7 +375,7 @@ async function onSubmit() {
     padding: 52px 56px 40px;
     border-radius: 16px;
     border: 1px solid var(--nv-scr-line-2);
-    background: linear-gradient(180deg, rgba(17, 26, 45, 0.82), rgba(9, 14, 26, 0.78));
+    background: rgba(13, 20, 36, 0.82);
     box-shadow:
       inset 0 1px 0 var(--nv-scr-highlight),
       0 40px 100px -50px rgba(0, 0, 0, 0.92);

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Web.Application.DataScopes;
 using Nerv.IIP.Iam.Infrastructure;
 
@@ -135,6 +136,43 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public void In_memory_store_returns_explicit_role_and_membership_scopes_for_the_checked_permission()
+    {
+        var store = new InMemoryIamStore();
+        store.ReplaceRoleDataScopes(
+            "role-platform-admin",
+            [new DataScopeBinding(DataScopeBinding.Organization, "org-001")]);
+        store.ReplaceMembershipDataScopes(
+            "user-admin",
+            "org-001",
+            "env-dev",
+            [new DataScopeBinding(DataScopeBinding.Self, "user-admin")]);
+
+        var grants = store.ListPermissionDataScopeGrants(
+            "user-admin",
+            "org-001",
+            "env-dev",
+            "business.masterdata.resources.read");
+
+        Assert.Contains(grants, x =>
+            x.SourceKind == "role"
+            && x.SourceId == "role-platform-admin"
+            && x.ScopeKind == DataScopeBinding.Organization
+            && x.ScopeId == "org-001"
+            && x.OrganizationWide);
+        Assert.Contains(grants, x =>
+            x.SourceKind == "membership"
+            && x.SourceId == "user-admin:org-001:env-dev"
+            && x.ScopeKind == DataScopeBinding.Self
+            && x.ScopeId == "user-admin");
+        Assert.Empty(store.ListPermissionDataScopeGrants(
+            "user-admin",
+            "org-001",
+            "env-dev",
+            "permission-not-granted"));
+    }
+
+    [Fact]
     public async Task External_client_credentials_issue_external_client_token_and_authorization_check_uses_grants()
     {
         var token = await _client.PostAsJsonAsync(
@@ -257,6 +295,9 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             && item.Domain == "business"
             && item.Seeded);
         Assert.Contains(catalog.Items, item => item.Code == "business.erp.finance.manage"
+            && item.Domain == "business"
+            && item.Seeded);
+        Assert.Contains(catalog.Items, item => item.Code == "business.wms.counts.read"
             && item.Domain == "business"
             && item.Seeded);
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.foundation.read"

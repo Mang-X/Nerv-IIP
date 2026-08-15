@@ -262,6 +262,7 @@ public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
 [Tags("Business Console Equipment")]
 [HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge")]
 [BusinessGatewayOperationId("acknowledgeBusinessConsoleEquipmentAlarm")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
@@ -280,9 +281,7 @@ public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var downstreamRequest = string.IsNullOrWhiteSpace(request.AcknowledgedBy)
-            ? request with { AcknowledgedBy = actorRef }
-            : request;
+        var downstreamRequest = request with { AcknowledgedBy = actorRef };
         return industrialTelemetry.AcknowledgeAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, downstreamRequest, cancellationToken);
     }
 }
@@ -290,6 +289,7 @@ public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
 [Tags("Business Console Equipment")]
 [HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve")]
 [BusinessGatewayOperationId("shelveBusinessConsoleEquipmentAlarm")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ShelveBusinessConsoleEquipmentAlarmEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
@@ -308,9 +308,7 @@ public sealed class ShelveBusinessConsoleEquipmentAlarmEndpoint(
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var downstreamRequest = string.IsNullOrWhiteSpace(request.ShelvedBy)
-            ? request with { ShelvedBy = actorRef }
-            : request;
+        var downstreamRequest = request with { ShelvedBy = actorRef };
         return industrialTelemetry.ShelveAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, downstreamRequest, cancellationToken);
     }
 }
@@ -368,6 +366,7 @@ public sealed class BusinessConsoleShelveAlarmRequestValidator : Validator<Busin
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ShelvedBy).MaximumLength(150);
         RuleFor(x => x.Reason).MaximumLength(300);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

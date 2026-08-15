@@ -1,79 +1,79 @@
-# Inventory Business Gap Implementation Plan
+# Inventory 业务缺口实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供代理执行者使用：**必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Close #412 by adding Inventory-owned stock status, reservation/allocation, valuation, count safety, and Quality event release behavior.
+**目标：**通过添加 Inventory 拥有的库存状态、预留/分配、估值、盘点安全和 Quality 事件放行行为来闭合 #412。
 
-**Architecture:** Keep all stock facts in `Business.Inventory`. Use public Quality contracts for inspection result consumption. Do not reference WMS, MES, ERP, or Quality Domain/Infrastructure/Web projects from Inventory.
+**架构：**所有库存事实都保留在 `Business.Inventory` 中。消费检验结果时使用 Quality 公开契约。Inventory 不得引用 WMS、MES、ERP 或 Quality 的 Domain/Infrastructure/Web 项目。
 
-**Tech Stack:** .NET 10, CleanDDD, FastEndpoints, EF Core PostgreSQL, CAP consumers, xUnit, `Nerv.IIP.Testing` schema convention helpers.
+**技术栈：**.NET 10、CleanDDD、FastEndpoints、EF Core PostgreSQL、CAP 消费者、xUnit、`Nerv.IIP.Testing` schema 约定辅助工具。
 
 ---
 
-### Task 1: Domain Rules
+### Task 1：领域规则
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockQualityStatus.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockReservationAggregate/StockReservation.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLedgerAggregate/StockLedger.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockMovementAggregate/StockMovement.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountTaskAggregate/StockCountTask.cs`
+**文件：**
+- 修改： `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/InventoryAggregateTests.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockQualityStatus.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockReservationAggregate/StockReservation.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockLedgerAggregate/StockLedger.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockMovementAggregate/StockMovement.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Domain/AggregatesModel/StockCountTaskAggregate/StockCountTask.cs`
 
-- [ ] Write failing tests for stock status normalization/rejection, reservation/release/allocation, moving-average valuation, and count freeze/version checks.
-- [ ] Run `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore` and confirm the new tests fail.
-- [ ] Implement minimal domain code to pass.
-- [ ] Re-run the same domain test project and confirm it passes.
+- [ ] 为库存状态规范化/拒绝、预留/释放/分配、移动平均估值以及盘点冻结/版本检查编写失败测试。
+- [ ] 运行 `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore`，确认新测试失败。
+- [ ] 实现让测试通过的最小领域代码。
+- [ ] 再次运行同一领域测试项目并确认通过。
 
-### Task 2: Commands, Queries, And Endpoints
+### Task 2：命令、查询和 Endpoint
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Endpoints/Inventory/InventoryEndpoints.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReserveStockCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReleaseStockReservationCommand.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/GetStockAvailabilityQuery.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs`
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
+**文件：**
+- 修改： `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryEndpointContractTests.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Endpoints/Inventory/InventoryEndpoints.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Auth/InventoryPermissionCodes.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReserveStockCommand.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockReservations/ReleaseStockReservationCommand.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/GetStockAvailabilityQuery.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs`
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs`
 
-- [ ] Write failing web tests for reservation endpoints, status-transfer endpoint, valuation response fields, count stale-version rejection, and endpoint contract metadata.
-- [ ] Run focused web tests and confirm failures.
-- [ ] Implement command handlers and endpoints using async EF Core queries with cancellation tokens.
-- [ ] Re-run focused web tests and confirm they pass.
+- [ ] 为预留 endpoint、状态转移 endpoint、估值响应字段、盘点旧版本拒绝和 endpoint 契约元数据编写失败的 Web 测试。
+- [ ] 运行聚焦的 Web 测试并确认失败。
+- [ ] 使用带取消令牌的异步 EF Core 查询实现命令处理器和 endpoint。
+- [ ] 再次运行聚焦的 Web 测试并确认通过。
 
-### Task 3: Quality Event Consumer
+### Task 3：Quality 事件消费者
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryMovementRequestedConsumerTests.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs`
+**文件：**
+- 修改： `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryMovementRequestedConsumerTests.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs`
 
-- [ ] Write failing consumer tests for `quality.InspectionPassed` and `quality.InspectionRejected`.
-- [ ] Implement a CAP consumer against `InspectionResultIntegrationEvent` from `Nerv.IIP.Contracts.Quality`.
-- [ ] Re-run consumer tests.
+- [ ] 为 `quality.InspectionPassed` 和 `quality.InspectionRejected` 编写失败的消费者测试。
+- [ ] 针对 `Nerv.IIP.Contracts.Quality` 中的 `InspectionResultIntegrationEvent` 实现 CAP 消费者。
+- [ ] 再次运行消费者测试。
 
-### Task 4: Persistence And Docs
+### Task 4：持久化与文档
 
-**Files:**
-- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/ApplicationDbContext.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockReservationEntityTypeConfiguration.cs`
-- Modify: existing Inventory EF configurations
-- Generate: new Inventory EF migration and model snapshot
-- Modify: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventorySchemaConventionTests.cs`
-- Modify: `docs/architecture/database-schema-catalog.md`
-- Modify: `docs/architecture/implementation-readiness.md`
+**文件：**
+- 修改： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/ApplicationDbContext.cs`
+- 创建： `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/StockReservationEntityTypeConfiguration.cs`
+- 修改：现有 Inventory EF 配置
+- 生成：新的 Inventory EF migration 和模型快照
+- 修改： `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventorySchemaConventionTests.cs`
+- 修改： `docs/architecture/database-schema-catalog.md`
+- 修改： `docs/architecture/implementation-readiness.md`
 
-- [ ] Write/update schema convention tests for new table/columns/check constraints.
-- [ ] Generate EF migration with PostgreSQL profile.
-- [ ] Update schema catalog/readiness with #412 behavior.
-- [ ] Run Inventory web tests and schema tests.
+- [ ] 为新表/列/check constraint 编写或更新 schema 约定测试。
+- [ ] 使用 PostgreSQL profile 生成 EF migration。
+- [ ] 使用 #412 行为更新 schema 目录/就绪清单。
+- [ ] 运行 Inventory Web 测试和 schema 测试。
 
-### Task 5: Verification And PR
+### Task 5：验证与 PR
 
-- [ ] Run `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore`.
-- [ ] Run `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore`.
-- [ ] Run `scripts/verify-business-inventory-mvp.ps1` if local prerequisites allow it.
-- [ ] Run `git diff --check`.
-- [ ] Commit, push `codex/issue-412-inventory-business-gap`, and create a PR with `Closes #412`.
+- [ ] 运行 `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Domain.Tests/Nerv.IIP.Business.Inventory.Domain.Tests.csproj --no-restore`。
+- [ ] 运行 `dotnet test backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/Nerv.IIP.Business.Inventory.Web.Tests.csproj --no-restore`。
+- [ ] 如果本地前置条件允许，运行 `scripts/verify-business-inventory-mvp.ps1`。
+- [ ] 运行 `git diff --check`。
+- [ ] 提交并推送 `codex/issue-412-inventory-business-gap`，然后创建包含 `Closes #412` 的 PR。

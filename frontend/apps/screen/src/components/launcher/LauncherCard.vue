@@ -70,7 +70,7 @@ defineProps<{
     flex-direction: column;
     padding: 30px 32px 24px;
     border-radius: var(--nv-scr-radius);
-    background: linear-gradient(180deg, var(--nv-scr-panel-a), var(--nv-scr-panel-b));
+    background: var(--nv-scr-panel-a);
     /* 评审定调：整圈暗边，顶边只比底边亮一丝 */
     border: 1px solid var(--nv-scr-line);
     border-top-color: rgba(255, 255, 255, 0.1);

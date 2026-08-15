@@ -54,7 +54,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lineDrafts)
+        IEnumerable<InboundOrderLineDraft> lineDrafts,
+        string? assignedOperatorUserId,
+        string? assignedPoolCode)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -62,7 +64,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         SourceDocumentType = WmsText.Required(sourceDocumentType, nameof(sourceDocumentType));
         SourceDocumentId = WmsText.Required(sourceDocumentId, nameof(sourceDocumentId));
         SiteCode = WmsText.Required(siteCode, nameof(siteCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AssignedPoolCode = WmsText.Optional(assignedPoolCode);
         Status = InboundOrderStatus.Open;
+        Version = 1;
         CreatedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
@@ -81,7 +86,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public string SourceDocumentType { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public string? AssignedOperatorUserId { get; private set; }
+    public string? AssignedPoolCode { get; private set; }
     public InboundOrderStatus Status { get; private set; }
+    public long Version { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
@@ -95,9 +103,32 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string sourceDocumentType,
         string sourceDocumentId,
         string siteCode,
-        IEnumerable<InboundOrderLineDraft> lines)
+        IEnumerable<InboundOrderLineDraft> lines,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
-        return new InboundOrder(organizationId, environmentId, inboundOrderNo, sourceDocumentType, sourceDocumentId, siteCode, lines);
+        return new InboundOrder(
+            organizationId,
+            environmentId,
+            inboundOrderNo,
+            sourceDocumentType,
+            sourceDocumentId,
+            siteCode,
+            lines,
+            assignedOperatorUserId,
+            assignedPoolCode);
+    }
+
+    public void AssignWorkPool(
+        string assignedPoolCode,
+        string? assignedOperatorUserId,
+        long expectedVersion)
+    {
+        EnsureExpectedVersion(expectedVersion);
+        EnsureOpen();
+        AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
+        AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
+        AdvanceVersion();
     }
 
     public void Cancel(string reason)
@@ -106,6 +137,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         CancellationReason = WmsText.Required(reason, nameof(reason));
         CancelledAtUtc = DateTime.UtcNow;
         Status = InboundOrderStatus.Cancelled;
+        AdvanceVersion();
     }
 
     public WarehouseTask CreatePutawayTask(
@@ -113,7 +145,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string lineNo,
         string fromLocationCode,
         string toLocationCode,
-        decimal quantity)
+        decimal quantity,
+        string? assignedOperatorUserId = null,
+        string? assignedPoolCode = null)
     {
         var line = FindLine(lineNo);
         EnsureCanCreatePutawayTask(line);
@@ -133,13 +167,19 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             SiteCode,
             fromLocationCode,
             toLocationCode,
-            quantity);
+            quantity,
+            line.LotNo,
+            line.SerialNo,
+            assignedOperatorUserId,
+            assignedPoolCode);
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> Complete(
         string idempotencyKey,
+        long expectedVersion,
         IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
     {
+        EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
@@ -153,6 +193,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             ? InboundOrderStatus.PendingQualityCheck
             : InboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
         var singleLine = lines.Count == 1;
         var requests = lines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
@@ -337,6 +378,20 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         {
             throw new InvalidOperationException("Completed or failed inbound orders are immutable.");
         }
+    }
+
+    private void EnsureExpectedVersion(long expectedVersion)
+    {
+        if (Version != expectedVersion)
+        {
+            throw new InvalidOperationException(
+                $"Inbound order version conflict: expected {expectedVersion}, actual {Version}.");
+        }
+    }
+
+    private void AdvanceVersion()
+    {
+        Version = checked(Version + 1);
     }
 
     private void EnsureHasLines()

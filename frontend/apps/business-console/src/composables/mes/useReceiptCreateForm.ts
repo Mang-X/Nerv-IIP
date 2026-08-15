@@ -6,7 +6,8 @@ import {
   useMesFinishedGoodsReceipts,
   useMesWorkOrderProducedLots,
 } from '@/composables/useBusinessMes'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { useSkuNames } from '@/composables/useSkuNames'
+import { notifyOperationFailure, notifySuccess, serverErrorMessage } from '@/utils/notify'
 
 /** 登记完工入库所需的工单上下文（由路由页编排后传入，表单本身只负责登记态）。 */
 export interface ReceiptCreateContext {
@@ -42,9 +43,12 @@ function toIsoFromLocalInput(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toISOString()
 }
 // 累计申请量超过工单完工数量：后端返回带 WorkOrderId 后缀的技术消息，收敛成 issue 指定的一线业务文案。
-// 命中时返回映射文案（作为「实际错误消息」传入 notifyError，绕过其 ≤60 字中文原文透传）；否则 undefined。
+// 命中时返回映射文案（作为「实际错误消息」传入 notifyOperationFailure，替掉技术原文）；否则 undefined。
 function overQuantityMessage(error: unknown): string | undefined {
-  const raw = error instanceof Error ? error.message : error ? String(error) : ''
+  // 先走 serverErrorMessage：generated client 抛的是响应体对象，只判 `instanceof Error` 会漏掉整条服务端消息。
+  const raw =
+    serverErrorMessage(error) ||
+    (error instanceof Error ? error.message : error ? String(error) : '')
   if (raw && (raw.includes('累计完工入库申请数量超过') || raw.includes('完工数量'))) {
     return '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。'
   }
@@ -67,11 +71,16 @@ export function useReceiptCreateForm(
   } = useMesFinishedGoodsReceipts()
   const { producedLots, producedLotsPending, producedLotsError, refreshProducedLots } =
     useMesWorkOrderProducedLots(() => context().workOrderId)
+  // 入库单位取工单成品的物料主档基本单位（MES 读面的 skuId 就是人读物料编码）。
+  // 曾踩坑：这里写死一个通用单位，遇到按 kg / l 计量的成品，后端单位换算找不到换算关系直接 500。
+  const { resolveBaseUom } = useSkuNames()
+  const contextBaseUom = computed(() => resolveBaseUom(context().skuId) ?? '')
 
   const form = reactive({
     quantity: '1',
     unitCost: '',
-    uomCode: 'EA',
+    // 物料主档到位前保持空：宁可让操作员显式选单位，也不预填一个假单位。
+    uomCode: '',
     requestedAtUtc: toLocalDateTimeInput(new Date()),
     producedLotNo: '',
     // 幂等键按「登记会话」生成：会话内瞬时失败重投复用同键→后端回放不重复入库；成功后 resetForm 轮换新键→连录产生独立申请。
@@ -91,6 +100,14 @@ export function useReceiptCreateForm(
   watch(producedLotsError, (err) => {
     if (err) form.producedLotNo = ''
   })
+  // 物料主档到位（或工单切换）后带出该成品的基本单位；操作员改成包装单位后不再被主档覆盖。
+  watch(
+    contextBaseUom,
+    (baseUom) => {
+      if (baseUom && !isNonEmpty(form.uomCode)) form.uomCode = baseUom
+    },
+    { immediate: true },
+  )
   // 工单详情/报工带出的建议数量：进入或工单切换时预填（操作员可改；成功后 resetForm 恢复默认）。
   watch(
     () => context().initialQuantity,
@@ -162,7 +179,8 @@ export function useReceiptCreateForm(
   function resetForm() {
     form.quantity = '1'
     form.unitCost = ''
-    form.uomCode = 'EA'
+    // 回到「跟随物料主档」：主档没到就留空，由上面的 watch 在主档到位后补齐。
+    form.uomCode = contextBaseUom.value
     // 成功后先清空产出批次：多批次工单强制操作员重新选择（避免连录误记到上一批次），单一批次再由
     // applyDefaultProducedLot 自动回填。
     form.producedLotNo = ''
@@ -193,10 +211,14 @@ export function useReceiptCreateForm(
     // 登记成功与「列表刷新」是两件独立的事：刷新失败不得否定已成功的登记（否则同时看到成功+失败并可能重复提交）。
     try {
       await createReceiptRequest(body)
-    } catch {
-      const err = createReceiptRequestError.value ?? undefined
+    } catch (error) {
+      const err = createReceiptRequestError.value ?? error
       const overQuantity = overQuantityMessage(err)
-      notifyError(overQuantity ? new Error(overQuantity) : err, '登记完工入库失败，请稍后重试。')
+      notifyOperationFailure(
+        '登记完工入库失败',
+        overQuantity ? new Error(overQuantity) : err,
+        '登记完工入库失败，请稍后重试。',
+      )
       return false
     }
     notifySuccess(`已登记完工入库 · 工单 ${body.workOrderId ?? ''}，可在列表查看入库状态。`)

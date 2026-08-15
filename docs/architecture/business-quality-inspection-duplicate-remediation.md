@@ -1,33 +1,27 @@
-# Quality inspection duplicate remediation runbook
+# 质量检验重复项处置运行手册
 
-This runbook is the operator path for the migration
-`20260629074947_AddQualityLongtailReviewFixes`, which adds the unique
-`quality.inspection_records` idempotency scope:
+本运行手册说明迁移
+`20260629074947_AddQualityLongtailReviewFixes` 的操作路径；该迁移新增唯一的
+`quality.inspection_records` 幂等范围：
 
 `organization_id + environment_id + source_type + source_service + source_document_id + sku_code`.
 
-The migration precheck fails before creating the unique index when historical
-duplicates exist. It intentionally does not merge, delete, or rewrite business
-facts automatically.
+存在历史重复项时，迁移预检查会在创建唯一索引前失败。该预检查有意不自动合并、删除或改写业务
+事实。
 
-## Guardrails
+## 护栏
 
-1. Take and verify a database backup before any data change.
-2. Run the report query first and attach the result to the release ticket.
-3. Do not delete or rewrite CAP outbox/inbox rows, dead letters, processed event
-   inbox rows, or external audit evidence.
-4. Do not silently delete `inspection_records` or `inspection_result_lines`.
-   Any deletion must name the canonical inspection record, the removed duplicate
-   ids, the reason, the approver, and the backup evidence.
-5. If duplicate records have different quantities, results, stock release
-   dimensions, result-line signatures, or NCR references, stop the release and
-   open a business-approved data-fix task. Do not apply the unique index until
-   that task leaves zero duplicate groups.
+1. 在进行任何数据变更前，必须创建并验证数据库备份。
+2. 必须先运行报告查询，并将结果附加到发布工单。
+3. 不得删除或改写 CAP 发件箱/收件箱行、死信、已处理事件收件箱行或外部审计证据。
+4. 不得静默删除 `inspection_records` 或 `inspection_result_lines`。任何删除都必须注明规范检验记录、
+   被移除重复项的 ID、原因、批准人和备份证据。
+5. 如果重复记录的数量、结果、库存放行维度、结果行签名或 NCR 引用不同，必须停止发布并创建经业务
+   批准的数据修复任务。在该任务将重复组清零前，不得应用唯一索引。
 
-## Duplicate report
+## 重复项报告
 
-Run this query on the target Quality PostgreSQL database before applying the
-migration:
+在应用迁移前，必须在目标 Quality PostgreSQL 数据库上运行此查询：
 
 ```sql
 WITH duplicate_groups AS (
@@ -163,65 +157,55 @@ ORDER BY
     canonical_rank;
 ```
 
-## Canonical record rule
+## 规范记录规则
 
-For each duplicate group, keep one canonical record:
+每个重复组保留一条规范记录：
 
-The report's `canonical_rank` is only a starting order based on Quality-local
-NCR references, `created_at_utc`, and `id`. It cannot detect CAP messages,
-external event payloads, ticket attachments, or other audit evidence. Check
-those references before treating a ranked row as the canonical record or
-deleting any non-canonical row.
+报告中的 `canonical_rank` 仅是基于 Quality 本地 NCR 引用、`created_at_utc` 和 `id` 的初始排序。
+它无法检测 CAP 消息、外部事件载荷、工单附件或其他审计证据。在将已排序行视为规范记录或删除任何
+非规范行之前，必须检查这些引用。
 
-1. Prefer the record referenced by an NCR through
-   `inspection_records.nonconformance_report_id` or
-   `nonconformance_reports.source_inspection_record_id`.
-2. If exactly one record is tied to downstream event/audit evidence, keep that
-   record.
-3. If no record has downstream references and all business facts match, keep the
-   earliest `created_at_utc`; use the smallest `id` only as the tiebreaker.
-4. If multiple records have different NCRs or different downstream outcomes,
-   stop and resolve with Quality, Inventory, and the source-service owner.
+1. 应优先保留由 NCR 通过
+   `inspection_records.nonconformance_report_id` 或
+   `nonconformance_reports.source_inspection_record_id` 引用的记录。
+2. 如果恰有一条记录关联下游事件/审计证据，必须保留该记录。
+3. 如果没有记录具有下游引用且所有业务事实一致，必须保留最早的 `created_at_utc`；仅在出现并列时使用
+   最小的 `id` 作为决胜条件。
+4. 如果多条记录具有不同 NCR 或不同下游结果，必须停止并与 Quality、Inventory 和来源服务负责人共同
+   解决。
 
-## Conflict handling
+## 冲突处理
 
-Treat a duplicate group as conflicting when any of these differ between records:
+当记录之间的以下任一项不同，必须将重复组视为存在冲突：
 
-1. `inspected_quantity`, `result`, `disposition_reason`, or result-line
-   `defect_quantity`.
-2. `uom_code`, `site_code`, `location_code`, `source_quality_status`,
-   `owner_type`, `owner_id`, `batch_no`, or `serial_no`.
-3. Result-line count or result-line signature.
-4. NCR links, NCR disposition state, Inventory movement ids, ERP return ids, or
-   MES rework work-order ids.
+1. `inspected_quantity`、`result`、`disposition_reason` 或结果行
+   `defect_quantity`。
+2. `uom_code`、`site_code`、`location_code`、`source_quality_status`、
+   `owner_type`、`owner_id`、`batch_no` 或 `serial_no`。
+3. 结果行数量或结果行签名。
+4. NCR 链接、NCR 处置状态、Inventory 移动 ID、ERP 退货 ID 或 MES 返工工单 ID。
 
-Conflicting groups require a business-approved data-fix task. The data-fix must
-preserve the original duplicate report, explain the canonical choice, and use a
-compensating domain operation or explicit reviewed SQL. Do not edit CAP
-outbox/inbox, processed event rows, dead letters, or external audit evidence.
+存在冲突的重复组必须使用经业务批准的数据修复任务。数据修复必须保留原始重复项报告、说明规范记录
+选择，并使用补偿性领域操作或经明确审核的 SQL。不得编辑 CAP 发件箱/收件箱、已处理事件行、死信或
+外部审计证据。
 
-## Manual remediation
+## 人工处置
 
-For a non-conflicting group with no non-canonical NCR or event/audit references:
+对于不存在冲突且非规范记录没有 NCR 或事件/审计引用的重复组：
 
-1. Export the duplicate report rows and all child `inspection_result_lines` for
-   the group to release evidence.
-2. Record the canonical `inspection_records.id`, duplicate ids to remove,
-   approver, reason, backup id, and release id in the change ticket.
-3. In a transaction, delete child `inspection_result_lines` for the approved
-   non-canonical ids, then delete those non-canonical `inspection_records`.
-4. Re-run the duplicate report query and confirm it returns no rows for the
-   remediated scope before committing.
+1. 将重复项报告行以及该组的所有子 `inspection_result_lines` 导出为发布证据。
+2. 在变更工单中记录规范 `inspection_records.id`、待移除的重复项 ID、批准人、原因、备份 ID 和发布 ID。
+3. 在事务中，先删除已批准非规范 ID 的子 `inspection_result_lines`，再删除这些非规范
+   `inspection_records`。
+4. 在提交前重新运行重复项报告查询，并确认其对已处置范围不返回任何行。
 
-For a group where a non-canonical record has an NCR reference or other audit
-evidence, do not use the delete-only path. Open a reviewed data-fix task that
-decides whether to keep that referenced record as canonical or to explicitly
-re-point the Quality-owned NCR reference to the canonical record. Event payloads
-and system audit rows remain immutable evidence.
+对于非规范记录具有 NCR 引用或其他审计证据的重复组，不得使用仅删除路径。必须创建经审核的数据修复
+任务，以决定保留该被引用记录作为规范记录，还是将 Quality 所有的 NCR 引用显式重新指向规范记录。事件
+载荷和系统审计行仍是不可变证据。
 
-## Migration verification
+## 迁移验证
 
-After remediation, the duplicate group count must be zero:
+处置后，重复组计数必须为零：
 
 ```sql
 SELECT count(*) AS duplicate_group_count
@@ -239,7 +223,6 @@ FROM (
 ) duplicate_groups;
 ```
 
-Only after this query returns `0` may the operator apply migration
-`20260629074947_AddQualityLongtailReviewFixes`. If the migration still fails,
-attach the precheck error and the latest duplicate report to the release ticket
-and do not bypass the unique index.
+只有在此查询返回 `0` 后，操作员才可应用迁移
+`20260629074947_AddQualityLongtailReviewFixes`。如果迁移仍然失败，必须将预检查错误和最新重复项报告
+附加到发布工单，且不得绕过唯一索引。

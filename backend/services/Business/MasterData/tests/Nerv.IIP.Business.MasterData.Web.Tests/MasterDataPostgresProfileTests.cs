@@ -1,3 +1,4 @@
+using System.Data.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -32,17 +33,63 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 public sealed class MasterDataPostgresProfileTests
 {
     [PostgresFact]
+    public async Task Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        var counter = new RelationalReadCounter();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(connectionString)
+            .AddInterceptors(counter)
+            .Options;
+        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        AssertUsesGovernedDatabase(dbContext);
+        await DropMasterDataSchemaAsync(dbContext);
+        await dbContext.Database.MigrateAsync();
+        var devices = Enumerable.Range(1, 200)
+            .Select(index => DeviceAsset.Register(
+                "org-001",
+                "env-dev",
+                $"DEV-{index:000}",
+                $"Device {index:000}",
+                "LINE-A",
+                "WC-A"))
+            .ToArray();
+        dbContext.DeviceAssets.AddRange(devices);
+        await dbContext.SaveChangesAsync();
+        var handler = new ResolveMasterDataReferencesQueryHandler(dbContext);
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                [new MasterDataReferenceRequest("device-asset", devices[0].Id.ToString())]),
+            CancellationToken.None);
+        var oneReferenceReads = counter.ReadCount;
+
+        counter.Reset();
+        await handler.Handle(
+            new ResolveMasterDataReferencesQuery(
+                "org-001",
+                "env-dev",
+                devices.Select(device => new MasterDataReferenceRequest("device-asset", device.Id.ToString())).ToArray()),
+            CancellationToken.None);
+
+        Assert.Equal(2, oneReferenceReads);
+        Assert.Equal(oneReferenceReads, counter.ReadCount);
+    }
+
+    [PostgresFact]
     public async Task Postgres_disable_endpoint_transaction_fact_persists_audit_and_cap_outbox_with_operation_identity()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var connectionString = database.ConnectionString;
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var services = CreateCapServices(connectionString);
         await using var provider = services.BuildServiceProvider();
 
         using (var scope = provider.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
             await DropMasterDataSchemaAsync(db);
             await db.Database.MigrateAsync();
             await scope.ServiceProvider.GetRequiredService<IStorageInitializer>()
@@ -68,14 +115,13 @@ public sealed class MasterDataPostgresProfileTests
     [PostgresFact]
     public async Task Postgres_cap_concurrent_operation_recovers_loser_and_persists_exactly_one_audit_and_outbox()
     {
-        await using var database = await TemporaryDatabase.CreateAsync(
-            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
-        var connectionString = database.ConnectionString;
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var services = CreateCapServices(connectionString, new LifecycleAuditInsertBarrier("K-RACE-PG"));
         await using var provider = services.BuildServiceProvider();
         using (var seedScope = provider.CreateScope())
         {
             var seed = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(seed);
             await DropMasterDataSchemaAsync(seed);
             await seed.Database.MigrateAsync();
             await seedScope.ServiceProvider.GetRequiredService<IStorageInitializer>()
@@ -358,41 +404,64 @@ public sealed class MasterDataPostgresProfileTests
         Assert.True(exists, $"Expected EF migrations history table in schema '{schema}'.");
     }
 
-    private sealed class TemporaryDatabase(
-        string adminConnectionString,
-        string databaseName,
-        string connectionString) : IAsyncDisposable
+    private static void AssertUsesGovernedDatabase(ApplicationDbContext db)
     {
-        public string ConnectionString { get; } = connectionString;
+        var governedConnection = new NpgsqlConnectionStringBuilder(
+            Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!);
+        Assert.Equal(governedConnection.Database, db.Database.GetDbConnection().Database);
+    }
 
-        public static async Task<TemporaryDatabase> CreateAsync(string baseConnectionString)
+    private sealed class RelationalReadCounter : DbCommandInterceptor
+    {
+        public int ReadCount { get; private set; }
+
+        public void Reset() => ReadCount = 0;
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
         {
-            var databaseName = $"nerv_masterdata_audit_{Guid.CreateVersion7():N}";
-            var adminConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = "postgres"
-            }.ConnectionString;
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
-            await command.ExecuteNonQueryAsync();
-            var testConnectionString = new NpgsqlConnectionStringBuilder(baseConnectionString)
-            {
-                Database = databaseName
-            }.ConnectionString;
-            return new TemporaryDatabase(adminConnectionString, databaseName, testConnectionString);
+            ReadCount++;
+            return result;
         }
 
-        public async ValueTask DisposeAsync()
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
         {
-            await using var connection = new NpgsqlConnection(adminConnectionString);
-            await connection.OpenAsync();
-            await using var command = new NpgsqlCommand(
-                $"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)",
-                connection);
-            await command.ExecuteNonQueryAsync();
+            ReadCount++;
+            return ValueTask.FromResult(result);
         }
     }
+
+    private sealed class NoopMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification => Task.CompletedTask;
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest => throw new NotSupportedException();
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+            IStreamRequest<TResponse> request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IAsyncEnumerable<object?> CreateStream(
+            object request,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
 }
 
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]

@@ -1,3 +1,5 @@
+extern alias WmsWeb;
+
 using FastEndpoints;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -6,9 +8,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
+using WmsListInboundOrdersEndpoint = WmsWeb::Nerv.IIP.Business.Wms.Web.Endpoints.Wms.ListInboundOrdersEndpoint;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpFastEndpointsOnlyArchitectureTests
 {
     [Fact]
@@ -26,8 +30,10 @@ public sealed class ErpFastEndpointsOnlyArchitectureTests
     }
 
     [Fact]
-    public void Erp_host_does_not_register_mvc_controller_endpoint_data_sources()
+    public void Erp_host_registers_only_erp_fastendpoints_without_mvc_endpoint_data_sources()
     {
+        Assert.NotEqual(typeof(Program).Assembly, typeof(WmsListInboundOrdersEndpoint).Assembly);
+
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.UseEnvironment("Testing"));
         using var client = factory.CreateClient();
@@ -48,6 +54,7 @@ public sealed class ErpFastEndpointsOnlyArchitectureTests
         Assert.DoesNotContain(endpointDataSources, source =>
             source.GetType().FullName?.Contains("ControllerActionEndpointDataSource", StringComparison.Ordinal) == true);
         Assert.Empty(missingContractRoutes);
+        Assert.DoesNotContain("/api/business/v1/wms/inbound-orders", routePatterns);
     }
 
     [Fact]

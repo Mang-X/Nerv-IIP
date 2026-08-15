@@ -527,8 +527,12 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         return response.Resources
             .Where(x => x.Active)
             .Where(x => string.Equals(x.WorkCenterCode, workCenterCode, StringComparison.Ordinal))
+            // 排程资源标识必须与 IIoT / 维护世界的 deviceAssetId 是同一个键,否则查可用性时
+            // 一台设备都对不上,全部回落成「状态未知」(#1320)。两侧共同持有的键是设备业务编码
+            // (DEV-CNC-01):MasterData 的 Code、IIoT DeviceStateSnapshot/AlarmEvent 的 DeviceAssetId
+            // 都是它;MasterData 读面上的 DeviceAssetId 字段是聚合主键 UUID,只在主数据内部有意义。
             .Select(x => new SchedulingProblemDeviceAssetSnapshot(
-                string.IsNullOrWhiteSpace(x.DeviceAssetId) ? x.Code : x.DeviceAssetId!,
+                SchedulingDeviceAssetKey.Resolve(x.Code, x.DeviceAssetId),
                 workCenterCode))
             .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
             .ToArray();

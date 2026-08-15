@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -60,7 +61,7 @@ yKndmINUKXFRt+mFo0HU2Ec=
             new("email", "admin@nerv.local"),
             new("securityStamp", "security-stamp-001"),
             new("permissionVersion", "7"),
-            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64)
         };
         if (includeOrganizationId)
         {
@@ -116,7 +117,7 @@ yKndmINUKXFRt+mFo0HU2Ec=
             new("environmentId", "env-dev"),
             new("securityStamp", "security-stamp-001"),
             new("permissionVersion", "7"),
-            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture), ClaimValueTypes.Integer64)
         };
         var token = new JwtSecurityToken(
             issuer: Issuer,

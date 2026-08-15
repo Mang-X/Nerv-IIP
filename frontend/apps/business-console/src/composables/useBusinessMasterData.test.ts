@@ -14,6 +14,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
   useBusinessWorkers,
+  WORKER_DIRECTORY_MAX_PAGE_SIZE,
 } from './useBusinessMasterData'
 
 const coladaState = vi.hoisted(() => ({
@@ -278,6 +279,31 @@ describe('business master data composables', () => {
       },
     })
     expect(workers.value).toEqual([])
+  })
+
+  /**
+   * 网关 `RuleFor(x => x.PageSize).InclusiveBetween(1, 200)`。超了是 400，而调用方大多把
+   * 人员目录当查表用，失败表现为**整列静默显占位符**而不是报错——极难从界面看出来。
+   *
+   * 第五轮走查实际踩到：待检工作台写死 `pageSize: 500`，「当前持有人」整列变 `—`，
+   * 连「已被他人认领」都读不出来，而单测因为 mock 掉了 API 全绿。
+   * 所以在 composable 里夹紧，并用这条锁住上界。
+   */
+  it('clamps the worker directory page size to the gateway bound', () => {
+    useBusinessWorkers({ pageSize: 500 })
+
+    expect(listBusinessConsoleWorkersQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ pageSize: WORKER_DIRECTORY_MAX_PAGE_SIZE }),
+    })
+    expect(WORKER_DIRECTORY_MAX_PAGE_SIZE).toBe(200)
+  })
+
+  it('keeps a caller-supplied page size that is already within the bound', () => {
+    useBusinessWorkers({ pageSize: 25 })
+
+    expect(listBusinessConsoleWorkersQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ pageSize: 25 }),
+    })
   })
 
   // 派工候选靠工作中心收敛：filters 必须原样进入查询，否则弹窗会把全厂人都列出来。

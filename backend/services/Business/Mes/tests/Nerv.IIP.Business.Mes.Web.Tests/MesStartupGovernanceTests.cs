@@ -5,6 +5,7 @@ using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MesStartupGovernanceTests
 {
     // MES has no code-analysis endpoint yet; this test only covers startup migration governance.

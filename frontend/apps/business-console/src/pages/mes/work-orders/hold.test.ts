@@ -42,6 +42,18 @@ const detailState = vi.hoisted(() => ({
 
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
+  useMesWorkScopeSelection: () => ({
+    scopeOptions: ref([]),
+    scopeSelectionValue: ref(undefined),
+    scopeReady: ref(true),
+    scopeMessage: ref(''),
+    scopePending: ref(false),
+    scopeUnavailable: ref(false),
+    selectedScope: ref(undefined),
+    principalIdentity: ref('principal-test'),
+    requireSelectedScope: vi.fn(),
+  }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
     recordProductionReportError: ref(undefined),
@@ -75,6 +87,20 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshDetail: vi.fn(),
     refreshMaterialReadiness: vi.fn(),
     retryCancelPreview: vi.fn(),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopeReady: ref(true),
+    workOrderReadScopeMessage: ref(''),
+  }),
+  // 急单表单的「工序任务」改成只选，列表页新引入了工序任务读面。
+  useMesOperationTasks: () => ({
+    filters: reactive({ organizationId: 'org', environmentId: 'dev', skip: 0, take: 200 }),
+    operationTasks: ref([]),
+    operationTasksError: ref(undefined),
+    operationTasksPending: ref(false),
+    operationTasksTotal: ref(0),
+    refreshOperationTasks: vi.fn(),
+    completeOperationTask: vi.fn(),
+    pauseOperationTask: vi.fn(),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -93,8 +119,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refreshWorkOrders: vi.fn(),
     workOrders: ref(detailState.workOrders),
     workOrdersError: ref(undefined),
+    workOrdersHasFailedResponse: ref(false),
+    workOrdersHasSuccessfulResponse: ref(true),
+    workOrdersLastUpdatedAt: ref('2026-07-30T00:00:00.000Z'),
     workOrdersPending: ref(false),
     workOrdersTotal: ref(detailState.workOrders.length),
+    workOrderReadScope: ref({
+      kind: 'work-center',
+      id: 'WC-A',
+      displayName: '精加工一线',
+    }),
+    workOrderReadScopeMessage: ref(''),
+    workOrderReadScopeReady: ref(true),
   }),
 }))
 
@@ -274,6 +310,8 @@ describe('work-order list — quality hold lock icon', () => {
       global: {
         plugins: [patchPermissions(['business.mes.work-orders.read'])],
         stubs: {
+          // 行内工单抽屉自带一整套 MES 查询，本用例只看质量冻结锁标记，整体桩掉。
+          WorkOrderDetailSheet: true,
           BusinessLayout: { template: '<main><slot /></main>' },
           NvPageHeader: { template: '<header><slot name="actions" /></header>' },
           NvToolbar: { template: '<div><slot name="filters" /></div>' },

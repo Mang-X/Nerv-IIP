@@ -2,9 +2,11 @@ using MediatR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Scheduling;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -13,6 +15,7 @@ public sealed class MaintenancePlanDueSchedulerTests
     [Fact]
     public async Task Scheduler_keeps_running_when_one_generation_attempt_fails()
     {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
         var sender = new ThrowingSender();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
@@ -23,19 +26,21 @@ public sealed class MaintenancePlanDueSchedulerTests
                 ["Maintenance:PmGeneration:Enabled"] = "true",
                 ["Maintenance:PmGeneration:OrganizationId"] = "org-001",
                 ["Maintenance:PmGeneration:EnvironmentId"] = "env-dev",
-                ["Maintenance:PmGeneration:Interval"] = "00:00:00.010",
+                ["Maintenance:PmGeneration:Interval"] = "01:00:00",
             })
             .Build();
         var scheduler = new MaintenancePlanDueScheduler(
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
             NullLogger<MaintenancePlanDueScheduler>.Instance,
-            new FixedTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero)));
+            fakeTime);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(() => sender.Attempts > 0 || scheduler.ExecuteTask?.IsCompleted == true);
+        await WaitForAttemptsAsync(sender, 1);
+        fakeTime.Advance(TimeSpan.FromHours(1));
+        await WaitForAttemptsAsync(sender, 2);
 
-        Assert.True(sender.Attempts > 0);
+        Assert.Equal(2, sender.Attempts);
         Assert.False(scheduler.ExecuteTask?.IsFaulted ?? false);
         await scheduler.StopAsync(CancellationToken.None);
     }
@@ -43,6 +48,7 @@ public sealed class MaintenancePlanDueSchedulerTests
     [Fact]
     public async Task Scheduler_uses_configured_time_zone_for_pm_business_date()
     {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 16, 30, 0, TimeSpan.Zero));
         var sender = new CapturingSender();
         await using var services = new ServiceCollection()
             .AddSingleton<ISender>(sender)
@@ -61,24 +67,32 @@ public sealed class MaintenancePlanDueSchedulerTests
             services.GetRequiredService<IServiceScopeFactory>(),
             configuration,
             NullLogger<MaintenancePlanDueScheduler>.Instance,
-            new FixedTimeProvider(new DateTimeOffset(2026, 6, 1, 16, 30, 0, TimeSpan.Zero)));
+            fakeTime);
 
         await scheduler.StartAsync(CancellationToken.None);
-        await WaitUntilAsync(() => sender.LastCommand is not null || scheduler.ExecuteTask?.IsCompleted == true);
+        await Eventually.WaitAsync(
+            "scheduler captures its first PM generation command",
+            _ => ValueTask.FromResult(sender.LastCommand),
+            command => command is not null,
+            command => command is null ? "command=none" : $"businessDate={command.BusinessDate}",
+            EventuallyOptions());
 
         Assert.Equal(new DateOnly(2026, 6, 2), sender.LastCommand?.BusinessDate);
         await scheduler.StopAsync(CancellationToken.None);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!predicate())
-        {
-            timeout.Token.ThrowIfCancellationRequested();
-            await Task.Delay(10, timeout.Token);
-        }
-    }
+    private static ValueTask<int> WaitForAttemptsAsync(ThrowingSender sender, int expectedAttempts) =>
+        Eventually.WaitAsync(
+            $"scheduler reaches {expectedAttempts} PM generation attempts",
+            _ => ValueTask.FromResult(sender.Attempts),
+            attempts => attempts >= expectedAttempts,
+            attempts => $"attempts={attempts}",
+            EventuallyOptions());
+
+    private static EventuallyOptions EventuallyOptions() => new(
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromMilliseconds(10),
+        []);
 
     private sealed class ThrowingSender : ISender
     {
@@ -164,11 +178,4 @@ public sealed class MaintenancePlanDueSchedulerTests
         }
     }
 
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow()
-        {
-            return utcNow;
-        }
-    }
 }

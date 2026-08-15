@@ -1,7 +1,9 @@
 import type { ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
 import type { StatusTone } from '@nerv-iip/ui'
 
-type MesStatusValue = NonNullable<NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']>
+type MesStatusValue = NonNullable<
+  NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']
+>
 
 export type MesStatusOption = {
   value: 'all' | MesStatusValue
@@ -48,10 +50,20 @@ const normalizedStatusLabels = Object.fromEntries(
   ]),
 )
 
-function statusOptions(values: MesStatusValue[]): MesStatusOption[] {
+/**
+ * 生成筛选下拉项。
+ *
+ * `overrides` 用于同一码值在不同业务语境下的说法差异——最典型的是 `open`：
+ * 停机/产能语境是「未恢复」，质量语境是「待处理」，交接语境是「待接班」。
+ * 共享表只放停机语境的默认值，其余语境在这里显式覆盖，避免筛选项印错词。
+ */
+function statusOptions(
+  values: MesStatusValue[],
+  overrides: Partial<Record<MesStatusValue, string>> = {},
+): MesStatusOption[] {
   return [
     { value: 'all', label: '全部状态' },
-    ...values.map((value) => ({ value, label: statusLabels[value] })),
+    ...values.map((value) => ({ value, label: overrides[value] ?? statusLabels[value] })),
   ]
 }
 
@@ -83,13 +95,10 @@ export const mesMaterialIssueStatusOptions = statusOptions([
   'received',
 ])
 
-export const mesQualityStatusOptions = statusOptions([
-  'open',
-  'reworkPending',
-  'scrapAccepted',
-  'returnAccepted',
-  'dispositionAccepted',
-])
+export const mesQualityStatusOptions = statusOptions(
+  ['open', 'reworkPending', 'scrapAccepted', 'returnAccepted', 'dispositionAccepted'],
+  { open: '待处理' },
+)
 
 export const mesReceiptStatusOptions = statusOptions([
   'requested',
@@ -128,22 +137,30 @@ export function isFailedReceiptStatus(status?: string | null) {
   return normalizeReceiptStatus(status) === 'inventorypostingfailed'
 }
 
-export const mesDowntimeStatusOptions = statusOptions([
-  'open',
-  'recovered',
-])
+export const mesDowntimeStatusOptions = statusOptions(['open', 'recovered'])
 
 export const mesCapacityStatusOptions = mesDowntimeStatusOptions
 
-export const mesHandoverStatusOptions = statusOptions([
-  'open',
-  'accepted',
-])
+export const mesHandoverStatusOptions = statusOptions(['open', 'accepted'], { open: '待接班' })
+
+/**
+ * 词表漏词只在开发期告警一次，生产构建里整段被摇树掉。
+ * 仍然回吐原值（不让状态列空白），但别让漏词沉默到真机走查才被发现。
+ */
+const warnedStatusValues = new Set<string>()
+function warnMissingStatusLabel(value: string) {
+  if (!import.meta.env.DEV) return
+  if (warnedStatusValues.has(value)) return
+  warnedStatusValues.add(value)
+  console.warn(`[MES] 词表缺失: ${value}，请补 useMesReferenceLabels.ts 的状态词表`)
+}
 
 export function useMesReferenceLabels() {
   function statusLabel(value?: string | null) {
     if (!value) return '未知'
-    return normalizedStatusLabels[value] ?? normalizedStatusLabels[value.toLowerCase()] ?? value
+    const label = normalizedStatusLabels[value] ?? normalizedStatusLabels[value.toLowerCase()]
+    if (label === undefined) warnMissingStatusLabel(value)
+    return label ?? value
   }
 
   function emptyText(value?: string | null) {

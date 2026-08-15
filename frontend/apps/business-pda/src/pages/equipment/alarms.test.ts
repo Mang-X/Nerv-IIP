@@ -1,7 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { BusinessOperationUnconfirmedError } from '@nerv-iip/api-client'
 
 // ---- vue-router mock（捕获 push）---------------------------------------------
 const push = vi.fn()
@@ -10,9 +11,9 @@ vi.mock('vue-router', () => ({
 }))
 
 // ---- useBusinessEquipmentAlarms mock ------------------------------------------
-const filters = reactive<{ deviceAssetId?: string; skip: number; take: number }>({
+const filters = reactive<{ deviceAssetId?: string; status?: string; skip: number; take: number }>({
   skip: 0,
-  take: 100,
+  take: 20,
 })
 const RAISED = {
   alarmEventId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -35,10 +36,16 @@ const ACKED = {
   externalAlarmId: 'EXT-2',
 }
 const alarms = ref<Array<Record<string, unknown>>>([RAISED, ACKED])
-const total = ref(2)
+const total = computed(() => alarms.value.length)
 const error = ref<unknown>(null)
 const pending = ref(false)
+const refreshing = ref(false)
+const scopeReady = ref(true)
+const organizationId = ref('org-001')
+const environmentId = ref('env-dev')
+const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
+const loadMore = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
 const shelve = vi.fn(
   async (
@@ -59,7 +66,18 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     filters,
     alarms,
     total,
+    loaded: computed(() => alarms.value.length),
+    loadingMore: ref(false),
+    loadMoreError: ref<unknown>(),
+    loadMore,
+    organizationId,
+    environmentId,
+    scopeReady,
+    lastUpdatedAt,
+    hasSuccessfulResponse: computed(() => !pending.value && !error.value),
+    hasFailedResponse: computed(() => false),
     pending,
+    refreshing,
     error,
     refresh,
     acknowledge,
@@ -78,12 +96,30 @@ beforeEach(() => {
   shelve.mockReset()
   shelve.mockResolvedValue({ success: true })
   filters.deviceAssetId = undefined
+  filters.status = undefined
   error.value = null
   pending.value = false
+  refreshing.value = false
   alarms.value = [RAISED, ACKED]
 })
 
 describe('PDA equipment alarms page', () => {
+  it('用具名的 NvUI 状态筛选器替代无名称原生 select', () => {
+    const wrapper = mount(AlarmsPage)
+
+    expect(wrapper.find('select[data-testid="alarm-status-filter"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="alarm-status-filter"]').text()).toContain('全部状态')
+  })
+
+  it('把分页器的真实刷新生命周期绑定给任务列表壳', async () => {
+    const wrapper = mount(AlarmsPage)
+
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(false)
+    refreshing.value = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'TaskListShell' }).props('refreshing')).toBe(true)
+  })
+
   it('renders alarm rows with device, alarm code and Chinese severity (no raw code)', () => {
     const wrapper = mount(AlarmsPage)
     const text = wrapper.text()
@@ -103,7 +139,7 @@ describe('PDA equipment alarms page', () => {
     expect(text).not.toContain('EXT-1')
   })
 
-  it('shows 确认/搁置 buttons only on unacknowledged rows; processed rows show a status tag + who/when', () => {
+  it('uses the alarm gate: acknowledged rows remain shelveable but cannot be acknowledged twice', () => {
     const wrapper = mount(AlarmsPage)
     expect(wrapper.find('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').exists()).toBe(
       true,
@@ -114,6 +150,9 @@ describe('PDA equipment alarms page', () => {
     expect(wrapper.find('[data-testid="ack-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists()).toBe(
       false,
     )
+    expect(
+      wrapper.find('[data-testid="shelve-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').exists(),
+    ).toBe(true)
     const tag = wrapper.find('[data-testid="status-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]')
     expect(tag.exists()).toBe(true)
     expect(tag.text()).toContain('已确认')
@@ -209,27 +248,76 @@ describe('PDA equipment alarms page', () => {
     wrapper.unmount()
   })
 
-  // P1 幂等：已发出但结果未知（超时）不盲目重试——刷新列表引导核对。
-  it('does NOT offer blind retry on an indeterminate failure; steers to verify + refreshes', async () => {
-    acknowledge.mockRejectedValue(new RequestTimeoutError())
+  // P1 幂等：已发出但结果未知（超时）保留冻结 payload/key，只允许原样重放。
+  it('replays an indeterminate shelve with the SAME frozen payload + persistent key', async () => {
+    shelve.mockRejectedValueOnce(new RequestTimeoutError())
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper
+      .get('[data-testid="shelve-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]')
+      .trigger('click')
+    await flushPromises()
+    document.body
+      .querySelectorAll<HTMLButtonElement>('button')
+      .forEach((button) => button.textContent?.includes('2 小时') && button.click())
+    await flushPromises()
+
+    expect(shelve).toHaveBeenCalledTimes(1)
+    const first = shelve.mock.calls[0]
+    const dialogText = document.body.textContent ?? ''
+    expect(dialogText).toContain('提交结果未知')
+    expect(dialogText).toContain('原内容')
+    expect(dialogText).not.toContain('幂等键')
+    expect(dialogText).not.toContain('重放')
+    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
+    expect(confirmBtn?.textContent).toContain('重试')
+    expect(refresh).toHaveBeenCalled()
+
+    confirmBtn!.click()
+    await flushPromises()
+    expect(shelve).toHaveBeenCalledTimes(2)
+    const second = shelve.mock.calls[1]
+    expect(second[1]).toBe(first[1])
+    expect(second[2]).toBe(first[2])
+    expect(second[3]).toBe(first[3])
+    wrapper.unmount()
+  })
+
+  it('still clears stale alarm context and shows the fixed toast when conflict refresh fails', async () => {
+    acknowledge.mockRejectedValueOnce({ success: false, message: 'lifecycle-conflict' })
+    refresh.mockRejectedValueOnce(new Error('refresh unavailable'))
     const wrapper = mount(AlarmsPage, { attachTo: document.body })
     await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
     await flushPromises()
-    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click() // 确认弹层
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click()
     await flushPromises()
 
-    expect(acknowledge).toHaveBeenCalledTimes(1)
+    expect(refresh).toHaveBeenCalled()
+    expect(document.body.textContent).toContain('状态已被其他操作更新')
+    expect(document.body.textContent).not.toContain('操作失败')
+    expect(document.body.querySelector('.nv-m-md-confirm')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('refreshes for an accepted readback failure and offers only the frozen-content retry', async () => {
+    acknowledge.mockRejectedValue(
+      new BusinessOperationUnconfirmedError(
+        '请求已受理，但权威状态尚未确认（downstream-invalid-response）',
+      ),
+    )
+    const wrapper = mount(AlarmsPage, { attachTo: document.body })
+    await wrapper.get('[data-testid="ack-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('.nv-m-md-confirm')!.click()
+    await flushPromises()
+
     const dialogText = document.body.textContent ?? ''
     expect(dialogText).toContain('提交结果未知')
-    expect(dialogText).toContain('核对')
-    // 无「重试」按钮，只有「我知道了」
-    const confirmBtn = document.body.querySelector<HTMLElement>('.nv-m-md-confirm')
-    expect(confirmBtn?.textContent).toContain('我知道了')
+    expect(dialogText).toContain('结果尚未核实')
+    expect(dialogText).not.toContain('downstream')
+    expect(document.body.querySelector<HTMLElement>('.nv-m-md-confirm')?.textContent).toContain(
+      '按原内容重试',
+    )
     expect(refresh).toHaveBeenCalled()
-
-    // 点「我知道了」不会再次发起确认
-    confirmBtn!.click()
-    await flushPromises()
     expect(acknowledge).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })

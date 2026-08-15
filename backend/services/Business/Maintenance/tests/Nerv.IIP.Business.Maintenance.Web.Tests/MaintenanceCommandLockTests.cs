@@ -1,18 +1,124 @@
+using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
-using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using Nerv.IIP.DistributedLocking;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
+using Nerv.IIP.Testing;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.Primitives;
+using RedisMaintenanceDistributedLock = Nerv.IIP.DistributedLocking.RedisCommandDistributedLock;
+using StackExchange.Redis;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MaintenanceCommandLockTests
 {
+    [Fact]
+    public void Production_configuration_fails_fast_when_redis_is_missing()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddNervIipCommandLocking(
+                configuration,
+                new TestHostEnvironment(Environments.Production),
+                isTesting: false,
+                serviceName: "business-maintenance"));
+
+        Assert.Contains("require a Redis connection string", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Testing_configuration_uses_an_in_memory_lock_without_redis()
+    {
+        var services = new ServiceCollection();
+        services.AddNervIipCommandLocking(
+            new ConfigurationBuilder().Build(),
+            new TestHostEnvironment("Testing"),
+            isTesting: true,
+            serviceName: "business-maintenance");
+        using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredService<IDistributedLock>());
+        Assert.Null(provider.GetService<IConnectionMultiplexer>());
+    }
+
+    [Fact]
+    public void Existing_redis_connection_registration_is_reused()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+            throw new InvalidOperationException("The registration should not be resolved by this test."));
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Redis"] = "redis.invalid:6379",
+            })
+            .Build();
+
+        services.AddNervIipCommandLocking(
+            configuration,
+            new TestHostEnvironment(Environments.Production),
+            isTesting: false,
+            serviceName: "business-maintenance");
+
+        Assert.Single(services, descriptor => descriptor.ServiceType == typeof(IConnectionMultiplexer));
+    }
+
+    [Fact]
+    public void Redis_key_prefix_isolated_by_service_name()
+    {
+        var maintenance = new StackExchangeRedisCommandLockStore(null!, "business-maintenance");
+        var quality = new StackExchangeRedisCommandLockStore(null!, "business-quality");
+
+        Assert.Equal(
+            "nerv-iip:business-maintenance:locks:tenant-action",
+            maintenance.ToRedisKeyForTesting("tenant-action"));
+        Assert.Equal(
+            "nerv-iip:business-quality:locks:tenant-action",
+            quality.ToRedisKeyForTesting("tenant-action"));
+    }
+
+    [Fact]
+    public void Redis_key_prefix_isolated_by_session_and_then_service_name()
+    {
+        var sessionA = new StackExchangeRedisCommandLockStore(
+            null!,
+            "business-maintenance",
+            "nerv:n822:019c123456787abc8def0123456789ab:");
+        var sessionB = new StackExchangeRedisCommandLockStore(
+            null!,
+            "business-maintenance",
+            "nerv:n822:019c123456797abc8def0123456789ab");
+
+        Assert.Equal(
+            "nerv:n822:019c123456787abc8def0123456789ab:nerv-iip:business-maintenance:locks:tenant-action",
+            sessionA.ToRedisKeyForTesting("tenant-action"));
+        Assert.Equal(
+            "nerv:n822:019c123456797abc8def0123456789ab:nerv-iip:business-maintenance:locks:tenant-action",
+            sessionB.ToRedisKeyForTesting("tenant-action"));
+    }
+
+    [Fact]
+    public void Redis_session_key_prefix_rejects_ambiguous_whitespace()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new StackExchangeRedisCommandLockStore(null!, "business-maintenance", "nerv:n822:invalid prefix:"));
+    }
+
     [Fact]
     public async Task Device_state_plan_creation_plan_update_and_pm_generation_share_org_environment_lock_key()
     {
@@ -40,16 +146,115 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Compatibility_complete_assignment_and_transition_share_one_work_order_lock_key()
+    {
+        var workOrderId = new MaintenanceWorkOrderId(Guid.CreateVersion7());
+        var complete = await new CompleteMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new CompleteMaintenanceWorkOrderCommand(workOrderId, "fixed", "failure", 10, []),
+            CancellationToken.None);
+        var assign = await new AssignMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new AssignMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, "dispatcher-001", "tech-001", null,
+                "on-duty", "assign-001", 0),
+            CancellationToken.None);
+        var transition = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, MaintenanceWorkOrderAction.Accept, "tech-001",
+                "accepted", "accept-001", 0),
+            CancellationToken.None);
+
+        Assert.Contains(complete.LockKey!, assign.LockKeys!);
+        Assert.Contains(complete.LockKey!, transition.LockKeys!);
+    }
+
+    [Fact]
+    public async Task Assignment_and_transition_lock_the_aggregate_and_the_normalized_scope_idempotency_key()
+    {
+        var workOrderId = new MaintenanceWorkOrderId(Guid.CreateVersion7());
+        var assign = await new AssignMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new AssignMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, "dispatcher-001", "tech-001", null,
+                "on-duty", " shared-key ", 0),
+            CancellationToken.None);
+        var transition = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                "org-001", "env-dev", workOrderId, MaintenanceWorkOrderAction.Accept, "tech-001",
+                "accepted", "shared-key", 0),
+            CancellationToken.None);
+        var expectedKeys = new[]
+        {
+            $"business-maintenance:lifecycle-idempotency:org-001:env-dev:shared-key",
+            $"business-maintenance:work-order:{workOrderId}",
+        };
+
+        Assert.Equal(expectedKeys, assign.LockKeys);
+        Assert.Equal(expectedKeys, transition.LockKeys);
+        Assert.Equal(TimeSpan.FromSeconds(30), assign.AcquireTimeout);
+        Assert.Equal(assign.AcquireTimeout, transition.AcquireTimeout);
+    }
+
+    [Fact]
+    public async Task Different_scope_or_idempotency_key_does_not_share_lifecycle_locks_for_different_work_orders()
+    {
+        var baseline = await LifecycleLockKeysAsync(
+            "org-001", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "shared-key");
+        var differentScope = await LifecycleLockKeysAsync(
+            "org-002", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "shared-key");
+        var differentKey = await LifecycleLockKeysAsync(
+            "org-001", "env-dev", new MaintenanceWorkOrderId(Guid.CreateVersion7()), "other-key");
+
+        Assert.Empty(baseline.Intersect(differentScope, StringComparer.Ordinal));
+        Assert.Empty(baseline.Intersect(differentKey, StringComparer.Ordinal));
+    }
+
+    private static async Task<IReadOnlyList<string>> LifecycleLockKeysAsync(
+        string organizationId,
+        string environmentId,
+        MaintenanceWorkOrderId workOrderId,
+        string idempotencyKey)
+    {
+        var settings = await new TransitionMaintenanceWorkOrderCommandLock().GetLockKeysAsync(
+            new TransitionMaintenanceWorkOrderCommand(
+                organizationId,
+                environmentId,
+                workOrderId,
+                MaintenanceWorkOrderAction.Accept,
+                "tech-001",
+                "accepted",
+                idempotencyKey,
+                0),
+            CancellationToken.None);
+        return settings.LockKeys!;
+    }
+
+    [Fact]
+    public async Task Production_service_provider_registers_assignment_and_transition_command_locks()
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("IndustrialTelemetry:BaseUrl", "http://industrial-telemetry.local");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        Assert.IsType<AssignMaintenanceWorkOrderCommandLock>(
+            scope.ServiceProvider.GetRequiredService<ICommandLock<AssignMaintenanceWorkOrderCommand>>());
+        Assert.IsType<TransitionMaintenanceWorkOrderCommandLock>(
+            scope.ServiceProvider.GetRequiredService<ICommandLock<TransitionMaintenanceWorkOrderCommand>>());
+    }
+
+    [Fact]
     public async Task Redis_distributed_lock_releases_after_normal_dispose_and_allows_retry()
     {
-        var store = new InMemoryRedisCommandLockStore();
-        var distributedLock = new RedisMaintenanceDistributedLock(store, TimeProvider.System);
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryRedisCommandLockStore(fakeTime);
+        var distributedLock = new RedisMaintenanceDistributedLock(store, fakeTime);
         await using var first = await distributedLock.AcquireAsync("pm-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
 
-        var retryTask = distributedLock.TryAcquireAsync("pm-lock", TimeSpan.FromSeconds(1), CancellationToken.None).AsTask();
-        await Task.Delay(50);
         await first.DisposeAsync();
-        await using var retry = await retryTask;
+        await using var retry = await distributedLock.TryAcquireAsync("pm-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.NotNull(retry);
     }
@@ -57,15 +262,20 @@ public sealed class MaintenanceCommandLockTests
     [Fact]
     public async Task Redis_distributed_lock_renews_lease_until_disposed()
     {
-        var store = new InMemoryRedisCommandLockStore();
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new RenewalObservingStore(new InMemoryRedisCommandLockStore(fakeTime));
         var distributedLock = new RedisMaintenanceDistributedLock(
             store,
-            TimeProvider.System,
-            TimeSpan.FromMilliseconds(100),
-            TimeSpan.FromMilliseconds(20));
-        await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(1), CancellationToken.None);
+            fakeTime,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(100));
+        await using var held = await distributedLock.AcquireAsync("pm-renewing-lock", TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        await Task.Delay(250);
+        for (var elapsedMilliseconds = 100; elapsedMilliseconds <= 1500; elapsedMilliseconds += 100)
+        {
+            fakeTime.Advance(TimeSpan.FromMilliseconds(100));
+            Assert.True(await store.WaitForRenewalAsync());
+        }
         await using var blocked = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.Null(blocked);
@@ -73,6 +283,24 @@ public sealed class MaintenanceCommandLockTests
         await held.DisposeAsync();
         await using var retry = await distributedLock.TryAcquireAsync("pm-renewing-lock", TimeSpan.Zero, CancellationToken.None);
         Assert.NotNull(retry);
+    }
+
+    [Fact]
+    public async Task Redis_distributed_lock_acquire_timeout_uses_controlled_time()
+    {
+        var fakeTime = new TrackingFakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryRedisCommandLockStore(fakeTime);
+        var distributedLock = new RedisMaintenanceDistributedLock(store, fakeTime);
+        await using var held = await distributedLock.AcquireAsync("pm-timeout-lock", TimeSpan.Zero, CancellationToken.None);
+
+        var blockedTask = distributedLock.TryAcquireAsync(
+            "pm-timeout-lock",
+            TimeSpan.FromSeconds(1),
+            CancellationToken.None).AsTask();
+        Assert.Equal(2, fakeTime.CreatedTimerCount);
+        fakeTime.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.Null(await blockedTask);
     }
 
     [Fact]
@@ -106,11 +334,17 @@ public sealed class MaintenanceCommandLockTests
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var registration = held.HandleLostToken.Register(lostSignal.SetResult);
 
-        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await lostSignal.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var warning = Assert.Single(logger.Messages, message => message.LogLevel == LogLevel.Warning);
-        Assert.Contains("pm-rejected-renewal", warning.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("token", warning.Message, StringComparison.OrdinalIgnoreCase);
+        // 契约是「续租被拒时写出带锁键、且不泄漏 token 的告警」——**写几条不是契约**。
+        // 续租每 20ms 触发一次，CI 负载下失败续租常在断言前跑到两次，
+        // 原来的 Assert.Single 因此必然抖动（见 #1201）。改为：至少一条命中锁键，
+        // 且所有告警都不含 token——这才是真正要守的两条。
+        var warnings = logger.Messages.Where(message => message.LogLevel == LogLevel.Warning).ToArray();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, message => message.Message.Contains("pm-rejected-renewal", StringComparison.Ordinal));
+        Assert.All(warnings, message =>
+            Assert.DoesNotContain("token", message.Message, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -138,8 +372,9 @@ public sealed class MaintenanceCommandLockTests
     public async Task Command_lock_behavior_releases_after_handler_exception_and_allows_retry()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IRedisCommandLockStore, InMemoryRedisCommandLockStore>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IRedisCommandLockStore>(sp =>
+            new InMemoryRedisCommandLockStore(sp.GetRequiredService<TimeProvider>()));
         services.AddSingleton<IDistributedLock, RedisMaintenanceDistributedLock>();
         services.AddScoped<ICommandLock<ThrowingLockedCommand>, ThrowingLockedCommandLock>();
         services.AddScoped<IRequestHandler<ThrowingLockedCommand>, ThrowingLockedCommandHandler>();
@@ -156,6 +391,166 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
+    public async Task Command_lock_behavior_acquires_distinct_keys_in_ordinal_order_and_releases_in_reverse()
+    {
+        var distributedLock = new RecordingDistributedLock();
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [
+                new MultiKeyLockedCommandLock(["z-key"]),
+                new MultiKeyLockedCommandLock(["a-key"]),
+                new MultiKeyLockedCommandLock(["z-key"]),
+            ],
+            distributedLock);
+
+        await behavior.Handle(
+            new MultiKeyLockedCommand(),
+            cancellationToken =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                distributedLock.Events.Add("handler");
+                return Task.FromResult(Unit.Value);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["acquire:a-key", "acquire:z-key", "handler", "release:z-key", "release:a-key"],
+            distributedLock.Events);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Command_lock_behavior_releases_partially_acquired_keys_when_later_acquisition_fails(
+        bool cancellation)
+    {
+        var distributedLock = new RecordingDistributedLock("z-key", cancellation);
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key"]), new MultiKeyLockedCommandLock(["a-key"])],
+            distributedLock);
+
+        var exception = await Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ => Task.FromResult(Unit.Value),
+            CancellationToken.None));
+
+        if (cancellation)
+        {
+            Assert.IsAssignableFrom<OperationCanceledException>(exception);
+        }
+        else
+        {
+            Assert.IsType<InvalidOperationException>(exception);
+        }
+        Assert.Equal(["acquire:a-key", "acquire:z-key", "release:a-key"], distributedLock.Events);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_attempts_every_reverse_release_and_stops_all_renewals_when_releases_fail()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new ReleaseFailingStore(["a-key", "z-key"]);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            store,
+            fakeTime,
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(20));
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
+            distributedLock);
+
+        var behaviorTask = Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            async _ =>
+            {
+                await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                return Unit.Value;
+            },
+            CancellationToken.None));
+        fakeTime.Advance(TimeSpan.FromMilliseconds(20));
+
+        var exception = await behaviorTask;
+        var aggregate = Assert.IsType<AggregateException>(exception);
+        Assert.Equal(
+            ["release failed: z-key", "release failed: a-key"],
+            aggregate.InnerExceptions.Select(error => error.Message));
+        Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+
+        var renewalCountsAfterRelease = store.RenewalCounts;
+        fakeTime.Advance(TimeSpan.FromMilliseconds(100));
+        Assert.Equal(renewalCountsAfterRelease, store.RenewalCounts);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_aggregates_handler_then_release_failures_without_masking_either()
+    {
+        var fakeTime = new FakeTimeProvider(new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = new ReleaseFailingStore(["z-key"]);
+        var distributedLock = new RedisMaintenanceDistributedLock(
+            store,
+            fakeTime,
+            TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(20));
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["z-key", "a-key"])],
+            distributedLock);
+
+        var behaviorTask = Record.ExceptionAsync(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            async _ =>
+            {
+                await store.AllKeysRenewed.WaitAsync(TimeSpan.FromSeconds(2));
+                throw new ApplicationException("handler failed");
+            },
+            CancellationToken.None));
+        fakeTime.Advance(TimeSpan.FromMilliseconds(20));
+
+        var exception = await behaviorTask;
+        var aggregate = Assert.IsType<AggregateException>(exception);
+        Assert.Collection(
+            aggregate.InnerExceptions,
+            error => Assert.IsType<ApplicationException>(error),
+            error => Assert.Equal("release failed: z-key", Assert.IsType<InvalidOperationException>(error).Message));
+        Assert.Equal(["release:z-key", "release:a-key"], store.ReleaseEvents);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_keeps_the_single_key_command_contract()
+    {
+        var distributedLock = new RecordingDistributedLock();
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["only-key"])],
+            distributedLock);
+
+        await behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ =>
+            {
+                distributedLock.Events.Add("handler");
+                return Task.FromResult(Unit.Value);
+            },
+            CancellationToken.None);
+
+        Assert.Equal(["acquire:only-key", "handler", "release:only-key"], distributedLock.Events);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_preserves_a_single_release_exception_type()
+    {
+        var distributedLock = new RecordingDistributedLock(failReleaseOnKey: "only-key");
+        var behavior = new NervIipCommandLockBehavior<MultiKeyLockedCommand, Unit>(
+            [new MultiKeyLockedCommandLock(["only-key"])],
+            distributedLock);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => behavior.Handle(
+            new MultiKeyLockedCommand(),
+            _ => Task.FromResult(Unit.Value),
+            CancellationToken.None));
+
+        Assert.Equal("synthetic lock release failure", exception.Message);
+        Assert.Equal(["acquire:only-key", "release:only-key"], distributedLock.Events);
+    }
+
+    [Fact]
     public async Task Maintenance_command_lock_behavior_cancels_handler_when_lease_is_lost()
     {
         var services = new ServiceCollection();
@@ -168,7 +563,7 @@ public sealed class MaintenanceCommandLockTests
         services.AddScoped<IRequestHandler<CancellableLockedCommand>, CancellableLockedCommandHandler>();
         services.AddMediatR(configuration => configuration
             .RegisterServicesFromAssemblyContaining<MaintenanceCommandLockTests>()
-            .AddOpenBehavior(typeof(MaintenanceCommandLockBehavior<,>)));
+            .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>)));
         await using var provider = services.BuildServiceProvider();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
@@ -196,6 +591,21 @@ public sealed class MaintenanceCommandLockTests
 
     public sealed record CancellableLockedCommand : ICommand;
 
+    public sealed record MultiKeyLockedCommand : ICommand;
+
+    public sealed class MultiKeyLockedCommandLock(IReadOnlyCollection<string> keys)
+        : ICommandLock<MultiKeyLockedCommand>
+    {
+        public Task<CommandLockSettings> GetLockKeysAsync(
+            MultiKeyLockedCommand command,
+            CancellationToken cancellationToken)
+        {
+            _ = command;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new CommandLockSettings(keys, 30));
+        }
+    }
+
     public sealed class CancellableLockedCommandLock : ICommandLock<CancellableLockedCommand>
     {
         public Task<CommandLockSettings> GetLockKeysAsync(CancellableLockedCommand command, CancellationToken cancellationToken)
@@ -208,7 +618,8 @@ public sealed class MaintenanceCommandLockTests
     {
         public async Task Handle(CancellableLockedCommand request, CancellationToken cancellationToken)
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            // The handler holds the command lock until the caller cancels it — no timer, no wall clock.
+            await PendingOperation.UntilCanceledAsync(cancellationToken);
         }
     }
 
@@ -249,6 +660,66 @@ public sealed class MaintenanceCommandLockTests
         }
     }
 
+    private sealed class RenewalObservingStore(IRedisCommandLockStore inner) : IRedisCommandLockStore
+    {
+        private readonly Channel<bool> renewalResults = Channel.CreateUnbounded<bool>();
+
+        public Task<bool> TryAcquireAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken) =>
+            inner.TryAcquireAsync(key, token, leaseTime, cancellationToken);
+
+        public async Task<bool> RenewAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            var renewed = await inner.RenewAsync(key, token, leaseTime, cancellationToken);
+            await renewalResults.Writer.WriteAsync(renewed, cancellationToken);
+            return renewed;
+        }
+
+        public Task ReleaseAsync(
+            string key,
+            string token,
+            CancellationToken cancellationToken) =>
+            inner.ReleaseAsync(key, token, cancellationToken);
+
+        public async Task<bool> WaitForRenewalAsync() =>
+            await renewalResults.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    private sealed class TrackingFakeTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private readonly FakeTimeProvider inner = new(start);
+        private int createdTimerCount;
+
+        public int CreatedTimerCount => Volatile.Read(ref createdTimerCount);
+
+        public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
+
+        public override long TimestampFrequency => inner.TimestampFrequency;
+
+        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+
+        public override long GetTimestamp() => inner.GetTimestamp();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            Interlocked.Increment(ref createdTimerCount);
+            return inner.CreateTimer(callback, state, dueTime, period);
+        }
+
+        public void Advance(TimeSpan delta) => inner.Advance(delta);
+    }
+
     private sealed class ThrowingRenewalStore : IRedisCommandLockStore
     {
         public Task<bool> TryAcquireAsync(string key, string token, TimeSpan leaseTime, CancellationToken cancellationToken)
@@ -265,6 +736,135 @@ public sealed class MaintenanceCommandLockTests
         {
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ReleaseFailingStore(IReadOnlyCollection<string> failingKeys) : IRedisCommandLockStore
+    {
+        private readonly ConcurrentDictionary<string, int> renewalCounts = new(StringComparer.Ordinal);
+        private readonly ConcurrentQueue<string> releaseEvents = new();
+        private readonly HashSet<string> failingKeys = new(failingKeys, StringComparer.Ordinal);
+        private readonly TaskCompletionSource allKeysRenewed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task AllKeysRenewed => allKeysRenewed.Task;
+
+        public IReadOnlyCollection<string> ReleaseEvents => releaseEvents.ToArray();
+
+        public IReadOnlyDictionary<string, int> RenewalCounts =>
+            renewalCounts.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+        public Task<bool> TryAcquireAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RenewAsync(
+            string key,
+            string token,
+            TimeSpan leaseTime,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            renewalCounts.AddOrUpdate(key, 1, static (_, count) => count + 1);
+            if (renewalCounts.ContainsKey("a-key") && renewalCounts.ContainsKey("z-key"))
+            {
+                allKeysRenewed.TrySetResult();
+            }
+            return Task.FromResult(true);
+        }
+
+        public Task ReleaseAsync(string key, string token, CancellationToken cancellationToken)
+        {
+            releaseEvents.Enqueue($"release:{key}");
+            if (failingKeys.Contains(key))
+            {
+                throw new InvalidOperationException($"release failed: {key}");
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingDistributedLock(
+        string? failOnKey = null,
+        bool cancelOnFailure = false,
+        string? failReleaseOnKey = null) : IDistributedLock
+    {
+        public List<string> Events { get; } = [];
+
+        public ILockSynchronizationHandler? TryAcquire(
+            string key,
+            TimeSpan timeout,
+            CancellationToken cancellationToken) =>
+            TryAcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+
+        public ILockSynchronizationHandler Acquire(
+            string key,
+            TimeSpan? timeout,
+            CancellationToken cancellationToken) =>
+            AcquireAsync(key, timeout, cancellationToken).AsTask().GetAwaiter().GetResult();
+
+        public ValueTask<ILockSynchronizationHandler?> TryAcquireAsync(
+            string key,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Events.Add($"acquire:{key}");
+            if (string.Equals(key, failOnKey, StringComparison.Ordinal))
+            {
+                if (cancelOnFailure)
+                {
+                    throw new OperationCanceledException("synthetic lock cancellation", cancellationToken);
+                }
+                throw new InvalidOperationException("synthetic lock acquisition failure");
+            }
+            return ValueTask.FromResult<ILockSynchronizationHandler?>(
+                new RecordingHandle(key, Events, failReleaseOnKey));
+        }
+
+        public async ValueTask<ILockSynchronizationHandler> AcquireAsync(
+            string key,
+            TimeSpan? timeout,
+            CancellationToken cancellationToken) =>
+            await TryAcquireAsync(key, timeout ?? TimeSpan.FromSeconds(30), cancellationToken)
+                ?? throw new TimeoutException($"Could not acquire {key}.");
+
+        private sealed class RecordingHandle(
+            string key,
+            List<string> events,
+            string? failReleaseOnKey) : ILockSynchronizationHandler
+        {
+            public CancellationToken HandleLostToken => CancellationToken.None;
+
+            public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+            public ValueTask DisposeAsync()
+            {
+                events.Add($"release:{key}");
+                if (string.Equals(key, failReleaseOnKey, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("synthetic lock release failure");
+                }
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class TestHostEnvironment(string environmentName) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = environmentName;
+
+        public string ApplicationName { get; set; } = "Nerv.IIP.DistributedLocking.Tests";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class TestLogger<T> : ILogger<T>

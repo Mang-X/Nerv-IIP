@@ -6,11 +6,15 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort, StatusTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReason,
+  describeMesReadinessReasons,
+  useMesProductionPlans,
+} from '@/composables/useBusinessMes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { notifyError, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -125,7 +129,7 @@ const sortedPlans = computed(() => {
 const pagedPlans = computed(() => sortedPlans.value)
 
 const selectedBlockingReasons = computed(() =>
-  (selectedPlan.value?.blockingReasons ?? []).map(describeMesReadinessReason),
+  describeMesReadinessReasons(selectedPlan.value?.blockingReasons),
 )
 const selectedPlanBlocked = computed(
   () =>
@@ -208,7 +212,7 @@ async function submitConvertPlan() {
     convertOpen.value = false
     refreshProductionPlans()
   } catch (error) {
-    notifyError(error)
+    notifyOperationFailure('下达工单失败', error, '下达工单失败，请稍后重试。')
   }
 }
 function resetFilters() {
@@ -234,7 +238,10 @@ function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
 // 受阻行的一句话原因（取首条），用于禁用入口的说明。
 function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
   const first = plan.blockingReasons?.[0]
-  if (first) return describeMesReadinessReason(first).label
+  if (first) {
+    const reason = describeMesReadinessReason(first)
+    return reason.detail ? `${reason.label}：${reason.detail}` : reason.label
+  }
   if (plan.readinessStatus === 'Warning') return '有预警，建议处理后再转'
   return '尚未就绪，需处理后再转'
 }
@@ -274,17 +281,30 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+// 来源计划词表。注意后端同一列既放「需求性质」（sales / forecast / safety / stock），
+// 也放「来源系统」（erp / mrp / aps / manual）——两类都要收，缺词就把英文码印到列上。
+const PLAN_SOURCE_LABELS: Record<string, string> = {
+  forecast: '预测需求',
+  sales: '正常订单',
+  'sales-order': '正常订单',
+  safety: '安全库存补充',
+  'safety-stock': '安全库存补充',
+  stock: '备货生产',
+  'stock-build': '备货生产',
+  erp: 'ERP 下达',
+  mrp: 'MRP 运算',
+  aps: 'APS 排程',
+  mes: 'MES 自建',
+  manual: '手工新建',
+}
 function formatPlanSource(value?: string | null) {
-  const map: Record<string, string> = {
-    forecast: '预测需求',
-    sales: '正常订单',
-    'sales-order': '正常订单',
-    safety: '安全库存补充',
-    'safety-stock': '安全库存补充',
-    stock: '备货生产',
-    'stock-build': '备货生产',
+  const raw = (value ?? '').trim()
+  if (!raw) return '未指定'
+  const label = PLAN_SOURCE_LABELS[raw.toLowerCase()]
+  if (label === undefined && import.meta.env.DEV) {
+    console.warn(`[生产计划] 词表缺失: ${raw}，请补 PLAN_SOURCE_LABELS`)
   }
-  return value ? (map[value] ?? value) : '未指定'
+  return label ?? raw
 }
 function normalizeSourceQuery(value: unknown): string {
   const text = Array.isArray(value) ? value[0] : value
@@ -295,7 +315,7 @@ function newPlanIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+  return inlineErrorMessage(error)
 }
 </script>
 
@@ -432,7 +452,9 @@ function formatError(error: unknown) {
               v-for="(reason, i) in selectedBlockingReasons"
               :key="i"
               class="text-muted-foreground"
-              >· {{ reason.label }}（{{ reason.nextStep }}）</span
+              >· {{ reason.label }}{{ reason.detail ? `：${reason.detail}` : '' }}（{{
+                reason.nextStep
+              }}）</span
             >
           </div>
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">

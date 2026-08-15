@@ -34,9 +34,12 @@ public sealed class WmsInventoryReservationExpiredConsumerTests
             "LOC-A-01",
             "PACK-01",
             4m,
-            "reservation-expired-001");
+            "reservation-expired-001",
+            assignedPoolCode: "POOL-PICKING");
         dbContext.OutboundOrders.Add(outbound);
         dbContext.WarehouseTasks.Add(pickingTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var wcsTask = WcsTask.Dispatch(
