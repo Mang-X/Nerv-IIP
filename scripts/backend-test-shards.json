@@ -128,6 +128,7 @@
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesSchedulePlanProvenancePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.RushWorkOrderHttpPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",

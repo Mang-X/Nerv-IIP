@@ -79,11 +79,13 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             cancellationToken);
         if (receipt is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
         if (!MatchesReceipt(receipt, integrationEvent.Payload))
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -111,6 +113,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             cancellationToken);
         if (materialRequest is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
