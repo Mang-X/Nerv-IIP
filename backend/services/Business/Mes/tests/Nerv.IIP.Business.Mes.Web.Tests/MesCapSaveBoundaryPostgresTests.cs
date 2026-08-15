@@ -68,6 +68,56 @@ public sealed class MesCapSaveBoundaryPostgresTests
     }
 
     [PostgreSqlFact]
+    public async Task Ncr_disposition_blank_defect_number_early_return_persists_only_inbox()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
+
+        await using (var handlerContext = CreateDbContext())
+        {
+            var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+                handlerContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(
+                CreateNcrDispositionEvent(
+                    eventId: "evt-quality-disposition-blank-defect-001",
+                    sourceDocumentId: " "),
+                CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateDbContext();
+        Assert.Empty(await assertionContext.DefectRecords.AsNoTracking().ToListAsync());
+        Assert.Equal(1, await CountInboxAsync(
+            assertionContext,
+            NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName));
+    }
+
+    [PostgreSqlFact]
+    public async Task Ncr_disposition_missing_defect_early_return_persists_only_inbox()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
+
+        await using (var handlerContext = CreateDbContext())
+        {
+            var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+                handlerContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(
+                CreateNcrDispositionEvent(
+                    eventId: "evt-quality-disposition-missing-defect-001",
+                    sourceDocumentId: "DEF-MISSING"),
+                CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateDbContext();
+        Assert.Empty(await assertionContext.DefectRecords.AsNoTracking().ToListAsync());
+        Assert.Equal(1, await CountInboxAsync(
+            assertionContext,
+            NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect.ConsumerName));
+    }
+
+    [PostgreSqlFact]
     public async Task Production_version_created_persists_binding_and_inbox_across_scopes_and_replay()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
@@ -165,6 +215,32 @@ public sealed class MesCapSaveBoundaryPostgresTests
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await MigrateDatabaseAsync();
         await AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(seedMismatchingReceipt: true);
+    }
+
+    [PostgreSqlFact]
+    public async Task Stock_movement_posted_missing_material_request_early_return_persists_only_inbox()
+    {
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
+
+        await using (var handlerContext = CreateDbContext())
+        {
+            var handler = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+                handlerContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(
+                CreateStockMovementPostedEvent(
+                    "MIR-MISSING",
+                    quantity: 8m,
+                    payloadIdempotencyKey: "mes:material-issue:transfer-missing:p0"),
+                CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateDbContext();
+        Assert.Empty(await assertionContext.MaterialIssueRequests.AsNoTracking().ToListAsync());
+        Assert.Equal(1, await CountInboxAsync(
+            assertionContext,
+            StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted.ConsumerName));
     }
 
     private static async Task AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(
@@ -289,10 +365,12 @@ public sealed class MesCapSaveBoundaryPostgresTests
             ProductionVersionCreatedIntegrationEventHandlerForBindMesWorkOrders.ConsumerName));
     }
 
-    private static NcrDispositionDecidedIntegrationEvent CreateNcrDispositionEvent()
+    private static NcrDispositionDecidedIntegrationEvent CreateNcrDispositionEvent(
+        string eventId = "evt-quality-disposition-001",
+        string? sourceDocumentId = "DEF-001")
     {
         return new NcrDispositionDecidedIntegrationEvent(
-            "evt-quality-disposition-001",
+            eventId,
             QualityIntegrationEventTypes.DispositionDecided,
             QualityIntegrationEventVersions.V1,
             DateTimeOffset.Parse("2026-08-13T09:00:00Z"),
@@ -315,7 +393,7 @@ public sealed class MesCapSaveBoundaryPostgresTests
                 null,
                 DateTimeOffset.Parse("2026-08-13T09:00:00Z"))
             {
-                SourceDocumentId = "DEF-001"
+                SourceDocumentId = sourceDocumentId
             });
     }
 
@@ -375,7 +453,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
 
     private static StockMovementPostedIntegrationEvent CreateStockMovementPostedEvent(
         string sourceDocumentId,
-        decimal quantity)
+        decimal quantity,
+        string? payloadIdempotencyKey = null)
     {
         return new StockMovementPostedIntegrationEvent(
             $"evt-inventory-posted-{sourceDocumentId}",
@@ -395,7 +474,7 @@ public sealed class MesCapSaveBoundaryPostgresTests
                 InventoryIntegrationEventSources.BusinessMes,
                 sourceDocumentId,
                 "WO-001",
-                $"mes:finished-goods-receipt:org-001:env-dev:{sourceDocumentId}",
+                payloadIdempotencyKey ?? $"mes:finished-goods-receipt:org-001:env-dev:{sourceDocumentId}",
                 "SKU-FG",
                 "PCS",
                 "SITE-001",

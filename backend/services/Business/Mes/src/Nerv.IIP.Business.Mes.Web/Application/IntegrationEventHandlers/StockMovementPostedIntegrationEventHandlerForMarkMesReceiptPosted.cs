@@ -113,6 +113,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             cancellationToken);
         if (materialRequest is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 

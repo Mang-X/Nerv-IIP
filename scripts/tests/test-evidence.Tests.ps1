@@ -458,16 +458,19 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesCapPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-cap-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesCapPostgresRules.Count 'The MES CAP PostgreSQL proofs must have one evidence policy rule.'
 $mesSaveBoundaryIdentities = @(
+    'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
+    'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Planning_existing_work_order_early_return_persists_only_inbox',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Production_version_created_persists_binding_and_inbox_across_scopes_and_replay',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_mismatch_early_return_persists_only_inbox',
+    'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox',
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox'
 )
 $mesCapIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesCapPostgresRules[0].testIdentities), [StringComparer]::Ordinal)
-Assert-Equal 9 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs and all six save-boundary proofs.'
-Assert-True (@($mesSaveBoundaryIdentities | Where-Object { -not $mesCapIdentitySet.Contains($_) }).Count -eq 0) 'The MES CAP policy rule must own all six save-boundary identities.'
+Assert-Equal 12 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs and all nine save-boundary proofs.'
+Assert-True (@($mesSaveBoundaryIdentities | Where-Object { -not $mesCapIdentitySet.Contains($_) }).Count -eq 0) 'The MES CAP policy rule must own all nine save-boundary identities.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { $_ -cnotmatch [string]$mesCapPostgresRules[0].testPattern }).Count -eq 0) 'The MES CAP policy pattern must match every save-boundary identity.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
 $brokenClosure.rules[0].sourceId = 'missing-source'

@@ -46,6 +46,7 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
         var defectNo = integrationEvent.Payload.SourceDocumentId;
         if (string.IsNullOrWhiteSpace(defectNo))
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -57,6 +58,7 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             cancellationToken);
         if (defect is null)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 

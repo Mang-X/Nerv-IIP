@@ -375,20 +375,23 @@ try {
     Assert-Contract (@($telemetryMember.diagnosticSchemas).Count -eq 1 -and [string]::Equals([string]$telemetryMember.diagnosticSchemas[0], 'industrial_telemetry', [StringComparison]::Ordinal)) 'IndustrialTelemetry business and CAP tables share one schema, which the member must declare.'
     Assert-MethodScopedFilter -Member $telemetryMember
     Assert-MethodScopedFilter -Member $qualityMember
-    # MES：新增保存边界类后，七个类中有 17 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
+    # MES：新增保存边界类后，七个类中有 20 条受治理的真实 PostgreSQL 证明；CAP 的原生存储表落在独立 cap schema，
     # 业务表与 EF 侧 cap_* 表落在 mes schema，两者都必须声明才能在失败时留下完整诊断。
     $mesMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'mes-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 17) 'The MES member must freeze exactly its seventeen governed PostgreSQL identities.'
+    Assert-Contract (@($mesMember.expectedTestIdentities).Count -eq 20) 'The MES member must freeze exactly its twenty governed PostgreSQL identities.'
     $mesSaveBoundaryIdentities = @(
+        'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox',
+        'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Planning_existing_work_order_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Production_version_created_persists_binding_and_inbox_across_scopes_and_replay',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_mismatch_early_return_persists_only_inbox',
+        'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox',
         'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox'
     )
     $mesIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesMember.expectedTestIdentities), [StringComparer]::Ordinal)
-    Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all six CAP save-boundary PostgreSQL identities.'
+    Assert-Contract (@($mesSaveBoundaryIdentities | Where-Object { -not $mesIdentitySet.Contains($_) }).Count -eq 0) 'The MES member must freeze all nine CAP save-boundary PostgreSQL identities.'
     Assert-Contract ([string]::Equals((@($mesMember.diagnosticSchemas) -join ','), 'mes,cap', [StringComparison]::Ordinal)) 'The MES member must declare both the mes schema and the native CAP storage schema.'
     Assert-MethodScopedFilter -Member $mesMember
     foreach ($mesSource in @(

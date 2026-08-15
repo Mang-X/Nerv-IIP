@@ -1032,17 +1032,20 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_blank_defect_number_early_return_persists_only_inbox",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_missing_defect_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Planning_existing_work_order_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Production_version_created_persists_binding_and_inbox_across_scopes_and_replay",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_mismatch_early_return_persists_only_inbox",
+        "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_missing_material_request_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posted_no_match_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_quality_results_persist_rejected_passed_and_conditional_hold_states",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSubscriptionTests.PostgreSQL_cap_with_inmemory_messaging_delivers_asset_unavailable_event_to_mes_consumer"
       ],
-      "expectedRuntimeTestCount": 9
+      "expectedRuntimeTestCount": 12
     },
     {
       "id": "erp-world-history",
