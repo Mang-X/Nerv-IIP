@@ -19,7 +19,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
     [PostgreSqlFact]
     public async Task Ncr_disposition_persists_business_fact_and_inbox_across_scopes_and_replay()
     {
-        await ResetDatabaseAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
         await using (var seedContext = CreateDbContext())
         {
             seedContext.WorkOrders.Add(WorkOrder.Create(
@@ -69,7 +70,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
     [PostgreSqlFact]
     public async Task Production_version_created_persists_binding_and_inbox_across_scopes_and_replay()
     {
-        await ResetDatabaseAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
         await using (var seedContext = CreateDbContext())
         {
             seedContext.WorkOrders.Add(WorkOrder.Create(
@@ -110,7 +112,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
     [PostgreSqlFact]
     public async Task Planning_existing_work_order_early_return_persists_only_inbox()
     {
-        await ResetDatabaseAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
         await using (var seedContext = CreateDbContext())
         {
             seedContext.WorkOrders.Add(WorkOrder.Create(
@@ -149,21 +152,24 @@ public sealed class MesCapSaveBoundaryPostgresTests
     }
 
     [PostgreSqlFact]
-    public Task Stock_movement_posted_no_match_early_return_persists_only_inbox()
+    public async Task Stock_movement_posted_no_match_early_return_persists_only_inbox()
     {
-        return AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(seedMismatchingReceipt: false);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
+        await AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(seedMismatchingReceipt: false);
     }
 
     [PostgreSqlFact]
-    public Task Stock_movement_posted_mismatch_early_return_persists_only_inbox()
+    public async Task Stock_movement_posted_mismatch_early_return_persists_only_inbox()
     {
-        return AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(seedMismatchingReceipt: true);
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
+        await AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(seedMismatchingReceipt: true);
     }
 
     private static async Task AssertStockMovementPostedEarlyReturnPersistsOnlyInboxAsync(
         bool seedMismatchingReceipt)
     {
-        await ResetDatabaseAsync();
         if (seedMismatchingReceipt)
         {
             await using var seedContext = CreateDbContext();
@@ -224,7 +230,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
     [PostgreSqlFact]
     public async Task Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox()
     {
-        await ResetDatabaseAsync();
+        await MesPostgresLaneDatabase.ResetSchemaAsync();
+        await MigrateDatabaseAsync();
 
         await using (var handlerContext = CreateDbContext())
         {
@@ -243,9 +250,8 @@ public sealed class MesCapSaveBoundaryPostgresTests
             StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed.ConsumerName));
     }
 
-    private static async Task ResetDatabaseAsync()
+    private static async Task MigrateDatabaseAsync()
     {
-        await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var dbContext = CreateDbContext();
         MesPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
         await dbContext.Database.MigrateAsync();
