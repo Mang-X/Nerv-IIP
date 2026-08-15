@@ -918,11 +918,13 @@ function Protect-NervTestEvidenceText {
 function New-NervTestEvidenceSummary {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Records,
-        [Parameter(Mandatory)] [hashtable] $RunMetadata,
+        [Parameter(Mandatory)] [object] $RunMetadata,
         [AllowNull()] [object] $TrxParseResult,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [object[]] $Violations,
         [AllowNull()] [object] $Baseline,
         [AllowNull()] [string] $PriorAttemptOutcome,
+        [bool] $PriorAttemptVerified = $false,
+        [AllowNull()] [string] $CurrentTestOutcome,
         [int] $TopCount = 10
     )
 
@@ -940,9 +942,7 @@ function New-NervTestEvidenceSummary {
     # character would be dropped here, or folded into a group whose gateResult belongs to a different
     # lane. The dedup has to be ordinal *before* the set is built, or the set never sees the second
     # spelling and the ordinal comparer below is decorative.
-    [string[]] $selectedLanes = if ($RunMetadata.ContainsKey('selectedLanes')) {
-        Get-NervOrdinalSorted -Unique -Values @($RunMetadata.selectedLanes | ForEach-Object { [string]$_ })
-    } else { @([string]$RunMetadata.lane) }
+    [string[]] $selectedLanes = Get-NervOrdinalSorted -Unique -Values @($RunMetadata.selectedLanes | ForEach-Object { [string]$_ })
     $selectedLaneResults = @(Get-NervOrdinalGroups -Items @($selectedLanes) -KeySelector { param($lane) [string]$lane -replace '-shard-[1-9][0-9]*$', '' } | ForEach-Object {
         $baseLane = [string]$_.Name
         [string[]] $selectors = @(Get-NervOrdinalSorted -Unique -Values @($_.Group | ForEach-Object { [string]$_ }))
@@ -1075,8 +1075,8 @@ function New-NervTestEvidenceSummary {
     $attemptClassification = if ([int]$RunMetadata.runAttempt -eq 1) {
         'initial'
     }
-    elseif ((Test-NervOrdinalEquals ([string]$PriorAttemptOutcome) 'failure') -and $RunMetadata.ContainsKey('priorAttemptVerified') -and [bool]$RunMetadata.priorAttemptVerified -and
-        $RunMetadata.ContainsKey('currentTestOutcome') -and (Test-NervOrdinalEquals ([string]$RunMetadata.currentTestOutcome) 'success') -and
+    elseif ((Test-NervOrdinalEquals ([string]$PriorAttemptOutcome) 'failure') -and $PriorAttemptVerified -and
+        (Test-NervOrdinalEquals ([string]$CurrentTestOutcome) 'success') -and
         ($passed + $failed) -gt 0 -and $failed -eq 0 -and $safeViolations.Count -eq 0) {
         'recovered-after-rerun'
     }
@@ -1092,18 +1092,18 @@ function New-NervTestEvidenceSummary {
         lane = [string]$RunMetadata.lane
         selectedLanes = $selectedLanes
         selectedLaneResults = $selectedLaneResults
-        repository = if ($RunMetadata.ContainsKey('repository')) { [string]$RunMetadata.repository } else { '' }
-        event = if ($RunMetadata.ContainsKey('event')) { [string]$RunMetadata.event } else { '' }
-        headBranch = if ($RunMetadata.ContainsKey('headBranch')) { [string]$RunMetadata.headBranch } else { '' }
-        jobName = if ($RunMetadata.ContainsKey('jobName')) { [string]$RunMetadata.jobName } else { '' }
-        currentTestOutcome = if ($RunMetadata.ContainsKey('currentTestOutcome')) { [string]$RunMetadata.currentTestOutcome } else { '' }
-        sourceUrl = if ($RunMetadata.ContainsKey('sourceUrl')) { [string]$RunMetadata.sourceUrl } else { '' }
-        runnerOs = if ($RunMetadata.ContainsKey('runnerOs')) { [string]$RunMetadata.runnerOs } else { '' }
-        runnerImage = if ($RunMetadata.ContainsKey('runnerImage')) { [string]$RunMetadata.runnerImage } else { '' }
-        dotnetSdk = if ($RunMetadata.ContainsKey('dotnetSdk')) { [string]$RunMetadata.dotnetSdk } else { '' }
-        artifactName = if ($RunMetadata.ContainsKey('artifactName')) { [string]$RunMetadata.artifactName } else { '' }
-        retentionDays = if ($RunMetadata.ContainsKey('retentionDays')) { [int]$RunMetadata.retentionDays } else { 0 }
-        retentionLocation = if ($RunMetadata.ContainsKey('retentionLocation')) { [string]$RunMetadata.retentionLocation } else { 'local-output' }
+        repository = [string]$RunMetadata.repository
+        event = [string]$RunMetadata.event
+        headBranch = [string]$RunMetadata.headBranch
+        jobName = [string]$RunMetadata.jobName
+        currentTestOutcome = [string]$CurrentTestOutcome
+        sourceUrl = [string]$RunMetadata.sourceUrl
+        runnerOs = [string]$RunMetadata.runnerOs
+        runnerImage = [string]$RunMetadata.runnerImage
+        dotnetSdk = [string]$RunMetadata.dotnetSdk
+        artifactName = [string]$RunMetadata.artifactName
+        retentionDays = [int]$RunMetadata.retentionDays
+        retentionLocation = [string]$RunMetadata.retentionLocation
         passed = $passed
         failed = $failed
         skipped = $skipped

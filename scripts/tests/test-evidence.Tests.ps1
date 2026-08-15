@@ -443,6 +443,35 @@ $metadataDefaultsBeforeTrxRead = $metadataDefaults | ConvertTo-Json -Depth 100 -
 $metadataDefaultsParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $metadataDefaults
 Assert-Equal $metadataDefaultsBeforeTrxRead ($metadataDefaults | ConvertTo-Json -Depth 100 -Compress) 'TRX reader must accept constructor-owned metadata without mutating it.'
 Assert-Equal 3 @($metadataDefaultsParseResult.Records).Count 'TRX reader must consume constructor-owned run metadata.'
+$metadataDefaultsBeforeSummary = $metadataDefaults | ConvertTo-Json -Depth 100 -Compress
+$metadataDefaultsSummary = New-NervTestEvidenceSummary -Records @($metadataDefaultsParseResult.Records) `
+    -RunMetadata $metadataDefaults -Violations @() -Baseline $null -PriorAttemptOutcome $null
+Assert-Equal $metadataDefaultsBeforeSummary ($metadataDefaults | ConvertTo-Json -Depth 100 -Compress) 'Summary construction must not add defaults or attempt state to run metadata.'
+$metadataSummaryDefaults = [ordered]@{
+    workflowRunId = '123'
+    runAttempt = 1
+    headSha = '0123456789abcdef0123456789abcdef01234567'
+    testedSha = '0123456789abcdef0123456789abcdef01234567'
+    lane = 'backend'
+    repository = ''
+    event = ''
+    headBranch = ''
+    jobName = ''
+    currentTestOutcome = ''
+    sourceUrl = ''
+    runnerOs = ''
+    runnerImage = ''
+    dotnetSdk = ''
+    artifactName = ''
+    retentionDays = 0
+    retentionLocation = 'local-output'
+}
+foreach ($field in $metadataSummaryDefaults.Keys) {
+    Assert-Equal $metadataSummaryDefaults[$field] $metadataDefaultsSummary.$field "Summary field '$field' must preserve the constructor-owned default or input value."
+}
+Assert-Equal 'backend' $metadataDefaultsSummary.selectedLanes[0] 'Summary must preserve the constructor selected-lane fallback.'
+Assert-Equal 1 @($metadataDefaultsSummary.selectedLanes).Count 'Summary selected-lane fallback must contain only the physical lane.'
+Assert-Equal $null $metadataDefaultsSummary.trxElapsedMilliseconds 'Summary without an explicit parse result must retain the null TRX elapsed default.'
 
 $metadataInvalidCases = @(
     @{ Name = 'lane'; Parameters = @{ Lane = 'backend/shard/1' }; Expected = "Invalid evidence lane 'backend/shard/1'." },
@@ -642,13 +671,9 @@ Assert-Equal 0 @(Get-NervTestEvidenceViolations -Records $exactIdentityRecord -P
 $foldedIdentityRecord = @([pscustomobject]@{ lane = 'backend'; outcome = 'skipped'; testName = "Fixture.Ordinal.Alpha$softHyphen"; skipReason = 'Opt in.' })
 Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedIdentityRecord -Policy $identityMembershipPolicy -SelectedLanes @('backend') -RunnerOs 'Linux') 'unregistered-skip'
 
-$run = @{
-    workflowRunId = '1001'
-    runAttempt = 2
-    headSha = '0123456789abcdef0123456789abcdef01234567'
-    testedSha = '89abcdef0123456789abcdef0123456789abcdef'
-    lane = 'backend-shard-1'
-}
+$run = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 2 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '89abcdef0123456789abcdef0123456789abcdef' `
+    -Lane 'backend-shard-1'
 $runBeforeTrxRead = $run | ConvertTo-Json -Depth 100 -Compress
 $parseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $run
 Assert-Equal $runBeforeTrxRead ($run | ConvertTo-Json -Depth 100 -Compress) 'Reading TRX must not add or modify run metadata.'
@@ -690,13 +715,13 @@ try {
     $trxTemplate = Get-Content (Join-Path $fixtures 'backend-results.trx') -Raw
     $matchingProvenanceTrx = Join-Path $provenanceDirectory 'matching.trx'
     Set-Content -LiteralPath $matchingProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)`" testedSha=`"$($run.testedSha)`" id=`"")
-    $matchingProvenanceParseResult = Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.Clone()
+    $matchingProvenanceParseResult = Read-NervTrxResults -Path @($matchingProvenanceTrx) -RunMetadata $run.PSObject.Copy()
     Assert-Equal 3 @($matchingProvenanceParseResult.Records).Count 'A normalized TRX whose persisted provenance matches the run must be readable.'
 
     $foldedProvenanceTrx = Join-Path $provenanceDirectory 'folded.trx'
     Set-Content -LiteralPath $foldedProvenanceTrx -NoNewline -Value ($trxTemplate -replace '<TestRun id="', "<TestRun headSha=`"$($run.headSha)$softHyphen`" testedSha=`"$($run.testedSha)`" id=`"")
     $foldedProvenanceRejected = $false
-    try { Read-NervTrxResults -Path @($foldedProvenanceTrx) -RunMetadata $run.Clone() | Out-Null }
+    try { Read-NervTrxResults -Path @($foldedProvenanceTrx) -RunMetadata $run.PSObject.Copy() | Out-Null }
     catch { $foldedProvenanceRejected = $_.Exception.Message.Contains('Normalized TRX provenance does not match', [StringComparison]::Ordinal) }
     Assert-True $foldedProvenanceRejected 'A persisted head SHA differing by an ignorable character must not be accepted as this run''s provenance; the comparison must be ordinal.'
 }
@@ -744,8 +769,9 @@ $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
 Assert-Equal 'environment-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipClassification 'Matched skip classification must be retained for aggregation.'
 Assert-Equal 'postgres-gated' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipPolicyId 'Matched skip policy entry must be retained for aggregation.'
-$summaryRun = $run.Clone()
-$summaryRun.selectedLanes = @('backend')
+$summaryRun = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 2 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '89abcdef0123456789abcdef0123456789abcdef' `
+    -Lane 'backend-shard-1' -SelectedLanes @('backend')
 $classifiedSummary = New-NervTestEvidenceSummary -Records $records -RunMetadata $summaryRun -TrxParseResult $parseResult -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
 Assert-Equal 1 @($classifiedSummary.selectedLanes).Count 'Summary must retain the selected lane selectors.'
 Assert-Equal 'backend' $classifiedSummary.selectedLanes[0] 'Summary selected lane selector mismatch.'
@@ -806,8 +832,9 @@ $postgresSelected = Get-NervTestEvidenceViolations -Records $records -Policy $po
 # selected real-dependency lane executed nothing. Both are expected, and nothing else is.
 Assert-ViolationSet $postgresSelected @('unregistered-skip', 'zero-execution')
 
-$postgresRun = $run.Clone()
-$postgresRun.lane = 'postgres'
+$postgresRun = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 2 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '89abcdef0123456789abcdef0123456789abcdef' `
+    -Lane 'postgres'
 $allSkippedParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'postgres-all-skipped.trx')) -RunMetadata $postgresRun
 $allSkipped = @($allSkippedParseResult.Records)
 $violations = Get-NervTestEvidenceViolations -Records $allSkipped -Policy $livePolicy -SelectedLanes @('postgres') -RunnerOs 'Linux'
@@ -843,14 +870,9 @@ Assert-ViolationSet (Get-NervTestEvidenceViolations -Records $foldedLaneShard -P
 
 # …and so must the summary's own lane/selector merge, which is a second implementation of the same
 # decision: it groups records into a base lane and decides which violations belong to that group.
-$foldedSummaryRun = @{
-    workflowRunId = '1001'
-    runAttempt = 1
-    headSha = '0123456789abcdef0123456789abcdef01234567'
-    testedSha = '0123456789abcdef0123456789abcdef01234567'
-    lane = 'postgres-shard-1'
-    selectedLanes = @('postgres-shard-1')
-}
+$foldedSummaryRun = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 1 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+    -Lane 'postgres-shard-1' -SelectedLanes @('postgres-shard-1')
 # Cloned from a real parsed record so the summary sees the full retained schema; only the lane
 # differs between the probes.
 $passedRecordTemplate = @($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) })[0]
@@ -946,21 +968,25 @@ try {
         Assert-True (-not $retainedText.Contains($sentinel)) "Retained evidence leaked sentinel '$sentinel'."
     }
     Assert-True ($summary.redactionCount -gt 0) 'Summary must count privacy redactions.'
-    $roundTripRun = $run.Clone()
+    $roundTripRun = $run.PSObject.Copy()
     $roundTripParseResult = Read-NervTrxResults -Path @($normalizedTrx.FullName) -RunMetadata $roundTripRun
     $roundTrip = @($roundTripParseResult.Records)
     Assert-Equal $sensitiveRecords.Count $roundTrip.Count 'Normalized TRX must round-trip through the parser.'
     Assert-Equal @($sensitiveRecords | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count @($roundTrip | Where-Object { [string]::Equals([string]$_.outcome, [string]('failed'), [StringComparison]::OrdinalIgnoreCase) }).Count 'Round-trip counters must remain valid.'
-    $recoveryRun = $run.Clone(); $recoveryRun.currentTestOutcome = 'success'; $recoveryRun.priorAttemptVerified = $true
-    $recoverySummary = New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure'
+    $recoveryRun = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 2 `
+        -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '89abcdef0123456789abcdef0123456789abcdef' `
+        -Lane 'backend-shard-1'
+    $recoveryRunBeforeSummary = $recoveryRun | ConvertTo-Json -Depth 100 -Compress
+    $recoverySummary = New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() `
+        -Baseline $null -PriorAttemptOutcome 'failure' -PriorAttemptVerified $true -CurrentTestOutcome 'success'
     Assert-True ([string]::Equals([string]($recoverySummary.attemptClassification), [string]('recovered-after-rerun'), [StringComparison]::OrdinalIgnoreCase)) 'Verified prior failure and current successful non-empty rerun must be report-only recovery.'
-    $failedCurrentRun = $recoveryRun.Clone(); $failedCurrentRun.currentTestOutcome = 'failure'
-    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $failedCurrentRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A failed current native test step must never be called recovered.'
-    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records @() -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'A zero-execution rerun must never be called recovered.'
-    $unverifiedPriorRun = $recoveryRun.Clone(); $unverifiedPriorRun.priorAttemptVerified = $false
-    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $unverifiedPriorRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure').attemptClassification 'Unverified prior-attempt provenance must never be called recovered.'
+    Assert-Equal 'success' $recoverySummary.currentTestOutcome 'Summary output and recovered classification must consume the same explicit current outcome.'
+    Assert-Equal $recoveryRunBeforeSummary ($recoveryRun | ConvertTo-Json -Depth 100 -Compress) 'Recovered classification must not write prior verification or current outcome into run metadata.'
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure' -PriorAttemptVerified $true -CurrentTestOutcome 'failure').attemptClassification 'A failed current native test step must never be called recovered.'
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records @() -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure' -PriorAttemptVerified $true -CurrentTestOutcome 'success').attemptClassification 'A zero-execution rerun must never be called recovered.'
+    Assert-Equal 'rerun' (New-NervTestEvidenceSummary -Records $parameterized -RunMetadata $recoveryRun -Violations @() -Baseline $null -PriorAttemptOutcome 'failure' -PriorAttemptVerified $false -CurrentTestOutcome 'success').attemptClassification 'Unverified prior-attempt provenance must never be called recovered.'
     Write-NervTestEvidenceArtifacts -Records $parameterized -Summary $recoverySummary -OutputDirectory $parameterArtifactRoot
-    $parameterRoundTripRun = $recoveryRun.Clone()
+    $parameterRoundTripRun = $recoveryRun.PSObject.Copy()
     $parameterRoundTripParseResult = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $parameterArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $parameterRoundTripRun
     $parameterRoundTrip = @($parameterRoundTripParseResult.Records)
     Assert-Equal 2 @(Get-NervStringsSorted -Values @($parameterRoundTrip.displayName) -Comparer ([StringComparer]::Ordinal) -Unique).Count 'Parameterized display identity must survive normalized TRX round-trip.'
@@ -974,7 +1000,7 @@ try {
     foreach ($sentinel in @('org-secret-A','org-secret-B','inner-secret','still-secret','third-secret')) {
         Assert-True (-not $displayRetainedText.Contains($sentinel)) "Retained display evidence leaked '$sentinel'."
     }
-    $displayRoundTripRun = $run.Clone()
+    $displayRoundTripRun = $run.PSObject.Copy()
     $displayRoundTripParseResult = Read-NervTrxResults -Path @((Get-ChildItem (Join-Path $displayPayloadArtifactRoot 'trx') -Filter '*.trx').FullName) -RunMetadata $displayRoundTripRun
     $displayRoundTrip = @($displayRoundTripParseResult.Records)
     foreach ($expectedRecord in $displayPayload) {
@@ -1078,7 +1104,9 @@ $incompatibleBaselineSummary = New-NervTestEvidenceSummary -Records $records -Ru
 Assert-True (-not $incompatibleBaselineSummary.baseline.available) 'Project wall-clock baseline must not be compared with TRX elapsed timing.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.unavailableReason 'Incompatible baseline must expose a structured unavailable reason.'
 Assert-Equal 'incompatible-granularity-or-duration-metric' $incompatibleBaselineSummary.baseline.assemblies[0].unavailableReason 'Each unavailable assembly comparison must expose its reason.'
-$compatibleRun = @{ workflowRunId = '1001'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; lane = 'backend-shard-1'; selectedLanes = @('backend-shard-1') }
+$compatibleRun = New-NervTestEvidenceRunMetadata -WorkflowRunId '1001' -RunAttempt 1 `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+    -Lane 'backend-shard-1' -SelectedLanes @('backend-shard-1')
 $compatibleParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'backend-results.trx')) -RunMetadata $compatibleRun
 $compatibleRecords = @($compatibleParseResult.Records)
 $compatibleMetadata = $metadata.Clone(); $compatibleMetadata.laneProvenance = New-NervLaneProvenanceFor -Lanes @([string]$compatibleRecords[0].lane)
@@ -1485,6 +1513,66 @@ try {
     )) { Assert-True $successMarkdown.Contains($exact) "Job Summary is missing exact value '$exact'." }
     Assert-True (-not $successMarkdown.Contains('baseline=ms, delta=%', [StringComparison]::Ordinal)) 'Unavailable baseline comparison must not render empty metric placeholders.'
     Assert-True ($successMarkdown.Contains('unavailable (incompatible-granularity-or-duration-metric)', [StringComparison]::Ordinal)) 'Each incompatible assembly comparison must render its unavailable reason.'
+
+    $constructorFailureCases = @(
+        @{ Name = 'invalid-lane'; Overrides = @('-Lane', 'backend/invalid'); Diagnostic = "Invalid evidence lane 'backend/invalid'."; Lane = 'invalid-lane'; RunAttempt = 1; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = '0123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'invalid-selected-lane'; Overrides = @('-SelectedLanes', 'backend/invalid'); Diagnostic = "Invalid selected lane 'backend/invalid'."; Lane = 'backend'; RunAttempt = 1; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = '0123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'invalid-run-attempt'; Overrides = @('-RunAttempt', '0'); Diagnostic = 'RunAttempt must be positive.'; Lane = 'backend'; RunAttempt = 0; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = '0123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'invalid-head-sha'; Overrides = @('-HeadSha', 'not-a-sha'); Diagnostic = 'HeadSha must be a lowercase 40-character SHA.'; Lane = 'backend'; RunAttempt = 1; HeadSha = 'invalid-head-sha'; TestedSha = '0123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'invalid-tested-sha'; Overrides = @('-TestedSha', 'not-a-sha'); Diagnostic = 'TestedSha must be a lowercase 40-character SHA.'; Lane = 'backend'; RunAttempt = 1; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = 'invalid-tested-sha' },
+        @{ Name = 'invalid-event'; Overrides = @('-Event', 'workflow_dispatch'); Diagnostic = "Unsupported evidence event 'workflow_dispatch'."; Lane = 'backend'; RunAttempt = 1; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = '0123456789abcdef0123456789abcdef01234567' },
+        @{ Name = 'push-sha-mismatch'; Overrides = @('-Event', 'push', '-TestedSha', '89abcdef0123456789abcdef0123456789abcdef'); Diagnostic = 'Push evidence requires HeadSha and TestedSha to be identical.'; Lane = 'backend'; RunAttempt = 1; HeadSha = '0123456789abcdef0123456789abcdef01234567'; TestedSha = '89abcdef0123456789abcdef0123456789abcdef' }
+    )
+    foreach ($constructorFailureCase in $constructorFailureCases) {
+        $failureOut = Join-Path $collectorRoot "constructor-$($constructorFailureCase.Name)"
+        $arguments = [Collections.Generic.List[string]]::new()
+        $arguments.AddRange([string[]]@(
+            '-Lane', 'backend', '-SelectedLanes', 'backend', '-ResultsDirectory', $successRaw,
+            '-OutputDirectory', $failureOut, '-WorkflowRunId', "fixture-$($constructorFailureCase.Name)", '-RunAttempt', '1',
+            '-HeadSha', '0123456789abcdef0123456789abcdef01234567', '-TestedSha', '0123456789abcdef0123456789abcdef01234567', '-RunnerOs', 'Linux',
+            '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests'
+        ))
+        for ($overrideIndex = 0; $overrideIndex -lt $constructorFailureCase.Overrides.Count; $overrideIndex += 2) {
+            $parameterIndex = -1
+            for ($argumentIndex = 0; $argumentIndex -lt $arguments.Count; $argumentIndex++) {
+                if ([string]::Equals([string]$arguments[$argumentIndex], [string]$constructorFailureCase.Overrides[$overrideIndex], [StringComparison]::Ordinal)) {
+                    $parameterIndex = $argumentIndex
+                    break
+                }
+            }
+            if ($parameterIndex -ge 0) { $arguments[$parameterIndex + 1] = [string]$constructorFailureCase.Overrides[$overrideIndex + 1] }
+            else {
+                $arguments.Add([string]$constructorFailureCase.Overrides[$overrideIndex])
+                $arguments.Add([string]$constructorFailureCase.Overrides[$overrideIndex + 1])
+            }
+        }
+        $constructorFailed = $false
+        try {
+            Invoke-TestPwshScript -ScriptPath $collector -LogRoot $collectorRoot -WorkingDirectory $repoRoot `
+                -Name "nerv-795-constructor-$($constructorFailureCase.Name)" -Arguments $arguments.ToArray() | Out-Null
+        }
+        catch { $constructorFailed = $true }
+        Assert-True $constructorFailed "Constructor case '$($constructorFailureCase.Name)' must preserve the collector's nonzero exit."
+        Assert-Equal 'diagnostics.log,summary.json,summary.md,tests.jsonl' `
+            (@(Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $failureOut -File | ForEach-Object Name) -Comparer ([StringComparer]::Ordinal)) -join ',') `
+            "Constructor case '$($constructorFailureCase.Name)' must preserve the failure artifact file set."
+        Assert-Equal 'trx' (@(Get-ChildItem -LiteralPath $failureOut -Directory | ForEach-Object Name) -join ',') `
+            "Constructor case '$($constructorFailureCase.Name)' must preserve the empty normalized-TRX directory."
+        $constructorFailureSummary = Get-Content -LiteralPath (Join-Path $failureOut 'summary.json') -Raw | ConvertFrom-Json
+        Assert-Equal 'schemaVersion,collectionStatus,workflowRunId,runAttempt,headSha,testedSha,lane,repository,jobName,passed,failed,skipped,executed,total,violations' `
+            (@($constructorFailureSummary.PSObject.Properties.Name) -join ',') `
+            "Constructor case '$($constructorFailureCase.Name)' must preserve the failure summary schema."
+        Assert-Equal "fixture-$($constructorFailureCase.Name)" $constructorFailureSummary.workflowRunId "Constructor case '$($constructorFailureCase.Name)' workflow run ID mismatch."
+        Assert-Equal $constructorFailureCase.RunAttempt $constructorFailureSummary.runAttempt "Constructor case '$($constructorFailureCase.Name)' run attempt fallback mismatch."
+        Assert-Equal $constructorFailureCase.HeadSha $constructorFailureSummary.headSha "Constructor case '$($constructorFailureCase.Name)' head SHA fallback mismatch."
+        Assert-Equal $constructorFailureCase.TestedSha $constructorFailureSummary.testedSha "Constructor case '$($constructorFailureCase.Name)' tested SHA fallback mismatch."
+        Assert-Equal $constructorFailureCase.Lane $constructorFailureSummary.lane "Constructor case '$($constructorFailureCase.Name)' lane fallback mismatch."
+        Assert-Equal 'Mang-X/Nerv-IIP' $constructorFailureSummary.repository "Constructor case '$($constructorFailureCase.Name)' repository fallback mismatch."
+        Assert-Equal 'Backend Tests' $constructorFailureSummary.jobName "Constructor case '$($constructorFailureCase.Name)' job fallback mismatch."
+        Assert-Equal 'evidence-collection-failed' $constructorFailureSummary.violations[0].code "Constructor case '$($constructorFailureCase.Name)' violation code mismatch."
+        Assert-Equal $constructorFailureSummary.lane $constructorFailureSummary.violations[0].id "Constructor case '$($constructorFailureCase.Name)' violation ID must use the same safe lane."
+        Assert-Equal $constructorFailureCase.Diagnostic $constructorFailureSummary.violations[0].message "Constructor case '$($constructorFailureCase.Name)' diagnostic mismatch."
+    }
 
     # Field-level assertions on the committed snapshot cannot show the one property that matters:
     # that the collector can actually consume it. So run the real collector end to end with

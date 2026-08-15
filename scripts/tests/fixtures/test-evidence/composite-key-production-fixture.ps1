@@ -67,23 +67,13 @@ function New-ProductionFixtureRecord {
 }
 
 function New-ProductionFixtureSummary([object[]] $Records) {
-    $metadata = @{
-        workflowRunId = 'fixture-run'
-        runAttempt = 1
-        headSha = '0123456789abcdef0123456789abcdef01234567'
-        testedSha = '0123456789abcdef0123456789abcdef01234567'
-        lane = 'backend-shard-1'
-        selectedLanes = @('backend-shard-1')
-        jobName = 'Backend Tests - BusinessGateway'
-        currentTestOutcome = 'success'
-        runnerOs = 'Linux'
-        runnerImage = 'ubuntu24@20260720.247.2'
-        dotnetSdk = '10.0.302'
-        artifactName = 'composite-key-production-fixture'
-        retentionDays = 1
-        retentionLocation = 'fixture://composite-key-production/'
-    }
-    return New-NervTestEvidenceSummary -Records $Records -RunMetadata $metadata -Violations @() -Baseline $null -PriorAttemptOutcome $null -TopCount 5
+    $metadata = New-NervTestEvidenceRunMetadata -WorkflowRunId 'fixture-run' -RunAttempt 1 `
+        -HeadSha '0123456789abcdef0123456789abcdef01234567' -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -Lane 'backend-shard-1' -SelectedLanes @('backend-shard-1') -JobName 'Backend Tests - BusinessGateway' `
+        -RunnerOs 'Linux' -RunnerImage 'ubuntu24@20260720.247.2' -DotnetSdk '10.0.302' `
+        -ArtifactName 'composite-key-production-fixture' -RetentionDays 1
+    return New-NervTestEvidenceSummary -Records $Records -RunMetadata $metadata -Violations @() -Baseline $null `
+        -PriorAttemptOutcome $null -CurrentTestOutcome 'success' -TopCount 5
 }
 
 function New-ProductionByteEvidenceRecords {

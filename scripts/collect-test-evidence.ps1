@@ -44,39 +44,21 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1')
 
-$allowedEvents = [Collections.Generic.HashSet[string]]::new(
-    [string[]]@('push', 'pull_request'),
-    [StringComparer]::OrdinalIgnoreCase
-)
-$runMetadata = @{
+$failureMetadata = @{
     workflowRunId = $WorkflowRunId
     runAttempt = $RunAttempt
     headSha = $HeadSha
     testedSha = $TestedSha
     lane = $Lane
-    selectedLanes = @($SelectedLanes)
     repository = $Repository
-    event = $Event
-    headBranch = $HeadBranch
     jobName = $JobName
-    currentTestOutcome = $CurrentTestOutcome
-    sourceUrl = $SourceUrl
-    runnerOs = $RunnerOs
-    runnerImage = $RunnerImage
-    dotnetSdk = $DotnetSdk
-    artifactName = $ArtifactName
-    retentionDays = $RetentionDays
-    retentionLocation = if ([string]::IsNullOrWhiteSpace($ArtifactName)) { 'local-output' } else { "artifact://$ArtifactName/" }
-    priorAttemptVerified = $false
 }
 try {
-    if (-not (Test-NervTestEvidenceLaneName $Lane)) { throw "Invalid evidence lane '$Lane'." }
-    foreach ($selected in $SelectedLanes) { if (-not (Test-NervTestEvidenceLaneName $selected)) { throw "Invalid selected lane '$selected'." } }
-    if ($RunAttempt -lt 1) { throw 'RunAttempt must be positive.' }
-    if ($HeadSha -notmatch '^[0-9a-f]{40}$') { throw 'HeadSha must be a lowercase 40-character SHA.' }
-    if ($TestedSha -notmatch '^[0-9a-f]{40}$') { throw 'TestedSha must be a lowercase 40-character SHA.' }
-    if (-not [string]::IsNullOrWhiteSpace($Event) -and (-not $allowedEvents.Contains($Event))) { throw "Unsupported evidence event '$Event'." }
-    if ([string]::Equals([string]($Event), [string]('push'), [StringComparison]::OrdinalIgnoreCase) -and (-not [string]::Equals([string]($HeadSha), [string]($TestedSha), [StringComparison]::Ordinal))) { throw 'Push evidence requires HeadSha and TestedSha to be identical.' }
+    $runMetadata = New-NervTestEvidenceRunMetadata -WorkflowRunId $WorkflowRunId -RunAttempt $RunAttempt `
+        -HeadSha $HeadSha -TestedSha $TestedSha -Lane $Lane -SelectedLanes $SelectedLanes `
+        -Repository $Repository -Event $Event -HeadBranch $HeadBranch -JobName $JobName -SourceUrl $SourceUrl `
+        -RunnerOs $RunnerOs -RunnerImage $RunnerImage -DotnetSdk $DotnetSdk -ArtifactName $ArtifactName `
+        -RetentionDays $RetentionDays
     if (-not (Test-Path -LiteralPath $ResultsDirectory -PathType Container)) { throw "Results directory does not exist: '$ResultsDirectory'." }
     $policy = Import-NervTestEvidencePolicy -Path $PolicyPath
     $policyViolations = @(Test-NervTestEvidencePolicy -Policy $policy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
@@ -89,6 +71,7 @@ try {
     $violations = @(Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes $SelectedLanes -RunnerOs $RunnerOs)
 
     $resolvedPriorOutcome = $null
+    $priorAttemptVerified = $false
     if ($RunAttempt -gt 1) {
         try {
             $priorAttempt = $RunAttempt - 1
@@ -103,12 +86,14 @@ try {
             if ($null -ne $priorRun) {
                 $priorAuthority = Resolve-NervPriorAttemptAuthority -Run $priorRun -Jobs $priorJobs -WorkflowRunId $WorkflowRunId -HeadSha $HeadSha -RunAttempt $RunAttempt -Lane $Lane -JobName $JobName
                 $resolvedPriorOutcome = $priorAuthority.outcome
-                $runMetadata.priorAttemptVerified = [bool]$priorAuthority.verified
+                $priorAttemptVerified = [bool]$priorAuthority.verified
             }
         }
         catch { Write-Diagnostic -Level 'WARN' -Message "Prior attempt lookup unavailable: $(Protect-ScriptAutomationText $_.Exception.Message)" }
     }
-    $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -TrxParseResult $trxParseResult -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome -TopCount 10
+    $summary = New-NervTestEvidenceSummary -Records $records -RunMetadata $runMetadata -TrxParseResult $trxParseResult `
+        -Violations $violations -Baseline $baseline -PriorAttemptOutcome $resolvedPriorOutcome `
+        -PriorAttemptVerified $priorAttemptVerified -CurrentTestOutcome $CurrentTestOutcome -TopCount 10
     $summary | Add-Member -NotePropertyName collectionStatus -NotePropertyValue 'succeeded' -Force
     Write-NervTestEvidenceArtifacts -Records $records -Summary $summary -OutputDirectory $OutputDirectory
     Write-NervEvidenceOutputPath -Path $OutputDirectory -ManifestPath $EvidencePathOutputFile
@@ -118,7 +103,7 @@ try {
 }
 catch {
     $safeFailure = Protect-NervTestEvidenceText $_.Exception.Message
-    $failureOutput = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $OutputDirectory -RunMetadata $runMetadata -Diagnostic $safeFailure
+    $failureOutput = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $OutputDirectory -RunMetadata $failureMetadata -Diagnostic $safeFailure
     Write-NervEvidenceOutputPath -Path $failureOutput -ManifestPath $EvidencePathOutputFile
     if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) { [IO.File]::AppendAllText($StepSummaryPath, (Get-Content -LiteralPath (Join-Path $failureOutput 'summary.md') -Raw), [Text.UTF8Encoding]::new($false)) }
     Write-Error $safeFailure -ErrorAction Continue
