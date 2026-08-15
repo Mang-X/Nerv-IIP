@@ -42,6 +42,46 @@ function Test-NervOrdinalEquals {
     return [string]::Equals([string]$Left, [string]$Right, [StringComparison]::Ordinal)
 }
 
+function Resolve-NervTrxOutcomeMapping {
+    [CmdletBinding(DefaultParameterSetName = 'TrxOutcome')]
+    param(
+        [Parameter(Mandatory, ParameterSetName = 'TrxOutcome')]
+        [AllowEmptyString()]
+        [string] $TrxOutcome,
+
+        [Parameter(Mandatory, ParameterSetName = 'NormalizedOutcome')]
+        [AllowEmptyString()]
+        [string] $NormalizedOutcome,
+
+        [Parameter(Mandatory, ParameterSetName = 'WriteFallback')]
+        [switch] $WriteFallback
+    )
+
+    $mappings = @(
+        [pscustomobject][ordered]@{ TrxOutcome = 'Passed'; NormalizedOutcome = 'passed'; IsWriteFallback = $false },
+        [pscustomobject][ordered]@{ TrxOutcome = 'Failed'; NormalizedOutcome = 'failed'; IsWriteFallback = $false },
+        [pscustomobject][ordered]@{ TrxOutcome = 'NotExecuted'; NormalizedOutcome = 'skipped'; IsWriteFallback = $true }
+    )
+
+    if ($WriteFallback) {
+        $fallbacks = @($mappings | Where-Object { [bool]$_.IsWriteFallback })
+        if ($fallbacks.Count -ne 1) {
+            throw [InvalidOperationException]::new('TRX outcome mappings must declare exactly one write fallback.')
+        }
+        return $fallbacks[0]
+    }
+
+    foreach ($mapping in $mappings) {
+        if ((Test-NervOrdinalEquals $PSCmdlet.ParameterSetName 'TrxOutcome') -and (Test-NervOrdinalEquals $mapping.TrxOutcome $TrxOutcome)) {
+            return $mapping
+        }
+        if ((Test-NervOrdinalEquals $PSCmdlet.ParameterSetName 'NormalizedOutcome') -and (Test-NervOrdinalEquals $mapping.NormalizedOutcome $NormalizedOutcome)) {
+            return $mapping
+        }
+    }
+    return $null
+}
+
 function Get-NervOrdinalCompositeKey {
     <#
         Encodes a sequence of identity components into one injective ordinal key.

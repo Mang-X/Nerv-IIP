@@ -37,6 +37,39 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+$outcomePairs = @(
+    [pscustomobject]@{ Trx = 'Passed'; Normalized = 'passed' },
+    [pscustomobject]@{ Trx = 'Failed'; Normalized = 'failed' },
+    [pscustomobject]@{ Trx = 'NotExecuted'; Normalized = 'skipped' }
+)
+$resolvedTrxOutcomes = [Collections.Generic.List[string]]::new()
+$resolvedNormalizedOutcomes = [Collections.Generic.List[string]]::new()
+foreach ($pair in $outcomePairs) {
+    $fromTrx = Resolve-NervTrxOutcomeMapping -TrxOutcome $pair.Trx
+    Assert-Equal $pair.Normalized $fromTrx.NormalizedOutcome "TRX outcome '$($pair.Trx)' must normalize through the shared table."
+    $toTrx = Resolve-NervTrxOutcomeMapping -NormalizedOutcome $pair.Normalized
+    Assert-Equal $pair.Trx $toTrx.TrxOutcome "Normalized outcome '$($pair.Normalized)' must map back through the shared table."
+    Assert-Equal $pair.Trx (Resolve-NervTrxOutcomeMapping -NormalizedOutcome $fromTrx.NormalizedOutcome).TrxOutcome "Canonical TRX outcome '$($pair.Trx)' must round-trip exactly."
+    Assert-Equal $pair.Normalized (Resolve-NervTrxOutcomeMapping -TrxOutcome $toTrx.TrxOutcome).NormalizedOutcome "Canonical normalized outcome '$($pair.Normalized)' must round-trip exactly."
+    $resolvedTrxOutcomes.Add([string]$fromTrx.TrxOutcome)
+    $resolvedNormalizedOutcomes.Add([string]$toTrx.NormalizedOutcome)
+}
+Assert-Equal 3 ([Collections.Generic.HashSet[string]]::new([string[]]$resolvedTrxOutcomes.ToArray(), [StringComparer]::Ordinal)).Count 'TRX outcome mappings must be ordinally unique.'
+Assert-Equal 3 ([Collections.Generic.HashSet[string]]::new([string[]]$resolvedNormalizedOutcomes.ToArray(), [StringComparer]::Ordinal)).Count 'Normalized outcome mappings must be ordinally unique.'
+
+$outcomeFallback = Resolve-NervTrxOutcomeMapping -WriteFallback
+Assert-Equal 'NotExecuted' $outcomeFallback.TrxOutcome 'The shared table must expose NotExecuted as its only write fallback.'
+Assert-Equal 'skipped' $outcomeFallback.NormalizedOutcome 'The write fallback must remain paired with skipped.'
+Assert-True ([bool]$outcomeFallback.IsWriteFallback) 'The write fallback descriptor must identify itself explicitly.'
+
+$outcomeSoftHyphen = [string][char]0x00AD
+foreach ($nonCanonicalTrxOutcome in @('PASSED', "Passed$outcomeSoftHyphen")) {
+    Assert-True ($null -eq (Resolve-NervTrxOutcomeMapping -TrxOutcome $nonCanonicalTrxOutcome)) "Non-canonical TRX outcome '$nonCanonicalTrxOutcome' must not match the shared table."
+}
+foreach ($nonCanonicalNormalizedOutcome in @('PASSED', "passed$outcomeSoftHyphen")) {
+    Assert-True ($null -eq (Resolve-NervTrxOutcomeMapping -NormalizedOutcome $nonCanonicalNormalizedOutcome)) "Non-canonical normalized outcome '$nonCanonicalNormalizedOutcome' must not match the shared table."
+}
+
 $quotedTextBoundaryCases = @(
     [pscustomobject]@{ Name = 'escaped double quote'; Text = '"a\"b";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 6 },
     [pscustomobject]@{ Name = 'even backslashes before double quote'; Text = '"a\\";tail'; QuoteStart = 0; AllowCSharpVerbatim = $false; Expected = 5 },
