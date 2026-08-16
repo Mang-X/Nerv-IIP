@@ -277,14 +277,15 @@ Sort-Object @{Expression='name'}          → 同样是文化排序，且作用�
 
 **不要把「契约存在」读成「语义被保护」**：上表是被写下来的口径差。
 
-### 两份收口声明
+### 三份收口声明
 
 | 文件 | 声明 | 由谁执行 |
 | --- | --- | --- |
 | `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`（按人读文案**分组**；同一行的**排序**不在豁免内）。豁免按「函数名 + 表达式原文精确相等」匹配，不是子串，且必须恰好命中一处；「精确相等」是真序数（查表用 `[StringComparer]::Ordinal` 构造，裸 `@{}` 的默认比较器是 OrdinalIgnoreCase，#1509 四轮更正）。 | `scripts/tests/test-evidence.Tests.ps1` |
+| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |
 | `scripts/lib/BackendTestShardSelectors.ps1` | 全文件按上述扫描面**零发现**，**零豁免**——这个库处理的每一个字符串都是标识符。 | `scripts/tests/backend-test-shards.Tests.ps1` |
 
-**两份声明的强度上界怎么读**（#1509 六轮更正）。此前这里写的是「盲区之外的构造，声明成立」，那句话把「盲区表」当成了扫描面的补集——实测不成立：`-lt`/`-le`/`-gt`/`-ge`、`[string]::Compare`/`.CompareTo`、`[StringComparer]::InvariantCulture`、`.Sort()` 无参四类都是 culture-aware，既不在覆盖轴也不在盲区表。四类现已全部补进覆盖轴。准确的上界是分两半的：
+**三份声明的强度上界怎么读**（#1509 六轮更正）。此前这里写的是「盲区之外的构造，声明成立」，那句话把「盲区表」当成了扫描面的补集——实测不成立：`-lt`/`-le`/`-gt`/`-ge`、`[string]::Compare`/`.CompareTo`、`[StringComparer]::InvariantCulture`、`.Sort()` 无参四类都是 culture-aware，既不在覆盖轴也不在盲区表。四类现已全部补进覆盖轴。准确的上界是分两半的：
 
 - **比较算子**这一半是穷举的：`TokenKind` 的成对家族被整体枚举并与三份名单对账，因此「不在盲区表里的比较算子一律被覆盖」成立，将来 PowerShell 新增一个也会红。
 - **方法名 / 类型名**这一半是名单：`Get-NervOrdinalContract{StringMethods,ComparisonMethods,AmbiguousMethods}` 与 `[StringComparison]`/`[StringComparer]` 的后缀判据都靠具名匹配，名单之外的成员（例如某个第三方 comparer 类型、或另一个 culture-aware 的字符串方法）**既不在覆盖轴也不在盲区表**，声明对它们不作断言。

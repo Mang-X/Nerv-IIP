@@ -94,6 +94,11 @@ $expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('Scr
 $actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
 Assert-True ([string]::Equals(($actualIsolatedLibraryNames -join '|'), ($expectedIsolatedLibraryNames -join '|'), [StringComparison]::Ordinal)) `
     "The composite-key mutation harness copy set must equal the TestEvidence facade closure. Expected=[$($expectedIsolatedLibraryNames -join ', ')] Actual=[$($actualIsolatedLibraryNames -join ', ')]"
+foreach ($facadeOwnedLibraryName in $facadeOwnedLibraryNames) {
+    $facadeOwnedLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $facadeOwnedLibraryName
+    Assert-Equal 0 @(Get-NervDotSourceCommands -Path $facadeOwnedLibraryPath).Count `
+        "TestEvidence facade-owned library '$facadeOwnedLibraryName' must remain a leaf so the isolated copy set is the complete dependency closure."
+}
 
 $redactionContractCases = @(
     [pscustomobject]@{ Name = 'null'; Input = $null; Expected = ''; Secrets = @() },
@@ -273,8 +278,6 @@ $facadeFunctions = @($testEvidenceAst.FindAll({
 $lastFacadeFunctionEnd = (@($facadeFunctions | ForEach-Object { [int]$_.Extent.EndOffset }) | Measure-Object -Maximum).Maximum
 Assert-True ($facadeBaselineImports[0].Extent.StartOffset -ge $lastFacadeFunctionEnd) `
     'TestEvidence.ps1 must load TestEvidenceBaseline.ps1 after all facade-owned dependency helpers are defined.'
-Assert-Equal 0 @(Get-NervDotSourceCommands -Path $testEvidenceBaselineLibraryPath).Count `
-    'TestEvidenceBaseline.ps1 must not self-import the facade or caller-owned libraries.'
 
 $expectedBaselineHelperNames = @(
     'Get-NervOrdinalCompositeKey',
@@ -2679,9 +2682,25 @@ foreach ($registeredScriptPath in @(
     Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
 }
 $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
-foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
+foreach ($registeredPath in @(
+    'collect-test-evidence.ps1',
+    'generate-test-evidence-baseline.ps1',
+    'scripts/lib/TestEvidence.ps1',
+    'scripts/lib/TestEvidenceBaseline.ps1',
+    'scripts/tests/test-evidence.Tests.ps1'
+)) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains('### 三份收口声明', [StringComparison]::Ordinal)) `
+    'Script governance must count all three executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
 
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
