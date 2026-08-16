@@ -43,9 +43,14 @@ BusinessLayout
    （`NvRowActions`，`align: end`）。缺值显示「无」，不显示空白或 `null`。
 2. **状态**：一律 `NvStatusBadge`，`:value="row.active === false ? 'disabled' : 'active'"`
    （启用/停用）。不自己画徽标。
-3. **行操作**：用 `components/masterData/MasterDataRowActions.vue`（查看详情只读
-   `NvDialog` / 编辑 emit 给页面 / 停用·启用走 `NvAlertDialog` 二次确认 + toast）。
-   后端未就绪的能力 `disabled` + tooltip，**绝不放会失败的假按钮**。
+3. **行操作**：查看详情只读 `NvDialog` / 编辑 emit 给页面 / 停用·启用走 `NvAlertDialog`
+   二次确认 + toast + **原因必填**。后端未就绪的能力 `disabled` + tooltip，**绝不放会失败的
+   假按钮**。
+   - **存量页**继续用 `components/masterData/MasterDataRowActions.vue`。
+   - **新页面注意**：该组件把确认框装在自己内部，随行渲染 → 一页 N 行就是 N 个确认框，
+     违反 `../flows/confirm-destroy.md` 规则 5（单实例声明在页面层）。在 #1591 收敛之前，
+     新页面要合规就**按 `master-data/workers.vue` 在页面层自建单实例确认框**，本组件只用于
+     查看详情与编辑触发；**不要把本组件的容器结构当默认答案照抄**。
 4. **说人话**：UI 不暴露工程语言（`operationId / code(术语) / resourceType / sourceSystem /
 #号 / organizationId / environmentId / demo / seed / mock`）；码值显示**中文**（英文
    种子用 `masterDataReference.ts` 的 `mergeReferenceOptions` 常量**兜底覆盖**）。术语
@@ -200,8 +205,11 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 ### 正例
 
 `pages/master-data/units.vue`、`devices.vue`、`skus.vue`、`partners.vue` 等（均在
-`goldStandardPages.contract.test.ts` allowlist）；行操作三件套
-`components/masterData/MasterDataRowActions.vue`。
+`goldStandardPages.contract.test.ts` allowlist）——**正例范围是列表骨架与页面组织**。
+
+破坏性确认（停用/启用）的正例是 `pages/master-data/workers.vue`（页面层单实例 + 原因必填）。
+`components/masterData/MasterDataRowActions.vue` **不是**这一项的正例：它把确认框装在组件内
+随行实例化，属存量例外（见下方反例与 #1591），只可参考其**原因必填输入**的写法。
 
 ### 反例
 
@@ -482,6 +490,9 @@ NvPageHeader（字典分组数 + [刷新] [+ 新建字典条目（选中可维�
 
 - 树-详情：`pages/master-data/facilities.vue`；主从 + 字典：`reference-data.vue`
 - 行操作三件套：`components/masterData/MasterDataRowActions.vue`
+  ——**只照抄查看/编辑/停用三个入口与原因必填输入**；它内含的确认框按行实例化，违反
+  `../flows/confirm-destroy.md` 规则 5，是 #1591 跟踪的存量例外，**不要照抄容器结构**
+- 破坏性确认（页面层单实例 + 原因必填）：`pages/master-data/workers.vue`
 - 分段标题：`components/masterData/FormSectionTitle.vue`
 - 工人选择器 / 技能登记：`components/masterData/WorkerSelect.vue`、`composables` 的
   `usePersonnelSkillAssignment`
