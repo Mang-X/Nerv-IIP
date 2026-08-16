@@ -15,7 +15,7 @@ $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -652,12 +652,14 @@ function Test-NervProductionCompositeKeyCallsites {
         [pscustomobject]@{
             Name = 'baseline-aggregate-1606'
             Fixture = 'baseline-aggregate'
+            TargetLibrary = 'TestEvidenceBaseline.ps1'
             Original = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
             Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
         },
         [pscustomobject]@{
             Name = 'baseline-identity-projection-1653'
             Fixture = 'baseline-aggregate'
+            TargetLibrary = 'TestEvidenceBaseline.ps1'
             Original = "            lane = `$items[0].lane`n            assembly = `$items[0].assembly"
             Mutated = "            lane = [string]`$items[0].lane`n            assembly = [string]`$items[0].assembly"
         },
@@ -2817,6 +2819,8 @@ foreach ($capturedScopeCandidate in @(
 $evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
 Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
+$baselineEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceBaselineLibraryPath -DisplayName 'TestEvidenceBaseline.ps1'
+Assert-True ($baselineEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceBaseline.ps1 must compare identifiers ordinally (#1509):`n  $(@($baselineEvidenceSweep.Findings) -join "`n  ")"
 # Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
 # hit more than once is exempting call sites the reviewer of the original never saw.
 foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
