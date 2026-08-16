@@ -87,7 +87,7 @@ PDA 表单承载另见 §6.2（单 Sheet ≤3 字段 + 拆步）。
 2. **高频以角色主任务为准**：该页目标角色最常执行的动作（报工/处置/确认/收货…），1 次点击必达。
 3. **唯一动作禁止进菜单**：整行只有一个可用动作时，它必须是行内按钮（进菜单是徒增一跳）。
 4. **查看详情不占行内名额**：ID 列本身即详情入口（`list-workbench.md` 既有规则："ID 即点击目标"）。
-5. **破坏性动作**（删除/停用/关闭/作废/回滚）：必须 `NvAlertDialog` 二次确认，且**原因必填**——确认框内含原因输入（`Textarea`，或原因码 `NvSelect` + 备注），为空时确认按钮 `disabled`；确认按钮用 `variant="destructive"`；原因随请求提交、进审计。
+5. **破坏性动作**（删除/停用/关闭/作废/回滚）：必须 `NvAlertDialog` 二次确认，且**原因必填**——确认框内含原因输入（`NvInput`，或原因码 `NvSelect` + 备注），**纯空白不算填**（判定用 `trim()`），为空时确认按钮 `disabled`；确认按钮用 `variant="destructive"`；原因随请求提交、进审计。
 
 ### 判定
 
@@ -133,7 +133,7 @@ PDA 表单承载另见 §6.2（单 Sheet ≤3 字段 + 拆步）。
 
 ❌ **三个动作全收菜单、行内零按钮** — 主数据行操作 `apps/business-console/src/components/masterData/MasterDataRowActions.vue:80`：查看详情/编辑/停用全部在下拉。按本节：查看详情由编码列 ID 链接承担；编辑（或停用）按各页频率提行内。
 
-❌ **破坏性确认无原因** — 停用确认只有说明文案、没有原因输入（`MasterDataRowActions.vue:120`）；关闭不合格品同（`quality/ncrs.vue:341`）。**v1 起新增的破坏性动作必须带原因输入**；存量随 W2/W3 各域 issue 补齐。
+❌ **破坏性确认无原因** — 曾经：停用确认只有说明文案、没有原因输入（主数据行操作、关闭不合格品）。**已整改**：质量关单原因在 NCR 关闭表单必填，主数据停用 / 重新启用原因随 #878 落地（`MasterDataRowActions.vue`、`master-data/workers.vue`，见下方目标写法即现网写法）。**规则不变：破坏性动作一律带原因输入**；其余域存量随各自 issue 补齐。
 
 ### 目标写法（原因必填）
 
@@ -146,7 +146,9 @@ PDA 表单承载另见 §6.2（单 Sheet ≤3 字段 + 拆步）。
     </NvAlertDialogHeader>
     <NvField>
       <NvFieldLabel for="disable-reason">停用原因 <span class="text-destructive">*</span></NvFieldLabel>
-      <Textarea id="disable-reason" v-model="disableReason" required />
+      <!-- 本库无 Textarea 组件；原因用 NvInput + maxlength 与服务端上限对齐（主数据为 500）。 -->
+      <NvInput id="disable-reason" v-model="disableReason" required :maxlength="500" />
+      <NvFieldDescription>原因会记入生命周期审计，可按对象回溯。</NvFieldDescription>
     </NvField>
     <NvAlertDialogFooter>
       <NvAlertDialogCancel>取消</NvAlertDialogCancel>

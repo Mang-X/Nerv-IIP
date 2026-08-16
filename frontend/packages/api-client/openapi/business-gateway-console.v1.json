@@ -48281,7 +48281,8 @@
         "required": [
           "organizationId",
           "environmentId",
-          "idempotencyKey"
+          "idempotencyKey",
+          "reason"
         ],
         "properties": {
           "organizationId": {
@@ -48311,7 +48312,8 @@
           "reason": {
             "type": "string",
             "maxLength": 500,
-            "minLength": 0
+            "minLength": 0,
+            "nullable": false
           },
           "effectiveFrom": {
             "type": "string",
