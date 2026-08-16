@@ -14,9 +14,25 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+$testEvidenceArtifactsLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceArtifacts.ps1'
 $testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
 $testEvidenceProvenanceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceProvenance.ps1'
 $facadeOwnedResponsibilityContracts = @(
+    [pscustomobject]@{
+        LibraryName = 'TestEvidenceArtifacts.ps1'
+        FunctionNames = @(
+            'New-NervTestEvidenceSummary',
+            'Write-NervUtf8NoBom',
+            'ConvertTo-NervEvidenceIdentity',
+            'Write-NervEvidenceOutputPath',
+            'New-NervNormalizedTrxFileNameSet',
+            'Add-NervNormalizedTrxFileName',
+            'Get-NervNormalizedTrxHashedFileName',
+            'Resolve-NervNormalizedTrxFileNames',
+            'Write-NervTestEvidenceArtifacts',
+            'Write-NervTestEvidenceFailureArtifacts'
+        )
+    },
     [pscustomobject]@{
         LibraryName = 'TestEvidenceBaseline.ps1'
         FunctionNames = @('New-NervTestEvidenceBaseline')
@@ -37,7 +53,7 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -73,6 +89,20 @@ function Get-NervDotSourceCommands {
         $node -is [Management.Automation.Language.CommandAst] -and
             $node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Dot
     }, $true))
+}
+
+function Assert-NervFacadeResponsibilityRegistryClosure {
+    param(
+        [Parameter(Mandatory)] [string[]] $ImportedLibraryNames,
+        [Parameter(Mandatory)] [object[]] $ResponsibilityContracts
+    )
+
+    [string[]]$actual = @(Get-NervOrdinalSorted -Unique -Values $ImportedLibraryNames)
+    [string[]]$registered = @(Get-NervOrdinalSorted -Unique -Values @(
+        $ResponsibilityContracts | ForEach-Object { [string]$_.LibraryName }
+    ))
+    Assert-True ([string]::Equals(($actual -join '|'), ($registered -join '|'), [StringComparison]::Ordinal)) `
+        "TestEvidence facade imports and responsibility registry must be identical. Actual=[$($actual -join ', ')] Registered=[$($registered -join ', ')]"
 }
 
 $testEvidenceConsumers = @(
@@ -114,6 +144,29 @@ $facadeOwnedLibraryNames = @($testEvidenceLibraryImports | ForEach-Object {
     Assert-Equal 1 $literalMatches.Count "TestEvidence facade imports must name one literal sibling library: $($_.Extent.Text)"
     [string]$literalMatches[0].Groups[1].Value
 })
+$facadeOwnedResponsibilityLibraryNames = @($facadeOwnedLibraryNames | Where-Object {
+    ([string]$_).StartsWith('TestEvidence', [StringComparison]::Ordinal) -and
+        -not [string]::Equals([string]$_, 'TestEvidence.ps1', [StringComparison]::Ordinal)
+})
+Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedResponsibilityLibraryNames `
+    -ResponsibilityContracts $facadeOwnedResponsibilityContracts
+
+$missingRegistryContracts = @($facadeOwnedResponsibilityContracts | Where-Object {
+    -not [string]::Equals([string]$_.LibraryName, 'TestEvidenceProvenance.ps1', [StringComparison]::Ordinal)
+})
+$missingRegistryFailure = $null
+try {
+    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedResponsibilityLibraryNames `
+        -ResponsibilityContracts $missingRegistryContracts
+}
+catch {
+    $missingRegistryFailure = $_.Exception.Message
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRegistryFailure)) `
+    'Removing an imported facade-owned library from the responsibility registry must fail closed.'
+Assert-True ([string]$missingRegistryFailure).Contains('TestEvidenceProvenance.ps1', [StringComparison]::Ordinal) `
+    'The missing-registry mutation failure must identify the imported Provenance library that escaped registration.'
+
 $expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('ScriptAutomation.ps1', 'TestEvidence.ps1') + @($facadeOwnedLibraryNames)))
 $actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
 Assert-True ([string]::Equals(($actualIsolatedLibraryNames -join '|'), ($expectedIsolatedLibraryNames -join '|'), [StringComparison]::Ordinal)) `
@@ -354,6 +407,37 @@ $collectorParseErrors = $null
 $collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
 $collectorAst = [Management.Automation.Language.Parser]::ParseFile($collectorPath, [ref]$collectorTokens, [ref]$collectorParseErrors)
 Assert-Equal 0 @($collectorParseErrors).Count 'collect-test-evidence.ps1 must parse before redaction ownership is inspected.'
+
+$expectedCollectorArtifactCalls = @(
+    [pscustomobject]@{ FunctionName = 'New-NervTestEvidenceSummary'; ExpectedCalls = 1 },
+    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceArtifacts'; ExpectedCalls = 1 },
+    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceFailureArtifacts'; ExpectedCalls = 1 },
+    [pscustomobject]@{ FunctionName = 'Write-NervEvidenceOutputPath'; ExpectedCalls = 2 }
+)
+foreach ($expectedCall in $expectedCollectorArtifactCalls) {
+    $actualCalls = @($collectorAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and
+            [string]::Equals([string]$node.GetCommandName(), [string]$expectedCall.FunctionName, [StringComparison]::Ordinal)
+    }, $true))
+    Assert-Equal ([int]$expectedCall.ExpectedCalls) $actualCalls.Count `
+        "collect-test-evidence.ps1 must retain exactly $($expectedCall.ExpectedCalls) '$($expectedCall.FunctionName)' call(s)."
+}
+
+$baselineGeneratorTokens = $null
+$baselineGeneratorParseErrors = $null
+$baselineGeneratorPath = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
+$baselineGeneratorAst = [Management.Automation.Language.Parser]::ParseFile(
+    $baselineGeneratorPath, [ref]$baselineGeneratorTokens, [ref]$baselineGeneratorParseErrors)
+Assert-Equal 0 @($baselineGeneratorParseErrors).Count `
+    'generate-test-evidence-baseline.ps1 must parse before Artifacts facade consumption is inspected.'
+$generatorUtf8Calls = @($baselineGeneratorAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        [string]::Equals([string]$node.GetCommandName(), 'Write-NervUtf8NoBom', [StringComparison]::Ordinal)
+}, $true))
+Assert-Equal 1 $generatorUtf8Calls.Count `
+    'generate-test-evidence-baseline.ps1 must retain exactly one facade-provided Write-NervUtf8NoBom call.'
 
 $middleManDefinitions = @($testEvidenceAst.FindAll({
     param($node)
