@@ -804,8 +804,15 @@ export function useWorkerRegistry(initial: Partial<WorkerDirectoryFilters> = {})
     createError: createMutation.error,
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) =>
       runAndRefresh(actions.update(code, patch)),
-    disable: (code: string) => runAndRefresh(actions.disable(code)),
-    enable: (code: string) => runAndRefresh(actions.enable(code)),
+    // 生命周期原因必须透传：后端对空原因稳定拒绝，且原因是审计事实的一部分（#878）。
+    disable: (
+      code: string,
+      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
+    ) => runAndRefresh(actions.disable(code, patch)),
+    enable: (
+      code: string,
+      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
+    ) => runAndRefresh(actions.enable(code, patch)),
   }
 }
 

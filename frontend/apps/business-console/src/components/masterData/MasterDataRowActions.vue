@@ -17,11 +17,15 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDropdownMenuItem,
+  NvField,
+  NvFieldDescription,
+  NvFieldLabel,
+  NvInput,
   NvRowActions,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from '@lucide/vue'
-import { ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 export interface DetailField {
@@ -36,10 +40,13 @@ const props = defineProps<{
   entityLabel: string
   /** 详情弹窗展示的字段（业务中文 label + 取自行的值）。 */
   detailFields: DetailField[]
-  /** 来自 useMasterDataResourceActions 的动作集合（停用/启用；编辑由页面自带表单处理）。 */
+  /**
+   * 来自 useMasterDataResourceActions 的动作集合（停用/启用；编辑由页面自带表单处理）。
+   * 第二个参数是补丁：生命周期原因由确认框收集后随请求提交（后端把它写进生命周期审计）。
+   */
   actions: {
-    disable: (code: string) => Promise<unknown>
-    enable: (code: string) => Promise<unknown>
+    disable: (code: string, patch?: { reason?: string }) => Promise<unknown>
+    enable: (code: string, patch?: { reason?: string }) => Promise<unknown>
     disablePending: { value: boolean }
     enablePending: { value: boolean }
   }
@@ -50,25 +57,49 @@ const emit = defineEmits<{ edit: [row: BusinessConsoleResourceItem] }>()
 
 const detailOpen = ref(false)
 const toggleOpen = ref(false)
+/**
+ * 停用 / 重新启用的业务原因：必填，随请求提交并进生命周期审计（#878）。
+ * 后端 `SetMasterDataResourceEnabledCommandHandler` 对空原因稳定拒绝，界面必须先拦住。
+ */
+const reason = ref('')
+// 本组件按行渲染（每行一个实例），label ↔ input 的 id 必须逐实例唯一。
+const reasonInputId = useId()
+const reasonMaxLength = 500
+
+const isActive = computed(() => props.row.active !== false)
+const actionLabel = computed(() => (isActive.value ? '停用' : '启用'))
+const togglePending = computed(
+  () => props.actions.disablePending.value || props.actions.enablePending.value,
+)
+const canConfirmToggle = computed(() => reason.value.trim().length > 0 && !togglePending.value)
+
+function openToggle() {
+  // 每次打开都从空白开始：上一条原因不能被当成这一次的理由带进审计。
+  reason.value = ''
+  toggleOpen.value = true
+}
 
 async function confirmToggle() {
   const code = props.row.code
-  if (!code) return
-  const isActive = props.row.active !== false
+  const trimmedReason = reason.value.trim()
+  if (!code || !trimmedReason) return
+  const active = isActive.value
   try {
-    if (isActive) {
-      await props.actions.disable(code)
+    if (active) {
+      await props.actions.disable(code, { reason: trimmedReason })
       notifySuccess(`${props.entityLabel}已停用。`)
     } else {
-      await props.actions.enable(code)
+      await props.actions.enable(code, { reason: trimmedReason })
       notifySuccess(`${props.entityLabel}已启用。`)
     }
     toggleOpen.value = false
+    reason.value = ''
   } catch (error) {
+    // 失败时保留已填原因：用户重试不必重新组织措辞。
     notifyOperationFailure(
-      `${props.entityLabel}${isActive ? '停用' : '启用'}失败`,
+      `${props.entityLabel}${active ? '停用' : '启用'}失败`,
       error,
-      `${props.entityLabel}${isActive ? '停用' : '启用'}失败，请稍后重试。`,
+      `${props.entityLabel}${active ? '停用' : '启用'}失败，请稍后重试。`,
     )
   }
 }
@@ -84,10 +115,10 @@ async function confirmToggle() {
       <PencilIcon aria-hidden="true" />
       编辑
     </NvDropdownMenuItem>
-    <NvDropdownMenuItem :disabled="!row.code" @click="toggleOpen = true">
-      <CircleSlashIcon v-if="row.active !== false" aria-hidden="true" />
+    <NvDropdownMenuItem :disabled="!row.code" @click="openToggle">
+      <CircleSlashIcon v-if="isActive" aria-hidden="true" />
       <PlayIcon v-else aria-hidden="true" />
-      {{ row.active !== false ? '停用' : '启用' }}
+      {{ actionLabel }}
     </NvDropdownMenuItem>
   </NvRowActions>
 
@@ -121,24 +152,40 @@ async function confirmToggle() {
     <NvAlertDialogContent>
       <NvAlertDialogHeader>
         <NvAlertDialogTitle>
-          {{ row.active !== false ? `确认停用该${entityLabel}？` : `确认启用该${entityLabel}？` }}
+          {{ isActive ? `确认停用该${entityLabel}？` : `确认启用该${entityLabel}？` }}
         </NvAlertDialogTitle>
         <NvAlertDialogDescription>
           {{
-            row.active !== false
+            isActive
               ? '停用后将不能用于新建/计划，已有记录不受影响。'
               : '启用后可重新用于新建与计划。'
           }}
         </NvAlertDialogDescription>
       </NvAlertDialogHeader>
+      <NvField>
+        <NvFieldLabel :for="reasonInputId">
+          {{ actionLabel }}原因 <span class="text-destructive">*</span>
+        </NvFieldLabel>
+        <NvInput
+          :id="reasonInputId"
+          v-model="reason"
+          data-testid="lifecycle-reason"
+          required
+          :maxlength="reasonMaxLength"
+          :placeholder="
+            isActive ? '说明停用依据，如设备报废、供应商终止合作' : '说明重新启用依据，如整改完成'
+          "
+        />
+        <NvFieldDescription>原因会记入生命周期审计，可按对象回溯。</NvFieldDescription>
+      </NvField>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
         <NvAlertDialogAction
-          :variant="row.active !== false ? 'destructive' : 'default'"
-          :disabled="actions.disablePending.value || actions.enablePending.value"
+          :variant="isActive ? 'destructive' : 'default'"
+          :disabled="!canConfirmToggle"
           @click="confirmToggle"
         >
-          {{ row.active !== false ? '确认停用' : '确认启用' }}
+          {{ isActive ? '确认停用' : '确认启用' }}
         </NvAlertDialogAction>
       </NvAlertDialogFooter>
     </NvAlertDialogContent>

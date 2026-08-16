@@ -11,8 +11,9 @@
 3. **API 调用发生在确认动作里**（`NvAlertDialogAction` 的 click handler）；确认按钮
    `variant="destructive"`，`pending` 时 disabled。
 4. **原因必填**（2026-07 W0 起对新增破坏性动作强制）：确认框内含原因输入
-   （`Textarea`，或原因码 `NvSelect` + 备注），为空时确认按钮 `disabled`；原因随请求提交、
-   进审计。存量随各域 issue 补齐。
+   （`NvInput`，或原因码 `NvSelect` + 备注），**纯空白不算填**（判定一律 `trim()`），
+   为空时确认按钮 `disabled`；原因随请求提交、进审计。存量随各域 issue 补齐。
+   `maxlength` 与服务端上限对齐（主数据生命周期原因为 500）。
 5. **单实例声明在页面层**：确认框放 `v-for` 外，由 `target` ref 指向当前行；不塞进表格组件。
 6. **Cancel 不禁用**：API 调用期间用户可以放弃等待（`NvAlertDialogCancel` 不跟 `pending`）。
 7. **`NvAlertDialogDescription` 不可省**：说清后果（「停用后将不能用于新建/计划，
@@ -31,11 +32,14 @@
 
 ## 正例
 
-容器/流程正确的现网锚点：`apps/business-console/src/components/masterData/MasterDataRowActions.vue`
-（`NvAlertDialog` 二次确认 + 后果描述 + toast 结果；**注意其原因输入尚缺**，属下方反例的
-整改对象——引用它时只抄容器与流程，不抄"无原因"）。
+现网锚点（容器、流程、原因必填全齐，可整体照抄）：
+`apps/business-console/src/components/masterData/MasterDataRowActions.vue`
+（`NvAlertDialog` 二次确认 + 后果描述 + 停用/启用原因必填 + toast 结果，#878）；
+同域另一形态见 `apps/business-console/src/pages/master-data/workers.vue`
+（确认框声明在页面层、由 `disableTarget`/`enableTarget` 指向当前行，符合规则 5）。
+契约由 `MasterDataRowActions.test.ts`（输入 / 禁用 / 提交 / 重置）钉住。
 
-目标骨架（含原因必填；与 `interaction-patterns.md` §2 目标写法一致）：
+骨架（含原因必填；与 `interaction-patterns.md` §2 目标写法一致）：
 
 ```vue
 <script setup lang="ts">
@@ -46,6 +50,7 @@ const pending = ref(false)
 
 function openConfirm(entity: Entity) {
   target.value = entity
+  // 每次打开都清空：上一条原因不能被当成这一次的理由带进审计。
   reason.value = ''
   confirmOpen.value = true
 }
@@ -83,7 +88,9 @@ async function confirmDisable() {
         <NvFieldLabel for="disable-reason"
           >停用原因 <span class="text-destructive">*</span></NvFieldLabel
         >
-        <Textarea id="disable-reason" v-model="reason" required />
+        <!-- 本库无 Textarea 组件；原因用 NvInput，maxlength 与服务端上限对齐。 -->
+        <NvInput id="disable-reason" v-model="reason" required :maxlength="500" />
+        <NvFieldDescription>原因会记入审计，可按对象回溯。</NvFieldDescription>
       </NvField>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
@@ -102,9 +109,13 @@ async function confirmDisable() {
 
 ## 反例
 
-❌ **破坏性确认无原因输入、原因不入审计** —— `/master-data/units` 停用确认框只有说明文案 +
-取消/确认停用，运行时抓取 reasonInputs=0、可直接点确认；质量「关闭不合格品」同
-（`quality/ncrs.vue` 的关闭确认）。出处：
-`frontend/DESIGN/roadmaps/2026-07-11-ux-walkthrough-findings.md` §3.1 P0-2
-（实机确认 + 截图 `masterdata-disable-confirm-no-reason.png`；源码
-`components/masterData/MasterDataRowActions.vue` 停用 `NvAlertDialog` 内无原因字段）。
+❌ **破坏性确认无原因输入、原因不入审计** —— 历史形态：`/master-data/units` 停用确认框只有
+说明文案 + 取消/确认停用，运行时抓取 reasonInputs=0、可直接点确认；质量「关闭不合格品」同。
+出处：`frontend/DESIGN/roadmaps/2026-07-11-ux-walkthrough-findings.md` §3.1 P0-2
+（实机确认 + 截图 `masterdata-disable-confirm-no-reason.png`）。
+**主数据与质量两处均已整改**（质量关单原因已在 NCR 关闭表单必填；主数据停用/启用见 #878），
+本条保留为形态反例。
+
+❌ **原因由代码写死、用户填不了** —— `master-data/product-categories.vue` /
+`skill-catalog.vue` 的停用把 `'不再使用'` 当原因直接发出去：审计里每条理由都一样，
+等于没有理由。这两页走的是产品工程侧 archive 端点、不在 #878 范围内，按各自域跟进。

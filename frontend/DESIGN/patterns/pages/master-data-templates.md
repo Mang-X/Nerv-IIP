@@ -187,8 +187,9 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 - **编辑**：`emit('edit', row)` 给页面 → 页面打开**全字段表单**（带回填，编码只读）。后端
   无 update 时 `disabled` + tooltip「编辑功能即将上线」。
 - **停用/启用**：`NvAlertDialog` 二次确认（文案：「停用后将不能用于新建/计划，已有记录不
-  受影响。」）+ **原因必填**（`interaction-patterns.md` §2 破坏性条款），结果走 toast；
-  **软删除，不物理删**。
+  受影响。」）+ **原因必填**（`interaction-patterns.md` §2 破坏性条款；原因随
+  `useMasterDataResourceActions` 的 patch 提交，进 MasterData 生命周期审计），结果走
+  toast；**软删除，不物理删**。
 
 **空状态**
 
@@ -211,7 +212,9 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 截图 `masterdata-rowactions-dropdown.png`；源码 `MasterDataRowActions.vue` 三个
 `NvDropdownMenuItem`）。
 
-❌ **停用确认无原因输入**：同上 §3.1 P0-2（详见 `../flows/confirm-destroy.md` 反例）。
+~~❌ **停用确认无原因输入**~~：同上 §3.1 P0-2，**已整改**（#878）——停用与重新启用确认框
+均含原因输入，空原因确认按钮 `disabled`，原因随请求进生命周期审计。现网写法见
+`../flows/confirm-destroy.md` 正例。
 
 ---
 

@@ -428,7 +428,8 @@ describe('master-data units page', () => {
     expect(stub.createUomConversion).not.toHaveBeenCalled()
   })
 
-  it('换算 Tab：行「停用」二次确认后调用换算的 disable', async () => {
+  it('换算 Tab：行「停用」二次确认填原因后携原因调用换算的 disable', async () => {
+    stub.conversionDisable.mockClear()
     const wrapper = mount(UnitsPage, {
       global: { stubs: { ...layoutStub, ...rowActionStubs, ...alertDialogStubs } },
     })
@@ -440,12 +441,21 @@ describe('master-data units page', () => {
     await disableItem!.trigger('click')
     await flushPromises()
 
-    const confirmBtn = wrapper.findAll('button').find((b) => b.text().includes('确认停用'))
-    expect(confirmBtn).toBeTruthy()
-    await confirmBtn!.trigger('click')
+    const confirmBtn = () => wrapper.findAll('button').find((b) => b.text().includes('确认停用'))!
+    // 原因必填：空着点确认不发请求（#878）。
+    expect(confirmBtn().attributes('disabled')).toBeDefined()
+    await confirmBtn().trigger('click')
+    await flushPromises()
+    expect(stub.conversionDisable).not.toHaveBeenCalled()
+
+    await wrapper.find('input[data-testid="lifecycle-reason"]').setValue('换算系数按新版工艺重定')
+    await flushPromises()
+    await confirmBtn().trigger('click')
     await flushPromises()
 
-    expect(stub.conversionDisable).toHaveBeenCalledWith('BOX→EA')
+    expect(stub.conversionDisable).toHaveBeenCalledWith('BOX→EA', {
+      reason: '换算系数按新版工艺重定',
+    })
   })
 
   it('换算 Tab：无换算时显示「去新建」空态', async () => {
