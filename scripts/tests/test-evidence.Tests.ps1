@@ -37,7 +37,7 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceBaseline.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -2734,6 +2734,7 @@ foreach ($registeredPath in @(
     'collect-test-evidence.ps1',
     'generate-test-evidence-baseline.ps1',
     'scripts/lib/TestEvidence.ps1',
+    'scripts/lib/TestEvidenceProvenance.ps1',
     'scripts/lib/TestEvidenceBaseline.ps1',
     'scripts/tests/test-evidence.Tests.ps1'
 )) {
@@ -2743,12 +2744,20 @@ Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
     [StringComparison]::Ordinal)) `
     'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains('### 三份收口声明', [StringComparison]::Ordinal)) `
-    'Script governance must count all three executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceProvenance.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains('### 四份收口声明', [StringComparison]::Ordinal)) `
+    'Script governance must count all four executable ordinal closure declarations.'
 Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
     [StringComparison]::Ordinal)) `
     'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceProvenance.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Provenance ordinal declaration.'
 
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
@@ -2888,6 +2897,8 @@ $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryP
 Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
 $baselineEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceBaselineLibraryPath -DisplayName 'TestEvidenceBaseline.ps1'
 Assert-True ($baselineEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceBaseline.ps1 must compare identifiers ordinally (#1509):`n  $(@($baselineEvidenceSweep.Findings) -join "`n  ")"
+$provenanceEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceProvenanceLibraryPath -DisplayName 'TestEvidenceProvenance.ps1'
+Assert-True ($provenanceEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceProvenance.ps1 must compare identifiers ordinally (#1509):`n  $(@($provenanceEvidenceSweep.Findings) -join "`n  ")"
 # Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
 # hit more than once is exempting call sites the reviewer of the original never saw.
 foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
