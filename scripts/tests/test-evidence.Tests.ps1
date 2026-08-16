@@ -14,6 +14,8 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
+$testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -73,12 +75,30 @@ foreach ($consumerPath in $testEvidenceConsumers) {
     Assert-Equal 1 $testEvidenceImports.Count "'$consumerPath' must dot-source TestEvidence.ps1 exactly once."
     Assert-True ($scriptAutomationImports[0].Extent.StartOffset -lt $testEvidenceImports[0].Extent.StartOffset) `
         "'$consumerPath' must load ScriptAutomation.ps1 before TestEvidence.ps1."
+    Assert-Equal 0 @($dotSourceCommands | Where-Object {
+        $_.Extent.Text.Contains('TestEvidenceBaseline.ps1', [StringComparison]::Ordinal)
+    }).Count "'$consumerPath' must load the Baseline library only through the TestEvidence facade."
 }
 
 $testEvidenceLibraryImports = @(Get-NervDotSourceCommands -Path $testEvidenceLibraryPath)
 Assert-Equal 0 @($testEvidenceLibraryImports | Where-Object {
     $_.Extent.Text.Contains('ScriptAutomation.ps1', [StringComparison]::Ordinal)
 }).Count 'TestEvidence.ps1 must not hide its caller-owned ScriptAutomation dependency with a self-import.'
+
+$facadeOwnedLibraryNames = @($testEvidenceLibraryImports | ForEach-Object {
+    $literalMatches = [regex]::Matches([string]$_.Extent.Text, "'([^']+\.ps1)'")
+    Assert-Equal 1 $literalMatches.Count "TestEvidence facade imports must name one literal sibling library: $($_.Extent.Text)"
+    [string]$literalMatches[0].Groups[1].Value
+})
+$expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('ScriptAutomation.ps1', 'TestEvidence.ps1') + @($facadeOwnedLibraryNames)))
+$actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
+Assert-True ([string]::Equals(($actualIsolatedLibraryNames -join '|'), ($expectedIsolatedLibraryNames -join '|'), [StringComparison]::Ordinal)) `
+    "The composite-key mutation harness copy set must equal the TestEvidence facade closure. Expected=[$($expectedIsolatedLibraryNames -join ', ')] Actual=[$($actualIsolatedLibraryNames -join ', ')]"
+foreach ($facadeOwnedLibraryName in $facadeOwnedLibraryNames) {
+    $facadeOwnedLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $facadeOwnedLibraryName
+    Assert-Equal 0 @(Get-NervDotSourceCommands -Path $facadeOwnedLibraryPath).Count `
+        "TestEvidence facade-owned library '$facadeOwnedLibraryName' must remain a leaf so the isolated copy set is the complete dependency closure."
+}
 
 $redactionContractCases = @(
     [pscustomobject]@{ Name = 'null'; Input = $null; Expected = ''; Secrets = @() },
@@ -225,6 +245,62 @@ $testEvidenceTokens = $null
 $testEvidenceParseErrors = $null
 $testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
 Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
+Assert-True (Test-Path -LiteralPath $testEvidenceBaselineLibraryPath -PathType Leaf) `
+    'TestEvidenceBaseline.ps1 must exist as the facade-owned Baseline responsibility library.'
+$testEvidenceBaselineTokens = $null
+$testEvidenceBaselineParseErrors = $null
+$testEvidenceBaselineAst = [Management.Automation.Language.Parser]::ParseFile(
+    $testEvidenceBaselineLibraryPath, [ref]$testEvidenceBaselineTokens, [ref]$testEvidenceBaselineParseErrors)
+Assert-Equal 0 @($testEvidenceBaselineParseErrors).Count 'TestEvidenceBaseline.ps1 must parse before its ownership contract is inspected.'
+
+$facadeBaselineDefinitions = @($testEvidenceAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        [string]::Equals([string]$node.Name, 'New-NervTestEvidenceBaseline', [StringComparison]::Ordinal)
+}, $true))
+$baselineLibraryDefinitions = @($testEvidenceBaselineAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst]
+}, $true))
+Assert-Equal 0 $facadeBaselineDefinitions.Count 'TestEvidence.ps1 must not define New-NervTestEvidenceBaseline after the responsibility split.'
+Assert-Equal 1 $baselineLibraryDefinitions.Count 'TestEvidenceBaseline.ps1 must define exactly one function.'
+Assert-True ([string]::Equals([string]$baselineLibraryDefinitions[0].Name, 'New-NervTestEvidenceBaseline', [StringComparison]::Ordinal)) `
+    'TestEvidenceBaseline.ps1 must own New-NervTestEvidenceBaseline and no sibling responsibility.'
+
+$facadeBaselineImports = @($testEvidenceLibraryImports | Where-Object {
+    $_.Extent.Text.Contains('TestEvidenceBaseline.ps1', [StringComparison]::Ordinal)
+})
+Assert-Equal 1 $facadeBaselineImports.Count 'TestEvidence.ps1 must dot-source TestEvidenceBaseline.ps1 exactly once.'
+$facadeFunctions = @($testEvidenceAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst]
+}, $true))
+$lastFacadeFunctionEnd = (@($facadeFunctions | ForEach-Object { [int]$_.Extent.EndOffset }) | Measure-Object -Maximum).Maximum
+Assert-True ($facadeBaselineImports[0].Extent.StartOffset -ge $lastFacadeFunctionEnd) `
+    'TestEvidence.ps1 must load TestEvidenceBaseline.ps1 after all facade-owned dependency helpers are defined.'
+
+$expectedBaselineHelperNames = @(
+    'Get-NervOrdinalCompositeKey',
+    'Get-NervOrdinalGroups',
+    'Get-NervOrdinalSorted',
+    'Get-NervOrdinalSortedBy',
+    'Get-NervTestEvidenceLaneJobs',
+    'Test-NervOrdinalEquals',
+    'Test-NervTestEvidenceLaneName'
+)
+$actualBaselineHelperNames = @(Get-NervOrdinalSorted -Unique -Values @($baselineLibraryDefinitions[0].Body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and
+        $null -ne $node.GetCommandName() -and
+        $node.GetCommandName().Contains('-Nerv', [StringComparison]::Ordinal)
+}, $true) | ForEach-Object { [string]$_.GetCommandName() }))
+Assert-True ([string]::Equals(($actualBaselineHelperNames -join '|'), ($expectedBaselineHelperNames -join '|'), [StringComparison]::Ordinal)) `
+    "New-NervTestEvidenceBaseline helper ownership changed. Expected=[$($expectedBaselineHelperNames -join ', ')] Actual=[$($actualBaselineHelperNames -join ', ')]"
+
+$baselineLibrarySource = [IO.File]::ReadAllText($testEvidenceBaselineLibraryPath)
+Assert-True ($baselineLibrarySource.Contains('# Script-Governance:', [StringComparison]::Ordinal) -and
+    $baselineLibrarySource.Contains('#   Category: library', [StringComparison]::Ordinal)) `
+    'TestEvidenceBaseline.ps1 must declare the Script-Governance library header.'
 $collectorTokens = $null
 $collectorParseErrors = $null
 $collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
@@ -579,12 +655,14 @@ function Test-NervProductionCompositeKeyCallsites {
         [pscustomobject]@{
             Name = 'baseline-aggregate-1606'
             Fixture = 'baseline-aggregate'
+            TargetLibrary = 'TestEvidenceBaseline.ps1'
             Original = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
             Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
         },
         [pscustomobject]@{
             Name = 'baseline-identity-projection-1653'
             Fixture = 'baseline-aggregate'
+            TargetLibrary = 'TestEvidenceBaseline.ps1'
             Original = "            lane = `$items[0].lane`n            assembly = `$items[0].assembly"
             Mutated = "            lane = [string]`$items[0].lane`n            assembly = [string]`$items[0].assembly"
         },
@@ -632,7 +710,7 @@ function Test-NervProductionCompositeKeyCallsites {
             $caseRoot = Join-Path $mutationRoot $case.Name
             $libraryRoot = Join-Path $caseRoot 'lib'
             [IO.Directory]::CreateDirectory($libraryRoot) | Out-Null
-            foreach ($libraryName in @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1')) {
+            foreach ($libraryName in $isolatedTestEvidenceLibraryNames) {
                 Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $libraryRoot $libraryName)
             }
             $mutationTargetLibrary = if ($case.PSObject.Properties.Match('TargetLibrary').Count -eq 1) {
@@ -2604,9 +2682,25 @@ foreach ($registeredScriptPath in @(
     Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
 }
 $scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
-foreach ($registeredPath in @('collect-test-evidence.ps1', 'generate-test-evidence-baseline.ps1', 'scripts/lib/TestEvidence.ps1', 'scripts/tests/test-evidence.Tests.ps1')) {
+foreach ($registeredPath in @(
+    'collect-test-evidence.ps1',
+    'generate-test-evidence-baseline.ps1',
+    'scripts/lib/TestEvidence.ps1',
+    'scripts/lib/TestEvidenceBaseline.ps1',
+    'scripts/tests/test-evidence.Tests.ps1'
+)) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
+Assert-True ($scriptGovernanceDoc.Contains('### 三份收口声明', [StringComparison]::Ordinal)) `
+    'Script governance must count all three executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
 
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
@@ -2744,6 +2838,8 @@ foreach ($capturedScopeCandidate in @(
 $evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidence.ps1'
 Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
+$baselineEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceBaselineLibraryPath -DisplayName 'TestEvidenceBaseline.ps1'
+Assert-True ($baselineEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceBaseline.ps1 must compare identifiers ordinally (#1509):`n  $(@($baselineEvidenceSweep.Findings) -join "`n  ")"
 # Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
 # hit more than once is exempting call sites the reviewer of the original never saw.
 foreach ($exceptionKey in @($evidenceSweep.ExceptionHits.Keys)) {
