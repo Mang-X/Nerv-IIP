@@ -73,7 +73,7 @@
 ### 3.1 阻断作业 / 高优
 
 - **P0-1 主数据人员目录接口 400，人员选择器全空**（门禁未拦，见 §4；修复中 PR #867 未合并 / 追踪 #868）。复现：登录 → `/master-data/organization`（或 `/master-data/skills`、`/mes/dispatch`）。前端 `useBusinessMasterData.ts:600` 发 `pageIndex: 0`，网关 `BusinessConsoleWorkerDirectoryRequestValidator`（`BusinessConsoleMasterDataEndpoints.cs:585`）`RuleFor(x => x.PageIndex).GreaterThan(0)`（1-based）→ **HTTP 400**，人员/班组选择器静默空。违反：功能正确性（非 A1 条款，但直接阻断派工/技能登记）。证据：运行时抓包 body `{"errors":{"pageIndex":["'pageIndex' 必须大于 '0'"]}}`；页面见 [masterdata-organization-empty-cta.png](assets/2026-07-11-ux-walkthrough/masterdata-organization-empty-cta.png)。建议（修复中，PR #867 未合并）：前端改 1-based（`pageIndex: 1`）+ 前后端各一条契约测试。**实机复验（fix 分支起栈）**：三处页面 workers 请求全部 `HTTP 200`，响应含真实工人 `user-admin`（`total: 1`；worker 目录 = IAM 用户，本地 seed 仅 admin 一名）；`/master-data/skills` → 登记技能的「工人」选择器实机渲染出真实条目 `admin`（[masterdata-skills-worker-selector-admin.png](assets/2026-07-11-ux-walkthrough/masterdata-skills-worker-selector-admin.png)）——修复前为 400、选择器空。
-- **P0-2 破坏性动作无原因、原因不入审计**（运行时确认）。复现：`/master-data/units` 行 `...` → 停用 → 确认框只有说明文案"确认停用该计量单位？停用后将不能用于新建/计划…"和 取消/确认停用，**无原因输入**（运行时抓取 reasonInputs=0，可直接点"确认停用"）。质量"关闭不合格品"同（源码为准）。违反 **§2 破坏性条款**（`NvAlertDialog` + 原因必填 + 随请求进审计）。证据：[masterdata-disable-confirm-no-reason.png](assets/2026-07-11-ux-walkthrough/masterdata-disable-confirm-no-reason.png)；`components/masterData/MasterDataRowActions.vue`（`toggleOpen` 触发的 `NvAlertDialog` 停用确认，内无原因输入字段）、`quality/ncrs.vue:404`（关闭不合格品 `NvAlertDialog`；head 行号，下同）。建议：按 §2 目标写法补原因输入 + `disabled` 门禁 + 提交入审计。
+- **P0-2 破坏性动作无原因、原因不入审计**（运行时确认）。复现：`/master-data/units` 行 `...` → 停用 → 确认框只有说明文案"确认停用该计量单位？停用后将不能用于新建/计划…"和 取消/确认停用，**无原因输入**（运行时抓取 reasonInputs=0，可直接点"确认停用"）。质量"关闭不合格品"同（源码为准）。违反 **§2 破坏性条款**（`NvAlertDialog` + 原因必填 + 随请求进审计）。证据：[masterdata-disable-confirm-no-reason.png](assets/2026-07-11-ux-walkthrough/masterdata-disable-confirm-no-reason.png)；`components/masterData/MasterDataRowActions.vue`（`toggleOpen` 触发的 `NvAlertDialog` 停用确认，内无原因输入字段）、`quality/ncrs.vue:404`（关闭不合格品 `NvAlertDialog`；head 行号，下同）。建议：按 §2 目标写法补原因输入 + `disabled` 门禁 + 提交入审计。**主数据侧已整改（#878）**：`MasterDataRowActions.vue` 的停用/重新启用确认框、`master-data/workers.vue` 的停用/恢复确认框均含原因输入，原因为空（含纯空白）时「确认」`disabled`，原因随 `disable`/`enable` 请求提交并进 MasterData 生命周期审计；网关 validator 同口径补非空校验。质量「关闭不合格品」的关闭原因此前已必填。
 
 ### 3.2 低效 / 中优
 
@@ -149,20 +149,20 @@
 
 ## 6. Top 问题 → issue 去向（草案标题 + 归属批次 + 验收）
 
-| #            | 草案标题                                                | 严重度 | 归属批次 / 链接                                      | 验收要点                                                              |
-| ------------ | ------------------------------------------------------- | ------ | ---------------------------------------------------- | --------------------------------------------------------------------- |
-| P0-1         | 人员目录分页 pageIndex 0/1-based 契约错位致 workers 400 | 阻断   | **已建 bug #868 / 修复中 PR #867（门禁绿·未合并）**  | 前端发 1-based；三处人员选择器实机可见数据；前后端各一契约测试        |
-| P0-2         | 破坏性动作补原因必填 + 入审计（主数据/质量优先）        | 阻断   | 并入各域 W2/W3（`type:enhancement` `area:frontend`） | 停用/关闭确认框含原因输入，空则 `disabled`，原因随请求进审计          |
-| P1-1/1-2/1-5 | MES 表单承载分级 + 完工入库成功引导 + 跨域失效链        | 低效   | 并入 MES W2 交互重设计                               | receipts/report 改 Sheet；成功态给出路≥2；入库 `onSuccess` 失效库存键 |
-| P1-3         | 工程 ECO 改独立页 + 承载分级                            | 低效   | 并入工程 W2                                          | ECO 详情独立页 `/engineering/eco/[id]`；创建改 Sheet/独立页           |
-| P1-4         | 质量 NCR 改独立页 + 行内动作                            | 低效   | 并入质量 W2                                          | NCR 独立页 `/quality/ncrs/[id]`；处置提行内                           |
-| P1-6         | MES 工序执行筛选进 URL                                  | 低效   | 并入 MES W2（照抄库存域先例）                        | 新标签同结果、返回不丢                                                |
-| P1-7         | 批量形态在业务页接入（横切）                            | 低效   | **横切 issue**（样板 1 个 + 各域跟进）               | `selectable` + `#bulk-actions`；破坏性批量条数复述 + 原因             |
-| P2-6         | 维护工单高频动作提行内                                  | 观感   | 并入维护 W2                                          | 派工/执行/完成按状态行内 1 次直达                                     |
-| P2-7         | 设备/审批 0 数据空态 CTA（替换骨架态）                  | 观感   | 并入设备/审批 W2                                     | 0 记录时显空态 + 下一步链接，不显长期骨架                             |
-| P2-4/2-5     | PDA 步骤条 + 数字键盘接入                               | 观感   | 并入 PDA W2/W3                                       | `Steps` 全程可见步骤名；数量/测量走 `NumberKeyboard`                  |
-| PDA-状态     | PDA 工单"未知状态"映射修正（报工 + 工序执行）           | 观感   | 并入 PDA W2                                          | 工单状态正确显示（released 等），核对 facade 字段                     |
-| P2-8         | PDA 设备报警显示原始设备 GUID → 改人读设备号            | 观感   | 并入 PDA W2                                          | 报警行显示 `DEV-*` 人读编号而非内部 id                                |
+| #            | 草案标题                                                | 严重度 | 归属批次 / 链接                                     | 验收要点                                                              |
+| ------------ | ------------------------------------------------------- | ------ | --------------------------------------------------- | --------------------------------------------------------------------- |
+| P0-1         | 人员目录分页 pageIndex 0/1-based 契约错位致 workers 400 | 阻断   | **已建 bug #868 / 修复中 PR #867（门禁绿·未合并）** | 前端发 1-based；三处人员选择器实机可见数据；前后端各一契约测试        |
+| P0-2         | 破坏性动作补原因必填 + 入审计（主数据/质量优先）        | 阻断   | **主数据 #878 已交付**；其余域并入各域 W2/W3        | 停用/关闭确认框含原因输入，空则 `disabled`，原因随请求进审计          |
+| P1-1/1-2/1-5 | MES 表单承载分级 + 完工入库成功引导 + 跨域失效链        | 低效   | 并入 MES W2 交互重设计                              | receipts/report 改 Sheet；成功态给出路≥2；入库 `onSuccess` 失效库存键 |
+| P1-3         | 工程 ECO 改独立页 + 承载分级                            | 低效   | 并入工程 W2                                         | ECO 详情独立页 `/engineering/eco/[id]`；创建改 Sheet/独立页           |
+| P1-4         | 质量 NCR 改独立页 + 行内动作                            | 低效   | 并入质量 W2                                         | NCR 独立页 `/quality/ncrs/[id]`；处置提行内                           |
+| P1-6         | MES 工序执行筛选进 URL                                  | 低效   | 并入 MES W2（照抄库存域先例）                       | 新标签同结果、返回不丢                                                |
+| P1-7         | 批量形态在业务页接入（横切）                            | 低效   | **横切 issue**（样板 1 个 + 各域跟进）              | `selectable` + `#bulk-actions`；破坏性批量条数复述 + 原因             |
+| P2-6         | 维护工单高频动作提行内                                  | 观感   | 并入维护 W2                                         | 派工/执行/完成按状态行内 1 次直达                                     |
+| P2-7         | 设备/审批 0 数据空态 CTA（替换骨架态）                  | 观感   | 并入设备/审批 W2                                    | 0 记录时显空态 + 下一步链接，不显长期骨架                             |
+| P2-4/2-5     | PDA 步骤条 + 数字键盘接入                               | 观感   | 并入 PDA W2/W3                                      | `Steps` 全程可见步骤名；数量/测量走 `NumberKeyboard`                  |
+| PDA-状态     | PDA 工单"未知状态"映射修正（报工 + 工序执行）           | 观感   | 并入 PDA W2                                         | 工单状态正确显示（released 等），核对 facade 字段                     |
+| P2-8         | PDA 设备报警显示原始设备 GUID → 改人读设备号            | 观感   | 并入 PDA W2                                         | 报警行显示 `DEV-*` 人读编号而非内部 id                                |
 
 > 说明：除 P0-1 已有独立 bug（#868）+ 修复 PR（#867）外，其余为交互重设计条目，按上表归属各域 W2/W3 或横切 issue。本走查文档（#815 / PR #865）作为这些 issue 的验收事实来源被引用。
 

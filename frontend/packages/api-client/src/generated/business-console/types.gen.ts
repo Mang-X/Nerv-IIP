@@ -5139,7 +5139,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     environmentId: string;
     idempotencyKey: string;
     codeSet?: string | null;
-    reason?: string;
+    reason: string;
     effectiveFrom?: string | null;
 };
 

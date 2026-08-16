@@ -22,6 +22,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -197,30 +198,61 @@ async function submitForm() {
   }
 }
 
+// 停用 / 恢复都是生命周期变更：原因必填，随请求提交并进生命周期审计（#878）。
+// 后端 `SetMasterDataResourceEnabledCommandHandler` 对空原因稳定拒绝，界面先拦住。
+const LIFECYCLE_REASON_MAX_LENGTH = 500
+
 const disableOpen = shallowRef(false)
 const disableTarget = shallowRef<BusinessConsoleWorkerDirectoryItem | null>(null)
+const disableReason = ref('')
+const canConfirmDisable = computed(
+  () => disableReason.value.trim().length > 0 && !disablePending.value,
+)
 function openDisable(row: BusinessConsoleWorkerDirectoryItem) {
   if (!row.employeeNo) return
   disableTarget.value = row
+  // 每次打开都从空白开始：上一条原因不能被当成这一次的理由带进审计。
+  disableReason.value = ''
   disableOpen.value = true
 }
 async function confirmDisable() {
   const target = disableTarget.value
-  if (!target?.employeeNo) return
+  const reason = disableReason.value.trim()
+  if (!target?.employeeNo || !reason) return
   try {
-    await disable(target.employeeNo)
+    await disable(target.employeeNo, { reason })
     notifySuccess(`员工「${target.displayName}」已停用。`)
     disableOpen.value = false
     disableTarget.value = null
+    disableReason.value = ''
   } catch (error) {
+    // 失败时保留已填原因，重试不必重新组织措辞。
     notifyOperationFailure('停用员工失败', error, '停用员工失败，请稍后重试。')
   }
 }
-async function restore(row: BusinessConsoleWorkerDirectoryItem) {
+
+const enableOpen = shallowRef(false)
+const enableTarget = shallowRef<BusinessConsoleWorkerDirectoryItem | null>(null)
+const enableReason = ref('')
+const canConfirmRestore = computed(
+  () => enableReason.value.trim().length > 0 && !enablePending.value,
+)
+function openRestore(row: BusinessConsoleWorkerDirectoryItem) {
   if (!row.employeeNo) return
+  enableTarget.value = row
+  enableReason.value = ''
+  enableOpen.value = true
+}
+async function confirmRestore() {
+  const target = enableTarget.value
+  const reason = enableReason.value.trim()
+  if (!target?.employeeNo || !reason) return
   try {
-    await enable(row.employeeNo)
-    notifySuccess(`员工「${row.displayName}」已恢复。`)
+    await enable(target.employeeNo, { reason })
+    notifySuccess(`员工「${target.displayName}」已恢复。`)
+    enableOpen.value = false
+    enableTarget.value = null
+    enableReason.value = ''
   } catch (error) {
     notifyOperationFailure('恢复员工失败', error, '恢复员工失败，请稍后重试。')
   }
@@ -406,8 +438,7 @@ async function restore(row: BusinessConsoleWorkerDirectoryItem) {
             type="button"
             variant="ghost"
             size="sm"
-            :disabled="enablePending"
-            @click="restore(row)"
+            @click="openRestore(row)"
             >恢复</NvButton
           >
           <NvButton v-else type="button" variant="ghost" size="sm" @click="openDisable(row)"
@@ -425,11 +456,55 @@ async function restore(row: BusinessConsoleWorkerDirectoryItem) {
             停用后「{{ disableTarget?.displayName }}」不再出现在派工与班组候选中，历史记录保留。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
+        <NvField>
+          <NvFieldLabel for="worker-disable-reason">
+            停用原因 <span class="text-destructive">*</span>
+          </NvFieldLabel>
+          <NvInput
+            id="worker-disable-reason"
+            v-model="disableReason"
+            required
+            :maxlength="LIFECYCLE_REASON_MAX_LENGTH"
+            placeholder="说明停用依据，如离职、转岗至外协单位"
+          />
+          <NvFieldDescription>原因会记入生命周期审计，可按员工回溯。</NvFieldDescription>
+        </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="disablePending" @click="confirmDisable">
+          <NvAlertDialogAction :disabled="!canConfirmDisable" @click="confirmDisable">
             <Spinner v-if="disablePending" aria-hidden="true" />
             确认停用
+          </NvAlertDialogAction>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="enableOpen">
+      <NvAlertDialogContent>
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>恢复员工</NvAlertDialogTitle>
+          <NvAlertDialogDescription>
+            恢复后「{{ enableTarget?.displayName }}」重新进入派工与班组候选。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvField>
+          <NvFieldLabel for="worker-enable-reason">
+            恢复原因 <span class="text-destructive">*</span>
+          </NvFieldLabel>
+          <NvInput
+            id="worker-enable-reason"
+            v-model="enableReason"
+            required
+            :maxlength="LIFECYCLE_REASON_MAX_LENGTH"
+            placeholder="说明恢复依据，如返岗复工"
+          />
+          <NvFieldDescription>原因会记入生命周期审计，可按员工回溯。</NvFieldDescription>
+        </NvField>
+        <NvAlertDialogFooter>
+          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+          <NvAlertDialogAction :disabled="!canConfirmRestore" @click="confirmRestore">
+            <Spinner v-if="enablePending" aria-hidden="true" />
+            确认恢复
           </NvAlertDialogAction>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>

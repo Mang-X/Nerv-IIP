@@ -203,6 +203,60 @@ describe('master-data workers page', () => {
     expect(body.code).toBeNull()
   })
 
+  it('停用员工必须填原因，空原因不发请求；填写后原因随请求提交', async () => {
+    stub.disable.mockClear()
+    const wrapper = mount(WorkersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '停用')!
+      .trigger('click')
+    await flushPromises()
+
+    const confirm = () => wrapper.findAll('button').find((b) => b.text().includes('确认停用'))!
+    expect(confirm().attributes('disabled')).toBeDefined()
+    await confirm().trigger('click')
+    await flushPromises()
+    expect(stub.disable).not.toHaveBeenCalled()
+
+    await wrapper.find('#worker-disable-reason').setValue('  转岗至外协单位  ')
+    await flushPromises()
+    await confirm().trigger('click')
+    await flushPromises()
+
+    expect(stub.disable).toHaveBeenCalledWith('EMP-1001', { reason: '转岗至外协单位' })
+  })
+
+  it('恢复员工同样先二次确认并必填原因', async () => {
+    stub.enable.mockClear()
+    stub.workers[0]!.active = false
+    const wrapper = mount(WorkersPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '恢复')!
+      .trigger('click')
+    await flushPromises()
+    // 点「恢复」只开确认框，不直接发请求。
+    expect(stub.enable).not.toHaveBeenCalled()
+
+    const confirm = () => wrapper.findAll('button').find((b) => b.text().includes('确认恢复'))!
+    expect(confirm().attributes('disabled')).toBeDefined()
+    await wrapper.find('#worker-enable-reason').setValue('返岗复工')
+    await flushPromises()
+    await confirm().trigger('click')
+    await flushPromises()
+
+    expect(stub.enable).toHaveBeenCalledWith('EMP-1001', { reason: '返岗复工' })
+    stub.workers[0]!.active = true
+  })
+
   it('edits a worker through the employee number as its identity', async () => {
     stub.update.mockClear()
     const wrapper = mount(WorkersPage, {
