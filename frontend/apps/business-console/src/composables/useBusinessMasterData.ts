@@ -85,6 +85,22 @@ export interface MasterDataListFilters extends BusinessContextFilters {
   take: number
 }
 
+/**
+ * 停用 / 重新启用的请求补丁：**`reason` 必填**（#878）。
+ *
+ * 生成契约里 `reason` 已是必填字段，这里不能再用 `Partial<...>` 把它弱化回可省略——
+ * 那正是本票要消除的原始漏传路径：`actions.disable(code)` 编译期通过、运行期被后端稳定拒绝。
+ * 类型级契约由 `useBusinessMasterData.lifecycleReason.test.ts` 的 `@ts-expect-error` 钉住。
+ *
+ * `organizationId` / `environmentId` / `idempotencyKey` 由动作自己补齐，调用方不必传。
+ */
+export interface MasterDataLifecyclePatch extends Partial<
+  Omit<BusinessConsoleSetMasterDataResourceEnabledRequest, 'reason'>
+> {
+  /** 用户填写的业务原因，随请求提交并进生命周期审计。 */
+  reason: string
+}
+
 export interface MasterDataResourceFilters extends MasterDataListFilters {
   codeSet?: string
   resourceType: string
@@ -641,18 +657,13 @@ export function useMasterDataResourceActions(resourceType: string) {
   return {
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) =>
       callPathBody(updateMutation, code, patch),
-    disable: (
-      code: string,
-      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) =>
+    // patch 无默认值：漏传 reason 必须编译失败，而不是留到运行期被后端拒。
+    disable: (code: string, patch: MasterDataLifecyclePatch) =>
       callPathBody(disableMutation, code, {
         idempotencyKey: newCreateIdempotencyKey(`disable-${resourceType}-${code}`),
         ...patch,
       }),
-    enable: (
-      code: string,
-      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) =>
+    enable: (code: string, patch: MasterDataLifecyclePatch) =>
       callPathBody(enableMutation, code, {
         idempotencyKey: newCreateIdempotencyKey(`enable-${resourceType}-${code}`),
         ...patch,
@@ -805,14 +816,10 @@ export function useWorkerRegistry(initial: Partial<WorkerDirectoryFilters> = {})
     update: (code: string, patch: Partial<BusinessConsoleUpdateMasterDataResourceRequest>) =>
       runAndRefresh(actions.update(code, patch)),
     // 生命周期原因必须透传：后端对空原因稳定拒绝，且原因是审计事实的一部分（#878）。
-    disable: (
-      code: string,
-      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) => runAndRefresh(actions.disable(code, patch)),
-    enable: (
-      code: string,
-      patch: Partial<BusinessConsoleSetMasterDataResourceEnabledRequest> = {},
-    ) => runAndRefresh(actions.enable(code, patch)),
+    disable: (code: string, patch: MasterDataLifecyclePatch) =>
+      runAndRefresh(actions.disable(code, patch)),
+    enable: (code: string, patch: MasterDataLifecyclePatch) =>
+      runAndRefresh(actions.enable(code, patch)),
   }
 }
 

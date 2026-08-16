@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
+import type { MasterDataLifecyclePatch } from '@/composables/useBusinessMasterData'
 import {
   NvAlertDialog,
   NvAlertDialogAction,
@@ -42,11 +43,12 @@ const props = defineProps<{
   detailFields: DetailField[]
   /**
    * 来自 useMasterDataResourceActions 的动作集合（停用/启用；编辑由页面自带表单处理）。
-   * 第二个参数是补丁：生命周期原因由确认框收集后随请求提交（后端把它写进生命周期审计）。
+   * 补丁里的 `reason` 是**必填**：由确认框收集后随请求提交，后端写进生命周期审计。
+   * 用 MasterDataLifecyclePatch 而不是自定义可选形状——否则组件这层又把必填约束松掉了。
    */
   actions: {
-    disable: (code: string, patch?: { reason?: string }) => Promise<unknown>
-    enable: (code: string, patch?: { reason?: string }) => Promise<unknown>
+    disable: (code: string, patch: MasterDataLifecyclePatch) => Promise<unknown>
+    enable: (code: string, patch: MasterDataLifecyclePatch) => Promise<unknown>
     disablePending: { value: boolean }
     enablePending: { value: boolean }
   }

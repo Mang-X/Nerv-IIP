@@ -213,8 +213,13 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 `NvDropdownMenuItem`）。
 
 ~~❌ **停用确认无原因输入**~~：同上 §3.1 P0-2，**已整改**（#878）——停用与重新启用确认框
-均含原因输入，空原因确认按钮 `disabled`，原因随请求进生命周期审计。现网写法见
-`../flows/confirm-destroy.md` 正例。
+均含原因输入，空原因确认按钮 `disabled`，原因随请求进生命周期审计。可整体照抄的现网写法见
+`../flows/confirm-destroy.md` 正例（`master-data/workers.vue`）。
+
+❌ **确认框按行实例化**：`MasterDataRowActions.vue` 自身含 `NvAlertDialog`，又在各表
+`#cell-actions` 里逐行渲染，一页 N 行即 N 个确认框，违反 `../flows/confirm-destroy.md`
+规则 5「单实例声明在页面层」。#878 之前即如此，只补了原因必填未收敛承载；作为存量例外由
+#1591 跟踪。**照抄本组件时只抄原因必填那一段，不要抄容器结构。**
 
 ---
 

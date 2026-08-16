@@ -32,12 +32,19 @@
 
 ## 正例
 
-现网锚点（容器、流程、原因必填全齐，可整体照抄）：
+**可整体照抄的现网锚点**：`apps/business-console/src/pages/master-data/workers.vue`
+——确认框声明在**页面层**、由 `disableTarget` / `enableTarget` 指向当前行（规则 5），
+停用与恢复各一个 `NvAlertDialog`，含后果描述、原因必填、`disabled` 门禁与 toast 结果（#878）。
+
+**只可照抄「原因必填」这一段、不可照抄容器结构**：
 `apps/business-console/src/components/masterData/MasterDataRowActions.vue`
-（`NvAlertDialog` 二次确认 + 后果描述 + 停用/启用原因必填 + toast 结果，#878）；
-同域另一形态见 `apps/business-console/src/pages/master-data/workers.vue`
-（确认框声明在页面层、由 `disableTarget`/`enableTarget` 指向当前行，符合规则 5）。
-契约由 `MasterDataRowActions.test.ts`（输入 / 禁用 / 提交 / 重置）钉住。
+——它自身包含 `NvAlertDialog`，又在 `units.vue` / `skus.vue` / `partners.vue` 等
+`NvDataTable` 的 `#cell-actions` 里**按行实例化**，实质是 N 行 N 个确认框，**违反规则 5**。
+这是 #878 之前就存在的结构，本次只补齐了原因必填，未做承载收敛；作为**存量例外**登记，
+收敛到页面层单实例由 #1591 跟踪。现有组件测试用 stub 抹平了弹层，**测不出**这个结构问题——
+引用本组件时请自行核对承载层级。
+
+原因必填部分的契约由 `MasterDataRowActions.test.ts`（输入 / 禁用 / 提交 / 重置 / 失败保留）钉住。
 
 骨架（含原因必填；与 `interaction-patterns.md` §2 目标写法一致）：
 
