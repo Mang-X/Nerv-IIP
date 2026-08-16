@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, toValue } from 'vue'
 
 import ReferenceDataPage from './reference-data.vue'
 
@@ -61,9 +61,14 @@ function stubActions() {
   }
 }
 
+const actionsFactoryArgs = vi.hoisted(() => ({ calls: [] as unknown[][] }))
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useReferenceDataCodes: () => stubCodes(),
-  useMasterDataResourceActions: () => stubActions(),
+  useMasterDataResourceActions: (...args: unknown[]) => {
+    actionsFactoryArgs.calls.push(args)
+    return stubActions()
+  },
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -281,5 +286,29 @@ describe('master-data reference-data page', () => {
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 表单未被重置：名称保留。
     expect((wrapper.find('#ref-name').element as HTMLInputElement).value).toBe('冷链')
+  })
+  it('行操作绑定当前选中的 CodeSet（缺它后端定位不到对象，一律 400）', async () => {
+    actionsFactoryArgs.calls.length = 0
+    const wrapper = mount(ReferenceDataPage, {
+      global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } },
+    })
+    await flushPromises()
+
+    // 页面必须把 codeSet 交给动作层，而不是只传 resourceType。
+    expect(actionsFactoryArgs.calls.length).toBeGreaterThan(0)
+    const [resourceType, codeSetArg] = actionsFactoryArgs.calls[0]!
+    expect(resourceType).toBe('reference-data')
+    expect(codeSetArg).toBeDefined()
+
+    // 且必须是随选中分组变化的响应式来源，不是构造时的字符串快照。
+    const readCodeSet = () => toValue(codeSetArg as Parameters<typeof toValue>[0])
+    expect(readCodeSet()).toBe('material-type')
+    await wrapper
+      .find('nav[aria-label="字典分组"]')
+      .findAll('button')
+      .find((b) => b.text().includes('仓储条件'))!
+      .trigger('click')
+    await flushPromises()
+    expect(readCodeSet()).toBe('storage-condition')
   })
 })
