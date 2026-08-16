@@ -15,6 +15,28 @@ $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
+$testEvidenceProvenanceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceProvenance.ps1'
+$facadeOwnedResponsibilityContracts = @(
+    [pscustomobject]@{
+        LibraryName = 'TestEvidenceBaseline.ps1'
+        FunctionNames = @('New-NervTestEvidenceBaseline')
+    },
+    [pscustomobject]@{
+        LibraryName = 'TestEvidenceProvenance.ps1'
+        FunctionNames = @(
+            'ConvertTo-NervResolvedRunnerImage',
+            'Get-NervGitHubRunnerProvenance',
+            'Assert-NervGitHubRunCheckoutProvenance',
+            'Resolve-NervPriorAttemptAuthority',
+            'Get-NervEvidenceRunIdentityFields',
+            'Get-NervEvidenceLaneEnvironmentFields',
+            'New-NervEvidenceRunIdentity',
+            'Get-NervEvidenceLaneProvenance',
+            'Assert-NervEvidenceSourceSummaries',
+            'Assert-NervEvidenceRootAuthority'
+        )
+    }
+)
 $isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
@@ -75,9 +97,11 @@ foreach ($consumerPath in $testEvidenceConsumers) {
     Assert-Equal 1 $testEvidenceImports.Count "'$consumerPath' must dot-source TestEvidence.ps1 exactly once."
     Assert-True ($scriptAutomationImports[0].Extent.StartOffset -lt $testEvidenceImports[0].Extent.StartOffset) `
         "'$consumerPath' must load ScriptAutomation.ps1 before TestEvidence.ps1."
-    Assert-Equal 0 @($dotSourceCommands | Where-Object {
-        $_.Extent.Text.Contains('TestEvidenceBaseline.ps1', [StringComparison]::Ordinal)
-    }).Count "'$consumerPath' must load the Baseline library only through the TestEvidence facade."
+    foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
+        Assert-Equal 0 @($dotSourceCommands | Where-Object {
+            $_.Extent.Text.Contains([string]$responsibilityContract.LibraryName, [StringComparison]::Ordinal)
+        }).Count "'$consumerPath' must load '$($responsibilityContract.LibraryName)' only through the TestEvidence facade."
+    }
 }
 
 $testEvidenceLibraryImports = @(Get-NervDotSourceCommands -Path $testEvidenceLibraryPath)
@@ -245,39 +269,67 @@ $testEvidenceTokens = $null
 $testEvidenceParseErrors = $null
 $testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
 Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
-Assert-True (Test-Path -LiteralPath $testEvidenceBaselineLibraryPath -PathType Leaf) `
-    'TestEvidenceBaseline.ps1 must exist as the facade-owned Baseline responsibility library.'
-$testEvidenceBaselineTokens = $null
-$testEvidenceBaselineParseErrors = $null
-$testEvidenceBaselineAst = [Management.Automation.Language.Parser]::ParseFile(
-    $testEvidenceBaselineLibraryPath, [ref]$testEvidenceBaselineTokens, [ref]$testEvidenceBaselineParseErrors)
-Assert-Equal 0 @($testEvidenceBaselineParseErrors).Count 'TestEvidenceBaseline.ps1 must parse before its ownership contract is inspected.'
-
-$facadeBaselineDefinitions = @($testEvidenceAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string]$node.Name, 'New-NervTestEvidenceBaseline', [StringComparison]::Ordinal)
-}, $true))
-$baselineLibraryDefinitions = @($testEvidenceBaselineAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst]
-}, $true))
-Assert-Equal 0 $facadeBaselineDefinitions.Count 'TestEvidence.ps1 must not define New-NervTestEvidenceBaseline after the responsibility split.'
-Assert-Equal 1 $baselineLibraryDefinitions.Count 'TestEvidenceBaseline.ps1 must define exactly one function.'
-Assert-True ([string]::Equals([string]$baselineLibraryDefinitions[0].Name, 'New-NervTestEvidenceBaseline', [StringComparison]::Ordinal)) `
-    'TestEvidenceBaseline.ps1 must own New-NervTestEvidenceBaseline and no sibling responsibility.'
-
-$facadeBaselineImports = @($testEvidenceLibraryImports | Where-Object {
-    $_.Extent.Text.Contains('TestEvidenceBaseline.ps1', [StringComparison]::Ordinal)
-})
-Assert-Equal 1 $facadeBaselineImports.Count 'TestEvidence.ps1 must dot-source TestEvidenceBaseline.ps1 exactly once.'
 $facadeFunctions = @($testEvidenceAst.FindAll({
     param($node)
     $node -is [Management.Automation.Language.FunctionDefinitionAst]
 }, $true))
 $lastFacadeFunctionEnd = (@($facadeFunctions | ForEach-Object { [int]$_.Extent.EndOffset }) | Measure-Object -Maximum).Maximum
-Assert-True ($facadeBaselineImports[0].Extent.StartOffset -ge $lastFacadeFunctionEnd) `
-    'TestEvidence.ps1 must load TestEvidenceBaseline.ps1 after all facade-owned dependency helpers are defined.'
+$responsibilityContractStates = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
+    $responsibilityLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $responsibilityContract.LibraryName
+    Assert-True (Test-Path -LiteralPath $responsibilityLibraryPath -PathType Leaf) `
+        "'$($responsibilityContract.LibraryName)' must exist as a TestEvidence facade-owned responsibility library."
+
+    $responsibilityTokens = $null
+    $responsibilityParseErrors = $null
+    $responsibilityAst = [Management.Automation.Language.Parser]::ParseFile(
+        $responsibilityLibraryPath, [ref]$responsibilityTokens, [ref]$responsibilityParseErrors)
+    Assert-Equal 0 @($responsibilityParseErrors).Count `
+        "'$($responsibilityContract.LibraryName)' must parse before its ownership contract is inspected."
+
+    $responsibilityDefinitions = @($responsibilityAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst]
+    }, $true))
+    $expectedResponsibilityFunctions = @(Get-NervOrdinalSorted -Unique -Values @($responsibilityContract.FunctionNames))
+    $actualResponsibilityFunctions = @(Get-NervOrdinalSorted -Unique -Values @($responsibilityDefinitions | ForEach-Object { [string]$_.Name }))
+    Assert-True ([string]::Equals(($actualResponsibilityFunctions -join '|'), ($expectedResponsibilityFunctions -join '|'), [StringComparison]::Ordinal)) `
+        "'$($responsibilityContract.LibraryName)' must define exactly its registered responsibility functions. Expected=[$($expectedResponsibilityFunctions -join ', ')] Actual=[$($actualResponsibilityFunctions -join ', ')]"
+    Assert-Equal @($expectedResponsibilityFunctions).Count $responsibilityDefinitions.Count `
+        "'$($responsibilityContract.LibraryName)' must not duplicate any registered responsibility function."
+
+    foreach ($functionName in $expectedResponsibilityFunctions) {
+        $facadeDefinitions = @($facadeFunctions | Where-Object {
+            [string]::Equals([string]$_.Name, [string]$functionName, [StringComparison]::Ordinal)
+        })
+        Assert-Equal 0 $facadeDefinitions.Count `
+            "TestEvidence.ps1 must not define '$functionName' after the responsibility split."
+    }
+
+    $responsibilityImports = @($testEvidenceLibraryImports | Where-Object {
+        $_.Extent.Text.Contains([string]$responsibilityContract.LibraryName, [StringComparison]::Ordinal)
+    })
+    Assert-Equal 1 $responsibilityImports.Count `
+        "TestEvidence.ps1 must dot-source '$($responsibilityContract.LibraryName)' exactly once."
+    Assert-True ($responsibilityImports[0].Extent.StartOffset -ge $lastFacadeFunctionEnd) `
+        "TestEvidence.ps1 must load '$($responsibilityContract.LibraryName)' after all facade-owned dependency helpers are defined."
+
+    $responsibilityLibrarySource = [IO.File]::ReadAllText($responsibilityLibraryPath)
+    Assert-True ($responsibilityLibrarySource.Contains('# Script-Governance:', [StringComparison]::Ordinal) -and
+        $responsibilityLibrarySource.Contains('#   Category: library', [StringComparison]::Ordinal)) `
+        "'$($responsibilityContract.LibraryName)' must declare the Script-Governance library header."
+
+    $responsibilityContractStates.Add([string]$responsibilityContract.LibraryName, [pscustomobject]@{
+        Definitions = $responsibilityDefinitions
+        Imports = $responsibilityImports
+    })
+}
+
+$baselineLibraryDefinitions = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Definitions)
+$facadeProvenanceImport = @($responsibilityContractStates['TestEvidenceProvenance.ps1'].Imports)[0]
+$facadeBaselineImport = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Imports)[0]
+Assert-True ($facadeProvenanceImport.Extent.StartOffset -lt $facadeBaselineImport.Extent.StartOffset) `
+    'TestEvidence.ps1 must load TestEvidenceProvenance.ps1 before TestEvidenceBaseline.ps1.'
 
 $expectedBaselineHelperNames = @(
     'Get-NervOrdinalCompositeKey',
@@ -297,10 +349,6 @@ $actualBaselineHelperNames = @(Get-NervOrdinalSorted -Unique -Values @($baseline
 Assert-True ([string]::Equals(($actualBaselineHelperNames -join '|'), ($expectedBaselineHelperNames -join '|'), [StringComparison]::Ordinal)) `
     "New-NervTestEvidenceBaseline helper ownership changed. Expected=[$($expectedBaselineHelperNames -join ', ')] Actual=[$($actualBaselineHelperNames -join ', ')]"
 
-$baselineLibrarySource = [IO.File]::ReadAllText($testEvidenceBaselineLibraryPath)
-Assert-True ($baselineLibrarySource.Contains('# Script-Governance:', [StringComparison]::Ordinal) -and
-    $baselineLibrarySource.Contains('#   Category: library', [StringComparison]::Ordinal)) `
-    'TestEvidenceBaseline.ps1 must declare the Script-Governance library header.'
 $collectorTokens = $null
 $collectorParseErrors = $null
 $collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
