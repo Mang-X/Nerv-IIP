@@ -2750,6 +2750,8 @@ Assert-True ($scriptGovernanceDoc.Contains(
     'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
 Assert-True ($scriptGovernanceDoc.Contains('### 四份收口声明', [StringComparison]::Ordinal)) `
     'Script governance must count all four executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains('**四份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
+    'Script governance must keep the closeout declaration count aligned in its strength-bound heading.'
 Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
     [StringComparison]::Ordinal)) `
