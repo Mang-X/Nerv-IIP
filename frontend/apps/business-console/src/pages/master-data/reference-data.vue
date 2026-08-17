@@ -5,7 +5,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useReferenceDataCodes,
   useMasterDataResourceActions,
@@ -88,6 +90,10 @@ const keyword = ref('')
 const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
+// 停用后的条目默认不在列表里，「启用」入口就永远够不到；开关打开后回到第 1 页重新取数（#1594）。
+const includeDisabled = useIncludeDisabledFilter([filters], () => {
+  page.value = 1
+})
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
@@ -402,7 +408,11 @@ function isNonEmpty(value: string) {
         <NvToolbar
           v-model:search="keyword"
           :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`"
-        />
+        >
+          <template #filters>
+            <IncludeDisabledFilter v-model="includeDisabled" />
+          </template>
+        </NvToolbar>
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
           {{ listErrorMessage }}
