@@ -1455,24 +1455,35 @@ public sealed class MasterDataApiContractTests
     [Fact]
     public async Task MasterData_disable_rejects_product_engineering_work_center_references()
     {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-MIX", "Mixing", 480));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var exception = await DisableReferencedWorkCenterAsync(
+            ["routing:ROUTE-MIX:A", "operation:OP-MIX", "bom:BOM-MIX"]);
 
-        var handler = new SetMasterDataResourceEnabledCommandHandler(
-            dbContext,
-            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(
-                true,
-                ["routing:ROUTE-MIX:A", "operation:OP-MIX", "bom:BOM-MIX"])));
-
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, "test:actor", "op-wc-mix", Reason: "retired"),
-            CancellationToken.None));
-
-        Assert.Equal("工程数据引用 'routing:ROUTE-MIX:A'（共 3 条），不能停用。", exception.Message);
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
         Assert.True(exception.Message.Length <= 60);
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(101)]
+    public async Task MasterData_disable_hides_maximum_and_oversized_product_engineering_references(int referenceLength)
+    {
+        var reference = new string('r', referenceLength);
+
+        var exception = await DisableReferencedWorkCenterAsync([reference]);
+
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain(reference, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_product_engineering_usage_with_empty_references_without_count_detail()
+    {
+        var exception = await DisableReferencedWorkCenterAsync([]);
+
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain("共0条", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2587,6 +2598,35 @@ public sealed class MasterDataApiContractTests
         {
             return Task.FromResult(usage);
         }
+    }
+
+    private static async Task<KnownException> DisableReferencedWorkCenterAsync(IReadOnlyCollection<string> references)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            "Mixing",
+            480));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new SetMasterDataResourceEnabledCommandHandler(
+            dbContext,
+            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, references)));
+
+        return await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand(
+                "org-001",
+                "env-dev",
+                "work-center",
+                "WC-MIX",
+                false,
+                "test:actor",
+                "op-wc-mix",
+                Reason: "retired"),
+            CancellationToken.None));
     }
 
     private sealed class FixedInternalServiceTokenProvider : IInternalServiceTokenProvider

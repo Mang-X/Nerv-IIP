@@ -647,7 +647,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU 字段 '{reference.Field}' 的值 '{reference.Code}' 不存在或未启用。");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 的值不存在或未启用。");
             }
         }
     }
@@ -1133,8 +1133,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (downstreamUsage.HasActiveReference)
         {
-            var firstReference = downstreamUsage.References.FirstOrDefault() ?? "未知";
-            throw new KnownException($"工程数据引用 '{firstReference}'（共 {downstreamUsage.References.Count} 条），不能停用。");
+            throw new KnownException("工程数据存在引用，不能停用。");
         }
     }
 

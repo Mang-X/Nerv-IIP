@@ -214,7 +214,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU 字段 '{reference.Field}' 的值 '{reference.Code}' 不存在或未启用。");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 的值不存在或未启用。");
             }
         }
     }

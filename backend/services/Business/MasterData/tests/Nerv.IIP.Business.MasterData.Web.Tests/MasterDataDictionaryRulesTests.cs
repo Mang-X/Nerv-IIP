@@ -151,18 +151,39 @@ public sealed class MasterDataDictionaryRulesTests
         var invalidBatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(BatchTrackingPolicy: "legacy-lot"),
             CancellationToken.None));
-        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值 'legacy-lot' 不存在或未启用。", invalidBatch.Message);
+        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值不存在或未启用。", invalidBatch.Message);
         Assert.True(invalidBatch.Message.Length <= 60);
 
         var invalidSerial = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(SerialTrackingPolicy: "serialized"),
             CancellationToken.None));
-        Assert.Equal("SKU 字段 'SerialTrackingPolicy' 的值 'serialized' 不存在或未启用。", invalidSerial.Message);
+        Assert.Equal("SKU 字段 'SerialTrackingPolicy' 的值不存在或未启用。", invalidSerial.Message);
 
         var invalidComplianceTag = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(ComplianceTags: ["custom-cert"]),
             CancellationToken.None));
-        Assert.Equal("SKU 字段 'ComplianceTags' 的值 'custom-cert' 不存在或未启用。", invalidComplianceTag.Message);
+        Assert.Equal("SKU 字段 'ComplianceTags' 的值不存在或未启用。", invalidComplianceTag.Message);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_hides_maximum_length_controlled_dictionary_value_from_rejection()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedDictionaryAsync(dbContext);
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+        var maximumLengthCode = new string('x', 100);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            ValidCreateSkuCommand(BatchTrackingPolicy: maximumLengthCode),
+            CancellationToken.None));
+
+        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值不存在或未启用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain(maximumLengthCode, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -234,7 +255,7 @@ public sealed class MasterDataDictionaryRulesTests
                 MaterialType: "legacy-material"),
             CancellationToken.None));
 
-        Assert.Equal("SKU 字段 'MaterialType' 的值 'legacy-material' 不存在或未启用。", invalidMaterialType.Message);
+        Assert.Equal("SKU 字段 'MaterialType' 的值不存在或未启用。", invalidMaterialType.Message);
     }
 
     [Fact]
