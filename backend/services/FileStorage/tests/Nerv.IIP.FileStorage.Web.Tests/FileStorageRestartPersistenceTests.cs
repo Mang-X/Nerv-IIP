@@ -62,7 +62,7 @@ public sealed class FileStorageRestartPersistenceTests
                     Assert.Equal("deleted", migrated.Status);
                     Assert.NotNull(migrated.DeletedAtUtc);
                     Assert.NotNull(migrated.PhysicalDeleteAfterUtc);
-                    Assert.Contains($"scan-removal:{blockedState}", migrated.DeletionReason, StringComparison.Ordinal);
+                    Assert.StartsWith($"scan-removal:{blockedState}", migrated.DeletionReason, StringComparison.Ordinal);
                 }
 
                 Assert.Equal(
@@ -177,7 +177,7 @@ public sealed class FileStorageRestartPersistenceTests
             INSERT INTO filestorage.stored_files (
                 file_id, organization_id, environment_id, owner_service, owner_type, owner_id,
                 file_purpose, file_name, content_type, size_bytes, object_key, scan_status, status,
-                created_at_utc, completed_at_utc)
+                created_at_utc, completed_at_utc, deletion_reason)
             SELECT
                 'legacy-file-' || scan_state,
                 'org-legacy-scan',
@@ -193,7 +193,8 @@ public sealed class FileStorageRestartPersistenceTests
                 scan_state,
                 'available',
                 CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP
+                CURRENT_TIMESTAMP,
+                CASE WHEN scan_state = 'failed' THEN repeat('x', 256) ELSE NULL END
             FROM (VALUES ('clean'), ('malware'), ('pending'), ('failed')) AS states(scan_state);
 
             INSERT INTO filestorage.upload_sessions (

@@ -18,10 +18,10 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     deleted_at_utc = COALESCE(deleted_at_utc, CURRENT_TIMESTAMP),
                     physical_delete_after_utc = COALESCE(physical_delete_after_utc, CURRENT_TIMESTAMP),
                     deletion_reason = LEFT(
+                        'scan-removal:' || COALESCE(scan_status, 'unknown') ||
                         CASE
-                            WHEN deletion_reason IS NULL OR deletion_reason = ''
-                                THEN 'scan-removal:' || COALESCE(scan_status, 'unknown')
-                            ELSE deletion_reason || ';scan-removal:' || COALESCE(scan_status, 'unknown')
+                            WHEN deletion_reason IS NULL OR deletion_reason = '' THEN ''
+                            ELSE ';' || deletion_reason
                         END,
                         256)
                 WHERE scan_status IS DISTINCT FROM 'clean';
