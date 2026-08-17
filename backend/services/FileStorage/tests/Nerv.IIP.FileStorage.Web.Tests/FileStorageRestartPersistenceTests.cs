@@ -4,10 +4,13 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.FileStorage.Web.Application.Files;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -17,6 +20,7 @@ public sealed class FileStorageRestartPersistenceTests
     public async Task Metadata_usage_and_download_grant_survive_web_host_restart()
     {
         await ResetFileStorageSchemaAsync();
+        await SeedLegacyScanStatesAsync();
         string fileId;
         string uploadSessionId;
         string grantId;
@@ -24,6 +28,53 @@ public sealed class FileStorageRestartPersistenceTests
         await using (var firstFactory = CreateFactory(LaneConnectionString, autoMigrate: true))
         {
             using var client = CreateClient(firstFactory);
+            using (var migrationScope = firstFactory.Services.CreateScope())
+            {
+                var contentIndex = Assert.IsAssignableFrom<ILocalFileContentIndex>(
+                    migrationScope.ServiceProvider.GetRequiredService<IFileStorageService>());
+                Assert.Equal(
+                    "legacy-upload-clean",
+                    await contentIndex.GetUploadSessionIdForDownloadGrantAsync(
+                        "legacy-grant-clean",
+                        "org-legacy-scan",
+                        "production",
+                        CancellationToken.None));
+
+                foreach (var blockedState in new[] { "malware", "pending", "failed" })
+                {
+                    Assert.Null(await contentIndex.GetUploadSessionIdForDownloadGrantAsync(
+                        $"legacy-grant-{blockedState}",
+                        "org-legacy-scan",
+                        "production",
+                        CancellationToken.None));
+                }
+
+                var migrationDb = migrationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var migratedFiles = await migrationDb.StoredFiles
+                    .AsNoTracking()
+                    .Where(x => x.OrganizationId == "org-legacy-scan")
+                    .OrderBy(x => x.FileId)
+                    .ToArrayAsync();
+                Assert.Equal("available", migratedFiles.Single(x => x.FileId == "legacy-file-clean").Status);
+                foreach (var blockedState in new[] { "malware", "pending", "failed" })
+                {
+                    var migrated = migratedFiles.Single(x => x.FileId == $"legacy-file-{blockedState}");
+                    Assert.Equal("deleted", migrated.Status);
+                    Assert.NotNull(migrated.DeletedAtUtc);
+                    Assert.NotNull(migrated.PhysicalDeleteAfterUtc);
+                    Assert.Contains($"scan-removal:{blockedState}", migrated.DeletionReason, StringComparison.Ordinal);
+                }
+
+                Assert.Equal(
+                    new[] { "legacy-grant-failed", "legacy-grant-malware", "legacy-grant-pending" },
+                    await migrationDb.DownloadGrants
+                        .AsNoTracking()
+                        .Where(x => x.OrganizationId == "org-legacy-scan")
+                        .OrderBy(x => x.DownloadGrantId)
+                        .Select(x => x.DownloadGrantId)
+                        .ToArrayAsync());
+            }
+
             var createdResponse = await client.PostAsJsonAsync(
                 "/api/files/v1/upload-sessions",
                 new CreateUploadSessionRequest(
@@ -102,6 +153,86 @@ public sealed class FileStorageRestartPersistenceTests
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier("filestorage");
         await using var command = connection.CreateCommand();
         command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedLegacyScanStatesAsync()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(
+                LaneConnectionString,
+                postgres => postgres.MigrationsHistoryTable("__EFMigrationsHistory", "filestorage"))
+            .Options;
+        await using (var dbContext = new ApplicationDbContext(options))
+        {
+            var migrator = dbContext.GetService<IMigrator>();
+            await migrator.MigrateAsync("20260705065020_AddFileStorageSecurityHardening");
+        }
+
+        await using var connection = new NpgsqlConnection(LaneConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO filestorage.stored_files (
+                file_id, organization_id, environment_id, owner_service, owner_type, owner_id,
+                file_purpose, file_name, content_type, size_bytes, object_key, scan_status, status,
+                created_at_utc, completed_at_utc)
+            SELECT
+                'legacy-file-' || scan_state,
+                'org-legacy-scan',
+                'production',
+                'legacy-test',
+                'migration',
+                scan_state,
+                'attachment',
+                scan_state || '.txt',
+                'text/plain',
+                1,
+                'org-legacy-scan/legacy-file-' || scan_state,
+                scan_state,
+                'available',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+            FROM (VALUES ('clean'), ('malware'), ('pending'), ('failed')) AS states(scan_state);
+
+            INSERT INTO filestorage.upload_sessions (
+                upload_session_id, file_id, organization_id, environment_id, owner_service, owner_type,
+                owner_id, file_purpose, file_name, content_type, expected_size_bytes, object_key, provider,
+                created_at_utc, expires_at_utc, completed, completed_at_utc)
+            SELECT
+                'legacy-upload-' || scan_state,
+                'legacy-file-' || scan_state,
+                'org-legacy-scan',
+                'production',
+                'legacy-test',
+                'migration',
+                scan_state,
+                'attachment',
+                scan_state || '.txt',
+                'text/plain',
+                1,
+                'org-legacy-scan/legacy-file-' || scan_state,
+                'server-proxy',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP + INTERVAL '1 hour',
+                TRUE,
+                CURRENT_TIMESTAMP
+            FROM (VALUES ('clean'), ('malware'), ('pending'), ('failed')) AS states(scan_state);
+
+            INSERT INTO filestorage.download_grants (
+                download_grant_id, file_id, organization_id, environment_id, provider,
+                created_at_utc, expires_at_utc)
+            SELECT
+                'legacy-grant-' || scan_state,
+                'legacy-file-' || scan_state,
+                'org-legacy-scan',
+                'production',
+                'server-proxy',
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP + INTERVAL '1 hour'
+            FROM (VALUES ('clean'), ('malware'), ('pending'), ('failed')) AS states(scan_state);
+            """;
         await command.ExecuteNonQueryAsync();
     }
 

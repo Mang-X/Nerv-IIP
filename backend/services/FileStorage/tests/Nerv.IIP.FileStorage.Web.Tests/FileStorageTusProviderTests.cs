@@ -306,7 +306,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_CleanFileWithTenantHeaders_ReturnsUploadedBytesOnce()
+    public async Task DownloadGrantContentEndpoint_AvailableFileWithTenantHeaders_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try

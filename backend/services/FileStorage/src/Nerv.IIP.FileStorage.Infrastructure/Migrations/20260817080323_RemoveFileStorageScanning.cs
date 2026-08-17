@@ -11,6 +11,22 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(
+                """
+                UPDATE filestorage.stored_files
+                SET status = 'deleted',
+                    deleted_at_utc = COALESCE(deleted_at_utc, CURRENT_TIMESTAMP),
+                    physical_delete_after_utc = COALESCE(physical_delete_after_utc, CURRENT_TIMESTAMP),
+                    deletion_reason = LEFT(
+                        CASE
+                            WHEN deletion_reason IS NULL OR deletion_reason = ''
+                                THEN 'scan-removal:' || COALESCE(scan_status, 'unknown')
+                            ELSE deletion_reason || ';scan-removal:' || COALESCE(scan_status, 'unknown')
+                        END,
+                        256)
+                WHERE scan_status IS DISTINCT FROM 'clean';
+                """);
+
             migrationBuilder.DropIndex(
                 name: "IX_stored_files_scan_status_status",
                 schema: "filestorage",

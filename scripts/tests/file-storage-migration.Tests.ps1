@@ -15,10 +15,35 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 $migrationScript = Join-Path $repoRoot 'scripts/install/migrate-file-storage.ps1'
+$removeScanningMigration = Join-Path $repoRoot 'backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260817080323_RemoveFileStorageScanning.cs'
 $connectionVariable = 'NERV_IIP_FILE_STORAGE_DB'
 $originalConnection = [Environment]::GetEnvironmentVariable($connectionVariable, 'Process')
 
 try {
+    if (-not (Test-Path -LiteralPath $removeScanningMigration)) {
+        throw 'RemoveFileStorageScanning migration must exist.'
+    }
+    $removeScanningText = Get-Content -LiteralPath $removeScanningMigration -Raw
+    foreach ($expected in @(
+        'scan_status IS DISTINCT FROM ''clean''',
+        'status = ''deleted''',
+        'deleted_at_utc = COALESCE(deleted_at_utc, CURRENT_TIMESTAMP)',
+        'physical_delete_after_utc = COALESCE(physical_delete_after_utc, CURRENT_TIMESTAMP)',
+        'scan-removal:',
+        'IX_stored_files_scan_status_status',
+        'scan_detail',
+        'scan_status',
+        'scanned_at_utc')) {
+        if (-not $removeScanningText.Contains($expected, [StringComparison]::Ordinal)) {
+            throw "RemoveFileStorageScanning migration must contain '$expected'."
+        }
+    }
+    $failClosedIndex = $removeScanningText.IndexOf('scan_status IS DISTINCT FROM ''clean''', [StringComparison]::Ordinal)
+    $dropScanStatusIndex = $removeScanningText.IndexOf('name: "scan_status"', [StringComparison]::Ordinal)
+    if ($failClosedIndex -lt 0 -or $dropScanStatusIndex -lt 0 -or $failClosedIndex -gt $dropScanStatusIndex) {
+        throw 'RemoveFileStorageScanning must fail closed for non-clean rows before dropping scan_status.'
+    }
+
     [Environment]::SetEnvironmentVariable($connectionVariable, $null, 'Process')
     $missingFailure = $null
     try {

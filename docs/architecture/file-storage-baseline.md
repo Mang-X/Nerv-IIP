@@ -94,17 +94,14 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 3. 客户端声明的 content type、文件名和扩展名只能作为输入，最终以服务端校验和对象存储元数据为准。
 4. complete 时必须校验 size、checksum、provider 回执、part 列表和对象实际存在性。
 5. 可执行文件、脚本、压缩包等高风险类型默认不进入普通预览或知识引入流程。
-6. 预留恶意文件扫描/隔离状态：未扫描或扫描失败的文件不得生成普通下载授权，不得进入 Knowledge ingestion。
-7. 上传、下载授权、归档和删除都必须写入可审计事件；审计事实最终由服务端生成。
-8. 每个组织和环境应预留容量配额与单日上传量限制；首批可以先建配置口径，不要求完整计费或配额后台。
+6. 上传、下载授权、归档和删除都必须写入可审计事件；审计事实最终由服务端生成。
+7. 每个组织和环境应预留容量配额与单日上传量限制；首批可以先建配置口径，不要求完整计费或配额后台。
 
 当前配置口径：
 
 1. `FileStorage:PurposePolicies:{purpose}:AllowedContentTypes`、`AllowedExtensions`、`BlockedExtensions` 控制声明校验；如果某个 allowlist 未配置，则该维度保持兼容放行，但 blocked extension 始终优先。
-2. tus complete 对 zip、png、jpeg 和 pdf 做魔数复核；普通文本/日志类按声明策略与扫描策略治理。
+2. tus complete 对 zip、png、jpeg 和 pdf 做魔数复核；普通文本/日志类按声明策略治理。
 3. 配额优先级为组织+环境+用途、组织+环境、用途默认；超配额在上传会话创建阶段返回冲突，不创建临时会话。
-4. 扫描默认关闭；显式启用 `FileStorage:Scanning:Enabled=true` 或配置 adapter 后，新完成文件进入 `pending`，由后台扫描 worker 处理。
-5. 扫描不可用默认 `block`，可配置 `allow-with-warning` 用于客户现场临时降级，但必须通过日志和扫描详情可追踪。
 
 ## Upload Provider 抽象
 
@@ -121,7 +118,7 @@ VerifyUploadedObject
 provider 能力建议：
 
 1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供本地 `HEAD`/`PATCH` offset endpoint、基础 tus header 校验、按 session 串行追加、size/checksum 校验、过期未完成上传清理和 download grant content 读取；生产入口需要由 Gateway/auth 层保护，更完整的 tus creation/OPTIONS discovery 可后续补齐。
-2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件、内网限制或需要服务端扫描的场景。
+2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件或内网限制场景。
 3. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum；该 provider 放在 post-MVP 的对象存储部署联调阶段。
 
 provider 选择可以由文件用途、大小、客户端能力、网络环境或部署配置决定，但选择结果必须记录在 `UploadSession` 中，便于审计和故障诊断。
@@ -157,6 +154,6 @@ provider 选择可以由文件用途、大小、客户端能力、网络环境�
 2. 能通过 Upload Provider 抽象生成 S3 multipart、tus 或 server-proxy 中至少一种上传指令，且接口不泄漏长期对象存储凭证。
 3. 能通过 `fileId` 查询文件元数据，响应中不暴露内部 objectKey。
 4. 能为有权限主体生成短期下载授权。
-5. 文件元数据包含组织、环境、ownerService、ownerType、ownerId、contentType、size、checksum、uploadMode、provider、filePurpose、scanStatus 和状态。
+5. 文件元数据包含组织、环境、ownerService、ownerType、ownerId、contentType、size、checksum、uploadMode、provider、filePurpose 和状态。
 6. 上传会话过期后不能 complete，过期临时对象可以被后台任务安全清理。
 7. Knowledge、Ops 或 AppHub 至少一个服务能以 `fileId` 形式引用文件，不直接保存对象存储 key 作为业务事实。
