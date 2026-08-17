@@ -126,10 +126,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
 }
 // 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
 // Sheet 已迁到 Pro：NvSheet/NvSheetTrigger/NvSheetClose 是 reka-ui 原语再导出（组件名仍是

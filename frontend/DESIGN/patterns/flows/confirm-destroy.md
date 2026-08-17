@@ -16,11 +16,14 @@
    成功才置 `open = false`。「取消」仍用 `NvAlertDialogCancel`（本来就该无条件关）。
    这条只有**挂真弹层**的测试能守住——把 `NvAlertDialog*` stub 成 `<div><slot /></div>` 的
    用例根本测不到关闭时机，样例见 `MasterDataLifecycleDialog.realDialog.test.ts`。
+   **写法已上门禁**（见下「门禁」一节）；组件本体不改 `defaultPrevented` 语义，裁决见
+   `apps/design-system/docs/components/desktop/alert-dialog.md`（#1613 子项 g）。
 4. **原因必填**（2026-07 W0 起对新增破坏性动作强制）：确认框内含原因输入
    （`NvInput`，或原因码 `NvSelect` + 备注），**纯空白不算填**（判定一律 `trim()`），
    为空时确认按钮 `disabled`；原因随请求提交、进审计。存量随各域 issue 补齐。
    `maxlength` 与服务端上限对齐（主数据生命周期原因为 500）。
 5. **单实例声明在页面层**：确认框放 `v-for` 外，由 `target` ref 指向当前行；不塞进表格组件。
+   这条同样已上门禁（见下「门禁」一节）。
 6. **Cancel 不禁用**：API 调用期间用户可以放弃等待（`NvAlertDialogCancel` 不跟 `pending`）。
 7. **`NvAlertDialogDescription` 不可省**：说清后果（「停用后将不能用于新建/计划，
    已有记录不受影响。」），无障碍必需。
@@ -28,6 +31,43 @@
    成功后关框、清 `target`。
 9. **批量破坏性动作**同样走本流，确认文案**复述条数**（「将停用 12 条计量单位…」，
    见 `../interaction-patterns.md` §5.2）。
+
+## 门禁（规则 3 / 规则 5）
+
+`apps/business-console/src/confirmDestroy.contract.test.ts`（#1613 子项 a）。判定用
+`vue/compiler-sfc` 解析**模板 AST**、遍历元素树，扫描面是
+`frontend/apps/<包名>/src` 与 `frontend/packages/<包名>/src` 下全部 `.vue`：
+
+- 规则 3：模板里出现 `<NvAlertDialogAction>` 即判红；
+- 规则 5：某元素带 `v-for` 且其子树内出现 `<NvAlertDialog>` 即判红。
+
+**两条白名单都是空的**（`SYNC_SAFE_ACTIONS` / `LOOPED_DIALOGS`）。往里加只允许一种情形：
+确认动作是**纯同步本地状态**、点击即关框没有可失败的写回，且必须逐条写明「为何同步安全」
+——门禁自己会检查理由不为空，并在存量被清干净后要求删掉对应条目。
+
+判定为什么不用正则：只匹配标识符会把脚本块的 `import { NvAlertDialogAction }` 与
+「不用 NvAlertDialogAction」这类注释算成违规（#1594 栽过一次，而本仓库每个清扫落点都写了
+这样一条注释）；规则 5 的 `v-for` 与 `<NvAlertDialog` 常隔十几行、缩进不可靠，文本判定既漏又误伤。
+门禁文件末尾带一组**变异对照**（正/负样本各若干），把判定谓词本身的鉴别力钉住。
+
+**门禁不保证关框时机。** 它挡的是写法，「点确认后框该不该关」是行为，只有**挂真弹层**的用例
+能钉住——PR #1615 实测过：把一处确认按钮改回 `NvAlertDialogAction`、并补回对应 stub 之后，
+整套页面测试仍然全绿。所以每个清扫落点都另有一条 `*.realDialog.test.ts`，门禁本身也会检查
+这些文件存在、且没有把 `NvAlertDialog*` 桩掉：
+
+| 落点                              | 真弹层用例                                                           |
+| --------------------------------- | -------------------------------------------------------------------- |
+| 主数据生命周期确认框              | `components/masterData/MasterDataLifecycleDialog.realDialog.test.ts` |
+| 排班页节假日/例外日删除、互斥替换 | `pages/master-data/scheduling.deleteConfirm.realDialog.test.ts`      |
+| 产品分类停用（master-data 域）    | `pages/master-data/productCategoryArchive.realDialog.test.ts`        |
+| 生产版本归档（engineering 域）    | `pages/engineering/productionVersionArchive.realDialog.test.ts`      |
+| 不合格品关闭（quality 域）        | `pages/quality/ncrClose.realDialog.test.ts`                          |
+| 批量确认报警（equipment 域）      | `pages/equipment/batchAckConfirm.realDialog.test.ts`                 |
+| 排程方案撤销发布                  | `pages/schedulingRevoke.realDialog.test.ts`                          |
+
+已知不覆盖：`<component :is>` 动态渲染（只认字面标签）；经业务组件间接承载的弹层
+（如把 `<MasterDataLifecycleDialog>` 塞进 `v-for`）——那一层由
+`pages/master-data/lifecycleDialogSingleInstance.contract.test.ts` 与其 `runtime` 版本管。
 
 ## 判定
 

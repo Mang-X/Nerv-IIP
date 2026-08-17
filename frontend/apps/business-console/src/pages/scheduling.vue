@@ -43,7 +43,6 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -895,14 +894,17 @@ function reasonLabel(reason?: string | null) {
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction
+          <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3），
+               撤销失败时框早已消失、用户无从原地重试。 -->
+          <NvButton
+            type="button"
             variant="destructive"
             :disabled="revokePlanPending"
             @click="confirmRevoke"
           >
             <Spinner v-if="revokePlanPending" aria-hidden="true" />
             确认撤销
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>

@@ -139,11 +139,9 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template:
-      '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
+  // 确认按钮**不再** stub：它已是普通 `NvButton`（#1613 清扫，confirm-destroy 规则 3），
+  // 真件渲染即真 `<button>`，按文案定位即可。关框时机的断言在
+  // `production-versions.archiveConfirm.realDialog.test.ts`（不 stub 弹层）。
 }
 
 const allStubs = {
@@ -308,7 +306,7 @@ describe('engineering production-versions page', () => {
 
     // 填原因后确认
     await wrapper.find('#archive-reason').setValue('工艺变更')
-    await wrapper.find('[data-testid="confirm-archive"]').trigger('click')
+    await findButton(wrapper, '确认归档')!.trigger('click')
     await flushPromises()
 
     expect(stub.archiveProductionVersion).toHaveBeenCalledTimes(1)

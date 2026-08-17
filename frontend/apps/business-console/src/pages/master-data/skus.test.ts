@@ -97,10 +97,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
   // RowActions 的 Pro 下拉就地渲染，避免 reka DropdownMenu portal 在 jsdom 卸载崩。
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: {

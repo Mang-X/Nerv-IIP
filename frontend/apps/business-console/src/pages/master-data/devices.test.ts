@@ -220,10 +220,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
 }
 // 设备类别/供应商/父设备已从自由文本改成只选控件（内部自带 reka Dialog，会撞上上面的
 // DialogRoot 桩）。桩成带同名 id 的输入位，用例继续用 `#dev-*` 表达「选中了某个候选」。
