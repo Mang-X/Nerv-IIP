@@ -25,6 +25,21 @@ const alertOpen = ref(false)
 
 拦截不可逆的破坏性操作，强制用户在继续前作出明确选择。`NvAlertDialog` 没有右上角关闭按钮，只能通过取消或确认操作退出，确保确认动作不会被误触跳过。`NvAlertDialogAction` 内部使用 `NvButton`，可通过 `variant="destructive"` 渲染为危险色。
 
+::: warning 异步确认不要用 NvAlertDialogAction
+`NvAlertDialogAction` 包的是 reka `AlertDialogAction`，直接渲染成 `DialogClose`——`@click` 里
+`onOpenChange(false)` **无条件执行、不看 `event.defaultPrevented`**。所以**点击瞬间框就关**，
+异步请求之后才落地：
+
+- 「提交失败后保留输入、原地重试」做不到（框早没了）；
+- 「`pending` 期间禁点确认」也做不到（用户根本看不到 disabled 那一瞬）。
+
+**确认动作要等接口结果时，请用普通 `NvButton`**，由 handler 成功才把 `open` 置 false；
+「取消」继续用 `NvAlertDialogCancel`（本就该无条件关）。本页下方示例都是**同步**关闭的场景，
+故仍用 `NvAlertDialogAction`。
+
+判定与实现见 `frontend/DESIGN/patterns/flows/confirm-destroy.md` 规则 3（#1607）。
+:::
+
 ## 基础用法
 
 通过 `NvAlertDialogTrigger` 触发，`v-model:open` 双向绑定开关状态；点击「删除」执行确认逻辑后关闭。

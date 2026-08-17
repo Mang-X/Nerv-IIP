@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
 import MasterDataLifecycleDialog from './MasterDataLifecycleDialog.vue'
@@ -32,12 +32,16 @@ const actions = {
 }
 const row = { resourceType: 'unit-of-measure', code: 'EA', displayName: '个', active: true }
 
+/** 真弹层挂在 body 上，用例之间必须卸载，否则上一份实例的响应式效果会一直挂着。 */
+let mounted: ReturnType<typeof mount> | null = null
+
 function mountDialog() {
   const controller = useMasterDataLifecycleConfirm()
   const wrapper = mount(MasterDataLifecycleDialog, {
     props: { controller },
     attachTo: document.body,
   })
+  mounted = wrapper
   return { controller, wrapper }
 }
 
@@ -45,6 +49,11 @@ function mountDialog() {
 function confirmButton() {
   return [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('确认停用'))
 }
+
+afterEach(() => {
+  mounted?.unmount()
+  mounted = null
+})
 
 beforeEach(() => {
   document.body.innerHTML = ''
