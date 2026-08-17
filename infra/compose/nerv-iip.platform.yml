@@ -106,13 +106,14 @@ services:
       Storage__MinIO__Endpoint: http://minio:9000
       Storage__MinIO__AccessKey: ${NERV_IIP_MINIO_ROOT_USER:?set NERV_IIP_MINIO_ROOT_USER}
       Storage__MinIO__SecretKey: ${NERV_IIP_MINIO_ROOT_PASSWORD:?set NERV_IIP_MINIO_ROOT_PASSWORD}
+      Storage__MinIO__ComplianceArchiveBucket: nerv-iip-compliance-archive
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
       otel-collector:
         condition: service_started
     ports:
