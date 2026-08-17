@@ -107,7 +107,13 @@ const stubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
   NvDropdownMenuContent: { template: '<div><slot /></div>' },
   NvDropdownMenuItem: { template: '<button type="button"><slot /></button>' },
-  NvDatePicker: { template: '<input type="date" />' },
+  // 日期选择器换成原生 date input，让互斥冲突用例能录入日期触发冲突确认。
+  NvDatePicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
+  },
   NvSelect: { template: '<select><slot /></select>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
@@ -199,6 +205,54 @@ describe('节假日删除确认框在真弹层下的关闭时机', () => {
     await flushPromises()
 
     documentButton('确认删除')!.click()
+    await flushPromises()
+
+    expect(stub.toastSuccess).toHaveBeenCalled()
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull()
+  })
+})
+
+/**
+ * 互斥冲突「确认替换」也走同一条规则（PR #1615 审核 N1）：删除路径有了真弹层断言，
+ * 替换路径没有——把它单独改回 `NvAlertDialogAction` 时套件仍全绿（只有 stub 一并删掉才会红，
+ * 红的是组件解析、不是行为），也就是「失败不关框」当时只是偶然被拦住。这一组把它变成不变量。
+ */
+describe('互斥冲突替换确认框在真弹层下的关闭时机', () => {
+  /** 为 2026-06-20（seed 里已是例外日）加节假日 → 触发互斥冲突确认。 */
+  async function openConflict(wrapper: ReturnType<typeof mount>) {
+    const form = wrapper.findAll('form').find((f) => f.find('#holiday-name').exists())!
+    await form.find('input[type="date"]').setValue('2026-06-20')
+    await flushPromises()
+    await form.trigger('submit')
+    await flushPromises()
+    return form
+  }
+
+  it('写回失败时冲突框保持打开、草稿日期仍在，用户可原地重试', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = await mountSchedulingSheet()
+    const form = await openConflict(wrapper)
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull()
+
+    const confirm = documentButton('确认替换')
+    expect(confirm).toBeTruthy()
+    confirm!.click()
+    await flushPromises()
+
+    expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
+    expect(stub.toastError).toHaveBeenCalled()
+    // NvAlertDialogAction 会打破这一条：点击即无条件关框。
+    expect(document.querySelector('[role="alertdialog"]')).not.toBeNull()
+    expect(documentButton('确认替换')).toBeTruthy()
+    // 草稿保留，重试不必重新选日期。
+    expect((form.find('input[type="date"]').element as HTMLInputElement).value).toBe('2026-06-20')
+  })
+
+  it('写回成功才关框', async () => {
+    const wrapper = await mountSchedulingSheet()
+    await openConflict(wrapper)
+
+    documentButton('确认替换')!.click()
     await flushPromises()
 
     expect(stub.toastSuccess).toHaveBeenCalled()
