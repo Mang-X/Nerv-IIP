@@ -234,7 +234,10 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 ~~❌ **确认框按行实例化**~~：`MasterDataRowActions.vue` 曾自身含 `NvAlertDialog`、在各表
 `#cell-actions` 里逐行渲染，一页 N 行即 N 个确认框。**已收敛**（#1591）：组件只触发，确认框
 收到页面层单实例。本条保留为形态反例——**组件测试用 stub 抹平弹层就测不出实例数**，所以
-收敛后专门补了运行时实例计数断言，别再让同类结构缺陷靠「门禁绿」躺着。
+收敛后专门补了运行时实例计数断言，别再让同类结构缺陷靠「门禁绿」躺着。#1591 只收敛了
+`MasterDataRowActions` 的停用/启用一路，`master-data/scheduling.vue` 的节假日/例外日删除仍以
+**裸 `NvAlertDialog` 写在 `v-for` 内**躺到 #1608——「已收敛」指的是这一形态的判定成立，
+不等于全仓已无存量，判某页合规仍要看该页模板本身。
 
 ---
 

@@ -166,8 +166,9 @@ const formSelectStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-// AlertDialog 内联展开（已迁到 Pro）：Trigger 渲染其插槽（即垃圾桶按钮），Action 渲染为可点击按钮，
-// 让测试能断言「点删 → 出现确认 → 确认后才调 remove」。data-testid（confirm / confirm-delete）保留不变，仅换组件名。
+// AlertDialog 内联展开（已迁到 Pro，含 reka portal/Teleport，jsdom 卸载会崩）：
+// 确认按钮已改为普通 NvButton（confirm-destroy 规则 3），不再有 Action 桩，按文案定位即可。
+// 关框时机测不到是这套桩的固有局限，由本文件末尾的真弹层用例补齐（#1608）。
 const alertDialogStubs = {
   NvAlertDialog: { template: '<div><slot /></div>' },
   NvAlertDialogTrigger: { template: '<div><slot /></div>' },
@@ -177,11 +178,11 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template:
-      '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
+}
+
+/** 按可见文案定位确认按钮（确认删除 / 确认替换）。 */
+function findButtonsByText(wrapper: ReturnType<typeof mount>, label: string) {
+  return wrapper.findAll('button').filter((b) => b.text().trim() === label)
 }
 
 // 班次 / 工作日历的新建对话框（已迁到 Pro）。NvTabsContent 对未激活页签 force-mount，
@@ -481,7 +482,7 @@ describe('master-data scheduling page', () => {
     expect(wrapper.text()).toContain('确定删除节假日')
 
     // 点「确认删除」后才真正写回（删掉端午节）。
-    const confirmBtn = wrapper.findAll('[data-testid="confirm-delete"]').at(0)!
+    const confirmBtn = findButtonsByText(wrapper, '确认删除')[0]!
     await confirmBtn.trigger('click')
     await flushPromises()
 
@@ -512,11 +513,8 @@ describe('master-data scheduling page', () => {
 
     expect(wrapper.text()).toContain('确定删除例外日')
 
-    // 在「确定删除例外日」那个确认弹层内点确认（按弹层文案定位，避开互斥冲突弹层）。
-    const exDialog = wrapper
-      .findAll('[data-testid="confirm"]')
-      .find((d) => d.text().includes('确定删除例外日'))!
-    await exDialog.find('[data-testid="confirm-delete"]').trigger('click')
+    // 删除确认框是页面层单实例，此时其目标是例外日（标题已断言），点唯一的「确认删除」。
+    await findButtonsByText(wrapper, '确认删除')[0]!.trigger('click')
     await flushPromises()
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
@@ -549,7 +547,7 @@ describe('master-data scheduling page', () => {
     expect(conflictDialog).toBeTruthy()
 
     // 确认替换：删掉该日例外日、加节假日，单次写回。
-    await conflictDialog!.find('[data-testid="confirm-delete"]').trigger('click')
+    await findButtonsByText(wrapper, '确认替换')[0]!.trigger('click')
     await flushPromises()
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
@@ -586,7 +584,7 @@ describe('master-data scheduling page', () => {
       .find((d) => d.text().includes('已是节假日'))
     expect(conflictDialog).toBeTruthy()
 
-    await conflictDialog!.find('[data-testid="confirm-delete"]').trigger('click')
+    await findButtonsByText(wrapper, '确认替换')[0]!.trigger('click')
     await flushPromises()
 
     expect(actionStub.calUpdate).toHaveBeenCalledTimes(1)
@@ -600,6 +598,142 @@ describe('master-data scheduling page', () => {
       ),
     ).toBe(true)
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('holiday/exception delete confirms are a single page-level instance, not one per row (confirm-destroy 规则 5)', async () => {
+    // 多条节假日 + 多条例外日：触发按钮随行增长，确认框恒为 1 个。
+    actionStub.calFetchDetail.mockResolvedValueOnce({
+      name: '标准日历',
+      workingTimes: [{ dayOfWeek: 'monday', startsAt: '08:00:00', endsAt: '17:00:00' }],
+      holidays: [
+        { date: '2026-06-19', name: '端午节' },
+        { date: '2026-10-01', name: '国庆节' },
+        { date: '2026-01-01', name: '元旦' },
+      ],
+      exceptions: [
+        { date: '2026-06-20', isWorkingDay: true, reason: '调休' },
+        { date: '2026-09-27', isWorkingDay: true, reason: '调休' },
+      ],
+    })
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    const holidayTriggers = wrapper
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label') === '删除节假日')
+    const exceptionTriggers = wrapper
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label') === '删除例外日')
+    expect(holidayTriggers).toHaveLength(3)
+    expect(exceptionTriggers).toHaveLength(2)
+
+    // 5 个可删项，但「确认删除」按钮只有一个——确认框在 v-for 外、单实例。
+    expect(findButtonsByText(wrapper, '确认删除')).toHaveLength(1)
+  })
+
+  it('the shared delete confirm targets the clicked item type — switching from holiday to exception does not delete the holiday', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 先点节假日的删除（只开框），再改点例外日的删除：目标必须切换成例外日。
+    await wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '删除节假日')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('确定删除节假日')
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '删除例外日')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('确定删除例外日')
+    expect(wrapper.text()).not.toContain('确定删除节假日')
+
+    await findButtonsByText(wrapper, '确认删除')[0]!.trigger('click')
+    await flushPromises()
+
+    const [, patch] = actionStub.calUpdate.mock.calls[0]!
+    // 删掉的必须是例外日；节假日原封不动（共用 deleteTarget 时最危险的就是删错类型）。
+    expect(patch.exceptions.some((e: { date?: string }) => e.date === '2026-06-20')).toBe(false)
+    expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-06-19')).toBe(true)
+  })
+
+  it('a failed delete keeps the confirm open and rolls the list back (no silent local-only delete)', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '删除节假日')!
+      .trigger('click')
+    await flushPromises()
+
+    await findButtonsByText(wrapper, '确认删除')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    // 目标未清空 → 确认框内容还在（真弹层下的"框不关"由 realDialog 用例钉住）。
+    expect(wrapper.text()).toContain('确定删除节假日')
+    // 写回失败要回滚，否则界面显示已删、服务端仍在。
+    expect(
+      wrapper.findAll('button').filter((b) => b.attributes('aria-label') === '删除节假日'),
+    ).toHaveLength(1)
+    expect(wrapper.text()).toContain('端午节')
+  })
+
+  it('a failed conflict replace keeps the draft and rolls both lists back', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    const holidayForm = wrapper.findAll('form').find((f) => f.find('#holiday-name').exists())!
+    await holidayForm.find('input[type="date"]').setValue('2026-06-20')
+    await flushPromises()
+    await holidayForm.trigger('submit')
+    await flushPromises()
+
+    await findButtonsByText(wrapper, '确认替换')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    // 冲突框保持打开（文案还在）、草稿日期保留，用户可原地重试。
+    expect(wrapper.text()).toContain('已设为例外日')
+    expect((holidayForm.find('input[type="date"]').element as HTMLInputElement).value).toBe(
+      '2026-06-20',
+    )
+    // 两个集合都回滚：例外日还在，未凭空多出节假日。
+    expect(wrapper.text()).toContain('调休')
   })
 
   it('persistCalendar de-duplicates workingTimes/holidays/exceptions before sending', async () => {
