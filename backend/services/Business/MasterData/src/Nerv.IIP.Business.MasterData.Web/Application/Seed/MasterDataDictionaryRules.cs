@@ -135,8 +135,12 @@ public static class MasterDataDictionaryRules
             ["uom-dimension"] = new HashSet<string>(["mass", "quantity"], StringComparer.Ordinal)
         };
 
+    /// <summary>
+    /// SKU 创建时需要按受控字典校验的字段。
+    /// **不含产品分类**：分类的权威值域是产品分类目录实体，由 <c>SkuCategoryValidator</c>
+    /// 单独校验（#1596，口径裁决 A）；`product-category` CodeSet 已降级为 legacy 兼容。
+    /// </summary>
     public static IEnumerable<ControlledReferenceData> GetCreateSkuReferences(
-        string category,
         string materialType,
         string batchTrackingPolicy,
         string serialTrackingPolicy,
@@ -145,7 +149,6 @@ public static class MasterDataDictionaryRules
         string defaultBarcodeRuleCode,
         IEnumerable<string> complianceTags)
     {
-        yield return new("product-category", category, "Category");
         yield return new("material-type", materialType, "MaterialType");
         yield return new("batch-tracking-policy", batchTrackingPolicy, "BatchTrackingPolicy");
         yield return new("serial-tracking-policy", serialTrackingPolicy, "SerialTrackingPolicy");
@@ -159,8 +162,8 @@ public static class MasterDataDictionaryRules
         }
     }
 
+    /// <summary>SKU 更新时的受控字典字段；**不含产品分类**，理由同 <see cref="GetCreateSkuReferences"/>。</summary>
     public static IEnumerable<ControlledReferenceData> GetUpdateSkuReferences(
-        string? category,
         string? materialType,
         string? batchTrackingPolicy,
         string? serialTrackingPolicy,
@@ -168,7 +171,6 @@ public static class MasterDataDictionaryRules
         string? storageConditionCode,
         string? defaultBarcodeRuleCode)
     {
-        if (category is not null) yield return new("product-category", category, "Category");
         if (materialType is not null) yield return new("material-type", materialType, "MaterialType");
         if (batchTrackingPolicy is not null) yield return new("batch-tracking-policy", batchTrackingPolicy, "BatchTrackingPolicy");
         if (serialTrackingPolicy is not null) yield return new("serial-tracking-policy", serialTrackingPolicy, "SerialTrackingPolicy");

@@ -14,6 +14,7 @@
 - **Name**:展示给用户的中文名。
 - 业务对象(SKU 等)的受控字段存的是 **Code**;UI 一律显示 **Name**,不暴露 Code。
 - **独立目录兼容**:`product-category`、`skill` 和 `quality-reason` 仍保留为 legacy CodeSet 校验与历史前端兜底来源；新增结构化维护应优先使用 ProductCategory、Skill 和 QualityReason 独立目录 API。独立目录不物理删除历史 code，且在完全切换前不得破坏 SKU `category`、PersonnelSkill `skillCode` 或历史 Quality defect reason 对 CodeSet 的兼容读取。
+- **`product-category` 已退出 SKU 写路径**（#1596，口径裁决 A）:SKU `category` 的**权威值域是 ProductCategory 独立目录实体**（`PCAT-*` 层级树），由 `SkuCategoryValidator` 校验；`product-category` CodeSet 仅作过渡期兼容——**存量 legacy 码仍被接受**，但不再是新写入的校验源。分类天然是层级树（实体带 `ParentCode`），扁平 CodeSet 表达不了；粗粒度「性质分类」这条轴由 `material-type` 承担，SKU 不再挂第二个分类字段。旧码→PCAT 树的数据迁移与本 CodeSet 正式退役另行处理。
 
 ## 2. CodeSet 目录（权威清单）
 
@@ -24,7 +25,7 @@
 | CodeSet | 中文名 | 类别 | 标准码值（code = 中文名） |
 |---|---|---|---|
 | `material-type` | 物料类型 | 系统枚举 | `raw-material`=原材料 / `semi-finished`=半成品 / `finished-goods`=成品 / `packaging`=包装物 / `consumable`=辅料消耗品 / `spare-part`=备品备件 / `tooling`=工装刀具 |
-| `product-category` | 产品分类（legacy 兼容） | 平台预置+可维护 | `electronic`=电子料 / `mechanical`=机械件 / `plastic`=塑胶件 / `hardware`=五金件 / `chemical`=化学品 / `assembly`=组装件 |
+| `product-category` | 产品分类（legacy 兼容，**已退出 SKU 写路径**，见 §1 与 #1596） | 平台预置+可维护 | `electronic`=电子料 / `mechanical`=机械件 / `plastic`=塑胶件 / `hardware`=五金件 / `chemical`=化学品 / `assembly`=组装件 |
 | `batch-tracking-policy` | 批次追踪策略 | 系统枚举 | `none`=不管理 / `optional`=可选记录 / `mandatory`=强制批次 |
 | `serial-tracking-policy` | 序列号追踪策略 | 系统枚举 | `none`=不管理 / `on-receipt`=入库赋序 / `on-production`=生产赋序 / `on-shipment`=出货赋序 |
 | `shelf-life-policy` | 保质期策略 | 系统枚举 | `none`=无保质期 / `fifo`=先进先出 / `fefo`=先到期先出 / `expiry-controlled`=到期管控 |
@@ -74,7 +75,7 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 
 | SKU 字段 | 校验 CodeSet | 备注 |
 |---|---|---|
-| `category` | `product-category` | |
+| `category` | ~~`product-category`~~ | **不再走 CodeSet**：权威值域为 ProductCategory 独立目录实体，legacy 码仅过渡期兼容（#1596） |
 | `materialType` | `material-type` | |
 | `batchTrackingPolicy` | `batch-tracking-policy` | |
 | `serialTrackingPolicy` | `serial-tracking-policy` | |
@@ -100,13 +101,13 @@ UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(�
 ## 5. 前后端对齐约定
 
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
-- **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。
-- **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
+- **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。**产品分类除外**——它取自 ProductCategory 独立目录 API，不走 `?codeSet=`（#1596）。
+- **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。产品分类改由「产品分类」页维护、走独立目录 API（#1596）。
 - 三处的 code 值集合必须等同；前端离线兜底的中文 label 应与本文件和后端种子 name 保持一致，避免实时字典不可用时出现不同展示名。
 
 ## 6. 落地状态（2026-06-10）
 
-- ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取产品分类、物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。
+- ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。**产品分类已改取 ProductCategory 独立目录**(「产品分类」页维护),不再经 `?codeSet=`(#1596)。
 - ✅ 后端种子 `MasterDataSeedService` 已通过 #352/#369 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,对 `batch-tracking-policy:lot`、`serial-tracking-policy:serial`、`shelf-life-policy:180d/365d`、`uom-dimension:mass/quantity` 等历史误种码值执行软停用而非物理删除；seed 会修复既有启用标准码的中文 name 与 UOM 种子的名称/量纲。
 - ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;人员技能登记会校验 legacy 技能 CodeSet 与技能等级必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
 - ✅ ProductCategory、Skill 和 QualityReason 已提供独立目录 API/BusinessGateway facade，用于产品分类树、技能证书属性和质量原因严重度/默认处置等结构化维护；legacy CodeSet 在切换期保留兼容。
