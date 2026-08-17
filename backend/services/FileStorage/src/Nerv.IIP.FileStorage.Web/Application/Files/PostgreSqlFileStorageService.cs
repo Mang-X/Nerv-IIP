@@ -203,8 +203,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             session.ExpectedSizeBytes,
             session.Checksum,
             session.ObjectKey,
-            FileStorageScanPolicy.InitialScanStatus(configuration),
-            FileStorageScanPolicy.Available,
+            FileStorageFileStatus.Available,
             session.CreatedAtUtc,
             now);
 
@@ -377,7 +376,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             x => x.FileId == grant.FileId,
             cancellationToken);
         if (file is null
-            || !FileStorageScanPolicy.CanDownload(file.ScanStatus, file.Status, configuration))
+            || !string.Equals(file.Status, FileStorageFileStatus.Available, StringComparison.Ordinal))
         {
             return null;
         }
@@ -456,7 +455,6 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             file.ContentType,
             file.SizeBytes,
             file.Checksum,
-            file.ScanStatus,
             file.Status,
             file.CreatedAtUtc,
             file.CompletedAtUtc);
@@ -481,7 +479,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         var storedBytes = dbContext.StoredFiles
             .Where(file => file.OrganizationId == organizationId
                 && file.EnvironmentId == environmentId
-                && file.Status != "deleted");
+                && file.Status != FileStorageFileStatus.Deleted);
         if (!string.IsNullOrWhiteSpace(filePurpose))
         {
             storedBytes = storedBytes.Where(file => file.FilePurpose == filePurpose);

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.FileStorage.Domain;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
@@ -44,7 +45,7 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
         var physicalDeleteGrace = FileStoragePurposePolicies.ResolvePhysicalDeleteGrace(configuration);
         var softDeleted = 0;
         var activeFiles = await dbContext.StoredFiles
-            .Where(x => x.Status == FileStorageScanPolicy.Available)
+            .Where(x => x.Status == FileStorageFileStatus.Available)
             .ToArrayAsync(cancellationToken);
         foreach (var file in activeFiles)
         {
@@ -62,7 +63,7 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
         }
 
         var physicalDeleteFiles = await dbContext.StoredFiles
-            .Where(x => x.Status == "deleted"
+            .Where(x => x.Status == FileStorageFileStatus.Deleted
                 && x.PhysicalDeleteAfterUtc != null
                 && x.PhysicalDeleteAfterUtc <= now)
             .ToArrayAsync(cancellationToken);

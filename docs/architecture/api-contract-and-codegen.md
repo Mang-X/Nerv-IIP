@@ -470,6 +470,12 @@ BusinessGateway 控制台 API 引入后，生成链路增加 `business-gateway-c
 4. 不允许前端在契约未更新时通过手写 DTO 临时绕过。
 5. SDK 模块新增或行为变化必须同步更新 docs/architecture/platform-sdk-baseline.md。
 
+### FileStorage 扫描字段移除的一次性版本例外（#1604）
+
+2026-08-17 owner 已批准在尚未形成客户发布支持的 FileStorage v1 基线中彻底删除病毒扫描能力。`scanStatus` 没有受支持的外部消费方，仓库内消费方随同一变更重新生成；因此 #1604 允许从现有 `/v1` DTO、PlatformGateway v1 OpenAPI 快照和生成客户端直接删除该字段，不另建只承载废弃字段的 v2 路由。升级方必须同步部署后端与重新生成的客户端，数据库 migration 必须先将历史非 `clean` 文件 fail closed，再删除扫描列。
+
+该例外只适用于 #1604 的 `scanStatus` 删除，不放宽本节的一般规则；FileStorage 形成受支持客户发布后，任何字段删除仍必须提升主版本。
+
 ## 反模式
 
 1. 在页面里直接手写 URL、标头和重复错误处理。

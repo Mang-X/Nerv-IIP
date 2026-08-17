@@ -72,18 +72,6 @@ public sealed class StoredFileRecordEntityTypeConfiguration : IEntityTypeConfigu
             .IsRequired()
             .HasMaxLength(1024)
             .HasComment("Internal object storage key; never exposed through public FileStorage responses.");
-        builder.Property(x => x.ScanStatus)
-            .HasColumnName("scan_status")
-            .IsRequired()
-            .HasMaxLength(32)
-            .HasComment("Malware or content scan status for the stored file.");
-        builder.Property(x => x.ScannedAtUtc)
-            .HasColumnName("scanned_at_utc")
-            .HasComment("UTC timestamp when malware or content scanning last completed.");
-        builder.Property(x => x.ScanDetail)
-            .HasColumnName("scan_detail")
-            .HasMaxLength(512)
-            .HasComment("Scanner result summary or degradation reason produced by FileStorage scanning.");
         builder.Property(x => x.Status)
             .HasColumnName("status")
             .IsRequired()
@@ -108,7 +96,6 @@ public sealed class StoredFileRecordEntityTypeConfiguration : IEntityTypeConfigu
 
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OwnerService, x.OwnerType, x.OwnerId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CompletedAtUtc });
-        builder.HasIndex(x => new { x.ScanStatus, x.Status });
         builder.HasIndex(x => new { x.Status, x.PhysicalDeleteAfterUtc });
         builder.HasIndex(x => x.ObjectKey).IsUnique();
     }

@@ -38,7 +38,7 @@
 - 是主平台关于“文件如何被保存、访问和治理”的事实源。
 - 二进制内容默认落到 MinIO 或等价对象存储，但对象存储内部 key 不作为公开业务契约。
 - tus、S3 multipart 和平台中转上传通过 Upload Provider 抽象接入，不成为业务服务依赖的领域模型。
-- filePurpose、大小限制、内容类型允许列表（content type allowlist）、scanStatus、保留策略和配额口径由 File Storage 统一治理。
+- filePurpose、大小限制、内容类型允许列表（content type allowlist）、保留策略和配额口径由 File Storage 统一治理。
 - 不解释文件的业务语义；KnowledgeSource、OperationTask、Application 等业务对象只通过 fileId 或 FileReference 关联文件。
 
 ### AppHub

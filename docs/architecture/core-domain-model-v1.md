@@ -89,7 +89,6 @@
 - UploadInstructions
 - UploadMode
 - UploadProvider
-- ScanStatus
 
 ### 首批主表建议
 
@@ -112,7 +111,6 @@
 - FileArchived
 - FileDeleted
 - FileRetentionPolicyChanged
-- FileScanStatusChanged
 
 ### 关键边界
 
@@ -122,7 +120,7 @@
 4. 对象内容默认落到 MinIO 或等价对象存储，元数据和治理状态必须落到 File Storage 自身数据库模式（schema）。
 5. Knowledge、Ops、AppHub 可以引用文件，但不能绕过 File Storage 直接把底层对象定位信息当成自己的事实源。
 6. tus、S3 multipart 和服务器代理（server-proxy）只作为 Upload Provider 策略存在；UploadSession 记录 provider 与 uploadMode，StoredFile 不依赖具体上传协议。
-7. filePurpose、大小限制、内容类型允许列表（content type allowlist）、scanStatus、保留策略和过期清理属于 File Storage 治理事实，不应散落到业务服务中各自实现。
+7. filePurpose、大小限制、内容类型允许列表（content type allowlist）、文件生命周期状态、保留策略和过期清理属于 File Storage 治理事实，不应散落到业务服务中各自实现。
 
 ## AppHub 一阶模型
 
@@ -322,8 +320,8 @@
 ### 关键边界
 
 1. Knowledge 只通过 File Storage 的 fileId、FileReference、受控下载授权或 Platform SDK 使用文件，不保存对象存储键（key）、预签名 URL 或底层存储凭证作为长期事实。
-2. 原始文件、派生附件、扫描状态、保留策略和物理删除归 File Storage；知识源状态、解析、分块、嵌入、索引和引用回显归 Knowledge。
-3. File Storage 文件归档、隔离或删除后，Knowledge 应通过集成事件或同步检查将相关 SourceDocument 标记为 Stale、Deleted 或不可检索，而不是直接改写 File Storage 状态。
+2. 原始文件、派生附件、保留策略和物理删除归 File Storage；知识源状态、解析、分块、嵌入、索引和引用回显归 Knowledge。
+3. File Storage 文件归档或删除后，Knowledge 应通过集成事件或同步检查将相关 SourceDocument 标记为 Stale、Deleted 或不可检索，而不是直接改写 File Storage 状态。
 4. Knowledge 可以把可重建索引写入 Qdrant 或等价向量库，但关系库必须保留可解释的索引元数据、任务状态和引用事实。
 5. AI Integration、Gateway 和平台服务只能通过 Knowledge 检索接口消费片段和引用，不绕过 Knowledge 权限过滤直接查询向量库、File Storage 或对象存储。
 6. 检索返回必须携带 CitationRecord 或等价引用结构，不能只返回脱离来源的纯文本片段。
