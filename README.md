@@ -135,6 +135,7 @@ user-secrets，检查/信任本地 HTTPS 开发证书，执行 `dotnet restore`�
 ```
 
 该命令通过 `scripts/dev.ps1` 启动平台级 Aspire AppHost。Aspire 是完整本地拓扑入口，会编排 PlatformGateway、AppHub、IAM、Ops、FileStorage、Notification、Business 服务、Connector Host、Console 和本地依赖服务。
+FileStorage 不提供独立 InMemory metadata profile；本地开发必须通过该 AppHost 获得 PostgreSQL 连接与 Development-only migration 配置，直接选择 `Persistence:Provider=InMemory` 会在启动时给出指引并退出。
 首次启动前建议先运行 bootstrap；如需手工配置本机 Aspire 密钥参数，可参考 [infra/aspire/README.md](infra/aspire/README.md)。
 本地基础设施镜像版本由 AppHost 显式固定到新版 major：PostgreSQL 使用 `18`，
 Redis 使用 `8`。不要改成 `latest`；PostgreSQL 18+ 的官方 Docker 镜像数据目录

@@ -25,20 +25,28 @@ public sealed class FileStorageStartupGovernanceTests
         Assert.DoesNotContain("startup-test-secret", exception.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Development_explicit_inmemory_starts()
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public void Inmemory_is_rejected_with_apphost_postgresql_remedy(string environment)
     {
-        using var factory = CreateFactory("Development", provider: "InMemory");
+        using var factory = CreateFactory(environment, provider: "InMemory");
 
-        using var client = factory.CreateClient();
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.NotNull(client);
+        Assert.Contains("FileStorage does not support Persistence:Provider=InMemory.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Aspire AppHost", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("PostgreSQL", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("startup-test-secret", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Development_without_versioned_storage_configuration_uses_unavailable_store()
     {
-        using var factory = CreateFactory("Development", provider: "InMemory");
+        using var factory = CreateFactory(
+            "Development",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString);
 
         var store = factory.Services.GetRequiredService<IVersionedObjectStore>();
 
@@ -56,7 +64,8 @@ public sealed class FileStorageStartupGovernanceTests
         storageSettings[missingSetting] = string.Empty;
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: storageSettings);
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -73,7 +82,8 @@ public sealed class FileStorageStartupGovernanceTests
         storageSettings["Storage:Provider"] = string.Empty;
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: storageSettings);
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -93,7 +103,8 @@ public sealed class FileStorageStartupGovernanceTests
         storageSettings["Storage:MinIO:Endpoint"] = endpoint;
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: storageSettings);
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -116,7 +127,8 @@ public sealed class FileStorageStartupGovernanceTests
         storageSettings["Storage:MinIO:ComplianceArchiveBucket"] = bucket;
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: storageSettings);
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -130,7 +142,8 @@ public sealed class FileStorageStartupGovernanceTests
     {
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: new Dictionary<string, string?>
             {
                 ["Storage:Provider"] = "Local"
@@ -146,7 +159,8 @@ public sealed class FileStorageStartupGovernanceTests
     {
         using var factory = CreateFactory(
             "Development",
-            provider: "InMemory",
+            provider: "PostgreSQL",
+            connectionString: PostgreSqlConnectionString,
             storageSettings: CompleteMinioSettings());
 
         var store = factory.Services.GetRequiredService<IVersionedObjectStore>();
@@ -181,7 +195,7 @@ public sealed class FileStorageStartupGovernanceTests
     }
 
     [Fact]
-    public void Development_inmemory_rejects_automigrate_with_specific_remedy()
+    public void Inmemory_with_automigrate_is_rejected_before_shared_automigrate_validation()
     {
         using var factory = CreateFactory(
             "Development",
@@ -190,10 +204,8 @@ public sealed class FileStorageStartupGovernanceTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.Contains(
-            "Persistence:AutoMigrate must be false when Persistence:Provider=InMemory.",
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.Contains("FileStorage does not support Persistence:Provider=InMemory.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Aspire AppHost", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -228,7 +240,6 @@ public sealed class FileStorageStartupGovernanceTests
     [Theory]
     [InlineData(null, true)]
     [InlineData("", true)]
-    [InlineData("InMemory", true)]
     [InlineData("PostgreSQL", false)]
     public void Production_rejects_nonpersistent_or_incomplete_configuration(
         string? provider,
