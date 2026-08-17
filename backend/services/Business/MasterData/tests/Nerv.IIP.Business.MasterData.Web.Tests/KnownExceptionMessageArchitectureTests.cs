@@ -1,27 +1,83 @@
-using System.Text.RegularExpressions;
-
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 public sealed class KnownExceptionMessageArchitectureTests
 {
-    private static readonly Regex DirectMessagePattern = new(
-        "new\\s+KnownException\\s*\\(\\s*\\$?\"(?<message>(?:\\\\.|[^\"\\\\])*)\"",
-        RegexOptions.CultureInvariant);
+    public static TheoryData<string, string> EnglishUserMessageSources => new()
+    {
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { void Run() { throw new KnownException(\"Unable to save\"); } }",
+            "explicit KnownException construction"
+        },
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create() => new(\"Unable to save\"); }",
+            "expression-bodied target-typed construction"
+        },
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create() { return new(\"Unable to save\"); } }",
+            "block return target-typed construction"
+        },
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { void Run() { KnownException error = new(\"Unable to save\"); } }",
+            "local-variable target-typed construction"
+        },
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { private readonly KnownException _error = new(\"Unable to save\"); }",
+            "field target-typed construction"
+        },
+        {
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Error { get; } = new(\"Unable to save\"); }",
+            "property target-typed construction"
+        },
+        {
+            "class Rule { public Rule WithMessage(string message) => this; } class Probe { void Run(Rule rule) { rule.WithMessage(\"Unable to save\"); } }",
+            "WithMessage construction"
+        },
+    };
 
-    private static readonly Regex ConstructorPattern = new(
-        "new\\s+KnownException\\s*\\(",
-        RegexOptions.CultureInvariant);
+    [Theory]
+    [MemberData(nameof(EnglishUserMessageSources))]
+    public void English_user_messages_are_reported(string source, string _)
+    {
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
 
-    private static readonly Regex TargetTypedConstructorPattern = new(
-        "\\bKnownException\\s+\\w+\\s*\\([^;{}]*\\)\\s*=>\\s*new\\s*\\(",
-        RegexOptions.CultureInvariant);
-
-    private static readonly Regex ChineseCharacterPattern = new(
-        "[\\u3400-\\u9fff]",
-        RegexOptions.CultureInvariant);
+        Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
+    }
 
     [Fact]
-    public void Direct_known_exception_messages_contain_chinese_user_guidance()
+    public void Non_static_user_messages_are_reported()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create(string message) => new(message); }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"], violations);
+    }
+
+    [Fact]
+    public void User_messages_estimated_above_sixty_characters_are_reported()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create(string code) => new($\"一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十{code}\"); }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息估算长度不能超过 60 个字符。"], violations);
+    }
+
+    [Fact]
+    public void Chinese_raw_string_user_messages_are_allowed()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create() => new(\"\"\"无法保存，请稍后重试。\"\"\"); }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void MasterData_user_messages_follow_the_architecture_rules()
     {
         var repositoryRoot = FindRepositoryRoot();
         var sourceRoot = Path.Combine(
@@ -32,48 +88,21 @@ public sealed class KnownExceptionMessageArchitectureTests
             "MasterData",
             "src");
 
-        var violations = Directory
+        var documents = Directory
             .GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
             .Where(file => !HasPathSegment(file, "bin") && !HasPathSegment(file, "obj"))
-            .SelectMany(file => FindViolations(repositoryRoot, file))
-            .Order(StringComparer.Ordinal)
+            .Select(file => new SourceDocument(
+                Path.GetRelativePath(repositoryRoot, file),
+                File.ReadAllText(file)))
             .ToArray();
 
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze(documents);
+
         Assert.True(
-            violations.Length == 0,
-            "MasterData KnownException messages must contain Chinese user guidance. Offenders:"
+            violations.Count == 0,
+            "MasterData user messages must be static, contain Chinese, and be at most 60 estimated characters. Offenders:"
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
-    }
-
-    private static IEnumerable<string> FindViolations(string repositoryRoot, string sourceFile)
-    {
-        var source = File.ReadAllText(sourceFile);
-        var directMessages = DirectMessagePattern.Matches(source);
-        var constructorCount = ConstructorPattern.Count(source);
-
-        foreach (Match match in TargetTypedConstructorPattern.Matches(source))
-        {
-            var line = source.AsSpan(0, match.Index).Count('\n') + 1;
-            yield return $"{Path.GetRelativePath(repositoryRoot, sourceFile)}:{line}: "
-                + "KnownException 构造必须显式写为 new KnownException(...)，以便验证用户消息。";
-        }
-
-        if (directMessages.Count != constructorCount)
-        {
-            yield return $"{Path.GetRelativePath(repositoryRoot, sourceFile)}: KnownException 必须以直接字符串作为第一参数，"
-                + $"但 {constructorCount} 个构造中仅识别到 {directMessages.Count} 个。";
-        }
-
-        foreach (Match match in directMessages)
-        {
-            var message = match.Groups["message"].Value;
-            if (!ChineseCharacterPattern.IsMatch(message))
-            {
-                var line = source.AsSpan(0, match.Index).Count('\n') + 1;
-                yield return $"{Path.GetRelativePath(repositoryRoot, sourceFile)}:{line}: {message}";
-            }
-        }
     }
 
     private static bool HasPathSegment(string path, string segment) =>
