@@ -8,8 +8,14 @@
 1. **一律 `NvAlertDialog`** —— 不用 `NvDialog`、不用 `window.confirm`。
 2. **触发只开确认框**：行内按钮 / `NvDropdownMenuItem variant="destructive"` 只负责
    `target = row; confirmOpen = true`，不直接调 API。
-3. **API 调用发生在确认动作里**（`NvAlertDialogAction` 的 click handler）；确认按钮
-   `variant="destructive"`，`pending` 时 disabled。
+3. **API 调用发生在确认动作里**；确认按钮 `variant="destructive"`，`pending` 时 disabled。
+   ⚠️ **确认按钮不要用 `NvAlertDialogAction`**（#1607）：它包的是 reka `AlertDialogAction`，
+   直接渲染成 `DialogClose`，`@click` 里 `onOpenChange(false)` **无条件执行、不看
+   `defaultPrevented`**——点下去框立刻关，异步请求之后才落地。于是「失败保留原因原地重试」
+   与「pending 期间禁点」都只在控制器层成立、真 UI 走不到。**用普通 `NvButton`**，由 handler
+   成功才置 `open = false`。「取消」仍用 `NvAlertDialogCancel`（本来就该无条件关）。
+   这条只有**挂真弹层**的测试能守住——把 `NvAlertDialog*` stub 成 `<div><slot /></div>` 的
+   用例根本测不到关闭时机，样例见 `MasterDataLifecycleDialog.realDialog.test.ts`。
 4. **原因必填**（2026-07 W0 起对新增破坏性动作强制）：确认框内含原因输入
    （`NvInput`，或原因码 `NvSelect` + 备注），**纯空白不算填**（判定一律 `trim()`），
    为空时确认按钮 `disabled`；原因随请求提交、进审计。存量随各域 issue 补齐。
@@ -26,6 +32,7 @@
 ## 判定
 
 - 「点触发按钮时发请求了吗？」发了 → 打回（少了确认步）。
+- 「确认按钮是 `NvAlertDialogAction` 吗？」是 → 打回（点击即关框，失败保留与 pending 禁点失效）。
 - 「确认框里**不填原因能不能点确认**？」能 → 不合规（规则 4）。
 - 「确认框是不是在 `v-for` 里？」是 → 打回（N 行 N 个实例）。
 - 「操作进行中还能取消吗？」Cancel 被 disabled → 打回。
@@ -106,13 +113,15 @@ async function confirmDisable() {
       </NvField>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-        <NvAlertDialogAction
+        <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（规则 3）。 -->
+        <NvButton
+          type="button"
           variant="destructive"
           :disabled="!reason.trim() || pending"
           @click="confirmDisable"
         >
           确认停用
-        </NvAlertDialogAction>
+        </NvButton>
       </NvAlertDialogFooter>
     </NvAlertDialogContent>
   </NvAlertDialog>
