@@ -22,14 +22,12 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
   NvAlertDialogFooter,
   NvAlertDialogHeader,
   NvAlertDialogTitle,
-  NvAlertDialogTrigger,
   NvButton,
   NvDataTable,
   NvDatePicker,
@@ -572,8 +570,9 @@ function dedupeBy<T>(items: T[], keyOf: (item: T) => string | null | undefined):
 }
 
 // 写回：把当前编辑后的 workingTimes/holidays/exceptions 经 update 提交。
+// 返回是否写回成功——删除/替换确认框据此决定「关框」还是「保留原地重试」（confirm-destroy 规则 3）。
 async function persistCalendar(successMsg: string) {
-  if (!selectedCalCode.value) return
+  if (!selectedCalCode.value) return false
   calBoardSaving.value = true
   // 发送前去重：workingTimes 按 dayOfWeek、holidays / exceptions 按 date(归一化),各保留第一条。
   const dedupedWorkingTimes = dedupeBy(workingTimes.value, (w) => normalizeDow(w.dayOfWeek) ?? '')
@@ -589,8 +588,10 @@ async function persistCalendar(successMsg: string) {
       exceptions: dedupedExceptions,
     })
     notifySuccess(successMsg)
+    return true
   } catch (error) {
     notifyOperationFailure('保存工作日历失败', error, '保存工作日历失败，请稍后重试。')
+    return false
   } finally {
     calBoardSaving.value = false
   }
@@ -661,10 +662,14 @@ async function addHoliday() {
   await persistCalendar('节假日已添加。')
 }
 async function removeHoliday(date: string) {
-  if (!selectedCalCode.value) return
+  if (!selectedCalCode.value) return false
   const key = toDateKey(date)
+  // 写回失败要回滚：否则界面显示已删、服务端仍在，是静默的数据不一致。
+  const snapshot = holidays.value
   holidays.value = holidays.value.filter((h) => toDateKey(h.date ?? '') !== key)
-  await persistCalendar('节假日已删除。')
+  const ok = await persistCalendar('节假日已删除。')
+  if (!ok) holidays.value = snapshot
+  return ok
 }
 
 // 加 / 删 例外日（指定某日上班或休息，覆盖每周模式）。
@@ -703,19 +708,25 @@ async function addException() {
 // 确认替换：删除另一类型在该日期的项，写入当前类型，单次持久化。
 async function resolveConflict() {
   const key = conflict.date
-  if (!selectedCalCode.value || !key) {
+  if (!selectedCalCode.value || !key || !conflict.kind) {
     conflict.open = false
+    conflict.kind = ''
     return
   }
+  if (calBoardSaving.value) return
+  // 失败要回滚并保留草稿与确认框：确认按钮是普通 NvButton，关框由成功路径决定。
+  const holidaySnapshot = holidays.value
+  const exceptionSnapshot = exceptions.value
+  let ok = false
   if (conflict.kind === 'holiday') {
     // 删该日例外日，加节假日。
     exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
     holidays.value = [...holidays.value, { date: key, name: conflict.name || '节假日' }]
-    holidayDraft.date = ''
-    holidayDraft.name = ''
-    conflict.open = false
-    conflict.kind = ''
-    await persistCalendar('已替换为节假日（原例外日已删除）。')
+    ok = await persistCalendar('已替换为节假日（原例外日已删除）。')
+    if (ok) {
+      holidayDraft.date = ''
+      holidayDraft.name = ''
+    }
   } else if (conflict.kind === 'exception') {
     // 删该日节假日，加例外日。
     holidays.value = holidays.value.filter((h) => toDateKey(h.date ?? '') !== key)
@@ -723,22 +734,79 @@ async function resolveConflict() {
       ...exceptions.value,
       { date: key, isWorkingDay: conflict.isWorkingDay, reason: conflict.reason },
     ]
-    exceptionDraft.date = ''
-    exceptionDraft.reason = ''
-    conflict.open = false
-    conflict.kind = ''
-    await persistCalendar('已替换为例外日（原节假日已删除）。')
+    ok = await persistCalendar('已替换为例外日（原节假日已删除）。')
+    if (ok) {
+      exceptionDraft.date = ''
+      exceptionDraft.reason = ''
+    }
   }
+  if (!ok) {
+    holidays.value = holidaySnapshot
+    exceptions.value = exceptionSnapshot
+    return
+  }
+  conflict.open = false
+  conflict.kind = ''
 }
 function cancelConflict() {
   conflict.open = false
   conflict.kind = ''
 }
 async function removeException(date: string) {
-  if (!selectedCalCode.value) return
+  if (!selectedCalCode.value) return false
   const key = toDateKey(date)
+  const snapshot = exceptions.value
   exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
-  await persistCalendar('例外日已删除。')
+  const ok = await persistCalendar('例外日已删除。')
+  if (!ok) exceptions.value = snapshot
+  return ok
+}
+
+// 删除确认：节假日与例外日共用**页面层单实例**确认框（confirm-destroy 规则 5，#1608）。
+// 两类目标共用一个 deleteTarget，必须靠 kind 判别——删错类型是静默的数据损失，不会报错。
+type CalendarDeleteTarget =
+  | { kind: 'holiday'; date: string; name: string }
+  | { kind: 'exception'; date: string; isWorkingDay: boolean }
+const deleteConfirmOpen = ref(false)
+const deleteTarget = shallowRef<CalendarDeleteTarget | null>(null)
+
+function openDeleteHoliday(holiday: BusinessConsoleWorkCalendarHoliday) {
+  if (!holiday.date) return
+  deleteTarget.value = { kind: 'holiday', date: holiday.date, name: holiday.name ?? '' }
+  deleteConfirmOpen.value = true
+}
+function openDeleteException(exception: BusinessConsoleWorkCalendarException) {
+  if (!exception.date) return
+  deleteTarget.value = {
+    kind: 'exception',
+    date: exception.date,
+    isWorkingDay: exception.isWorkingDay ?? false,
+  }
+  deleteConfirmOpen.value = true
+}
+const deleteConfirmTitle = computed(() => {
+  const target = deleteTarget.value
+  if (!target) return ''
+  if (target.kind === 'holiday')
+    return `确定删除节假日 ${formatDate(target.date)}${target.name ? ` ${target.name}` : ''}？`
+  return `确定删除例外日 ${formatDate(target.date)}（${target.isWorkingDay ? '当日上班' : '当日休息'}）？`
+})
+const deleteConfirmDescription = computed(() => {
+  const target = deleteTarget.value
+  if (!target) return ''
+  return target.kind === 'holiday' ? '该日将不再标记为节假日。' : '该日将恢复按每周工作模式判定。'
+})
+// 成功才关框：失败时留在原地可重试（确认按钮是普通 NvButton，不是点击即关的 NvAlertDialogAction）。
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target || calBoardSaving.value) return
+  const ok =
+    target.kind === 'holiday'
+      ? await removeHoliday(target.date)
+      : await removeException(target.date)
+  if (!ok) return
+  deleteConfirmOpen.value = false
+  deleteTarget.value = null
 }
 
 // DatePicker 的 modelValue 是 'YYYY-MM-DD' | null；草稿仍用字符串，故清空(null)归一为 ''。
@@ -1251,38 +1319,16 @@ const sortedExceptions = computed(() =>
                       ><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span>
                       <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span
                     >
-                    <NvAlertDialog>
-                      <NvAlertDialogTrigger as-child>
-                        <NvButton
-                          size="icon"
-                          variant="ghost"
-                          type="button"
-                          aria-label="删除节假日"
-                          :disabled="calBoardSaving"
-                          ><Trash2Icon aria-hidden="true"
-                        /></NvButton>
-                      </NvAlertDialogTrigger>
-                      <NvAlertDialogContent>
-                        <NvAlertDialogHeader>
-                          <NvAlertDialogTitle
-                            >确定删除节假日 {{ formatDate(h.date)
-                            }}{{ h.name ? ` ${h.name}` : '' }}？</NvAlertDialogTitle
-                          >
-                          <NvAlertDialogDescription
-                            >该日将不再标记为节假日。</NvAlertDialogDescription
-                          >
-                        </NvAlertDialogHeader>
-                        <NvAlertDialogFooter>
-                          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-                          <NvAlertDialogAction
-                            variant="destructive"
-                            :disabled="calBoardSaving"
-                            @click="removeHoliday(h.date!)"
-                            >确认删除</NvAlertDialogAction
-                          >
-                        </NvAlertDialogFooter>
-                      </NvAlertDialogContent>
-                    </NvAlertDialog>
+                    <!-- 触发只开框；确认框是页面层单实例（v-for 外），见文件末尾。 -->
+                    <NvButton
+                      size="icon"
+                      variant="ghost"
+                      type="button"
+                      aria-label="删除节假日"
+                      :disabled="calBoardSaving"
+                      @click="openDeleteHoliday(h)"
+                      ><Trash2Icon aria-hidden="true"
+                    /></NvButton>
                   </li>
                 </ul>
               </section>
@@ -1348,45 +1394,43 @@ const sortedExceptions = computed(() =>
                         }}{{ e.reason ? ` · ${e.reason}` : '' }}</span
                       ></span
                     >
-                    <NvAlertDialog>
-                      <NvAlertDialogTrigger as-child>
-                        <NvButton
-                          size="icon"
-                          variant="ghost"
-                          type="button"
-                          aria-label="删除例外日"
-                          :disabled="calBoardSaving"
-                          ><Trash2Icon aria-hidden="true"
-                        /></NvButton>
-                      </NvAlertDialogTrigger>
-                      <NvAlertDialogContent>
-                        <NvAlertDialogHeader>
-                          <NvAlertDialogTitle
-                            >确定删除例外日 {{ formatDate(e.date) }}（{{
-                              e.isWorkingDay ? '当日上班' : '当日休息'
-                            }}）？</NvAlertDialogTitle
-                          >
-                          <NvAlertDialogDescription
-                            >该日将恢复按每周工作模式判定。</NvAlertDialogDescription
-                          >
-                        </NvAlertDialogHeader>
-                        <NvAlertDialogFooter>
-                          <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-                          <NvAlertDialogAction
-                            variant="destructive"
-                            :disabled="calBoardSaving"
-                            @click="removeException(e.date!)"
-                            >确认删除</NvAlertDialogAction
-                          >
-                        </NvAlertDialogFooter>
-                      </NvAlertDialogContent>
-                    </NvAlertDialog>
+                    <!-- 触发只开框；与节假日共用页面层那一个确认框，靠 deleteTarget.kind 判别。 -->
+                    <NvButton
+                      size="icon"
+                      variant="ghost"
+                      type="button"
+                      aria-label="删除例外日"
+                      :disabled="calBoardSaving"
+                      @click="openDeleteException(e)"
+                      ><Trash2Icon aria-hidden="true"
+                    /></NvButton>
                   </li>
                 </ul>
               </section>
             </div>
           </NvSheetContent>
         </NvSheet>
+
+        <!-- 节假日 / 例外日删除确认（受控，页面层单实例；两类目标共用，靠 deleteTarget.kind 判别） -->
+        <NvAlertDialog v-model:open="deleteConfirmOpen">
+          <NvAlertDialogContent>
+            <NvAlertDialogHeader>
+              <NvAlertDialogTitle>{{ deleteConfirmTitle }}</NvAlertDialogTitle>
+              <NvAlertDialogDescription>{{ deleteConfirmDescription }}</NvAlertDialogDescription>
+            </NvAlertDialogHeader>
+            <NvAlertDialogFooter>
+              <NvAlertDialogCancel>取消</NvAlertDialogCancel>
+              <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
+              <NvButton
+                type="button"
+                variant="destructive"
+                :disabled="calBoardSaving"
+                @click="confirmDelete"
+                >确认删除</NvButton
+              >
+            </NvAlertDialogFooter>
+          </NvAlertDialogContent>
+        </NvAlertDialog>
 
         <!-- 节假日 / 例外日互斥冲突确认（受控） -->
         <NvAlertDialog v-model:open="conflict.open">
@@ -1397,8 +1441,9 @@ const sortedExceptions = computed(() =>
             </NvAlertDialogHeader>
             <NvAlertDialogFooter>
               <NvAlertDialogCancel @click="cancelConflict">取消</NvAlertDialogCancel>
-              <NvAlertDialogAction :disabled="calBoardSaving" @click="resolveConflict"
-                >确认替换</NvAlertDialogAction
+              <!-- 同上：替换要等写回结果，失败时保留草稿与本框，故不用 NvAlertDialogAction。 -->
+              <NvButton type="button" :disabled="calBoardSaving" @click="resolveConflict"
+                >确认替换</NvButton
               >
             </NvAlertDialogFooter>
           </NvAlertDialogContent>

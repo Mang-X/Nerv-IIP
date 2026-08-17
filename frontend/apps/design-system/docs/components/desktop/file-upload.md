@@ -194,7 +194,7 @@ onMounted(async () => {
     owner-id="inspection-2406-17"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['application/pdf', 'image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['application/pdf', 'image/png', 'image/jpeg']"
     :max-files="4"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -217,7 +217,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
     owner-id="inspection-2406-17"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['application/pdf', 'image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['application/pdf', 'image/png', 'image/jpeg']"
     :max-files="4"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -303,13 +303,13 @@ const upload = ref<FileUploadExpose | null>(null)
   <FileUpload
     ref="avatarUpload"
     variant="avatar"
-    purpose="operator-avatar"
+    purpose="avatar"
     owner-service="Iam"
     owner-type="UserProfile"
     owner-id="operator-2406"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="1"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -325,13 +325,13 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 <template>
   <FileUpload
     variant="avatar"
-    purpose="operator-avatar"
+    purpose="avatar"
     owner-service="Iam"
     owner-type="UserProfile"
     owner-id="operator-2406"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="1"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -348,7 +348,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
   <FileUpload
     ref="compactUpload"
     variant="compact"
-    purpose="work-instruction-attachment"
+    purpose="engineering-document"
     owner-service="ProductEngineering"
     owner-type="StandardOperation"
     owner-id="op-assembly-10"
@@ -371,7 +371,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 <template>
   <FileUpload
     variant="compact"
-    purpose="work-instruction-attachment"
+    purpose="engineering-document"
     owner-service="ProductEngineering"
     owner-type="StandardOperation"
     owner-id="op-assembly-10"
@@ -395,13 +395,13 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
   <FileUpload
     ref="galleryUpload"
     variant="gallery"
-    purpose="quality-gallery"
+    purpose="quality-evidence"
     owner-service="Quality"
     owner-type="NonconformanceReport"
     owner-id="ncr-2406-21"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="6"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -417,13 +417,13 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 <template>
   <FileUpload
     variant="gallery"
-    purpose="quality-gallery"
+    purpose="quality-evidence"
     owner-service="Quality"
     owner-type="NonconformanceReport"
     owner-id="ncr-2406-21"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="6"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -440,7 +440,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
   <FileUpload
     ref="tableUpload"
     variant="table"
-    purpose="engineering-documents"
+    purpose="engineering-document"
     owner-service="ProductEngineering"
     owner-type="EngineeringDocument"
     owner-id="doc-pack-2406"
@@ -449,7 +449,6 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
     :accepted-content-types="[
       'application/pdf',
       'image/png',
-      'image/svg+xml',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ]"
     :max-files="8"
@@ -467,7 +466,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 <template>
   <FileUpload
     variant="table"
-    purpose="engineering-documents"
+    purpose="engineering-document"
     owner-service="ProductEngineering"
     owner-type="EngineeringDocument"
     owner-id="doc-pack-2406"
@@ -476,7 +475,6 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
     :accepted-content-types="[
       'application/pdf',
       'image/png',
-      'image/svg+xml',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ]"
     :max-files="8"
@@ -495,13 +493,13 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
   <FileUpload
     ref="imageUpload"
     variant="image"
-    purpose="equipment-photo"
+    purpose="maintenance-photo"
     owner-service="Maintenance"
     owner-type="EquipmentAsset"
     owner-id="eqp-press-07"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="4"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
@@ -517,13 +515,13 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 <template>
   <FileUpload
     variant="image"
-    purpose="equipment-photo"
+    purpose="maintenance-photo"
     owner-service="Maintenance"
     owner-type="EquipmentAsset"
     owner-id="eqp-press-07"
     organization-id="org-demo"
     environment-id="env-prod"
-    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :accepted-content-types="['image/png', 'image/jpeg']"
     :max-files="4"
     :create-upload-session="createUploadSession"
     :complete-upload-session="completeUploadSession"
