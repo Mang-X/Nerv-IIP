@@ -94,12 +94,28 @@ function Get-NervDotSourceCommands {
 function Assert-NervFacadeResponsibilityRegistryClosure {
     param(
         [Parameter(Mandatory)] [string[]] $ImportedLibraryNames,
+        [Parameter(Mandatory)] [string[]] $SharedDependencyNames,
         [Parameter(Mandatory)] [object[]] $ResponsibilityContracts
     )
 
-    [string[]]$actual = @(Get-NervOrdinalSorted -Unique -Values $ImportedLibraryNames)
+    $importedSet = Get-NervOrdinalSet -Values $ImportedLibraryNames
+    $sharedDependencySet = Get-NervOrdinalSet -Values $SharedDependencyNames
     [string[]]$registered = @(Get-NervOrdinalSorted -Unique -Values @(
         $ResponsibilityContracts | ForEach-Object { [string]$_.LibraryName }
+    ))
+    $registeredSet = Get-NervOrdinalSet -Values $registered
+    [string[]]$missingSharedDependencies = @(Get-NervOrdinalSorted -Unique -Values @(
+        $SharedDependencyNames | Where-Object { -not $importedSet.Contains([string]$_) }
+    ))
+    Assert-Equal 0 $missingSharedDependencies.Count `
+        "TestEvidence facade shared-dependency whitelist must name imported libraries only. Missing=[$($missingSharedDependencies -join ', ')]"
+    [string[]]$registeredSharedDependencies = @(Get-NervOrdinalSorted -Unique -Values @(
+        $SharedDependencyNames | Where-Object { $registeredSet.Contains([string]$_) }
+    ))
+    Assert-Equal 0 $registeredSharedDependencies.Count `
+        "TestEvidence facade shared dependencies must not also appear in the responsibility registry. Overlap=[$($registeredSharedDependencies -join ', ')]"
+    [string[]]$actual = @(Get-NervOrdinalSorted -Unique -Values @(
+        $ImportedLibraryNames | Where-Object { -not $sharedDependencySet.Contains([string]$_) }
     ))
     Assert-True ([string]::Equals(($actual -join '|'), ($registered -join '|'), [StringComparison]::Ordinal)) `
         "TestEvidence facade imports and responsibility registry must be identical. Actual=[$($actual -join ', ')] Registered=[$($registered -join ', ')]"
@@ -144,11 +160,9 @@ $facadeOwnedLibraryNames = @($testEvidenceLibraryImports | ForEach-Object {
     Assert-Equal 1 $literalMatches.Count "TestEvidence facade imports must name one literal sibling library: $($_.Extent.Text)"
     [string]$literalMatches[0].Groups[1].Value
 })
-$facadeOwnedResponsibilityLibraryNames = @($facadeOwnedLibraryNames | Where-Object {
-    ([string]$_).StartsWith('TestEvidence', [StringComparison]::Ordinal) -and
-        -not [string]::Equals([string]$_, 'TestEvidence.ps1', [StringComparison]::Ordinal)
-})
-Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedResponsibilityLibraryNames `
+$sharedFacadeDependencyNames = @('OrdinalString.ps1')
+Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
+    -SharedDependencyNames $sharedFacadeDependencyNames `
     -ResponsibilityContracts $facadeOwnedResponsibilityContracts
 
 $missingRegistryContracts = @($facadeOwnedResponsibilityContracts | Where-Object {
@@ -156,7 +170,8 @@ $missingRegistryContracts = @($facadeOwnedResponsibilityContracts | Where-Object
 })
 $missingRegistryFailure = $null
 try {
-    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedResponsibilityLibraryNames `
+    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
+        -SharedDependencyNames $sharedFacadeDependencyNames `
         -ResponsibilityContracts $missingRegistryContracts
 }
 catch {
@@ -166,6 +181,37 @@ Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRegistryFailure))
     'Removing an imported facade-owned library from the responsibility registry must fail closed.'
 Assert-True ([string]$missingRegistryFailure).Contains('TestEvidenceProvenance.ps1', [StringComparison]::Ordinal) `
     'The missing-registry mutation failure must identify the imported Provenance library that escaped registration.'
+
+$nonPrefixedRegistryFailure = $null
+try {
+    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames @($facadeOwnedLibraryNames + 'EvidenceExtra.ps1') `
+        -SharedDependencyNames $sharedFacadeDependencyNames `
+        -ResponsibilityContracts $facadeOwnedResponsibilityContracts
+}
+catch {
+    $nonPrefixedRegistryFailure = $_.Exception.Message
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$nonPrefixedRegistryFailure)) `
+    'Adding a non-TestEvidence-prefixed facade import without a responsibility registry row must fail closed.'
+Assert-True ([string]$nonPrefixedRegistryFailure).Contains('EvidenceExtra.ps1', [StringComparison]::Ordinal) `
+    'The unregistered-import mutation failure must identify the non-TestEvidence-prefixed library that escaped registration.'
+
+$sharedDependencyRegistryFailure = $null
+try {
+    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
+        -SharedDependencyNames $sharedFacadeDependencyNames `
+        -ResponsibilityContracts @($facadeOwnedResponsibilityContracts + [pscustomobject]@{
+            LibraryName = 'OrdinalString.ps1'
+            FunctionNames = @()
+        })
+}
+catch {
+    $sharedDependencyRegistryFailure = $_.Exception.Message
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$sharedDependencyRegistryFailure)) `
+    'Registering a shared facade dependency as a responsibility library must fail closed.'
+Assert-True ([string]$sharedDependencyRegistryFailure).Contains('OrdinalString.ps1', [StringComparison]::Ordinal) `
+    'The shared-dependency overlap mutation failure must identify the library registered in both partitions.'
 
 $expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('ScriptAutomation.ps1', 'TestEvidence.ps1') + @($facadeOwnedLibraryNames)))
 $actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
