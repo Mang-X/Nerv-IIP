@@ -2,8 +2,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
+import fileStorageSettings from '../../../../../../../backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/appsettings.json'
 import type { FileUploadExpose } from '.'
 import { FileUpload, fileUploadMotion } from '.'
+
+const qualityEvidencePurpose =
+  Object.keys(fileStorageSettings.FileStorage.PurposePolicies).find(
+    (purpose) => purpose === 'quality-evidence',
+  ) ??
+  (() => {
+    throw new Error('FileStorage purpose configuration must register quality-evidence.')
+  })()
 
 const originalCreateObjectURL = URL.createObjectURL
 const originalRevokeObjectURL = URL.revokeObjectURL
@@ -149,7 +158,7 @@ describe('FileUpload', () => {
 
     const wrapper = mount(FileUpload, {
       props: {
-        purpose: 'quality-evidence',
+        purpose: qualityEvidencePurpose,
         ownerService: 'Quality',
         ownerType: 'InspectionRecord',
         ownerId: 'inspection_1',
@@ -180,7 +189,7 @@ describe('FileUpload', () => {
         ownerType: 'InspectionRecord',
         ownerId: 'inspection_1',
       },
-      filePurpose: 'quality-evidence',
+      filePurpose: qualityEvidencePurpose,
       fileName: 'evidence.txt',
       contentType: 'text/plain',
       expectedSizeBytes: 5,
@@ -189,7 +198,7 @@ describe('FileUpload', () => {
     expect(completeUploadSession).toHaveBeenCalledWith('ups_1', {
       organizationId: 'org_1',
       environmentId: 'env_1',
-      filePurpose: 'quality-evidence',
+      filePurpose: qualityEvidencePurpose,
       checksum: null,
       sizeBytes: 5,
     })
@@ -233,7 +242,7 @@ describe('FileUpload', () => {
 
     const wrapper = mount(FileUpload, {
       props: {
-        purpose: 'quality-evidence',
+        purpose: qualityEvidencePurpose,
         ownerService: 'Quality',
         ownerType: 'InspectionRecord',
         ownerId: 'inspection_1',
@@ -828,7 +837,7 @@ describe('FileUpload', () => {
       ownerId: 'inspection_new',
       organizationId: 'org_new',
       environmentId: 'env_new',
-      purpose: 'quality-evidence',
+      purpose: qualityEvidencePurpose,
     })
 
     await upload.uploadQueued()
@@ -838,7 +847,7 @@ describe('FileUpload', () => {
       expect.objectContaining({
         organizationId: 'org_new',
         environmentId: 'env_new',
-        filePurpose: 'quality-evidence',
+        filePurpose: qualityEvidencePurpose,
         owner: expect.objectContaining({
           ownerId: 'inspection_new',
         }),
@@ -1018,7 +1027,7 @@ async function waitForAssertion(assertion: () => void) {
 
 function createBaseProps(overrides: Record<string, unknown> = {}) {
   return {
-    purpose: 'quality-evidence',
+    purpose: qualityEvidencePurpose,
     ownerService: 'Quality',
     ownerType: 'InspectionRecord',
     ownerId: 'inspection_1',
