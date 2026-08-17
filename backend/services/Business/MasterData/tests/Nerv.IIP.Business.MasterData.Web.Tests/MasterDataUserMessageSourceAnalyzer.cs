@@ -1,6 +1,8 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Operations;
+using FluentValidation;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -10,6 +12,9 @@ public sealed record SourceDocument(string Path, string Text);
 public static class MasterDataUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
+    private const string FluentValidationOptionsTypeName = "FluentValidation.DefaultValidatorOptions";
+    private const string FluentValidationMessageParameterName = "errorMessage";
+    private const string FluentValidationMessageProviderParameterName = "messageProvider";
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
@@ -45,17 +50,12 @@ public static class MasterDataUserMessageSourceAnalyzer
 
             foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess
-                    || memberAccess.Name.Identifier.ValueText != "WithMessage")
+                if (!TryGetFluentValidationMessage(semanticModel, invocation, out var messageExpression))
                 {
                     continue;
                 }
 
-                var firstArgument = invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression;
-                if (firstArgument is not null)
-                {
-                    AddViolations(syntaxTree, firstArgument, violations);
-                }
+                AddViolations(syntaxTree, messageExpression, violations);
             }
         }
 
@@ -72,6 +72,83 @@ public static class MasterDataUserMessageSourceAnalyzer
         SemanticModel semanticModel,
         BaseObjectCreationExpressionSyntax creation) =>
         semanticModel.GetTypeInfo(creation).Type?.ToDisplayString() == KnownExceptionTypeName;
+
+    private static bool TryGetFluentValidationMessage(
+        SemanticModel semanticModel,
+        InvocationExpressionSyntax invocation,
+        out ExpressionSyntax messageExpression)
+    {
+        messageExpression = null!;
+        if (semanticModel.GetOperation(invocation) is IInvocationOperation operation)
+        {
+            var targetMethod = operation.TargetMethod.ReducedFrom ?? operation.TargetMethod;
+            if (targetMethod.Name != "WithMessage"
+                || targetMethod.ContainingType.ToDisplayString() != FluentValidationOptionsTypeName)
+            {
+                return false;
+            }
+
+            var messageArgument = operation.Arguments.FirstOrDefault(
+                argument => argument.Parameter?.Name is FluentValidationMessageParameterName
+                    or FluentValidationMessageProviderParameterName);
+            if (messageArgument?.Value.Syntax is not ExpressionSyntax expression)
+            {
+                return false;
+            }
+
+            messageExpression = expression;
+            return true;
+        }
+
+        return TryGetUsingStaticFluentValidationMessage(semanticModel, invocation, out messageExpression);
+    }
+
+    private static bool TryGetUsingStaticFluentValidationMessage(
+        SemanticModel semanticModel,
+        InvocationExpressionSyntax invocation,
+        out ExpressionSyntax messageExpression)
+    {
+        messageExpression = null!;
+        if (invocation.Expression is not IdentifierNameSyntax { Identifier.ValueText: "WithMessage" })
+        {
+            return false;
+        }
+
+        var importedType = invocation.SyntaxTree.GetCompilationUnitRoot().Usings
+            .Where(usingDirective =>
+                usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword)
+                && usingDirective.Name is not null)
+            .Select(usingDirective => semanticModel.GetSymbolInfo(usingDirective.Name!).Symbol)
+            .OfType<INamedTypeSymbol>()
+            .FirstOrDefault(type => type.ToDisplayString() == FluentValidationOptionsTypeName);
+        if (importedType is null)
+        {
+            return false;
+        }
+
+        var messageParameter = importedType.GetMembers("WithMessage")
+            .OfType<IMethodSymbol>()
+            .SelectMany(method => method.Parameters)
+            .FirstOrDefault(parameter =>
+                parameter.Name == FluentValidationMessageParameterName
+                && parameter.Type.SpecialType == SpecialType.System_String);
+        if (messageParameter is null)
+        {
+            return false;
+        }
+
+        var arguments = invocation.ArgumentList.Arguments;
+        var messageArgument = arguments.FirstOrDefault(argument =>
+                argument.NameColon?.Name.Identifier.ValueText == messageParameter.Name)
+            ?? arguments.ElementAtOrDefault(messageParameter.Ordinal);
+        if (messageArgument?.Expression is not ExpressionSyntax expression)
+        {
+            return false;
+        }
+
+        messageExpression = expression;
+        return true;
+    }
 
     private static void AddViolations(
         SyntaxTree syntaxTree,
@@ -148,9 +225,14 @@ public static class MasterDataUserMessageSourceAnalyzer
         var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
         var assemblyPaths = trustedPlatformAssemblies?
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Append(typeof(IValidator).Assembly.Location)
             .Append(typeof(KnownException).Assembly.Location)
             .Distinct(StringComparer.Ordinal)
-            ?? [typeof(object).Assembly.Location, typeof(KnownException).Assembly.Location];
+            ?? [
+                typeof(object).Assembly.Location,
+                typeof(IValidator).Assembly.Location,
+                typeof(KnownException).Assembly.Location,
+            ];
 
         return assemblyPaths
             .Select(path => MetadataReference.CreateFromFile(path))

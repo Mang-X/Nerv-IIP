@@ -28,10 +28,6 @@ public sealed class KnownExceptionMessageArchitectureTests
             "using NetCorePal.Extensions.Primitives; class Probe { KnownException Error { get; } = new(\"Unable to save\"); }",
             "property target-typed construction"
         },
-        {
-            "class Rule { public Rule WithMessage(string message) => this; } class Probe { void Run(Rule rule) { rule.WithMessage(\"Unable to save\"); } }",
-            "WithMessage construction"
-        },
     };
 
     [Theory]
@@ -70,6 +66,72 @@ public sealed class KnownExceptionMessageArchitectureTests
     {
         const string source =
             "using NetCorePal.Extensions.Primitives; class Probe { KnownException Create() => new(\"\"\"无法保存，请稍后重试。\"\"\"); }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void FluentValidation_reduced_WithMessage_is_reported()
+    {
+        const string source =
+            "using FluentValidation; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { RuleFor(x => x.Name).NotEmpty().WithMessage(\"Unable to save\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
+    }
+
+    [Fact]
+    public void FluentValidation_static_WithMessage_uses_the_error_message_argument()
+    {
+        const string source =
+            "using FluentValidation; using DefaultValidatorExtensions = FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); DefaultValidatorExtensions.WithMessage(rule, \"无法保存。\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
+    public void FluentValidation_using_static_WithMessage_is_reported()
+    {
+        const string source =
+            "using FluentValidation; using static FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); WithMessage(rule, \"Unable to save\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
+    }
+
+    [Fact]
+    public void FluentValidation_named_arguments_use_the_error_message_parameter()
+    {
+        const string source =
+            "using FluentValidation; using DefaultValidatorExtensions = FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); DefaultValidatorExtensions.WithMessage(rule: rule, errorMessage: \"Unable to save\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
+    }
+
+    [Fact]
+    public void FluentValidation_message_provider_is_reported_as_non_static()
+    {
+        const string source =
+            "using FluentValidation; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { RuleFor(x => x.Name).NotEmpty().WithMessage(_ => \"Unable to save\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"], violations);
+    }
+
+    [Fact]
+    public void Non_FluentValidation_WithMessage_is_ignored()
+    {
+        const string source =
+            "class Rule { public Rule WithMessage(string message) => this; } class Probe { void Run(Rule rule) { rule.WithMessage(\"Unable to save\"); } }";
 
         var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
 
