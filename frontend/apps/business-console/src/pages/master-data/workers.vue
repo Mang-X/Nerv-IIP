@@ -6,7 +6,6 @@ import { useMasterDataResource, useWorkerRegistry } from '@/composables/useBusin
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -471,10 +470,19 @@ async function confirmRestore() {
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="!canConfirmDisable" @click="confirmDisable">
+          <!--
+            不用 NvAlertDialogAction：它渲染成 reka DialogClose，点击即无条件关框，
+            「失败保留原因」与「pending 禁点」在真 UI 走不到（#1607）。
+          -->
+          <NvButton
+            type="button"
+            variant="destructive"
+            :disabled="!canConfirmDisable"
+            @click="confirmDisable"
+          >
             <Spinner v-if="disablePending" aria-hidden="true" />
             确认停用
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>
@@ -502,10 +510,10 @@ async function confirmRestore() {
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="!canConfirmRestore" @click="confirmRestore">
+          <NvButton type="button" :disabled="!canConfirmRestore" @click="confirmRestore">
             <Spinner v-if="enablePending" aria-hidden="true" />
             确认恢复
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>

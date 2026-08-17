@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
   NvAlertDialogFooter,
   NvAlertDialogHeader,
   NvAlertDialogTitle,
+  NvButton,
   NvField,
   NvFieldDescription,
   NvFieldLabel,
@@ -65,13 +65,20 @@ const REASON_MAX_LENGTH = 500
       </NvField>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-        <NvAlertDialogAction
+        <!--
+          确认按钮**不能**用 NvAlertDialogAction：它包的是 reka AlertDialogAction，直接渲染成
+          DialogClose，`@click` 里 `onOpenChange(false)` 无条件执行、不看 defaultPrevented——
+          点下去框立刻关，异步请求之后才落地。那样「失败保留原因原地重试」与「pending 禁点」
+          都只在控制器层成立、真 UI 走不到（#1607）。用普通 NvButton，由 confirm() 成功才关框。
+        -->
+        <NvButton
+          type="button"
           :variant="props.controller.isActive.value ? 'destructive' : 'default'"
           :disabled="!props.controller.canConfirm.value"
           @click="props.controller.confirm"
         >
           {{ props.controller.isActive.value ? '确认停用' : '确认启用' }}
-        </NvAlertDialogAction>
+        </NvButton>
       </NvAlertDialogFooter>
     </NvAlertDialogContent>
   </NvAlertDialog>
