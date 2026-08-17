@@ -47,9 +47,3 @@ public interface IObjectStorageAdapter
 {
     string BuildObjectKey(string organizationId, string fileId);
 }
-
-public static class FilePurposePolicy
-{
-    public static readonly string[] SupportedPurposes = ["application-package", "avatar", "attachment", "diagnostic-log"];
-    public static bool IsAllowed(string purpose) => SupportedPurposes.Contains(purpose, StringComparer.Ordinal);
-}

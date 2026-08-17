@@ -65,6 +65,53 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
         Assert.Contains("scanStatus", boundaries.DomainFacts);
     }
 
+    [Theory]
+    [InlineData("application-package")]
+    [InlineData("avatar")]
+    [InlineData("attachment")]
+    [InlineData("diagnostic-log")]
+    [InlineData("quality-evidence")]
+    [InlineData("maintenance-photo")]
+    [InlineData("engineering-document")]
+    public async Task Configured_file_purpose_is_exposed_as_registered(string purpose)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+
+        var response = await client.GetFromJsonAsync<FilePurposeBoundary>(
+            $"/internal/file-storage/v1/purposes/{purpose}");
+
+        Assert.NotNull(response);
+        Assert.Equal(purpose, response.Purpose);
+        Assert.True(response.Allowed);
+        Assert.Null(response.ErrorCode);
+        Assert.Null(response.Message);
+    }
+
+    [Fact]
+    public async Task Quality_evidence_purpose_creates_upload_session_from_shared_configuration()
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        var request = new CreateUploadSessionRequest(
+            "org-001",
+            "prod",
+            new OwnerReference("Quality", "InspectionRecord", "inspection-42"),
+            "quality-evidence",
+            "evidence.txt",
+            "text/plain",
+            32,
+            null);
+
+        var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", request);
+
+        response.EnsureSuccessStatusCode();
+    }
+
     [Fact]
     public async Task UploadSessionWorkflow_MetadataFirstServerProxy_CompletesFileAndIssuesDownloadGrant()
     {
@@ -158,6 +205,17 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
         var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", request);
 
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<FileStorageErrorResponse>();
+        Assert.NotNull(error);
+        Assert.Equal("file-purpose-not-registered", error.Code);
+        Assert.Contains("not-supported", error.Message, StringComparison.Ordinal);
+
+        var boundary = await client.GetFromJsonAsync<FilePurposeBoundary>(
+            "/internal/file-storage/v1/purposes/not-supported");
+        Assert.NotNull(boundary);
+        Assert.False(boundary.Allowed);
+        Assert.Equal("file-purpose-not-registered", boundary.ErrorCode);
+        Assert.Contains("not-supported", boundary.Message, StringComparison.Ordinal);
     }
 
     private static CreateUploadSessionRequest CreateUploadSessionRequest()
@@ -207,3 +265,11 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
 
     private sealed record FileStorageBoundaries(IReadOnlyList<string> DomainFacts, IReadOnlyList<string> ProviderBoundaries);
 }
+
+public sealed record FilePurposeBoundary(
+    string Purpose,
+    bool Allowed,
+    string? ErrorCode,
+    string? Message);
+
+public sealed record FileStorageErrorResponse(string Code, string Message);
