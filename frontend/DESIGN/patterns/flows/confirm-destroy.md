@@ -53,6 +53,12 @@
 `disableTarget` / `enableTarget` 指向当前行（#878）。页面只有一处破坏性动作时够用，
 不必引入控制器。
 
+**一页两类删除目标共用一个确认框**：`pages/master-data/scheduling.vue` 的节假日与例外日
+（#1608）—— 一个 `deleteTarget` 带 `kind` 判别（`{ kind: 'holiday' | 'exception', … }`），
+触发只 `openDeleteHoliday/openDeleteException`，确认时按 `kind` 分派。共用目标 ref 时
+**类型判别是硬要求**：删错类型不会报错，是静默的数据损失，所以要有「先点 A 再点 B，
+删掉的必须是 B」这条用例。该页写回失败还会**回滚本地集合**——否则界面显示已删、服务端仍在。
+
 契约：`pages/master-data/lifecycleDialogSingleInstance.contract.test.ts`（源码扫描：组件不得含
 确认框、每页恰好一个、不得写进 `#cell-*` 插槽）+ `...runtime.test.ts`（**真挂一页数组件实例**：
 行操作随行增长、确认框恒为 1）。后者是必需的——**源码扫描挡不住「其实渲染了 N 次」**，
