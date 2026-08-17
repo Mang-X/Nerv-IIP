@@ -27,6 +27,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -200,22 +201,34 @@ async function submitForm() {
 }
 
 // ── 停用 ────────────────────────────────────────────────────────
+// 停用原因必填：原因进审计，代码写死一句「不再使用」等于每条记录都没有理由（#1595）。
+// 上限与网关 BusinessConsoleArchiveProductCategoryRequestValidator 的 500 对齐。
+const ARCHIVE_REASON_MAX_LENGTH = 500
 const archiveOpen = shallowRef(false)
 const archiveTarget = shallowRef<ProductCategoryItem | null>(null)
+const archiveReason = ref('')
+const canConfirmArchive = computed(
+  () => archiveReason.value.trim().length > 0 && !archivePending.value,
+)
 function openArchive(row: ProductCategoryItem) {
   if (!row.categoryCode) return
   archiveTarget.value = row
+  // 每次打开都从空白开始：上一条原因不能被当成这一次的理由带进审计。
+  archiveReason.value = ''
   archiveOpen.value = true
 }
 async function confirmArchive() {
   const target = archiveTarget.value
-  if (!target?.categoryCode) return
+  const reason = archiveReason.value.trim()
+  if (!target?.categoryCode || !reason) return
   try {
-    await archiveCategory(target.categoryCode, '不再使用')
+    await archiveCategory(target.categoryCode, reason)
     notifySuccess(`分类「${target.categoryName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
+    archiveReason.value = ''
   } catch (error) {
+    // 失败时保留已填原因：重试不必重新组织措辞。
     notifyOperationFailure('停用产品分类失败', error, '停用产品分类失败，请稍后重试。')
   }
 }
@@ -366,11 +379,24 @@ async function confirmArchive() {
             }}」将不可在新的选型中使用，已有引用不受影响。
           </NvAlertDialogDescription>
         </NvAlertDialogHeader>
+        <NvField>
+          <NvFieldLabel for="category-archive-reason">
+            停用原因 <span class="text-destructive">*</span>
+          </NvFieldLabel>
+          <NvInput
+            id="category-archive-reason"
+            v-model="archiveReason"
+            required
+            :maxlength="ARCHIVE_REASON_MAX_LENGTH"
+            placeholder="说明停用依据，如与上级分类合并、图纸取消该分类"
+          />
+          <NvFieldDescription>原因会记入审计，可按分类回溯。</NvFieldDescription>
+        </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
           <NvAlertDialogAction
             variant="destructive"
-            :disabled="archivePending"
+            :disabled="!canConfirmArchive"
             @click="confirmArchive"
           >
             <Spinner v-if="archivePending" aria-hidden="true" />
