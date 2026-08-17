@@ -136,7 +136,6 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             null,
             "org-001/file_existing",
-            "clean",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-10),
             DateTimeOffset.UtcNow.AddMinutes(-10)));
@@ -198,7 +197,6 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             null,
             "org-001/file_existing",
-            "clean",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-10),
             DateTimeOffset.UtcNow.AddMinutes(-10)));
@@ -258,7 +256,6 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal(4096, storedFile.SizeBytes);
         Assert.Equal("sha256:test", storedFile.Checksum);
         Assert.Equal(session.ObjectKey, storedFile.ObjectKey);
-        Assert.Equal("clean", storedFile.ScanStatus);
         Assert.Equal("available", storedFile.Status);
         AssertObjectKeyIsNotExposed(result.Value);
     }
@@ -306,83 +303,6 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
-    public async Task Scanner_MarksEicarFileAsMalwareAndDownloadGrantCannotBeRedeemed()
-    {
-        var rootPath = CreateTempDirectory();
-        try
-        {
-            await using var dbContext = CreateDbContext();
-            var store = CreateTusStore(rootPath);
-            var configuration = new ConfigurationBuilder()
-                .AddConfiguration(FileStorageTestConfiguration.Default)
-                .AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["FileStorage:Scanning:Enabled"] = "true",
-                    ["FileStorage:Scanning:Adapter"] = "local-eicar",
-                    ["FileStorage:Scanning:UnavailablePolicy"] = "block"
-                })
-                .Build();
-            var eicarBytes = Encoding.ASCII.GetBytes("NERV-IIP-MALWARE-TEST-FILE");
-            AddUploadSession(dbContext, "ups_eicar", "file_eicar", DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(5), completed: true);
-            dbContext.StoredFiles.Add(StoredFileRecord.Create(
-                "file_eicar",
-                "org-001",
-                "prod",
-                "AppHub",
-                "ApplicationPackage",
-                "app-42",
-                "attachment",
-                "eicar.txt",
-                "text/plain",
-                eicarBytes.Length,
-                null,
-                "org-001/file_eicar",
-                "pending",
-                "available",
-                DateTimeOffset.UtcNow.AddMinutes(-5),
-                DateTimeOffset.UtcNow.AddMinutes(-4)));
-            await dbContext.SaveChangesAsync();
-            var writtenOffset = await WriteTusBytesAsync(store, "ups_eicar", eicarBytes);
-            Assert.Equal(eicarBytes.Length, writtenOffset);
-            Assert.Equal(eicarBytes.Length, store.GetOffset("ups_eicar"));
-
-            var alertSink = new CapturingSecurityAlertSink();
-            var scanner = new PostgreSqlFileStorageScanner(
-                dbContext,
-                new TestTusStoreAccessor(store),
-                configuration,
-                alertSink,
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgreSqlFileStorageScanner>.Instance);
-            var scanResult = await scanner.ScanPendingFilesAsync(CancellationToken.None);
-            var service = new PostgreSqlFileStorageService(
-                dbContext,
-                new TusUploadProvider(),
-                new TestTusStoreAccessor(store),
-                configuration);
-            var grant = await service.CreateDownloadGrantAsync("file_eicar", new CreateDownloadGrantRequest("org-001", "prod"), CancellationToken.None);
-            var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(grant.Value!.Download.Url.Split('/').Last(), "org-001", "prod", CancellationToken.None);
-            var file = await dbContext.StoredFiles.SingleAsync();
-
-            Assert.True(
-                scanResult.MalwareFiles == 1,
-                $"Expected one malware file, got clean={scanResult.CleanFiles}, malware={scanResult.MalwareFiles}, failed={scanResult.FailedFiles}, detail={file.ScanDetail}.");
-            Assert.Equal("malware", file.ScanStatus);
-            Assert.NotNull(file.ScannedAtUtc);
-            Assert.Contains("Malware test signature", file.ScanDetail, StringComparison.OrdinalIgnoreCase);
-            Assert.Null(uploadSessionId);
-            var alert = Assert.Single(alertSink.Intents);
-            Assert.Equal("file_eicar", alert.FileId);
-            Assert.Equal("org-001", alert.OrganizationId);
-            Assert.Equal("prod", alert.EnvironmentId);
-            Assert.Equal("attachment", alert.FilePurpose);
-        }
-        finally
-        {
-            DeleteTempDirectory(rootPath);
-        }
-    }
-
-    [Fact]
     public async Task GetFileMetadata_ReadsStoredFileRecord()
     {
         await using var dbContext = CreateDbContext();
@@ -400,7 +320,6 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             "sha256:test",
             "org-001/file_123",
-            "pending",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));
@@ -421,7 +340,6 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal("application/zip", result.Value.ContentType);
         Assert.Equal(4096, result.Value.SizeBytes);
         Assert.Equal("sha256:test", result.Value.Checksum);
-        Assert.Equal("pending", result.Value.ScanStatus);
         Assert.Equal("available", result.Value.Status);
         AssertObjectKeyIsNotExposed(result.Value);
     }
@@ -446,7 +364,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 10,
                 null,
                 "org-001/file_old",
-                "pending",
                 "available",
                 now.AddHours(-4),
                 now.AddHours(-4)),
@@ -463,7 +380,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 11,
                 null,
                 "org-001/file_match_1",
-                "pending",
                 "available",
                 now.AddHours(-2),
                 now.AddHours(-2)),
@@ -480,7 +396,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 12,
                 null,
                 "org-001/file_match_2",
-                "pending",
                 "available",
                 now.AddHours(-1),
                 now.AddHours(-1)),
@@ -497,7 +412,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 13,
                 null,
                 "org-001/file_different_uploader",
-                "pending",
                 "available",
                 now.AddMinutes(-30),
                 now.AddMinutes(-30)),
@@ -514,7 +428,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 15,
                 null,
                 "org-002/file_other_tenant",
-                "pending",
                 "available",
                 now.AddMinutes(-25),
                 now.AddMinutes(-25)),
@@ -531,7 +444,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 14,
                 null,
                 "org-001/file_archived",
-                "pending",
                 "archived",
                 now.AddMinutes(-20),
                 now.AddMinutes(-20)));
@@ -634,7 +546,7 @@ public sealed class FileStoragePostgreSqlServiceTests
     {
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
-        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", scanStatus: "clean", grantId: "dgr_123");
+        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
         var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
@@ -648,11 +560,11 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
-    public async Task GetUploadSessionIdForDownloadGrant_CleanFile_ConsumesGrantOnce()
+    public async Task GetUploadSessionIdForDownloadGrant_AvailableFile_ConsumesGrantOnce()
     {
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
-        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", scanStatus: "clean", grantId: "dgr_123");
+        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
         var first = await service.GetUploadSessionIdForDownloadGrantAsync(
@@ -672,15 +584,18 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
-    public async Task GetUploadSessionIdForDownloadGrant_NonCleanScanStatus_DoesNotRedeemGrant()
+    public async Task GetUploadSessionIdForDownloadGrant_NonAvailableFile_DoesNotRedeemGrant()
     {
         await using var dbContext = CreateDbContext();
         var service = new PostgreSqlFileStorageService(dbContext, configuration: FileStorageTestConfiguration.Default);
-        AddCompletedTusFileWithGrant(dbContext, "file_pending", "ups_pending", scanStatus: "pending", grantId: "dgr_pending");
+        AddCompletedTusFileWithGrant(dbContext, "file_deleted", "ups_deleted", grantId: "dgr_deleted");
+        await dbContext.SaveChangesAsync();
+        var file = await dbContext.StoredFiles.SingleAsync();
+        file.MarkDeleted(DateTimeOffset.UtcNow, "test-deletion");
         await dbContext.SaveChangesAsync();
 
         var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
-            "dgr_pending",
+            "dgr_deleted",
             "org-001",
             "prod",
             CancellationToken.None);
@@ -713,7 +628,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                 5,
                 null,
                 "org-001/file_completed",
-                "clean",
                 "available",
                 now.AddMinutes(-30),
                 now.AddMinutes(-20)));
@@ -785,7 +699,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                     5,
                     null,
                     "org-001/file_old",
-                    "clean",
                     "available",
                     now.AddDays(-30),
                     now.AddDays(-30)),
@@ -802,7 +715,6 @@ public sealed class FileStoragePostgreSqlServiceTests
                     5,
                     null,
                     "org-001/file_recent",
-                    "clean",
                     "available",
                     now,
                     now));
@@ -960,7 +872,6 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             "sha256:test",
             "org-001/file_123",
-            "clean",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));
@@ -987,7 +898,6 @@ public sealed class FileStoragePostgreSqlServiceTests
         ApplicationDbContext dbContext,
         string fileId,
         string uploadSessionId,
-        string scanStatus,
         string grantId)
     {
         var now = DateTimeOffset.UtcNow;
@@ -1005,7 +915,6 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             "sha256:test",
             $"org-001/{fileId}",
-            scanStatus,
             "available",
             now.AddMinutes(-5),
             now));
@@ -1097,19 +1006,6 @@ public sealed class FileStoragePostgreSqlServiceTests
         {
             store = localStore;
             return true;
-        }
-    }
-
-    private sealed class CapturingSecurityAlertSink : IFileStorageSecurityAlertSink
-    {
-        private readonly List<FileStorageSecurityAlertIntent> intents = [];
-
-        public IReadOnlyCollection<FileStorageSecurityAlertIntent> Intents => intents;
-
-        public Task PublishMalwareDetectedAsync(FileStorageSecurityAlertIntent intent, CancellationToken cancellationToken)
-        {
-            intents.Add(intent);
-            return Task.CompletedTask;
         }
     }
 

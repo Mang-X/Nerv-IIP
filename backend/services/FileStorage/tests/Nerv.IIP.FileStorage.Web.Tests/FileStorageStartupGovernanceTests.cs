@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.FileStorage.Web.Application.Archives;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
@@ -31,6 +33,125 @@ public sealed class FileStorageStartupGovernanceTests
         using var client = factory.CreateClient();
 
         Assert.NotNull(client);
+    }
+
+    [Fact]
+    public void Development_without_versioned_storage_configuration_uses_unavailable_store()
+    {
+        using var factory = CreateFactory("Development", provider: "InMemory");
+
+        var store = factory.Services.GetRequiredService<IVersionedObjectStore>();
+
+        Assert.IsType<UnavailableVersionedObjectStore>(store);
+    }
+
+    [Theory]
+    [InlineData("Storage:MinIO:Endpoint")]
+    [InlineData("Storage:MinIO:AccessKey")]
+    [InlineData("Storage:MinIO:SecretKey")]
+    [InlineData("Storage:MinIO:ComplianceArchiveBucket")]
+    public void Minio_configuration_requires_every_setting(string missingSetting)
+    {
+        var storageSettings = CompleteMinioSettings();
+        storageSettings[missingSetting] = string.Empty;
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: storageSettings);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("versioned object storage configuration is invalid", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("startup-minio-access-key", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("startup-minio-secret-key", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Minio_configuration_requires_explicit_provider()
+    {
+        var storageSettings = CompleteMinioSettings();
+        storageSettings["Storage:Provider"] = string.Empty;
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: storageSettings);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("provider=<missing>", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("ftp://localhost:21")]
+    [InlineData("http://user:password@localhost:9000")]
+    [InlineData("http://localhost:9000/archive")]
+    [InlineData("http://localhost:9000?region=local")]
+    [InlineData("localhost:9000")]
+    public void Minio_endpoint_must_be_an_http_origin(string endpoint)
+    {
+        var storageSettings = CompleteMinioSettings();
+        storageSettings["Storage:MinIO:Endpoint"] = endpoint;
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: storageSettings);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("endpointValid=False", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(endpoint, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("ABCD")]
+    [InlineData("ab")]
+    [InlineData("192.168.1.1")]
+    [InlineData("bad..bucket")]
+    [InlineData("bad.-bucket")]
+    [InlineData("bad-.bucket")]
+    [InlineData("-bad-bucket")]
+    public void Minio_bucket_must_use_a_valid_s3_name(string bucket)
+    {
+        var storageSettings = CompleteMinioSettings();
+        storageSettings["Storage:MinIO:ComplianceArchiveBucket"] = bucket;
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: storageSettings);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("complianceArchiveBucketValid=False", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(bucket, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Unknown_versioned_storage_provider_fails_fast()
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: new Dictionary<string, string?>
+            {
+                ["Storage:Provider"] = "Local"
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("provider=Local", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Complete_minio_configuration_registers_minio_store()
+    {
+        using var factory = CreateFactory(
+            "Development",
+            provider: "InMemory",
+            storageSettings: CompleteMinioSettings());
+
+        var store = factory.Services.GetRequiredService<IVersionedObjectStore>();
+
+        Assert.IsType<MinioVersionedObjectStore>(store);
     }
 
     [Fact]
@@ -146,7 +267,8 @@ public sealed class FileStorageStartupGovernanceTests
         string environment,
         string? provider,
         string? connectionString = null,
-        bool autoMigrate = false)
+        bool autoMigrate = false,
+        IReadOnlyDictionary<string, string?>? storageSettings = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -156,6 +278,25 @@ public sealed class FileStorageStartupGovernanceTests
                 builder.UseSetting("Persistence:AutoMigrate", autoMigrate.ToString());
                 builder.UseSetting("ConnectionStrings:FileStorageDb", connectionString ?? string.Empty);
                 builder.UseSetting("InternalService:BearerToken", "startup-test-internal-token-32bytes");
+                if (storageSettings is not null)
+                {
+                    foreach (var (key, value) in storageSettings)
+                    {
+                        builder.UseSetting(key, value);
+                    }
+                }
             });
+    }
+
+    private static Dictionary<string, string?> CompleteMinioSettings()
+    {
+        return new Dictionary<string, string?>
+        {
+            ["Storage:Provider"] = " MinIO ",
+            ["Storage:MinIO:Endpoint"] = "http://localhost:9000",
+            ["Storage:MinIO:AccessKey"] = "startup-minio-access-key",
+            ["Storage:MinIO:SecretKey"] = "startup-minio-secret-key",
+            ["Storage:MinIO:ComplianceArchiveBucket"] = "nerv-iip-compliance-archive"
+        };
     }
 }

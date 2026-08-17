@@ -81,8 +81,7 @@
 | UploadProvider | 上传实现策略 | File Storage | 屏蔽 tus、S3 multipart、server-proxy 等协议差异的基础设施扩展点，不拥有文件领域事实。 |
 | tus | tus 断点续传协议 | File Storage | 可选上传 provider，适合大文件和断点续传场景；领域模型仍以 UploadSession 与 StoredFile 为准。 |
 | S3MultipartUploadProvider | S3 分片上传策略 | File Storage | 对接 MinIO/S3 multipart upload 的 provider，负责生成短期分片上传指令和完成校验。 |
-| FilePurposePolicy | 文件用途策略 | File Storage | 按文件用途定义大小限制、content type allowlist、扩展名、扫描要求、保留策略和配额口径。 |
-| scanStatus | 扫描状态 | File Storage | 文件安全扫描状态；未扫描、扫描失败或隔离中的文件不能进入普通下载和 Knowledge ingestion。 |
+| FilePurposePolicy | 文件用途策略 | File Storage | 按文件用途定义大小限制、content type allowlist、扩展名、保留策略和配额口径。 |
 | DownloadGrant | 下载授权 | File Storage | 一次短期下载许可，可映射为平台中转下载或对象存储预签名 URL。 |
 | FileReference | 文件引用 | File Storage、业务服务 | 业务对象与 fileId 的绑定关系；File Storage 记录引用边界，业务服务解释业务语义。 |
 | objectKey | 对象存储键 | File Storage | MinIO 或等价对象存储内部定位信息，不应作为前端、外部应用或业务服务的长期公开契约。 |

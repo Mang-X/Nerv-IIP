@@ -594,7 +594,6 @@ export type NervIipContractsFileStorageFileMetadataResponse = {
     contentType?: string;
     sizeBytes?: number;
     checksum?: string | null;
-    scanStatus?: string;
     status?: string;
     createdAtUtc?: string;
     completedAtUtc?: string;

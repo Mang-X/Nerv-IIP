@@ -126,7 +126,6 @@ public sealed class FileStorageContractJsonTests
             "application/pdf",
             12345,
             "sha256:abc",
-            "pending",
             "completed",
             DateTimeOffset.Parse("2026-05-21T00:00:00Z"),
             DateTimeOffset.Parse("2026-05-21T00:01:00Z"));
@@ -140,6 +139,7 @@ public sealed class FileStorageContractJsonTests
         Assert.Equal("file-001", root.GetProperty("fileId").GetString());
         Assert.Equal("AppHub", root.GetProperty("owner").GetProperty("ownerService").GetString());
         Assert.Equal("report.pdf", root.GetProperty("fileName").GetString());
+        Assert.False(root.TryGetProperty("scanStatus", out _));
         AssertDoesNotExposeObjectKey(json);
         Assert.NotNull(result);
         Assert.Equal("completed", result.Status);

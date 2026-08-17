@@ -41,7 +41,7 @@ Nerv-IIP 后端需要同时承载身份与权限、对外授权、文件存储�
 
 ## 实施说明
 
-1. 首批脚手架至少落下 PlatformGateway、Iam、FileStorage、AppHub、Ops 五个最小服务骨架，以及 common/Contracts、common/Sdk、common/Caching、common/Observability、common/Testing 五类窄共享库；Iam 骨架需要预留用户、角色、权限、外部客户端和授权授予的基础边界，FileStorage 骨架需要预留文件元数据、上传会话、上传指令、下载授权、Upload Provider、FilePurposePolicy、scanStatus 和对象存储适配边界。Notification 作为平台通用能力边界冻结，首批可以不阻塞注册纵切，但后续实现必须保持独立服务边界，不并入 Ops 或 Gateway。
+1. 首批脚手架至少落下 PlatformGateway、Iam、FileStorage、AppHub、Ops 五个最小服务骨架，以及 common/Contracts、common/Sdk、common/Caching、common/Observability、common/Testing 五类窄共享库；Iam 骨架需要预留用户、角色、权限、外部客户端和授权授予的基础边界，FileStorage 骨架需要预留文件元数据、上传会话、上传指令、下载授权、Upload Provider、FilePurposePolicy 和对象存储适配边界。Notification 作为平台通用能力边界冻结，首批可以不阻塞注册纵切，但后续实现必须保持独立服务边界，不并入 Ops 或 Gateway。
 2. Connector Host 与 Connector 需在 connector-hosts 根目录下建立独立解决方案，并通过 Platform SDK 与版本化公开契约和主平台协作；主平台与 Connector Host 在同一主版本内不要求同步发布或同步小版本升级。
 3. 平台 HTTP 服务的默认命名应采用点分 PascalCase，例如 Nerv.IIP.AppHub.Web、Nerv.IIP.AppHub.Domain、Nerv.IIP.AppHub.Infrastructure；Connector Host 宿主仍可保留 Nerv.IIP.ConnectorHost.Host 这类命名。
 4. 服务内目录默认采用 src 与 tests；若未来出现额外脚手架约定，也必须在所有服务中统一，不得出现 src/tests 与 src/test 混用。

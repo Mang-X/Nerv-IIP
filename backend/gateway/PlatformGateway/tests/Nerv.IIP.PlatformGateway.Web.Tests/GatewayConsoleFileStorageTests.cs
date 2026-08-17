@@ -626,7 +626,6 @@ public sealed class GatewayConsoleFileStorageTests
             "text/csv",
             42,
             null,
-            "pending",
             "completed",
             DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow);

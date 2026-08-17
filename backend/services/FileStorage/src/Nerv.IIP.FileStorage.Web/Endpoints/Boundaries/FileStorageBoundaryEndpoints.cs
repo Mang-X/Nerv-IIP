@@ -14,7 +14,7 @@ public sealed class GetFileStorageBoundariesEndpoint : EndpointWithoutRequest
     public override async Task HandleAsync(CancellationToken ct)
     {
         await HttpContext.Response.WriteAsJsonAsync(new FileStorageBoundaryResponse(
-            ["FileMetadata", "UploadSession", "UploadInstruction", "DownloadGrant", "FilePurposePolicy", "scanStatus"],
+            ["FileMetadata", "UploadSession", "UploadInstruction", "DownloadGrant", "FilePurposePolicy"],
             ["UploadProvider", "tus", "s3-multipart", "server-proxy", "ObjectStorageAdapter", "MinIO"]), ct);
     }
 }
