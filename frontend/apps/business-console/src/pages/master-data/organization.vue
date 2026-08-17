@@ -7,10 +7,12 @@ import type {
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useMasterDataResource,
@@ -71,6 +73,8 @@ const shifts = useMasterDataResource('shift')
 const teamWorkshops = useBusinessMasterDataResources('workshop')
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 departments.filters.take = TREE_TAKE
 teams.filters.take = TREE_TAKE
@@ -744,7 +748,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 :row="selectedNode.item"
                 entity-label="部门"
                 :detail-fields="detailFields"
-                :actions="deptActions"
+                @toggle="(row) => lifecycle.request(row, deptActions, '部门')"
                 @edit="openEditDept(selectedNode)"
               />
             </div>
@@ -812,7 +816,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
                       { label: '班组编码', value: row.code ?? '' },
                       { label: '班组名称', value: row.displayName ?? '' },
                     ]"
-                    :actions="teamActions"
+                    @toggle="(row) => lifecycle.request(row, teamActions, '班组')"
                     @edit="openEditTeam"
                   />
                 </div>
@@ -1066,5 +1070,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
       :team-code="membersTeam.code"
       :team-name="membersTeam.name"
     />
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

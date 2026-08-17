@@ -6,9 +6,11 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -76,6 +78,8 @@ const {
   skusTotal,
 } = useBusinessSkus()
 const skuActions = useMasterDataResourceActions('sku')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 // 字典化下拉「实时拉取 + 常量兜底」：每个 codeSet 一个 resources 查询，服务端按 codeSet 过滤；
 // 后端某些 codeSet 可能仍空，届时由对应常量兜底，保证表单始终可用、可选。
@@ -805,10 +809,11 @@ function isNonEmpty(value: string) {
           :row="row"
           entity-label="物料"
           :detail-fields="skuDetailFields(row)"
-          :actions="skuActions"
+          @toggle="(row) => lifecycle.request(row, skuActions, '物料')"
           @edit="openEdit"
         />
       </template>
     </NvDataTable>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

@@ -6,8 +6,10 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useReferenceDataCodes,
   useMasterDataResourceActions,
@@ -86,6 +88,9 @@ const {
 // 停用/启用/编辑回填一律 400（#1593）。传 ref 而非快照：切换左侧分组后动作要跟着走。
 const selectedCodeSet = ref(CODE_SETS[0]!.codeSet)
 const codeActions = useMasterDataResourceActions('reference-data', selectedCodeSet)
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
+
 const keyword = ref('')
 const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
@@ -447,12 +452,13 @@ function isNonEmpty(value: string) {
               :row="row"
               entity-label="字典条目"
               :detail-fields="codeDetailFields(row)"
-              :actions="codeActions"
+              @toggle="(row) => lifecycle.request(row, codeActions, '字典条目')"
               @edit="openEdit"
             />
           </template>
         </NvDataTable>
       </div>
     </div>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

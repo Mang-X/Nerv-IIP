@@ -6,8 +6,10 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useBusinessPartners,
@@ -83,6 +85,9 @@ const workshops = useBusinessWorkshops()
 const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('production-line')
 const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
 const deviceActions = useMasterDataResourceActions('device-asset')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
+
 const { resolvePartnerLabel } = useBusinessPartnerNames()
 
 // 列表回传的是 lineCode/workCenterCode（编码）；解析成名称显示（取自产线/工作中心实体，找不到回退编码）。
@@ -950,10 +955,11 @@ async function submitDevice() {
           :row="row"
           entity-label="设备"
           :detail-fields="deviceDetailFields(row)"
-          :actions="deviceActions"
+          @toggle="(row) => lifecycle.request(row, deviceActions, '设备')"
           @edit="openEdit"
         />
       </template>
     </NvDataTable>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

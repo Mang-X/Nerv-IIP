@@ -7,8 +7,10 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useBusinessUoms,
@@ -135,6 +137,8 @@ const {
   refreshConversions,
 } = useUomConversions()
 const conversionActions = useMasterDataResourceActions('uom-conversion')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 // 量纲下拉「实时拉取 + 常量兜底」：取数据字典 uom-dimension，实时为空回退常量。
 const { resources: dimensionResources } = useBusinessMasterDataResources('reference-data', {
@@ -693,7 +697,7 @@ async function submitConversion() {
               :row="row"
               entity-label="计量单位"
               :detail-fields="uomDetailFields(row)"
-              :actions="uomActions"
+              @toggle="(row) => lifecycle.request(row, uomActions, '计量单位')"
               @edit="openEdit"
             />
           </template>
@@ -896,11 +900,12 @@ async function submitConversion() {
               :row="row"
               entity-label="换算关系"
               :detail-fields="conversionDetailFields(row)"
-              :actions="conversionActions"
+              @toggle="(row) => lifecycle.request(row, conversionActions, '换算关系')"
             />
           </template>
         </NvDataTable>
       </NvTabsContent>
     </NvTabs>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

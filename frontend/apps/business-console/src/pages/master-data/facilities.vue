@@ -10,8 +10,10 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessWorkshops,
   useMasterDataResource,
@@ -77,6 +79,8 @@ const siteActions = useMasterDataResourceActions('site')
 const workshopActions = useMasterDataResourceActions('workshop')
 const lineActions = useMasterDataResourceActions('production-line')
 const wcActions = useMasterDataResourceActions('work-center')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 // 拉大每类的 take，尽量一页拼全树（不做假分页，超上限处给提示）。
 for (const r of [sites, lines, workCenters]) r.filters.take = TREE_TAKE
@@ -822,6 +826,14 @@ async function submitEdit() {
 const selectedActions = computed(() =>
   selectedNode.value ? ACTIONS_BY_TYPE[selectedNode.value.type] : null,
 )
+/** 行操作把当前节点交给页面层单实例确认框；节点/动作缺一不可，缺了就不开框（#1591）。 */
+function requestLifecycle(row: BusinessConsoleResourceItem) {
+  const node = selectedNode.value
+  const actions = selectedActions.value
+  if (!node || !actions) return
+  lifecycle.request(row, actions, NODE_LABEL[node.type])
+}
+
 // 选中节点能否就地建子级。
 const childTypeOfSelected = computed(() =>
   selectedNode.value ? CHILD_OF[selectedNode.value.type] : undefined,
@@ -1010,7 +1022,7 @@ function childLabelOf(type: string): string | undefined {
                 :row="selectedNode.item"
                 :entity-label="NODE_LABEL[selectedNode.type]"
                 :detail-fields="detailFields"
-                :actions="selectedActions"
+                @toggle="requestLifecycle"
                 @edit="openEdit(selectedNode)"
               />
             </div>
@@ -1321,5 +1333,6 @@ function childLabelOf(type: string): string | undefined {
         </form>
       </NvDialogContent>
     </NvDialog>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>
