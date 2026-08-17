@@ -17,8 +17,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private readonly IConfiguration? configuration;
     private readonly TimeProvider timeProvider;
 
-    public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
-        : this(dbContext, new ServerProxyUploadProvider())
+    public PostgreSqlFileStorageService(ApplicationDbContext dbContext, IConfiguration configuration)
+        : this(dbContext, new ServerProxyUploadProvider(), configuration: configuration)
     {
     }
 
@@ -40,9 +40,12 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         CreateUploadSessionRequest request,
         CancellationToken cancellationToken)
     {
-        if (!FilePurposePolicy.IsAllowed(request.FilePurpose))
+        var purposeRegistration = FileStoragePurposePolicies.ResolveRegistration(request.FilePurpose, configuration);
+        if (!purposeRegistration.IsRegistered)
         {
-            return FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'.");
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(
+                purposeRegistration.Message!,
+                purposeRegistration.ErrorCode!);
         }
 
         if (!FileStorageRequestValidation.IsValidCreateUploadSessionRequest(request))

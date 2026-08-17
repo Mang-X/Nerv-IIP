@@ -57,6 +57,8 @@ POST /api/files/v1/files/{fileId}/download-grants
 
 2026-07-05 安全硬化已补齐以下运行路径：上传会话创建时按 `FileStorage:PurposePolicies:{purpose}` 校验 content type、扩展名 allowlist/blocklist，并按 `FileStorage:Quotas:OrganizationPurpose:{org}:{env}:{purpose}:MaxBytes`、`FileStorage:Quotas:Organization:{org}:{env}:MaxBytes` 或用途级 `QuotaBytes` 做配额拒绝；组织级配额使用组织/环境总用量并按 organization/environment 加锁，组织用途级和用途级配额使用对应 purpose 用量并按 organization/environment/purpose 加锁，使 usedBytes 检查和 upload session reservation 写入在当前服务进程内串行化；`GET /api/files/v1/usage` 返回匹配配额口径下的当前已存字节加未过期上传会话预留字节，以及匹配配额。正式文件扫描由后台 worker 驱动 `scan_status` 从 `pending` 流转到 `clean`、`malware` 或 `failed`；本地私有化友好 adapter 支持在文件前 64KB 内识别无害 `NERV-IIP-MALWARE-TEST-FILE` 测试签名，部署也可配置 `FileStorage:Scanning:Adapter=clamav`、`ClamAv:Host`、`ClamAv:Port` 对接 ClamAV INSTREAM。`FileStorage:Scanning:UnavailablePolicy=block` 时扫描不可用文件保持不可下载，`allow-with-warning` 时可按降级说明标记放行。Malware、pending、failed 或非 available 文件不会被 download grant content endpoint 兑换为字节，malware 命中会通过 `IFileStorageSecurityAlertSink` 发布结构化安全告警/通知意图，默认实现写入结构化 warning 日志，后续可替换为 Notification HTTP adapter。正式文件生命周期清理由 `FileStorage:PurposePolicies:{purpose}:RetentionSeconds` 触发软删，再按 `FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds` 物理删除 `stored_files`、关联 `upload_sessions` / `download_grants` 和本地 tus 字节。
 
+2026-08-17 起，`FileStorage:PurposePolicies` 的直接子键同时是 purpose 注册目录的单一事实源，Domain 不再维护硬编码白名单。平台内置目录为 `application-package`、`avatar`、`attachment`、`diagnostic-log`、`quality-evidence`、`maintenance-photo` 与 `engineering-document`；PostgreSQL metadata 实现和 `/internal/file-storage/v1/purposes/{purpose}` 共用同一配置解析。未注册值以 HTTP 400 返回稳定错误码 `file-purpose-not-registered`，消息包含实际 purpose 和配置路径，内部边界端点返回同一诊断。NvUI 测试和设计系统示例复用或对齐该目录；本项不引入 owner allowlist、传输 eligibility、策略版本或新的契约生成链。
+
 MVP 后续顺序保持为：
 
 1. server-proxy metadata stub、contracts/SDK、PostgreSQL-backed service 和本地 tus endpoint：稳定 API、schema、SDK DTO、上传 offset 和下载内容消费形状。
@@ -100,7 +102,7 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 
 当前配置口径：
 
-1. `FileStorage:PurposePolicies:{purpose}:AllowedContentTypes`、`AllowedExtensions`、`BlockedExtensions` 控制声明校验；如果某个 allowlist 未配置，则该维度保持兼容放行，但 blocked extension 始终优先。
+1. `FileStorage:PurposePolicies` 的直接子键定义已注册 purpose；子键下的 `AllowedContentTypes`、`AllowedExtensions`、`BlockedExtensions` 控制声明校验。如果某个 allowlist 未配置，则该维度保持兼容放行，但 blocked extension 始终优先；整个 purpose 子键未注册时，在创建上传会话前失败关闭。
 2. tus complete 对 zip、png、jpeg 和 pdf 做魔数复核；普通文本/日志类按声明策略与扫描策略治理。
 3. 配额优先级为组织+环境+用途、组织+环境、用途默认；超配额在上传会话创建阶段返回冲突，不创建临时会话。
 4. 扫描默认关闭；显式启用 `FileStorage:Scanning:Enabled=true` 或配置 adapter 后，新完成文件进入 `pending`，由后台扫描 worker 处理。

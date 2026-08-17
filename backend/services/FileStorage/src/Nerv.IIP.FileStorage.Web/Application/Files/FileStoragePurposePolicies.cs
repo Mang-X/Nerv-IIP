@@ -6,7 +6,39 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 internal static class FileStoragePurposePolicies
 {
+    public const string NotRegisteredErrorCode = "file-purpose-not-registered";
+
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> QuotaReservationLocks = new(StringComparer.Ordinal);
+
+    public static FilePurposeRegistration ResolveRegistration(
+        string filePurpose,
+        IConfiguration? configuration)
+    {
+        var purpose = filePurpose ?? string.Empty;
+        var registeredPurposes = GetRegisteredPurposes(configuration);
+        if (registeredPurposes.Contains(purpose))
+        {
+            return FilePurposeRegistration.Registered(purpose);
+        }
+
+        return FilePurposeRegistration.NotRegistered(purpose);
+    }
+
+    public static IReadOnlyList<string> GetRegisteredPurposes(IConfiguration? configuration)
+    {
+        if (configuration is null)
+        {
+            return [];
+        }
+
+        return configuration.GetSection("FileStorage:PurposePolicies")
+            .GetChildren()
+            .Select(section => section.Key)
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(key => key, StringComparer.Ordinal)
+            .ToArray();
+    }
 
     public static FileStoragePolicyValidationResult ValidateDeclaredType(
         string filePurpose,
@@ -181,6 +213,23 @@ internal static class FileStoragePurposePolicies
 
         return null;
     }
+}
+
+internal sealed record FilePurposeRegistration(
+    string Purpose,
+    bool IsRegistered,
+    string? ErrorCode,
+    string? Message)
+{
+    public static FilePurposeRegistration Registered(string purpose) =>
+        new(purpose, true, null, null);
+
+    public static FilePurposeRegistration NotRegistered(string purpose) =>
+        new(
+            purpose,
+            false,
+            FileStoragePurposePolicies.NotRegisteredErrorCode,
+            $"File purpose '{purpose}' is not registered in FileStorage:PurposePolicies.");
 }
 
 internal sealed record FileStoragePolicyValidationResult(bool IsAllowed, string? Message)
