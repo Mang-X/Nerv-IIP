@@ -35,7 +35,8 @@ public sealed class NullMasterDataDownstreamReferenceChecker : IMasterDataDownst
 
 public sealed class HttpProductEngineeringReferenceUsageChecker(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalTokenProvider) : IMasterDataDownstreamReferenceChecker
+    IInternalServiceTokenProvider internalTokenProvider,
+    ILogger<HttpProductEngineeringReferenceUsageChecker> logger) : IMasterDataDownstreamReferenceChecker
 {
     public async Task<MasterDataDownstreamReferenceUsage> GetWorkCenterUsageAsync(
         string organizationId,
@@ -55,11 +56,11 @@ public sealed class HttpProductEngineeringReferenceUsageChecker(
         }
         catch (HttpRequestException exception)
         {
-            throw new KnownException("暂时无法检查 ProductEngineering 中的工作中心使用情况，请稍后重试。", exception);
+            throw DownstreamFailure(exception);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new KnownException("检查 ProductEngineering 中的工作中心使用情况超时，请稍后重试。", exception);
+            throw DownstreamFailure(exception);
         }
 
         using (response)
@@ -83,10 +84,11 @@ public sealed class HttpProductEngineeringReferenceUsageChecker(
         }
     }
 
-    private static KnownException DownstreamFailure(Exception diagnostic) =>
-        new KnownException(
-            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
-            diagnostic);
+    private KnownException DownstreamFailure(Exception diagnostic)
+    {
+        logger.LogWarning(diagnostic, "工程数据工作中心引用检查失败。");
+        return new KnownException("无法确认工程数据中的工作中心使用情况，当前操作已取消。", diagnostic);
+    }
 
     private sealed record ProductEngineeringWorkCenterUsageResponse(bool HasActiveReference, IReadOnlyCollection<string>? References);
 

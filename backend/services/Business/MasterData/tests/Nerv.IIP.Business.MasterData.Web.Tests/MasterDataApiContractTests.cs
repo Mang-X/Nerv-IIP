@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
@@ -258,6 +259,23 @@ public sealed class MasterDataApiContractTests
             Assert.True(reference.Active);
             Assert.Equal("Scratch", reference.DisplayName);
         });
+    }
+
+    [Fact]
+    public void ResolveMasterDataReferencesQueryValidator_rejects_more_than_two_hundred_references_in_chinese()
+    {
+        var validator = new ResolveMasterDataReferencesQueryValidator();
+        var query = new ResolveMasterDataReferencesQuery(
+            "org-001",
+            "env-dev",
+            Enumerable.Range(1, 201)
+                .Select(index => new MasterDataReferenceRequest("device-asset", $"DEV-{index:000}"))
+                .ToArray());
+
+        var result = validator.Validate(query);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("主数据引用批次必须包含 1 至 200 条引用。", error.ErrorMessage);
     }
 
     [Fact]
@@ -1300,6 +1318,7 @@ public sealed class MasterDataApiContractTests
     [Fact]
     public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
     {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         {
             ReasonPhrase = "upstream-secret",
@@ -1307,7 +1326,7 @@ public sealed class MasterDataApiContractTests
         {
             BaseAddress = new Uri("https://product-engineering.local")
         };
-        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider(), logger);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
             "org-001",
@@ -1316,14 +1335,69 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
 
         Assert.Equal(
-            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
+            "无法确认工程数据中的工作中心使用情况，当前操作已取消。",
             exception.Message);
+        Assert.DoesNotContain("HTTP", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("upstream-secret", exception.Message, StringComparison.Ordinal);
+        var diagnostic = Assert.Single(logger.Exceptions);
+        Assert.Contains("HTTP 503", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("upstream-secret", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_logs_transport_diagnostic_before_safe_known_exception()
+    {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new ThrowingHttpMessageHandler(
+            new HttpRequestException("socket-secret")))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            logger);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal("无法确认工程数据中的工作中心使用情况，当前操作已取消。", exception.Message);
+        Assert.DoesNotContain("socket-secret", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("socket-secret", Assert.Single(logger.Exceptions).Message);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_logs_timeout_diagnostic_before_safe_known_exception()
+    {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new ThrowingHttpMessageHandler(
+            new TaskCanceledException("timeout-secret")))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            logger);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal("无法确认工程数据中的工作中心使用情况，当前操作已取消。", exception.Message);
+        Assert.DoesNotContain("timeout-secret", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("timeout-secret", Assert.Single(logger.Exceptions).Message);
     }
 
     [Fact]
     public async Task ProductEngineering_reference_checker_hides_downstream_error_message_from_user()
     {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
@@ -1334,7 +1408,7 @@ public sealed class MasterDataApiContractTests
         {
             BaseAddress = new Uri("https://product-engineering.local"),
         };
-        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider(), logger);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
             "org-001",
@@ -1343,9 +1417,11 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
 
         Assert.Equal(
-            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
+            "无法确认工程数据中的工作中心使用情况，当前操作已取消。",
             exception.Message);
         Assert.DoesNotContain("database password leaked", exception.Message, StringComparison.Ordinal);
+        var diagnostic = Assert.Single(logger.Exceptions);
+        Assert.Contains("database password leaked", diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1361,7 +1437,10 @@ public sealed class MasterDataApiContractTests
         {
             BaseAddress = new Uri("https://product-engineering.local")
         };
-        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>());
 
         var usage = await checker.GetWorkCenterUsageAsync(
             "org-001",
@@ -1384,14 +1463,16 @@ public sealed class MasterDataApiContractTests
 
         var handler = new SetMasterDataResourceEnabledCommandHandler(
             dbContext,
-            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, ["routing:ROUTE-MIX:A"])));
+            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(
+                true,
+                ["routing:ROUTE-MIX:A", "operation:OP-MIX", "bom:BOM-MIX"])));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, "test:actor", "op-wc-mix", Reason: "retired"),
             CancellationToken.None));
 
-        Assert.Contains("ProductEngineering", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("routing:ROUTE-MIX:A", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("工程数据引用 'routing:ROUTE-MIX:A'（共 3 条），不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
     }
 
     [Fact]
@@ -2089,12 +2170,12 @@ public sealed class MasterDataApiContractTests
         var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
             CancellationToken.None));
-        Assert.Contains("启用直接换算关系", expired.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'box' 到 'ea' 缺少启用的直接换算关系。", expired.Message);
 
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
             CancellationToken.None));
-        Assert.Contains("启用直接换算关系", missing.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'case' 到 'ea' 缺少启用的直接换算关系。", missing.Message);
     }
 
     [Fact]
@@ -2129,7 +2210,7 @@ public sealed class MasterDataApiContractTests
             new UpdateMasterDataResourceCommand("org-001", "env-dev", "sku", "SKU-UPDATE-UOM", PurchaseUomCode: "box"),
             CancellationToken.None));
 
-        Assert.Contains("启用直接换算关系", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'box' 到 'ea' 缺少启用的直接换算关系。", exception.Message);
     }
 
     [Fact]
@@ -2145,7 +2226,7 @@ public sealed class MasterDataApiContractTests
         var missingSkill = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
-        Assert.Contains("skill:welding", missingSkill.Message, StringComparison.Ordinal);
+        Assert.Equal("人员技能字段 'SkillCode' 的值 'welding' 不存在或未启用。", missingSkill.Message);
 
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2153,7 +2234,7 @@ public sealed class MasterDataApiContractTests
         var missingLevel = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
-        Assert.Contains("skill-level:senior", missingLevel.Message, StringComparison.Ordinal);
+        Assert.Equal("人员技能字段 'Level' 的值 'senior' 不存在或未启用。", missingLevel.Message);
 
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2513,6 +2594,28 @@ public sealed class MasterDataApiContractTests
         public string BearerToken => "test-internal-token";
     }
 
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<Exception> Exceptions { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null)
+            {
+                Exceptions.Add(exception);
+            }
+        }
+    }
+
     private sealed class NoopMediator : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -2569,6 +2672,14 @@ public sealed class MasterDataApiContractTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(send(request));
+        }
+    }
+
+    private sealed class ThrowingHttpMessageHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromException<HttpResponseMessage>(exception);
         }
     }
 

@@ -151,17 +151,18 @@ public sealed class MasterDataDictionaryRulesTests
         var invalidBatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(BatchTrackingPolicy: "legacy-lot"),
             CancellationToken.None));
-        Assert.Contains("batch-tracking-policy:legacy-lot", invalidBatch.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值 'legacy-lot' 不存在或未启用。", invalidBatch.Message);
+        Assert.True(invalidBatch.Message.Length <= 60);
 
         var invalidSerial = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(SerialTrackingPolicy: "serialized"),
             CancellationToken.None));
-        Assert.Contains("serial-tracking-policy:serialized", invalidSerial.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'SerialTrackingPolicy' 的值 'serialized' 不存在或未启用。", invalidSerial.Message);
 
         var invalidComplianceTag = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(ComplianceTags: ["custom-cert"]),
             CancellationToken.None));
-        Assert.Contains("compliance-tag:custom-cert", invalidComplianceTag.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'ComplianceTags' 的值 'custom-cert' 不存在或未启用。", invalidComplianceTag.Message);
     }
 
     [Fact]
@@ -233,7 +234,7 @@ public sealed class MasterDataDictionaryRulesTests
                 MaterialType: "legacy-material"),
             CancellationToken.None));
 
-        Assert.Contains("material-type:legacy-material", invalidMaterialType.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'MaterialType' 的值 'legacy-material' 不存在或未启用。", invalidMaterialType.Message);
     }
 
     [Fact]

@@ -214,7 +214,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU 字段 '{reference.Field}' 引用的参考数据 '{reference.CodeSet}:{reference.Code}' 不存在或未启用。");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 的值 '{reference.Code}' 不存在或未启用。");
             }
         }
     }
@@ -402,7 +402,7 @@ internal static class SkuChannelUomValidator
                 cancellationToken);
             if (!hasConversion)
             {
-                throw new KnownException($"SKU 渠道计量单位 '{channelUom}' 需要一条到基本计量单位 '{baseUom}' 的启用直接换算关系。");
+                throw new KnownException($"计量单位 '{channelUom}' 到 '{baseUom}' 缺少启用的直接换算关系。");
             }
         }
     }
@@ -787,7 +787,7 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
             cancellationToken);
         if (!exists)
         {
-            throw new KnownException($"人员技能字段 '{field}' 引用的参考数据 '{codeSet}:{trimmedCode}' 不存在或未启用。");
+            throw new KnownException($"人员技能字段 '{field}' 的值 '{trimmedCode}' 不存在或未启用。");
         }
     }
 }
