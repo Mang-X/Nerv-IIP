@@ -622,7 +622,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(
     private async Task ValidateSkuControlledReferenceDataAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
     {
         // 分类的权威值域是产品分类目录实体，不在受控字典循环里（#1596）。
-        await SkuCategoryValidator.ValidateAsync(dbContext, referenceDataRepository, request.OrganizationId, request.EnvironmentId, request.Category, cancellationToken);
+        // 更新保留 legacy 兼容：编辑一条老物料不该被它自己的历史分类挡住（#1596）。
+        await SkuCategoryValidator.ValidateAsync(dbContext, referenceDataRepository, request.OrganizationId, request.EnvironmentId, request.Category, allowLegacyFallback: true, cancellationToken);
 
         // SKU update does not expose compliance tag changes yet, so only editable dictionary-backed fields are validated here.
         foreach (var reference in MasterDataDictionaryRules.GetUpdateSkuReferences(

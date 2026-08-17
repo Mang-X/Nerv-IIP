@@ -185,7 +185,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
     private async Task ValidateControlledReferenceDataAsync(CreateSkuCommand request, CancellationToken cancellationToken)
     {
         // 分类的权威值域是产品分类目录实体，不在受控字典循环里（#1596）。
-        await SkuCategoryValidator.ValidateAsync(_dbContext, _referenceDataRepository, request.OrganizationId, request.EnvironmentId, request.Category, cancellationToken);
+        await SkuCategoryValidator.ValidateAsync(_dbContext, _referenceDataRepository, request.OrganizationId, request.EnvironmentId, request.Category, allowLegacyFallback: false, cancellationToken);
 
         if (_referenceDataRepository is null)
         {
@@ -268,9 +268,13 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 /// 「独立目录兼容」降级为 legacy。此前后端只认 CodeSet，而界面下拉给的是实体编码，
 /// 两个值空间不相交，新建物料表单提交必 400。
 ///
-/// 过渡期同时接受 legacy CodeSet 里仍启用的码：文档明确「完全切换前不得破坏 SKU
-/// <c>category</c> 对 CodeSet 的兼容读取」，否则编辑一条老物料会被它自己的历史分类挡住。
+/// legacy 兼容**只给更新路径**（<c>allowLegacyFallback</c>）：文档要求「完全切换前
+/// 不得破坏 SKU <c>category</c> 对 CodeSet 的兼容读取」，而这条理由只覆盖「编辑一条老物料不该被
+/// 它自己的历史分类挡住」。**新建一律只认实体**，否则新数据会持续流入待退役的值空间。
 /// 旧码迁移与 CodeSet 正式退役另行处理。
+///
+/// 实体一旦按 code 命中即为**权威判定**：命中且已停用就直接拒，不再落到 legacy 支路——
+/// 否则 CodeSet 里放一条同码启用条目，就能把「停用的分类不可再用」这条不变量整个绕过去。
 /// </summary>
 public static class SkuCategoryValidator
 {
@@ -282,6 +286,7 @@ public static class SkuCategoryValidator
         string organizationId,
         string environmentId,
         string? category,
+        bool allowLegacyFallback,
         CancellationToken cancellationToken)
     {
         // 更新命令未提交该字段：不是「填了空」，是「没改」，不校验。
@@ -305,32 +310,47 @@ public static class SkuCategoryValidator
 
         if (dbContext is not null)
         {
-            var isActiveCategory = await dbContext.ProductCategories.AnyAsync(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                !x.Disabled &&
-                x.CategoryCode == code,
-                cancellationToken);
-            if (isActiveCategory)
+            // 按 code 取实体的停用标记：命中即权威，不带 Disabled 过滤——带了的话「停用实体」
+            // 会退化成「查无此条」，再被同码 legacy 兜底放行。
+            var entityDisabled = await dbContext.ProductCategories
+                .Where(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.CategoryCode == code)
+                .Select(x => (bool?)x.Disabled)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (entityDisabled is not null)
             {
-                return;
+                if (entityDisabled == false)
+                {
+                    return;
+                }
+
+                throw new KnownException(
+                    $"SKU field 'Category' references disabled product category '{code}'.");
             }
 
-            var isActiveLegacyCode = await dbContext.ReferenceDataCodes.AnyAsync(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                !x.Disabled &&
-                x.CodeSet == LegacyCodeSet &&
-                x.Code == code,
-                cancellationToken);
-            if (isActiveLegacyCode)
+            // 实体里完全没有这个 code，才轮到 legacy 兼容（且仅更新路径）。
+            if (allowLegacyFallback)
             {
-                return;
+                var isActiveLegacyCode = await dbContext.ReferenceDataCodes.AnyAsync(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    !x.Disabled &&
+                    x.CodeSet == LegacyCodeSet &&
+                    x.Code == code,
+                    cancellationToken);
+                if (isActiveLegacyCode)
+                {
+                    return;
+                }
             }
         }
         else if (await referenceDataRepository!.ExistsActiveAsync(organizationId, environmentId, LegacyCodeSet, code, cancellationToken))
         {
-            // 只有字典仓储可用时（无持久化上下文的构造路径）退回 legacy 校验，强度不降。
+            // 降级路径：只有字典仓储、没有持久化上下文时无从查实体，只能退回 legacy 校验。
+            // 该重载只被测试使用（运行时 DI 走带 dbContext 的版本），故保留而不是一律拒绝；
+            // 「新建只认实体」的口径由带 dbContext 的 handler 级测试钉住。
             return;
         }
 

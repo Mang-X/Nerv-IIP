@@ -33,7 +33,7 @@ public sealed class SkuCategoryValidationTests
         dbContext.ProductCategories.Add(ProductCategory.Create(Org, Env, "PCAT-SHOCK-FR", "前减振器", "PCAT-SHOCK", null));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK-FR", CancellationToken.None);
+        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK-FR", allowLegacyFallback: true, CancellationToken.None);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class SkuCategoryValidationTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var error = await Assert.ThrowsAsync<KnownException>(() =>
-            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK-RR", CancellationToken.None));
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK-RR", allowLegacyFallback: true, CancellationToken.None));
         Assert.Contains("PCAT-SHOCK-RR", error.Message, StringComparison.Ordinal);
     }
 
@@ -60,7 +60,7 @@ public sealed class SkuCategoryValidationTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         var error = await Assert.ThrowsAsync<KnownException>(() =>
-            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-NOT-THERE", CancellationToken.None));
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-NOT-THERE", allowLegacyFallback: true, CancellationToken.None));
         Assert.Contains("PCAT-NOT-THERE", error.Message, StringComparison.Ordinal);
     }
 
@@ -77,7 +77,7 @@ public sealed class SkuCategoryValidationTests
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create(Org, Env, "product-category", "electronic", "电子料"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "electronic", CancellationToken.None);
+        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "electronic", allowLegacyFallback: true, CancellationToken.None);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class SkuCategoryValidationTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "chemical", CancellationToken.None));
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "chemical", allowLegacyFallback: true, CancellationToken.None));
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public sealed class SkuCategoryValidationTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK", CancellationToken.None));
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-SHOCK", allowLegacyFallback: true, CancellationToken.None));
     }
 
     /// <summary>更新命令未提交该字段时（null）不应触发校验，否则改个名字都要带上分类。</summary>
@@ -116,7 +116,7 @@ public sealed class SkuCategoryValidationTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, null, CancellationToken.None);
+        await SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, null, allowLegacyFallback: true, CancellationToken.None);
     }
 
     [Fact]
@@ -127,7 +127,57 @@ public sealed class SkuCategoryValidationTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         await Assert.ThrowsAsync<KnownException>(() =>
-            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "   ", CancellationToken.None));
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "   ", allowLegacyFallback: true, CancellationToken.None));
+    }
+
+
+    /// <summary>
+    /// 阻断修复（PR #1602 审核）：停用实体 + **同码**启用 legacy 条目时，此前会落到 legacy 支路
+    /// 被放行，「停用的分类不可再用」这条不变量整个被绕过。实体按 code 命中即权威，命中即停。
+    /// </summary>
+    [Fact]
+    public async Task Disabled_entity_is_not_rescued_by_a_same_code_active_legacy_entry()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var category = ProductCategory.Create(Org, Env, "SAME-CODE", "同码分类", null, null);
+        category.Disable("并入上级");
+        dbContext.ProductCategories.Add(category);
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create(Org, Env, "product-category", "SAME-CODE", "同码字典条目"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<KnownException>(() =>
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "SAME-CODE", allowLegacyFallback: true, CancellationToken.None));
+        Assert.Contains("disabled product category", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>新建路径不接受 legacy 码：兼容理由只覆盖「编辑老物料」，不该让新数据继续流入待退役值空间。</summary>
+    [Fact]
+    public async Task Create_path_rejects_legacy_codes_even_when_they_are_active()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create(Org, Env, "product-category", "electronic", "电子料"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "electronic", allowLegacyFallback: false, CancellationToken.None));
+    }
+
+    /// <summary>环境隔离（此前只覆盖了组织隔离）。</summary>
+    [Fact]
+    public async Task Category_from_another_environment_is_rejected()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.Add(ProductCategory.Create(Org, "env-prod", "PCAT-PART", "零部件", null, null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "PCAT-PART", allowLegacyFallback: true, CancellationToken.None));
     }
 
     /// <summary>

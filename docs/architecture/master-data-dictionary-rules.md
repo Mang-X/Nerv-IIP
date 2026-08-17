@@ -101,13 +101,13 @@ UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(�
 ## 5. 前后端对齐约定
 
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
-- **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。
-- **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
+- **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。**产品分类除外**——它取自 ProductCategory 独立目录 API，不走 `?codeSet=`（#1596）。
+- **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。产品分类改由「产品分类」页维护、走独立目录 API（#1596）。
 - 三处的 code 值集合必须等同；前端离线兜底的中文 label 应与本文件和后端种子 name 保持一致，避免实时字典不可用时出现不同展示名。
 
 ## 6. 落地状态（2026-06-10）
 
-- ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取产品分类、物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。
+- ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。**产品分类已改取 ProductCategory 独立目录**(「产品分类」页维护),不再经 `?codeSet=`(#1596)。
 - ✅ 后端种子 `MasterDataSeedService` 已通过 #352/#369 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,对 `batch-tracking-policy:lot`、`serial-tracking-policy:serial`、`shelf-life-policy:180d/365d`、`uom-dimension:mass/quantity` 等历史误种码值执行软停用而非物理删除；seed 会修复既有启用标准码的中文 name 与 UOM 种子的名称/量纲。
 - ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;人员技能登记会校验 legacy 技能 CodeSet 与技能等级必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
 - ✅ ProductCategory、Skill 和 QualityReason 已提供独立目录 API/BusinessGateway facade，用于产品分类树、技能证书属性和质量原因严重度/默认处置等结构化维护；legacy CodeSet 在切换期保留兼容。

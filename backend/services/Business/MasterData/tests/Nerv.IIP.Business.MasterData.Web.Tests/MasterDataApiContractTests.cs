@@ -1917,6 +1917,37 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("SKU-001", created.Code);
     }
 
+    /// <summary>
+    /// handler 级钉住「新建只认产品分类实体」（#1596 口径裁决 A + PR #1602 审核阻断 2）：
+    /// 走带 <c>ApplicationDbContext</c> 的构造（= 运行时 DI 实际使用的那条），
+    /// 启用实体可建，启用 legacy 码被拒——兼容只留给更新路径。
+    /// </summary>
+    [Fact]
+    public async Task Create_sku_command_accepts_entity_category_and_rejects_legacy_code()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            dbContext);
+
+        var created = await handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-ENTITY", "Entity Category", "kg", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
+            CancellationToken.None);
+        Assert.Equal("SKU-ENTITY", created.Code);
+
+        // `electronic` 是 seed 出来的启用 legacy 码：更新路径仍接受，新建路径必须拒。
+        var rejected = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-LEGACY", "Legacy Category", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
+            CancellationToken.None));
+        Assert.Contains("product category 'electronic'", rejected.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Create_sku_command_preserves_channel_uoms_planning_profile_and_lifecycle_flags()
     {
@@ -1943,7 +1974,7 @@ public sealed class MasterDataApiContractTests
                 "SKU-407",
                 "Issue 407 SKU",
                 "ea",
-                "electronic",
+                "PCAT-PART",
                 "finished-goods",
                 "none",
                 "none",
@@ -2021,12 +2052,12 @@ public sealed class MasterDataApiContractTests
             dbContext);
 
         var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
+            new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
             CancellationToken.None));
         Assert.Contains("requires an active direct conversion", expired.Message, StringComparison.Ordinal);
 
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
+            new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
             CancellationToken.None));
         Assert.Contains("requires an active direct conversion", missing.Message, StringComparison.Ordinal);
     }
@@ -2411,6 +2442,10 @@ public sealed class MasterDataApiContractTests
 
     private static void SeedSkuControlledReferenceData(ApplicationDbContext dbContext)
     {
+        // 新建 SKU 的分类只认产品分类目录实体（#1596）；legacy 码仅更新路径兼容，
+        // 所以「让 SKU 建得出来」的共享 seed 必须给出实体分类。
+        dbContext.ProductCategories.Add(
+            Domain.AggregatesModel.ProductCategoryAggregate.ProductCategory.Create("org-001", "env-dev", "PCAT-PART", "零部件", null, null));
         dbContext.ReferenceDataCodes.AddRange(
             ReferenceDataCode.Create("org-001", "env-dev", "product-category", "chemical", "Chemical"),
             ReferenceDataCode.Create("org-001", "env-dev", "product-category", "electronic", "Electronic"),
