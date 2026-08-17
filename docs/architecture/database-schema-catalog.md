@@ -798,7 +798,7 @@ MAN-631/#1168 迁移 `20260731210404_AddMaintenanceKeywordSearchIndexes` 启用 
 
 已知差距：
 
-1. AppHost 默认通过独立 `file-storage-db` / `nerv_iip_filestorage` resource 运行 PostgreSQL-backed FileStorage；只有 Development 显式设置 `Persistence:Provider=InMemory` 才允许进程内 metadata。非 Development 缺 provider、选择 InMemory、缺连接串或启用 Web-host AutoMigrate 会 fail fast。`scripts/install/migrate-file-storage.ps1` 已提供受治理的显式 migration 入口；完整客户发布仍需由安装流程补齐备份/恢复和全服务编排。
+1. AppHost 默认通过独立 `file-storage-db` / `nerv_iip_filestorage` resource 运行 PostgreSQL-backed FileStorage；PostgreSQL 是所有环境唯一的 metadata 实现，选择 `Persistence:Provider=InMemory` 会给出 AppHost/PostgreSQL 指引后 fail fast。缺 provider、缺连接串或非 Development 启用 Web-host AutoMigrate 同样会失败。`scripts/install/migrate-file-storage.ps1` 已提供受治理的显式 migration 入口；完整客户发布仍需由安装流程补齐备份/恢复和全服务编排。
 2. 设置 `FileStorage:UploadProvider=tus` 后已具备本地 tus `HEAD`/`PATCH` offset 传输、download grant content 读取、size/checksum 强校验、过期未完成上传清理、用途类型策略、配额拒绝、后台扫描状态流转和正式文件软删/物理清理能力。
 3. tus 端点当前按平台内部服务边界实现为 `AllowAnonymous`，生产入口需要由 Gateway/auth 层保护；MinIO/S3 multipart 不进入 MVP，放到后续对象存储部署联调。`object_key` 不得被提升为公开 API、SDK DTO、Gateway facade 或 Console 生成客户端字段。
 

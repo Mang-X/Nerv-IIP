@@ -14,6 +14,16 @@ using Nerv.IIP.Persistence;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
+if (string.Equals(
+        builder.Configuration["Persistence:Provider"]?.Trim(),
+        "InMemory",
+        StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "FileStorage does not support Persistence:Provider=InMemory. " +
+        "Start FileStorage through the Aspire AppHost with PostgreSQL persistence.");
+}
+
 var persistence = PersistenceStartupGovernance.Resolve(
     builder.Configuration,
     builder.Environment,
@@ -22,7 +32,6 @@ var persistence = PersistenceStartupGovernance.Resolve(
         NonDevelopmentMigrationRemedy =
             "Use scripts/install/migrate-file-storage.ps1 or a migration bundle outside Development."
     });
-var usePostgreSql = persistence.UsePostgreSql;
 builder.Services.AddFastEndpoints();
 // Upload-session / download-grant expiry and file retention are scheduling semantics, so the clock behind
 // them is injected rather than read from DateTimeOffset.UtcNow: tests replace this registration to advance
@@ -61,19 +70,12 @@ builder.Services.AddSingleton<IVersionedObjectStore>(services =>
 });
 builder.Services.AddSingleton<VersionedArchiveService>();
 
-if (usePostgreSql)
-{
-    builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
-    builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
-    builder.Services.AddScoped<PostgreSqlFileStorageScanner>();
-    builder.Services.AddScoped<IFileStorageSecurityAlertSink, LoggingFileStorageSecurityAlertSink>();
-    builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
-    builder.Services.AddHostedService<FileStorageScanHostedService>();
-}
-else
-{
-    builder.Services.AddSingleton<IFileStorageService, InMemoryFileStorageService>();
-}
+builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+builder.Services.AddScoped<PostgreSqlFileStorageScanner>();
+builder.Services.AddScoped<IFileStorageSecurityAlertSink, LoggingFileStorageSecurityAlertSink>();
+builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
+builder.Services.AddHostedService<FileStorageScanHostedService>();
 
 builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
@@ -81,7 +83,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
-if (usePostgreSql && persistence.AutoMigrate)
+if (persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<FileStorageDatabaseMigrationRunner>().MigrateAsync();

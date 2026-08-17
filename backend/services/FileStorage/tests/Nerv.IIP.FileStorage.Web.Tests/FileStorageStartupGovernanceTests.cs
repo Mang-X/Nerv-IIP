@@ -23,14 +23,19 @@ public sealed class FileStorageStartupGovernanceTests
         Assert.DoesNotContain("startup-test-secret", exception.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Development_explicit_inmemory_starts()
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public void Inmemory_is_rejected_with_apphost_postgresql_remedy(string environment)
     {
-        using var factory = CreateFactory("Development", provider: "InMemory");
+        using var factory = CreateFactory(environment, provider: "InMemory");
 
-        using var client = factory.CreateClient();
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.NotNull(client);
+        Assert.Contains("FileStorage does not support Persistence:Provider=InMemory.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Aspire AppHost", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("PostgreSQL", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("startup-test-secret", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -60,7 +65,7 @@ public sealed class FileStorageStartupGovernanceTests
     }
 
     [Fact]
-    public void Development_inmemory_rejects_automigrate_with_specific_remedy()
+    public void Inmemory_with_automigrate_is_rejected_before_shared_automigrate_validation()
     {
         using var factory = CreateFactory(
             "Development",
@@ -69,10 +74,8 @@ public sealed class FileStorageStartupGovernanceTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.Contains(
-            "Persistence:AutoMigrate must be false when Persistence:Provider=InMemory.",
-            exception.Message,
-            StringComparison.Ordinal);
+        Assert.Contains("FileStorage does not support Persistence:Provider=InMemory.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Aspire AppHost", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -107,7 +110,6 @@ public sealed class FileStorageStartupGovernanceTests
     [Theory]
     [InlineData(null, true)]
     [InlineData("", true)]
-    [InlineData("InMemory", true)]
     [InlineData("PostgreSQL", false)]
     public void Production_rejects_nonpersistent_or_incomplete_configuration(
         string? provider,

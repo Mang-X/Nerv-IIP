@@ -529,42 +529,52 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
-    public async Task InMemoryListFiles_FiltersByTenantBeforeOtherFilters()
+    public async Task ListFiles_TakeAboveMaximum_ReturnsAtMostTwoHundredItems()
     {
-        var service = new InMemoryFileStorageService();
-        var orgFile = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
-        var otherTenantFile = (await service.CreateUploadSessionAsync(
-            CreateUploadRequest() with { OrganizationId = "org-002" },
-            CancellationToken.None)).Value!;
-        Assert.Equal(StatusCodes.Status200OK, (await service.CompleteUploadSessionAsync(
-            orgFile.UploadSessionId,
-            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096),
-            CancellationToken.None)).StatusCode);
-        Assert.Equal(StatusCodes.Status200OK, (await service.CompleteUploadSessionAsync(
-            otherTenantFile.UploadSessionId,
-            new CompleteUploadSessionRequest("org-002", "prod", "application-package", "sha256:test", 4096),
-            CancellationToken.None)).StatusCode);
+        await using var dbContext = CreateDbContext();
+        var now = DateTimeOffset.UtcNow;
+        dbContext.StoredFiles.AddRange(Enumerable.Range(1, 201).Select(index => StoredFileRecord.Create(
+            $"file_{index:000}",
+            "org-001",
+            "prod",
+            "AppHub",
+            "ApplicationPackage",
+            "app-42",
+            "application-package",
+            $"demo-{index:000}.zip",
+            "application/zip",
+            1,
+            null,
+            $"org-001/file_{index:000}",
+            "clean",
+            "available",
+            now.AddMinutes(-index),
+            now.AddMinutes(-index))));
+        await dbContext.SaveChangesAsync();
+        var service = new PostgreSqlFileStorageService(dbContext);
 
         var result = await service.ListFilesAsync(
-            new ListFilesRequest("org-001", "prod", "application-package", null, null, null, "available"),
+            new ListFilesRequest("org-001", "prod", null, null, null, null, null, Skip: 0, Take: 500),
             CancellationToken.None);
 
         Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
-        var item = Assert.Single(result.Value!.Items);
-        Assert.Equal(orgFile.FileId, item.FileId);
-        Assert.Equal("org-001", item.OrganizationId);
+        Assert.Equal(201, result.Value!.Total);
+        Assert.Equal(200, result.Value.Items.Count);
     }
 
     [Fact]
-    public async Task InMemoryCreateUploadSession_UsesVersion7FileId()
+    public async Task CreateUploadSession_NegativeExpectedSize_ReturnsBadRequestWithoutPersisting()
     {
-        var service = new InMemoryFileStorageService();
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
 
-        var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+        var result = await service.CreateUploadSessionAsync(
+            CreateUploadRequest() with { ExpectedSizeBytes = -1 },
+            CancellationToken.None);
 
-        Assert.Equal(StatusCodes.Status200OK, result.StatusCode);
-        Assert.NotNull(result.Value);
-        Assert.Empty(GuidVersionAssertions.Version7GuidSuffixFailures(result.Value.FileId, "file_"));
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Null(result.Value);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
     }
 
     [Fact]
