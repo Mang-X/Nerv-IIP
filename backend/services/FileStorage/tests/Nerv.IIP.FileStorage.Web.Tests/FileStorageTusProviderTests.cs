@@ -59,7 +59,9 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
-        var service = new InMemoryFileStorageService(new TusUploadProvider());
+        var service = new InMemoryFileStorageService(
+            new TusUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default);
         var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
 
         var result = await service.CompleteUploadSessionAsync(
@@ -457,7 +459,10 @@ public sealed class FileStorageTusProviderTests
     public async Task PostgreSqlCreateUploadSession_WithTusProvider_PersistsTusProvider()
     {
         await using var dbContext = CreateDbContext();
-        var service = new PostgreSqlFileStorageService(dbContext, new TusUploadProvider());
+        var service = new PostgreSqlFileStorageService(
+            dbContext,
+            new TusUploadProvider(),
+            configuration: FileStorageTestConfiguration.Default);
 
         var result = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
 
@@ -582,6 +587,7 @@ public sealed class FileStorageTusProviderTests
     private static LocalTusFileStore CreateTusStore(string rootPath)
     {
         var configuration = new ConfigurationBuilder()
+            .AddConfiguration(FileStorageTestConfiguration.Default)
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["FileStorage:Tus:RootPath"] = rootPath
