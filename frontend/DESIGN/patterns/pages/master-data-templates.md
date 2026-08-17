@@ -46,11 +46,11 @@ BusinessLayout
 3. **行操作**：查看详情只读 `NvDialog` / 编辑 emit 给页面 / 停用·启用走 `NvAlertDialog`
    二次确认 + toast + **原因必填**。后端未就绪的能力 `disabled` + tooltip，**绝不放会失败的
    假按钮**。
-   - **存量页**继续用 `components/masterData/MasterDataRowActions.vue`。
-   - **新页面注意**：该组件把确认框装在自己内部，随行渲染 → 一页 N 行就是 N 个确认框，
-     违反 `../flows/confirm-destroy.md` 规则 5（单实例声明在页面层）。在 #1591 收敛之前，
-     新页面要合规就**按 `master-data/workers.vue` 在页面层自建单实例确认框**，本组件只用于
-     查看详情与编辑触发；**不要把本组件的容器结构当默认答案照抄**。
+   - 触发用 `components/masterData/MasterDataRowActions.vue`（只发 `edit` / `toggle` 事件）；
+   - 确认框用 `components/masterData/MasterDataLifecycleDialog.vue` +
+     `composables/masterDataLifecycleConfirm.ts`，**每页渲染一个实例、放在 `#cell-*` 插槽外**
+     （#1591 已收敛；一页多张表共用同一个，`request(row, actions, label)` 切目标）。
+     契约见 `pages/master-data/lifecycleDialogSingleInstance.{contract,runtime}.test.ts`。
 4. **说人话**：UI 不暴露工程语言（`operationId / code(术语) / resourceType / sourceSystem /
 #号 / organizationId / environmentId / demo / seed / mock`）；码值显示**中文**（英文
    种子用 `masterDataReference.ts` 的 `mergeReferenceOptions` 常量**兜底覆盖**）。术语
@@ -214,9 +214,9 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 `pages/master-data/units.vue`、`devices.vue`、`skus.vue`、`partners.vue` 等（均在
 `goldStandardPages.contract.test.ts` allowlist）——**正例范围是列表骨架与页面组织**。
 
-破坏性确认（停用/启用）的正例是 `pages/master-data/workers.vue`（页面层单实例 + 原因必填）。
-`components/masterData/MasterDataRowActions.vue` **不是**这一项的正例：它把确认框装在组件内
-随行实例化，属存量例外（见下方反例与 #1591），只可参考其**原因必填输入**的写法。
+破坏性确认（停用/启用）的正例：`MasterDataRowActions`（触发）+ `MasterDataLifecycleDialog`
+（页面层单实例）+ `masterDataLifecycleConfirm`（状态），#1591 收敛后可整体照抄；
+页面只有一处破坏性动作时，`pages/master-data/workers.vue` 的页面自建写法同样合规。
 
 ### 反例
 
@@ -231,10 +231,10 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 均含原因输入，空原因确认按钮 `disabled`，原因随请求进生命周期审计。可整体照抄的现网写法见
 `../flows/confirm-destroy.md` 正例（`master-data/workers.vue`）。
 
-❌ **确认框按行实例化**：`MasterDataRowActions.vue` 自身含 `NvAlertDialog`，又在各表
-`#cell-actions` 里逐行渲染，一页 N 行即 N 个确认框，违反 `../flows/confirm-destroy.md`
-规则 5「单实例声明在页面层」。#878 之前即如此，只补了原因必填未收敛承载；作为存量例外由
-#1591 跟踪。**照抄本组件时只抄原因必填那一段，不要抄容器结构。**
+~~❌ **确认框按行实例化**~~：`MasterDataRowActions.vue` 曾自身含 `NvAlertDialog`、在各表
+`#cell-actions` 里逐行渲染，一页 N 行即 N 个确认框。**已收敛**（#1591）：组件只触发，确认框
+收到页面层单实例。本条保留为形态反例——**组件测试用 stub 抹平弹层就测不出实例数**，所以
+收敛后专门补了运行时实例计数断言，别再让同类结构缺陷靠「门禁绿」躺着。
 
 ---
 
@@ -496,10 +496,10 @@ NvPageHeader（字典分组数 + [刷新] [+ 新建字典条目（选中可维�
 ## 落地参照（现有实现，照抄起点）
 
 - 树-详情：`pages/master-data/facilities.vue`；主从 + 字典：`reference-data.vue`
-- 行操作三件套：`components/masterData/MasterDataRowActions.vue`
-  ——**只照抄查看/编辑/停用三个入口与原因必填输入**；它内含的确认框按行实例化，违反
-  `../flows/confirm-destroy.md` 规则 5，是 #1591 跟踪的存量例外，**不要照抄容器结构**
-- 破坏性确认（页面层单实例 + 原因必填）：`pages/master-data/workers.vue`
+- 行操作三件套：`components/masterData/MasterDataRowActions.vue`（只触发，不含确认框）
+- 破坏性确认（页面层单实例 + 原因必填）：`components/masterData/MasterDataLifecycleDialog.vue`
+  - `composables/masterDataLifecycleConfirm.ts`；单处动作的简化写法见
+    `pages/master-data/workers.vue`
 - 分段标题：`components/masterData/FormSectionTitle.vue`
 - 工人选择器 / 技能登记：`components/masterData/WorkerSelect.vue`、`composables` 的
   `usePersonnelSkillAssignment`

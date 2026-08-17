@@ -11,8 +11,10 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useMasterDataResource,
   useMasterDataResourceActions,
@@ -92,6 +94,8 @@ const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
 const shiftActions = useMasterDataResourceActions('shift')
 const calActions = useMasterDataResourceActions('work-calendar')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -910,7 +914,7 @@ const sortedExceptions = computed(() =>
               :row="row"
               entity-label="班次"
               :detail-fields="baseDetailFields(row, '班次编码', '班次名称')"
-              :actions="shiftActions"
+              @toggle="(row) => lifecycle.request(row, shiftActions, '班次')"
               @edit="openEditShift"
             />
           </template>
@@ -1020,7 +1024,7 @@ const sortedExceptions = computed(() =>
                     :row="row"
                     entity-label="工作日历"
                     :detail-fields="baseDetailFields(row, '日历编码', '日历名称')"
-                    :actions="calActions"
+                    @toggle="(row) => lifecycle.request(row, calActions, '工作日历')"
                     @edit="openEditCal"
                   />
                 </div>
@@ -1401,5 +1405,6 @@ const sortedExceptions = computed(() =>
         </NvAlertDialog>
       </NvTabsContent>
     </NvTabs>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>
