@@ -184,13 +184,15 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 
     private async Task ValidateControlledReferenceDataAsync(CreateSkuCommand request, CancellationToken cancellationToken)
     {
+        // 分类的权威值域是产品分类目录实体，不在受控字典循环里（#1596）。
+        await SkuCategoryValidator.ValidateAsync(_dbContext, _referenceDataRepository, request.OrganizationId, request.EnvironmentId, request.Category, cancellationToken);
+
         if (_referenceDataRepository is null)
         {
             return;
         }
 
         foreach (var reference in MasterDataDictionaryRules.GetCreateSkuReferences(
-            request.Category,
             request.MaterialType,
             request.BatchTrackingPolicy,
             request.SerialTrackingPolicy,
@@ -255,6 +257,85 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.PurchasingEnabled,
             request.ManufacturingEnabled,
             request.SalesEnabled);
+    }
+}
+
+/// <summary>
+/// SKU 的「产品分类」值域校验（#1596，口径裁决 A）。
+///
+/// 权威值域是**产品分类目录实体**（ProductCategory，`PCAT-*` 层级树），不是 reference-data
+/// 的 `product-category` CodeSet——后者已按 <c>master-data-dictionary-rules.md</c> §1
+/// 「独立目录兼容」降级为 legacy。此前后端只认 CodeSet，而界面下拉给的是实体编码，
+/// 两个值空间不相交，新建物料表单提交必 400。
+///
+/// 过渡期同时接受 legacy CodeSet 里仍启用的码：文档明确「完全切换前不得破坏 SKU
+/// <c>category</c> 对 CodeSet 的兼容读取」，否则编辑一条老物料会被它自己的历史分类挡住。
+/// 旧码迁移与 CodeSet 正式退役另行处理。
+/// </summary>
+public static class SkuCategoryValidator
+{
+    public const string LegacyCodeSet = "product-category";
+
+    public static async Task ValidateAsync(
+        ApplicationDbContext? dbContext,
+        IReferenceDataCodeRepository? referenceDataRepository,
+        string organizationId,
+        string environmentId,
+        string? category,
+        CancellationToken cancellationToken)
+    {
+        // 更新命令未提交该字段：不是「填了空」，是「没改」，不校验。
+        if (category is null)
+        {
+            return;
+        }
+
+        var code = category.Trim();
+        if (code.Length == 0)
+        {
+            throw new KnownException("SKU field 'Category' must reference an active product category.");
+        }
+
+        // 两条数据源哪条在就用哪条：handler 有三个构造重载，只认 dbContext 会让不带它的那条
+        // 路径静默失去校验——「依赖缺失就放行」正是最容易积成静默缺口的写法。
+        if (dbContext is null && referenceDataRepository is null)
+        {
+            return;
+        }
+
+        if (dbContext is not null)
+        {
+            var isActiveCategory = await dbContext.ProductCategories.AnyAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !x.Disabled &&
+                x.CategoryCode == code,
+                cancellationToken);
+            if (isActiveCategory)
+            {
+                return;
+            }
+
+            var isActiveLegacyCode = await dbContext.ReferenceDataCodes.AnyAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !x.Disabled &&
+                x.CodeSet == LegacyCodeSet &&
+                x.Code == code,
+                cancellationToken);
+            if (isActiveLegacyCode)
+            {
+                return;
+            }
+        }
+        else if (await referenceDataRepository!.ExistsActiveAsync(organizationId, environmentId, LegacyCodeSet, code, cancellationToken))
+        {
+            // 只有字典仓储可用时（无持久化上下文的构造路径）退回 legacy 校验，强度不降。
+            return;
+        }
+
+        throw new KnownException(
+            $"SKU field 'Category' references inactive or missing product category '{code}'.");
     }
 }
 

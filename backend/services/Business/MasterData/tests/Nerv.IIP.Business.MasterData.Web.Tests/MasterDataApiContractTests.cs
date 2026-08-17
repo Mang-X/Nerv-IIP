@@ -1902,7 +1902,9 @@ public sealed class MasterDataApiContractTests
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "missing-category", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("product-category:missing-category", missing.Message, StringComparison.Ordinal);
+        // 分类的权威值域已从 `product-category` CodeSet 改为产品分类目录实体（#1596），
+        // 报错措辞随之改为直呼「产品分类」；过渡期 legacy 码（下方 seed 的 electronic）仍被接受。
+        Assert.Contains("product category 'missing-category'", missing.Message, StringComparison.Ordinal);
 
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
