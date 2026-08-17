@@ -134,9 +134,9 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 4. 关键产品决策
 
-1. **产品分类（category）字典化**：从硬编码 demo 选项改为受控字典 `product-category` 驱动；用户在「数据字典」页维护分类，物料表单即可选到。Phase 1 用去 demo 的前端常量兜底 + 文案声明数据源为字典；Phase 2 切「按 CodeSet 拉取」端点，UI 不变。层级分类树（物料组）作为远期 Roadmap。
+1. ~~**产品分类（category）字典化**~~ → **已改判为「分类是独立目录实体」**（#1596，口径裁决 A）：当年的方向是把分类做成受控字典 `product-category`，层级分类树列为远期 Roadmap；分类树后来已作为 **ProductCategory 独立目录**落地（带 `ParentCode` 的层级树），于是 SKU `category` 的权威值域改为**该实体**，`product-category` 字典退出 SKU 写路径、仅保留存量兼容读取。理由：分类天然是层级，扁平字典表达不了；粗粒度「性质分类」这条轴已由 `materialType` 承担，SKU 不再挂第二个分类字段。详见 `master-data-dictionary-rules.md` §1。
 2. **`...Code` 自由文本 → 选字典**：`shelfLifePolicyCode/storageConditionCode/defaultBarcodeRuleCode` 由 `Input` 改为 `Select`，UI 只见业务词（保质期管理/存储条件/默认条码规则），取值受字典约束。
-3. **平台枚举与工厂字典**：`materialType/batchTrackingPolicy/serialTrackingPolicy/shelfLifePolicy` 带系统行为语义 → 平台预置枚举，只能启停不可改语义（前端常量即可）；`product-category/storage-condition/barcode-rule/quality-reason` 偏业务 → 平台预置常用值 + 工厂可维护。
+3. **平台枚举与工厂字典**：`materialType/batchTrackingPolicy/serialTrackingPolicy/shelfLifePolicy` 带系统行为语义 → 平台预置枚举，只能启停不可改语义（前端常量即可）；`storage-condition/barcode-rule/quality-reason` 偏业务 → 平台预置常用值 + 工厂可维护。（`product-category` 已按第 1 条退出 SKU 写路径，改由产品分类目录实体承载。）
 4. **伙伴角色诚实处理**：列表不回 partnerType，**不再猜 code 子串**。Phase 1 用「角色筛选 + 角色列（含『未分配』并标注推断口径）+ 新建时显式选角色」；Phase 2 后端列表回 partnerType 后角色展示才精确。同一主体可兼多角色（客户+供应商互供），建议 `partnerType` 演进为多角色（§7.4 issue）。
 5. **字典做成受控值中心**：字典页改 CodeSet 主从结构，成为唯一受控值来源，被物料表单消费，形成「维护→消费」闭环。
 6. **诚实的能力分级**：编辑/停用/详情字段等后端未就绪的入口，**保留可见但禁用 + tooltip 说明**，绝不放会失败的假按钮。
@@ -207,7 +207,7 @@ DataTablePagination（服务端 total）
 
 **字段（4 分组，工程术语→业务语言）**：
 
-*基础信息*：物料编号（只读「保存后由系统分配」）｜物料名称\*（Input）｜产品分类\*（**Select·字典 `product-category`**，旁置「去数据字典维护 →」链接）｜物料类型\*（Select 枚举：成品/半成品/原材料/包材/服务）
+*基础信息*：物料编号（只读「保存后由系统分配」）｜物料名称\*（Input）｜产品分类\*（**Select·产品分类目录**，取自 ProductCategory 实体树，旁置「去产品分类维护 →」链接；`product-category` 字典已退出 SKU 写路径，仅存量兼容，见 #1596）｜物料类型\*（Select 枚举：成品/半成品/原材料/包材/服务）
 
 *单位与计量*：基本单位\*（Select·**实时取 `unit-of-measure` 实体**/前端常量兜底，去「计量单位」页维护）｜多单位换算（**进阶折叠**，Phase 2）
 
@@ -314,7 +314,7 @@ DataTablePagination（服务端 total）
 
 | # | 用户痛点 | 方案 | 阶段 |
 |---|---|---|---|
-| 1 | 物料弹窗副标题 demo、表单费解、分类来路不明无处维护 | 删 demo 副标题/硬编码；分类字典 `product-category` 驱动、字典页可维护；字段按「平台枚举固定下拉 / 业务码值选字典」分类；`...Code` 改 Select | 去 demo+枚举【P1】；字典驱动【P2】 |
+| 1 | 物料弹窗副标题 demo、表单费解、分类来路不明无处维护 | 删 demo 副标题/硬编码；**分类由产品分类目录实体驱动、「产品分类」页可维护**（当时的方案是字典 `product-category` 驱动，已按 #1596 改判为实体）；字段按「平台枚举固定下拉 / 业务码值选字典」分类；`...Code` 改 Select | 去 demo+枚举【P1】；分类目录驱动【P2】 |
 | 2 | 物料无法维护 | 物料页补查看/编辑/停用入口 + 只读详情抽屉 | 入口/详情【P1】；编辑停用【P2】 |
 | 3 | 客户供应商缺失、无维护 | 接 partner create；角色筛选+角色列；新建显式选角色；停止猜 code | 创建+筛选【P1】；角色精确+编辑【P2】 |
 | 4 | 工厂资源混在一起且只读 | 拆「工厂与产线」(Tabs 工厂/产线/工作中心) + 「设备台账」+「组织与日历」；各 Tab 可建档 | 拆分+建档【P1】；编辑停用+层级可视化【P2】 |

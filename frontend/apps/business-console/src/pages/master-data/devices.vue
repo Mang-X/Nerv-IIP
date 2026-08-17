@@ -5,7 +5,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useBusinessMasterDataResources,
   useBusinessPartners,
@@ -116,6 +118,10 @@ function wcName(code?: string | null) {
 
 const keyword = ref('')
 const page = ref(1)
+// 停用后的行默认不在列表里，「启用」入口就永远够不到（#1594）。
+const includeDisabled = useIncludeDisabledFilter([devices.filters], () => {
+  page.value = 1
+})
 const pageSize = ref('10')
 const createOpen = ref(false)
 const createShowErrors = ref(false)
@@ -906,7 +912,11 @@ async function submitDevice() {
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
+    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称">
+      <template #filters>
+        <IncludeDisabledFilter v-model="includeDisabled" />
+      </template>
+    </NvToolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
       {{ listErrorMessage }}

@@ -6,9 +6,11 @@ import type {
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useBusinessMasterDataResources,
   useMasterDataResource,
@@ -73,6 +75,12 @@ const teamActions = useMasterDataResourceActions('team')
 departments.filters.take = TREE_TAKE
 teams.filters.take = TREE_TAKE
 shifts.filters.take = TREE_TAKE
+// 停用后的部门/班组/班次默认不在列表里，「启用」入口就永远够不到；三者共用一个开关（#1594）。
+const includeDisabled = useIncludeDisabledFilter([
+  departments.filters,
+  teams.filters,
+  shifts.filters,
+])
 teamWorkshops.filters.take = TREE_TAKE
 
 function isNonEmpty(value: string) {
@@ -632,6 +640,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
           >
             {{ allExpanded ? '全部折叠' : '全部展开' }}
           </NvButton>
+          <IncludeDisabledFilter v-model="includeDisabled" class="ml-auto" />
         </div>
 
         <p v-if="treeListError" class="text-sm text-destructive" role="alert">

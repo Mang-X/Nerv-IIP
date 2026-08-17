@@ -5,8 +5,10 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -107,14 +109,12 @@ const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
 
 const keyword = ref('')
-const includeDisabled = ref(false)
+// 「包含停用」收在共享 composable，与其余主数据页同一实现（#1594）。
+// 分页重置由下方 watch([keyword, includeDisabled, pageSize]) 统一负责，这里不再传回调。
+const includeDisabled = useIncludeDisabledFilter([filters])
 const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
 const pageSize = ref('10')
-
-watch(includeDisabled, (value) => {
-  filters.includeDisabled = value
-})
 
 interface CreateSkuForm {
   organizationId: string
@@ -764,10 +764,7 @@ function isNonEmpty(value: string) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
       <template #filters>
-        <label class="flex items-center gap-2 text-sm text-muted-foreground">
-          <NvCheckbox v-model="includeDisabled" />
-          包含停用
-        </label>
+        <IncludeDisabledFilter v-model="includeDisabled" />
       </template>
       <template #actions>
         <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>

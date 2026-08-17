@@ -10,7 +10,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useMasterDataResource,
   useMasterDataResourceActions,
@@ -135,6 +137,10 @@ function refreshAll() {
 // ---- 班次 ----
 const shiftKeyword = ref('')
 const shiftPage = ref(1)
+// 停用后的行默认不在列表里，「启用」入口就永远够不到；班次与日历共用一个开关（#1594）。
+const includeDisabled = useIncludeDisabledFilter([shifts.filters, calendars.filters], () => {
+  shiftPage.value = 1
+})
 const shiftPageSize = ref('10')
 const shiftOpen = ref(false)
 const shiftShowErrors = ref(false)
@@ -787,6 +793,9 @@ const sortedExceptions = computed(() =>
       <!-- 班次 -->
       <NvTabsContent value="shift" class="grid gap-3">
         <NvToolbar v-model:search="shiftKeyword" search-placeholder="在当前页内筛选班次编码、名称">
+          <template #filters>
+            <IncludeDisabledFilter v-model="includeDisabled" />
+          </template>
           <template #actions>
             <NvDialog v-model:open="shiftOpen">
               <NvDialogTrigger as-child>
@@ -911,6 +920,9 @@ const sortedExceptions = computed(() =>
       <!-- 工作日历 -->
       <NvTabsContent value="work-calendar" class="grid gap-3">
         <NvToolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
+          <template #filters>
+            <IncludeDisabledFilter v-model="includeDisabled" />
+          </template>
           <template #actions>
             <NvDialog v-model:open="calOpen">
               <NvDialogTrigger as-child>
