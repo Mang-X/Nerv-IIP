@@ -150,6 +150,7 @@ backend/services/AppHub/
 3. 命令处理器通过仓储读取和持久化聚合。
 4. 命令处理器不显式调用 `SaveChanges`、`SaveEntitiesAsync` 或 `UpdateAsync`，默认交给 netcorepal 的 UnitOfWork 管线处理。
 5. 业务异常使用 `KnownException`，不要返回半成功对象来表达业务错误。
+6. 用户可见的领域拒绝消息中的自然语言必须使用简体中文；插入的动态编码、ID 等值保持原始值，不翻译或改写。自动化检查当前先覆盖 MasterData，其他领域的覆盖范围必须另行声明，不得据此宣称已完成。该规则不改变路由、页面入口、操作步骤或工作流，因此不产生产品文档影响。
 
 查询：
 

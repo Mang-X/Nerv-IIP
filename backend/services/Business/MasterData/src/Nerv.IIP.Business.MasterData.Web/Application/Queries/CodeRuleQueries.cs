@@ -87,7 +87,7 @@ public sealed class GetCodeRuleDetailQueryHandler(ApplicationDbContext dbContext
                 x.EnvironmentId == request.EnvironmentId &&
                 x.RuleKey == request.RuleKey,
                 cancellationToken)
-            ?? throw new KnownException($"Code rule '{request.RuleKey}' was not found.");
+            ?? throw new KnownException($"未找到编码规则 '{request.RuleKey}'。");
 
         var versions = await dbContext.CodeRuleVersions
             .AsNoTracking()

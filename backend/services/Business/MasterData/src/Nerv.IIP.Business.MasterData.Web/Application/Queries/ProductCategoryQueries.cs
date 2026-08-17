@@ -109,7 +109,7 @@ public sealed class GetProductCategoryQueryHandler(ApplicationDbContext dbContex
             x.EnvironmentId == request.EnvironmentId &&
             x.CategoryCode == request.CategoryCode,
             cancellationToken)
-            ?? throw new KnownException($"Product category '{request.CategoryCode}' was not found.");
+            ?? throw new KnownException($"未找到产品分类 '{request.CategoryCode}'。");
         var categories = await ListProductCategoriesQueryHandler.LoadCategoriesAsync(
             dbContext,
             request.OrganizationId,

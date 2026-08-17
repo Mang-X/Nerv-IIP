@@ -149,7 +149,7 @@ public sealed class SkuCategoryValidationTests
 
         var error = await Assert.ThrowsAsync<KnownException>(() =>
             SkuCategoryValidator.ValidateAsync(dbContext, null, Org, Env, "SAME-CODE", allowLegacyFallback: true, CancellationToken.None));
-        Assert.Contains("disabled product category", error.Message, StringComparison.Ordinal);
+        Assert.Contains("产品分类 'SAME-CODE' 已停用", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>新建路径不接受 legacy 码：兼容理由只覆盖「编辑老物料」，不该让新数据继续流入待退役值空间。</summary>

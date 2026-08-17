@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
@@ -261,6 +262,23 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public void ResolveMasterDataReferencesQueryValidator_rejects_more_than_two_hundred_references_in_chinese()
+    {
+        var validator = new ResolveMasterDataReferencesQueryValidator();
+        var query = new ResolveMasterDataReferencesQuery(
+            "org-001",
+            "env-dev",
+            Enumerable.Range(1, 201)
+                .Select(index => new MasterDataReferenceRequest("device-asset", $"DEV-{index:000}"))
+                .ToArray());
+
+        var result = validator.Validate(query);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("主数据引用批次必须包含 1 至 200 条引用。", error.ErrorMessage);
+    }
+
+    [Fact]
     public async Task Resolve_references_batches_two_hundred_device_ids_with_authoritative_alias_facts()
     {
         await using var provider = CreateInMemoryProvider();
@@ -361,7 +379,7 @@ public sealed class MasterDataApiContractTests
                         .ToArray()),
                 CancellationToken.None));
 
-        Assert.Contains("between 1 and 200", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1 至 200 条引用", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -488,7 +506,7 @@ public sealed class MasterDataApiContractTests
             new CreateProductCategoryCommand("org-001", "env-dev", "CAT-ORPHAN", "Orphan", "CAT-MISSING", null),
             CancellationToken.None));
 
-        Assert.Contains("Parent product category 'CAT-MISSING' was not found.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("未找到父产品分类 'CAT-MISSING'。", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -522,7 +540,7 @@ public sealed class MasterDataApiContractTests
         var childReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
             CancellationToken.None));
-        Assert.Contains("active child product category", childReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的子分类", childReference.Message, StringComparison.Ordinal);
 
         var child = await dbContext.ProductCategories.SingleAsync(x => x.CategoryCode == "CAT-PUMP", CancellationToken.None);
         child.Disable("retired");
@@ -546,7 +564,7 @@ public sealed class MasterDataApiContractTests
         var skuReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
             CancellationToken.None));
-        Assert.Contains("active SKU", skuReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的 SKU", skuReference.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -643,7 +661,7 @@ public sealed class MasterDataApiContractTests
             new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
             CancellationToken.None));
 
-        Assert.Contains("does not have a credit limit", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("未配置信用额度", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -827,7 +845,7 @@ public sealed class MasterDataApiContractTests
                 new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", ambiguousReference),
                 CancellationToken.None));
 
-        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("无法唯一确定", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1228,12 +1246,12 @@ public sealed class MasterDataApiContractTests
         var uomReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, "test:actor", "op-uom-ea", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active SKU", uomReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的 SKU", uomReference.Message, StringComparison.Ordinal);
 
         var workCenterReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, "test:actor", "op-wc-assy", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的设备资产", workCenterReference.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1262,7 +1280,9 @@ public sealed class MasterDataApiContractTests
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, "test:actor", "op-uom-kg", Reason: "retired"),
             CancellationToken.None));
 
-        Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "计量单位 'kg' 仍被启用的计量单位换算关系引用，不能停用。请先处理相关换算关系。",
+            exception.Message);
     }
 
     [Fact]
@@ -1298,11 +1318,15 @@ public sealed class MasterDataApiContractTests
     [Fact]
     public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            ReasonPhrase = "upstream-secret",
+        }))
         {
             BaseAddress = new Uri("https://product-engineering.local")
         };
-        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider(), logger);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
             "org-001",
@@ -1310,7 +1334,94 @@ public sealed class MasterDataApiContractTests
             "WC-MIX",
             CancellationToken.None));
 
-        Assert.Contains("ProductEngineering work center usage check", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "无法确认工程数据中的工作中心使用情况，当前操作已取消。",
+            exception.Message);
+        Assert.DoesNotContain("HTTP", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("upstream-secret", exception.Message, StringComparison.Ordinal);
+        var diagnostic = Assert.Single(logger.Exceptions);
+        Assert.Contains("HTTP 503", diagnostic.Message, StringComparison.Ordinal);
+        Assert.Contains("upstream-secret", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_logs_transport_diagnostic_before_safe_known_exception()
+    {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new ThrowingHttpMessageHandler(
+            new HttpRequestException("socket-secret")))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            logger);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal("无法确认工程数据中的工作中心使用情况，当前操作已取消。", exception.Message);
+        Assert.DoesNotContain("socket-secret", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("socket-secret", Assert.Single(logger.Exceptions).Message);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_logs_timeout_diagnostic_before_safe_known_exception()
+    {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new ThrowingHttpMessageHandler(
+            new TaskCanceledException("timeout-secret")))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            logger);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal("无法确认工程数据中的工作中心使用情况，当前操作已取消。", exception.Message);
+        Assert.DoesNotContain("timeout-secret", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("timeout-secret", Assert.Single(logger.Exceptions).Message);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_hides_downstream_error_message_from_user()
+    {
+        var logger = new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>();
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"success":false,"message":"database password leaked","code":500,"data":null}""",
+                Encoding.UTF8,
+                "application/json"),
+        }))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider(), logger);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal(
+            "无法确认工程数据中的工作中心使用情况，当前操作已取消。",
+            exception.Message);
+        Assert.DoesNotContain("database password leaked", exception.Message, StringComparison.Ordinal);
+        var diagnostic = Assert.Single(logger.Exceptions);
+        Assert.Contains("database password leaked", diagnostic.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1326,7 +1437,10 @@ public sealed class MasterDataApiContractTests
         {
             BaseAddress = new Uri("https://product-engineering.local")
         };
-        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+        var checker = new HttpProductEngineeringReferenceUsageChecker(
+            httpClient,
+            new FixedInternalServiceTokenProvider(),
+            new CapturingLogger<HttpProductEngineeringReferenceUsageChecker>());
 
         var usage = await checker.GetWorkCenterUsageAsync(
             "org-001",
@@ -1341,22 +1455,35 @@ public sealed class MasterDataApiContractTests
     [Fact]
     public async Task MasterData_disable_rejects_product_engineering_work_center_references()
     {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-MIX", "Mixing", 480));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var exception = await DisableReferencedWorkCenterAsync(
+            ["routing:ROUTE-MIX:A", "operation:OP-MIX", "bom:BOM-MIX"]);
 
-        var handler = new SetMasterDataResourceEnabledCommandHandler(
-            dbContext,
-            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, ["routing:ROUTE-MIX:A"])));
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+    }
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, "test:actor", "op-wc-mix", Reason: "retired"),
-            CancellationToken.None));
+    [Theory]
+    [InlineData(100)]
+    [InlineData(101)]
+    public async Task MasterData_disable_hides_maximum_and_oversized_product_engineering_references(int referenceLength)
+    {
+        var reference = new string('r', referenceLength);
 
-        Assert.Contains("ProductEngineering", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("routing:ROUTE-MIX:A", exception.Message, StringComparison.Ordinal);
+        var exception = await DisableReferencedWorkCenterAsync([reference]);
+
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain(reference, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_product_engineering_usage_with_empty_references_without_count_detail()
+    {
+        var exception = await DisableReferencedWorkCenterAsync([]);
+
+        Assert.Equal("工程数据存在引用，不能停用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain("共0条", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1570,7 +1697,7 @@ public sealed class MasterDataApiContractTests
         var dimensionMismatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateUomConversionCommand("org-001", "env-dev", "kg", "l", 1m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
             CancellationToken.None));
-        Assert.Contains("same dimension", dimensionMismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("属于同一量纲", dimensionMismatch.Message, StringComparison.Ordinal);
 
         await handler.Handle(
             new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
@@ -1774,7 +1901,7 @@ public sealed class MasterDataApiContractTests
                 ExternalReferences: new Dictionary<string, string>(),
                 Components: [new DeviceAssetComponentDraft("MOTOR", "Drive motor", 0m, true)]),
             CancellationToken.None));
-        Assert.Contains("quantity must be greater than zero", invalidQuantity.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("数量必须大于零", invalidQuantity.Message, StringComparison.Ordinal);
 
         var invalidCurrency = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
             new RegisterDeviceAssetCommand(
@@ -1796,7 +1923,7 @@ public sealed class MasterDataApiContractTests
                 ExternalReferences: new Dictionary<string, string>(),
                 PurchaseCurrencyCode: "USDT"),
             CancellationToken.None));
-        Assert.Contains("3-letter ISO 4217", invalidCurrency.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("3 位 ISO 4217", invalidCurrency.Message, StringComparison.Ordinal);
 
         dbContext.DeviceAssets.Add(DeviceAsset.Register("org-001", "env-dev", "EQ-OK", "Mixer 500", "LINE-001", "WC-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1810,7 +1937,7 @@ public sealed class MasterDataApiContractTests
                 "EQ-OK",
                 Components: [new DeviceAssetComponentDetail("MOTOR", "Drive motor", -1m, true)]),
             CancellationToken.None));
-        Assert.Contains("quantity must be greater than zero", invalidUpdate.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("数量必须大于零", invalidUpdate.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1886,7 +2013,7 @@ public sealed class MasterDataApiContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Duplicate", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("已存在", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1904,7 +2031,7 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
         // 分类的权威值域已从 `product-category` CodeSet 改为产品分类目录实体（#1596），
         // 报错措辞随之改为直呼「产品分类」；过渡期 legacy 码（下方 seed 的 electronic）仍被接受。
-        Assert.Contains("product category 'missing-category'", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("产品分类 'missing-category'", missing.Message, StringComparison.Ordinal);
 
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1945,7 +2072,7 @@ public sealed class MasterDataApiContractTests
         var rejected = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-LEGACY", "Legacy Category", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("product category 'electronic'", rejected.Message, StringComparison.Ordinal);
+        Assert.Contains("产品分类 'electronic'", rejected.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2054,12 +2181,12 @@ public sealed class MasterDataApiContractTests
         var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
             CancellationToken.None));
-        Assert.Contains("requires an active direct conversion", expired.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'box' 到 'ea' 缺少启用的直接换算关系。", expired.Message);
 
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
             CancellationToken.None));
-        Assert.Contains("requires an active direct conversion", missing.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'case' 到 'ea' 缺少启用的直接换算关系。", missing.Message);
     }
 
     [Fact]
@@ -2094,7 +2221,7 @@ public sealed class MasterDataApiContractTests
             new UpdateMasterDataResourceCommand("org-001", "env-dev", "sku", "SKU-UPDATE-UOM", PurchaseUomCode: "box"),
             CancellationToken.None));
 
-        Assert.Contains("requires an active direct conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("计量单位 'box' 到 'ea' 缺少启用的直接换算关系。", exception.Message);
     }
 
     [Fact]
@@ -2110,7 +2237,7 @@ public sealed class MasterDataApiContractTests
         var missingSkill = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
-        Assert.Contains("skill:welding", missingSkill.Message, StringComparison.Ordinal);
+        Assert.Equal("人员技能字段 'SkillCode' 的值 'welding' 不存在或未启用。", missingSkill.Message);
 
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2118,7 +2245,7 @@ public sealed class MasterDataApiContractTests
         var missingLevel = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
-        Assert.Contains("skill-level:senior", missingLevel.Message, StringComparison.Ordinal);
+        Assert.Equal("人员技能字段 'Level' 的值 'senior' 不存在或未启用。", missingLevel.Message);
 
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -2162,7 +2289,7 @@ public sealed class MasterDataApiContractTests
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", skillCode, level, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
 
-        Assert.Contains($"Personnel skill field '{expectedField}'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"人员技能字段 '{expectedField}'", exception.Message, StringComparison.Ordinal);
         Assert.Contains($"'{expectedCodeSet}'", exception.Message, StringComparison.Ordinal);
     }
 
@@ -2473,9 +2600,60 @@ public sealed class MasterDataApiContractTests
         }
     }
 
+    private static async Task<KnownException> DisableReferencedWorkCenterAsync(IReadOnlyCollection<string> references)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            "Mixing",
+            480));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new SetMasterDataResourceEnabledCommandHandler(
+            dbContext,
+            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, references)));
+
+        return await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand(
+                "org-001",
+                "env-dev",
+                "work-center",
+                "WC-MIX",
+                false,
+                "test:actor",
+                "op-wc-mix",
+                Reason: "retired"),
+            CancellationToken.None));
+    }
+
     private sealed class FixedInternalServiceTokenProvider : IInternalServiceTokenProvider
     {
         public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<Exception> Exceptions { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (exception is not null)
+            {
+                Exceptions.Add(exception);
+            }
+        }
     }
 
     private sealed class NoopMediator : IMediator
@@ -2534,6 +2712,14 @@ public sealed class MasterDataApiContractTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(send(request));
+        }
+    }
+
+    private sealed class ThrowingHttpMessageHandler(Exception exception) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromException<HttpResponseMessage>(exception);
         }
     }
 

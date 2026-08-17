@@ -28,7 +28,7 @@ public sealed class RegisterToolingAssetCommandHandler(
         if (allocation.IsIdempotentReplay)
             return new MasterDataResourceResult("tooling-asset", allocation.Code, request.Name);
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
-            throw new KnownException($"Tooling asset '{allocation.Code}' already exists.");
+            throw new KnownException($"工装资产 '{allocation.Code}' 已存在。");
 
         var asset = ToolingAsset.Register(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Name,
             request.ToolingType, request.WorkCenterCodes, request.SkuCodes, request.MaintenanceLifeCount);
@@ -44,7 +44,7 @@ public sealed class ChangeToolingStatusCommandHandler(IToolingAssetRepository re
     public async Task Handle(ChangeToolingStatusCommand request, CancellationToken cancellationToken)
     {
         var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
-            ?? throw new KnownException($"Tooling asset '{request.Code}' was not found.");
+            ?? throw new KnownException($"未找到工装资产 '{request.Code}'。");
         asset.ChangeStatus(request.Status, request.Reason);
     }
 }
@@ -55,7 +55,7 @@ public sealed class RecordToolingUsageCommandHandler(IToolingAssetRepository rep
     public async Task Handle(RecordToolingUsageCommand request, CancellationToken cancellationToken)
     {
         var asset = await repository.FindAsync(request.OrganizationId, request.EnvironmentId, request.Code, cancellationToken)
-            ?? throw new KnownException($"Tooling asset '{request.Code}' was not found.");
+            ?? throw new KnownException($"未找到工装资产 '{request.Code}'。");
         asset.RecordUsage(request.Count);
     }
 }
@@ -67,16 +67,16 @@ public sealed class ImportChangeoverMatrixCommandHandler(ApplicationDbContext db
 {
     public async Task<int> Handle(ImportChangeoverMatrixCommand request, CancellationToken cancellationToken)
     {
-        if (request.Entries.Count == 0) throw new KnownException("At least one changeover matrix entry is required.");
+        if (request.Entries.Count == 0) throw new KnownException("换型矩阵至少需要一条记录。");
         var toolingCodes = request.Entries.SelectMany(x => x.RequiredToolingCodes).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var schedulableTooling = await dbContext.ToolingAssets
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && toolingCodes.Contains(x.Code))
             .Select(x => x.Code).ToArrayAsync(cancellationToken);
         var missing = toolingCodes.Except(schedulableTooling, StringComparer.OrdinalIgnoreCase).ToArray();
-        if (missing.Length > 0) throw new KnownException($"Unknown tooling assets: {string.Join(", ", missing)}.");
+        if (missing.Length > 0) throw new KnownException($"以下工装资产不存在：{string.Join(", ", missing)}。");
 
         var keys = request.Entries.Select(Key).ToArray();
-        if (keys.Distinct().Count() != keys.Length) throw new KnownException("The import contains duplicate changeover matrix keys.");
+        if (keys.Distinct().Count() != keys.Length) throw new KnownException("导入内容包含重复的换型矩阵键。");
         var existing = await dbContext.ChangeoverMatrixEntries
             .Include(x => x.RequiredTooling)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
