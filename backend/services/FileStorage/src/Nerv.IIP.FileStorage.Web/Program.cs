@@ -23,6 +23,40 @@ var persistence = PersistenceStartupGovernance.Resolve(
             "Use scripts/install/migrate-file-storage.ps1 or a migration bundle outside Development."
     });
 var usePostgreSql = persistence.UsePostgreSql;
+var storageProvider = builder.Configuration["Storage:Provider"]?.Trim();
+var minioEndpoint = builder.Configuration["Storage:MinIO:Endpoint"];
+var minioAccessKey = builder.Configuration["Storage:MinIO:AccessKey"];
+var minioSecretKey = builder.Configuration["Storage:MinIO:SecretKey"];
+var minioComplianceArchiveBucket = builder.Configuration["Storage:MinIO:ComplianceArchiveBucket"];
+var hasValidMinioEndpoint = TryParseMinioEndpoint(minioEndpoint, out var minioUri);
+var hasValidMinioComplianceArchiveBucket = IsValidBucketName(minioComplianceArchiveBucket);
+var hasStorageConfiguration = !string.IsNullOrWhiteSpace(storageProvider) ||
+    !string.IsNullOrWhiteSpace(minioEndpoint) ||
+    !string.IsNullOrWhiteSpace(minioAccessKey) ||
+    !string.IsNullOrWhiteSpace(minioSecretKey) ||
+    !string.IsNullOrWhiteSpace(minioComplianceArchiveBucket);
+var useMinio = hasStorageConfiguration &&
+    string.Equals(storageProvider, "MinIO", StringComparison.OrdinalIgnoreCase) &&
+    hasValidMinioEndpoint &&
+    !string.IsNullOrWhiteSpace(minioAccessKey) &&
+    !string.IsNullOrWhiteSpace(minioSecretKey) &&
+    hasValidMinioComplianceArchiveBucket;
+
+if (hasStorageConfiguration && !useMinio)
+{
+    throw new InvalidOperationException(
+        "FileStorage versioned object storage configuration is invalid: " +
+        $"provider={(string.IsNullOrWhiteSpace(storageProvider) ? "<missing>" : storageProvider)}, " +
+        $"endpointConfigured={!string.IsNullOrWhiteSpace(minioEndpoint)}, " +
+        $"endpointValid={hasValidMinioEndpoint}, " +
+        $"accessKeyConfigured={!string.IsNullOrWhiteSpace(minioAccessKey)}, " +
+        $"secretKeyConfigured={!string.IsNullOrWhiteSpace(minioSecretKey)}, " +
+        $"complianceArchiveBucketConfigured={!string.IsNullOrWhiteSpace(minioComplianceArchiveBucket)}, " +
+        $"complianceArchiveBucketValid={hasValidMinioComplianceArchiveBucket}. " +
+        "Set Storage:Provider=MinIO and configure Storage:MinIO:Endpoint, AccessKey, SecretKey, and " +
+        "ComplianceArchiveBucket together, or remove the entire Storage section when versioned archive storage is not used.");
+}
+
 builder.Services.AddFastEndpoints();
 // Upload-session / download-grant expiry and file retention are scheduling semantics, so the clock behind
 // them is injected rather than read from DateTimeOffset.UtcNow: tests replace this registration to advance
@@ -37,27 +71,19 @@ builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
     string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"], "tus", StringComparison.OrdinalIgnoreCase)
         ? new TusUploadProvider()
         : new ServerProxyUploadProvider());
-builder.Services.AddSingleton<IVersionedObjectStore>(services =>
+builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 {
-    var configuration = services.GetRequiredService<IConfiguration>();
-    var endpoint = configuration["Storage:MinIO:Endpoint"];
-    var accessKey = configuration["Storage:MinIO:AccessKey"];
-    var secretKey = configuration["Storage:MinIO:SecretKey"];
-    var bucket = configuration["Storage:MinIO:ComplianceArchiveBucket"];
-    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
-        string.IsNullOrWhiteSpace(accessKey) ||
-        string.IsNullOrWhiteSpace(secretKey) ||
-        string.IsNullOrWhiteSpace(bucket))
+    if (!useMinio)
     {
         return new UnavailableVersionedObjectStore();
     }
 
     var client = new MinioClient()
-        .WithEndpoint(uri.Host, uri.Port)
-        .WithCredentials(accessKey, secretKey)
-        .WithSSL(string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        .WithEndpoint(minioUri!.Host, minioUri.Port)
+        .WithCredentials(minioAccessKey, minioSecretKey)
+        .WithSSL(string.Equals(minioUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         .Build();
-    return new MinioVersionedObjectStore(client, bucket);
+    return new MinioVersionedObjectStore(client, minioComplianceArchiveBucket!);
 });
 builder.Services.AddSingleton<VersionedArchiveService>();
 
@@ -93,5 +119,45 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseFastEndpoints();
 app.Run();
+
+static bool TryParseMinioEndpoint(string? value, out Uri? endpoint)
+{
+    endpoint = null;
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var candidate) ||
+        (candidate.Scheme != Uri.UriSchemeHttp && candidate.Scheme != Uri.UriSchemeHttps) ||
+        string.IsNullOrWhiteSpace(candidate.Host) ||
+        !string.IsNullOrEmpty(candidate.UserInfo) ||
+        !string.IsNullOrEmpty(candidate.Query) ||
+        !string.IsNullOrEmpty(candidate.Fragment) ||
+        (candidate.AbsolutePath != "/" && candidate.AbsolutePath.Length != 0))
+    {
+        return false;
+    }
+
+    endpoint = candidate;
+    return true;
+}
+
+static bool IsValidBucketName(string? value)
+{
+    if (value is null || value.Length is < 3 or > 63 ||
+        !IsAsciiLetterOrDigit(value[0]) ||
+        !IsAsciiLetterOrDigit(value[^1]) ||
+        value.Contains("..", StringComparison.Ordinal) ||
+        value.Contains(".-", StringComparison.Ordinal) ||
+        value.Contains("-.", StringComparison.Ordinal) ||
+        System.Net.IPAddress.TryParse(value, out _))
+    {
+        return false;
+    }
+
+    return value.All(character =>
+        IsAsciiLetterOrDigit(character) || character is '-' or '.');
+
+    static bool IsAsciiLetterOrDigit(char character)
+    {
+        return character is >= 'a' and <= 'z' or >= '0' and <= '9';
+    }
+}
 
 public partial class Program;

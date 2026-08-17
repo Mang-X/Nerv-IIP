@@ -62,6 +62,36 @@ services:
       timeout: 5s
       retries: 10
 
+  minio-init:
+    image: pgsty/minio:RELEASE.2026-04-17T00-00-00Z
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${NERV_IIP_MINIO_ROOT_USER:?Set NERV_IIP_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${NERV_IIP_MINIO_ROOT_PASSWORD:?Set NERV_IIP_MINIO_ROOT_PASSWORD}
+      COMPLIANCE_ARCHIVE_BUCKET: nerv-iip-compliance-archive
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set nerv-iip http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
+        mc mb --ignore-existing --with-lock --with-versioning "nerv-iip/$${COMPLIANCE_ARCHIVE_BUCKET}"
+        mc version enable "nerv-iip/$${COMPLIANCE_ARCHIVE_BUCKET}"
+        version_info="$$(mc version info --json "nerv-iip/$${COMPLIANCE_ARCHIVE_BUCKET}")"
+        printf '%s\n' "$${version_info}"
+        case "$${version_info}" in
+          *'"status":"Enabled"'*) ;;
+          *) exit 1 ;;
+        esac
+        retention_info="$$(mc retention info --json --default "nerv-iip/$${COMPLIANCE_ARCHIVE_BUCKET}/")"
+        printf '%s\n' "$${retention_info}"
+        case "$${retention_info}" in
+          *'"enabled":"Enabled"'*) ;;
+          *) exit 1 ;;
+        esac
+
   victoria-logs:
     image: victoriametrics/victoria-logs:v1.50.0
     restart: unless-stopped
