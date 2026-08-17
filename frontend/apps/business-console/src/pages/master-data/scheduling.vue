@@ -600,6 +600,9 @@ async function persistCalendar(successMsg: string) {
 // 设每周工作模式：切换某星期是否为工作日（默认时段 08:00–17:00）。
 async function toggleWeekday(day: SystemDayOfWeek) {
   if (!selectedCalCode.value) return
+  // 快照必须在改本地**之前**取整份 workingTimes：persistCalendar 会在 try 之前就把集合就地写成
+  // 去重结果，而回滚只能还原整份快照——反向补一条 { dayOfWeek } 会把该星期原有的多条时段抹平。
+  const snapshot = workingTimes.value
   const exists = workingDaySet.value.has(day)
   if (exists) {
     workingTimes.value = workingTimes.value.filter((w) => normalizeDow(w.dayOfWeek) !== day)
@@ -608,7 +611,8 @@ async function toggleWeekday(day: SystemDayOfWeek) {
   else if (!workingTimes.value.some((w) => normalizeDow(w.dayOfWeek) === day)) {
     workingTimes.value = [...workingTimes.value, { dayOfWeek: day }]
   }
-  await persistCalendar('每周工作模式已更新。')
+  const ok = await persistCalendar('每周工作模式已更新。')
+  if (!ok) workingTimes.value = snapshot
 }
 
 // 节假日与例外日互斥：一个日期至多一种覆盖。检测到跨类型冲突时，弹确认对话框，
@@ -656,10 +660,16 @@ async function addHoliday() {
     })
     return
   }
+  // 写回失败要回滚并保留草稿：否则界面多出一条服务端没有的幻影节假日，草稿又被清空，连原地重试都做不到。
+  const snapshot = holidays.value
   holidays.value = [...holidays.value, { date: key, name: holidayDraft.name.trim() || '节假日' }]
+  const ok = await persistCalendar('节假日已添加。')
+  if (!ok) {
+    holidays.value = snapshot
+    return
+  }
   holidayDraft.date = ''
   holidayDraft.name = ''
-  await persistCalendar('节假日已添加。')
 }
 async function removeHoliday(date: string) {
   if (!selectedCalCode.value) return false
@@ -692,6 +702,8 @@ async function addException() {
     })
     return
   }
+  // 同 addHoliday：失败回滚集合并保留草稿，成功后才清草稿。
+  const snapshot = exceptions.value
   exceptions.value = [
     ...exceptions.value,
     {
@@ -700,9 +712,13 @@ async function addException() {
       reason: exceptionDraft.reason.trim() || null,
     },
   ]
+  const ok = await persistCalendar('例外日已添加。')
+  if (!ok) {
+    exceptions.value = snapshot
+    return
+  }
   exceptionDraft.date = ''
   exceptionDraft.reason = ''
-  await persistCalendar('例外日已添加。')
 }
 
 // 确认替换：删除另一类型在该日期的项，写入当前类型，单次持久化。
