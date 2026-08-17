@@ -44,13 +44,14 @@ FileStorage 还包含独立的 `VersionedArchive` 合规归档子系统。它通
 | 抽象轴 | `IFileStorageUploadProvider` 同时暴露 `UploadMode` 与 `Provider`，实际只生成传输指令 | `ITusStore` 负责 staging 上传面，`IStorageProvider` 负责 final 字节面，application/数据库拥有文件事实 |
 | provider 选择 | `FileStorage:UploadProvider` 在 `tus` 与默认 `server-proxy` 之间选择；不存在 final provider 选择 | 通用文件运行实例显式选择 LocalFileSystem 或 S3-compatible，严格二选一 |
 | 本地 root | `FileStorage:Tus:RootPath` 未配置时回落系统临时目录 | 非 Development 必须使用显式、绝对、已初始化的持久 root，配置或身份无效时失败关闭 |
-| staging/final | `SHA256(uploadSessionId).bin` 在 complete 前后原地承载字节 | staging/final 分区；Local 位于同一 filesystem/mount；final 只由 `ObjectKey` 定位 |
+| staging/final | `SHA256(uploadSessionId).bin` 在 complete 前后原地承载字节 | staging/final 分区；Local 位于同一 filesystem/mount；final 只由 canonical `ObjectKey` 定位 |
+| `ObjectKey` | 当前候选为 `{organizationId}/{fileId}`，尚未参与物理定位 | 固定为跨 Local/S3/OS 唯一解释的 `v1/{organizationDigest}/{fileDigest}` canonical contract |
 | Local 耐久 | append 对文件调用 `Flush(flushToDisk: true)`，没有 final rename 或目录持久化 | durable staging、同文件系统 atomic no-overwrite rename、final 回读复验和崩溃幂等收敛 |
 | 路径安全 | upload session hash 限制了当前临时文件名，但没有通用 `ObjectKey` confinement | canonicalize 后仍位于受控树内，不跟随 link/reparse，不允许路径逃逸或 TOCTOU 绕过 |
 | 健康 | 没有通用文件 Local root 的 identity、mount、free bytes、inode 或 read-only 状态治理 | startup blocked、runtime critical/unready、capacity restricted 三类状态分离 |
 | 合规归档 | `VersionedArchive` 使用独立 MinIO 接口和 bucket | 只复用底层 MinIO client/config/secret 机制，接口、bucket 与合规语义保持分离 |
 
-表中的目标均尚未实现。特别是，当前 `ObjectKey = "{organizationId}/{fileId}"` 只是 provider 无关的相对元数据候选，不能据此证明 Local 路径安全、final 已存在或 provider 已可迁移。
+表中的目标均尚未实现。特别是，当前 `ObjectKey = "{organizationId}/{fileId}"` 只是 provider 无关的相对元数据候选，不符合本 ADR 接受的 canonical contract，不能据此证明 Local 路径安全、final 已存在或 provider 已可迁移。
 
 ## 继承 ADR 0023 的约束
 
@@ -58,7 +59,7 @@ FileStorage 还包含独立的 `VersionedArchive` 合规归档子系统。它通
 
 1. tus 是唯一目标上传协议；PlatformGateway proxy 是受控入口；storage provider 是字节后端，三者不得重新混为一类。
 2. tusdotnet 只负责传输、offset 恢复和 staging 写入，不能生成 completed/available 文件事实。
-3. staging 可续传、可过期、不可下载；final 只由相对、provider 无关且不公开的 `ObjectKey` 定位。
+3. staging 可续传、可过期、不可下载；final 只由相对、provider 无关且不公开的 `ObjectKey` 定位。本 ADR 在不改变该所有权的前提下冻结其 canonical 编码。
 4. complete 对所有 provider 都必须证明实际字节存在、size 与 canonical SHA-256，并执行幂等 promote、final 回读复验和冲突检测。
 5. FileStorage application 和 PostgreSQL 独占 upload-session 共享栅栏、持久 `committing` 意图、Tx1/Tx2 与唯一 completed/available 文件事实。provider 不提交业务状态，也不得持有数据库事务跨越 storage I/O。
 
@@ -81,6 +82,10 @@ tusdotnet `ITusStore` 是同一已选 storage backend 的 staging、offset 和 e
 | completed/available 事实 | 不负责 | 不负责 | 独占 |
 
 接口名称表达职责，具体方法签名与内部类型由实施票决定；实现不得借此改变表中的所有权。
+
+promote 是同一 provider family 内部的 commit bridge，而不是 application 可以解释的跨层路径协议。它可以由同一基础设施组件同时实现该 family 的 `ITusStore` 与 `IStorageProvider`，也可以由两个适配器共享私有 staging/final locator 与 commit primitive；两种形态必须具有相同所有权和结果语义。application 只传递 opaque staging identity、canonical `ObjectKey` 与冻结的 size/checksum 意图，不得拼接或解释 filesystem path、bucket、prefix 或 object key。
+
+该 bridge 不取得 staging 生命周期所有权。offset、expiry、abort 与受治理的 staging cleanup 仍归 `ITusStore` 上传面；除 Local atomic rename 本身消费 staging 名称外，promote 不得提前删除 staging。任何补充 cleanup 都必须晚于 final 回读复验和 Tx2 completed/available 事实提交，并遵守“不删除唯一恢复副本”。
 
 ### 2. LocalFileSystem 与 S3-compatible 部署期严格二选一
 
@@ -109,11 +114,32 @@ LocalFileSystem 与 S3-compatible 都必须提供 ADR 0023 所需的统一强制
 
 promote、Head、写入和 Delete 的结果必须能够区分：目标不存在；目标已存在且实际 size/canonical checksum 一致；目标已存在但内容冲突；暂时不可用或可重试失败；永久配置或安全失败。不得用模糊布尔值吞掉冲突与重试语义。
 
-`ObjectKey` 对 provider 只是 opaque、相对、provider 无关的 final locator。绝对路径、bucket、endpoint、credential、presigned URL 和 provider 私有标识不得进入公开 DTO 或业务长期事实。每个 provider 在触碰字节前仍须独立验证 locator；当前 `{organizationId}/{fileId}` 字面格式不是安全证明。
+`ObjectKey` 对 provider 是 opaque、相对、provider 无关的 final locator。绝对路径、bucket、endpoint、credential、presigned URL 和 provider 私有标识不得进入公开 DTO 或业务长期事实。每个 provider 在触碰字节前仍须独立验证 locator。
 
 ETag、客户端 checksum、HTTP 成功响应或对象 metadata 不能替代服务端对实际物理字节计算的 canonical SHA-256。实现可以选择在 provider 内部或由 application 通过流式读取计算，但对外证明强度不得降低。
 
-### 4. Local 使用显式持久 root、分区布局和稳定身份
+### 4. `ObjectKey` 使用跨 provider、跨 OS 的唯一 canonical contract
+
+新建通用文件的 `ObjectKey` 必须且只能使用以下 v1 grammar：
+
+```text
+v1/{organizationDigest}/{fileDigest}
+```
+
+- `organizationDigest = lowerhex(SHA-256(UTF-8("org" + U+0000 + organizationId)))`；
+- `fileDigest = lowerhex(SHA-256(UTF-8("file" + U+0000 + fileId)))`；
+- `organizationId` 与 `fileId` 必须是有效 Unicode scalar sequence；编码前不做 trim、大小写折叠或 Unicode normalization，无效序列失败关闭；
+- key 必须匹配 `\Av1/[0-9a-f]{64}/[0-9a-f]{64}\z`：恰有三个非空 segment，长度依次为 2、64、64，总长固定 132 个 ASCII byte/character，只允许 `/` 作为 segment separator；
+- 比较完整 key 时必须使用 ordinal、case-sensitive byte equality。不得接受大写 hex、反斜杠、重复/尾随分隔符、`.`、`..`、percent decode、Unicode 等价折叠或 provider/OS 自动 normalization；
+- 两个输入 identity 即使只在大小写或 Unicode normalization 形式上不同，也必须生成不同 key。若已存在 key 绑定到不同 identity 或内容，必须报告冲突并失败关闭，不能覆盖或合并。
+
+规范测试向量：`organizationId = "acme"`、`fileId = "file_00000000000000000000000000000000"` 时，key 必须是 `v1/f960a43e09fd76bfdb8631a7a6e4b93f6dfe13801b8dd680462a8bfaba529f57/ff2b6fa4c01004f5f8dafa637ccb7d9f929d5dba8a09c4bb5bd3fc3e67c19724`。
+
+该固定 ASCII grammar 在 Local、S3-compatible、Linux、Windows 与 macOS 上只有一个字面表示；provider 只能把完整 canonical key 映射到自己的私有 root/prefix，不能从 digest 反推出业务 identity，也不能为历史拼写建立大小写、分隔符或 normalization alias。application 持久化并传递完整 key，但仍不解释物理路径或 bucket key。
+
+所有不严格匹配 v1 grammar 的既有 key——包括当前 `{organizationId}/{fileId}` 候选——均为 legacy/non-compliant，不因能被某个后端读取就视为 canonical。#994 必须在生成新 key 前审计 upload session、`StoredFile` 与现有字节引用，输出无别名、无冲突的显式迁移/修复映射；冲突、缺失或无法证明的条目失败关闭。不得在读取时静默 lower-case、normalize、重写或同时接受新旧 alias。
+
+### 5. Local 使用显式持久 root、分区布局和稳定身份
 
 Local Production、PoC 与私有化部署必须显式配置绝对、持久 root；不得使用系统临时目录、进程 cwd、隐式用户目录或容器可写层。root 下必须分离 staging 与 final 命名空间：tus 只能按 upload-session staging 身份写 staging；final 只能按 `ObjectKey` 访问；PATCH 不得打开 final。
 
@@ -127,9 +153,9 @@ staging 与 final 必须处于同一 filesystem/mount。跨 volume 或跨 mount 
 - 已有数据后关键配置被原地改变；
 - identity marker 缺失、冲突或无法可信读取。
 
-marker 的文件名、序列化格式、配置键名与安装入口留给实施票；“显式初始化、稳定身份、替换时失败关闭”是不可弱化的结果。
+marker 的文件名、序列化格式、配置键名与安装入口留给实施票；“显式初始化、稳定身份、替换时失败关闭”是不可弱化的结果。#1012 是 initialization/identity 的实施 owner，负责显式初始化入口、marker 生命周期、与数据库/部署身份的交叉校验及故障证明。
 
-### 5. Local 路径解析必须在实际操作时保持 confinement
+### 6. Local 路径解析必须在实际操作时保持 confinement
 
 root、staging 与 final 路径必须 canonicalize，并证明实际解析结果严格位于预期受控树内；简单字符串前缀比较不构成证明。provider 必须拒绝 rooted/absolute 路径、`..`、改变解析结果的空段或分隔符混用，以及 Windows drive、UNC、NTFS ADS、保留设备名等平台逃逸形态。
 
@@ -137,7 +163,7 @@ root、每个中间目录与叶节点都不得通过 symlink、hardlink、juncti
 
 本 ADR 冻结“不跟随链接、操作时保持 confinement、发现不可信路径即失败关闭”的结果，不规定 `openat2`、handle-relative API 或某个跨平台库。路径和权限诊断不得输出文件内容、credential、完整 `ObjectKey` 或不必要的绝对 root。
 
-### 6. Local durable staging 与 atomic no-overwrite promote
+### 7. Local durable staging 与 atomic no-overwrite promote
 
 tus staging 成功推进 durable offset 前，已确认的字节必须按支持平台的持久化语义落盘；只进入 page cache 不能宣称 durable。
 
@@ -147,23 +173,42 @@ final 已存在且实际 size/canonical checksum 与本次提交一致时，按 
 
 进程可能在 staging write、file flush、rename、目录元数据持久化或 final 回读复验任一边界崩溃。重启后只能收敛为以下之一：保留可继续的 staging；保留一致 final 等待 Tx2；明确报告冲突并保留恢复证据。不得开放半文件，也不得删除唯一恢复副本。
 
-进程崩溃语义不等于掉电或底层文件系统保证。后续实现必须按支持的 Linux、Windows、macOS API 与故障注入分别给出证据，不能用一句 `fsync + rename` 代替跨平台证明。
+进程崩溃语义不等于掉电或底层文件系统保证。后续实现必须按受支持 OS/filesystem 组合分别给出 API 级与故障注入证据，不能用一句 `fsync + rename` 代替跨平台证明。该部署支持矩阵不是 provider 可选能力矩阵，由 #1012 与 deployment baseline 共同维护；未列入矩阵或尚未通过 capability/preflight 证明的组合必须 startup blocked，不能从相似平台结果推定支持。
 
-### 7. 启动、运行期与容量健康状态分离
+### 8. 启动、运行期与容量健康状态分离
 
 Local provider 必须区分三类状态：
 
 1. **startup blocked**：root 缺失或未初始化、非持久、不可 canonicalize、identity/mount 不符、staging/final 跨 filesystem、不可读写或 provider 配置无效时，非 Development 服务不进入 ready。
 2. **runtime critical / unready**：mount 丢失或被替换、root 变成只读、identity 漂移或已有 final 不可读时，停止新写入并明确使依赖健康检查失败；不得把替代空目录当成新存储。
-3. **capacity restricted**：free bytes 或 inode 低于受配置治理的 emergency reserve 时，拒绝新上传与新迁移写入，但保留读取、下载、核对、GC/删除和备份恢复所需访问，使系统仍可自救。
+3. **capacity restricted / degraded**：free bytes 或 inode 低于受配置治理的 emergency reserve 时进入 degraded，但 read/control plane 仍 ready；具体动作按下表准入，使系统仍可读取、核对和自救。
+
+capacity restricted 的动作准入固定如下；“允许”只表示容量状态本身不拒绝，仍须通过业务授权、identity/confinement、完整性和并发栅栏等既有检查：
+
+| 动作 | capacity restricted | 约束 |
+| --- | --- | --- |
+| create upload session | 拒绝 | 不建立新上传意图 |
+| tus PATCH / 新增 staging bytes | 拒绝 | 包括已存在 `open` session 的后续写入 |
+| 已进入 `committing` 的 Local promote | 允许 | 仅限已冻结 intent、同 filesystem atomic no-overwrite rename；不得退化为内容 copy |
+| final verify / download | 允许 | 只读并继续执行授权与完整性检查 |
+| 离线迁移 source read / verify | 允许 | 仅 source 读取与证据生成 |
+| backup read | 允许 | 不含向当前 provider 回写字节 |
+| GC / final delete | 允许 | 仍须满足生命周期与删除授权 |
+| abort / expiry staging cleanup | 允许 | 仍归 `ITusStore`，且不得删除唯一恢复副本 |
+| 离线迁移 target copy / 新 target bytes | 拒绝 | source 可读不代表 target 可写 |
+| restore write | 默认拒绝；受控例外允许 | 仅 FileStorage 停服恢复模式、容量 preflight 通过并有显式 operator override 时允许 |
+
+runtime critical/unready 的优先级高于该表。mount 丢失/替换、root 只读、identity 漂移、confinement 不可信或 final 不可读等 critical 状态必须使服务 unready，并覆盖 capacity restricted 下所有“允许”动作；在后端身份与安全性重新可信前，不得继续 read、rename、delete、cleanup 或 restore write。
 
 健康输出只能暴露 provider 类型、状态类别和容量/身份的脱敏摘要，不得输出完整 root、对象 key、endpoint credential 或文件内容。capacity 阈值与用量计数由 #1018 实施；Local free bytes、inode、read-only 和 mount identity 探测由 #1012 实施。
 
-### 8. `VersionedArchive` 保持独立 MinIO-only 边界
+### 9. `VersionedArchive` 保持独立 MinIO-only 边界
 
 `VersionedArchive` 是既有 MinIO-only 合规归档子系统，拥有 versioning、version id、object lock 和 legal hold 语义；它不参与通用文件 LocalFileSystem / S3-compatible 二选一。通用 `IStorageProvider` 不吸收其 API、bucket、版本或合规能力。
 
 两者可以共用底层 `IMinioClient` 注册、endpoint/credential 配置与 secret 注入机制，但接口、bucket、生命周期和失败语义保持分离。选择 Local 作为通用文件 provider 不能把 `VersionedArchive` 改成 Local，也不能静默关闭其独立 MinIO 配置。
+
+通用文件的 Local/S3 provider selector 与 `VersionedArchive` 的 archive selector/configuration 是两个独立选择轴；共享 client、endpoint 或 credential 不等于共享 selector，也不得让其中一个 selector 的默认值隐式改变另一个。#997 承接通用 selector 的 DI/config 迁移以及它与 archive selector 的组合测试；未显式且无歧义选定通用 active provider 的运行实例仍按本 ADR startup blocked。
 
 本 ADR 不修改 `VersionedArchive` 的 API、代码或行为。归档桶的搬迁与备份恢复分别由 #1013、#1005 和父票后续层治理。
 
@@ -175,7 +220,7 @@ Local provider 必须区分三类状态：
 | Local root 未显式配置或不是持久位置 | startup blocked | 使用系统 temp、cwd 或容器可写层 |
 | identity marker 缺失、冲突或布局版本不匹配 | startup blocked；由显式初始化/修复流程处理 | 自动认领目录并继续服务 |
 | volume 未挂载而同名空目录出现 | startup blocked 或 runtime critical/unready | 把空目录当成新存储并返回“文件不存在” |
-| root/mount 在运行中被替换或变只读 | runtime critical/unready，阻止新写入 | 在未知后端继续 PATCH、promote 或删除 |
+| root/mount 在运行中被替换或变只读 | runtime critical/unready，覆盖 capacity allow 并阻止全部 provider I/O | 在未知后端继续 read、PATCH、promote、cleanup、restore 或删除 |
 | staging/final 不在同一 filesystem | startup blocked | copy + delete 冒充 atomic Local promote |
 | `ObjectKey` 逃逸、link/reparse 或 TOCTOU 风险 | 在任何字节操作前失败关闭 | 跟随到受控树外读、写、覆盖或删除 |
 | durable offset 前进但字节未持久化 | 操作失败或不推进 durable offset | 重启后 offset 大于实际字节长度 |
@@ -183,16 +228,18 @@ Local provider 必须区分三类状态：
 | rename 可能成功但 Tx2 未提交 | 保留 `committing` 与一致 final，回读复验后继续 | 重新开放 PATCH、覆盖 final 或删除唯一副本 |
 | final 已存在且 size/checksum 一致 | 幂等收敛并继续 final 复验 | 创建第二个 final |
 | final 已存在但内容冲突 | 失败关闭并保留脱敏诊断 | 覆盖、截断或接受冲突对象 |
-| free bytes/inode 低于 emergency reserve | capacity restricted；拒绝新上传/迁移写，保留读取和自救操作 | 全面停服，导致无法下载、核对或清理 |
+| free bytes/inode 低于 emergency reserve | capacity restricted/degraded；read/control ready，并严格按动作准入矩阵执行 | 全面停服，或继续 create/PATCH/target copy |
 | 健康诊断输出 | 只输出 provider 与状态类别、脱敏容量/身份摘要 | 输出 credential、完整 root、`ObjectKey` 或文件内容 |
 
 ## 后续层接口
 
 ### 第 3 层：离线迁移契约与 runbook
 
-第 3 层可以依赖本 ADR 冻结的前提：FileStorage 运行时只有一个 active provider；Local 与 S3-compatible 使用同一 opaque relative `ObjectKey` 语义；provider 具有 Head、OpenRead、写入/建立和复验证据；Local 具有稳定 storage identity/config fingerprint 与容量 preflight；`VersionedArchive` 保持独立 MinIO 边界。
+第 3 层可以依赖本 ADR 冻结的前提：FileStorage 运行时只有一个 active provider；Local 与 S3-compatible 使用同一 canonical、opaque relative `ObjectKey` 语义；provider 具有 Head、OpenRead、写入/建立和复验证据；Local 具有稳定 storage identity/config fingerprint 与容量 preflight；`VersionedArchive` 保持独立 MinIO 边界。
 
 本 ADR 不定义停服、manifest、copy、逐对象 checksum、断点/失败清单、配置切换、起服抽样、回退或 source 清理步骤，也不证明这些操作已经可运行。
+
+迁移涉及的 version id/evidence remap 仍属于第 3 层；本 ADR 不决定或展开其映射机制。
 
 ### 第 4 层：周边文档同步
 
@@ -204,11 +251,12 @@ Local provider 必须区分三类状态：
 
 | 实施面 | 责任票 |
 | --- | --- |
-| `ObjectKey` 扶正、staging/final、promote 与 complete 通用不变量 | #994 |
-| tusdotnet 与各 provider 的 `ITusStore` 上传面 | #999；S3 `ITusStore` 与 #997 协同 |
-| S3-compatible `IStorageProvider`、bucket/prefix、credential、preflight 与真实 MinIO contract | #997 |
-| Local root、路径/链接安全、持久化/atomic rename、mount/capacity health 与跨平台部署 | #1012 |
-| 逻辑配额与磁盘/inode emergency reserve 准入 | #1018 |
+| ADR 0023 的 durable `open/committing/completed` 状态与不可变 intent、entity/schema/migration、application-owned 共享栅栏、PATCH mutation 临界区、Tx1/Tx2、并发 complete/重放、重启 recoverer 与故障注入 | #1628；先于 #999/#994 落地，不由 provider PR 另造第二套提交协议 |
+| tusdotnet 与各 provider 的 `ITusStore` 上传面，以及实际 PATCH mutation 接入 #1628 共享栅栏并在写入前复核 durable state | #999；S3 `ITusStore` 与 #997 协同；#999 不拥有 Tx1/Tx2 |
+| canonical `ObjectKey` 生成、legacy key 全量审计/迁移，以及 staging/final/promote locator 接缝 | #994；消费 #1628 冻结 intent 与提交证据，不重定义共享栅栏、Tx1/Tx2 或 recoverer |
+| S3-compatible `IStorageProvider`、bucket/prefix、credential、preflight、真实 MinIO contract，以及通用 provider selector 与 archive selector 的独立 DI/config/组合测试 | #997 |
+| Local root、显式 initialization/identity、路径/链接安全、持久化/atomic rename、mount/capacity probe、支持矩阵与跨平台部署 | #1012 |
+| 逻辑配额、磁盘/inode emergency reserve 动作准入与 degraded/critical readiness | #1018；消费 #1012 探测结果，动作矩阵不得与本 ADR 分叉 |
 | GC 按 `ObjectKey` 经 `IStorageProvider` 删除，staging expiry 归 tusdotnet | #1611 |
 | 离线搬迁与切换 | #1013 和父票第 3 层 |
 
