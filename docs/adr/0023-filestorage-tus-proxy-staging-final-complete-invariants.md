@@ -69,12 +69,13 @@
 1. `ExpectedSizeBytes` 在创建 upload session 时冻结。complete 请求重复提交的 size、checksum、客户端回执或 HTTP 成功响应都不是物理字节证据。
 2. complete 必须从实际物理字节证明对象存在，读取实际 size 并由服务端计算 SHA-256。零字节文件也必须有真实存在的对象，不能以不存在对象的默认长度零代替。
 3. canonical checksum 格式固定为 `sha256:<64 位小写十六进制>`。服务端必须持久化该值；调用方提供 expected checksum 时，服务端计算值必须与之完全一致，调用方未提供时也仍须计算并持久化。
-4. 成功顺序固定为：取得 upload session 的提交栅栏 → 验证 session/context/expiry 与 staging 存在性 → 验证实际 size 并计算 canonical SHA-256 → 幂等 promote 到 `ObjectKey` → 按同一 `ObjectKey` 回读 final 并再次验证存在性、size 和 checksum → 在同一数据库事务中提交 session completed 与唯一 `StoredFile` available 事实。
-5. complete 与 tus PATCH 必须互斥。session 进入 `committing` 后不得接受新的 PATCH；校验后的 staging 不能再被修改。
-6. 并发 complete 只能有一个提交者建立最终文件事实。其余调用必须读取同一最终结果或得到可明确重试的响应，不能创建第二个 `StoredFile` 或第二个 final。
-7. promote 前失败不得产生 completed/available 事实。只有能够确定 final 尚未产生时，session 才能回到可继续上传的 `open`。
-8. promote 已成功或可能成功、但数据库尚未提交时，必须保留可恢复的提交意图，session 保持 `committing`。同一 session/context/`ObjectKey`/size/checksum 的重试必须先复验已有 final，再继续提交数据库事实；不得重新开放 PATCH 或覆盖 final。
-9. 数据库事务提交后响应丢失时，complete 重放必须返回同一 file metadata，不得重复建立文件、final 或新的业务身份。
+4. 在任何可能建立 final 的动作之前，必须用一个独立且已提交的数据库事务原子完成以下事项：取得 upload session 的唯一提交所有权；验证 session/context/expiry；将 session 从 `open` 持久转为 `committing`；冻结本次 context、`ObjectKey`、expected size，以及 canonical checksum 或足以让恢复流程确定性重算并复验 canonical checksum 的不可变提交意图。该事务提交成功后才允许访问具有副作用的 promote 路径；“提交所有权”不得只实现为进程内锁或尚未提交事务中的行锁。
+5. 成功顺序固定为：提交上述持久 `committing` 意图 → 验证 staging 存在性、实际 size 并由服务端计算 canonical SHA-256 → 幂等 promote 到 `ObjectKey` → 按同一 `ObjectKey` 回读 final 并再次验证存在性、size 和 checksum → 用另一个数据库事务原子写入唯一 `StoredFile` available 事实、canonical checksum 与 session completed。两个数据库事务之间不得持有数据库事务跨越 storage I/O。
+6. complete 与 tus PATCH 必须互斥。第一个数据库事务将 session 持久转为 `committing` 后不得接受新的 PATCH；校验后的 staging 不能再被修改。
+7. 并发 complete 只能有一个提交所有者建立最终文件事实。其余调用必须依据已提交的 `committing` 意图读取同一最终结果或得到可明确重试的响应，不能创建第二个 `StoredFile` 或第二个 final。
+8. 第一个数据库事务提交后、promote 前失败不得产生 completed/available 事实，但 session 仍保持持久 `committing`；只有恢复流程能够证明尚未开始任何可能建立 final 的动作时，才可用已提交的状态转换释放所有权并回到 `open`。
+9. promote 已成功或可能成功、但最终数据库事务尚未提交时，已提交的恢复意图必须继续存在，session 保持 `committing`。同一 session/context/`ObjectKey`/size/checksum 的重试必须先复验已有 final，再继续提交数据库事实；不得重新开放 PATCH 或覆盖 final。
+10. 最终数据库事务提交后响应丢失时，complete 重放必须返回同一 file metadata，不得重复建立文件、final 或新的业务身份。
 
 ## Upload session 状态机
 
@@ -82,10 +83,10 @@
 stateDiagram-v2
     [*] --> open: 创建会话并分配 ObjectKey
     open --> open: tus PATCH staging / offset 推进
-    open --> committing: complete 获取提交栅栏
+    open --> committing: 独立数据库事务提交所有权与恢复意图
     open --> expired: 会话到期
     open --> aborted: 显式放弃
-    committing --> open: 确认 promote 未发生且可继续上传
+    committing --> open: 已提交恢复转换确认 promote 从未开始
     committing --> committing: final 可能已产生，等待重试或恢复
     committing --> completed: final 复验通过且数据库事务提交
     completed --> completed: 幂等 complete 重放
@@ -95,7 +96,7 @@ stateDiagram-v2
 ```
 
 - `open`：允许 tus 向 staging 写入；offset 是 tus store 事实，不新增 `uploading` 领域状态。
-- `committing`：持有或等待提交栅栏，禁止 PATCH，只允许 complete 重试或恢复流程收敛。
+- `committing`：数据库中已经持久化唯一提交所有权和不可变恢复意图，禁止 PATCH，只允许 complete 重试或恢复流程收敛；它不是仅存在于进程内或未提交事务中的锁状态。
 - `completed`：final 已按 `ObjectKey` 复验，session 与 `StoredFile` 数据库事实已经原子提交，complete 重放返回同一结果。
 - `expired` / `aborted`：不可 complete；staging 只能由受治理的清理流程处理。
 - 一旦 promote 可能已经成功，状态不得回到 `open`，以免旧上传继续改写提交依据。
@@ -121,20 +122,23 @@ sequenceDiagram
     F->>T: 写 staging 并推进 offset
     C->>G: complete
     G->>F: CompleteUploadSession
-    F->>D: 取得 session 提交栅栏
+    F->>D: Tx1 原子取得所有权并写 committing + 冻结恢复意图
+    D-->>F: Tx1 已提交，PATCH 自此被拒绝
+    Note over F,D: Tx1 独立完成，不持有未提交行锁跨越 storage I/O
     F->>T: 读取实际 size + 计算 SHA-256
     F->>S: 幂等 promote 到 ObjectKey
     F->>S: 按 ObjectKey 回读并复验
-    F->>D: 同事务写 StoredFile + session completed
+    F->>D: Tx2 原子写唯一 StoredFile + checksum + session completed
+    D-->>F: Tx2 已提交
     F-->>G: 返回唯一 file metadata
     G-->>C: 返回同一 file metadata
 ```
 
 提交时序明确三个恢复边界：
 
-1. promote 前失败：没有 completed/available 文件事实；确认 final 未产生后，允许继续上传或重试。
-2. promote 后、数据库提交前失败：final 只能作为不可下载的可恢复提交对象；session 保持 `committing`，重试按同一 `ObjectKey`、size 和 checksum 复验并收敛。
-3. 数据库提交后响应丢失：重放 complete 返回同一 file metadata，不重复创建任何文件事实或 final 对象。
+1. Tx1 提交后、promote 前失败：没有 completed/available 文件事实，持久 `committing` 意图仍在；恢复流程证明 promote 从未开始后，才可通过已提交的状态转换继续上传，否则保持 `committing` 并重试。
+2. promote 后、Tx2 提交前失败：final 只能作为不可下载的可恢复提交对象；持久 `committing` 意图不会随进程或行锁消失，重试按冻结的 context、`ObjectKey`、expected size 和 checksum 证据复验并收敛。
+3. Tx2 提交后响应丢失：重放 complete 返回同一 file metadata，不重复创建任何文件事实或 final 对象。
 
 ## 失败矩阵
 
@@ -144,11 +148,11 @@ sequenceDiagram
 | staging 小于冻结 size | complete 失败；确认未 promote 时可继续 tus 上传 | 将短文件标为 available |
 | staging 大于冻结 size | 失败关闭 | 截断后静默接受 |
 | 服务端 SHA-256 与 expected checksum 不匹配 | 失败关闭，保留诊断所需的非敏感事实 | 用客户端 checksum 覆盖服务端结果 |
-| complete 与 PATCH 并发 | 提交栅栏使二者互斥；`committing` 拒绝 PATCH | final 在校验后又被 PATCH 改写 |
-| 两个 complete 并发 | 只产生一个 `StoredFile` 和一个 final；其他调用读取同一结果或重试 | 产生重复文件身份或对象 |
-| promote 前进程崩溃 | 无 completed/available 事实；确认 final 未产生后允许续传或重试 | 先写数据库 ready 事实 |
-| promote 后、数据库提交前崩溃 | 保持可恢复提交意图；已有一致 final 经复验后继续提交 | 重新开放 PATCH、覆盖未知 final 或允许下载绕过 metadata |
-| 数据库已提交、响应丢失 | complete 重放返回同一 file metadata | 把已完成视为错误并要求调用方新建文件 |
+| complete 与 PATCH 并发 | Tx1 原子取得所有权并提交 `committing`；此后拒绝 PATCH | 仅依赖进程锁或未提交行锁，使 final 在校验后又被 PATCH 改写 |
+| 两个 complete 并发 | Tx1 只允许一个所有者；其他调用依据同一持久意图读取结果或重试 | 产生重复文件身份或对象 |
+| Tx1 提交后、promote 前进程崩溃 | 无 completed/available 事实且 session 保持 `committing`；证明 promote 从未开始后才可已提交地回到 `open` | 事务回滚为 `open`、丢失恢复意图或直接写数据库 ready 事实 |
+| promote 后、Tx2 提交前崩溃 | 持久恢复意图继续存在；已有一致 final 经复验后继续 Tx2 | 重新开放 PATCH、覆盖未知 final 或允许下载绕过 metadata |
+| Tx2 已提交、响应丢失 | complete 重放返回同一 file metadata | 把已完成视为错误并要求调用方新建文件 |
 | final 已存在且 size/checksum 相同 | 视为同一提交的幂等恢复，复验后继续收敛 | 无条件创建第二个 final |
 | final 已存在但 size/checksum 不同 | 失败关闭，输出不含内容或凭据的诊断 | 覆盖、截断或接受冲突 final |
 | 服务重启 | tus offset 可恢复；`committing` 可按提交意图重试收敛 | offset 清零、丢失提交意图或产生假完成记录 |
@@ -166,7 +170,7 @@ sequenceDiagram
 
 1. 现有 `server-proxy` placeholder、自研 tus endpoint、`UploadMode`/`Provider` 双字段和基于 upload session 的本地字节路径都属于需要显式迁移的兼容面，不能继续扩展为目标架构。
 2. complete 成为跨 provider 的统一提交协议；任何后端实现都必须提供足够能力完成 staging 验证、幂等 promote、final 回读复验与冲突检测。
-3. final 字节事实先于数据库 ready 事实，避免可下载 metadata 指向不存在或未经证明的内容；代价是实现必须处理字节存储与数据库之间无法由单一事务覆盖的恢复窗口。
+3. final 字节事实先于数据库 ready 事实，避免可下载 metadata 指向不存在或未经证明的内容；代价是恢复协议必须跨两个已提交的数据库事务，以持久 `committing` 意图衔接 storage I/O，而不能用一个未提交事务或进程锁假装覆盖整个窗口。
 4. canonical SHA-256 成为每个 completed 文件的服务端权威事实，增加完整字节读取成本，但获得跨 provider 一致的完整性证明、幂等判定和审计依据。
 5. staging 与 final 分离后，上传过期清理、提交恢复和 final 生命周期可以独立治理；清理实现必须遵守“不删除唯一恢复副本”的顺序。
 6. 本 ADR 与现有基线和公开契约会暂时并存冲突；权威文档和生成链的机械同步、兼容裁决及运行时代码由 #992 的独立后续层交付，不能从 ADR 已接受推导为实现完成。
