@@ -302,6 +302,7 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
 
 Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
     'skills-lock.json',
+    't3.json',
     '.claude/settings.json',
     '.claude/launch.json',
     '.codex/config.toml',
