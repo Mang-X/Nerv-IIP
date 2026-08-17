@@ -65,7 +65,6 @@ public sealed record FileMetadataResponse(
     string ContentType,
     long SizeBytes,
     string? Checksum,
-    string ScanStatus,
     string Status,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset CompletedAtUtc);

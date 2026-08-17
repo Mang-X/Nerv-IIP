@@ -13,7 +13,6 @@ public sealed record FileMetadata(
     long SizeBytes,
     string? Checksum,
     string ObjectKey,
-    string ScanStatus,
     string Status,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset CompletedAtUtc);

@@ -242,8 +242,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             session.ExpectedSizeBytes,
             session.Checksum,
             BuildObjectKey(session.OrganizationId, session.FileId),
-            FileStorageScanPolicy.InitialScanStatus(configuration),
-            FileStorageScanPolicy.Available,
+            FileStorageFileStatus.Available,
             session.CreatedAtUtc,
             now);
 
@@ -390,7 +389,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             || !string.Equals(grant.OrganizationId, organizationId, StringComparison.Ordinal)
             || !string.Equals(grant.EnvironmentId, environmentId, StringComparison.Ordinal)
             || !files.TryGetValue(grant.FileId, out var file)
-            || !FileStorageScanPolicy.CanDownload(file.ScanStatus, file.Status, configuration)
+            || !string.Equals(file.Status, FileStorageFileStatus.Available, StringComparison.Ordinal)
             || !fileUploadSessions.TryGetValue(grant.FileId, out var mappedUploadSessionId))
         {
             return Task.FromResult<string?>(null);
@@ -584,7 +583,6 @@ internal static class FileMetadataMapping
             file.ContentType,
             file.SizeBytes,
             file.Checksum,
-            file.ScanStatus,
             file.Status,
             file.CreatedAtUtc,
             file.CompletedAtUtc);

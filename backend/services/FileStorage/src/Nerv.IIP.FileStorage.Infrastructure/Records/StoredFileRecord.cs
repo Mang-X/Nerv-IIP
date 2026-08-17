@@ -18,9 +18,6 @@ public sealed class StoredFileRecord
     public long SizeBytes { get; private set; }
     public string? Checksum { get; private set; }
     public string ObjectKey { get; private set; } = string.Empty;
-    public string ScanStatus { get; private set; } = string.Empty;
-    public DateTimeOffset? ScannedAtUtc { get; private set; }
-    public string? ScanDetail { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset CompletedAtUtc { get; private set; }
@@ -41,7 +38,6 @@ public sealed class StoredFileRecord
         long sizeBytes,
         string? checksum,
         string objectKey,
-        string scanStatus,
         string status,
         DateTimeOffset createdAtUtc,
         DateTimeOffset completedAtUtc)
@@ -60,18 +56,10 @@ public sealed class StoredFileRecord
             SizeBytes = sizeBytes,
             Checksum = checksum,
             ObjectKey = objectKey,
-            ScanStatus = scanStatus,
             Status = status,
             CreatedAtUtc = createdAtUtc,
             CompletedAtUtc = completedAtUtc
         };
-    }
-
-    public void MarkScanned(string scanStatus, DateTimeOffset scannedAtUtc, string? scanDetail)
-    {
-        ScanStatus = scanStatus;
-        ScannedAtUtc = scannedAtUtc;
-        ScanDetail = scanDetail;
     }
 
     public void MarkDeleted(DateTimeOffset deletedAtUtc, string reason, TimeSpan? physicalDeleteGrace = null)

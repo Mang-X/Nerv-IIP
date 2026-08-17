@@ -114,7 +114,6 @@ public sealed class FileStorageRestartPersistenceTests
                 builder.UseSetting("Persistence:Provider", "PostgreSQL");
                 builder.UseSetting("Persistence:AutoMigrate", autoMigrate.ToString());
                 builder.UseSetting("ConnectionStrings:FileStorageDb", connectionString);
-                builder.UseSetting("FileStorage:Scanning:Enabled", "false");
                 builder.UseSetting("FileStorage:GarbageCollection:IntervalSeconds", "3600");
             });
     }
