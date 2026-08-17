@@ -300,6 +300,73 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
             [StringComparison]::Ordinal)) "Shared control input '$sharedControlInput' must conservatively select every known business service."
 }
 
+Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
+    'skills-lock.json',
+    '.claude/settings.json',
+    '.claude/launch.json',
+    '.codex/config.toml',
+    '.codex/environments/environment.toml') -Flags @{
+    docs = $true
+    backend = $false; frontend = $false; scripts = $false; workflows = $false; infra = $false
+    connector_hosts = $false; business_gateway = $false; openapi_codegen = $false
+    postgresql = $false; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $false
+} -Services @()
+
+Assert-ImpactCase -Name 'github-issue-templates' -Paths @(
+    '.github/ISSUE_TEMPLATE/bug_report.yml',
+    '.github/ISSUE_TEMPLATE/config.yml') -Flags @{
+    docs = $true
+    backend = $false; frontend = $false; scripts = $false; workflows = $false
+    postgresql = $false; redis_cap = $false; full_chain = $false; erp_sales_order_demand = $false
+} -Services @()
+
+# Routing an agent-tooling path must not weaken workflow routing: '.github/workflows/**'
+# still fails open even though a sibling '.github/' prefix is now classified.
+Assert-ImpactCase -Name 'workflow-still-fails-open-beside-issue-templates' -Paths @('.github/workflows/nightly.yml') -Flags @{
+    docs = $true; backend = $true; frontend = $true; scripts = $true; workflows = $true
+    postgresql = $true; redis_cap = $true; full_chain = $true; erp_sales_order_demand = $true
+}
+
+# Root-level runtime and build inputs must keep failing open. Anything moved out of this
+# contract silently narrows CI coverage, so the erosion has to break this test first.
+$conservativeRootInputs = @(
+    '.gitattributes',
+    '.gitignore',
+    '.node-version',
+    'aspire.config.json',
+    'dotnet-tools.json',
+    'nerv.ps1'
+)
+foreach ($conservativeRootInput in $conservativeRootInputs) {
+    $plan = Get-NervCiImpactPlan -ChangedPaths @($conservativeRootInput)
+    foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+        Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $true
+    }
+}
+
+# Completeness: the unclassified fail-open set is enumerated from the tracked path space,
+# not from whichever path a reviewer happened to name. A new tracked path that no rule
+# claims reds this test, forcing an explicit classify-or-declare decision.
+$trackedPaths = @(& git -C $repoRoot ls-files)
+Assert-Contract ($trackedPaths.Count -gt 0) 'Tracked path enumeration returned nothing; the completeness contract cannot be evaluated.'
+$trackedPlan = Get-NervCiImpactPlan -ChangedPaths $trackedPaths
+$unclassifiedReasons = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($reasonProperty in $trackedPlan.reasons.PSObject.Properties) {
+    foreach ($reasonValue in @($reasonProperty.Value)) {
+        if ([string]$reasonValue -like 'unclassified-path:*') {
+            [void]$unclassifiedReasons.Add(([string]$reasonValue).Substring('unclassified-path:'.Length))
+        }
+    }
+}
+$observedUnclassified = @($unclassifiedReasons)
+[Array]::Sort($observedUnclassified, [StringComparer]::Ordinal)
+$expectedUnclassified = @($conservativeRootInputs)
+[Array]::Sort($expectedUnclassified, [StringComparer]::Ordinal)
+Assert-Contract ([string]::Equals(
+        ($observedUnclassified -join '|'),
+        ($expectedUnclassified -join '|'),
+        [StringComparison]::Ordinal)) "Tracked paths falling through to unclassified fail-open must equal the declared conservative set. Observed: $($observedUnclassified -join ', ')."
+
 Assert-BackendFastLaneControlInputsRoute
 
 Assert-ImpactCase -Name 'frontend-app' -Paths @('frontend/apps/screen/src/App.vue') -Flags @{

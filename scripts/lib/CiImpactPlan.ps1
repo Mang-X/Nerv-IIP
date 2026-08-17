@@ -155,6 +155,26 @@ function Get-NervCiImpactPlan {
             continue
         }
 
+        # Agent-harness configuration only reaches local agent runtimes: the skill payload
+        # directories these install into are gitignored, and no CI job reads them. They
+        # route to 'docs' like the AGENTS.md guidance they sit beside. Runtime and build
+        # inputs that happen to live in the repository root ('.gitattributes',
+        # '.gitignore', '.node-version', 'aspire.config.json', 'dotnet-tools.json',
+        # 'nerv.ps1') are deliberately absent here so they keep failing open.
+        if ([string]::Equals($path, 'skills-lock.json', [StringComparison]::Ordinal) -or
+            $path.StartsWith('.claude/', [StringComparison]::Ordinal) -or
+            $path.StartsWith('.codex/', [StringComparison]::Ordinal)) {
+            Select-Impact -Name 'docs' -Reason $reason
+            continue
+        }
+
+        # Issue templates are collaboration metadata. The earlier rule already claimed
+        # every other '.github/workflows/' path, so this cannot weaken workflow routing.
+        if ($path.StartsWith('.github/ISSUE_TEMPLATE/', [StringComparison]::Ordinal)) {
+            Select-Impact -Name 'docs' -Reason $reason
+            continue
+        }
+
         if ([string]::Equals($path, 'NuGet.config', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) {
             Select-AllImpacts -Reason "shared-control-input:$path"
