@@ -256,7 +256,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "material-type",
                 Name: "Renamed"),
             CancellationToken.None));
-        Assert.Contains("system-managed reference data", update.Message, StringComparison.Ordinal);
+        Assert.Contains("系统管理的参考数据", update.Message, StringComparison.Ordinal);
 
         var disabled = await enableHandler.Handle(
             new SetMasterDataResourceEnabledCommand(
@@ -290,7 +290,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "custom-material",
                 "Custom Material"),
             CancellationToken.None));
-        Assert.Contains("system enum reference data code set", invalid.Message, StringComparison.Ordinal);
+        Assert.Contains("系统枚举代码集", invalid.Message, StringComparison.Ordinal);
 
         var productCategory = await handler.Handle(
             new CreateReferenceDataCodeCommand(
@@ -340,7 +340,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "powder",
                 "Powder"),
             CancellationToken.None));
-        Assert.Contains("not reserved", unknownCodeSet.Message, StringComparison.Ordinal);
+        Assert.Contains("未在主数据字典规则中登记", unknownCodeSet.Message, StringComparison.Ordinal);
     }
 
     private static CreateSkuCommand ValidCreateSkuCommand(

@@ -21,17 +21,17 @@ internal static class UomConversionValidator
             .Select(x => new { x.Code, x.DimensionType, x.Disabled })
             .ToListAsync(cancellationToken);
         var from = units.SingleOrDefault(x => x.Code == fromUomCode)
-            ?? throw new KnownException($"Unit of measure '{fromUomCode}' was not found.");
+            ?? throw new KnownException($"未找到计量单位 '{fromUomCode}'。");
         var to = units.SingleOrDefault(x => x.Code == toUomCode)
-            ?? throw new KnownException($"Unit of measure '{toUomCode}' was not found.");
+            ?? throw new KnownException($"未找到计量单位 '{toUomCode}'。");
         if (requireActiveUnits && (from.Disabled || to.Disabled))
         {
-            throw new KnownException("UOM conversion requires active units of measure.");
+            throw new KnownException("计量单位换算要求源计量单位和目标计量单位均已启用。");
         }
 
         if (!string.Equals(from.DimensionType, to.DimensionType, StringComparison.Ordinal))
         {
-            throw new KnownException("UOM conversion requires source and target units in the same dimension.");
+            throw new KnownException("计量单位换算要求源计量单位和目标计量单位属于同一量纲。");
         }
     }
 }

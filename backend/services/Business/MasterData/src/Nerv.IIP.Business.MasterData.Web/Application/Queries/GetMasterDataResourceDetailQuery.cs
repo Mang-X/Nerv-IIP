@@ -195,7 +195,7 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
             "reference-data" => UpdateMasterDataResourceCommandHandler.Detail(
                 await FindReferenceDataCodeAsync(request, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
-            _ => throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'."),
+            _ => throw new KnownException($"不支持主数据资源类型 '{request.ResourceType}'。"),
         };
     }
 
@@ -219,7 +219,7 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
             {
                 0 => null,
                 1 => matches[0],
-                _ => throw new KnownException($"Master data device reference '{request.Code}' is ambiguous."),
+                _ => throw new KnownException($"主数据设备引用 '{request.Code}' 对应多条记录，无法唯一确定。"),
             };
         }
 
@@ -297,7 +297,7 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
     {
         if (string.IsNullOrWhiteSpace(codeSet))
         {
-            throw new KnownException("Reference data codeSet is required when addressing a reference-data resource.");
+            throw new KnownException("访问参考数据资源时必须提供 codeSet。");
         }
 
         return codeSet.Trim();
@@ -308,7 +308,7 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
         var parts = code.Split("->", StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
         {
-            throw new KnownException("UOM conversion code must use 'from->to' format.");
+            throw new KnownException("计量单位换算编码必须使用 'from->to' 格式。");
         }
 
         return (parts[0], parts[1]);
@@ -319,12 +319,12 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
         var parts = code.Split(':', StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
         {
-            throw new KnownException("Personnel skill code must use 'userId:skillCode' format.");
+            throw new KnownException("人员技能编码必须使用 'userId:skillCode' 格式。");
         }
 
         return (parts[0], parts[1]);
     }
 
     private static KnownException NotFound(string resourceType, string code) =>
-        new($"Master data resource '{resourceType}:{code}' was not found.");
+        new KnownException($"未找到主数据资源 '{resourceType}:{code}'。");
 }

@@ -55,29 +55,38 @@ public sealed class HttpProductEngineeringReferenceUsageChecker(
         }
         catch (HttpRequestException exception)
         {
-            throw new KnownException("ProductEngineering work center usage check is unavailable.", exception);
+            throw new KnownException("暂时无法检查 ProductEngineering 中的工作中心使用情况，请稍后重试。", exception);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new KnownException("ProductEngineering work center usage check timed out.", exception);
+            throw new KnownException("检查 ProductEngineering 中的工作中心使用情况超时，请稍后重试。", exception);
         }
 
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw new KnownException($"ProductEngineering work center usage check failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
+                throw DownstreamFailure(new HttpRequestException(
+                    $"ProductEngineering work center usage check failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                    null,
+                    response.StatusCode));
             }
 
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ProductEngineeringWorkCenterUsageResponse>>(cancellationToken);
             if (envelope?.Data is null || !envelope.Success)
             {
-                throw new KnownException($"ProductEngineering work center usage check failed: {envelope?.Message ?? "empty response"}");
+                throw DownstreamFailure(new InvalidOperationException(
+                    $"ProductEngineering work center usage response was invalid. Code={envelope?.Code}; Message={envelope?.Message ?? "empty response"}"));
             }
 
             return new MasterDataDownstreamReferenceUsage(envelope.Data.HasActiveReference, envelope.Data.References ?? []);
         }
     }
+
+    private static KnownException DownstreamFailure(Exception diagnostic) =>
+        new KnownException(
+            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
+            diagnostic);
 
     private sealed record ProductEngineeringWorkCenterUsageResponse(bool HasActiveReference, IReadOnlyCollection<string>? References);
 

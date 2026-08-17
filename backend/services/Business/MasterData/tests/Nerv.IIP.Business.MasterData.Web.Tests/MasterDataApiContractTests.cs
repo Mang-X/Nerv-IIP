@@ -361,7 +361,7 @@ public sealed class MasterDataApiContractTests
                         .ToArray()),
                 CancellationToken.None));
 
-        Assert.Contains("between 1 and 200", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("1 至 200 条引用", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -488,7 +488,7 @@ public sealed class MasterDataApiContractTests
             new CreateProductCategoryCommand("org-001", "env-dev", "CAT-ORPHAN", "Orphan", "CAT-MISSING", null),
             CancellationToken.None));
 
-        Assert.Contains("Parent product category 'CAT-MISSING' was not found.", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("未找到父产品分类 'CAT-MISSING'。", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -522,7 +522,7 @@ public sealed class MasterDataApiContractTests
         var childReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
             CancellationToken.None));
-        Assert.Contains("active child product category", childReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的子分类", childReference.Message, StringComparison.Ordinal);
 
         var child = await dbContext.ProductCategories.SingleAsync(x => x.CategoryCode == "CAT-PUMP", CancellationToken.None);
         child.Disable("retired");
@@ -546,7 +546,7 @@ public sealed class MasterDataApiContractTests
         var skuReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
             CancellationToken.None));
-        Assert.Contains("active SKU", skuReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的 SKU", skuReference.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -643,7 +643,7 @@ public sealed class MasterDataApiContractTests
             new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
             CancellationToken.None));
 
-        Assert.Contains("does not have a credit limit", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("未配置信用额度", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -827,7 +827,7 @@ public sealed class MasterDataApiContractTests
                 new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", ambiguousReference),
                 CancellationToken.None));
 
-        Assert.Contains("ambiguous", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("无法唯一确定", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1228,12 +1228,12 @@ public sealed class MasterDataApiContractTests
         var uomReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, "test:actor", "op-uom-ea", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active SKU", uomReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的 SKU", uomReference.Message, StringComparison.Ordinal);
 
         var workCenterReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, "test:actor", "op-wc-assy", Reason: "retired"),
             CancellationToken.None));
-        Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("启用的设备资产", workCenterReference.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1262,7 +1262,9 @@ public sealed class MasterDataApiContractTests
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, "test:actor", "op-uom-kg", Reason: "retired"),
             CancellationToken.None));
 
-        Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            "计量单位 'kg' 仍被启用的计量单位换算关系引用，不能停用。请先处理相关换算关系。",
+            exception.Message);
     }
 
     [Fact]
@@ -1298,7 +1300,10 @@ public sealed class MasterDataApiContractTests
     [Fact]
     public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            ReasonPhrase = "upstream-secret",
+        }))
         {
             BaseAddress = new Uri("https://product-engineering.local")
         };
@@ -1310,7 +1315,37 @@ public sealed class MasterDataApiContractTests
             "WC-MIX",
             CancellationToken.None));
 
-        Assert.Contains("ProductEngineering work center usage check", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
+            exception.Message);
+        Assert.DoesNotContain("upstream-secret", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_hides_downstream_error_message_from_user()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"success":false,"message":"database password leaked","code":500,"data":null}""",
+                Encoding.UTF8,
+                "application/json"),
+        }))
+        {
+            BaseAddress = new Uri("https://product-engineering.local"),
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Equal(
+            "无法确认 ProductEngineering 工作中心使用情况，已取消停用操作。请联系管理员。",
+            exception.Message);
+        Assert.DoesNotContain("database password leaked", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1570,7 +1605,7 @@ public sealed class MasterDataApiContractTests
         var dimensionMismatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateUomConversionCommand("org-001", "env-dev", "kg", "l", 1m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
             CancellationToken.None));
-        Assert.Contains("same dimension", dimensionMismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("属于同一量纲", dimensionMismatch.Message, StringComparison.Ordinal);
 
         await handler.Handle(
             new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
@@ -1774,7 +1809,7 @@ public sealed class MasterDataApiContractTests
                 ExternalReferences: new Dictionary<string, string>(),
                 Components: [new DeviceAssetComponentDraft("MOTOR", "Drive motor", 0m, true)]),
             CancellationToken.None));
-        Assert.Contains("quantity must be greater than zero", invalidQuantity.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("数量必须大于零", invalidQuantity.Message, StringComparison.Ordinal);
 
         var invalidCurrency = await Assert.ThrowsAsync<KnownException>(() => registerHandler.Handle(
             new RegisterDeviceAssetCommand(
@@ -1796,7 +1831,7 @@ public sealed class MasterDataApiContractTests
                 ExternalReferences: new Dictionary<string, string>(),
                 PurchaseCurrencyCode: "USDT"),
             CancellationToken.None));
-        Assert.Contains("3-letter ISO 4217", invalidCurrency.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("3 位 ISO 4217", invalidCurrency.Message, StringComparison.Ordinal);
 
         dbContext.DeviceAssets.Add(DeviceAsset.Register("org-001", "env-dev", "EQ-OK", "Mixer 500", "LINE-001", "WC-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1810,7 +1845,7 @@ public sealed class MasterDataApiContractTests
                 "EQ-OK",
                 Components: [new DeviceAssetComponentDetail("MOTOR", "Drive motor", -1m, true)]),
             CancellationToken.None));
-        Assert.Contains("quantity must be greater than zero", invalidUpdate.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("数量必须大于零", invalidUpdate.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1886,7 +1921,7 @@ public sealed class MasterDataApiContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Duplicate", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("already exists", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("已存在", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1904,7 +1939,7 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None));
         // 分类的权威值域已从 `product-category` CodeSet 改为产品分类目录实体（#1596），
         // 报错措辞随之改为直呼「产品分类」；过渡期 legacy 码（下方 seed 的 electronic）仍被接受。
-        Assert.Contains("product category 'missing-category'", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("产品分类 'missing-category'", missing.Message, StringComparison.Ordinal);
 
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1945,7 +1980,7 @@ public sealed class MasterDataApiContractTests
         var rejected = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-LEGACY", "Legacy Category", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, []),
             CancellationToken.None));
-        Assert.Contains("product category 'electronic'", rejected.Message, StringComparison.Ordinal);
+        Assert.Contains("产品分类 'electronic'", rejected.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2054,12 +2089,12 @@ public sealed class MasterDataApiContractTests
         var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
             CancellationToken.None));
-        Assert.Contains("requires an active direct conversion", expired.Message, StringComparison.Ordinal);
+        Assert.Contains("启用直接换算关系", expired.Message, StringComparison.Ordinal);
 
         var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "PCAT-PART", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
             CancellationToken.None));
-        Assert.Contains("requires an active direct conversion", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("启用直接换算关系", missing.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2094,7 +2129,7 @@ public sealed class MasterDataApiContractTests
             new UpdateMasterDataResourceCommand("org-001", "env-dev", "sku", "SKU-UPDATE-UOM", PurchaseUomCode: "box"),
             CancellationToken.None));
 
-        Assert.Contains("requires an active direct conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("启用直接换算关系", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2162,7 +2197,7 @@ public sealed class MasterDataApiContractTests
             new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", skillCode, level, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
             CancellationToken.None));
 
-        Assert.Contains($"Personnel skill field '{expectedField}'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"人员技能字段 '{expectedField}'", exception.Message, StringComparison.Ordinal);
         Assert.Contains($"'{expectedCodeSet}'", exception.Message, StringComparison.Ordinal);
     }
 

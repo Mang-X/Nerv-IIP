@@ -35,7 +35,7 @@ public sealed class ResolveMasterDataReferencesQueryHandler(ApplicationDbContext
         var references = request.References.ToArray();
         if (references.Length is < 1 or > MaxReferences)
         {
-            throw new KnownException("Master data reference batch must contain between 1 and 200 references.");
+            throw new KnownException("主数据引用批次必须包含 1 至 200 条引用。");
         }
 
         var deviceReferences = references

@@ -122,7 +122,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         if (!LifecycleAuditPayloadEquals(existing, pending))
         {
             ChangeTracker.Clear();
-            throw new KnownException($"Lifecycle operation '{pending.OperationId}' conflicts with its previously persisted payload.");
+            throw new KnownException($"生命周期操作 '{pending.OperationId}' 与此前持久化的请求内容冲突。");
         }
 
         // The failed transaction included the resource mutation and any outbox rows. The winner already
