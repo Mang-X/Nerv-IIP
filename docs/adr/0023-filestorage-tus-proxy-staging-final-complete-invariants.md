@@ -69,21 +69,22 @@
 1. `ExpectedSizeBytes` 在创建 upload session 时冻结。complete 请求重复提交的 size、checksum、客户端回执或 HTTP 成功响应都不是物理字节证据。
 2. complete 必须从实际物理字节证明对象存在，读取实际 size 并由服务端计算 SHA-256。零字节文件也必须有真实存在的对象，不能以不存在对象的默认长度零代替。
 3. canonical checksum 格式固定为 `sha256:<64 位小写十六进制>`。服务端必须持久化该值；调用方提供 expected checksum 时，服务端计算值必须与之完全一致，调用方未提供时也仍须计算并持久化。
-4. 在任何可能建立 final 的动作之前，必须用一个独立且已提交的数据库事务原子完成以下事项：取得 upload session 的唯一提交所有权；验证 session/context/expiry；将 session 从 `open` 持久转为 `committing`；冻结本次 context、`ObjectKey`、expected size，以及 canonical checksum 或足以让恢复流程确定性重算并复验 canonical checksum 的不可变提交意图。该事务提交成功后才允许访问具有副作用的 promote 路径；“提交所有权”不得只实现为进程内锁或尚未提交事务中的行锁。
-5. 成功顺序固定为：提交上述持久 `committing` 意图 → 验证 staging 存在性、实际 size 并由服务端计算 canonical SHA-256 → 幂等 promote 到 `ObjectKey` → 按同一 `ObjectKey` 回读 final 并再次验证存在性、size 和 checksum → 用另一个数据库事务原子写入唯一 `StoredFile` available 事实、canonical checksum 与 session completed。两个数据库事务之间不得持有数据库事务跨越 storage I/O。
-6. complete 与 tus PATCH 必须互斥。第一个数据库事务将 session 持久转为 `committing` 后不得接受新的 PATCH；校验后的 staging 不能再被修改。
-7. 并发 complete 只能有一个提交所有者建立最终文件事实。其余调用必须依据已提交的 `committing` 意图读取同一最终结果或得到可明确重试的响应，不能创建第二个 `StoredFile` 或第二个 final。
-8. 第一个数据库事务提交后、promote 前失败不得产生 completed/available 事实，但 session 仍保持持久 `committing`；只有恢复流程能够证明尚未开始任何可能建立 final 的动作时，才可用已提交的状态转换释放所有权并回到 `open`。
-9. promote 已成功或可能成功、但最终数据库事务尚未提交时，已提交的恢复意图必须继续存在，session 保持 `committing`。同一 session/context/`ObjectKey`/size/checksum 的重试必须先复验已有 final，再继续提交数据库事实；不得重新开放 PATCH 或覆盖 final。
-10. 最终数据库事务提交后响应丢失时，complete 重放必须返回同一 file metadata，不得重复建立文件、final 或新的业务身份。
+4. 每个 upload session 必须有一个由 complete 与 tus PATCH 共享的提交栅栏。PATCH 即使已通过较早的协议准入，也必须在紧邻实际 staging mutation 之前进入同一栅栏、重新读取并确认 durable session 仍为 `open`，并在 mutation 完成前保持栅栏；若状态不是 `open`，必须在写入任何字节前拒绝。该不变量不规定 `tusdotnet` hook、锁产品、分布式协调技术或 provider 实现。
+5. 在任何可能建立 final 的动作之前，Tx1 必须先取得该共享提交栅栏，并 drain 所有已经准入、仍可能 mutation staging 的 PATCH。确认不存在在途 staging mutation 后，Tx1 才能在栅栏内用一个独立数据库事务原子取得唯一提交所有权、验证 session/context/expiry、将 session 从 `open` 持久转为 `committing`，并冻结本次 context、`ObjectKey`、expected size，以及 canonical checksum 或足以让恢复流程确定性重算并复验 canonical checksum 的不可变提交意图。Tx1 提交后才能释放共享栅栏；“提交所有权”不得只实现为进程内锁或尚未提交事务中的行锁。
+6. 成功顺序固定为：取得共享栅栏并 drain 已准入 PATCH → 提交上述持久 `committing` 意图 → 释放共享栅栏 → 验证 staging 存在性、实际 size 并由服务端计算 canonical SHA-256 → 幂等 promote 到 `ObjectKey` → 按同一 `ObjectKey` 回读 final 并再次验证存在性、size 和 checksum → 用另一个数据库事务原子写入唯一 `StoredFile` available 事实、canonical checksum 与 session completed。两个数据库事务之间不得持有数据库事务跨越 storage I/O。
+7. complete 与 tus PATCH 必须覆盖实际 mutation 全程互斥，而不只是阻止 Tx1 之后新准入的请求。Tx1 drain 完成后，任何 PATCH 都不得与 staging size/checksum 读取或 promote 重叠；Tx1 提交并释放栅栏后，等待中的 PATCH 必须在同一栅栏内紧邻 mutation 复核 durable `committing`，并在写入前拒绝。
+8. 并发 complete 只能有一个提交所有者建立最终文件事实。其余调用必须依据已提交的 `committing` 意图读取同一最终结果或得到可明确重试的响应，不能创建第二个 `StoredFile` 或第二个 final。
+9. 第一个数据库事务提交后、promote 前失败不得产生 completed/available 事实，但 session 仍保持持久 `committing`；只有恢复流程能够证明尚未开始任何可能建立 final 的动作时，才可用已提交的状态转换释放所有权并回到 `open`。
+10. promote 已成功或可能成功、但最终数据库事务尚未提交时，已提交的恢复意图必须继续存在，session 保持 `committing`。同一 session/context/`ObjectKey`/size/checksum 的重试必须先复验已有 final，再继续提交数据库事实；不得重新开放 PATCH 或覆盖 final。
+11. 最终数据库事务提交后响应丢失时，complete 重放必须返回同一 file metadata，不得重复建立文件、final 或新的业务身份。
 
 ## Upload session 状态机
 
 ```mermaid
 stateDiagram-v2
     [*] --> open: 创建会话并分配 ObjectKey
-    open --> open: tus PATCH staging / offset 推进
-    open --> committing: 独立数据库事务提交所有权与恢复意图
+    open --> open: 共享栅栏内复核 open 后 PATCH mutation
+    open --> committing: 共享栅栏 drain PATCH 后 Tx1 提交恢复意图
     open --> expired: 会话到期
     open --> aborted: 显式放弃
     committing --> open: 已提交恢复转换确认 promote 从未开始
@@ -95,7 +96,7 @@ stateDiagram-v2
     completed --> [*]
 ```
 
-- `open`：允许 tus 向 staging 写入；offset 是 tus store 事实，不新增 `uploading` 领域状态。
+- `open`：允许 tus 向 staging 写入；每次实际 mutation 都必须在 upload-session 共享提交栅栏内紧邻写入复核 durable `open`。offset 是 tus store 事实，不新增 `uploading` 领域状态。
 - `committing`：数据库中已经持久化唯一提交所有权和不可变恢复意图，禁止 PATCH，只允许 complete 重试或恢复流程收敛；它不是仅存在于进程内或未提交事务中的锁状态。
 - `completed`：final 已按 `ObjectKey` 复验，session 与 `StoredFile` 数据库事实已经原子提交，complete 重放返回同一结果。
 - `expired` / `aborted`：不可 complete；staging 只能由受治理的清理流程处理。
@@ -119,11 +120,18 @@ sequenceDiagram
     G-->>C: 返回受控 tus URL
     C->>G: tus PATCH
     G->>F: 代理 tus PATCH
+    F->>F: PATCH 进入 upload-session 共享提交栅栏
+    F->>D: 紧邻 mutation 复核 durable session=open
+    D-->>F: session=open
     F->>T: 写 staging 并推进 offset
+    F->>F: PATCH mutation 完成并释放共享栅栏
     C->>G: complete
     G->>F: CompleteUploadSession
+    F->>F: 取得共享栅栏并 drain 所有已准入 PATCH mutation
     F->>D: Tx1 原子取得所有权并写 committing + 冻结恢复意图
-    D-->>F: Tx1 已提交，PATCH 自此被拒绝
+    D-->>F: Tx1 已提交
+    F->>F: 释放共享栅栏
+    Note over F,D: 后续 PATCH 在 mutation 前复核到 committing 并拒绝
     Note over F,D: Tx1 独立完成，不持有未提交行锁跨越 storage I/O
     F->>T: 读取实际 size + 计算 SHA-256
     F->>S: 幂等 promote 到 ObjectKey
@@ -148,7 +156,8 @@ sequenceDiagram
 | staging 小于冻结 size | complete 失败；确认未 promote 时可继续 tus 上传 | 将短文件标为 available |
 | staging 大于冻结 size | 失败关闭 | 截断后静默接受 |
 | 服务端 SHA-256 与 expected checksum 不匹配 | 失败关闭，保留诊断所需的非敏感事实 | 用客户端 checksum 覆盖服务端结果 |
-| complete 与 PATCH 并发 | Tx1 原子取得所有权并提交 `committing`；此后拒绝 PATCH | 仅依赖进程锁或未提交行锁，使 final 在校验后又被 PATCH 改写 |
+| complete 与已准入 PATCH 并发 | Tx1 取得共享栅栏并 drain 所有仍可能 mutation staging 的 PATCH，确认 mutation 结束后才提交 `committing` | 已准入 PATCH 与 size/checksum 读取或 promote 重叠 |
+| Tx1 与新到或等待中的 PATCH 并发 | PATCH 进入同一栅栏并紧邻 mutation 复核 durable 状态；Tx1 提交后只能读到 `committing` 并在写入前拒绝 | 只做早期准入检查，或在共享栅栏外依据过时 `open` 状态写 staging |
 | 两个 complete 并发 | Tx1 只允许一个所有者；其他调用依据同一持久意图读取结果或重试 | 产生重复文件身份或对象 |
 | Tx1 提交后、promote 前进程崩溃 | 无 completed/available 事实且 session 保持 `committing`；证明 promote 从未开始后才可已提交地回到 `open` | 事务回滚为 `open`、丢失恢复意图或直接写数据库 ready 事实 |
 | promote 后、Tx2 提交前崩溃 | 持久恢复意图继续存在；已有一致 final 经复验后继续 Tx2 | 重新开放 PATCH、覆盖未知 final 或允许下载绕过 metadata |
