@@ -16,8 +16,17 @@ $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $testEvidenceArtifactsLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceArtifacts.ps1'
 $testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
+$testEvidencePrivacyLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidencePrivacy.ps1'
 $testEvidenceProvenanceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceProvenance.ps1'
 $facadeOwnedResponsibilityContracts = @(
+    [pscustomobject]@{
+        LibraryName = 'TestEvidencePrivacy.ps1'
+        FunctionNames = @(
+            'ConvertTo-NervRetainedDisplayName',
+            'ConvertTo-NervRetainedFailureText',
+            'Get-NervRetainedSkipReason'
+        )
+    },
     [pscustomobject]@{
         LibraryName = 'TestEvidenceArtifacts.ps1'
         FunctionNames = @(
@@ -53,7 +62,7 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -517,25 +526,74 @@ $sharedRedactionOwners = @(
     [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceArtifacts'; ExpectedCalls = 3 },
     [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceFailureArtifacts'; ExpectedCalls = 2 }
 )
-foreach ($owner in $sharedRedactionOwners) {
-    $ownerFunctions = @(
-        @($testEvidenceAst, $artifactsLibraryAst | ForEach-Object {
-            $_.FindAll({
-                param($node)
-                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                    [string]::Equals([string]$node.Name, [string]$owner.FunctionName, [StringComparison]::Ordinal)
-            }, $true)
-        })
+function Get-NervFunctionDefinitionsFromAsts {
+    param(
+        [Parameter(Mandatory)] [object[]] $Asts,
+        [Parameter(Mandatory)] [string] $FunctionName
     )
-    Assert-Equal 1 $ownerFunctions.Count "TestEvidence must define '$($owner.FunctionName)' exactly once before redaction calls are counted."
+
+    return @($Asts | ForEach-Object {
+        $_.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                [string]::Equals([string]$node.Name, $FunctionName, [StringComparison]::Ordinal)
+        }, $true)
+    })
+}
+
+function Assert-NervSharedRedactorOwner {
+    param(
+        [Parameter(Mandatory)] [object[]] $DefinitionAsts,
+        [Parameter(Mandatory)] [object] $Owner
+    )
+
+    $ownerFunctions = @(Get-NervFunctionDefinitionsFromAsts -Asts $DefinitionAsts -FunctionName ([string]$Owner.FunctionName))
+    Assert-Equal 1 $ownerFunctions.Count "TestEvidence must define '$($Owner.FunctionName)' exactly once before redaction calls are counted."
     $sharedCalls = @($ownerFunctions[0].Body.FindAll({
         param($node)
         $node -is [Management.Automation.Language.CommandAst] -and
             [string]::Equals([string]$node.GetCommandName(), 'Protect-ScriptAutomationText', [StringComparison]::Ordinal)
     }, $true))
-    Assert-Equal $owner.ExpectedCalls $sharedCalls.Count `
-        "'$($owner.FunctionName)' must own exactly $($owner.ExpectedCalls) direct shared-redactor call(s)."
+    Assert-Equal $Owner.ExpectedCalls $sharedCalls.Count `
+        "'$($Owner.FunctionName)' must own exactly $($Owner.ExpectedCalls) direct shared-redactor call(s)."
 }
+
+$testEvidenceDefinitionAsts = @(
+    @($testEvidenceAst) +
+    @($facadeOwnedResponsibilityContracts | ForEach-Object {
+        $responsibilityContractStates[[string]$_.LibraryName].Ast
+    })
+)
+foreach ($owner in $sharedRedactionOwners) {
+    Assert-NervSharedRedactorOwner -DefinitionAsts $testEvidenceDefinitionAsts -Owner $owner
+}
+
+$displayRedactionOwner = @($sharedRedactionOwners | Where-Object {
+    [string]::Equals([string]$_.FunctionName, 'ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal)
+})[0]
+$missingRedactionOwnerFailure = $null
+try {
+    Assert-NervSharedRedactorOwner -DefinitionAsts @($artifactsLibraryAst) -Owner $displayRedactionOwner
+}
+catch {
+    $missingRedactionOwnerFailure = $_.Exception.Message
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRedactionOwnerFailure)) `
+    'Removing the registered owner definition from the responsibility AST set must fail closed.'
+Assert-True ([string]$missingRedactionOwnerFailure).Contains('ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal) `
+    'The missing shared-redactor owner failure must identify ConvertTo-NervRetainedDisplayName.'
+
+$duplicateRedactionOwnerFailure = $null
+try {
+    Assert-NervSharedRedactorOwner -DefinitionAsts @($testEvidenceAst, $testEvidenceAst) -Owner $displayRedactionOwner
+}
+catch {
+    $duplicateRedactionOwnerFailure = $_.Exception.Message
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$duplicateRedactionOwnerFailure)) `
+    'Duplicating a shared-redactor owner definition in the responsibility AST set must fail closed.'
+Assert-True ([string]$duplicateRedactionOwnerFailure).Contains('ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal) `
+    'The duplicate shared-redactor owner failure must identify ConvertTo-NervRetainedDisplayName.'
 
 $safeFailureAssignments = @($collectorAst.FindAll({
     param($node)
