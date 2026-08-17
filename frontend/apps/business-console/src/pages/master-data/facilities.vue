@@ -9,7 +9,9 @@ import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataT
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import MasterDataTreeNode from '@/components/masterData/MasterDataTreeNode.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useBusinessWorkshops,
   useMasterDataResource,
@@ -78,6 +80,13 @@ const wcActions = useMasterDataResourceActions('work-center')
 
 // 拉大每类的 take，尽量一页拼全树（不做假分页，超上限处给提示）。
 for (const r of [sites, lines, workCenters]) r.filters.take = TREE_TAKE
+// 停用后的节点默认不在树里，「启用」入口就永远够不到；四层共用一个开关（#1594）。
+const includeDisabled = useIncludeDisabledFilter([
+  sites.filters,
+  workshops.filters,
+  lines.filters,
+  workCenters.filters,
+])
 workshops.filters.take = TREE_TAKE
 
 // 工作日历列表（仅供"默认工作日历"在详情面板解析编码→名称）。
@@ -895,6 +904,7 @@ function childLabelOf(type: string): string | undefined {
           >
             {{ allExpanded ? '全部折叠' : '全部展开' }}
           </NvButton>
+          <IncludeDisabledFilter v-model="includeDisabled" class="ml-auto" />
         </div>
 
         <p v-if="treeListError" class="text-sm text-destructive" role="alert">

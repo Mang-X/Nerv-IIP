@@ -5,7 +5,9 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import {
   useBusinessPartners,
   useMasterDataResourceActions,
@@ -75,6 +77,10 @@ const keyword = ref('')
 const roleFilter = ref('all')
 const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)
+// 停用后的行默认不在列表里，「启用」入口就永远够不到（#1594）。
+const includeDisabled = useIncludeDisabledFilter([filters], () => {
+  page.value = 1
+})
 const pageSize = ref('10')
 
 // 取一个伙伴的全部角色（主角色 partnerType + 附加角色 partnerRoles，去重；只取真实 typed 字段）。
@@ -518,6 +524,7 @@ function formatCreditLimit(
 
     <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
       <template #filters>
+        <IncludeDisabledFilter v-model="includeDisabled" />
         <NvSelect v-model="roleFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="伙伴角色"
             ><NvSelectValue

@@ -195,6 +195,13 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
   受影响。」）+ **原因必填**（`interaction-patterns.md` §2 破坏性条款；原因随
   `useMasterDataResourceActions` 的 patch 提交，进 MasterData 生命周期审计），结果走
   toast；**软删除，不物理删**。
+- **「包含停用」开关是停用/启用的配套件，不是可选项**（#1594）：服务端 `IncludeDisabled`
+  默认 false，页面不给开关，停用后的行就从列表消失，而「启用」只在 `row.active === false`
+  时出现——行没了，启用入口永远够不到，软删除退化成**单向操作**。凡是用
+  `MasterDataRowActions` 的页面，必须用 `components/masterData/IncludeDisabledFilter.vue`
+  - `composables/masterDataIncludeDisabled.ts` 接上该页**全部**列表过滤器（一页多张表时
+    共用一个开关）。契约由 `pages/master-data/includeDisabled.contract.test.ts` 按目录扫描
+    兜底：新增页漏接即红。
 
 **空状态**
 
