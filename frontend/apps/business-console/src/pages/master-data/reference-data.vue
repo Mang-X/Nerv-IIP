@@ -80,9 +80,10 @@ const {
   filters,
   refreshCodes,
 } = useReferenceDataCodes()
-const codeActions = useMasterDataResourceActions('reference-data')
-
+// 字典条目的身份是 (codeSet, code) 两段，行操作必须带上当前分组，否则后端定位不到对象、
+// 停用/启用/编辑回填一律 400（#1593）。传 ref 而非快照：切换左侧分组后动作要跟着走。
 const selectedCodeSet = ref(CODE_SETS[0]!.codeSet)
+const codeActions = useMasterDataResourceActions('reference-data', selectedCodeSet)
 const keyword = ref('')
 const sort = ref<NvDataTableSort | null>(null)
 const page = ref(1)

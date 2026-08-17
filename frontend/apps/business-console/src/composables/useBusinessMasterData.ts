@@ -606,8 +606,16 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
  * 任一基础数据资源的「编辑 / 停用 / 启用」——走 #344 的通用端点
  * `PATCH|POST /master-data/resources/{resourceType}/{code}[/disable|/enable]`。
  * 与列表 hook 解耦,页面在 RowActions 里组合使用;成功后失效相关列表查询。
+ *
+ * `codeSet` 只对身份是两段的资源有意义（当前是 `reference-data`：身份 = `{codeSet}:{code}`）。
+ * 后端 `RequireReferenceDataCodeSet` 对空 codeSet 直接拒绝，缺它则停用/启用/详情一律 400
+ * （#1593）。传 ref/getter 以跟随页面当前选中的分组；其余资源类型不传，请求里也不会多出这个
+ * 字段（由 `optionalQuery` 保证）。
  */
-export function useMasterDataResourceActions(resourceType: string) {
+export function useMasterDataResourceActions(
+  resourceType: string,
+  codeSet?: MaybeRefOrGetter<string | undefined>,
+) {
   const ctx = defaultContext()
   const queryCache = useQueryCache()
   function invalidate() {
@@ -632,6 +640,8 @@ export function useMasterDataResourceActions(resourceType: string) {
   const withCtx = (extra: Record<string, unknown>) => ({
     organizationId: ctx.organizationId,
     environmentId: ctx.environmentId,
+    // 每次调用现取：页面切换分组后，后续动作必须打在新分组上。
+    ...optionalQuery('codeSet', toValue(codeSet)),
     ...extra,
   })
   const callPathBody = (m: typeof updateMutation, code: string, extra: Record<string, unknown>) =>
@@ -646,7 +656,11 @@ export function useMasterDataResourceActions(resourceType: string) {
   ): Promise<BusinessConsoleMasterDataResourceDetail | undefined> {
     const res = await getBusinessConsoleMasterDataResourceDetail({
       path: { resourceType, code },
-      query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+      query: {
+        organizationId: ctx.organizationId,
+        environmentId: ctx.environmentId,
+        ...optionalQuery('codeSet', toValue(codeSet)),
+      },
     })
     const envelope = (
       res as { data?: { success?: boolean; data?: BusinessConsoleMasterDataResourceDetail | null } }
