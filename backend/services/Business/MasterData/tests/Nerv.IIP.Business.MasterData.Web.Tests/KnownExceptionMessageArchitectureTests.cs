@@ -95,10 +95,10 @@ public sealed class KnownExceptionMessageArchitectureTests
     }
 
     [Fact]
-    public void FluentValidation_using_static_WithMessage_is_reported()
+    public void FluentValidation_static_english_WithMessage_is_reported()
     {
         const string source =
-            "using FluentValidation; using static FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); WithMessage(rule, \"Unable to save\"); } }";
+            "using FluentValidation; using DefaultValidatorExtensions = FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); DefaultValidatorExtensions.WithMessage(rule, \"Unable to save\"); } }";
 
         var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
 
@@ -109,7 +109,7 @@ public sealed class KnownExceptionMessageArchitectureTests
     public void FluentValidation_named_arguments_use_the_error_message_parameter()
     {
         const string source =
-            "using FluentValidation; using DefaultValidatorExtensions = FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); DefaultValidatorExtensions.WithMessage(rule: rule, errorMessage: \"Unable to save\"); } }";
+            "using FluentValidation; using DefaultValidatorExtensions = FluentValidation.DefaultValidatorOptions; class Request { public string Name { get; set; } = string.Empty; } class Probe : AbstractValidator<Request> { public Probe() { var rule = RuleFor(x => x.Name).NotEmpty(); DefaultValidatorExtensions.WithMessage(errorMessage: \"Unable to save\", rule: rule); } }";
 
         var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
 
@@ -125,6 +125,17 @@ public sealed class KnownExceptionMessageArchitectureTests
         var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
 
         Assert.Equal(["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"], violations);
+    }
+
+    [Fact]
+    public void Source_type_with_the_same_full_name_as_FluentValidation_is_ignored()
+    {
+        const string source =
+            "namespace FluentValidation { public static class DefaultValidatorOptions { public static string WithMessage(object rule, string errorMessage) => errorMessage; } } class Probe { void Run() { _ = FluentValidation.DefaultValidatorOptions.WithMessage(new object(), \"Unable to save\"); } }";
+
+        var violations = MasterDataUserMessageSourceAnalyzer.Analyze([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Empty(violations);
     }
 
     [Fact]

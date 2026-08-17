@@ -23,10 +23,14 @@ public static class MasterDataUserMessageSourceAnalyzer
         var syntaxTrees = documents
             .Select(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path))
             .ToArray();
+        var fluentValidationReference = MetadataReference.CreateFromFile(typeof(IValidator).Assembly.Location);
         var compilation = CSharpCompilation.Create(
             "MasterDataUserMessageArchitecture",
             syntaxTrees,
-            CreateMetadataReferences());
+            CreateMetadataReferences(fluentValidationReference));
+        var fluentValidationOptionsType = GetFluentValidationOptionsType(
+            compilation,
+            fluentValidationReference);
         var violations = new List<Violation>();
 
         foreach (var syntaxTree in syntaxTrees)
@@ -50,7 +54,11 @@ public static class MasterDataUserMessageSourceAnalyzer
 
             foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                if (!TryGetFluentValidationMessage(semanticModel, invocation, out var messageExpression))
+                if (!TryGetFluentValidationMessage(
+                        semanticModel,
+                        invocation,
+                        fluentValidationOptionsType,
+                        out var messageExpression))
                 {
                     continue;
                 }
@@ -76,78 +84,46 @@ public static class MasterDataUserMessageSourceAnalyzer
     private static bool TryGetFluentValidationMessage(
         SemanticModel semanticModel,
         InvocationExpressionSyntax invocation,
+        INamedTypeSymbol fluentValidationOptionsType,
         out ExpressionSyntax messageExpression)
     {
         messageExpression = null!;
-        if (semanticModel.GetOperation(invocation) is IInvocationOperation operation)
-        {
-            var targetMethod = operation.TargetMethod.ReducedFrom ?? operation.TargetMethod;
-            if (targetMethod.Name != "WithMessage"
-                || targetMethod.ContainingType.ToDisplayString() != FluentValidationOptionsTypeName)
-            {
-                return false;
-            }
-
-            var messageArgument = operation.Arguments.FirstOrDefault(
-                argument => argument.Parameter?.Name is FluentValidationMessageParameterName
-                    or FluentValidationMessageProviderParameterName);
-            if (messageArgument?.Value.Syntax is not ExpressionSyntax expression)
-            {
-                return false;
-            }
-
-            messageExpression = expression;
-            return true;
-        }
-
-        return TryGetUsingStaticFluentValidationMessage(semanticModel, invocation, out messageExpression);
-    }
-
-    private static bool TryGetUsingStaticFluentValidationMessage(
-        SemanticModel semanticModel,
-        InvocationExpressionSyntax invocation,
-        out ExpressionSyntax messageExpression)
-    {
-        messageExpression = null!;
-        if (invocation.Expression is not IdentifierNameSyntax { Identifier.ValueText: "WithMessage" })
+        if (semanticModel.GetOperation(invocation) is not IInvocationOperation operation)
         {
             return false;
         }
 
-        var importedType = invocation.SyntaxTree.GetCompilationUnitRoot().Usings
-            .Where(usingDirective =>
-                usingDirective.StaticKeyword.IsKind(SyntaxKind.StaticKeyword)
-                && usingDirective.Name is not null)
-            .Select(usingDirective => semanticModel.GetSymbolInfo(usingDirective.Name!).Symbol)
-            .OfType<INamedTypeSymbol>()
-            .FirstOrDefault(type => type.ToDisplayString() == FluentValidationOptionsTypeName);
-        if (importedType is null)
+        var targetMethod = operation.TargetMethod.ReducedFrom ?? operation.TargetMethod;
+        if (targetMethod.Name != "WithMessage"
+            || !SymbolEqualityComparer.Default.Equals(
+                targetMethod.ContainingType,
+                fluentValidationOptionsType))
         {
             return false;
         }
 
-        var messageParameter = importedType.GetMembers("WithMessage")
-            .OfType<IMethodSymbol>()
-            .SelectMany(method => method.Parameters)
-            .FirstOrDefault(parameter =>
-                parameter.Name == FluentValidationMessageParameterName
-                && parameter.Type.SpecialType == SpecialType.System_String);
-        if (messageParameter is null)
-        {
-            return false;
-        }
-
-        var arguments = invocation.ArgumentList.Arguments;
-        var messageArgument = arguments.FirstOrDefault(argument =>
-                argument.NameColon?.Name.Identifier.ValueText == messageParameter.Name)
-            ?? arguments.ElementAtOrDefault(messageParameter.Ordinal);
-        if (messageArgument?.Expression is not ExpressionSyntax expression)
+        var messageArgument = operation.Arguments.FirstOrDefault(
+            argument => argument.Parameter?.Name is FluentValidationMessageParameterName
+                or FluentValidationMessageProviderParameterName);
+        if (messageArgument?.Value.Syntax is not ExpressionSyntax expression)
         {
             return false;
         }
 
         messageExpression = expression;
         return true;
+    }
+
+    private static INamedTypeSymbol GetFluentValidationOptionsType(
+        CSharpCompilation compilation,
+        PortableExecutableReference fluentValidationReference)
+    {
+        var assembly = compilation.GetAssemblyOrModuleSymbol(fluentValidationReference) as IAssemblySymbol
+            ?? throw new InvalidOperationException("FluentValidation metadata reference did not resolve to an assembly.");
+
+        return assembly.GetTypeByMetadataName(FluentValidationOptionsTypeName)
+            ?? throw new InvalidOperationException(
+                $"{FluentValidationOptionsTypeName} was not found in the FluentValidation metadata reference.");
     }
 
     private static void AddViolations(
@@ -220,22 +196,23 @@ public static class MasterDataUserMessageSourceAnalyzer
     private static bool ContainsChinese(string message) =>
         message.Any(character => character is >= '\u3400' and <= '\u9fff');
 
-    private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
+    private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences(
+        PortableExecutableReference fluentValidationReference)
     {
         var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
         var assemblyPaths = trustedPlatformAssemblies?
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Append(typeof(IValidator).Assembly.Location)
             .Append(typeof(KnownException).Assembly.Location)
             .Distinct(StringComparer.Ordinal)
             ?? [
                 typeof(object).Assembly.Location,
-                typeof(IValidator).Assembly.Location,
                 typeof(KnownException).Assembly.Location,
             ];
 
         return assemblyPaths
+            .Where(path => !StringComparer.Ordinal.Equals(path, fluentValidationReference.FilePath))
             .Select(path => MetadataReference.CreateFromFile(path))
+            .Append(fluentValidationReference)
             .ToArray();
     }
 
