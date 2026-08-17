@@ -6,8 +6,10 @@ import type {
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
+import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
   useBusinessPartners,
   useMasterDataResourceActions,
@@ -64,6 +66,8 @@ const {
   refreshPartners,
 } = useBusinessPartners()
 const partnerActions = useMasterDataResourceActions('business-partner')
+// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
+const lifecycle = useMasterDataLifecycleConfirm()
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
@@ -582,10 +586,11 @@ function formatCreditLimit(
           :row="row"
           entity-label="伙伴"
           :detail-fields="partnerDetailFields(row)"
-          :actions="partnerActions"
+          @toggle="(row) => lifecycle.request(row, partnerActions, '伙伴')"
           @edit="openEdit"
         />
       </template>
     </NvDataTable>
+    <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>
 </template>

@@ -32,19 +32,24 @@
 
 ## 正例
 
-**可整体照抄的现网锚点**：`apps/business-console/src/pages/master-data/workers.vue`
-——确认框声明在**页面层**、由 `disableTarget` / `enableTarget` 指向当前行（规则 5），
-停用与恢复各一个 `NvAlertDialog`，含后果描述、原因必填、`disabled` 门禁与 toast 结果（#878）。
+**主数据列表页的标准形态**（#1591 收敛后）：行操作只触发，确认框在页面层单实例。
 
-**只可照抄「原因必填」这一段、不可照抄容器结构**：
-`apps/business-console/src/components/masterData/MasterDataRowActions.vue`
-——它自身包含 `NvAlertDialog`，又在 `units.vue` / `skus.vue` / `partners.vue` 等
-`NvDataTable` 的 `#cell-actions` 里**按行实例化**，实质是 N 行 N 个确认框，**违反规则 5**。
-这是 #878 之前就存在的结构，本次只补齐了原因必填，未做承载收敛；作为**存量例外**登记，
-收敛到页面层单实例由 #1591 跟踪。现有组件测试用 stub 抹平了弹层，**测不出**这个结构问题——
-引用本组件时请自行核对承载层级。
+- 触发：`components/masterData/MasterDataRowActions.vue` —— 只发 `toggle` 事件，**自身不含
+  任何 `NvAlertDialog`**；
+- 承载：`components/masterData/MasterDataLifecycleDialog.vue` —— 每页渲染**一个**实例，放在
+  `v-for` / `#cell-*` 插槽之外；
+- 状态：`composables/masterDataLifecycleConfirm.ts` —— `request(row, actions, label)` 指向当前
+  行。**一页多张表共用同一个确认框**（工厂结构 4 层、计量单位与换算、班次与日历都是如此），
+  切换目标即可，不必每表一个。
 
-原因必填部分的契约由 `MasterDataRowActions.test.ts`（输入 / 禁用 / 提交 / 重置 / 失败保留）钉住。
+**另一种同样合规的形态**：`pages/master-data/workers.vue` —— 页面自己声明确认框、由
+`disableTarget` / `enableTarget` 指向当前行（#878）。页面只有一处破坏性动作时够用，
+不必引入控制器。
+
+契约：`pages/master-data/lifecycleDialogSingleInstance.contract.test.ts`（源码扫描：组件不得含
+确认框、每页恰好一个、不得写进 `#cell-*` 插槽）+ `...runtime.test.ts`（**真挂一页数组件实例**：
+行操作随行增长、确认框恒为 1）。后者是必需的——**源码扫描挡不住「其实渲染了 N 次」**，
+而组件测试用 stub 抹平弹层同样测不出实例数，#1591 那个结构缺陷就是这么躺了很久。
 
 骨架（含原因必填；与 `interaction-patterns.md` §2 目标写法一致）：
 
