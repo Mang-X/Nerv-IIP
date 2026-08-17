@@ -52,7 +52,7 @@ public sealed class CreateProductCategoryCommandHandler(
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
-            throw new KnownException($"Product category '{allocation.Code}' already exists.");
+            throw new KnownException($"产品分类 '{allocation.Code}' 已存在。");
         }
 
         await ProductCategoryTreeValidator.EnsureParentDoesNotCreateCycleAsync(
@@ -110,7 +110,7 @@ public sealed class UpdateProductCategoryCommandHandler(ApplicationDbContext dbC
             x.EnvironmentId == environmentId &&
             x.CategoryCode == categoryCode,
             cancellationToken)
-            ?? throw new KnownException($"Product category '{categoryCode}' was not found.");
+            ?? throw new KnownException($"未找到产品分类 '{categoryCode}'。");
     }
 }
 
@@ -145,7 +145,7 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             cancellationToken);
         if (hasActiveChild)
         {
-            throw new KnownException($"Product category '{request.CategoryCode}' cannot be archived because it has active child product category records.");
+            throw new KnownException($"产品分类 '{request.CategoryCode}' 仍有启用的子分类，不能归档。请先处理相关子分类。");
         }
 
         var referencedBySku = await dbContext.Skus.AnyAsync(x =>
@@ -156,7 +156,7 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             cancellationToken);
         if (referencedBySku)
         {
-            throw new KnownException($"Product category '{request.CategoryCode}' cannot be archived because it is referenced by active SKU records.");
+            throw new KnownException($"产品分类 '{request.CategoryCode}' 仍被启用的 SKU 引用，不能归档。请先调整相关 SKU 的产品分类。");
         }
     }
 }
@@ -187,7 +187,7 @@ internal static class ProductCategoryTreeValidator
         var normalizedParent = parentCode.Trim();
         if (string.Equals(categoryCode, normalizedParent, StringComparison.OrdinalIgnoreCase))
         {
-            throw new KnownException("Product category cannot reference itself as parent.");
+            throw new KnownException("产品分类不能将自身设置为父分类。");
         }
 
         var categories = await dbContext.ProductCategories
@@ -198,7 +198,7 @@ internal static class ProductCategoryTreeValidator
         var byCode = categories.ToDictionary(x => x.CategoryCode, x => x.ParentCode, StringComparer.OrdinalIgnoreCase);
         if (!byCode.ContainsKey(normalizedParent))
         {
-            throw new KnownException($"Parent product category '{normalizedParent}' was not found.");
+            throw new KnownException($"未找到父产品分类 '{normalizedParent}'。");
         }
 
         var current = normalizedParent;
@@ -206,7 +206,7 @@ internal static class ProductCategoryTreeValidator
         {
             if (string.Equals(nextParent, categoryCode, StringComparison.OrdinalIgnoreCase))
             {
-                throw new KnownException("Product category parent cannot be a descendant.");
+                throw new KnownException("产品分类不能将自己的后代分类设置为父分类。");
             }
 
             current = nextParent;

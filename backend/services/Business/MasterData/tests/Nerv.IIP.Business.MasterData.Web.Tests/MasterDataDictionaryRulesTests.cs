@@ -151,17 +151,39 @@ public sealed class MasterDataDictionaryRulesTests
         var invalidBatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(BatchTrackingPolicy: "legacy-lot"),
             CancellationToken.None));
-        Assert.Contains("batch-tracking-policy:legacy-lot", invalidBatch.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值不存在或未启用。", invalidBatch.Message);
+        Assert.True(invalidBatch.Message.Length <= 60);
 
         var invalidSerial = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(SerialTrackingPolicy: "serialized"),
             CancellationToken.None));
-        Assert.Contains("serial-tracking-policy:serialized", invalidSerial.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'SerialTrackingPolicy' 的值不存在或未启用。", invalidSerial.Message);
 
         var invalidComplianceTag = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             ValidCreateSkuCommand(ComplianceTags: ["custom-cert"]),
             CancellationToken.None));
-        Assert.Contains("compliance-tag:custom-cert", invalidComplianceTag.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'ComplianceTags' 的值不存在或未启用。", invalidComplianceTag.Message);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_hides_maximum_length_controlled_dictionary_value_from_rejection()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await SeedDictionaryAsync(dbContext);
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+        var maximumLengthCode = new string('x', 100);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            ValidCreateSkuCommand(BatchTrackingPolicy: maximumLengthCode),
+            CancellationToken.None));
+
+        Assert.Equal("SKU 字段 'BatchTrackingPolicy' 的值不存在或未启用。", exception.Message);
+        Assert.True(exception.Message.Length <= 60);
+        Assert.DoesNotContain(maximumLengthCode, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -233,7 +255,7 @@ public sealed class MasterDataDictionaryRulesTests
                 MaterialType: "legacy-material"),
             CancellationToken.None));
 
-        Assert.Contains("material-type:legacy-material", invalidMaterialType.Message, StringComparison.Ordinal);
+        Assert.Equal("SKU 字段 'MaterialType' 的值不存在或未启用。", invalidMaterialType.Message);
     }
 
     [Fact]
@@ -256,7 +278,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "material-type",
                 Name: "Renamed"),
             CancellationToken.None));
-        Assert.Contains("system-managed reference data", update.Message, StringComparison.Ordinal);
+        Assert.Contains("系统管理的参考数据", update.Message, StringComparison.Ordinal);
 
         var disabled = await enableHandler.Handle(
             new SetMasterDataResourceEnabledCommand(
@@ -290,7 +312,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "custom-material",
                 "Custom Material"),
             CancellationToken.None));
-        Assert.Contains("system enum reference data code set", invalid.Message, StringComparison.Ordinal);
+        Assert.Contains("系统枚举代码集", invalid.Message, StringComparison.Ordinal);
 
         var productCategory = await handler.Handle(
             new CreateReferenceDataCodeCommand(
@@ -340,7 +362,7 @@ public sealed class MasterDataDictionaryRulesTests
                 "powder",
                 "Powder"),
             CancellationToken.None));
-        Assert.Contains("not reserved", unknownCodeSet.Message, StringComparison.Ordinal);
+        Assert.Contains("未在主数据字典规则中登记", unknownCodeSet.Message, StringComparison.Ordinal);
     }
 
     private static CreateSkuCommand ValidCreateSkuCommand(

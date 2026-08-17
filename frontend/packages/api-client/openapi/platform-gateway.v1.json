@@ -4199,9 +4199,6 @@
             "type": "string",
             "nullable": true
           },
-          "scanStatus": {
-            "type": "string"
-          },
           "status": {
             "type": "string"
           },

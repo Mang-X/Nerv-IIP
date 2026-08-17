@@ -52,7 +52,7 @@ internal static class MasterDataScopeContextAudit
     {
         Add(
             dbContext,
-            context ?? throw new KnownException("An authenticated audit context is required for scope candidate creation."),
+            context ?? throw new KnownException("创建范围候选项需要经过认证的审计上下文。"),
             organizationId,
             environmentId,
             $"{resourceType}-created",

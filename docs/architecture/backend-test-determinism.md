@@ -354,7 +354,7 @@ MAN-661 独占必需/按需执行通道政策、机器可读隔离登记表与�
   方向是让**所有**读写这批列的路径解析同一个 `TimeProvider` 注册。`FileStoragePostgreSqlServiceTests` 的
   `GarbageCollector_ReadsUploadSessionExpiryThroughTheClockThatWroteIt` 与
   `GarbageCollector_KeepsSessionsWrittenByAClockAnchoredBehindTheWallClock` 在 GC 退回墙钟时**都会失败**
-  （实测 2 个失败）。扫描器写的 `ScannedAtUtc` 是审计戳、没有任何过期比较读它，刻意留在墙钟上。
+  （实测 2 个失败）。历史扫描器写的 `ScannedAtUtc` 曾是无过期比较读取的墙钟审计戳；该扫描器和字段已由 #1604 删除。
 - **`Consistently.StaysAsync` 区分「超时」与「违例」。** 窗口在首次观测返回前就到期时抛
   `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族），而不是 `ConsistentlyViolatedException`。
   否则一次冷启动的 Docker PostgreSQL 查询会把「基础设施慢」误诊成「负向断言被违反」，而且诊断只能编造一个

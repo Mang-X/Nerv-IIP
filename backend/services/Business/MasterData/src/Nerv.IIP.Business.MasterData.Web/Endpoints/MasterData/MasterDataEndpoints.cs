@@ -1726,7 +1726,7 @@ public sealed class ResolveMasterDataReferencesQueryValidator : Validator<Resolv
         RuleFor(request => request.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(request => request.References)
             .Must(references => references is { Count: >= 1 and <= 200 })
-            .WithMessage("references must contain between 1 and 200 values");
+            .WithMessage("主数据引用批次必须包含 1 至 200 条引用。");
         RuleForEach(request => request.References).ChildRules(reference =>
         {
             reference.RuleFor(item => item.ResourceType).NotEmpty().MaximumLength(100);

@@ -309,43 +309,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteAndDownload_WithScannerEnabledPendingScanStatusReturnsNotFound()
-    {
-        var rootPath = CreateTempDirectory();
-        try
-        {
-            await using var factory = CreateFactoryWithTusProvider(rootPath, scanningEnabled: true);
-            var client = CreateInternalServiceClient(factory);
-            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
-            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length, request: CreateTextAttachmentRequest());
-            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
-
-            var completeResponse = await client.PostAsJsonAsync(
-                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-                new CompleteUploadSessionRequest("org-001", "prod", "attachment", null, uploadedBytes.Length));
-            completeResponse.EnsureSuccessStatusCode();
-
-            var grantResponse = await client.PostAsJsonAsync(
-                $"/api/files/v1/files/{created.FileId}/download-grants",
-                new CreateDownloadGrantRequest("org-001", "prod"));
-            grantResponse.EnsureSuccessStatusCode();
-            var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
-            Assert.NotNull(grant);
-
-            using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
-            AddTransferHeaders(downloadRequest, grant.Download.Headers);
-            var downloadResponse = await client.SendAsync(downloadRequest);
-
-            Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
-        }
-        finally
-        {
-            DeleteTempDirectory(rootPath);
-        }
-    }
-
-    [Fact]
-    public async Task DownloadGrantContentEndpoint_CleanFileWithTenantHeaders_ReturnsUploadedBytesOnce()
+    public async Task DownloadGrantContentEndpoint_AvailableFileWithTenantHeaders_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -515,7 +479,6 @@ public sealed class FileStorageTusProviderTests
 
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
-        bool? scanningEnabled = null,
         TimeProvider? timeProvider = null)
     {
         return CreateFactory()
@@ -526,8 +489,7 @@ public sealed class FileStorageTusProviderTests
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["FileStorage:UploadProvider"] = "tus",
-                        ["FileStorage:Tus:RootPath"] = rootPath,
-                        ["FileStorage:Scanning:Enabled"] = scanningEnabled?.ToString()
+                        ["FileStorage:Tus:RootPath"] = rootPath
                     });
                 });
 

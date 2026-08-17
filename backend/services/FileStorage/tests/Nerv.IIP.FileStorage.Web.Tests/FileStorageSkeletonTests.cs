@@ -62,7 +62,6 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.Equal("Healthy", health);
         Assert.Contains("FileMetadata", boundaries!.DomainFacts);
         Assert.Contains("UploadProvider", boundaries.ProviderBoundaries);
-        Assert.Contains("scanStatus", boundaries.DomainFacts);
     }
 
     [Theory]
@@ -159,7 +158,6 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.Equal("application/zip", completed.ContentType);
         Assert.Equal(4096, completed.SizeBytes);
         Assert.Equal("sha256:test", completed.Checksum);
-        Assert.Equal("clean", completed.ScanStatus);
         Assert.Equal("available", completed.Status);
         await AssertObjectKeyIsNotExposedAsync(completeResponse);
         await AssertFlatOwnerFieldsAreNotExposedAsync(completeResponse);
