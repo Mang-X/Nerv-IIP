@@ -267,6 +267,24 @@ $approvedSkipReason = Get-NervRetainedSkipReason ([pscustomobject]@{
 })
 Assert-Equal 'Authorization=Bearer <redacted>' $approvedSkipReason 'Approved skip reasons must use the shared redactor output.'
 
+$retainedSkipBoundaryCases = @(
+    [pscustomobject]@{ Length = 511; Expected = ('x' * 511) },
+    [pscustomobject]@{ Length = 512; Expected = ('x' * 512) },
+    [pscustomobject]@{ Length = 513; Expected = ('x' * 512) }
+)
+foreach ($case in $retainedSkipBoundaryCases) {
+    $actual = Get-NervRetainedSkipReason ([pscustomobject]@{
+        skipPolicyId = 'approved-boundary-fixture'
+        skipReason = ('x' * $case.Length)
+    })
+    Assert-Equal $case.Expected $actual "Approved skip reason length $($case.Length) must retain the exact existing 512-character boundary behavior."
+    Assert-Equal ([Math]::Min($case.Length, 512)) $actual.Length "Approved skip reason length $($case.Length) produced an unexpected retained length."
+}
+
+$retainedFailureText = ConvertTo-NervRetainedFailureText 'raw failure body that must not be retained'
+Assert-Equal 'Test failed; raw failure details are intentionally omitted by evidence privacy policy.' $retainedFailureText 'Failure retention must preserve the fixed privacy-policy prose.'
+Assert-True (-not $retainedFailureText.Contains('raw failure body', [StringComparison]::Ordinal)) 'Failure retention must not expose the raw failure body.'
+
 $redactionFailureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-redaction-contract-$([Guid]::NewGuid().ToString('N'))"
 try {
     $failurePath = Write-NervTestEvidenceFailureArtifacts -OutputDirectory $redactionFailureRoot -RunMetadata @{
@@ -1343,6 +1361,11 @@ Assert-Equal 'backend-shard-1' $records[0].lane 'Shard lane must not alter schem
 Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $records[0].assembly 'Assembly must come from UnitTest storage.'
 Assert-Equal 1250.0 ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipReason 'Skip reason mismatch.'
+$stdoutFallbackParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'stdout-skip-fallback.trx')) -RunMetadata $run
+$stdoutFallbackRecords = @($stdoutFallbackParseResult.Records)
+Assert-Equal 1 $stdoutFallbackRecords.Count 'StdOut fallback fixture must yield exactly one retained record.'
+Assert-Equal 'skipped' $stdoutFallbackRecords[0].outcome 'StdOut fallback fixture must remain a skipped result.'
+Assert-Equal 'SKIP: fixture dependency unavailable.' $stdoutFallbackRecords[0].skipReason 'A NotExecuted result without ErrorInfo/Message must retain the trimmed StdOut SKIP line.'
 Assert-Equal 3000.0 $parseResult.TrxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
 Assert-Equal 1 @($parseResult.TrxRuns).Count 'TRX parse result must retain one run for the fixture.'
 Assert-Equal 'backend-shard-1' $parseResult.TrxRuns[0].lane 'TRX run lane mismatch.'
@@ -1858,6 +1881,26 @@ function New-NervLaneProvenanceFor {
 $imported = ConvertFrom-NervDotNetConsoleSummary -Text (Get-Content (Join-Path $fixtures 'github-backend-console.log.txt') -Raw) -RunMetadata $metadata
 Assert-Equal 'project' $imported.granularity 'Console import is project-granularity.'
 Assert-Equal 822000 ($imported.assemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]('Nerv.IIP.BusinessGateway.Web.Tests.dll'), [StringComparison]::OrdinalIgnoreCase) }).elapsedMilliseconds '13m42s must normalize to milliseconds.'
+$expectedConsoleAssemblies = @(
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.BusinessGateway.Web.Tests.dll'; Passed = 500; Failed = 0; Skipped = 8; Executed = 500; Total = 508 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.dll'; Passed = 88; Failed = 0; Skipped = 1; Executed = 88; Total = 89 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.Wms.Web.Tests.dll'; Passed = 140; Failed = 0; Skipped = 5; Executed = 140; Total = 145 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.Inventory.Web.Tests.dll'; Passed = 90; Failed = 0; Skipped = 2; Executed = 90; Total = 92 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.FullChain.Tests.dll'; Passed = 12; Failed = 0; Skipped = 5; Executed = 12; Total = 17 }
+)
+Assert-Equal $expectedConsoleAssemblies.Count @($imported.assemblies).Count 'Console import must retain exactly the five fixture assemblies.'
+foreach ($expectedAssembly in $expectedConsoleAssemblies) {
+    $actualAssemblies = @($imported.assemblies | Where-Object {
+        [string]::Equals([string]$_.assembly, [string]$expectedAssembly.Assembly, [StringComparison]::Ordinal)
+    })
+    Assert-Equal 1 $actualAssemblies.Count "Console import must retain assembly '$($expectedAssembly.Assembly)' exactly once."
+    $actualAssembly = $actualAssemblies[0]
+    Assert-Equal $expectedAssembly.Passed $actualAssembly.passed "Console import passed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Failed $actualAssembly.failed "Console import failed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Skipped $actualAssembly.skipped "Console import skipped count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Executed $actualAssembly.executed "Console import executed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Total $actualAssembly.total "Console import total count changed for '$($expectedAssembly.Assembly)'."
+}
 $baselineA = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 $baselineB = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal ($baselineA | ConvertTo-Json -Depth 100) ($baselineB | ConvertTo-Json -Depth 100) 'Baseline generation must be deterministic.'
