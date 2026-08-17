@@ -1,3 +1,5 @@
+using Nerv.IIP.FileStorage.Domain;
+
 namespace Nerv.IIP.FileStorage.Infrastructure.Records;
 
 public sealed class StoredFileRecord
@@ -64,7 +66,7 @@ public sealed class StoredFileRecord
 
     public void MarkDeleted(DateTimeOffset deletedAtUtc, string reason, TimeSpan? physicalDeleteGrace = null)
     {
-        Status = "deleted";
+        Status = FileStorageFileStatus.Deleted;
         DeletedAtUtc = deletedAtUtc;
         DeletionReason = reason;
         PhysicalDeleteAfterUtc = deletedAtUtc.Add(physicalDeleteGrace ?? TimeSpan.Zero);

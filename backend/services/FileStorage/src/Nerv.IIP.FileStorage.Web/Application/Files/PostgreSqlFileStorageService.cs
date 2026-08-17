@@ -476,7 +476,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         var storedBytes = dbContext.StoredFiles
             .Where(file => file.OrganizationId == organizationId
                 && file.EnvironmentId == environmentId
-                && file.Status != "deleted");
+                && file.Status != FileStorageFileStatus.Deleted);
         if (!string.IsNullOrWhiteSpace(filePurpose))
         {
             storedBytes = storedBytes.Where(file => file.FilePurpose == filePurpose);

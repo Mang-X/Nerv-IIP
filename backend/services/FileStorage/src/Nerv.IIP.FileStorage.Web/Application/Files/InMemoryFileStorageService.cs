@@ -440,7 +440,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         var storedBytes = files.Values
             .Where(file => string.Equals(file.OrganizationId, organizationId, StringComparison.Ordinal)
                 && string.Equals(file.EnvironmentId, environmentId, StringComparison.Ordinal)
-                && !string.Equals(file.Status, "deleted", StringComparison.Ordinal)
+                && !string.Equals(file.Status, FileStorageFileStatus.Deleted, StringComparison.Ordinal)
                 && (filePurpose is null || string.Equals(file.FilePurpose, filePurpose, StringComparison.Ordinal)))
             .Sum(file => file.SizeBytes);
 
