@@ -77,7 +77,7 @@ $planningAction = {
         -WorkflowJobName $WorkflowJobName `
         -WorkflowStepName $WorkflowStepName `
         -ArtifactPath $resolvedArtifactPath
-}.GetNewClosure()
+}
 
 Invoke-WithScopedEnvironment `
     -Variables @{

@@ -643,7 +643,7 @@ try {
             return [pscustomobject]@{ Stdout = (New-ListTestsOutput -Identities @($project.expectedTestIdentities)); Stderr = ''; ExitCode = 0 }
         }
         return [pscustomobject]@{ Stdout = ''; Stderr = ''; ExitCode = 0 }
-    }.GetNewClosure()
+    }
 
     $artifact = Invoke-NervAcceptanceScenarioMatrixPlanning `
         -Manifest $planningManifest `
