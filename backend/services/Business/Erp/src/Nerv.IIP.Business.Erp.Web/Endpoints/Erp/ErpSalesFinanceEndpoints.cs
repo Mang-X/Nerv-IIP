@@ -28,7 +28,8 @@ public sealed record CreateSalesOrderResponse(SalesOrderId SalesOrderId, string 
 public sealed record ChangeSalesOrderLineRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string LineNo, decimal OrderedQuantity, decimal UnitPrice, DateOnly RequiredDate, string Reason);
 public sealed record CancelSalesOrderRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string Reason);
 public sealed record ReleaseSalesOrderCreditHoldRequest(string OrganizationId, string EnvironmentId, string SalesOrderNo, string StartedBy = "system:erp");
-public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine> Lines, string? IdempotencyKey = null);
+/// <summary>Lines 留空表示整单释放：服务端按销售订单当前未发行与剩余数量成单。</summary>
+public sealed record ReleaseDeliveryOrderRequest(string OrganizationId, string EnvironmentId, string? DeliveryOrderNo, string SalesOrderNo, IReadOnlyCollection<DeliveryOrderCommandLine>? Lines, string? IdempotencyKey = null);
 public sealed record ReleaseDeliveryOrderResponse(DeliveryOrderId DeliveryOrderId);
 public sealed record CreateSalesReturnAuthorizationRequest(string OrganizationId, string EnvironmentId, string? RmaNo, string SalesOrderNo, string AccountReceivableNo, string SiteCode, IReadOnlyCollection<SalesReturnAuthorizationCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record CreateSalesReturnAuthorizationResponse(SalesReturnAuthorizationId SalesReturnAuthorizationId);

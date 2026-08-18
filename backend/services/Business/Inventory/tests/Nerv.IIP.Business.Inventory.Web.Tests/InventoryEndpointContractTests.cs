@@ -34,7 +34,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(17, contracts.Length);
+        Assert.Equal(18, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/directory"
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
@@ -91,6 +91,11 @@ public sealed class InventoryEndpointContractTests
             && x.PermissionCode == InventoryPermissionCodes.CountsManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "cancelInventoryCountTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/count-tasks/{countTaskId}/recount"
+            && x.PermissionCode == InventoryPermissionCodes.CountsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "restartInventoryCountTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/reservations"
             && x.PermissionCode == InventoryPermissionCodes.ReservationsManage
@@ -1476,6 +1481,135 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             idempotencyKey);
+    }
+
+    [Fact]
+    public async Task Recount_restart_reopens_a_recount_required_task_and_lets_the_next_confirmation_post()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var taskResult = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            NewCountTaskCommand("COUNT-RECOUNT-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 台账在快照之后被别的过账改了：确认差异会把任务打到 recount-required，这就是走查里的死单。
+        dbContext.StockLedgers.Single().ReleaseCountFreeze();
+        dbContext.StockLedgers.Single().ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-recount-drift-001", 1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
+                new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-recount-confirm-stale"),
+                CancellationToken.None));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal(StockCountTaskStatuses.RecountRequired, dbContext.StockCountTasks.Single().Status);
+
+        var restarted = await new RestartStockCountTaskCommandHandler(dbContext).Handle(
+            new RestartStockCountTaskCommand(taskResult.CountTaskId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reopened = dbContext.StockCountTasks.Single();
+        var frozenLedger = dbContext.StockLedgers.Single();
+        Assert.Equal(StockCountTaskStatuses.Open, restarted.Status);
+        Assert.Equal(StockCountTaskStatuses.Open, reopened.Status);
+        // 快照重取到当前版本，且上一轮的实盘读数不留下来。
+        Assert.Equal(frozenLedger.LedgerVersion, restarted.ExpectedLedgerVersion);
+        Assert.NotEqual(taskResult.ExpectedLedgerVersion, restarted.ExpectedLedgerVersion);
+        Assert.Null(reopened.CountedQuantity);
+        Assert.Null(reopened.VarianceQuantity);
+        Assert.True(frozenLedger.IsFrozenForCount);
+
+        var confirmed = await new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
+            new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 12m, "idem-recount-confirm-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(12m, confirmed.OnHandQuantity);
+        Assert.Equal(StockCountTaskStatuses.Confirmed, dbContext.StockCountTasks.Single().Status);
+    }
+
+    [Fact]
+    public async Task Recount_restart_is_rejected_for_a_task_that_is_not_stuck_in_recount_required()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var taskResult = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            NewCountTaskCommand("COUNT-RECOUNT-002"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new RestartStockCountTaskCommandHandler(dbContext).Handle(
+                new RestartStockCountTaskCommand(taskResult.CountTaskId),
+                CancellationToken.None));
+
+        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(StockCountTaskStatuses.Open, dbContext.StockCountTasks.Single().Status);
+        Assert.Equal(taskResult.ExpectedLedgerVersion, dbContext.StockCountTasks.Single().ExpectedLedgerVersion);
+    }
+
+    [Fact]
+    public async Task Recount_required_task_can_be_closed_out_by_cancelling_it()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var taskResult = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            NewCountTaskCommand("COUNT-RECOUNT-003"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        dbContext.StockLedgers.Single().ReleaseCountFreeze();
+        dbContext.StockLedgers.Single().ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-recount-drift-003", 1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<KnownException>(() =>
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
+                new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-recount-confirm-stale-003"),
+                CancellationToken.None));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var cancelled = await new CancelStockCountTaskCommandHandler(dbContext).Handle(
+            new CancelStockCountTaskCommand(taskResult.CountTaskId, "盘点范围调整，任务作废"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(StockCountTaskStatuses.Cancelled, cancelled.Status);
+        Assert.False(dbContext.StockLedgers.Single().IsFrozenForCount);
+    }
+
+    private static CreateStockCountTaskCommand NewCountTaskCommand(string countTaskCode)
+    {
+        return new CreateStockCountTaskCommand(
+            "org-001",
+            "env-dev",
+            countTaskCode,
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
     }
 
     private sealed class TestStockCountApprovalClient : IStockCountApprovalClient

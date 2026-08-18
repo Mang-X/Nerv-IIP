@@ -418,6 +418,43 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Recount_restart_drops_the_rejected_count_reading_and_refreezes_the_ledger()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        task.SubmitForApproval(ledger, countedQuantity: 7m);
+        task.RequireRecountAfterApprovalRejection(ledger);
+
+        Assert.Equal("recount-required", task.Status);
+        Assert.Equal(7m, task.CountedQuantity);
+        Assert.False(ledger.IsFrozenForCount);
+
+        task.RestartRecount(ledger);
+
+        Assert.Equal("open", task.Status);
+        // 被驳回的那次实盘读数不能留：留着下一次确认会拿旧读数直接过账。
+        Assert.Null(task.CountedQuantity);
+        Assert.Null(task.VarianceQuantity);
+        Assert.True(ledger.IsFrozenForCount);
+        Assert.Equal(ledger.LedgerVersion, task.ExpectedLedgerVersion);
+    }
+
+    [Fact]
+    public void Recount_restart_rejects_a_task_that_is_not_in_recount_required()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => task.RestartRecount(ledger));
+
+        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("open", task.Status);
+    }
+
+    [Fact]
     public void Count_adjustment_fact_requires_assigned_movement_id()
     {
         var ledger = NewLedger();

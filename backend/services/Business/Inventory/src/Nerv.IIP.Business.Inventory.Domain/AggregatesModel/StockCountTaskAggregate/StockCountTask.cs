@@ -179,6 +179,24 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// 重盘：把因台账版本漂移或审批驳回而停在 recount-required 的任务放回可实盘状态。
+    /// 重新冻结台账并按当前版本重取快照，之前那次实盘数与差异一并作废——它们是对旧快照的读数，
+    /// 留着会让下一次确认拿旧读数直接过账。
+    /// </summary>
+    public void RestartRecount(StockLedger ledger)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        EnsureStatus(StockCountTaskStatuses.RecountRequired, "Only a stock count task that requires recount can be restarted.");
+        EnsureSameDimension(ledger);
+        ledger.FreezeForCount(CountTaskCode);
+        ExpectedLedgerVersion = ledger.LedgerVersion;
+        CountedQuantity = null;
+        VarianceQuantity = null;
+        Status = StockCountTaskStatuses.Open;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
     public void Cancel(StockLedger ledger, string reason)
     {
         ArgumentNullException.ThrowIfNull(ledger);

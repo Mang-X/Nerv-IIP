@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,8 @@ const inventoryState = vi.hoisted(() => ({
   availabilityFilters: undefined as Record<string, string | undefined> | undefined,
   confirmAdjustment: vi.fn(),
   createCountTask: vi.fn(),
+  restartCountTask: vi.fn(),
+  cancelCountTask: vi.fn(),
   postMovement: vi.fn(),
   expiryPage: undefined as { value: number } | undefined,
   expiryPageSize: undefined as { value: number } | undefined,
@@ -177,6 +179,12 @@ vi.mock('@/composables/useBusinessInventory', () => ({
     createCountTask: inventoryState.createCountTask,
     createCountTaskError: ref(undefined),
     createCountTaskPending: ref(false),
+    restartCountTask: inventoryState.restartCountTask,
+    restartCountTaskError: ref(undefined),
+    restartCountTaskPending: ref(false),
+    cancelCountTask: inventoryState.cancelCountTask,
+    cancelCountTaskError: ref(undefined),
+    cancelCountTaskPending: ref(false),
     // 盘点表格来自服务端读面：页面不再持有会话内本地队列。
     countTasks: computed(() => ({
       items: inventoryState.countTaskRows,
@@ -512,12 +520,19 @@ function openCountTaskRow(countTaskId: string) {
   }
 }
 
+/** 一行卡死在「需复盘」的服务端盘点任务：重盘是它唯一的出口。 */
+function recountRequiredCountTaskRow(countTaskId: string) {
+  return { ...openCountTaskRow(countTaskId), status: 'recount-required' }
+}
+
 describe('inventory workflow pages', () => {
   beforeEach(() => {
     routeState.query = {}
     routerState.push.mockReset()
     inventoryState.confirmAdjustment.mockReset()
     inventoryState.createCountTask.mockReset()
+    inventoryState.restartCountTask.mockReset()
+    inventoryState.cancelCountTask.mockReset()
     inventoryState.postMovement.mockReset()
     inventoryState.notifyError.mockReset()
     inventoryState.notifySuccess.mockReset()
@@ -908,6 +923,61 @@ describe('inventory workflow pages', () => {
     expect(firstKey).toMatch(/^count-COUNT-TASK-1-\d+-\d+$/)
     expect(secondKey).toMatch(/^count-COUNT-TASK-1-\d+-\d+$/)
     expect(secondKey).not.toBe(firstKey)
+  })
+
+  it('offers recount as the way out of a recount-required count task', async () => {
+    inventoryState.countTaskRows = [recountRequiredCountTaskRow('COUNT-TASK-STUCK')]
+    inventoryState.restartCountTask.mockResolvedValue({ data: { status: 'open' } })
+
+    const wrapper = mountInventoryPage(CountsPage)
+    const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!
+
+    expect(recount.attributes('disabled')).toBeUndefined()
+    await recount.trigger('click')
+    await flushPromises()
+
+    expect(inventoryState.restartCountTask).toHaveBeenCalledWith('COUNT-TASK-STUCK')
+    expect(inventoryState.notifySuccess).toHaveBeenCalled()
+  })
+
+  it('keeps recount disabled for a task that is not stuck in recount-required', async () => {
+    inventoryState.countTaskRows = [openCountTaskRow('COUNT-TASK-OPEN')]
+
+    const wrapper = mountInventoryPage(CountsPage)
+    const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!
+
+    expect(recount.attributes('disabled')).toBeDefined()
+    await recount.trigger('click')
+    await flushPromises()
+
+    expect(inventoryState.restartCountTask).not.toHaveBeenCalled()
+  })
+
+  it('closes a count task with a required reason', async () => {
+    inventoryState.countTaskRows = [recountRequiredCountTaskRow('COUNT-TASK-CLOSE')]
+    inventoryState.cancelCountTask.mockResolvedValue({ data: { status: 'cancelled' } })
+
+    const wrapper = mountInventoryPage(CountsPage)
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('关闭任务'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 原因是必填：没填就不发请求。
+    const closeForm = wrapper.findAll('form').at(-1)!
+    await closeForm.trigger('submit')
+    await flushPromises()
+    expect(inventoryState.cancelCountTask).not.toHaveBeenCalled()
+
+    await wrapper.find('#count-close-reason').setValue('盘点范围调整，任务不再执行')
+    await closeForm.trigger('submit')
+    await flushPromises()
+
+    expect(inventoryState.cancelCountTask).toHaveBeenCalledWith(
+      'COUNT-TASK-CLOSE',
+      '盘点范围调整，任务不再执行',
+    )
   })
 
   it('requires the adjustment action to be opened from a count task row before submitting', async () => {
