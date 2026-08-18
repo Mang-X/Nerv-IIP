@@ -604,7 +604,7 @@ public sealed record BusinessConsoleRemoveTeamMemberRequest(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason = "");
+    string Reason);
 
 public sealed record BusinessConsoleTeamMemberItem(
     string TeamCode,

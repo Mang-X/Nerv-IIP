@@ -5383,7 +5383,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest = {
     organizationId: string;
     environmentId: string;
-    reason?: string;
+    reason: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateDepartmentRequest = {
