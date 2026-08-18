@@ -13,9 +13,9 @@
 # docs/architecture/decision-record-governance.md；本脚本只强制该文档里已经
 # 达成的部分，未达成的欠账在那里登记，不在此处误红。
 #
-# 刻意不校验编号唯一性：docs/adr 当前存在 0020 撞号（industrial-telemetry 与
-# nvui-naming 各占一篇），按 owner 裁决由独立 PR 改号，那次改动同时补上唯一性
-# 校验。此处加检查会让门禁在改号前一直红。
+# 编号唯一性与 H1/文件名编号一致性均已校验：0020 撞号（industrial-telemetry 与
+# nvui-naming 各占一篇）已由独立 PR 把零入链的 industrial-telemetry 改为 0026，
+# 该次改动同时补上这两项校验。
 
 [CmdletBinding()]
 param(
@@ -54,8 +54,16 @@ foreach ($file in $adrFiles) {
     if ($lines.Count -eq 0) { $findings.Add("${name}: 文件为空"); continue }
 
     # 标题：全角冒号是规范值（25 篇统一后的口径）
-    if ($lines[0] -notmatch '^# ADR \d{4}：\S') {
+    $titleMatch = [regex]::Match($lines[0], '^# ADR (\d{4})：\S')
+    if (-not $titleMatch.Success) {
         $findings.Add("${name}: 首行必须是 '# ADR NNNN：<标题>'（全角冒号），实际为 '$($lines[0])'")
+    }
+    elseif ($name.Length -ge 4) {
+        # H1 编号必须与文件名编号一致，否则改号时只改一处会留下矛盾记录
+        $filePrefix = $name.Substring(0, 4)
+        if (-not [string]::Equals($titleMatch.Groups[1].Value, $filePrefix, [StringComparison]::Ordinal)) {
+            $findings.Add("${name}: H1 编号 $($titleMatch.Groups[1].Value) 与文件名编号 $filePrefix 不一致")
+        }
     }
 
     $text = $lines -join "`n"
@@ -91,6 +99,23 @@ foreach ($file in $adrFiles) {
         if ($synonymSections.Contains($section)) {
             $findings.Add("${name}: 小节 '## $section' 是同义异名，必须写成 '## $($synonymSections[$section])'")
         }
+    }
+}
+
+# 编号唯一性：撞号会让「ADR NNNN」这种文字引用无法解析到唯一记录。
+$numberOwners = [ordered]@{}
+foreach ($file in $adrFiles) {
+    if ($file.Name.Length -lt 4) { continue }
+    $number = $file.Name.Substring(0, 4)
+    if (-not $numberOwners.Contains($number)) {
+        $numberOwners[$number] = [System.Collections.Generic.List[string]]::new()
+    }
+    $numberOwners[$number].Add($file.Name)
+}
+foreach ($number in $numberOwners.Keys) {
+    $owners = @($numberOwners[$number])
+    if ($owners.Count -gt 1) {
+        $findings.Add("编号 $number 被 $($owners.Count) 篇占用，必须唯一：$($owners -join '、')")
     }
 }
 
