@@ -427,12 +427,30 @@ try {
         -ExpectedTestIdentities $projectExpected `
         -DiscoveryOutput (New-ListTestsOutput -Identities $projectExpected)
     Assert-Contract ([string]::Equals((@($closedDiscovery) -join '|'), ($projectExpected -join '|'), [StringComparison]::Ordinal)) 'Discovery closure must return the exact ordinal identity set.'
+    $tabIndentedDiscovery = Assert-NervAcceptanceDiscoveryClosure `
+        -ProjectPath ([string]$planningProjects[0].path) `
+        -ExpectedTestIdentities $projectExpected `
+        -DiscoveryOutput ("The following Tests are available:`n" + (@($projectExpected | ForEach-Object { "`t$_" }) -join "`n"))
+    Assert-Contract ([string]::Equals((@($tabIndentedDiscovery) -join '|'), ($projectExpected -join '|'), [StringComparison]::Ordinal)) 'Discovery closure must accept a continuous real list with tab-indented identities.'
     $buildLogIdentityLeak = ($projectExpected -join "`n") + "`nThe following Tests are available:`n"
     Assert-ThrowsContaining -ExpectedMessage 'identity set does not exactly equal' -Context 'Build-log identity leak with empty test list' -Action {
         Assert-NervAcceptanceDiscoveryClosure `
             -ProjectPath ([string]$planningProjects[0].path) `
             -ExpectedTestIdentities $projectExpected `
             -DiscoveryOutput $buildLogIdentityLeak | Out-Null
+    }
+    foreach ($listTerminatorMutation in @(
+        @{ Name = 'blank-line'; Terminator = '' },
+        @{ Name = 'build-summary'; Terminator = 'Build succeeded.' }
+    )) {
+        $postTerminatorIdentities = @($projectExpected | ForEach-Object { "    $_" }) -join "`n"
+        $terminatedListOutput = "The following Tests are available:`n$($listTerminatorMutation.Terminator)`n$postTerminatorIdentities"
+        Assert-ThrowsContaining -ExpectedMessage 'identity set does not exactly equal' -Context "Discovery $($listTerminatorMutation.Name) terminator mutation" -Action {
+            Assert-NervAcceptanceDiscoveryClosure `
+                -ProjectPath ([string]$planningProjects[0].path) `
+                -ExpectedTestIdentities $projectExpected `
+                -DiscoveryOutput $terminatedListOutput | Out-Null
+        }
     }
     foreach ($discoveryMutation in @(
         @{ Name = 'zero'; Output = (New-ListTestsOutput); Message = 'identity set does not exactly equal' },

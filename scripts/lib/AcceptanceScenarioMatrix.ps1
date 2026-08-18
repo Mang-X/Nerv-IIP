@@ -674,8 +674,11 @@ function Assert-NervAcceptanceDiscoveryClosure {
             $inTestList = $true
             continue
         }
-        if (-not $inTestList -or $rawLine.Length -eq $rawLine.TrimStart().Length) { continue }
-        if ($candidate -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$') { continue }
+        if (-not $inTestList) { continue }
+        if ($rawLine.Length -eq $rawLine.TrimStart().Length -or $candidate -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$') {
+            $inTestList = $false
+            continue
+        }
         if (-not $observedSet.Add($candidate)) { throw "Planning project '$ProjectPath' has duplicate discovered identity '$candidate'." }
         $observed.Add($candidate)
     }
