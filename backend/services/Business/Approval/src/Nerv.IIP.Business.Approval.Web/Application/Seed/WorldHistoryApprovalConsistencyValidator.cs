@@ -125,6 +125,14 @@ public sealed class WorldHistoryApprovalConsistencyValidator(ApplicationDbContex
             failures.Add($"{documentId} 发起人应为 {fact.StartedByActorRef}，实际 {chain.StartedBy}。");
         }
 
+        // #1684：NCR 处置审批链的 id 必须等于跨服务确定性公式的值，
+        // 否则 Quality 侧按同一公式回填的 DispositionApprovalChainId 会指向不存在的链。
+        if (string.Equals(chain.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal) &&
+            chain.Id.Id != Nerv.IIP.Contracts.Approval.WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(documentId))
+        {
+            failures.Add($"{documentId} 处置审批链 id {chain.Id.Id:D} 与跨服务确定性公式不符，Quality 侧回链将指向不存在的链。");
+        }
+
         CheckMoment(chain.StartedAtUtc, $"{documentId} 发起时间", lowerBound, upperBound, failures);
 
         if (fact.Outcome == WorldHistoryApprovalOutcome.Pending)

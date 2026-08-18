@@ -290,6 +290,85 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
             ncrIds.ToHashSet(StringComparer.Ordinal));
     }
 
+    /// <summary>
+    /// #1684 · NCR 处置审批回链黄金向量：覆盖条数 K、NCR 单号公式与确定性链 id 必须与
+    /// Quality 侧逐字一致（Quality 侧有同名逐字副本，两边 Digest 分叉即漂移）。
+    /// </summary>
+    [Fact]
+    public void Ncr_disposition_backlink_matches_the_cross_service_golden_vector()
+    {
+        Assert.Equal(
+            WorldHistoryNcrDispositionApprovalGoldenVector.Digest,
+            WorldHistoryNcrDispositionApprovalGoldenVector.DigestOf(
+                WorldHistoryApprovalSpec.NcrReferenceCount,
+                WorldHistoryNcrDispositionApprovals.SeededDispositionChainId,
+                WorldHistoryApprovalSpec.NonconformanceReportNo));
+    }
+
+    /// <summary>
+    /// #1684：NCR 处置审批链落库 id 必须等于跨服务确定性公式值（Quality 回链据此可解析）；
+    /// 采购订单审批链没有跨服务回链方，保持生产同款的 v7 id。
+    /// </summary>
+    [Fact]
+    public async Task Ncr_chains_carry_the_deterministic_seeded_identity_and_purchase_chains_keep_version7()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var chains = await db.ApprovalChains.AsNoTracking().ToArrayAsync();
+        var ncrChains = chains.Where(x => x.TemplateCode == WorldHistoryApprovalSpec.NcrTemplateCode).ToArray();
+        var purchaseChains = chains.Where(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode).ToArray();
+
+        Assert.NotEmpty(ncrChains);
+        Assert.All(ncrChains, chain => Assert.Equal(
+            WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(chain.DocumentReference.DocumentId),
+            chain.Id.Id));
+        Assert.NotEmpty(purchaseChains);
+        Assert.All(purchaseChains, chain => Assert.Equal(7, chain.Id.Id.Version));
+    }
+
+    /// <summary>
+    /// #1684 fail-closed：NCR 处置审批链若不是确定性 id（例如旧库残留生产 v7 id 的链），
+    /// 校验器必须点名「与跨服务确定性公式不符」，否则 Quality 侧回链会静默指向不存在的链。
+    /// </summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_an_ncr_chain_id_deviates_from_the_deterministic_formula()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var victim = await db.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .FirstAsync(x => x.TemplateCode == WorldHistoryApprovalSpec.NcrTemplateCode);
+        var victimDocumentId = victim.DocumentReference.DocumentId;
+        db.ApprovalChains.Remove(victim);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // 同一单据补一条走生产路径 Start（v7 id）的链，模拟「链在、id 不确定」的历史残留。
+        var template = await db.ApprovalTemplates
+            .Include(x => x.Steps)
+            .SingleAsync(x => x.TemplateCode == WorldHistoryApprovalSpec.NcrTemplateCode);
+        db.ApprovalChains.Add(ApprovalChain.Start(
+            template,
+            new ApprovalDocumentReference(
+                WorldHistoryApprovalSpec.NcrSourceService,
+                WorldHistoryApprovalSpec.NcrDocumentType,
+                victimDocumentId,
+                documentLineId: null),
+            "user:user-emp-040"));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryApprovalConsistencyException>(() =>
+            new WorldHistoryApprovalConsistencyValidator(db).ValidateAsync("org-001", "env-dev", asOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("确定性公式不符", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Validator_fails_closed_when_a_planned_chain_disappears()
     {

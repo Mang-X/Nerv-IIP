@@ -29,7 +29,12 @@ public static class WorldHistoryApprovalSpec
     public const string PurchaseDocumentType = ApprovalDocumentTypes.PurchaseOrder;
     public const string PurchaseSourceService = "erp";
 
-    public const string NcrTemplateCode = "APT-WB-NCR-001";
+    /// <summary>
+    /// NCR 处置评审审批模板码：取自审批契约的唯一事实来源（#1684 收敛）——该码现在还参与
+    /// 跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals.SeededDispositionChainId"/>），
+    /// Quality 侧回链与本侧种子必须逐字同码。
+    /// </summary>
+    public const string NcrTemplateCode = ApprovalTemplateCodes.NcrDisposition;
 
     /// <summary>
     /// NCR 处置审批的单据类型：取自审批契约的唯一事实来源，种子 / 前端发起面 / Quality 白名单三方共用
@@ -146,6 +151,12 @@ public static class WorldHistoryApprovalSpec
     /// 以及 2026-07-01..08-15 每日 × scale 1.0 逐点复算质量域实际 NCR 数，
     /// 本下界处处 ≤ 实际值（实测比值最低 0.265，本系数 0.18 留有 ≥30% 余量）。
     /// 语义上即「重大处置需审批的 NCR 子集」，无需覆盖全部 NCR。
+    ///
+    /// #1684 起系数与小样本门槛落在契约包
+    /// <see cref="WorldHistoryNcrDispositionApprovals.CoveredNcrCount"/>（唯一事实来源）：
+    /// Quality 侧用同一函数加自己那份 <c>WorldHistoryProcurementSpec</c> 副本复算 K，
+    /// 决定哪些 NCR 允许回填处置审批链 id——本方法与 Quality 侧的复算必须逐 K 一致
+    /// （两侧黄金向量测试钉住）。
     /// </summary>
     public static int NcrReferenceCount(DateOnly asOfDate, double scale)
     {
@@ -154,8 +165,9 @@ public static class WorldHistoryApprovalSpec
             return 0;
         }
 
-        var totalPurchaseOrders = WorldHistoryProcurementSpec.TotalPurchaseOrders(asOfDate, scale);
-        return totalPurchaseOrders < 30 ? 0 : (int)Math.Floor(totalPurchaseOrders * 0.18d);
+        return WorldHistoryNcrDispositionApprovals.CoveredNcrCount(
+            WorldHistoryProcurementSpec.TotalPurchaseOrders(asOfDate, scale),
+            scale);
     }
 
     /// <summary>

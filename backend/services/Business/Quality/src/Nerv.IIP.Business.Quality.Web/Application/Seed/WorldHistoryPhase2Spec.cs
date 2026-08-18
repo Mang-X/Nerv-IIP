@@ -26,6 +26,24 @@ public static class WorldHistoryPhase2Spec
     /// <summary>不合格报告（设定集 §9 已预留 <c>NCR-2026-####</c>）。</summary>
     public static string NonconformanceReportNo(int index) => $"NCR-2026-{index:D4}";
 
+    /// <summary>
+    /// 处置审批回链的覆盖面（#1684）：审批域只为 <c>NCR-2026-0001..K</c> 造历史处置审批链，
+    /// <c>K</c> 是契约包 <see cref="Nerv.IIP.Contracts.Approval.WorldHistoryNcrDispositionApprovals.CoveredNcrCount"/>
+    /// 给出的标定下界（采购单量按本服务那份 <see cref="WorldHistoryProcurementSpec"/> 副本复算，
+    /// 与 Approval 侧 <c>WorldHistoryApprovalSpec.NcrReferenceCount</c> 逐 K 一致，黄金向量测试钉住）。
+    /// 覆盖面内的历史 NCR 必须回填确定性处置审批链 id；覆盖面外必须保持 <c>null</c>，
+    /// 否则会指向审批库里不存在的链。seed 与一致性校验器共用本方法，写入与校验不可能漂移。
+    /// </summary>
+    public static IReadOnlySet<string> ApprovalCoveredNonconformanceReportNos(DateOnly asOfDate, double scale)
+    {
+        var coveredCount = Nerv.IIP.Contracts.Approval.WorldHistoryNcrDispositionApprovals.CoveredNcrCount(
+            WorldHistoryProcurementSpec.TotalPurchaseOrders(asOfDate, scale),
+            scale);
+        return Enumerable.Range(1, coveredCount)
+            .Select(NonconformanceReportNo)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
     /// <summary>入库单（采购收货 / 完工入库各自成单）。</summary>
     public static string InboundOrderNo(string sourceDocumentId) => $"IB-{sourceDocumentId}";
 

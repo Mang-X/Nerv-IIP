@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 
@@ -360,7 +361,16 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             fact.DocumentId,
             documentLineId: null,
             amount: fact.Amount);
-        var chain = ApprovalChain.Start(template, documentReference, fact.StartedByActorRef);
+        // NCR 处置审批链的 id 按跨服务确定性公式生成：Quality 种子用同一公式把该 id 回填到
+        // NonconformanceReport.DispositionApprovalChainId，两个库不通信也能精确互指（#1684）。
+        // 采购订单审批链没有跨服务回链方，保持生产同款的 Start（Guid.CreateVersion7()）。
+        var chain = string.Equals(fact.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal)
+            ? ApprovalChain.StartWithSeededIdentity(
+                new ApprovalChainId(WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(fact.DocumentId)),
+                template,
+                documentReference,
+                fact.StartedByActorRef)
+            : ApprovalChain.Start(template, documentReference, fact.StartedByActorRef);
 
         if (fact.IsCompleted)
         {
