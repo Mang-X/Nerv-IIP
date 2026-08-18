@@ -82,7 +82,6 @@ const stubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: { template: '<button type="button"><slot /></button>' },
   NvDialog: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },

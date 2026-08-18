@@ -112,10 +112,6 @@ const alertDialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
 }
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {

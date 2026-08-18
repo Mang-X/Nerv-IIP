@@ -120,10 +120,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    emits: ['click'],
-    template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
 }
 const selectStubs = {
   NvSelect: {
