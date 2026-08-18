@@ -47,7 +47,7 @@ FileStorage 还包含独立的 `VersionedArchive` 合规归档子系统。它通
 2. tusdotnet 只负责传输、offset 恢复和 staging 写入，不能生成 completed/available 文件事实。
 3. staging 可续传、可过期、不可下载；final 只由相对、provider 无关且不公开的 `ObjectKey` 定位。本 ADR 在不改变该所有权的前提下冻结其 canonical 编码。
 4. complete 对所有 provider 都必须证明实际字节存在、size 与 canonical SHA-256，并执行幂等 promote、final 回读复验和冲突检测。
-5. FileStorage application 和 PostgreSQL 独占 upload-session 共享栅栏、持久 `committing` 意图、Tx1/Tx2 与唯一 completed/available 文件事实。provider 不提交业务状态，也不得持有数据库事务跨越 storage I/O。
+5. FileStorage application 和 PostgreSQL 独占 upload-session 共享栅栏、持久 `committing` 意图、Tx1/Tx2 与唯一 completed/available 文件事实。provider 不提交业务状态，也不得持有数据库事务跨越 storage I/O。staging 上传面、`ObjectKey` locator 面与 `IStorageProvider` final 面都只消费这些已冻结的提交意图与提交证据：不得另造第二套提交协议，不得重新定义共享栅栏、Tx1/Tx2 或恢复流程的所有权，也不得由上传面或 locator 面持有 Tx1/Tx2。
 
 ## 决策
 
@@ -72,8 +72,6 @@ tusdotnet `ITusStore` 是同一已选 storage backend 的 staging、offset 和 e
 promote 是同一 provider family 内部的 commit bridge，而不是 application 可以解释的跨层路径协议。它可以由同一基础设施组件同时实现该 family 的 `ITusStore` 与 `IStorageProvider`，也可以由两个适配器共享私有 staging/final locator 与 commit primitive；两种形态必须具有相同所有权和结果语义。application 只传递 opaque staging identity、canonical `ObjectKey` 与冻结的 size/checksum 意图，不得拼接或解释 filesystem path、bucket、prefix 或 object key。
 
 该 bridge 不取得 staging 生命周期所有权。offset、expiry、abort 与受治理的 staging cleanup 仍归 `ITusStore` 上传面；除 Local atomic rename 本身消费 staging 名称外，promote 不得提前删除 staging。任何补充 cleanup 都必须晚于 final 回读复验和 Tx2 completed/available 事实提交，并遵守“不删除唯一恢复副本”。
-
-ADR 0023 冻结的持久 `committing` 意图、共享提交栅栏、Tx1/Tx2 与重启恢复流程，是 staging 上传面、`ObjectKey` locator 面与 `IStorageProvider` final 面共同消费的既有裁决。三个面都只能消费已冻结的提交意图与提交证据：不得另造第二套提交协议，不得重新定义共享栅栏、Tx1/Tx2 或恢复流程的所有权，也不得由上传面或 locator 面持有 Tx1/Tx2。
 
 ### 2. LocalFileSystem 与 S3-compatible 部署期严格二选一
 
