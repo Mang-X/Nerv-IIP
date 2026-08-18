@@ -70,7 +70,7 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 6. DLQ 和 replay 工具必须输出 correlationId、消费者名称、失败原因、尝试次数和 replay 批次 ID；不得在日志中打印敏感 payload。
 7. Connector Host 与外部应用协议事件若进入平台消息系统，也必须先转换为本 ADR 定义的 IntegrationEvent envelope；外部协议版本不直接等同于平台事件版本。
 
-## 范围外事项
+## 范围之外
 
 1. 不在本 ADR 中定义具体 RabbitMQ exchange、queue、prefetch、TTL、quorum queue 或镜像策略。
 2. 不在本 ADR 中冻结每个业务事件的 payload 字段清单；这些字段由对应 Contracts 项目、服务文档和测试承接。

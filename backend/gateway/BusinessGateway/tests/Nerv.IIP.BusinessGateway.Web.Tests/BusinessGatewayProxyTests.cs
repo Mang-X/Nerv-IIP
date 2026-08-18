@@ -388,7 +388,7 @@ public sealed class BusinessGatewayProxyTests
         var listMembers = await client.GetAsync("/api/business-console/v1/master-data/teams/T-001/members?organizationId=org-001&environmentId=env-dev&includeDisabled=true");
         using var removeMemberMessage = new HttpRequestMessage(
             HttpMethod.Delete,
-            "/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=transferred");
+            "/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=%20transferred%20");
         removeMemberMessage.Headers.Add("X-Correlation-Id", "corr-remove-member");
         removeMemberMessage.Headers.Add("X-Causation-Id", "cause-remove-member");
         removeMemberMessage.Headers.Add("Idempotency-Key", "idem-remove-member");
