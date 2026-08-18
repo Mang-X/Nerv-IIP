@@ -45,18 +45,18 @@ public sealed class InMemoryIamStore
             var user = _users.SingleOrDefault(x => x.LoginName == loginName && x.Enabled);
             if (user is null)
             {
-                throw new UnauthorizedAccessException("Invalid login.");
+                throw InvalidCredentials();
             }
 
             var now = DateTimeOffset.UtcNow;
             if (user.AccountExpiresAtUtc is not null && user.AccountExpiresAtUtc <= now)
             {
-                throw new UnauthorizedAccessException("Invalid login.");
+                throw InvalidCredentials();
             }
 
             if (user.LockoutUntilUtc is not null && user.LockoutUntilUtc > now)
             {
-                throw new UnauthorizedAccessException("Invalid login.");
+                throw AccountLocked(user.LockoutUntilUtc);
             }
 
             if (!Verify(password, user.PasswordHash))
@@ -69,7 +69,13 @@ public sealed class InMemoryIamStore
                     LockoutUntilUtc = failedLoginCount >= lockoutThreshold ? now.Add(lockoutWindow) : null
                 };
                 _users[_users.IndexOf(user)] = updated;
-                throw new UnauthorizedAccessException("Invalid login.");
+                if (updated.LockoutUntilUtc is not null)
+                {
+                    throw AccountLocked(updated.LockoutUntilUtc);
+                }
+
+                var remainingAttempts = Math.Max(0, lockoutThreshold - failedLoginCount);
+                throw InvalidCredentials(remainingAttempts <= 2 ? remainingAttempts : null);
             }
 
             var successful = user with
@@ -82,6 +88,12 @@ public sealed class InMemoryIamStore
             return CreateSession(successful);
         }
     }
+
+    private static IamLoginRejectedException InvalidCredentials(int? remainingAttempts = null) =>
+        new(IamLoginFailureCodes.InvalidCredentials, remainingAttempts: remainingAttempts);
+
+    private static IamLoginRejectedException AccountLocked(DateTimeOffset? lockoutUntilUtc) =>
+        new(IamLoginFailureCodes.AccountLocked, lockoutUntilUtc);
 
     public AuthResult Refresh(string refreshToken)
     {
