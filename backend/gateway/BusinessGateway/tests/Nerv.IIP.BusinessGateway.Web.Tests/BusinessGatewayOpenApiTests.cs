@@ -91,6 +91,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules", "get", "listBusinessConsoleCodeRules");
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}", "get", "getBusinessConsoleCodeRule");
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "createBusinessConsoleCodeRuleVersion");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/versions", "post", "changeReason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/code-rules/{ruleKey}/preview", "post", "previewBusinessConsoleCodeRule");
         AssertOperationId(paths, "/api/business-console/v1/inventory/availability", "get", "getBusinessConsoleInventoryAvailability");
         AssertOperationId(paths, "/api/business-console/v1/inventory/expiry-alerts", "get", "listBusinessConsoleInventoryExpiryAlerts");

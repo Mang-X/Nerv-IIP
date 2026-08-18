@@ -103,6 +103,8 @@ public class CodeRule : Entity<CodeRuleId>, IAggregateRoot
 
 public class CodeRuleVersion : Entity<CodeRuleVersionId>
 {
+    public const int ChangeReasonMaximumLength = 500;
+
     protected CodeRuleVersion()
     {
     }
@@ -135,7 +137,7 @@ public class CodeRuleVersion : Entity<CodeRuleVersionId>
         Status = Required(status);
         EffectiveFromUtc = effectiveFromUtc;
         CreatedBy = Required(createdBy);
-        ChangeReason = Optional(changeReason) ?? string.Empty;
+        ChangeReason = RequiredChangeReason(changeReason);
         CreatedAtUtc = createdAtUtc;
     }
 
@@ -213,6 +215,23 @@ public class CodeRuleVersion : Entity<CodeRuleVersionId>
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string RequiredChangeReason(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Change reason cannot be blank.", nameof(value));
+        }
+
+        if (value.Length > ChangeReasonMaximumLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                $"Change reason cannot exceed {ChangeReasonMaximumLength} characters.");
+        }
+
+        return value.Trim();
     }
 
     private static string? Optional(string? value)

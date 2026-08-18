@@ -5531,7 +5531,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     isActive?: boolean;
     effectiveFromUtc?: string | null;
     createdBy: string;
-    changeReason?: string;
+    changeReason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCodeRulePreviewResponse = NetCorePalExtensionsDtoResponseData & {

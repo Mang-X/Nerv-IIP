@@ -23,6 +23,8 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvFieldDescription,
+  NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -340,6 +342,18 @@ function parseNumber(value: string): number | undefined {
 
 const displayNameValid = computed(() => form.displayName.trim().length > 0)
 const createdByValid = computed(() => form.createdBy.trim().length > 0)
+const CHANGE_REASON_MAX_LENGTH = 500
+const changeReasonError = computed(() => {
+  if (form.changeReason.length > CHANGE_REASON_MAX_LENGTH) {
+    return `变更原因不能超过 ${CHANGE_REASON_MAX_LENGTH} 个字符。`
+  }
+  if (form.changeReason.length > 0 && form.changeReason.trim().length === 0) {
+    return '变更原因不能只包含空白字符。'
+  }
+  if (form.changeReason.trim().length === 0) return '请输入变更原因。'
+  return ''
+})
+const changeReasonValid = computed(() => changeReasonError.value === '')
 
 // 单段校验，对齐后端 CodeRuleDefinition.Validate()：返回 null 表示该段合法，否则给中文错误。
 function segmentError(row: SegmentRow): string | null {
@@ -386,7 +400,11 @@ const segmentsValid = computed(
     sequenceCountError.value === '',
 )
 const canSubmit = computed(
-  () => displayNameValid.value && createdByValid.value && segmentsValid.value,
+  () =>
+    displayNameValid.value &&
+    createdByValid.value &&
+    changeReasonValid.value &&
+    segmentsValid.value,
 )
 
 // 把编辑行映射成契约段（number 空串转 undefined）。
@@ -439,6 +457,19 @@ function openCreate(row: BusinessConsoleCodeRuleItem) {
   formOpen.value = true
 }
 
+function resetVersionForm() {
+  Object.assign(form, blankForm())
+  showErrors.value = false
+  formPreview.value = ''
+  editingRuleKey.value = null
+  editingCurrentVersion.value = ''
+}
+
+function onFormOpenChange(value: boolean) {
+  formOpen.value = value
+  if (!value && !createPending.value) resetVersionForm()
+}
+
 function addSegment() {
   form.segments.push(blankSegment())
 }
@@ -484,14 +515,13 @@ async function submitForm() {
     isActive: true,
     effectiveFromUtc: form.effectiveFromUtc || null,
     createdBy: form.createdBy.trim(),
-    changeReason: form.changeReason.trim() || undefined,
+    changeReason: form.changeReason.trim(),
   }
   try {
     await createRuleVersion(ruleKey, body)
     notifySuccess(`规则「${displayName}」新版本已发布。`)
-    showErrors.value = false
     formOpen.value = false
-    editingRuleKey.value = null
+    resetVersionForm()
   } catch (error) {
     notifyOperationFailure('发布编码规则失败', error, '发布编码规则失败，请稍后重试。')
   }
@@ -691,7 +721,7 @@ async function submitForm() {
     </NvDialog>
 
     <!-- 新建版本 Dialog -->
-    <NvDialog v-model:open="formOpen">
+    <NvDialog :open="formOpen" @update:open="onFormOpenChange">
       <NvDialogContent class="sm:max-w-3xl">
         <NvDialogHeader>
           <NvDialogTitle>新建编码规则版本</NvDialogTitle>
@@ -700,7 +730,7 @@ async function submitForm() {
             规则 {{ editingRuleKey }}，当前版本 {{ editingCurrentVersion || '无' }}
           </NvDialogDescription>
         </NvDialogHeader>
-        <form class="grid gap-5" @submit.prevent="submitForm">
+        <form class="grid gap-5" novalidate @submit.prevent="submitForm">
           <CarriedContextSummary
             label="规则上下文"
             :items="[
@@ -709,7 +739,7 @@ async function submitForm() {
             ]"
           />
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写带 * 的必填项（名称、创建人），并修正下方红字提示的段定义。
+            请填写带 * 的必填项（名称、变更原因、创建人），并修正下方红字提示。
           </p>
 
           <FormSectionTitle>版本信息</FormSectionTitle>
@@ -745,13 +775,41 @@ async function submitForm() {
                 class="w-full"
               />
             </NvField>
-            <NvField>
-              <NvFieldLabel for="cr-reason">变更原因</NvFieldLabel>
+            <NvField :data-invalid="showErrors && !changeReasonValid">
+              <NvFieldLabel for="cr-reason">
+                变更原因 <span class="text-destructive">*</span>
+              </NvFieldLabel>
               <NvInput
                 id="cr-reason"
                 v-model="form.changeReason"
-                placeholder="可选，本次变更说明"
+                required
+                :maxlength="CHANGE_REASON_MAX_LENGTH"
+                placeholder="说明本次规则调整的业务依据"
+                :invalid="showErrors && !changeReasonValid"
+                :aria-invalid="showErrors && !changeReasonValid ? 'true' : undefined"
+                :aria-describedby="
+                  showErrors && changeReasonError
+                    ? 'cr-reason-error cr-reason-count'
+                    : 'cr-reason-help cr-reason-count'
+                "
               />
+              <div class="flex items-start justify-between gap-3">
+                <NvFieldError
+                  v-if="showErrors && changeReasonError"
+                  id="cr-reason-error"
+                  :errors="[changeReasonError]"
+                />
+                <NvFieldDescription v-else id="cr-reason-help">
+                  原因会记入版本历史，供后续审计与追溯。
+                </NvFieldDescription>
+                <span
+                  id="cr-reason-count"
+                  class="ml-auto shrink-0 text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {{ form.changeReason.length }} / {{ CHANGE_REASON_MAX_LENGTH }}
+                </span>
+              </div>
             </NvField>
             <NvField :data-invalid="showErrors && !createdByValid">
               <NvFieldLabel for="cr-by"
@@ -991,7 +1049,13 @@ async function submitForm() {
           </div>
 
           <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
+            <NvButton
+              type="button"
+              variant="outline"
+              :disabled="createPending"
+              @click="onFormOpenChange(false)"
+              >取消</NvButton
+            >
             <NvButton type="submit" :disabled="createPending">
               <Spinner v-if="createPending" aria-hidden="true" />
               发布版本

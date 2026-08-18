@@ -1648,6 +1648,17 @@ public sealed record CreateCodeRuleVersionRequest(
     string CreatedBy,
     string ChangeReason);
 
+public sealed class CreateCodeRuleVersionRequestValidator : Validator<CreateCodeRuleVersionRequest>
+{
+    public CreateCodeRuleVersionRequestValidator()
+    {
+        RuleFor(x => x.ChangeReason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(CodeRuleChangeReason.MaximumLength);
+    }
+}
+
 public sealed class CreateCodeRuleVersionEndpoint(ISender sender)
     : MasterDataEndpoint<CreateCodeRuleVersionRequest, ResponseData<CodeRuleVersionResponse>>
 {

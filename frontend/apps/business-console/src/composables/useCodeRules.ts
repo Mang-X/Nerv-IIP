@@ -96,7 +96,7 @@ export function useCodeRules() {
 
     // 新建版本（版本化配置发布）。
     createRuleVersion: (ruleKey: string, body: BusinessConsoleCreateCodeRuleVersionRequest) =>
-      (createMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+      createMutation.mutateAsync({
         path: { ruleKey },
         body,
       }),

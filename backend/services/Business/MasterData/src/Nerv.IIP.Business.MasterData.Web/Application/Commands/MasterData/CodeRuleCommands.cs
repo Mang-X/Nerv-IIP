@@ -44,6 +44,7 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
 {
     public async Task<CodeRuleVersionResponse> Handle(CreateCodeRuleVersionCommand request, CancellationToken cancellationToken)
     {
+        var changeReason = CodeRuleChangeReason.NormalizeRequired(request.ChangeReason);
         var current = await dbContext.CodeRules.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
@@ -87,7 +88,7 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
             status,
             request.EffectiveFromUtc,
             request.CreatedBy,
-            request.ChangeReason,
+            changeReason,
             now);
         dbContext.CodeRuleVersions.Add(version);
 
@@ -137,7 +138,27 @@ public sealed class CreateCodeRuleVersionCommandHandler(ApplicationDbContext dbC
             status,
             request.EffectiveFromUtc,
             request.CreatedBy,
-            request.ChangeReason);
+            changeReason);
+    }
+}
+
+internal static class CodeRuleChangeReason
+{
+    internal const int MaximumLength = CodeRuleVersion.ChangeReasonMaximumLength;
+
+    public static string NormalizeRequired(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new KnownException("编码规则版本变更原因不能为空。");
+        }
+
+        if (reason.Length > MaximumLength)
+        {
+            throw new KnownException($"编码规则版本变更原因不能超过 {MaximumLength} 个字符。");
+        }
+
+        return reason.Trim();
     }
 }
 

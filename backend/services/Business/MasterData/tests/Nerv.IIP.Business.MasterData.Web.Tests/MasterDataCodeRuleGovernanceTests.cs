@@ -7,12 +7,25 @@ using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Contracts.Coding;
+using NetCorePal.Extensions.Primitives;
 using System.Text.Json;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
 public sealed class MasterDataCodeRuleGovernanceTests
 {
+    public static TheoryData<string?> InvalidChangeReasons => new()
+    {
+        null,
+        "",
+        " ",
+        "\t",
+        "　",
+        new string('变', 501),
+        $" {new string('变', 500)}",
+        $"{new string('变', 500)} ",
+    };
+
     [Fact]
     public async Task List_code_rules_returns_current_definitions_with_segments()
     {
@@ -112,7 +125,7 @@ public sealed class MasterDataCodeRuleGovernanceTests
                 true,
                 effectiveFromUtc,
                 "admin-001",
-                "align plant convention"),
+                "  align plant convention　"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -125,7 +138,112 @@ public sealed class MasterDataCodeRuleGovernanceTests
         var audit = await dbContext.CodeRuleVersions.SingleAsync();
         Assert.Equal("admin-001", audit.CreatedBy);
         Assert.Equal("align plant convention", audit.ChangeReason);
+        Assert.Equal("align plant convention", response.ChangeReason);
         Assert.Equal(effectiveFromUtc, audit.EffectiveFromUtc);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidChangeReasons))]
+    public void Code_rule_version_request_rejects_invalid_change_reason_differentially(string? reason)
+    {
+        var validator = new CreateCodeRuleVersionRequestValidator();
+
+        Assert.True(validator.Validate(Request("调整编码规范")).IsValid);
+        Assert.False(validator.Validate(Request(reason!)).IsValid);
+    }
+
+    [Fact]
+    public void Code_rule_version_request_accepts_the_500_character_boundary()
+    {
+        var result = new CreateCodeRuleVersionRequestValidator()
+            .Validate(Request(new string('变', 500)));
+
+        Assert.True(
+            result.IsValid,
+            string.Join("; ", result.Errors.Select(failure => failure.ErrorMessage)));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidChangeReasons))]
+    public void Code_rule_version_domain_rejects_invalid_change_reason_differentially(string? reason)
+    {
+        Assert.Equal("调整编码规范", Version("  调整编码规范　").ChangeReason);
+
+        Assert.ThrowsAny<ArgumentException>(() => Version(reason!));
+    }
+
+    [Fact]
+    public void Code_rule_version_domain_accepts_the_500_character_boundary()
+    {
+        var reason = new string('变', 500);
+        var paddedReason = $" {new string('变', 498)} ";
+
+        Assert.Equal(reason, Version(reason).ChangeReason);
+        Assert.Equal(new string('变', 498), Version(paddedReason).ChangeReason);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidChangeReasons))]
+    public async Task Create_code_rule_version_rejects_invalid_reason_before_state_or_audit_changes(string? reason)
+    {
+        await using var dbContext = CreateDbContext();
+        var current = CodeRule.Create(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU code",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU"), CodeRuleSegment.SequenceOf(5)),
+            true,
+            1);
+        var activeVersion = Version("initial governance reason");
+        dbContext.CodeRules.Add(current);
+        dbContext.CodeRuleVersions.Add(activeVersion);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreateCodeRuleVersionCommandHandler(dbContext).Handle(
+            Command(reason!),
+            CancellationToken.None));
+
+        Assert.Equal(1, current.Version);
+        Assert.Equal(CodeRuleVersionStatus.Active, activeVersion.Status);
+        Assert.Single(dbContext.CodeRuleVersions.Local);
+        Assert.DoesNotContain(
+            dbContext.ChangeTracker.Entries<CodeRuleVersion>(),
+            entry => entry.State == EntityState.Added);
+    }
+
+    [Fact]
+    public async Task Create_code_rule_version_accepts_500_characters_and_persists_the_real_audit_reason()
+    {
+        await using var dbContext = CreateDbContext();
+        var reason = new string('变', 500);
+
+        var response = await new CreateCodeRuleVersionCommandHandler(dbContext).Handle(
+            Command(reason),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(reason, response.ChangeReason);
+        Assert.Equal(reason, (await dbContext.CodeRuleVersions.SingleAsync()).ChangeReason);
+    }
+
+    [Fact]
+    public async Task Create_code_rule_version_trims_the_raw_500_character_boundary_before_audit()
+    {
+        await using var dbContext = CreateDbContext();
+        var normalizedReason = new string('变', 498);
+        var rawReason = $" {normalizedReason} ";
+
+        var response = await new CreateCodeRuleVersionCommandHandler(dbContext).Handle(
+            Command(rawReason),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(500, rawReason.Length);
+        Assert.Equal(normalizedReason, response.ChangeReason);
+        Assert.Equal(normalizedReason, (await dbContext.CodeRuleVersions.SingleAsync()).ChangeReason);
     }
 
     [Fact]
@@ -421,4 +539,49 @@ public sealed class MasterDataCodeRuleGovernanceTests
 
     private static string SegmentsJson(params CodeRuleSegment[] segments) =>
         JsonSerializer.Serialize(segments, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+    private static CreateCodeRuleVersionRequest Request(string reason) =>
+        new(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU 编码规则",
+            "sku",
+            ScopeDimension.Organization,
+            [CodeRuleSegment.ConstantOf("SKU-"), CodeRuleSegment.SequenceOf(4)],
+            true,
+            new DateTimeOffset(2026, 8, 18, 0, 0, 0, TimeSpan.Zero),
+            "admin-001",
+            reason);
+
+    private static CreateCodeRuleVersionCommand Command(string reason) =>
+        new(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU 编码规则 v2",
+            "sku",
+            ScopeDimension.Organization,
+            [CodeRuleSegment.ConstantOf("SKU-"), CodeRuleSegment.SequenceOf(4)],
+            true,
+            new DateTimeOffset(2026, 8, 18, 0, 0, 0, TimeSpan.Zero),
+            "admin-001",
+            reason);
+
+    private static CodeRuleVersion Version(string reason) =>
+        CodeRuleVersion.Record(
+            "org-001",
+            "env-dev",
+            "master-data.sku",
+            "SKU 编码规则",
+            "sku",
+            (int)ScopeDimension.Organization,
+            SegmentsJson(CodeRuleSegment.ConstantOf("SKU-"), CodeRuleSegment.SequenceOf(4)),
+            true,
+            1,
+            CodeRuleVersionStatus.Active,
+            new DateTimeOffset(2026, 8, 18, 0, 0, 0, TimeSpan.Zero),
+            "admin-001",
+            reason,
+            new DateTimeOffset(2026, 8, 18, 0, 0, 0, TimeSpan.Zero));
 }
