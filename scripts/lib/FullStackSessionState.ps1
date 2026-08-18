@@ -15,6 +15,7 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
+$script:NervFullStackManifestFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\.json$'
 $script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
@@ -450,10 +451,57 @@ function Get-NervFullStackManifests {
         return @()
     }
 
-    return @(
-        Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $directory -Filter 'nerv-*.json' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal) |
-            ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json -Depth 30 }
-    )
+    $manifests = [Collections.Generic.List[object]]::new()
+    $candidates = Get-NervItemsSortedByString `
+        -Items @(Get-ChildItem -LiteralPath $directory -Filter 'nerv-*.json' -File) `
+        -KeySelector { param($row) [string]$row.Name } `
+        -Comparer ([StringComparer]::Ordinal)
+
+    foreach ($candidate in $candidates) {
+        $manifest = $null
+        try {
+            $manifest = Get-Content -LiteralPath $candidate.FullName -Raw | ConvertFrom-Json -Depth 30 -NoEnumerate
+        }
+        catch {
+            Write-Warning "Skipping invalid full-stack session manifest candidate '$($candidate.FullName)': $($_.Exception.Message)"
+            continue
+        }
+
+        $manifestPatternOptions = [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+            [Text.RegularExpressions.RegexOptions]::CultureInvariant
+        if (-not [regex]::IsMatch(
+                [string]$candidate.Name,
+                $script:NervFullStackManifestFileNamePattern,
+                $manifestPatternOptions)) {
+            Write-Warning "Skipping non-manifest full-stack session file '$($candidate.FullName)': the file name is outside the manifest namespace."
+            continue
+        }
+
+        if ($null -eq $manifest -or $manifest.GetType() -ne [Management.Automation.PSCustomObject]) {
+            Write-Warning "Skipping invalid full-stack session manifest '$($candidate.FullName)': the JSON payload must be an object."
+            continue
+        }
+
+        $sessionIdProperty = $manifest.PSObject.Properties['sessionId']
+        $stateProperty = $manifest.PSObject.Properties['state']
+        if ($null -eq $sessionIdProperty -or
+            [string]::IsNullOrWhiteSpace([string]$sessionIdProperty.Value) -or
+            $null -eq $stateProperty -or
+            [string]::IsNullOrWhiteSpace([string]$stateProperty.Value)) {
+            Write-Warning "Skipping invalid full-stack session manifest '$($candidate.FullName)': required properties 'sessionId' and 'state' must be non-empty."
+            continue
+        }
+
+        $expectedFileName = "$([string]$sessionIdProperty.Value).json"
+        if (-not [string]::Equals([string]$candidate.Name, $expectedFileName, [StringComparison]::Ordinal)) {
+            Write-Warning "Skipping invalid full-stack session manifest '$($candidate.FullName)': sessionId does not match the file name."
+            continue
+        }
+
+        $manifests.Add($manifest)
+    }
+
+    return @($manifests)
 }
 
 function Move-NervFullStackSessionState {

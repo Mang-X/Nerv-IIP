@@ -6,10 +6,94 @@ function Assert-True([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Write-Utf8TestFile([string] $Path, [string] $Content) {
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-state-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
 
 try {
+    $discoveryRoot = Join-Path $testRoot 'manifest-discovery'
+    $discoverySessionId = 'nerv-abcd-123456'
+    $discoveryManifest = New-NervFullStackManifest `
+        -SessionId $discoverySessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$discoverySessionId") `
+        -StateRoot $discoveryRoot
+    Write-NervFullStackManifest -Manifest $discoveryManifest -StateRoot $discoveryRoot
+
+    $discoveryDirectory = Join-Path $discoveryRoot 'fullstack-sessions'
+    Write-Utf8TestFile (Join-Path $discoveryDirectory 'nerv-bad.json') '{invalid-json'
+    Write-Utf8TestFile (Join-Path $discoveryDirectory 'nerv-cafe-654321.json') '{"sessionId":"nerv-cafe-654321"}'
+    Write-Utf8TestFile `
+        (Join-Path $discoveryDirectory 'nerv-abcd-123456.guardian-stop.ack.json') `
+        '{"sessionId":"nerv-abcd-123456.guardian-stop.ack","state":"Stopped"}'
+    Write-Utf8TestFile `
+        (Join-Path $discoveryDirectory 'nerv-dead-beef12.json') `
+        '{"sessionId":"nerv-feed-abcdef","state":"Stopped"}'
+    Write-Utf8TestFile (Join-Path $discoveryDirectory 'nerv-0001-000001.json') 'null'
+    Write-Utf8TestFile `
+        (Join-Path $discoveryDirectory 'nerv-0002-000002.json') `
+        '[{"sessionId":"nerv-0002-000002","state":"Stopped"}]'
+    Write-Utf8TestFile (Join-Path $discoveryDirectory 'nerv-0003-000003.json') '42'
+
+    $discoveryOutput = @(Get-NervFullStackManifests -StateRoot $discoveryRoot 3>&1)
+    $discoveryWarnings = @($discoveryOutput | Where-Object { $_ -is [Management.Automation.WarningRecord] })
+    $discoveredManifests = @($discoveryOutput | Where-Object { $_ -isnot [Management.Automation.WarningRecord] })
+    Assert-True ($discoveredManifests.Count -eq 1) "Manifest discovery must return exactly the one valid manifest; removing any independent manifest predicate must make this assertion fail. Actual: $(@($discoveredManifests | ForEach-Object { [string]$_.sessionId }) -join ', ')."
+    Assert-True ([string]::Equals([string]$discoveredManifests[0].sessionId, $discoverySessionId, [StringComparison]::Ordinal)) 'Manifest discovery must not lose a valid manifest.'
+    Assert-True ($discoveryWarnings.Count -eq 7) "Manifest discovery must emit exactly one warning for each rejected candidate; actual count: $($discoveryWarnings.Count)."
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-bad.json', [StringComparison]::Ordinal) }).Count -eq 1) 'Invalid JSON must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-cafe-654321.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A canonical manifest without state must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('guardian-stop.ack.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A fully populated file outside the manifest namespace must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-dead-beef12.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A canonical file with a mismatched payload sessionId must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-0001-000001.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A null JSON payload must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-0002-000002.json', [StringComparison]::Ordinal) }).Count -eq 1) 'An array JSON payload must emit exactly one visible warning.'
+    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-0003-000003.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A scalar JSON payload must emit exactly one visible warning.'
+
+    $guardianRoot = Join-Path $testRoot 'guardian-sidecar-discovery'
+    $guardianDirectory = Join-Path $guardianRoot 'fullstack-sessions'
+    [System.IO.Directory]::CreateDirectory($guardianDirectory) | Out-Null
+    Write-Utf8TestFile `
+        (Join-Path $guardianDirectory 'nerv-aaaa-aaaaaa.guardian-stop.ack.json') `
+        '{"schemaVersion":1,"kind":"ack","sessionId":"nerv-aaaa-aaaaaa"}'
+    $guardianOutput = @(Get-NervFullStackManifests -StateRoot $guardianRoot 3>&1)
+    $guardianWarnings = @($guardianOutput | Where-Object { $_ -is [Management.Automation.WarningRecord] })
+    $guardianManifests = @($guardianOutput | Where-Object { $_ -isnot [Management.Automation.WarningRecord] })
+    Assert-True ($guardianManifests.Count -eq 0) 'A real guardian acknowledgement payload must not be discovered as a manifest.'
+    Assert-True ($guardianWarnings.Count -eq 1) 'A real guardian acknowledgement sidecar must emit exactly one warning.'
+    Assert-True ($guardianWarnings[0].Message.Contains('outside the manifest namespace', [StringComparison]::Ordinal)) 'A real guardian acknowledgement must be classified by its sidecar file name before payload fields are inspected.'
+
+    $uppercaseRoot = Join-Path $testRoot 'uppercase-discovery'
+    $uppercaseSessionId = 'nerv-ABCD-ABCDEF'
+    $uppercaseManifest = New-NervFullStackManifest `
+        -SessionId $uppercaseSessionId `
+        -WorktreeRoot $repoRoot `
+        -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
+        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$uppercaseSessionId") `
+        -StateRoot $uppercaseRoot
+    Write-NervFullStackManifest -Manifest $uppercaseManifest -StateRoot $uppercaseRoot
+    $uppercaseReloaded = Read-NervFullStackManifest -SessionId $uppercaseSessionId -StateRoot $uppercaseRoot
+    $uppercaseDiscovered = @(Get-NervFullStackManifests -StateRoot $uppercaseRoot)
+    Assert-True ([string]::Equals([string]$uppercaseReloaded.sessionId, $uppercaseSessionId, [StringComparison]::Ordinal)) 'Uppercase session IDs must round-trip through Write/Read.'
+    Assert-True ($uppercaseDiscovered.Count -eq 1) 'Discovery must not lose a manifest accepted by New/Write/Read because its hex digits are uppercase.'
+    Assert-True ([string]::Equals([string]$uppercaseDiscovered[0].sessionId, $uppercaseSessionId, [StringComparison]::Ordinal)) 'Discovery must preserve the uppercase session ID payload.'
+
+    $caseMismatchRoot = Join-Path $testRoot 'case-mismatch-discovery'
+    $caseMismatchDirectory = Join-Path $caseMismatchRoot 'fullstack-sessions'
+    [System.IO.Directory]::CreateDirectory($caseMismatchDirectory) | Out-Null
+    Write-Utf8TestFile `
+        (Join-Path $caseMismatchDirectory 'nerv-abcd-abcdef.json') `
+        '{"sessionId":"nerv-ABCD-ABCDEF","state":"Stopped"}'
+    $caseMismatchOutput = @(Get-NervFullStackManifests -StateRoot $caseMismatchRoot 3>&1)
+    $caseMismatchWarnings = @($caseMismatchOutput | Where-Object { $_ -is [Management.Automation.WarningRecord] })
+    $caseMismatchManifests = @($caseMismatchOutput | Where-Object { $_ -isnot [Management.Automation.WarningRecord] })
+    Assert-True ($caseMismatchManifests.Count -eq 0) 'Discovery must reject a payload sessionId whose casing differs from the actual file stem.'
+    Assert-True ($caseMismatchWarnings.Count -eq 1) 'A file/payload casing mismatch must emit exactly one warning.'
+    Assert-True ($caseMismatchWarnings[0].Message.Contains('sessionId does not match the file name', [StringComparison]::Ordinal)) 'A file/payload casing mismatch must be classified as an ordinal identity mismatch.'
+
     $sessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot
     Assert-True ($sessionId -match '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$') "Invalid session ID: $sessionId"
 
