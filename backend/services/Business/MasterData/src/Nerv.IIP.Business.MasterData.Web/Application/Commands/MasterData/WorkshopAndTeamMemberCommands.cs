@@ -134,6 +134,7 @@ public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContex
 {
     public async Task<MasterDataResourceResult> Handle(RemoveTeamMemberCommand request, CancellationToken cancellationToken)
     {
+        var reason = TeamMemberRemovalReason.NormalizeRequired(request.Reason);
         var member = await dbContext.TeamMembers
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -153,7 +154,7 @@ public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContex
             effectiveTo = member.EffectiveTo,
             disabled = member.Disabled,
         };
-        member.Remove(string.IsNullOrWhiteSpace(request.Reason) ? "removed" : request.Reason);
+        member.Remove(reason);
         MasterDataScopeContextAudit.Add(
             dbContext,
             request.AuditContext,
@@ -174,7 +175,28 @@ public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContex
                 effectiveTo = member.EffectiveTo,
                 disabled = member.Disabled,
             },
-            string.IsNullOrWhiteSpace(request.Reason) ? "removed" : request.Reason.Trim());
+            reason);
         return new MasterDataResourceResult("team-member", member.Code, member.UserId);
+    }
+}
+
+internal static class TeamMemberRemovalReason
+{
+    internal const int MaximumLength = 500;
+
+    public static string NormalizeRequired(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new KnownException("班组成员移除原因不能为空。");
+        }
+
+        var normalized = reason.Trim();
+        if (normalized.Length > MaximumLength)
+        {
+            throw new KnownException($"班组成员移除原因不能超过 {MaximumLength} 个字符。");
+        }
+
+        return normalized;
     }
 }

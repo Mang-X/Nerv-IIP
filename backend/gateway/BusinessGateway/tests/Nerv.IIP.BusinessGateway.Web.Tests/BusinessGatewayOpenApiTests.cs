@@ -75,6 +75,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members", "get", "listBusinessConsoleTeamMembers");
         AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members", "post", "addBusinessConsoleTeamMember");
         AssertOperationId(paths, "/api/business-console/v1/master-data/teams/{teamCode}/members/{userId}", "delete", "removeBusinessConsoleTeamMember");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/teams/{teamCode}/members/{userId}", "delete", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/sites", "post", "createBusinessConsoleSite");
         AssertOperationId(paths, "/api/business-console/v1/master-data/production-lines", "post", "createBusinessConsoleProductionLine");
         AssertOperationId(paths, "/api/business-console/v1/master-data/work-centers", "post", "createBusinessConsoleWorkCenter");

@@ -2081,6 +2081,131 @@ public sealed class MasterDataApiContractTests
         Assert.Empty(activeList.Members);
     }
 
+    public static TheoryData<string?> InvalidTeamMemberRemovalReasons => new()
+    {
+        null,
+        "",
+        " ",
+        "\t",
+        "　",
+        new string('停', 501),
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidTeamMemberRemovalReasons))]
+    public async Task Team_member_removal_rejects_invalid_reason_before_changing_state(string? reason)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+
+        await Assert.ThrowsAsync<KnownException>(() => new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                reason!,
+                new("corr-invalid", "cause-invalid", "user:test", "op-invalid")),
+            CancellationToken.None));
+
+        Assert.False(member.Disabled);
+        Assert.Empty(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>());
+        Assert.Empty(dbContext.ScopeContextAuditEntries.Local);
+    }
+
+    [Fact]
+    public async Task Team_member_removal_accepts_500_characters_and_writes_the_real_reason_to_both_audits()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+        var reason = new string('停', 500);
+
+        await new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                reason,
+                new("corr-remove", "cause-remove", "user:test", "op-remove")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(member.Disabled);
+        Assert.Equal(reason, Assert.Single(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+        Assert.Equal(reason, Assert.Single(dbContext.ScopeContextAuditEntries.Local).Reason);
+        Assert.DoesNotContain(
+            dbContext.ScopeContextAuditEntries.Local,
+            audit => string.Equals(audit.Reason, "removed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Team_member_removal_trims_the_reason_before_domain_and_scope_context_audit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+
+        await new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                "  调离班组  ",
+                new("corr-remove", "cause-remove", "user:test", "op-remove")),
+            CancellationToken.None);
+
+        Assert.Equal("调离班组", Assert.Single(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+        Assert.Equal("调离班组", Assert.Single(dbContext.ScopeContextAuditEntries.Local).Reason);
+    }
+
+    [Fact]
+    public void Team_member_removal_request_reason_has_no_default_value()
+    {
+        var reason = Assert.Single(
+            Assert.Single(typeof(RemoveTeamMemberRequest).GetConstructors()).GetParameters(),
+            parameter => parameter.Name == "Reason");
+
+        Assert.False(reason.IsOptional);
+        Assert.False(reason.HasDefaultValue);
+    }
+
     [Fact]
     public async Task Create_sku_command_rejects_duplicate_business_key()
     {

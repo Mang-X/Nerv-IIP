@@ -1053,7 +1053,7 @@ public sealed record RemoveTeamMemberRequest(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason = "");
+    string Reason);
 
 public sealed class AddTeamMemberEndpoint(
     ISender sender,

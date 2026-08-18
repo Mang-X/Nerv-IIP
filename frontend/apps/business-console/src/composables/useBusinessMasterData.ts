@@ -853,7 +853,7 @@ export interface TeamMemberAddInput {
 
 /**
  * 某班组的成员维护：按 teamCode 列成员 + 添加成员 + 移除成员。teamCode 以 getter/ref 传入
- * 以便随选中行切换；增删成功后互相失效，列表即时刷新。移除走 DELETE（body 带 org/env）。
+ * 以便随选中行切换；增删成功后互相失效，列表即时刷新。移除走 DELETE，必须带用户填写的真实原因。
  */
 export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
   const ctx = defaultContext()
@@ -880,10 +880,12 @@ export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
     ...addBusinessConsoleTeamMemberMutationOptions(),
     onSuccess: invalidate,
   } as unknown as UseMutationOptions)
+  const removeMutationOptions = removeBusinessConsoleTeamMemberMutationOptions()
+  type RemoveTeamMemberMutationVariables = Parameters<typeof removeMutationOptions.mutation>[0]
   const removeMutation = useMutation({
-    ...removeBusinessConsoleTeamMemberMutationOptions(),
+    ...removeMutationOptions,
     onSuccess: invalidate,
-  } as unknown as UseMutationOptions)
+  })
 
   return {
     members: computed<BusinessConsoleTeamMemberItem[]>(() =>
@@ -907,11 +909,17 @@ export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
         },
       }),
     addPending: addMutation.isLoading,
-    removeMember: (userId: string) =>
-      (removeMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
+    removeMember: (userId: string, reason: string) => {
+      const variables: RemoveTeamMemberMutationVariables = {
         path: { teamCode: toValue(teamCode) ?? '', userId },
-        body: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
-      }),
+        body: {
+          organizationId: ctx.organizationId,
+          environmentId: ctx.environmentId,
+          reason,
+        },
+      }
+      return removeMutation.mutateAsync(variables)
+    },
     removePending: removeMutation.isLoading,
     memberError: computed(() => addMutation.error.value ?? removeMutation.error.value),
   }

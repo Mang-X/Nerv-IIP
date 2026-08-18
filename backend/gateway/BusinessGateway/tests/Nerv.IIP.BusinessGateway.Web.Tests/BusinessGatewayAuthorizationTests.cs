@@ -1120,6 +1120,14 @@ public sealed class BusinessGatewayAuthorizationTests
             quantity = 1,
             uomCode = "EA",
         },
+        "/api/business-console/v1/master-data/teams/T-001/members/user-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            teamCode = "T-001",
+            userId = "user-001",
+            reason = "人员调离",
+        },
         _ => new { organizationId = "org-001", environmentId = "env-dev" },
         };
     }

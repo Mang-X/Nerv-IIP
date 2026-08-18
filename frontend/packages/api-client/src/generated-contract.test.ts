@@ -1,6 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
+import type {
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  RemoveBusinessConsoleTeamMemberData,
+} from './generated/business-console/types.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
@@ -209,6 +213,29 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
       reason: string
     }>()
+  })
+
+  it('requires a non-null reason in the generated team-member removal request', () => {
+    expectTypeOf<
+      NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest
+    >().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      reason: string
+    }>()
+    expectTypeOf<RemoveBusinessConsoleTeamMemberData['body']>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      reason: string
+    }>()
+
+    const missingReason: RemoveBusinessConsoleTeamMemberData = {
+      path: { teamCode: 'T-001', userId: 'user-001' },
+      // @ts-expect-error reason is a required generated request field
+      body: { organizationId: 'org-001', environmentId: 'env-dev' },
+      url: '/api/business-console/v1/master-data/teams/{teamCode}/members/{userId}',
+    }
+    expect(missingReason.body).toBeDefined()
   })
 
   it('exports the maintenance lifecycle API through the stable business-console barrel', () => {
