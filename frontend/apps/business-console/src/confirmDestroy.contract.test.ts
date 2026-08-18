@@ -11,7 +11,8 @@ import { parse } from 'vue/compiler-sfc'
  *   → 渲染成 `DialogClose`，`@click` 里 `onOpenChange(false)` **无条件执行、不看
  *   `defaultPrevented`**。于是「失败保留原因原地重试」与「pending 期间禁点」只在控制器层成立，
  *   真 UI 走不到（#1607）。
- * - **规则 5**：`NvAlertDialog` **自身**不得带 `v-for`，也不得落在带 `v-for` 的元素子树内\n *   ——两种写法都是 N 行 N 个弹层实例（#1608）。
+ * - **规则 5**：`NvAlertDialog` **自身**不得带 `v-for`，也不得落在带 `v-for` 的元素子树内
+ *   ——两种写法都是 N 行 N 个弹层实例（#1608）。
  *
  * ## 这道门禁保证什么、不保证什么
  *
@@ -191,7 +192,7 @@ describe('confirm-destroy 写法门禁（规则 3 / 规则 5）', () => {
     ).toEqual([])
   })
 
-  it('规则 5：NvAlertDialog 不写在 v-for 子树里（白名单外零命中）', () => {
+  it('规则 5：NvAlertDialog 自身不带 v-for、也不落在 v-for 子树里（白名单外零命中）', () => {
     const offenders = hits((f) => f.loopedDialogs, LOOPED_DIALOGS)
     expect(
       offenders,
