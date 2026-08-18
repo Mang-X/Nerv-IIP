@@ -4882,7 +4882,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveProductCategoryRequest = {
-    reason?: string;
+    reason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSkillListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4938,7 +4938,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveSkillRequest = {
-    reason?: string;
+    reason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMasterDataResourceDetail = NetCorePalExtensionsDtoResponseData & {
@@ -5383,7 +5383,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest = {
     organizationId: string;
     environmentId: string;
-    reason?: string;
+    reason: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateDepartmentRequest = {
@@ -5531,7 +5531,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     isActive?: boolean;
     effectiveFromUtc?: string | null;
     createdBy: string;
-    changeReason?: string;
+    changeReason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCodeRulePreviewResponse = NetCorePalExtensionsDtoResponseData & {

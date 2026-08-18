@@ -388,7 +388,7 @@ public sealed class BusinessGatewayProxyTests
         var listMembers = await client.GetAsync("/api/business-console/v1/master-data/teams/T-001/members?organizationId=org-001&environmentId=env-dev&includeDisabled=true");
         using var removeMemberMessage = new HttpRequestMessage(
             HttpMethod.Delete,
-            "/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=transferred");
+            "/api/business-console/v1/master-data/teams/T-001/members/user-001?organizationId=org-001&environmentId=env-dev&reason=%20transferred%20");
         removeMemberMessage.Headers.Add("X-Correlation-Id", "corr-remove-member");
         removeMemberMessage.Headers.Add("X-Causation-Id", "cause-remove-member");
         removeMemberMessage.Headers.Add("Idempotency-Key", "idem-remove-member");
@@ -519,7 +519,7 @@ public sealed class BusinessGatewayProxyTests
             isActive = true,
             effectiveFromUtc = "2026-06-01T00:00:00Z",
             createdBy = "admin-001",
-            changeReason = "align plant convention",
+            changeReason = "  align plant convention  ",
         });
         var preview = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/preview", new
         {
@@ -543,6 +543,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
         Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
         Assert.Equal("admin-001", masterData.LastCodeRuleVersionRequest.CreatedBy);
+        Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
     }
 
