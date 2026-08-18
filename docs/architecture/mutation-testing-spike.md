@@ -34,8 +34,11 @@ NERV-870 的结论是**有限通过**：Stryker.NET 4.16.0 可以在当前 .NET 
 以下命令使用新的临时目录；`NERV870_TMP` 只指向本次运行拥有的目录。实际运行前先执行工具 `--help`，下列 mutation 参数均来自该帮助输出。
 
 ```bash
+set -euo pipefail
+
 NERV870_TMP_ROOT="${TMPDIR:-/tmp}"
 NERV870_TMP="$(mktemp -d "${NERV870_TMP_ROOT%/}/nerv-870-stryker.XXXXXX")"
+[[ -n "$NERV870_TMP" && -d "$NERV870_TMP" ]]
 
 dotnet tool install dotnet-stryker \
   --version 4.16.0 \
