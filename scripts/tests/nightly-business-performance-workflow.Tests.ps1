@@ -209,9 +209,9 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
             @{
                 Input = '0'
                 ExpectedThresholds = @{
-                    InventoryMaxElapsedMilliseconds = 600000
-                    MesMaxElapsedMilliseconds = 600000
-                    ErpMaxElapsedMilliseconds = 600000
+                    InventoryMaxElapsedMilliseconds = 30000
+                    MesMaxElapsedMilliseconds = 30000
+                    ErpMaxElapsedMilliseconds = 30000
                 }
                 AbsentThresholds = @('MaxElapsedMilliseconds')
             },
@@ -364,9 +364,9 @@ if ($manualMaxElapsedMilliseconds -gt 0) {
 }
 else {
     $thresholdArguments = @{
-        InventoryMaxElapsedMilliseconds = 600000
-        MesMaxElapsedMilliseconds = 600000
-        ErpMaxElapsedMilliseconds = 600000
+        InventoryMaxElapsedMilliseconds = 30000
+        MesMaxElapsedMilliseconds = 30000
+        ErpMaxElapsedMilliseconds = 30000
     }
 }
 & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
@@ -456,9 +456,9 @@ jobs:
           }
           else {
               $thresholdArguments = @{
-                  InventoryMaxElapsedMilliseconds = 600000
-                  MesMaxElapsedMilliseconds = 600000
-                  ErpMaxElapsedMilliseconds = 600000
+                  InventoryMaxElapsedMilliseconds = 30000
+                  MesMaxElapsedMilliseconds = 30000
+                  ErpMaxElapsedMilliseconds = 30000
               }
           }
           & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
@@ -477,7 +477,7 @@ jobs:
         [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
         Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
         $manualOnly = '                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds'
-        $manualWithScheduledThreshold = "                  MaxElapsedMilliseconds = `$manualMaxElapsedMilliseconds`n                  InventoryMaxElapsedMilliseconds = 600000"
+        $manualWithScheduledThreshold = "                  MaxElapsedMilliseconds = `$manualMaxElapsedMilliseconds`n                  InventoryMaxElapsedMilliseconds = 30000"
         Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
         [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
         $failure = $null
@@ -517,7 +517,7 @@ try {
             @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
             @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
             @{ Name = 'manual-threshold-binding-wrong-input'; Original = 'github.event.inputs.max_elapsed_milliseconds'; Replacement = 'github.event.inputs.wrong_max_elapsed_milliseconds' },
-            @{ Name = 'scheduled-threshold'; Original = 'InventoryMaxElapsedMilliseconds = 600000'; Replacement = 'InventoryMaxElapsedMilliseconds = 0' },
+            @{ Name = 'scheduled-threshold'; Original = 'InventoryMaxElapsedMilliseconds = 30000'; Replacement = 'InventoryMaxElapsedMilliseconds = 0' },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
