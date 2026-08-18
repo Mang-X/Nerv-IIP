@@ -1,4 +1,4 @@
-# ADR 0006: 前端工作区与目录结构
+# ADR 0006：前端工作区与目录结构
 
 - 状态：已接受
 - 日期：2026-05-13
@@ -40,7 +40,7 @@ Nerv-IIP 前端既要保留工程边界，又要适合 AI 协作与持续代码�
 2. 首批脚手架需同时落下根级 package.json、pnpm-workspace.yaml、vite.config.ts、tsconfig.base.json，以及 console 应用自己的 vite.config.ts。
 3. README、架构图与脚手架目录树必须与本 ADR 保持一致。
 
-## 范围外事项
+## 范围之外
 
 1. 不在本 ADR 中决定视觉设计系统细节。
 2. 不在本 ADR 中决定具体 UI 组件库实现方案。

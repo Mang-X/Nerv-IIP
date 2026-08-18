@@ -12,15 +12,20 @@ export class ConsoleAuthError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly code?: string,
+    readonly lockoutUntilUtc?: string,
+    readonly remainingAttempts?: number,
   ) {
     super(message)
   }
 }
 
 export interface ConsoleAuthApiMessages {
+  accountLocked?: (lockoutUntilUtc?: string) => string
   invalidCredentialsOrExpiredSession: string
   loginFallback: string
   principalFallback: string
+  remainingAttempts?: (count: number) => string
   refreshFallback: string
 }
 
@@ -105,8 +110,22 @@ function assertData<T>(
   }
 
   const status = result.response?.status
-  throw new ConsoleAuthError(
-    status === 401 ? messages.invalidCredentialsOrExpiredSession : fallback,
-    status,
-  )
+  const failureCode = result.response?.headers.get('X-Nerv-Iam-Login-Failure') ?? undefined
+  const lockoutUntilUtc = result.response?.headers.get('X-Nerv-Iam-Lockout-Until-Utc') ?? undefined
+  const remainingAttemptsHeader = result.response?.headers.get('X-Nerv-Iam-Remaining-Attempts')
+  const remainingAttempts = remainingAttemptsHeader
+    ? Number.parseInt(remainingAttemptsHeader, 10)
+    : undefined
+  const message =
+    failureCode === 'iam-account-locked' && messages.accountLocked
+      ? messages.accountLocked(lockoutUntilUtc)
+      : failureCode === 'iam-invalid-credentials' &&
+          remainingAttempts &&
+          remainingAttempts > 0 &&
+          messages.remainingAttempts
+        ? messages.remainingAttempts(remainingAttempts)
+        : status === 401
+          ? messages.invalidCredentialsOrExpiredSession
+          : fallback
+  throw new ConsoleAuthError(message, status, failureCode, lockoutUntilUtc, remainingAttempts)
 }
