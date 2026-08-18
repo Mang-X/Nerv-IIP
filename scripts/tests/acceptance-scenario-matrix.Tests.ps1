@@ -386,6 +386,55 @@ try {
         -ImpactRulesSucceeded $true
     Assert-Contract ([string]::Equals([string]$missingEntrypointMappingSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($missingEntrypointMappingSelection.scenarios).Count -eq 5) 'A missing active script entrypoint mapping must conservatively select all active/core scenarios.'
 
+    foreach ($entrypointRuleMutation in @(
+        @{ Name = 'wrong-case-kind'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.kind = 'SCRIPT' } },
+        @{ Name = 'unknown-kind'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.kind = 'container' } },
+        @{ Name = 'missing-kind'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.PSObject.Properties.Remove('kind') } },
+        @{ Name = 'non-string-kind'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.kind = 123 } },
+        @{ Name = 'non-string-script-path'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.path = 123 } },
+        @{ Name = 'non-script-entrypoint-path'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.path = 'backend/verify.ps1' } },
+        @{ Name = 'wrong-script-extension'; ScenarioIndex = 0; Apply = { param($value) $value.entrypoint.path = 'scripts/verify.sh' } },
+        @{ Name = 'fullstack-missing-scenario'; ScenarioIndex = 2; Apply = { param($value) $value.entrypoint.PSObject.Properties.Remove('scenario') } },
+        @{ Name = 'fullstack-non-string-scenario'; ScenarioIndex = 2; Apply = { param($value) $value.entrypoint.scenario = 528 } },
+        @{ Name = 'fullstack-invalid-scenario'; ScenarioIndex = 2; Apply = { param($value) $value.entrypoint.scenario = 'MAN-528' } },
+        @{ Name = 'dotnet-extra-path'; ScenarioIndex = 4; Apply = { param($value) $value.entrypoint | Add-Member -NotePropertyName path -NotePropertyValue 'scripts/verify.ps1' } }
+    )) {
+        $malformedEntrypointManifest = Copy-JsonObject $manifest
+        & $entrypointRuleMutation.Apply $malformedEntrypointManifest.scenarios[$entrypointRuleMutation.ScenarioIndex]
+        $malformedEntrypointSelection = Select-NervAcceptanceScenarioMatrix `
+            -Manifest $malformedEntrypointManifest `
+            -Event 'pull_request' `
+            -ChangedPaths @('README.md') `
+            -ImpactRulesSucceeded $true
+        Assert-Contract (
+            [string]::Equals([string]$malformedEntrypointSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
+            [string]::Equals((@($malformedEntrypointSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
+            @($malformedEntrypointSelection.scenarios).Count -eq 5
+        ) "Malformed active/core entrypoint '$($entrypointRuleMutation.Name)' must conservatively select all active/core scenarios with an impact-rules-invalid reason."
+    }
+
+    $wrongCaseEntrypointForEveryEventManifest = Copy-JsonObject $manifest
+    $wrongCaseEntrypointForEveryEventManifest.scenarios[0].entrypoint.kind = 'SCRIPT'
+    foreach ($entrypointEventCase in @(
+        @{ Event = 'push'; Parameters = @{} },
+        @{ Event = 'schedule'; Parameters = @{} },
+        @{ Event = 'workflow_dispatch'; Parameters = @{ DispatchSelection = 'full' } }
+    )) {
+        $entrypointEventParameters = @{
+            Manifest = $wrongCaseEntrypointForEveryEventManifest
+            Event = $entrypointEventCase.Event
+        }
+        foreach ($parameter in $entrypointEventCase.Parameters.GetEnumerator()) {
+            $entrypointEventParameters[$parameter.Key] = $parameter.Value
+        }
+        $malformedEntrypointEventSelection = Select-NervAcceptanceScenarioMatrix @entrypointEventParameters
+        Assert-Contract (
+            [string]::Equals([string]$malformedEntrypointEventSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
+            [string]::Equals((@($malformedEntrypointEventSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
+            @($malformedEntrypointEventSelection.scenarios).Count -eq 5
+        ) "Malformed active/core entrypoint must conservatively select active/core scenarios for event '$($entrypointEventCase.Event)'."
+    }
+
     $malformedImpactRulesManifest = Copy-JsonObject $manifest
     $malformedImpactRulesManifest.scenarios[0].impact.paths = @()
     $malformedImpactRulesSelection = Select-NervAcceptanceScenarioMatrix `
@@ -636,10 +685,21 @@ try {
 
     foreach ($invalidSameValueMutation in @(
         @{ Name = 'repository'; Property = 'repository'; Value = 'invalid'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'repository-parent-segment'; Property = 'repository'; Value = '../repo'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'repository-current-segment'; Property = 'repository'; Value = './repo'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'repository-leading-hyphen'; Property = 'repository'; Value = '-owner/repo'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'repository-trailing-hyphen'; Property = 'repository'; Value = 'owner/repo-'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'repository-empty-segment'; Property = 'repository'; Value = 'owner//repo'; ExpectedName = 'Repository'; Message = 'Planning repository' },
         @{ Name = 'tested-sha'; Property = 'testedSha'; Value = 'invalid'; ExpectedName = 'TestedSha'; Message = 'Planning testedSha' },
         @{ Name = 'run-id'; Property = 'runId'; Value = '0'; ExpectedName = 'RunId'; Message = 'Planning runId' },
         @{ Name = 'run-attempt'; Property = 'runAttempt'; Value = 0; ExpectedName = 'RunAttempt'; Message = 'Planning runAttempt' },
         @{ Name = 'manifest-path'; Property = 'manifestPath'; Value = '../matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-terminal-parent-segment'; Property = 'manifestPath'; Value = 'a/..'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-current-segment'; Property = 'manifestPath'; Value = 'a/./b'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-drive-absolute'; Property = 'manifestPath'; Value = 'C:/repo/matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-empty-segment'; Property = 'manifestPath'; Value = 'scripts//matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-backslash'; Property = 'manifestPath'; Value = 'scripts\matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-trailing-slash'; Property = 'manifestPath'; Value = 'scripts/matrix.json/'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-digest'; Property = 'manifestDigest'; Value = 'invalid'; ExpectedName = 'ManifestDigest'; Message = 'Planning manifestDigest' },
         @{ Name = 'event'; Property = 'event'; Value = 'PUSH'; ExpectedName = 'Event'; Message = 'Planning event' }
     )) {

@@ -501,6 +501,67 @@ function Test-NervAcceptanceChangedPath {
     return $true
 }
 
+function Test-NervAcceptanceRepositoryIdentifier {
+    param([AllowNull()] [object] $Repository)
+
+    if ($Repository -isnot [string]) { return $false }
+    $text = [string]$Repository
+    if ([string]::IsNullOrWhiteSpace($text) -or
+        -not [string]::Equals($text, $text.Trim(), [StringComparison]::Ordinal)) {
+        return $false
+    }
+
+    $segments = @($text.Split('/', [StringSplitOptions]::None))
+    if ($segments.Count -ne 2) { return $false }
+    for ($segmentIndex = 0; $segmentIndex -lt $segments.Count; $segmentIndex++) {
+        $segment = [string]$segments[$segmentIndex]
+        $maximumLength = if ($segmentIndex -eq 0) { 39 } else { 100 }
+        if ($segment.Length -lt 1 -or $segment.Length -gt $maximumLength) { return $false }
+
+        for ($characterIndex = 0; $characterIndex -lt $segment.Length; $characterIndex++) {
+            $code = [int][char]$segment[$characterIndex]
+            $isAlphaNumeric = ($code -ge [int][char]'0' -and $code -le [int][char]'9') -or
+                ($code -ge [int][char]'A' -and $code -le [int][char]'Z') -or
+                ($code -ge [int][char]'a' -and $code -le [int][char]'z')
+            $isAllowedPunctuation = [char]$segment[$characterIndex] -eq '-' -or
+                ($segmentIndex -eq 1 -and ([char]$segment[$characterIndex] -eq '.' -or [char]$segment[$characterIndex] -eq '_'))
+            if (-not $isAlphaNumeric -and -not $isAllowedPunctuation) { return $false }
+            if (($characterIndex -eq 0 -or $characterIndex -eq $segment.Length - 1) -and -not $isAlphaNumeric) { return $false }
+        }
+        if ($segmentIndex -eq 0 -and $segment.Contains('--', [StringComparison]::Ordinal)) { return $false }
+    }
+    return $true
+}
+
+function Test-NervAcceptanceEntrypointRule {
+    param([AllowNull()] [object] $Entrypoint)
+
+    if ($null -eq $Entrypoint -or $Entrypoint -isnot [pscustomobject] -or
+        -not (Test-NervAcceptanceObjectProperty -Object $Entrypoint -Name 'kind') -or
+        $Entrypoint.kind -isnot [string]) {
+        return $false
+    }
+
+    $kind = [string]$Entrypoint.kind
+    if ([string]::Equals($kind, 'script', [StringComparison]::Ordinal)) {
+        return @($Entrypoint.PSObject.Properties).Count -eq 2 -and
+            (Test-NervAcceptanceObjectProperty -Object $Entrypoint -Name 'path') -and
+            $Entrypoint.path -is [string] -and
+            (Test-NervAcceptanceChangedPath -Path $Entrypoint.path) -and
+            [string]$Entrypoint.path -cmatch '^scripts/.+\.ps1$'
+    }
+    if ([string]::Equals($kind, 'fullstack', [StringComparison]::Ordinal)) {
+        return @($Entrypoint.PSObject.Properties).Count -eq 2 -and
+            (Test-NervAcceptanceObjectProperty -Object $Entrypoint -Name 'scenario') -and
+            $Entrypoint.scenario -is [string] -and
+            [string]$Entrypoint.scenario -cmatch '^man-[0-9]+$'
+    }
+    if ([string]::Equals($kind, 'dotnet', [StringComparison]::Ordinal)) {
+        return @($Entrypoint.PSObject.Properties).Count -eq 1
+    }
+    return $false
+}
+
 function Test-NervAcceptanceGlobalImpactPath {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -558,6 +619,11 @@ function Select-NervAcceptanceScenarioMatrix {
         [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
     }))
     $activeCore = @($active | Where-Object { [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) })
+    foreach ($scenario in $activeCore) {
+        if (-not (Test-NervAcceptanceEntrypointRule -Entrypoint $scenario.entrypoint)) {
+            return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+        }
+    }
 
     if ([string]::Equals($Event, 'push', [StringComparison]::Ordinal)) {
         return [pscustomobject]@{ selectionMode = 'main-active-core'; reasons = @('main'); scenarios = @($activeCore) }
@@ -625,9 +691,6 @@ function Select-NervAcceptanceScenarioMatrix {
         }
 
         $entrypoint = $scenario.entrypoint
-        if ($null -eq $entrypoint -or $entrypoint -isnot [pscustomobject] -or $entrypoint.kind -isnot [string]) {
-            return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
-        }
         if ([string]::Equals([string]$entrypoint.kind, 'script', [StringComparison]::Ordinal)) {
             if (-not (Test-NervAcceptanceObjectProperty -Object $entrypoint -Name 'path') -or
                 -not (Test-NervAcceptanceChangedPath -Path $entrypoint.path)) {
@@ -840,12 +903,12 @@ function Assert-NervAcceptancePlanningProvenance {
         [Parameter(Mandatory)] [string] $Event
     )
 
-    if ($Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Planning repository must be an owner/name identifier.' }
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) { throw 'Planning repository must be a canonical owner/name identifier.' }
     if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'Planning testedSha must be a lowercase 40-character Git SHA.' }
     if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'Planning runId must be a positive decimal identifier.' }
     if ($RunAttempt -le 0) { throw 'Planning runAttempt must be positive.' }
     Assert-NervAcceptanceString -Value $ManifestPath -Context 'planning manifestPath'
-    if ($ManifestPath.StartsWith('/', [StringComparison]::Ordinal) -or $ManifestPath.Contains('\', [StringComparison]::Ordinal) -or $ManifestPath.Contains('../', [StringComparison]::Ordinal)) {
+    if (-not (Test-NervAcceptanceChangedPath -Path $ManifestPath)) {
         throw 'Planning manifestPath must be normalized and repository-relative.'
     }
     if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'Planning manifestDigest must be a lowercase SHA-256 digest.' }
