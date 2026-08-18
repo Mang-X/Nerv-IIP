@@ -322,7 +322,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 order.OrganizationId,
                 order.EnvironmentId,
                 ApprovalTemplateCodes.SalesCreditRelease,
-                "business-erp",
+                ApprovalSourceServices.BusinessErp,
                 "sales-order-credit-release",
                 order.SalesOrderNo,
                 null,

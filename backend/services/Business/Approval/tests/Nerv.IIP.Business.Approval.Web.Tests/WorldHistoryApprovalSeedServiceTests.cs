@@ -387,6 +387,74 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
         Assert.Contains(exception.Failures, failure => failure.Contains("未落库", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// #1683：落库事实里的来源服务 / 单据类型必须等于审批契约常量——它们是 ERP 回写消费侧的分流依据，
+    /// 错一个字就静默 return（采购审批通过后订单永停 pending，无日志、无异常、无死信）。
+    /// </summary>
+    [Fact]
+    public async Task Seeded_purchase_chains_carry_the_contract_source_service()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var purchaseChains = await db.ApprovalChains
+            .AsNoTracking()
+            .Where(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode)
+            .ToArrayAsync();
+
+        Assert.NotEmpty(purchaseChains);
+        Assert.All(purchaseChains, chain =>
+        {
+            Assert.Equal(ApprovalSourceServices.BusinessErp, chain.DocumentReference.SourceService);
+            Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, chain.DocumentReference.DocumentType);
+        });
+    }
+
+    /// <summary>
+    /// #1683 fail-closed：把一条落库链的来源服务改回事故值 <c>erp</c>，校验器必须逐字抓出来
+    /// （此前校验器完全不看 sourceService / documentType，词表漂移对它结构性无感知）。
+    /// </summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_a_chain_source_service_drifts()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var victim = await db.ApprovalChains
+            .Where(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode)
+            .FirstAsync();
+        db.Entry(victim).Reference(x => x.DocumentReference).TargetEntry!
+            .Property(x => x.SourceService).CurrentValue = "erp";
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryApprovalConsistencyException>(() =>
+            new WorldHistoryApprovalConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("来源服务应为", StringComparison.Ordinal));
+    }
+
+    /// <summary>#1683 fail-closed：单据类型漂移同样必须被逐字抓出。</summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_a_chain_document_type_drifts()
+    {
+        await using var db = CreateDbContext();
+        await new WorldHistoryApprovalSeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+
+        var victim = await db.ApprovalChains
+            .Where(x => x.TemplateCode == WorldHistoryApprovalSpec.PurchaseTemplateCode)
+            .FirstAsync();
+        db.Entry(victim).Reference(x => x.DocumentReference).TargetEntry!
+            .Property(x => x.DocumentType).CurrentValue = "erp-purchase-order";
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryApprovalConsistencyException>(() =>
+            new WorldHistoryApprovalConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("单据类型应为", StringComparison.Ordinal));
+    }
+
     #region 审批委托（approval.approval_delegations）
 
     /// <summary>

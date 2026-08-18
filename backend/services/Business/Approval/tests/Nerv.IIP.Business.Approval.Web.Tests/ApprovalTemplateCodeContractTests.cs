@@ -20,6 +20,39 @@ namespace Nerv.IIP.Business.Approval.Web.Tests;
 /// </summary>
 public sealed class ApprovalTemplateCodeContractTests
 {
+    /// <summary>
+    /// #1683 三方漂移契约（来源服务）：ERP 发起侧 / 审批种子侧 / ERP 回写消费侧共用
+    /// <see cref="ApprovalSourceServices.BusinessErp"/>。种子此前写 <c>erp</c>，回写消费侧只认
+    /// <c>business-erp</c>，不匹配即静默 <c>return</c>——采购审批通过后订单永停 pending 且无任何报错。
+    /// 谁把种子常量改回去，本用例必红。
+    /// </summary>
+    [Fact]
+    public void Seed_spec_and_contract_pin_the_same_purchase_source_service()
+    {
+        Assert.Equal("business-erp", ApprovalSourceServices.BusinessErp);
+        Assert.Equal(ApprovalSourceServices.BusinessErp, WorldHistoryApprovalSpec.PurchaseSourceService);
+    }
+
+    /// <summary>
+    /// #1683：常量对上还不够——真正落库的是 <c>BuildApprovalFacts</c> 产出的事实流。
+    /// 每条采购审批事实的来源服务 / 单据类型都必须逐字等于契约常量（回写消费侧的分流依据）。
+    /// </summary>
+    [Fact]
+    public void Purchase_approval_facts_carry_the_contract_source_service()
+    {
+        var facts = WorldHistoryApprovalSpec.BuildApprovalFacts(new DateOnly(2026, 7, 26), 0.2d);
+        var purchaseFacts = facts
+            .Where(x => string.Equals(x.TemplateCode, WorldHistoryApprovalSpec.PurchaseTemplateCode, StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(purchaseFacts);
+        Assert.All(purchaseFacts, fact =>
+        {
+            Assert.Equal(ApprovalSourceServices.BusinessErp, fact.SourceService);
+            Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, fact.DocumentType);
+        });
+    }
+
     /// <summary>任何一侧改动常量或种子字面量，本用例必红：权威码值 = 落库事实 APT-WB-PO-001。</summary>
     [Fact]
     public void Seed_spec_and_contract_pin_the_same_purchase_template_vocabulary()

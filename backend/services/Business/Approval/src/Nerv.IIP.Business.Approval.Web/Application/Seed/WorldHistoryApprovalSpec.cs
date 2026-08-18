@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 ///
 /// 两条审批来源全部**引用已有的共享形状**，审批域不自造任何业务单据：
 /// <list type="number">
-/// <item>采购订单审批（<c>purchase-order</c> / <c>erp</c>）：逐张覆盖一期 ERP 的 <c>PO-2026-####</c>，
+/// <item>采购订单审批（<c>purchase-order</c> / <c>business-erp</c>）：逐张覆盖一期 ERP 的 <c>PO-2026-####</c>，
 /// 发起人是经营部 2 名采购（设定集 §5 EMP-057/EMP-058），审批人是厂长（<c>user-admin</c>）；</item>
 /// <item>NCR 处置审批（<c>ncr-disposition</c> / <c>quality</c>）：引用二期质量域的 <c>NCR-2026-####</c> 号段，
 /// 发起人是质量工程师（EMP-040/EMP-041），审批人是质量主管（EMP-033 胡玉兰）。</item>
@@ -27,7 +27,13 @@ public static class WorldHistoryApprovalSpec
     /// </summary>
     public const string PurchaseTemplateCode = ApprovalTemplateCodes.PurchaseOrderRelease;
     public const string PurchaseDocumentType = ApprovalDocumentTypes.PurchaseOrder;
-    public const string PurchaseSourceService = "erp";
+
+    /// <summary>
+    /// 采购审批链的来源服务：取自审批契约的唯一事实来源，ERP 发起侧 / 种子 / ERP 回写消费侧三方共用
+    /// （#1683：种子此前写 <c>erp</c>，回写消费侧只认 <c>business-erp</c>，不匹配即静默 <c>return</c>——
+    /// 采购审批通过后订单永停 pending，且无日志、无异常、无死信）。
+    /// </summary>
+    public const string PurchaseSourceService = ApprovalSourceServices.BusinessErp;
 
     /// <summary>
     /// NCR 处置评审审批模板码：取自审批契约的唯一事实来源（#1684 收敛）——该码现在还参与

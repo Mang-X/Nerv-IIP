@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
+  CreateBusinessConsoleCodeRuleVersionData,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
@@ -19,6 +20,7 @@ import type {
   BusinessConsoleConnectorTagCoverageItem,
   BusinessConsoleConnectorTagCoverageRequest,
   BusinessConsoleConnectorTagCoverageResponse,
+  BusinessConsoleCreateCodeRuleVersionRequest,
   BusinessConsoleCreateErpPurchaseRequisitionEnvelope,
   BusinessConsoleCreateErpPurchaseRequisitionResponse,
   BusinessConsoleConfigureErpWorkCenterCostRateRequest,
@@ -213,6 +215,25 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
       reason: string
     }>()
+  })
+
+  it('requires a non-null change reason for code-rule versions through the stable boundary', () => {
+    expectTypeOf<
+      Pick<BusinessConsoleCreateCodeRuleVersionRequest, 'changeReason'>
+    >().toEqualTypeOf<{ changeReason: string }>()
+    expectTypeOf<
+      CreateBusinessConsoleCodeRuleVersionData['body']
+    >().toEqualTypeOf<BusinessConsoleCreateCodeRuleVersionRequest>()
+
+    // @ts-expect-error changeReason is a required generated request field
+    const missingChangeReason: BusinessConsoleCreateCodeRuleVersionRequest = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      displayName: 'SKU 编码规则',
+      segments: [],
+      createdBy: 'user-admin',
+    }
+    expect(missingChangeReason).toBeDefined()
   })
 
   it('requires a non-null reason in the generated team-member removal request', () => {
