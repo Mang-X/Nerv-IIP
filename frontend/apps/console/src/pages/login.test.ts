@@ -71,11 +71,7 @@ describe('Login page', () => {
 
   it('formats the lockout deadline as local HH:mm', () => {
     expect(
-      formatConsoleLockoutMessage(
-        '2026-08-18T08:30:00.0000000+00:00',
-        'zh-CN',
-        'Asia/Shanghai',
-      ),
+      formatConsoleLockoutMessage('2026-08-18T08:30:00.0000000+00:00', 'zh-CN', 'Asia/Shanghai'),
     ).toBe('账户已锁定，请于 16:30 后重试。')
   })
 
