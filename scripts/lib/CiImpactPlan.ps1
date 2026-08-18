@@ -44,6 +44,14 @@ function Get-NervCiImpactPlan {
     $erpAcceptanceBusinessServiceNameSet = [Collections.Generic.HashSet[string]]::new(
         [string[]]@('Erp', 'DemandPlanning', 'MasterData'),
         [StringComparer]::Ordinal)
+    $acceptanceScenarioMatrixOwningPathSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'scripts/acceptance-scenario-matrix.json'
+            'scripts/lib/AcceptanceScenarioMatrix.ps1'
+            'scripts/plan-acceptance-scenario-matrix.ps1'
+            'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
+        ),
+        [StringComparer]::Ordinal)
     $knownBusinessServices = @($knownBusinessServiceNames | ForEach-Object { ConvertTo-NervCiImpactServiceId -Name $_ })
     $flags = [ordered]@{
         backend = $false
@@ -337,6 +345,10 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
+            if ($acceptanceScenarioMatrixOwningPathSet.Contains($path)) {
+                foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+                continue
+            }
             if ([string]::Equals($path, 'scripts/run-full-chain-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/FullChainTestLane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/full-chain-test-lane.json', [StringComparison]::Ordinal) -or
