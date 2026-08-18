@@ -1112,7 +1112,7 @@ WMS 收货、上架、拣货、复核发货与盘点五类列表已接入 WMS �
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。
 2. 高风险动作审批的人工确认 UI、细粒度权限 scope 和批量/恢复类动作策略。
 3. Sdk.Observability 的完整实现和诊断附件链路。
-4. AI Integration 与 Knowledge 的具体代码骨架。
+4. AI Integration 与 Knowledge 的具体代码骨架，以及它们依赖的 Qdrant 接入平台级 AppHost；ADR 0008 实施说明第 2 条把 Qdrant 列入首批至少覆盖范围，`infra/aspire/Nerv.IIP.AppHost/Program.cs` 当前未注册该资源，属未达成的交付缺口而非决策变更。
 5. Notification 的模板映射、通知合并/静默窗口以及跨服务 DLQ 统一看板；边界口径应遵守 docs/architecture/notification-baseline.md。
 6. KnowledgeSource 的完整管理后台，但生命周期口径应遵守 docs/architecture/knowledge-source-lifecycle.md。
 7. 复杂 IAM 授权能力，包括跨组织委派、临时授权、完整 OAuth/OIDC 协议矩阵、MFA、SSO、细粒度 ABAC 与第三方应用市场。
