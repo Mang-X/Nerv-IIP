@@ -20,7 +20,7 @@
 #     - .NET SDK 10
 #     - Docker Desktop
 #     - Node.js 22.22.3
-#     - pnpm 11.13.1
+#     - pnpm 11.22.0
 
 param(
   [switch]$UsePostgres
