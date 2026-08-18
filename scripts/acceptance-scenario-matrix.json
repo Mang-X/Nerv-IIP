@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 2,
+  "lane": "full-chain",
+  "planningBudget": {
+    "restorePerProjectSeconds": 600,
+    "discoveryPerProjectSeconds": 600,
+    "artifactWriteSeconds": 60,
+    "safetyMarginSeconds": 300
+  },
+  "scenarios": [
+    {
+      "id": "sales-order-demand",
+      "v1Alias": "sales-order-demand-planning",
+      "services": ["ERP", "DemandPlanning", "MasterData"],
+      "ownerIssue": "#1645",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.DemandPlanning"],
+      "entrypoint": {
+        "kind": "script",
+        "path": "scripts/verify-erp-sales-order-demand-planning.ps1"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/services/erp/**", "backend/services/demand-planning/**", "backend/services/master-data/**", "backend/common/Nerv.IIP.Contracts.Erp/**", "backend/common/Nerv.IIP.Contracts.DemandPlanning/**"],
+        "owners": ["ERP", "DemandPlanning", "MasterData"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 900,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["erp", "demand_planning", "master_data"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
+      "id": "wms-delivery-erp",
+      "v1Alias": "erp-wms-delivery-completion",
+      "services": ["WMS", "ERP", "Inventory"],
+      "ownerIssue": "#1240",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.Wms", "Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.Inventory"],
+      "entrypoint": {
+        "kind": "script",
+        "path": "scripts/verify-erp-wms-delivery-completion.ps1"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/services/wms/**", "backend/services/erp/**", "backend/services/inventory/**", "backend/common/Nerv.IIP.Contracts.Wms/**", "backend/common/Nerv.IIP.Contracts.Erp/**"],
+        "owners": ["WMS", "ERP", "Inventory"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 900,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["erp", "wms", "inventory"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
+      "id": "mes-produced-lot-inventory",
+      "v1Alias": "mes-inventory-produced-lot",
+      "services": ["MES", "Inventory"],
+      "ownerIssue": "#1240",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.Mes", "Nerv.IIP.Contracts.Inventory"],
+      "entrypoint": {
+        "kind": "fullstack",
+        "scenario": "man-528"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.MesInventoryProducedLotPostgresRedisAcceptanceTests.External_process_proves_exact_produced_lot_link_for_success_and_explicit_failure"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/services/mes/**", "backend/services/inventory/**", "backend/common/Nerv.IIP.Contracts.Mes/**", "backend/common/Nerv.IIP.Contracts.Inventory/**", "frontend/apps/business-console/**"],
+        "owners": ["MES", "Inventory"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 1200,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["mes", "inventory"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
+      "id": "telemetry-runtime-maintenance",
+      "v1Alias": "maintenance-runtime-hours",
+      "services": ["IndustrialTelemetry", "Maintenance"],
+      "ownerIssue": "#1240",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.IndustrialTelemetry", "Nerv.IIP.Contracts.Maintenance"],
+      "entrypoint": {
+        "kind": "fullstack",
+        "scenario": "man-440"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.MaintenanceRuntimeHoursPostgresRedisAcceptanceTests.Scheduler_generates_plan_work_order_only_after_real_runtime_crosses_threshold"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/services/industrial-telemetry/**", "backend/services/maintenance/**", "backend/common/Nerv.IIP.Contracts.IndustrialTelemetry/**", "backend/common/Nerv.IIP.Contracts.Maintenance/**"],
+        "owners": ["IndustrialTelemetry", "Maintenance"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 1200,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["maintenance", "industrial_telemetry"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
+      "id": "erp-return-closure",
+      "v1Alias": "erp-return-closure",
+      "services": ["ERP", "WMS"],
+      "ownerIssue": "#1240",
+      "status": "active",
+      "tier": "core",
+      "contracts": ["Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.Wms"],
+      "entrypoint": {
+        "kind": "dotnet"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": false,
+        "externalProcesses": false
+      },
+      "impact": {
+        "paths": ["backend/services/erp/**", "backend/services/wms/**", "backend/common/Nerv.IIP.Contracts.Erp/**", "backend/common/Nerv.IIP.Contracts.Wms/**"],
+        "owners": ["ERP", "WMS"]
+      },
+      "runPolicy": {
+        "pullRequest": "impact",
+        "main": "always",
+        "nightly": "always",
+        "workflowDispatch": "selectable"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 600,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["erp", "wms"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    },
+    {
+      "id": "equipment-unavailable-scheduling-mes",
+      "v1Alias": null,
+      "services": ["MasterData", "Scheduling", "MES"],
+      "ownerIssue": "#1240",
+      "status": "blocked",
+      "tier": "extended",
+      "blockedReason": "No stable entrypoint yet proves real transport and the cross-service business terminal state for unavailable equipment.",
+      "contracts": ["Nerv.IIP.Contracts.MasterData", "Nerv.IIP.Contracts.Scheduling", "Nerv.IIP.Contracts.Mes"],
+      "entrypoint": {
+        "kind": "dotnet"
+      },
+      "testProjects": [
+        {
+          "path": "backend/tests/Nerv.IIP.Business.SchedulingMes.FullChain.Tests/Nerv.IIP.Business.SchedulingMes.FullChain.Tests.csproj",
+          "frozenTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.EquipmentUnavailableSchedulingMesPostgresRedisAcceptanceTests.Unavailable_equipment_invalidates_schedule_and_blocks_mes_dispatch_until_replanned"]
+        }
+      ],
+      "dependencies": {
+        "postgres": true,
+        "redis": true,
+        "externalProcesses": true
+      },
+      "impact": {
+        "paths": ["backend/services/master-data/**", "backend/services/scheduling/**", "backend/services/mes/**", "backend/common/Nerv.IIP.Contracts.MasterData/**", "backend/common/Nerv.IIP.Contracts.Scheduling/**", "backend/common/Nerv.IIP.Contracts.Mes/**"],
+        "owners": ["MasterData", "Scheduling", "MES"]
+      },
+      "runPolicy": {
+        "pullRequest": "never",
+        "main": "never",
+        "nightly": "never",
+        "workflowDispatch": "forbidden"
+      },
+      "expectedRuntimeTestCount": 1,
+      "executionBudget": {
+        "dependencyReadinessSeconds": 360,
+        "executionTimeoutSeconds": 1800,
+        "diagnosticsSeconds": 300,
+        "cleanupSeconds": 300,
+        "evidenceWriteSeconds": 60,
+        "safetyMarginSeconds": 300
+      },
+      "diagnosticProtocol": {
+        "schemas": ["master_data", "scheduling", "mes"],
+        "captureBeforeCleanup": true,
+        "redactSecrets": true
+      },
+      "evidenceProtocol": {
+        "machineReadableResult": "trx",
+        "exactIdentitySet": true,
+        "incrementalSummary": true,
+        "requireBusinessKeys": true,
+        "requireDependencyVersions": true
+      },
+      "cleanupProtocol": {
+        "ownedResourcesOnly": true,
+        "requireZeroRemaining": true,
+        "preserveDiagnosticsBeforeCleanup": true,
+        "prohibitedActions": ["broad-process-kill", "unknown-database-delete", "docker-prune", "redis-flushall"]
+      }
+    }
+  ]
+}
