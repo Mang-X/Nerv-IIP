@@ -48,13 +48,13 @@ jobs:
         timeout-minutes: 20
         shell: pwsh
         run: |
-          $commonArguments = @(
-              '-Scenario', 'all',
-              '-Profile', 'nightly',
-              '-Rows', 25,
-              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
-              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
-          )
+          $commonArguments = @{
+              Scenario = 'all'
+              Profile = 'nightly'
+              Rows = 25
+              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
+              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
+          }
           $manualMaxElapsedMilliseconds = 0
           $manualInputParsed = [int]::TryParse(
               [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
@@ -66,17 +66,16 @@ jobs:
               throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
           }
           if ($manualMaxElapsedMilliseconds -gt 0) {
-              $thresholdArguments = @(
-                  '-MaxElapsedMilliseconds',
-                  $manualMaxElapsedMilliseconds
-              )
+              $thresholdArguments = @{
+                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
+              }
           }
           else {
-              $thresholdArguments = @(
-                  '-InventoryMaxElapsedMilliseconds', 600000,
-                  '-MesMaxElapsedMilliseconds', 600000,
-                  '-ErpMaxElapsedMilliseconds', 600000
-              )
+              $thresholdArguments = @{
+                  InventoryMaxElapsedMilliseconds = 600000
+                  MesMaxElapsedMilliseconds = 600000
+                  ErpMaxElapsedMilliseconds = 600000
+              }
           }
           & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
       - uses: actions/upload-artifact@v4

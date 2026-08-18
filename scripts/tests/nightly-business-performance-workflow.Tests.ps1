@@ -16,6 +16,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $workflowPath = Join-Path $repoRoot '.github/workflows/nightly-business-performance.yml'
 $ciWorkflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$verifierPath = Join-Path $repoRoot 'scripts/verify-business-performance-baseline.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 function Assert-WorkflowContract {
@@ -131,33 +132,65 @@ function Invoke-NightlyBusinessPerformanceRunFixture {
     )
 
     $runBlock = Get-NightlyBusinessPerformanceRunBlock -Path $Path
-    $verifierInvocation = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'
-    Assert-WorkflowContract ([regex]::Matches($runBlock, [regex]::Escape($verifierInvocation)).Count -eq 1) 'Performance run fixture must replace exactly one governed verifier invocation.'
-    $recordingInvocation = @'
-$script:nightlyVerifierInvoked = $true
-$script:nightlyThresholdArguments = @($thresholdArguments)
-'@.Trim()
-    $instrumentedRunBlock = $runBlock.Replace($verifierInvocation, $recordingInvocation)
-    $script:nightlyVerifierInvoked = $false
-    $script:nightlyThresholdArguments = @()
+    $verifierTarget = './scripts/verify-business-performance-baseline.ps1'
+    Assert-WorkflowContract ([regex]::Matches($runBlock, [regex]::Escape($verifierTarget)).Count -eq 1) 'Performance run fixture must replace exactly one governed verifier target.'
+
+    $tokens = $null
+    $parseErrors = $null
+    $verifierAst = [Management.Automation.Language.Parser]::ParseFile($verifierPath, [ref]$tokens, [ref]$parseErrors)
+    Assert-WorkflowContract ($parseErrors.Count -eq 0 -and $null -ne $verifierAst.ParamBlock) 'The production business performance verifier must expose one parseable parameter block.'
+
+    $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-verifier-binding-$([Guid]::NewGuid().ToString('N'))"
+    $fakeVerifierPath = Join-Path $fixtureRoot 'fake-business-performance-verifier.ps1'
+    $fakeVerifier = @"
+[CmdletBinding()]
+$($verifierAst.ParamBlock.Extent.Text)
+
+[pscustomobject] ([hashtable] `$PSBoundParameters)
+"@
+    [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    [IO.File]::WriteAllText($fakeVerifierPath, $fakeVerifier, [Text.UTF8Encoding]::new($false))
+
+    $instrumentedRunBlock = $runBlock.Replace($verifierTarget, '$nightlyFakeVerifierPath')
+    $nightlyFakeVerifierPath = $fakeVerifierPath
+    $invocations = @()
     $failure = $null
 
     try {
-        Invoke-WithScopedEnvironment -Variables @{
-            MANUAL_MAX_ELAPSED_MILLISECONDS = $ManualThreshold
-        } -ScriptBlock {
-            & ([scriptblock]::Create($instrumentedRunBlock))
+        try {
+            $invocations = @(Invoke-WithScopedEnvironment -Variables @{
+                    MANUAL_MAX_ELAPSED_MILLISECONDS = $ManualThreshold
+                } -ScriptBlock {
+                    & ([scriptblock]::Create($instrumentedRunBlock))
+                })
+        }
+        catch {
+            $failure = $_
         }
     }
-    catch {
-        $failure = $_
+    finally {
+        if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
     }
 
     return [pscustomobject]@{
         Failure = $failure
-        VerifierInvoked = $script:nightlyVerifierInvoked
-        ThresholdArguments = @($script:nightlyThresholdArguments)
+        InvocationCount = $invocations.Count
+        BoundParameters = if ($invocations.Count -eq 1) { $invocations[0] } else { $null }
     }
+}
+
+function Assert-NightlyBoundParameter {
+    param(
+        [Parameter(Mandatory)] [object] $BoundParameters,
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [object] $ExpectedValue,
+        [Parameter(Mandatory)] [type] $ExpectedType
+    )
+
+    $property = $BoundParameters.PSObject.Properties[$Name]
+    Assert-WorkflowContract ($null -ne $property) "The fake verifier binder must receive named parameter '$Name'."
+    Assert-WorkflowContract ($property.Value.GetType() -eq $ExpectedType) "Bound parameter '$Name' must have runtime type '$($ExpectedType.FullName)'. Actual: $($property.Value.GetType().FullName)"
+    Assert-WorkflowContract ([object]::Equals($property.Value, $ExpectedValue)) "Bound parameter '$Name' must equal '$ExpectedValue'. Actual: $($property.Value)"
 }
 
 function Test-NightlyBusinessPerformanceInvalidManualThresholds {
@@ -165,7 +198,7 @@ function Test-NightlyBusinessPerformanceInvalidManualThresholds {
         $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $workflowPath -ManualThreshold $invalidThreshold
         Assert-WorkflowContract ($null -ne $result.Failure) "Manual threshold '$invalidThreshold' must fail before invoking the verifier."
         Assert-WorkflowContract ($result.Failure.Exception.Message.Contains('must be an invariant integer greater than or equal to 0', [StringComparison]::Ordinal)) "Manual threshold '$invalidThreshold' must produce the governed deterministic diagnostic. Actual: $($result.Failure.Exception.Message)"
-        Assert-WorkflowContract (-not $result.VerifierInvoked) "Manual threshold '$invalidThreshold' must not invoke the verifier."
+        Assert-WorkflowContract ($result.InvocationCount -eq 0) "Manual threshold '$invalidThreshold' must not invoke the verifier."
     }
 
     Write-Host 'Invalid manual threshold behavior tests passed.'
@@ -175,26 +208,79 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
     foreach ($testCase in @(
             @{
                 Input = '0'
-                ExpectedArguments = @(
-                    '-InventoryMaxElapsedMilliseconds', '600000',
-                    '-MesMaxElapsedMilliseconds', '600000',
-                    '-ErpMaxElapsedMilliseconds', '600000'
-                )
+                ExpectedThresholds = @{
+                    InventoryMaxElapsedMilliseconds = 600000
+                    MesMaxElapsedMilliseconds = 600000
+                    ErpMaxElapsedMilliseconds = 600000
+                }
+                AbsentThresholds = @('MaxElapsedMilliseconds')
             },
             @{
                 Input = '1'
-                ExpectedArguments = @('-MaxElapsedMilliseconds', '1')
+                ExpectedThresholds = @{ MaxElapsedMilliseconds = 1 }
+                AbsentThresholds = @('InventoryMaxElapsedMilliseconds', 'MesMaxElapsedMilliseconds', 'ErpMaxElapsedMilliseconds')
             }
         )) {
         $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $workflowPath -ManualThreshold $testCase.Input
         Assert-WorkflowContract ($null -eq $result.Failure) "Manual threshold '$($testCase.Input)' must execute its governed threshold mode. Actual failure: $($result.Failure)"
-        Assert-WorkflowContract $result.VerifierInvoked "Manual threshold '$($testCase.Input)' must invoke the verifier exactly once."
-        $actualArguments = @($result.ThresholdArguments | ForEach-Object { [string]$_ }) -join "`n"
-        $expectedArguments = @($testCase.ExpectedArguments) -join "`n"
-        Assert-WorkflowContract ([string]::Equals($actualArguments, $expectedArguments, [StringComparison]::Ordinal)) "Manual threshold '$($testCase.Input)' must pass only its governed threshold arguments. Actual: $actualArguments"
+        Assert-WorkflowContract ($result.InvocationCount -eq 1) "Manual threshold '$($testCase.Input)' must invoke the fake verifier exactly once through the real PowerShell binder."
+
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Scenario' -ExpectedValue 'all' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Profile' -ExpectedValue 'nightly' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Rows' -ExpectedValue 25 -ExpectedType ([int])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'MetricsOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/metrics.jsonl' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'SummaryOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/summary.json' -ExpectedType ([string])
+
+        foreach ($expectedThreshold in $testCase.ExpectedThresholds.GetEnumerator()) {
+            Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name $expectedThreshold.Key -ExpectedValue $expectedThreshold.Value -ExpectedType ([int])
+        }
+        foreach ($absentThreshold in $testCase.AbsentThresholds) {
+            Assert-WorkflowContract ($null -eq $result.BoundParameters.PSObject.Properties[$absentThreshold]) "Manual threshold '$($testCase.Input)' must not bind '$absentThreshold'."
+        }
+        foreach ($absentCommonParameter in @('ConnectionString', 'SkipRestore')) {
+            Assert-WorkflowContract ($null -eq $result.BoundParameters.PSObject.Properties[$absentCommonParameter]) "Nightly workflow must not bind optional verifier parameter '$absentCommonParameter'."
+        }
+        $expectedBindingCount = 5 + $testCase.ExpectedThresholds.Count
+        Assert-WorkflowContract (@($result.BoundParameters.PSObject.Properties).Count -eq $expectedBindingCount) "Manual threshold '$($testCase.Input)' must bind exactly $expectedBindingCount governed parameters."
     }
 
-    Write-Host 'Manual threshold mode behavior tests passed.'
+    Write-Host 'Manual threshold mode real-binder behavior tests passed.'
+}
+
+function Test-NightlyBusinessPerformancePositionalArrayRegression {
+    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-positional-$([Guid]::NewGuid().ToString('N')).yml"
+    $workflowText = [IO.File]::ReadAllText($workflowPath)
+    $namedCommonArguments = @'
+          $commonArguments = @{
+              Scenario = 'all'
+              Profile = 'nightly'
+              Rows = 25
+              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
+              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
+          }
+'@
+    $positionalCommonArguments = @'
+          $commonArguments = @(
+              '-Scenario', 'all',
+              '-Profile', 'nightly',
+              '-Rows', 25,
+              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
+              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
+          )
+'@
+    Assert-WorkflowContract ($workflowText.Contains($namedCommonArguments, [StringComparison]::Ordinal)) 'Positional-array regression fixture must match the canonical named common arguments.'
+
+    try {
+        [IO.File]::WriteAllText($fixturePath, $workflowText.Replace($namedCommonArguments, $positionalCommonArguments), [Text.UTF8Encoding]::new($false))
+        $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $fixturePath -ManualThreshold '0'
+        Assert-WorkflowContract ($null -ne $result.Failure) 'Restoring positional array splatting must fail through the fake verifier real parameter binder.'
+        Assert-WorkflowContract ($result.Failure.Exception.Message.Contains("parameter 'Rows'", [StringComparison]::Ordinal) -and $result.Failure.Exception.Message.Contains('nightly', [StringComparison]::Ordinal)) "Positional array splatting must reproduce the hosted Rows/nightly binding failure. Actual: $($result.Failure.Exception.Message)"
+        Assert-WorkflowContract ($result.InvocationCount -eq 0) 'A binder failure must prevent the fake verifier body from running.'
+        Write-Host 'Historical positional-array binder regression test passed.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
+    }
 }
 
 function Assert-NightlyBusinessPerformanceWorkflow {
@@ -254,13 +340,13 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     $performanceRun = [string](Get-WorkflowProperty -Object $performance[0] -Name 'run')
     $performanceCode = @($performanceRun -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -notmatch '^\s*(#|$)' }) -join "`n"
     $expectedPerformanceCode = @'
-$commonArguments = @(
-    '-Scenario', 'all',
-    '-Profile', 'nightly',
-    '-Rows', 25,
-    '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
-    '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
-)
+$commonArguments = @{
+    Scenario = 'all'
+    Profile = 'nightly'
+    Rows = 25
+    MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
+    SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
+}
 $manualMaxElapsedMilliseconds = 0
 $manualInputParsed = [int]::TryParse(
     [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
@@ -272,17 +358,16 @@ if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
     throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
 }
 if ($manualMaxElapsedMilliseconds -gt 0) {
-    $thresholdArguments = @(
-        '-MaxElapsedMilliseconds',
-        $manualMaxElapsedMilliseconds
-    )
+    $thresholdArguments = @{
+        MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
+    }
 }
 else {
-    $thresholdArguments = @(
-        '-InventoryMaxElapsedMilliseconds', 600000,
-        '-MesMaxElapsedMilliseconds', 600000,
-        '-ErpMaxElapsedMilliseconds', 600000
-    )
+    $thresholdArguments = @{
+        InventoryMaxElapsedMilliseconds = 600000
+        MesMaxElapsedMilliseconds = 600000
+        ErpMaxElapsedMilliseconds = 600000
+    }
 }
 & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
 '@.Trim()
@@ -347,13 +432,13 @@ jobs:
         timeout-minutes: 20
         shell: pwsh
         run: |
-          $commonArguments = @(
-              '-Scenario', 'all',
-              '-Profile', 'nightly',
-              '-Rows', 25,
-              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
-              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
-          )
+          $commonArguments = @{
+              Scenario = 'all'
+              Profile = 'nightly'
+              Rows = 25
+              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
+              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
+          }
           $manualMaxElapsedMilliseconds = 0
           $manualInputParsed = [int]::TryParse(
               [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
@@ -365,17 +450,16 @@ jobs:
               throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
           }
           if ($manualMaxElapsedMilliseconds -gt 0) {
-              $thresholdArguments = @(
-                  '-MaxElapsedMilliseconds',
-                  $manualMaxElapsedMilliseconds
-              )
+              $thresholdArguments = @{
+                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
+              }
           }
           else {
-              $thresholdArguments = @(
-                  '-InventoryMaxElapsedMilliseconds', 600000,
-                  '-MesMaxElapsedMilliseconds', 600000,
-                  '-ErpMaxElapsedMilliseconds', 600000
-              )
+              $thresholdArguments = @{
+                  InventoryMaxElapsedMilliseconds = 600000
+                  MesMaxElapsedMilliseconds = 600000
+                  ErpMaxElapsedMilliseconds = 600000
+              }
           }
           & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
       - uses: actions/upload-artifact@v4
@@ -392,8 +476,8 @@ jobs:
     try {
         [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
         Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
-        $manualOnly = "                  '-MaxElapsedMilliseconds',`n                  `$manualMaxElapsedMilliseconds"
-        $manualWithScheduledThreshold = "                  '-MaxElapsedMilliseconds',`n                  `$manualMaxElapsedMilliseconds,`n                  '-InventoryMaxElapsedMilliseconds', 600000"
+        $manualOnly = '                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds'
+        $manualWithScheduledThreshold = "                  MaxElapsedMilliseconds = `$manualMaxElapsedMilliseconds`n                  InventoryMaxElapsedMilliseconds = 600000"
         Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
         [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
         $failure = $null
@@ -409,6 +493,7 @@ jobs:
 
 Test-NightlyBusinessPerformanceInvalidManualThresholds
 Test-NightlyBusinessPerformanceManualThresholdModes
+Test-NightlyBusinessPerformancePositionalArrayRegression
 Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 
@@ -432,7 +517,7 @@ try {
             @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
             @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
             @{ Name = 'manual-threshold-binding-wrong-input'; Original = 'github.event.inputs.max_elapsed_milliseconds'; Replacement = 'github.event.inputs.wrong_max_elapsed_milliseconds' },
-            @{ Name = 'scheduled-threshold'; Original = "'-InventoryMaxElapsedMilliseconds', 600000"; Replacement = "'-InventoryMaxElapsedMilliseconds', 0" },
+            @{ Name = 'scheduled-threshold'; Original = 'InventoryMaxElapsedMilliseconds = 600000'; Replacement = 'InventoryMaxElapsedMilliseconds = 0' },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
