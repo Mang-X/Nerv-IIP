@@ -496,6 +496,25 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Pending_approval_count_task_cannot_be_cancelled()
+    {
+        // 作废一张待审批任务只动任务本身：审批链还在跑，回写命令随后必然踩到 EnsureStatus(pending-approval)
+        // 而抛异常，从 CAP 消费者逃逸成毒消息。与重盘同一条守卫：待审批必须先走完审批。
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        task.SubmitForApproval(ledger, countedQuantity: 30m);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => task.Cancel(ledger, "operator-cancelled"));
+
+        Assert.Contains("pending-approval", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("pending-approval", task.Status);
+        // 审批回写路径仍然走得通，没有被这次拒绝弄坏。
+        task.RequireRecountAfterApprovalRejection(ledger);
+        Assert.Equal("recount-required", task.Status);
+    }
+
+    [Fact]
     public void Count_adjustment_fact_requires_assigned_movement_id()
     {
         var ledger = NewLedger();

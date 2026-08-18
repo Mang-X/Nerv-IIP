@@ -325,8 +325,15 @@ async function submitClose() {
 }
 
 // 已确认的任务不能再关闭（差异已经过账），已作废的不用再关。
+// 待审批同样不能关：审批链还在跑，把任务作废掉会让随后的审批回写在服务端抛异常、
+// 从消费者逃逸成毒消息——与「重盘不能绕过审批」是同一条原则。
 function canCloseRow(row: CountTaskRow) {
-  return Boolean(row.countTaskId) && row.status !== 'confirmed' && row.status !== 'cancelled'
+  return (
+    Boolean(row.countTaskId) &&
+    row.status !== 'confirmed' &&
+    row.status !== 'cancelled' &&
+    row.status !== 'pending-approval'
+  )
 }
 
 function openAdjustment(row: CountTaskRow) {

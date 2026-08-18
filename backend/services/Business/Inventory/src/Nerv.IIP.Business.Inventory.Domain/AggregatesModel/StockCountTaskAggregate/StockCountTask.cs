@@ -204,12 +204,25 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// 关闭（作废）盘点任务并解冻台账。与 <see cref="RestartRecount"/> 同一条原则：待审批必须先走完审批。
+    /// 作废一张待审批任务只动任务本身——审批链还在跑，`StockCountAdjustment` 仍是 pending-approval，
+    /// 审批人随后批准/驳回时回写命令不会被幂等跳过，而 ConfirmApprovedAdjustment /
+    /// RequireRecountAfterApprovalRejection 都要求任务处于 pending-approval，于是抛异常从 CAP 消费者
+    /// 逃逸、无限重试成毒消息。宁可在这里拒绝。
+    /// </summary>
     public void Cancel(StockLedger ledger, string reason)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         if (Status == StockCountTaskStatuses.Confirmed)
         {
             throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
+        }
+
+        if (Status == StockCountTaskStatuses.PendingApproval)
+        {
+            throw new InvalidOperationException(
+                "Stock count task in status 'pending-approval' cannot be cancelled; the variance approval must complete first.");
         }
 
         if (Status == StockCountTaskStatuses.Cancelled)

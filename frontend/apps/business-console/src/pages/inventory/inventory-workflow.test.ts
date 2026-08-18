@@ -966,19 +966,37 @@ describe('inventory workflow pages', () => {
     expect(inventoryState.restartCountTask).toHaveBeenCalledWith('COUNT-TASK-DRIFTED')
   })
 
-  it('keeps recount disabled for confirmed and pending-approval tasks', async () => {
+  it.each(['confirmed', 'cancelled', 'pending-approval'])(
+    'keeps recount disabled for %s tasks',
+    async (status) => {
+      inventoryState.countTaskRows = [{ ...openCountTaskRow(`COUNT-TASK-${status}`), status }]
+
+      const wrapper = mountInventoryPage(CountsPage)
+      const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!
+
+      expect(recount.attributes('disabled')).toBeDefined()
+      await recount.trigger('click')
+      await flushPromises()
+
+      expect(inventoryState.restartCountTask).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps close disabled for a pending-approval task so the approval write-back cannot poison', async () => {
+    // 作废待审批任务会让随后的审批回写在服务端抛异常、从消费者逃逸成毒消息。
     inventoryState.countTaskRows = [
-      { ...openCountTaskRow('COUNT-TASK-CONFIRMED'), status: 'confirmed' },
+      { ...openCountTaskRow('COUNT-TASK-PENDING'), status: 'pending-approval' },
     ]
 
     const wrapper = mountInventoryPage(CountsPage)
-    const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!
+    const close = wrapper.findAll('button').find((button) => button.text().includes('关闭任务'))!
 
-    expect(recount.attributes('disabled')).toBeDefined()
-    await recount.trigger('click')
+    expect(close.attributes('disabled')).toBeDefined()
+    await close.trigger('click')
     await flushPromises()
 
-    expect(inventoryState.restartCountTask).not.toHaveBeenCalled()
+    // 弹框外壳在本文件是桩（slot 直出），所以只断言动作没被触发，不看弹框在不在。
+    expect(inventoryState.cancelCountTask).not.toHaveBeenCalled()
   })
 
   it('closes a count task with a required reason', async () => {
