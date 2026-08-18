@@ -1,4 +1,4 @@
-# ADR 0025：FileStorage 停服离线迁移、切换、回退与归档证据 remap
+# ADR 0027：FileStorage 停服离线迁移、切换、回退与归档证据 remap
 
 - 状态：已接受
 - 日期：2026-08-18
