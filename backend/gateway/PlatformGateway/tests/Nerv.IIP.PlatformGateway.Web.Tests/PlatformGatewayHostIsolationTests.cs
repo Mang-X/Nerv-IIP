@@ -58,28 +58,99 @@ public sealed class PlatformGatewayHostIsolationTests
 
         await using var buildingFactory = PlatformGatewayTestHost.CreateFactory();
         var build = Task.Run(() => buildingFactory.Services);
-        var completedTooEarly = true;
         try
         {
-            await build.WaitAsync(BuildMustStayBlockedFor);
+            var completedTooEarly = true;
+            try
+            {
+                await build.WaitAsync(BuildMustStayBlockedFor);
+            }
+            catch (TimeoutException)
+            {
+                completedTooEarly = false;
+            }
+
+            var document = await response.Content.ReadAsByteArrayAsync();
+            Assert.True(
+                document.Length > 64 * 1024,
+                $"The PlatformGateway OpenAPI document is only {document.Length} bytes, so the response no longer "
+                + "exceeds TestServer's response-pipe threshold and this test would not observe the guarded window.");
+
+            Assert.False(
+                completedTooEarly,
+                "PlatformGateway host construction completed while another host was still writing a response body "
+                + $"(gate reported {PlatformGatewayTestHostGate.RequestsInFlight} request(s) in flight and "
+                + $"{PlatformGatewayTestHostGate.RequestsWaiting} waiting).");
+
+            await build.WaitAsync(BuildMustCompleteWithin);
         }
-        catch (TimeoutException)
+        finally
         {
-            completedTooEarly = false;
+            await response.Content.LoadIntoBufferAsync();
+            await build;
         }
+    }
 
-        Assert.False(
-            completedTooEarly,
-            "PlatformGateway host construction completed while another host was still writing a response body "
-            + $"(gate reported {PlatformGatewayTestHostGate.RequestsInFlight} request(s) in flight).");
+    [Fact]
+    public async Task Requests_waiting_behind_a_host_build_are_not_reported_as_in_flight()
+    {
+        await using var factory = PlatformGatewayTestHost.CreateFactory();
+        using var client = factory.CreateClient();
+        using var buildEntered = new ManualResetEventSlim();
+        using var releaseBuild = new ManualResetEventSlim();
+        var build = Task.Run(() => PlatformGatewayTestHostGate.Build(() =>
+        {
+            buildEntered.Set();
+            releaseBuild.Wait();
+            return 0;
+        }));
+        Task<HttpResponseMessage>? request = null;
 
-        var document = await response.Content.ReadAsStringAsync();
-        Assert.True(
-            document.Length > 64 * 1024,
-            $"The PlatformGateway OpenAPI document is only {document.Length} bytes, so the response no longer "
-            + "exceeds TestServer's response-pipe threshold and this test would not observe the guarded window.");
+        try
+        {
+            Assert.True(buildEntered.Wait(BuildMustCompleteWithin));
+            request = client.GetAsync("/health");
 
-        await build.WaitAsync(BuildMustCompleteWithin);
+            await WaitUntilAsync(() => PlatformGatewayTestHostGate.RequestsWaiting > 0);
+
+            Assert.Equal(0, PlatformGatewayTestHostGate.RequestsInFlight);
+            Assert.True(PlatformGatewayTestHostGate.RequestsWaiting > 0);
+        }
+        finally
+        {
+            releaseBuild.Set();
+            await build;
+            if (request is not null)
+            {
+                using var response = await request;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_token_signing_and_jwks_reads_are_stable()
+    {
+        var expectedToken = GatewayTestTokens.ValidAccessToken();
+        var expectedJwks = GatewayTestTokens.PublicJwksJson();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 256).Select(_ => Task.Run(() =>
+            (GatewayTestTokens.ValidAccessToken(), GatewayTestTokens.PublicJwksJson()))));
+
+        Assert.All(results, result =>
+        {
+            Assert.Equal(expectedToken, result.Item1);
+            Assert.Same(expectedJwks, result.Item2);
+        });
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var timeoutAt = DateTime.UtcNow + BuildMustCompleteWithin;
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < timeoutAt, "Timed out waiting for the gateway gate diagnostic state.");
+            await Task.Delay(10);
+        }
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateFactory(

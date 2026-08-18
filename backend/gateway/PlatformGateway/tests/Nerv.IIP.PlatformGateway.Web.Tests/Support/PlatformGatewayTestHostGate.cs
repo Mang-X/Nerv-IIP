@@ -23,8 +23,10 @@ internal static class PlatformGatewayTestHostGate
     private static readonly TimeSpan BuildBudget = TimeSpan.FromSeconds(60);
 
     private static int _requestsInFlight;
+    private static int _requestsWaiting;
 
     internal static int RequestsInFlight => Volatile.Read(ref _requestsInFlight);
+    internal static int RequestsWaiting => Volatile.Read(ref _requestsWaiting);
 
     internal static T Build<T>(Func<T> build)
     {
@@ -69,8 +71,9 @@ internal static class PlatformGatewayTestHostGate
                 $"PlatformGateway test host build could not reach the condition 'no gateway request in flight' "
                 + $"({Capacity} permits held) after {Stopwatch.GetElapsedTime(started).TotalSeconds:F1}s "
                 + $"across {attempts} wait attempt(s). Last observation: {acquired} of {Capacity} permit(s) "
-                + $"acquired, {RequestsInFlight} request(s) still inside the server pipeline. A gateway "
-                + "request is stuck; the acquired permits were released so other requests can proceed.");
+                + $"acquired, {RequestsInFlight} request(s) inside the server pipeline and "
+                + $"{RequestsWaiting} request(s) waiting to enter it. The acquired permits were released "
+                + "so queued requests can proceed.");
         }
     }
 
@@ -86,7 +89,16 @@ internal static class PlatformGatewayTestHostGate
 
     private static async Task HoldPermitAsync(HttpContext context, RequestDelegate next)
     {
-        await Permits.WaitAsync();
+        Interlocked.Increment(ref _requestsWaiting);
+        try
+        {
+            await Permits.WaitAsync();
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _requestsWaiting);
+        }
+
         Interlocked.Increment(ref _requestsInFlight);
         try
         {
