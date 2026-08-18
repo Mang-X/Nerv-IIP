@@ -84,7 +84,11 @@ builder.Services.AddCors(options =>
     options.AddPolicy(ConsoleCorsPolicy, policy =>
         policy.WithOrigins(allowedCorsOrigins)
             .AllowAnyHeader()
-            .AllowAnyMethod());
+            .AllowAnyMethod()
+            .WithExposedHeaders(
+                GatewayAuthResponseHeaders.LoginFailure,
+                GatewayAuthResponseHeaders.LockoutUntilUtc,
+                GatewayAuthResponseHeaders.RemainingAttempts));
 });
 builder.Services.AddRateLimiter(options =>
 {
