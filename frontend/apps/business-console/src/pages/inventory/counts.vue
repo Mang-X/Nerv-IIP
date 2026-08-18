@@ -285,10 +285,16 @@ async function submitAdjustment() {
   notifySuccess(approvalPending ? '库存调整已进入审批' : '库存调整已确认')
 }
 
-// 重盘：任务卡在「需复盘」时的唯一出口——重新冻结台账、按当前版本重取快照后放回待实盘。
+// 重盘：重新冻结台账、按当前版本重取快照后放回待实盘。
+// 两种死单都靠它出去：审批驳回停在「需复盘」的；以及台账在快照之后被改动、确认差异每次都被拒
+// （拒绝回滚事务，状态仍留在「待实盘」）的。已确认 / 已作废 / 待审批不能重开。
+function canRestartRow(row: CountTaskRow) {
+  return Boolean(row.countTaskId) && (row.status === 'recount-required' || row.status === 'open')
+}
+
 async function restart(row: CountTaskRow) {
   const countTaskId = row.countTaskId ?? ''
-  if (!countTaskId || row.status !== 'recount-required') return
+  if (!canRestartRow(row)) return
   try {
     await restartCountTask(countTaskId)
   } catch (error) {
@@ -417,7 +423,7 @@ function isNonEmpty(value: string) {
             确认差异
           </NvDropdownMenuItem>
           <NvDropdownMenuItem
-            :disabled="row.status !== 'recount-required' || restartCountTaskPending"
+            :disabled="!canRestartRow(row) || restartCountTaskPending"
             @click="restart(row)"
           >
             <RotateCcwIcon aria-hidden="true" />

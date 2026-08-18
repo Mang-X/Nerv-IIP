@@ -940,8 +940,25 @@ describe('inventory workflow pages', () => {
     expect(inventoryState.notifySuccess).toHaveBeenCalled()
   })
 
-  it('keeps recount disabled for a task that is not stuck in recount-required', async () => {
-    inventoryState.countTaskRows = [openCountTaskRow('COUNT-TASK-OPEN')]
+  it('also offers recount to an open task whose snapshot drifted', async () => {
+    // 台账在快照之后被改动时确认必被拒，而拒绝会回滚事务，任务留在「待实盘」——同样是死单。
+    inventoryState.countTaskRows = [openCountTaskRow('COUNT-TASK-DRIFTED')]
+    inventoryState.restartCountTask.mockResolvedValue({ data: { status: 'open' } })
+
+    const wrapper = mountInventoryPage(CountsPage)
+    const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!
+
+    expect(recount.attributes('disabled')).toBeUndefined()
+    await recount.trigger('click')
+    await flushPromises()
+
+    expect(inventoryState.restartCountTask).toHaveBeenCalledWith('COUNT-TASK-DRIFTED')
+  })
+
+  it('keeps recount disabled for confirmed and pending-approval tasks', async () => {
+    inventoryState.countTaskRows = [
+      { ...openCountTaskRow('COUNT-TASK-CONFIRMED'), status: 'confirmed' },
+    ]
 
     const wrapper = mountInventoryPage(CountsPage)
     const recount = wrapper.findAll('button').find((button) => button.text().includes('重盘'))!

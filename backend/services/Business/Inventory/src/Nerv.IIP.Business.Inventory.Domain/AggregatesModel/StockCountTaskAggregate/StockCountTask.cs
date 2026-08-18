@@ -180,14 +180,21 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
     }
 
     /// <summary>
-    /// 重盘：把因台账版本漂移或审批驳回而停在 recount-required 的任务放回可实盘状态。
-    /// 重新冻结台账并按当前版本重取快照，之前那次实盘数与差异一并作废——它们是对旧快照的读数，
-    /// 留着会让下一次确认拿旧读数直接过账。
+    /// 重盘：重新冻结台账、按当前版本重取快照，把任务放回可实盘状态。
+    /// 覆盖两种卡死：审批驳回后停在 recount-required 的任务；以及台账在快照之后被改动、
+    /// 确认差异每次都被拒（拒绝会回滚事务，状态仍留在 open）的任务——后者同样只有重取快照才能继续。
+    /// 之前那次实盘数与差异一并作废：它们是对旧快照的读数，留着会让下一次确认拿旧读数直接过账。
+    /// 已确认、已作废不可重开；待审批必须先走完审批，不能靠重盘绕过。
     /// </summary>
     public void RestartRecount(StockLedger ledger)
     {
         ArgumentNullException.ThrowIfNull(ledger);
-        EnsureStatus(StockCountTaskStatuses.RecountRequired, "Only a stock count task that requires recount can be restarted.");
+        if (Status != StockCountTaskStatuses.RecountRequired && Status != StockCountTaskStatuses.Open)
+        {
+            throw new InvalidOperationException(
+                $"Stock count task in status '{Status}' cannot be restarted for recount; only open or recount-required tasks can.");
+        }
+
         EnsureSameDimension(ledger);
         ledger.FreezeForCount(CountTaskCode);
         ExpectedLedgerVersion = ledger.LedgerVersion;

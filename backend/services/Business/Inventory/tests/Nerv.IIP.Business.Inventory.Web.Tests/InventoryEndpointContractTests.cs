@@ -1536,7 +1536,7 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
-    public async Task Recount_restart_is_rejected_for_a_task_that_is_not_stuck_in_recount_required()
+    public async Task Recount_restart_is_rejected_for_a_confirmed_task()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -1550,15 +1550,18 @@ public sealed class InventoryEndpointContractTests
             NewCountTaskCommand("COUNT-RECOUNT-002"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ConfirmStockCountAdjustmentCommandHandler(dbContext, TestStockCountApprovalClient.Instance).Handle(
+            new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-recount-confirm-002"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new RestartStockCountTaskCommandHandler(dbContext).Handle(
                 new RestartStockCountTaskCommand(taskResult.CountTaskId),
                 CancellationToken.None));
 
-        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(StockCountTaskStatuses.Open, dbContext.StockCountTasks.Single().Status);
-        Assert.Equal(taskResult.ExpectedLedgerVersion, dbContext.StockCountTasks.Single().ExpectedLedgerVersion);
+        Assert.Contains("confirmed", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(StockCountTaskStatuses.Confirmed, dbContext.StockCountTasks.Single().Status);
     }
 
     [Fact]

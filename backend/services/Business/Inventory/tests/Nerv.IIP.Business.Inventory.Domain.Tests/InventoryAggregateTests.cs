@@ -442,16 +442,57 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
-    public void Recount_restart_rejects_a_task_that_is_not_in_recount_required()
+    public void Recount_restart_also_reopens_an_open_task_whose_snapshot_drifted()
     {
+        // 台账在快照之后被改动时，确认差异每次都被拒；拒绝回滚事务，任务留在 open。
+        // 这条同样是死单，只有重取快照才能继续，所以 open 也必须能重盘。
         var ledger = NewLedger();
         ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
         var task = NewCountTask(ledger);
+        ledger.ReleaseCountFreeze();
+        ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-002"));
+        Assert.Throws<StockCountRecountRequiredException>(() =>
+            task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-001"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() => task.RestartRecount(ledger));
+        task.RestartRecount(ledger);
 
-        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("open", task.Status);
+        Assert.Equal(ledger.LedgerVersion, task.ExpectedLedgerVersion);
+        Assert.True(ledger.IsFrozenForCount);
+        task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-002");
+        Assert.Equal("confirmed", task.Status);
+    }
+
+    [Fact]
+    public void Recount_restart_is_rejected_for_confirmed_pending_and_cancelled_tasks()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var pendingTask = NewCountTask(ledger);
+        pendingTask.SubmitForApproval(ledger, countedQuantity: 30m);
+
+        // 待审批不能靠重盘绕过审批。
+        var pendingException = Assert.Throws<InvalidOperationException>(() => pendingTask.RestartRecount(ledger));
+        Assert.Contains("pending-approval", pendingException.Message, StringComparison.Ordinal);
+        Assert.Equal("pending-approval", pendingTask.Status);
+
+        var confirmedLedger = NewLedger();
+        confirmedLedger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-002"));
+        var confirmedTask = NewCountTask(confirmedLedger);
+        confirmedTask.ConfirmAdjustment(confirmedLedger, countedQuantity: 9m, "idem-count-001");
+
+        var confirmedException = Assert.Throws<InvalidOperationException>(() => confirmedTask.RestartRecount(confirmedLedger));
+        Assert.Contains("confirmed", confirmedException.Message, StringComparison.Ordinal);
+        Assert.Equal("confirmed", confirmedTask.Status);
+
+        var cancelledLedger = NewLedger();
+        cancelledLedger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-003"));
+        var cancelledTask = NewCountTask(cancelledLedger);
+        cancelledTask.Cancel(cancelledLedger, "operator-cancelled");
+
+        var cancelledException = Assert.Throws<InvalidOperationException>(() => cancelledTask.RestartRecount(cancelledLedger));
+        Assert.Contains("cancelled", cancelledException.Message, StringComparison.Ordinal);
+        Assert.Equal("cancelled", cancelledTask.Status);
     }
 
     [Fact]
