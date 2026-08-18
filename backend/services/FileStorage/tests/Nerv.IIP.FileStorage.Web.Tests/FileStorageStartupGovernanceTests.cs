@@ -281,7 +281,7 @@ public sealed class FileStorageStartupGovernanceTests
         bool autoMigrate = false,
         IReadOnlyDictionary<string, string?>? storageSettings = null)
     {
-        return new WebApplicationFactory<Program>()
+        return new FileStorageUnconfiguredWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment(environment);
