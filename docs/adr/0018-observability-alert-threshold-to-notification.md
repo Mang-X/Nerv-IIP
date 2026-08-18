@@ -35,7 +35,7 @@ Nerv-IIP 已输出 OpenTelemetry 指标，并具备仅处理日志的 VictoriaLo
 3. AppHub 已拥有 Connector Host 心跳事实；
 4. PostgreSQL 已是默认持久化依赖。
 
-## 影响
+## 后果
 
 Nerv-IIP 由此具备默认的告警到 Notification 闭环路径，且无需引入另一个必需的运行时组件。运维人员可通过现有 Notification 渠道接收告警触发和恢复通知。
 
