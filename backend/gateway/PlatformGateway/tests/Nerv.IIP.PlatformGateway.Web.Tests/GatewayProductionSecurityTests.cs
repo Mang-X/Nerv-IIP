@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -45,6 +46,15 @@ public sealed class GatewayProductionSecurityTests
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("https://console.example.test", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+
+        using var actualRequest = new HttpRequestMessage(HttpMethod.Get, "/health");
+        actualRequest.Headers.TryAddWithoutValidation("Origin", "https://console.example.test");
+        var actualResponse = await client.SendAsync(actualRequest);
+        actualResponse.EnsureSuccessStatusCode();
+        var exposedHeaders = actualResponse.Headers.GetValues("Access-Control-Expose-Headers").Single();
+        Assert.Contains(GatewayAuthResponseHeaders.LoginFailure, exposedHeaders, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(GatewayAuthResponseHeaders.LockoutUntilUtc, exposedHeaders, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(GatewayAuthResponseHeaders.RemainingAttempts, exposedHeaders, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

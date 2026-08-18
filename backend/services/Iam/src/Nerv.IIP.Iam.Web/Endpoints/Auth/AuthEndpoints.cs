@@ -167,6 +167,10 @@ public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest
 
 internal static class IamEndpointResults
 {
+    private const string LoginFailureHeader = "X-Nerv-Iam-Login-Failure";
+    private const string LockoutUntilHeader = "X-Nerv-Iam-Lockout-Until-Utc";
+    private const string RemainingAttemptsHeader = "X-Nerv-Iam-Remaining-Attempts";
+
     public static async Task<bool> RejectEnterpriseIdentityStubOutsideDevelopmentAsync(
         HttpContext context,
         IWebHostEnvironment environment,
@@ -193,6 +197,20 @@ internal static class IamEndpointResults
         var result = await action();
         if (!result.IsAuthorized)
         {
+            if (result.Failure is { } failure)
+            {
+                context.Response.Headers[LoginFailureHeader] = failure.Code;
+                if (failure.LockoutUntilUtc is { } lockoutUntilUtc)
+                {
+                    context.Response.Headers[LockoutUntilHeader] = lockoutUntilUtc.ToString("O");
+                }
+
+                if (failure.RemainingAttempts is { } remainingAttempts)
+                {
+                    context.Response.Headers[RemainingAttemptsHeader] = remainingAttempts.ToString();
+                }
+            }
+
             await ResponseDataEndpointResults.WriteErrorAsync(
                 context,
                 StatusCodes.Status401Unauthorized,

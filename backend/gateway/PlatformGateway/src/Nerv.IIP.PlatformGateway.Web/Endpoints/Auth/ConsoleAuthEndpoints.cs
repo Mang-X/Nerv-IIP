@@ -111,6 +111,20 @@ internal static class ConsoleAuthEndpointResults
 
     public static Task WriteProblemAsync(HttpContext context, GatewayAuthException exception, CancellationToken cancellationToken)
     {
+        if (exception.Reason is "iam-account-locked" or "iam-invalid-credentials")
+        {
+            context.Response.Headers[GatewayAuthResponseHeaders.LoginFailure] = exception.Reason;
+            if (exception.LockoutUntilUtc is { } lockoutUntilUtc)
+            {
+                context.Response.Headers[GatewayAuthResponseHeaders.LockoutUntilUtc] = lockoutUntilUtc.ToString("O");
+            }
+
+            if (exception.RemainingAttempts is { } remainingAttempts)
+            {
+                context.Response.Headers[GatewayAuthResponseHeaders.RemainingAttempts] = remainingAttempts.ToString();
+            }
+        }
+
         var status = (int)exception.StatusCode;
         return ResponseDataEndpointResults.WriteErrorAsync(context, status, exception.Reason, cancellationToken);
     }
