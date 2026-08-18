@@ -83,7 +83,7 @@ configured identity/fingerprint 负责解析实际物理身份，数据库 `acti
 
 - canonical v1 `ObjectKey`；
 - source actual existence、source actual size、source actual canonical SHA-256；
-- metadata identity、expected size/checksum 及其与实际字节的 reconciliation；
+- `metadata identity/expected size/checksum reconciliation` 是目标契约：必须把 source actual bytes 与 metadata identity、expected size/checksum 逐项对账，任一缺失或冲突都失败关闭；这不表示当前功能、命令或工具已经实现；
 - source provider identity/config fingerprint；
 - 稳定状态和失败原因。
 
@@ -267,6 +267,8 @@ commit target：
 - `runtime critical/unready` 优先级更高，覆盖 capacity restricted 下的允许项并阻断全部动作；后端身份、安全性或可读性恢复可信前，不继续 read、copy、verify、rename、delete、cleanup 或 restore write。
 
 ## 失败停止与重试矩阵
+
+`remap 缺项/歧义/环` 是下表两条相邻 remap 场景的覆盖类别标签；两条场景仍保持各自不同的重试语义。
 
 | 场景 | 停止结果 | 是否可按同 run/digest 重试 | 下一安全态 |
 | --- | --- | --- | --- |
