@@ -16,6 +16,10 @@
 
 本 ADR 只决定三件事：通用文件上传的协议与入口拓扑；staging/final 生命周期和 `ObjectKey` 的目标语义；所有 storage provider 共同遵守的 complete 提交不变量。
 
+**本 ADR 接受的是目标架构约束，不是交付证明。** 它只完成 #992 四层拆分中的第 1 层文档裁决，
+不证明代码测试、真实运行、CI、PR 合并或 tracker 完成；实现进度与逐层交付状态以票面和
+`docs/architecture/implementation-readiness.md` 为准。
+
 以下内容不在本 ADR 范围内：
 
 - 不设计或实现 `IStorageProvider`、Local/S3-compatible 适配及其选择、注册或能力矩阵；
