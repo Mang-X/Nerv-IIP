@@ -597,6 +597,19 @@ function ConvertTo-NervAcceptanceCheckedInt64 {
     return [int64]$Value
 }
 
+function Test-NervAcceptancePlanningRunCommand {
+    param([AllowNull()] [object] $Run)
+
+    if ($Run -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Run)) { return $false }
+    foreach ($line in @(([string]$Run) -split "`r?`n")) {
+        $command = ([string]$line).Trim()
+        if ($command -cmatch '^pwsh(?:\.exe)?(?:\s+-(?:NoLogo|NoProfile|NonInteractive))*\s+(?:-File\s+)?["'']?(?:\./)?scripts/plan-acceptance-scenario-matrix\.ps1["'']?(?:\s|$)') {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Get-NervAcceptancePlanningWorkflowBudget {
     param(
         [Parameter(Mandatory)] [string] $WorkflowPath,
@@ -604,12 +617,15 @@ function Get-NervAcceptancePlanningWorkflowBudget {
         [Parameter(Mandatory)] [string] $StepName
     )
 
-    $jobs = @(Get-NervCiWorkflowBudgets -Path $WorkflowPath)
+    $jobs = Get-NervCiWorkflowBudgets -Path $WorkflowPath
     $jobMatches = @($jobs | Where-Object { [string]::Equals([string]$_.Name, $JobName, [StringComparison]::Ordinal) })
     if ($jobMatches.Count -ne 1) { throw "Workflow '$WorkflowPath' must define exactly one '$JobName' planning job." }
     $stepMatches = @($jobMatches[0].Steps | Where-Object { [string]::Equals([string]$_.Name, $StepName, [StringComparison]::Ordinal) })
     if ($stepMatches.Count -ne 1 -or $null -eq $stepMatches[0].TimeoutMinutes) {
         throw "Workflow '$WorkflowPath' job '$JobName' must define exactly one timed '$StepName' planning step."
+    }
+    if (-not (Test-NervAcceptancePlanningRunCommand -Run $stepMatches[0].Run)) {
+        throw "Workflow '$WorkflowPath' job '$JobName' timed step '$StepName' must invoke scripts/plan-acceptance-scenario-matrix.ps1."
     }
     $timeoutSeconds = ConvertTo-NervAcceptanceCheckedInt64 -Value (([Numerics.BigInteger]$stepMatches[0].TimeoutMinutes) * 60) -Context 'planning workflow step timeout'
     if ($timeoutSeconds -le 0) { throw "Workflow '$WorkflowPath' planning step timeout must be positive." }
@@ -647,8 +663,18 @@ function Assert-NervAcceptanceDiscoveryClosure {
     [Array]::Sort($expected, [StringComparer]::Ordinal)
     $observed = [Collections.Generic.List[string]]::new()
     $observedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $inTestList = $false
+    $testListHeaderCount = 0
     foreach ($line in @($DiscoveryOutput -split "`r?`n")) {
-        $candidate = ([string]$line).Trim()
+        $rawLine = [string]$line
+        $candidate = $rawLine.Trim()
+        if ([string]::Equals($candidate, 'The following Tests are available:', [StringComparison]::Ordinal)) {
+            $testListHeaderCount++
+            if ($testListHeaderCount -ne 1) { throw "Planning project '$ProjectPath' discovery emitted more than one test-list section." }
+            $inTestList = $true
+            continue
+        }
+        if (-not $inTestList -or $rawLine.Length -eq $rawLine.TrimStart().Length) { continue }
         if ($candidate -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$') { continue }
         if (-not $observedSet.Add($candidate)) { throw "Planning project '$ProjectPath' has duplicate discovered identity '$candidate'." }
         $observed.Add($candidate)
