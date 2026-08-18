@@ -121,7 +121,7 @@ manifest 同时列出一致、missing、orphan、size/SHA conflict 计数，并�
 - `manifestDigest`；
 - 稳定 `remapId`。
 
-target `versionId` 不要求等于 source/recorded `versionId`。source evidence/audit 不改写。缺项、歧义、多映射、链冲突或环均失败关闭；resolver 不得猜测 target version。
+target `versionId` 不要求等于 source/recorded `versionId`。source evidence/audit 不改写。remap 缺项失败关闭；只有既定 immutable remap 契约允许追加一条完整映射，且不会形成第二映射、链冲突或环时，才可在同一 run/digest 追加缺项并重新执行 full closure。歧义、多映射、链冲突或环属于结构性冲突，不能靠 append 消除；当前不存在批准的 append-only supersession 契约，因此同一 run/digest 必须失败关闭并废止，改由新 run 重新规划。resolver 不得猜测 target version。
 
 ## additive v2 resolver 结果语义
 
@@ -197,8 +197,8 @@ evidence pack 使用以下分区，并使每份记录绑定 `migrationRunId`、g
 
 | 前置 | 输入 | 动作类型 | 动作 | 成功证据 | 失败停止/重试 | 下一安全态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| source 冻结且 fence 持续有效 | 通用 metadata、归档 recorded evidence、source identity | 目标接口（非当前命令） | 分轨生成通用文件 manifest 与 VersionedArchive manifest；逐项 actual byte readback，完成 metadata/evidence reconciliation | 两份 manifest 的一致/missing/orphan/conflict 清单及读取证据 | 任一 legacy key 未闭合或任一 missing/orphan/conflict 非零即阻断；修复 source 事实后须重新 freeze | source 保持冻结，尚未 copy |
-| 双轨 reconciliation 全部闭合 | 两份不可变 manifest | 目标接口（非当前命令） | 冻结统一 `manifestDigest`；digest 后禁止重解释、增删条目 | digest、条目计数、生成工具版本与签章 | digest 不可重现则废止 run；同 run 只可重复核对同一字节 | source 冻结，manifest 已冻结 |
+| source 冻结且 fence 持续有效 | 通用 metadata、归档 recorded evidence、source identity | 目标接口（非当前命令） | 分轨生成通用文件 manifest 与 VersionedArchive manifest；逐项 actual byte readback，完成 metadata/evidence reconciliation | 两份 manifest 的一致/missing/orphan/conflict 清单及读取证据 | `manifestDigest` 冻结前，任一 legacy key 未闭合或任一 missing/orphan/conflict 非零即阻断；修复 source 事实后重新 freeze/reconciliation，并生成新的 digest 候选 | source 保持冻结，尚未 copy |
+| 双轨 reconciliation 全部闭合 | 两份不可变 manifest | 目标接口（非当前命令） | 冻结统一 `manifestDigest`；digest 后禁止重解释、增删条目 | digest、条目计数、生成工具版本与签章 | digest 不可重现，或冻结后发现 manifest 字节/条目错误，必须废止该 run 身份并以新 run 重新规划；不得在同一 run/digest 重解释 | source 冻结、fence 保持，manifest 已冻结或 run 已废止 |
 
 ### 4. copy 与 checkpoint resume
 
@@ -211,8 +211,8 @@ evidence pack 使用以下分区，并使每份记录绑定 `migrationRunId`、g
 
 | 前置 | 输入 | 动作类型 | 动作 | 成功证据 | 失败停止/重试 | 下一安全态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| copy 已遍历全部 manifest 条目 | target identity、双 manifest、copy checkpoints | 目标接口（非当前命令） | 逐对象从 target 实际字节计算 size/canonical SHA-256；archive 固定 target exact `versionId`，复验 object lock/retention/legal hold | 通用与 archive 逐项 exact-verification 记录 | missing/conflict/readback 失败即停止；同 run/digest 修复可重试失败项但仍需重新汇总全量计数 | source 冻结；target 未获开放资格 |
-| target 逐项验证成功 | recorded evidence 与 target exact evidence | 目标接口（非当前命令） | 为 archive 追加 immutable remap 并验证 catalog 无缺项、歧义、多映射、冲突或环 | `expected=verified` 且 `failed=missing=conflict=0`，catalog/remap 闭合 | 闭合失败即保持 activation 不变；post-open 样本不替代全量证明 | source 冻结；target exact 证据闭合 |
+| copy 已遍历全部 manifest 条目 | target identity、双 manifest、copy checkpoints | 目标接口（非当前命令） | 逐对象从 target 实际字节计算 size/canonical SHA-256；archive 固定 target exact `versionId`，复验 object lock/retention/legal hold | 通用与 archive 逐项 exact-verification 记录 | 暂时性 readback 失败或 target missing 可在不改变 manifest 条目/字节的前提下按同 run/digest 重做 copy/verify；source manifest 字节/条目错误或 target conflict 必须废止 run 并新建 run | source 冻结；target 未获开放资格 |
+| target 逐项验证成功 | recorded evidence 与 target exact evidence | 目标接口（非当前命令） | 为 archive 追加 immutable remap 并验证 catalog 无缺项、歧义、多映射、冲突或环 | `expected=verified` 且 `failed=missing=conflict=0`，catalog/remap 闭合 | 缺项仅在 immutable 契约允许 append 且不产生结构性冲突时可同 run/digest 补齐并重做 full closure；歧义、多映射、链冲突或环必须废止同一 run/digest 并新建 run | source 冻结；target exact 证据闭合或 run 已废止 |
 
 ### 6. v2 rollout/capability gate
 
@@ -272,13 +272,15 @@ commit target：
 | --- | --- | --- | --- |
 | identity/config 漂移 | 阻断批次，废止漂移后的证据 | 否；重新计划并冻结身份 | source 保持或恢复冻结前授权态 |
 | fence 破坏或发现未冻结 mutation | 立即停止，废止 freeze 后 manifest/copy 资格 | 否；修复 fence 后从 freeze 重建证据 | 业务停服，source 不清理 |
-| manifest missing/orphan/conflict | copy/cutover 阻断并输出逐项原因 | 可；修复 source 事实后重建 manifest 与 digest | source 冻结，target 不开放 |
+| digest freeze 前 reconciliation 发现 manifest missing/orphan/conflict | copy/cutover 阻断并输出逐项原因 | 可；修复 source 事实后重新 freeze/reconciliation，并冻结新的 digest | source 冻结、fence 保持，target 不开放 |
+| digest freeze 后发现 manifest 字节/条目 missing/orphan/conflict | 本 run/digest 失败关闭，禁止重解释或重建 | 否；废止该 run 身份，以新 run 重新规划、freeze 并生成 manifest | source 保持 pre-open 冻结、fence 持续，target 不开放 |
 | legacy evidence 缺失或 non-canonical key 未闭合 | 阻断 catalog 与 copy，不猜填 | 否；先取得完整 recorded key/exact readback 或闭合 #994 | source 冻结，target 不开放 |
 | capacity/health 拒绝 | 按 ADR 0024 拒绝相应 I/O；critical 阻断全部动作 | 可；同 identity 恢复健康并重新 preflight | source 保持，target 不新增字节 |
 | target 已存在且 exact readback 为 same | 记录 same，不覆盖 | 可；按同 checkpoint 幂等继续 | target 保留一致对象，仍未开放 |
 | target 已存在且为 conflict | 停止并隔离 target，禁止覆盖 | 否；调查未知写入并重新认领/计划 | source 冻结，target 隔离 |
 | copy 中断 | 保留已证明 checkpoint，不重新解释 manifest | 可；仅同 run/digest/checkpoint | source 冻结，target 保留部分副本 |
-| remap 缺项、歧义、多映射、链冲突或环 | resolver/cutover 失败关闭 | 可；只追加纠正事实后重做全量闭合 | activation 不变，业务封闭 |
+| remap 缺项 | resolver/cutover 失败关闭 | 仅当 immutable 契约允许 append 且不会产生第二映射、链冲突或环时，可按同 run/digest 补齐并重做 full closure | activation 不变，业务封闭 |
+| remap 歧义、多映射、链冲突或环 | resolver/cutover 失败关闭 | 否；当前无批准的 append-only supersession 契约，不得靠 append 消除，废止同一 run/digest 并以新 run 重新规划 | activation 不变、fence 保持，业务封闭 |
 | v1 旁路仍可运行 | activation 阻断 | 可；禁用旁路并重跑 capability gate | source 冻结，未进 pre-open |
 | CAS stale | 事务不变并追加拒绝 audit | 可；读取新 observed 事实后重新判定，不盲重放 | 原 activation state 保持不变 |
 | 越界 target writer | 批次失败关闭并隔离 target | 否；未知对象不得吸收进原 manifest | source 冻结，target 隔离 |
