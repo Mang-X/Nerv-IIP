@@ -321,6 +321,79 @@ try {
         -ChangedPaths @('README.md') `
         -ImpactRulesSucceeded $true
     Assert-Contract (@($unmatchedSelection.scenarios).Count -eq 0) 'A successful pull request impact evaluation may select zero scenarios.'
+    Assert-Contract ([string]::Equals((@($unmatchedSelection.reasons) -join '|'), 'no-impact', [StringComparison]::Ordinal)) 'A successful zero-scenario pull request selection must record the explicit no-impact reason.'
+
+    foreach ($entrypointCase in @(
+        @{ Path = 'scripts/verify-erp-sales-order-demand-planning.ps1'; ScenarioId = 'sales-order-demand' },
+        @{ Path = 'scripts/verify-erp-wms-delivery-completion.ps1'; ScenarioId = 'wms-delivery-erp' }
+    )) {
+        $entrypointSelection = Select-NervAcceptanceScenarioMatrix `
+            -Manifest $manifest `
+            -Event 'pull_request' `
+            -ChangedPaths @($entrypointCase.Path) `
+            -ImpactRulesSucceeded $true
+        Assert-Contract ([string]::Equals((@($entrypointSelection.scenarios.id) -join '|'), $entrypointCase.ScenarioId, [StringComparison]::Ordinal)) "Scenario entrypoint '$($entrypointCase.Path)' must select only '$($entrypointCase.ScenarioId)'."
+    }
+
+    foreach ($globalSelectionPath in @(
+        'scripts/acceptance-scenario-matrix.json',
+        'scripts/lib/AcceptanceScenarioMatrix.ps1',
+        'scripts/plan-acceptance-scenario-matrix.ps1',
+        'scripts/tests/acceptance-scenario-matrix.Tests.ps1',
+        'scripts/full-chain-test-lane.json',
+        'scripts/lib/FullChainTestLane.ps1',
+        'scripts/run-full-chain-test-lane.ps1',
+        'scripts/tests/full-chain-test-lane.Tests.ps1',
+        'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
+        'infra/aspire/Nerv.IIP.AppHost/Program.cs',
+        '.github/workflows/ci.yml',
+        'scripts/lib/CiImpactPlan.ps1'
+    )) {
+        $globalSelection = Select-NervAcceptanceScenarioMatrix `
+            -Manifest $manifest `
+            -Event 'pull_request' `
+            -ChangedPaths @($globalSelectionPath) `
+            -ImpactRulesSucceeded $true
+        Assert-Contract (@($globalSelection.scenarios).Count -eq 5) "Global FullChain control '$globalSelectionPath' must conservatively select all active/core scenarios."
+    }
+
+    foreach ($invalidChangedPath in @(
+        '../README.md',
+        '/tmp/README.md',
+        'C:/repo/README.md',
+        'backend//README.md',
+        'backend\README.md',
+        './README.md',
+        'backend/./README.md',
+        'backend/services/../README.md',
+        'backend/'
+    )) {
+        $invalidPathSelection = Select-NervAcceptanceScenarioMatrix `
+            -Manifest $manifest `
+            -Event 'pull_request' `
+            -ChangedPaths @($invalidChangedPath) `
+            -ImpactRulesSucceeded $true
+        Assert-Contract ([string]::Equals([string]$invalidPathSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal)) "Invalid changed path '$invalidChangedPath' must use conservative selection."
+        Assert-Contract (@($invalidPathSelection.scenarios).Count -eq 5) "Invalid changed path '$invalidChangedPath' must select all active/core scenarios."
+    }
+
+    $missingEntrypointMappingManifest = Copy-JsonObject $manifest
+    $missingEntrypointMappingManifest.scenarios[0].entrypoint.PSObject.Properties.Remove('path')
+    $missingEntrypointMappingSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $missingEntrypointMappingManifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('scripts/verify-erp-sales-order-demand-planning.ps1') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract ([string]::Equals([string]$missingEntrypointMappingSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($missingEntrypointMappingSelection.scenarios).Count -eq 5) 'A missing active script entrypoint mapping must conservatively select all active/core scenarios.'
+
+    $malformedImpactRulesManifest = Copy-JsonObject $manifest
+    $malformedImpactRulesManifest.scenarios[0].impact.paths = @()
+    $malformedImpactRulesSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $malformedImpactRulesManifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('backend/services/Business/Erp/Application/Orders.cs') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract ([string]::Equals([string]$malformedImpactRulesSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and @($malformedImpactRulesSelection.scenarios).Count -eq 5) 'Malformed active impact rules must conservatively select all active/core scenarios.'
 
     foreach ($conservativeCase in @(
         @{ Name = 'rules-failed'; Paths = @('README.md'); RulesSucceeded = $false },
@@ -340,6 +413,12 @@ try {
 
     $nightlySelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'schedule'
     Assert-Contract ([string]::Equals([string]$nightlySelection.selectionMode, 'nightly-active', [StringComparison]::Ordinal) -and @($nightlySelection.scenarios).Count -eq 5) 'Nightly must select every active scenario.'
+
+    foreach ($wrongCaseEvent in @('PULL_REQUEST', 'PUSH', 'SCHEDULE', 'WORKFLOW_DISPATCH')) {
+        Assert-ThrowsContaining -ExpectedMessage 'Planning event' -Context "Wrong-case selector event '$wrongCaseEvent'" -Action {
+            Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event $wrongCaseEvent -ChangedPaths @('README.md') -DispatchSelection 'full' | Out-Null
+        }
+    }
 
     foreach ($dispatchAll in @('lane', 'full')) {
         $dispatchSelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection $dispatchAll
@@ -527,6 +606,14 @@ try {
     foreach ($artifactMutation in @(
         @{ Name = 'unknown-field'; Apply = { param($value) $value | Add-Member -NotePropertyName extra -NotePropertyValue $true }; Message = 'unknown field' },
         @{ Name = 'missing-field'; Apply = { param($value) $value.PSObject.Properties.Remove('runId') }; Message = 'missing required field' },
+        @{ Name = 'run-native-number'; Apply = { param($value) $value.runId = [int64]123456789 }; Message = 'runId must be a JSON string' },
+        @{ Name = 'repository-native-type'; Apply = { param($value) $value.repository = 123 }; Message = 'repository must be a JSON string' },
+        @{ Name = 'sha-native-type'; Apply = { param($value) $value.testedSha = 123 }; Message = 'testedSha must be a JSON string' },
+        @{ Name = 'attempt-native-string'; Apply = { param($value) $value.runAttempt = '2' }; Message = 'runAttempt must be a JSON integer' },
+        @{ Name = 'manifest-path-native-type'; Apply = { param($value) $value.manifestPath = 123 }; Message = 'manifestPath must be a JSON string' },
+        @{ Name = 'digest-native-type'; Apply = { param($value) $value.manifestDigest = 123 }; Message = 'manifestDigest must be a JSON string' },
+        @{ Name = 'event-native-type'; Apply = { param($value) $value.event = 123 }; Message = 'event must be a JSON string' },
+        @{ Name = 'selection-mode-native-type'; Apply = { param($value) $value.selectionMode = 123 }; Message = 'selectionMode must be a JSON string' },
         @{ Name = 'sha'; Apply = { param($value) $value.testedSha = '1123456789abcdef0123456789abcdef01234567' }; Message = 'testedSha does not match' },
         @{ Name = 'run'; Apply = { param($value) $value.runId = '987654321' }; Message = 'runId does not match' },
         @{ Name = 'attempt'; Apply = { param($value) $value.runAttempt = 3 }; Message = 'runAttempt does not match' },
@@ -545,6 +632,53 @@ try {
             -ManifestDigest $manifestDigest `
             -ExpectedMessage $artifactMutation.Message `
             -Context "Artifact $($artifactMutation.Name) mutation"
+    }
+
+    foreach ($invalidSameValueMutation in @(
+        @{ Name = 'repository'; Property = 'repository'; Value = 'invalid'; ExpectedName = 'Repository'; Message = 'Planning repository' },
+        @{ Name = 'tested-sha'; Property = 'testedSha'; Value = 'invalid'; ExpectedName = 'TestedSha'; Message = 'Planning testedSha' },
+        @{ Name = 'run-id'; Property = 'runId'; Value = '0'; ExpectedName = 'RunId'; Message = 'Planning runId' },
+        @{ Name = 'run-attempt'; Property = 'runAttempt'; Value = 0; ExpectedName = 'RunAttempt'; Message = 'Planning runAttempt' },
+        @{ Name = 'manifest-path'; Property = 'manifestPath'; Value = '../matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-digest'; Property = 'manifestDigest'; Value = 'invalid'; ExpectedName = 'ManifestDigest'; Message = 'Planning manifestDigest' },
+        @{ Name = 'event'; Property = 'event'; Value = 'PUSH'; ExpectedName = 'Event'; Message = 'Planning event' }
+    )) {
+        $invalidSameArtifact = Copy-JsonObject $persistedArtifact
+        $invalidSameArtifact.PSObject.Properties[$invalidSameValueMutation.Property].Value = $invalidSameValueMutation.Value
+        $invalidSameArguments = @{
+            Artifact = $invalidSameArtifact
+            Manifest = $planningManifest
+            Selection = $planningSelection
+            Repository = 'Mang-X/Nerv-IIP'
+            TestedSha = '0123456789abcdef0123456789abcdef01234567'
+            RunId = '123456789'
+            RunAttempt = 2
+            ManifestPath = 'scripts/acceptance-scenario-matrix.json'
+            ManifestDigest = $manifestDigest
+            Event = 'workflow_dispatch'
+        }
+        $invalidSameArguments[$invalidSameValueMutation.ExpectedName] = $invalidSameValueMutation.Value
+        Assert-ThrowsContaining -ExpectedMessage $invalidSameValueMutation.Message -Context "Artifact and expected $($invalidSameValueMutation.Name) invalid-same mutation" -Action {
+            Assert-NervAcceptancePlanningArtifact @invalidSameArguments | Out-Null
+        }
+    }
+
+    $invalidSelectionModeArtifact = Copy-JsonObject $persistedArtifact
+    $invalidSelectionModeArtifact.selectionMode = 'invalid-mode'
+    $invalidSelectionModeSelection = Copy-JsonObject $planningSelection
+    $invalidSelectionModeSelection.selectionMode = 'invalid-mode'
+    Assert-ThrowsContaining -ExpectedMessage 'selectionMode is invalid' -Context 'Artifact and selection invalid-same selectionMode mutation' -Action {
+        Assert-NervAcceptancePlanningArtifact `
+            -Artifact $invalidSelectionModeArtifact `
+            -Manifest $planningManifest `
+            -Selection $invalidSelectionModeSelection `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 `
+            -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+            -ManifestDigest $manifestDigest `
+            -Event 'workflow_dispatch' | Out-Null
     }
 
     $nonActiveSelection = Copy-JsonObject $planningSelection

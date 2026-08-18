@@ -478,14 +478,81 @@ function Test-NervAcceptanceImpactPathMatch {
     return [string]::Equals($Pattern, $ChangedPath, [StringComparison]::Ordinal)
 }
 
+function Test-NervAcceptanceChangedPath {
+    param([AllowNull()] [object] $Path)
+
+    if ($Path -isnot [string]) { return $false }
+    $text = [string]$Path
+    if ([string]::IsNullOrWhiteSpace($text) -or
+        -not [string]::Equals($text, $text.Trim(), [StringComparison]::Ordinal) -or
+        $text.StartsWith('/', [StringComparison]::Ordinal) -or
+        $text.Contains('\', [StringComparison]::Ordinal) -or
+        $text -cmatch '^[A-Za-z]:/' -or
+        $text.EndsWith('/', [StringComparison]::Ordinal)) {
+        return $false
+    }
+    foreach ($segment in @($text.Split('/', [StringSplitOptions]::None))) {
+        if ([string]::IsNullOrEmpty($segment) -or
+            [string]::Equals($segment, '.', [StringComparison]::Ordinal) -or
+            [string]::Equals($segment, '..', [StringComparison]::Ordinal)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-NervAcceptanceGlobalImpactPath {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $exactPaths = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'scripts/acceptance-scenario-matrix.json',
+            'scripts/lib/AcceptanceScenarioMatrix.ps1',
+            'scripts/plan-acceptance-scenario-matrix.ps1',
+            'scripts/tests/acceptance-scenario-matrix.Tests.ps1',
+            'scripts/full-chain-test-lane.json',
+            'scripts/lib/FullChainTestLane.ps1',
+            'scripts/run-full-chain-test-lane.ps1',
+            'scripts/tests/full-chain-test-lane.Tests.ps1',
+            'scripts/lib/CiImpactPlan.ps1',
+            'scripts/get-ci-impact-plan.ps1',
+            'scripts/tests/ci-impact-plan.Tests.ps1',
+            'scripts/lib/ScriptAutomation.ps1',
+            'NuGet.config',
+            '.gitattributes',
+            '.gitignore',
+            '.node-version',
+            'aspire.config.json',
+            'dotnet-tools.json',
+            'nerv.ps1'
+        ),
+        [StringComparer]::Ordinal)
+    if ($exactPaths.Contains($Path)) { return $true }
+    if ($Path.StartsWith('.github/workflows/', [StringComparison]::Ordinal) -or
+        $Path.StartsWith('backend/common/', [StringComparison]::Ordinal) -or
+        $Path.StartsWith('backend/tests/Nerv.IIP.Business.FullChain.Tests/', [StringComparison]::Ordinal) -or
+        $Path.StartsWith('backend/tests/Nerv.IIP.Business.SchedulingMes.FullChain.Tests/', [StringComparison]::Ordinal) -or
+        $Path.StartsWith('infra/aspire/', [StringComparison]::Ordinal)) {
+        return $true
+    }
+    return $Path.StartsWith('scripts/', [StringComparison]::Ordinal) -and
+        ($Path.Contains('full-chain', [StringComparison]::OrdinalIgnoreCase) -or
+        $Path.Contains('fullstack', [StringComparison]::OrdinalIgnoreCase))
+}
+
 function Select-NervAcceptanceScenarioMatrix {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
-        [Parameter(Mandatory)] [ValidateSet('pull_request', 'push', 'schedule', 'workflow_dispatch')] [string] $Event,
+        [Parameter(Mandatory)] [string] $Event,
         [AllowEmptyCollection()] [string[]] $ChangedPaths = @(),
         [bool] $ImpactRulesSucceeded = $true,
         [string] $DispatchSelection
     )
+
+    $allowedEvents = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('pull_request', 'push', 'schedule', 'workflow_dispatch'),
+        [StringComparer]::Ordinal)
+    if (-not $allowedEvents.Contains($Event)) { throw "Planning event '$Event' is invalid." }
 
     $active = @(Get-NervAcceptanceScenariosByOrdinal -Scenarios @($Manifest.scenarios | Where-Object {
         [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
@@ -513,24 +580,84 @@ function Select-NervAcceptanceScenarioMatrix {
     }
 
     $paths = @($ChangedPaths)
-    $pathsValid = $paths.Count -gt 0
-    foreach ($path in $paths) {
-        if ([string]::IsNullOrWhiteSpace([string]$path) -or
-            -not [string]::Equals([string]$path, ([string]$path).Trim(), [StringComparison]::Ordinal) -or
-            ([string]$path).Contains('\', [StringComparison]::Ordinal)) {
-            $pathsValid = $false
-            break
-        }
-    }
+    $pathsValid = $paths.Count -gt 0 -and @($paths | Where-Object { -not (Test-NervAcceptanceChangedPath -Path $_) }).Count -eq 0
     if (-not $ImpactRulesSucceeded -or -not $pathsValid) {
         $reason = if (-not $ImpactRulesSucceeded) { 'impact-rules-failed' } else { 'changed-paths-missing-or-invalid' }
         return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @($reason); scenarios = @($activeCore) }
     }
 
+    $normalizedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($path in $paths) { [void]$normalizedSet.Add([string]$path) }
+    $normalizedPaths = [string[]]@($normalizedSet)
+    [Array]::Sort($normalizedPaths, [StringComparer]::Ordinal)
+
+    $scenarioByEntrypoint = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in $activeCore) {
+        $impact = $scenario.impact
+        if ($null -eq $impact -or $impact -isnot [pscustomobject] -or
+            -not (Test-NervAcceptanceObjectProperty -Object $impact -Name 'paths') -or
+            $impact.paths -isnot [array] -or @($impact.paths).Count -eq 0) {
+            return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+        }
+        foreach ($impactPath in @($impact.paths)) {
+            if ($impactPath -isnot [string]) {
+                return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+            }
+            $impactPathText = [string]$impactPath
+            $hasWildcard = $impactPathText.Contains('*', [StringComparison]::Ordinal) -or
+                $impactPathText.Contains('?', [StringComparison]::Ordinal) -or
+                $impactPathText.Contains('[', [StringComparison]::Ordinal)
+            $pathToValidate = $impactPathText
+            if ($hasWildcard) {
+                if (-not $impactPathText.EndsWith('/**', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+                }
+                $pathToValidate = $impactPathText.Substring(0, $impactPathText.Length - 3)
+                if ($pathToValidate.Contains('*', [StringComparison]::Ordinal) -or
+                    $pathToValidate.Contains('?', [StringComparison]::Ordinal) -or
+                    $pathToValidate.Contains('[', [StringComparison]::Ordinal)) {
+                    return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+                }
+            }
+            if (-not (Test-NervAcceptanceChangedPath -Path $pathToValidate)) {
+                return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+            }
+        }
+
+        $entrypoint = $scenario.entrypoint
+        if ($null -eq $entrypoint -or $entrypoint -isnot [pscustomobject] -or $entrypoint.kind -isnot [string]) {
+            return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+        }
+        if ([string]::Equals([string]$entrypoint.kind, 'script', [StringComparison]::Ordinal)) {
+            if (-not (Test-NervAcceptanceObjectProperty -Object $entrypoint -Name 'path') -or
+                -not (Test-NervAcceptanceChangedPath -Path $entrypoint.path)) {
+                return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+            }
+            $entrypointPath = [string]$entrypoint.path
+            if ($scenarioByEntrypoint.ContainsKey($entrypointPath)) {
+                return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @('impact-rules-invalid'); scenarios = @($activeCore) }
+            }
+            $scenarioByEntrypoint.Add($entrypointPath, $scenario)
+        }
+    }
+
     $selected = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
     $reasons = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($changedPath in $normalizedPaths) {
+        if (Test-NervAcceptanceGlobalImpactPath -Path $changedPath) {
+            foreach ($scenario in $activeCore) { $selected[[string]$scenario.id] = $scenario }
+            [void]$reasons.Add("global-impact:$changedPath")
+            continue
+        }
+        if ($scenarioByEntrypoint.ContainsKey($changedPath)) {
+            $scenario = $scenarioByEntrypoint[$changedPath]
+            $selected[[string]$scenario.id] = $scenario
+            [void]$reasons.Add("entrypoint:$changedPath")
+            continue
+        }
+    }
     foreach ($scenario in $activeCore) {
-        foreach ($changedPath in $paths) {
+        foreach ($changedPath in $normalizedPaths) {
             $matched = $false
             foreach ($impactPath in @($scenario.impact.paths)) {
                 if (Test-NervAcceptanceImpactPathMatch -Pattern ([string]$impactPath) -ChangedPath ([string]$changedPath)) {
@@ -547,6 +674,7 @@ function Select-NervAcceptanceScenarioMatrix {
     $selectedScenarios = @(Get-NervAcceptanceScenariosByOrdinal -Scenarios @($selected.Values))
     $reasonValues = [string[]]@($reasons)
     [Array]::Sort($reasonValues, [StringComparer]::Ordinal)
+    if ($selectedScenarios.Count -eq 0) { $reasonValues = [string[]]@('no-impact') }
     return [pscustomobject]@{ selectionMode = 'pull-request-impact'; reasons = @($reasonValues); scenarios = @($selectedScenarios) }
 }
 
@@ -725,6 +853,28 @@ function Assert-NervAcceptancePlanningProvenance {
     if (-not $allowedEvents.Contains($Event)) { throw "Planning event '$Event' is invalid." }
 }
 
+function Assert-NervAcceptanceSelectionMode {
+    param(
+        [AllowNull()] [object] $SelectionMode,
+        [Parameter(Mandatory)] [string] $Event
+    )
+
+    if ($SelectionMode -isnot [string]) { throw 'Planning selectionMode must be a JSON string.' }
+    $allowedModes = if ([string]::Equals($Event, 'pull_request', [StringComparison]::Ordinal)) {
+        @('pull-request-impact', 'conservative-active-core')
+    }
+    elseif ([string]::Equals($Event, 'push', [StringComparison]::Ordinal)) { @('main-active-core') }
+    elseif ([string]::Equals($Event, 'schedule', [StringComparison]::Ordinal)) { @('nightly-active') }
+    elseif ([string]::Equals($Event, 'workflow_dispatch', [StringComparison]::Ordinal)) {
+        @('workflow-dispatch-all-active', 'workflow-dispatch-scenario')
+    }
+    else { @() }
+    $allowedModeSet = [Collections.Generic.HashSet[string]]::new([string[]]$allowedModes, [StringComparer]::Ordinal)
+    if (-not $allowedModeSet.Contains([string]$SelectionMode)) {
+        throw "Planning selectionMode is invalid for event '$Event'."
+    }
+}
+
 function New-NervAcceptancePlanningArtifact {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
@@ -781,9 +931,31 @@ function Assert-NervAcceptancePlanningArtifact {
         [Parameter(Mandatory)] [string] $Event
     )
 
+    Assert-NervAcceptancePlanningProvenance -Repository $Repository -TestedSha $TestedSha -RunId $RunId -RunAttempt $RunAttempt -ManifestPath $ManifestPath -ManifestDigest $ManifestDigest -Event $Event
+    if (-not (Test-NervAcceptanceObjectProperty -Object $Selection -Name 'selectionMode')) { throw 'Planning selection is missing selectionMode.' }
+    Assert-NervAcceptanceSelectionMode -SelectionMode $Selection.selectionMode -Event $Event
+    if (-not (Test-NervAcceptanceObjectProperty -Object $Selection -Name 'reasons')) { throw 'Planning selection is missing reasons.' }
+    Assert-NervAcceptanceStringArray -Value $Selection.reasons -Context 'planning selection reasons'
+
     $fields = @('schemaVersion', 'repository', 'testedSha', 'runId', 'runAttempt', 'manifestPath', 'manifestDigest', 'event', 'selectionMode', 'selectionReasons', 'scenarios', 'projects')
     Assert-NervAcceptanceObjectSchema -Object $Artifact -AllowedFields $fields -RequiredFields $fields -Context 'planning artifact'
     if (-not (Test-NervAcceptanceInteger -Value $Artifact.schemaVersion) -or [int64]$Artifact.schemaVersion -ne 1) { throw 'Planning artifact schemaVersion must be 1.' }
+    foreach ($stringField in @('repository', 'testedSha', 'runId', 'manifestPath', 'manifestDigest', 'event', 'selectionMode')) {
+        if ($Artifact.PSObject.Properties[$stringField].Value -isnot [string]) {
+            throw "Planning artifact $stringField must be a JSON string."
+        }
+    }
+    if (-not (Test-NervAcceptanceInteger -Value $Artifact.runAttempt)) { throw 'Planning artifact runAttempt must be a JSON integer.' }
+    Assert-NervAcceptancePlanningProvenance `
+        -Repository $Artifact.repository `
+        -TestedSha $Artifact.testedSha `
+        -RunId $Artifact.runId `
+        -RunAttempt $Artifact.runAttempt `
+        -ManifestPath $Artifact.manifestPath `
+        -ManifestDigest $Artifact.manifestDigest `
+        -Event $Artifact.event
+    Assert-NervAcceptanceSelectionMode -SelectionMode $Artifact.selectionMode -Event $Artifact.event
+
     $selectionIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($selectedScenario in @($Selection.scenarios)) {
         $selectedId = [string]$selectedScenario.id
@@ -810,7 +982,7 @@ function Assert-NervAcceptancePlanningArtifact {
         }
     }
     if (-not (Test-NervAcceptanceInteger -Value $Artifact.runAttempt) -or [int64]$Artifact.runAttempt -ne $RunAttempt) { throw 'Planning artifact runAttempt does not match expected provenance.' }
-    Assert-NervAcceptanceStringArray -Value $Artifact.selectionReasons -Context 'planning artifact selectionReasons' -AllowEmpty
+    Assert-NervAcceptanceStringArray -Value $Artifact.selectionReasons -Context 'planning artifact selectionReasons'
     if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($Artifact.selectionReasons)) -Right ([string[]]@($Selection.reasons)))) {
         throw 'Planning artifact selectionReasons do not exactly equal the selection result.'
     }
