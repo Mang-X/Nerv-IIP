@@ -17,6 +17,7 @@
 - 本地启动、Aspire/fullstack 运行或排障：读取
   `docs/architecture/local-dev-troubleshooting.md`。
 - 人工文档或协作文本：读取 `docs/architecture/document-language-governance.md`；该规则覆盖仓库文档，以及 GitHub/Linear 的 Issue、PR、评论和审核文本。
+- 新增、修改或审核测试断言、golden/snapshot/digest、provider/lane 命名或测试删除：读取 `docs/architecture/test-validity-governance.md`。
 - GitHub/Linear 发布前：除非用户明确指定其他语言，先检查标题、正文、评论、Review、状态说明和验收结论中的自然语言是否为简体中文；代码、命令、路径、标识符、检查名、SHA、URL 和必要的英文引文按语言治理规则保留。
 - 新建、修订或执行 Superpowers spec/plan：先读取 `docs/superpowers/AGENTS.md`。
 - 用户可见页面或流程变更：按
