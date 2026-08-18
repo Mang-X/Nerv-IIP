@@ -45,9 +45,9 @@ generation、workflow 或 script。
 | registry 族 | producer | consumer | 当前权威来源 | 重复形式与规模 | 主要漂移风险 | 当前验证 | 建议 seam | 分流 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 服务 endpoint | 13 个 Business Web 的 `*EndpointContracts.All` | FastEndpoints `Configure*Contract`、OpenAPI operationId、FacadeCoverage | service-local endpoint contract | matrix 复制 415 行 service/method/route/operationId | 新服务可在测试源码和 csproj 两份接线清单中同时遗漏 | 已接线服务做 live↔matrix 双向比较，另核对 Gateway OpenAPI operationId；仅要求 live >=300 | 保留 service contract 为 endpoint shape 权威；matrix 只维护分类，服务集合做 closed-world discovery | NERV-882；可机械收口 |
-| acceptance endpoint catalog | 部分 service contract | `PublicBusinessEndpointCatalog.All` 的 #77 chain 测试 | 场景所需 endpoint 清单 | 名称称 `All`，实际只组合部分服务/合同 | 容易把存在性清单误报为全平台或真实 full-chain 覆盖 | 只断言场景所需合同存在 | 改成封闭场景 catalog/名称，显式列出未覆盖域 | NERV-887；可机械收口 |
+| acceptance endpoint catalog | 部分 service contract | `PublicBusinessEndpointCatalog.All` 的 #77 chain 测试 | 场景所需 endpoint 清单 | 名称 `All`，实际只组合部分服务/合同 | 容易把存在性清单误报为全平台或真实 full-chain 覆盖 | 只断言场景所需合同存在 | 改成封闭场景 catalog/名称，显式列出未覆盖域 | NERV-887；可机械收口 |
 | IAM / service / Gateway permission | service endpoint metadata、Gateway auth 常量、IAM seed | runtime authorize、IAM catalog/role、frontend visibility | 当前分裂；按上下文地图 IAM 拥有 permission facts | service 100、IAM business seed 95、Gateway 93、Business Console 67 个 unique code | 已有 5 个 consumer code 无 IAM seed；描述、角色迁移也可独立漂移 | 各层局部测试；无全仓 consumer→seed 闭合测试 | 先修真实语义，再加 closed-world gate；长期权威由 Spec 裁决 | NERV-883、885、888、886 |
-| Business Console route/permission | 99 个 page 文件及 `definePage.meta` | router guard、`navigation.ts` 102 项/90 unique route | page 文件是路由与 guard metadata 的运行来源；navigation 是产品 IA | route 与 permission 在 page/navigation 两写 | 新页面/菜单只改一侧；手工测试覆盖点状 | 静态盘点 89 个可比较 route 权限相同；无 whole-tree 门禁 | navigation 保留 label/icon/order，只引用 typed route；权限派生或全树等价断言 | NERV-889；边界固定 |
+| Business Console route/permission | 99 个 page 文件及 `definePage.meta` | router guard、`navigation.ts` 101 个运行条目/89 个 unique active route | page 文件是路由与 guard metadata 的运行来源；navigation 是产品 IA | route 与 permission 在 page/navigation 两写 | 新页面/菜单只改一侧；手工测试覆盖点状 | 静态盘点 89 个可比较 active route 权限相同；无 whole-tree 门禁 | navigation 保留 label/icon/order，只引用 typed route；权限派生或全树等价断言 | NERV-889；边界固定 |
 | PDA task kind | `PDA_TASK_KINDS` 13 项 | PDA 首页 permission/icon map 与文件路由 | business-core task kind 是任务目录 | ID 在 task、permission、icon、page route 多写 | permission map 漏项时 `!permission` 默认显示 | 当前 13 项均有映射/页面；测试未穷举所有 key | literal-union ID + exhaustive map，缺项 fail closed | NERV-884；可机械收口 |
 | OpenAPI / generated client | Gateway runtime Swagger | 快照、Hey API generated client、stable barrel、apps | Gateway runtime OpenAPI | 两份 JSON 快照与 generated 目录 | 手改派生物或漏跑 codegen | export→generate→git diff 的现行 drift gate | 保持现有生成 seam；不手工合并 | 已有 NERV-658/NERV-491；非本次新票 |
 | Gateway DTO shape | downstream HTTP response 与 facade endpoint DTO | BusinessGateway adapter、Swagger、frontend client | 每个 facade 的公开 DTO 语义 | `Application/BusinessServices` 有大量 record；存在显式 passthrough 副本 | downstream wire 与 facade shape 独立变化 | focused mapping/test，OpenAPI 只覆盖 facade 输出 | 逐 capability 判断“映射”还是“纯透传”；生成 transport 边界由 NERV-658 裁决 | 需架构裁决 |
@@ -89,8 +89,25 @@ BarcodeLabel、Scheduling 以及 Quality reason-code 等不在其中。它服务
 
 ### Business Console 路由
 
-静态扫描得到 99 个 `.vue` page、`navigation.ts` 102 个条目和 90 个 unique route。临时解析脚本
-对 89 个可以直接映射的 route 比较 `requiredPermissions`，未发现集合不一致；导航目标也都能映射
+在本报告快照 `c67bb99ed28e2c476f29d01decf0ee7bfe6eb1d9` 上，静态扫描得到 99 个
+`.vue` page；从 `navigation.ts` 排除首个非空字符为 `//` 的注释行后，得到 101 个运行条目和
+89 个 unique active route。若直接扫描原始文本则会得到 102 项/90 个 unique route，因为会把
+已注释的 `/mes/schedules` 也计入。复算命令为：
+
+```bash
+snapshot=c67bb99ed28e2c476f29d01decf0ee7bfe6eb1d9
+nav_path=frontend/apps/business-console/src/navigation.ts
+pages_path=frontend/apps/business-console/src/pages
+git ls-tree -r --name-only "$snapshot" -- "$pages_path" |
+  awk '/\.vue$/{count++} END{print count+0}'
+git show "$snapshot:$nav_path" | awk '!/^[[:space:]]*\/\//' |
+  rg -o "to: \{ path: '[^']+' \}" | wc -l
+git show "$snapshot:$nav_path" | awk '!/^[[:space:]]*\/\//' |
+  rg -o "to: \{ path: '[^']+' \}" |
+  sed -E "s/^.*path: '([^']+)'.*$/\1/" | sort -u | wc -l
+```
+
+对这 89 个 active route 比较 `requiredPermissions`，未发现集合不一致；导航目标也都能映射
 到页面。未进入导航的非动态页面包括 `/design-system/blocks`、`/design-system/shell`、
 `/engineering`、`/forbidden`、`/login`、`/wms`，其中包含登录/错误页和领域 index，不能简单要求
 所有页面都有菜单。
@@ -129,7 +146,7 @@ Business service 中存在、IAM business seed 中不存在的 5 项为：
 - `business.quality.spc.manage`
 
 Gateway 也使用 `business.inventory.expired-stock.override`；Business Console 的 67 项均在 IAM
-business seed 中。另有 20 个已 seed 权限没有专属中文描述，当前 `IamPermissionCatalog` 会回退为
+business seed 中。另有 20 个已 seed 权限没有专属描述，当前 `IamPermissionCatalog` 会回退为
 code；这不影响 code 集合闭合结论，但说明“code、描述、默认角色”是三个不同迁移维度。
 
 不能在本 Spike 里机械补 5 个字符串：seed 会改变哪些权限可分配，默认角色是否获得权限还涉及
