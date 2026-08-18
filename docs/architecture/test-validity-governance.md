@@ -2,7 +2,7 @@
 
 ## 目的与边界
 
-本文规定测试断言的语义来源，以及不同 provider（提供程序）和 lane（执行通道）允许声明的证明范围。它回答“断言为什么正确”和“这次运行最多证明什么”。CI 是否实际执行、TRX 脱敏、skip 政策、zero-execution、证据留存和运行身份仍以 [测试证据治理](test-evidence-governance.md) 为准，本文不重复其执行证据契约。
+本文规定测试断言的语义来源，以及不同 provider（提供程序）和 lane（执行通道）允许声明的证明范围。它回答“断言为什么正确”和“这次运行最多证明什么”。CI 是否实际执行、TRX 脱敏、skip 政策、zero-execution、证据留存和运行身份仍以 [测试证据治理](test-evidence-governance.md) 为准，本文不重复其执行证据契约；真实依赖 lane 的定义、稳定 ID、唯一归属和触发层级以[真实依赖测试 Lane 架构](real-dependency-test-lanes.md)为准，本文只约束测试结论的有效性，不另立 lane 权威。
 
 一条测试只有同时满足以下条件才是有效证据：
 
@@ -44,7 +44,7 @@ Golden、snapshot 和 digest 都是权威语义的派生表示，不是语义来
 - 先对当前输出求 digest，再用同一实现重算 digest 证明自身正确；
 - 在没有逐项解释的情况下，用大范围 snapshot 刷新掩盖新增、缺失、顺序或默认值变化。
 
-允许工具生成机械文件，但 reviewer 必须从独立来源审核语义差异。若输出过大，应断言来源要求的关键性质，并把完整 snapshot 仅作为可审的派生载体；不能用不可读的体积替代合同说明。
+允许工具生成机械文件，但审核者必须从独立来源审核语义差异。若输出过大，应断言来源要求的关键性质，并把完整 snapshot 仅作为可审的派生载体；不能用不可读的体积替代合同说明。
 
 正例：GS1 标准和仓库条码规则先给出输入与期望 AI 段，再由固定规范化器生成 golden；实现输出只与该 golden 比较。反例：运行当前条码生成器覆盖全部 golden，看到测试变绿后才把新输出解释为标准。
 
@@ -56,27 +56,27 @@ Golden、snapshot 和 digest 都是权威语义的派生表示，不是语义来
 | --- | --- | --- |
 | pure/fake/EF Core InMemory | 纯函数、领域状态机、应用编排、确定性输入输出，以及 fake 明确模拟的分支。 | SQL 翻译、migration、schema/索引/外键/唯一约束、事务隔离、锁、真实持久化重启、provider 特有异常。 |
 | PostgreSQL | 在实际执行路径覆盖到的 migration、schema、SQL 翻译、约束、事务、锁、并发和重启持久化行为。 | Redis/CAP 传输、跨进程消息恢复、完整服务拓扑、浏览器流程，或测试未制造的并发/故障分支。 |
-| Redis/CAP | 在真实 Redis/CAP 与所声明持久化依赖上实际触发的发布、消费、重投、乱序、inbox/outbox、consumer group 和清理行为。 | 未参与的 broker/provider、完整 HTTP 用户链路、所有业务服务，或仅凭消息最终出现推导出的数据库隔离正确性。 |
+| Redis/CAP | 在真实 Redis/CAP 与所声明持久化依赖上实际触发的发布、消费、重投、乱序、inbox/outbox、consumer group 和清理行为；断言终点是 transport 或单个消费者的持久结果。 | 未参与的 broker/provider、完整 HTTP 用户链路、所有业务服务，或仅凭消息最终出现推导出的数据库隔离正确性。 |
 | FullChain | 清单中精确场景经真实公开入口、实际服务拓扑和声明的真实依赖完成，并具有身份、readiness、结果与 cleanup 证据。 | 清单外场景、未触达的异常分支、平台全量正确性、性能容量，或另一 provider/profile 的等价性。 |
 
 mock 浏览器只能证明前端对 mock 契约的交互；真实浏览器若后端仍为 stub，也不能称为 FullChain。反过来，协议级 FullChain 未启动浏览器时也不能声明视觉或可访问性通过。
 
 ### 命名与 trait
 
-- 名称先写行为，再写必要的执行边界；`Postgres`、`RedisCap`、`FullChain` 等后缀只在测试确实连接该依赖、执行目标行为并由对应 lane 认证时使用。
+- 名称先写行为，再写必要的执行边界；测试名需要 provider 后缀时统一使用小写 `_on_postgres`、`_on_redis_cap`、`_on_full_chain`，且只在测试确实连接该依赖、执行目标行为并由对应 lane 认证时使用。这些下划线后缀只是代码标识符命名约定，不是 lane ID。
 - `Integration`、`Provider`、`EndToEnd` 过于宽泛，不能单独表达依赖或证明范围。需要 provider 语义时，名称或 trait 必须点明实际 provider。
-- trait 是路由和盘点契约，不是装饰。声明的 trait、manifest 身份、skip 条件和责任 lane 必须一致；缺少环境时应按[测试证据治理](test-evidence-governance.md)登记并失败关闭，不得 `return` 静默空跑。
-- lane 名称描述实际拓扑，不描述愿望。`postgres` lane 中使用 CAP InMemory 的用例不得改称 `RedisCap`；只验证 HTTP mock 的用例不得改称 `FullChain`。
-- 同一测试组合多个真实依赖时，名称和证据应写明实际组合；不能用其中最强的一个标签替代其余依赖身份。
+- trait 是路由和盘点契约，不是装饰。声明的 trait、manifest 身份、skip 条件和责任 lane 必须一致；对应 lane 被选中后，缺少环境必须按[测试证据治理](test-evidence-governance.md)失败关闭，未选中时按已登记政策合法跳过，任何情况下都不得 `return` 静默空跑。
+- lane 一律使用冻结的稳定 ID `postgres`、`redis-cap`、`full-chain`，描述实际拓扑而非愿望。`postgres` lane 中使用 CAP InMemory 的用例不得归为 `redis-cap`；只验证 HTTP mock 的用例不得归为 `full-chain`。
+- 同一测试组合多个真实依赖时，名称和证据叙述应写明实际组合，不能用其中最强的一个标签替代其余依赖身份；组合说明不改变按“证明什么”裁决的 `requiredLane` 唯一归属。
 
-正例：`Concurrent_create_enforces_unique_source_key_on_postgres` 在 PostgreSQL lane 中制造两个事务并验证唯一结果。反例：`PostgresProfileTests.Create_succeeds` 实际替换为 EF Core InMemory，只因配置键写着 `PostgreSQL` 就宣称 provider 证明。
+正例：`Concurrent_create_enforces_unique_source_key_on_postgres` 在 `postgres` lane 中制造两个事务并验证唯一结果。反例：`PostgresProfileTests.Create_succeeds` 实际替换为 EF Core InMemory，只因配置键写着 `PostgreSQL` 就宣称 provider 证明。
 
-## Review checklist
+## 审核清单
 
-新增、修改、迁移或删除测试时，author 与 reviewer 逐项核对：
+新增、修改、迁移或删除测试时，作者与审核者逐项核对：
 
 - [ ] **来源：**每项关键预期归入六类之一，并能定位独立权威来源；当前实现输出没有反向成为合同。
-- [ ] **red-green：**测试在修复前提交、最小错误实现或等价 mutation 上会失败，失败原因正是目标行为；修复后才通过。
+- [ ] **红绿验证：**测试在修复前提交、最小错误实现或等价错误变异上会失败，失败原因正是目标行为；修复后才通过。
 - [ ] **旧实现反例：**测试保留能区分旧错误实现与新实现的输入/交错/fixture，而不是只验证新实现存在。
 - [ ] **并发：**并发结论实际控制交错、事务和同步边沿，并证明冲突结果；并行启动或循环多次不等于竞态证据。
 - [ ] **时间：**使用 `TimeProvider`/明确 UTC、时区和边界；等待计时器注册边沿后再推进假时钟；不依赖墙钟睡眠碰运气。
@@ -84,19 +84,19 @@ mock 浏览器只能证明前端对 mock 契约的交互；真实浏览器若后
 - [ ] **隔离：**组织/环境、数据库/schema、Redis namespace、端口、文件目录、进程和 cleanup 均有精确归属；测试不清理共享或未知资源。
 - [ ] **证明范围：**标题、注释、PR 和验收结论没有超过实际 provider、拓扑、数据量及场景。
 - [ ] **golden/snapshot：**来源、规范化方法和语义变化可审，没有批量接受当前输出。
-- [ ] **负向路径：**缺依赖、坏输入、旧格式、冲突和 cleanup 失败按合同 fail closed；只测 happy path 不足以替代既有负向防线。
+- [ ] **负向路径：**缺依赖、坏输入、旧格式、冲突和 cleanup 失败按合同失败关闭；只测正常路径不足以替代既有负向防线。
 
 ### 删除或弱化负向隔离测试
 
 负向隔离测试包括跨租户/环境/数据库/schema/namespace/端口/进程所有权、越权访问、错误身份和 cleanup 边界。删除、合并或弱化这类测试前，必须提供**更强的行为证据**，同时满足：
 
-1. 在同一或更真实的 provider/拓扑上执行目标边界，而不是换成源码搜索、mock 或正向 happy path；
-2. 保留旧实现或等价错误 mutation 作为反例，证明替代测试会因隔离被破坏而失败；
+1. 在同一或更真实的 provider/拓扑上执行目标边界，而不是换成源码搜索、mock 或正向正常路径；
+2. 保留旧实现或等价错误变异作为反例，证明替代测试会因隔离被破坏而失败；
 3. 覆盖原测试保护的身份维度和失败结果，并新增至少一种更强条件，例如真实并发交错、真实约束、重启恢复或 cleanup 读回；
 4. PR 逐项说明旧断言由哪条新行为证据承接。无法建立映射时保留原测试，或先把改动拆到后续 Issue。
 
-正例：用真实 PostgreSQL 的两个 organization 事务和提交后读回，替代只检查 query filter 表达式的隔离测试；新测试在移除 organization 谓词的 mutation 上失败。反例：删除“不能删除其他 run 的 Redis key”测试，只保留“本次 key 已删除”的正向断言；后者无法发现广泛清理。
+正例：用真实 PostgreSQL 的两个 organization 事务和提交后读回，替代只检查 query filter 表达式的隔离测试；新测试在移除 organization 谓词的错误变异上失败。反例：删除“不能删除其他 run 的 Redis key”测试，只保留“本次 key 已删除”的正向断言；后者无法发现广泛清理。
 
 ## PR 结论格式
 
-涉及测试的 PR 至少说明：合同分类与来源、实际 provider/lane、red-green 或反例证据、受影响的隔离/时间/并发边界，以及未运行或不能证明的事项。执行数量、CI 状态和产物链接继续按[测试证据治理](test-evidence-governance.md)报告；“CI 绿色”不能替代本文件要求的语义来源与证明范围审核。
+涉及测试的 PR 至少说明：合同分类与来源、实际 provider/lane、红绿验证或反例证据、受影响的隔离/时间/并发边界，以及未运行或不能证明的事项。执行数量、CI 状态和产物链接继续按[测试证据治理](test-evidence-governance.md)报告；“CI 绿色”不能替代本文件要求的语义来源与证明范围审核。
