@@ -351,10 +351,13 @@ MAN-661 独占必需/按需执行通道政策、机器可读隔离登记表与�
   与 `PhysicalDeleteAfterUtc` 由 `PostgreSqlFileStorageService` 写、由 `PostgreSqlFileStorageGarbageCollector`
   读；写侧改注入时钟而读侧留在 `DateTimeOffset.UtcNow` 会让同一批列由两个时钟驱动。回退到「只改 `IsExpired`」
   并不能解决这一点：TUS 的 `IsExpired` 与 GC 读的是同一列，只要有任何一侧被注入，两个时钟就已经并存。因此收口
-  方向是让**所有**读写这批列的路径解析同一个 `TimeProvider` 注册。`FileStoragePostgreSqlServiceTests` 的
+  方向是让**所有**读写这批列的路径解析同一个 `TimeProvider` 注册。
+  `PostgreSqlFileStorageServiceEfCoreInMemoryTests` 使用 EF Core InMemory provider 验证实现级时钟逻辑；其中
   `GarbageCollector_ReadsUploadSessionExpiryThroughTheClockThatWroteIt` 与
   `GarbageCollector_KeepsSessionsWrittenByAClockAnchoredBehindTheWallClock` 在 GC 退回墙钟时**都会失败**
-  （实测 2 个失败）。历史扫描器写的 `ScannedAtUtc` 曾是无过期比较读取的墙钟审计戳；该扫描器和字段已由 #1604 删除。
+  （实测 2 个失败），但不证明 PostgreSQL provider 行为。真实 PostgreSQL 重启持久化证据由
+  `FileStorageRestartPersistenceTests` 独立负责。历史扫描器写的 `ScannedAtUtc` 曾是无过期比较读取的墙钟审计戳；
+  该扫描器和字段已由 #1604 删除。
 - **`Consistently.StaysAsync` 区分「超时」与「违例」。** 窗口在首次观测返回前就到期时抛
   `ConsistentlyObservationTimeoutException`（`TimeoutException` 家族），而不是 `ConsistentlyViolatedException`。
   否则一次冷启动的 Docker PostgreSQL 查询会把「基础设施慢」误诊成「负向断言被违反」，而且诊断只能编造一个
