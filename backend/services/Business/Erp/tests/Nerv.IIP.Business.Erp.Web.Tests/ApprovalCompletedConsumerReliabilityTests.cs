@@ -106,9 +106,64 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
         Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
     }
 
+    /// <summary>
+    /// #1683 回归：**种子形状**的采购审批链（单据引用的来源服务取审批契约唯一事实来源
+    /// <see cref="ApprovalSourceServices.BusinessErp"/>）被批准后，ERP 回写必须**真的发生**——
+    /// 采购订单从 pending-approval 走到 released，而不是在来源服务分流处静默 return。
+    /// </summary>
+    [Fact]
+    public async Task ApprovalCompletedHandler_ReleasesPurchaseOrderForSeedShapedSourceService()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.PurchaseOrders.Add(PendingApprovalPurchaseOrder("PO-001", "chain-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, deadLetters);
+
+        await handler.HandleAsync(
+            ApprovalCompletedEvent(
+                ApprovalResults.Approved,
+                documentSourceService: ApprovalSourceServices.BusinessErp),
+            CancellationToken.None);
+
+        Assert.Equal(PurchaseOrderStatus.Released, dbContext.PurchaseOrders.Single().Status);
+        Assert.Single(dbContext.ProcessedIntegrationEvents);
+        Assert.Empty(await deadLetters.ListAsync(
+            ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    /// <summary>
+    /// #1683 事故形态钉死：来源服务写成旧字面量 <c>erp</c> 时，回写**静默失效**——
+    /// 订单永停 pending、无 processed 记录、连死信都没有（走查实证的「审批通过却没有任何报错」）。
+    /// 本用例与上一条成对存在：证明上一条的绿是「真的回写了」而不是断言没鉴别力。
+    /// </summary>
+    [Fact]
+    public async Task ApprovalCompletedHandler_SilentlyIgnoresLegacyErpSourceServiceAndLeavesOrderPending()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.PurchaseOrders.Add(PendingApprovalPurchaseOrder("PO-001", "chain-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, deadLetters);
+
+        await handler.HandleAsync(
+            ApprovalCompletedEvent(ApprovalResults.Approved, documentSourceService: "erp"),
+            CancellationToken.None);
+
+        Assert.Equal(PurchaseOrderStatus.PendingApproval, dbContext.PurchaseOrders.Single().Status);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        Assert.Empty(await deadLetters.ListAsync(
+            ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
     private static ApprovalCompletedIntegrationEvent ApprovalCompletedEvent(
         string result,
-        int eventVersion = ApprovalIntegrationEventVersions.V1)
+        int eventVersion = ApprovalIntegrationEventVersions.V1,
+        string? documentSourceService = null)
     {
         return new ApprovalCompletedIntegrationEvent(
             "evt-approval-001",
@@ -129,7 +184,11 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
                 "u-manager",
                 null,
                 null,
-                new ApprovalDocumentReferencePayload("business-erp", "purchase-order", "PO-001", null)));
+                new ApprovalDocumentReferencePayload(
+                    documentSourceService ?? ApprovalSourceServices.BusinessErp,
+                    "purchase-order",
+                    "PO-001",
+                    null)));
     }
 
     private static PurchaseOrder PendingApprovalPurchaseOrder(string purchaseOrderNo, string chainId)
