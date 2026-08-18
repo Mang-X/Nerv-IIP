@@ -1,9 +1,10 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Validates the acceptance scenario manifest with temporary JSON fixtures
+#     - Validates acceptance scenario manifest, selection, workflow budget, discovery, and artifact contracts with fixtures
+#     - Runs a temporary fake dotnet executable through the real planner helper boundary
 #   Writes:
-#     - Temporary JSON fixtures under the operating-system temp directory
+#     - Temporary JSON and workflow fixtures plus planning artifacts under the operating-system temp directory
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -14,6 +15,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrix.ps1'
 $manifestPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $v1ManifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
+$plannerPath = Join-Path $repoRoot 'scripts/plan-acceptance-scenario-matrix.ps1'
+$workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-acceptance-scenario-matrix-$([Guid]::NewGuid().ToString('N'))"
 
 if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {
@@ -66,6 +69,74 @@ function Assert-ManifestRejected {
     Assert-Contract $rejected "Mutation '$Name' must be rejected with '$ExpectedMessage'."
 }
 
+function Copy-JsonObject {
+    param([Parameter(Mandatory)] [object] $Value)
+
+    return ($Value | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
+}
+
+function Write-WorkflowFixture {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [int] $StepTimeoutMinutes
+    )
+
+    $path = Join-Path $fixtureRoot "$Name.yml"
+    $content = @"
+name: Acceptance planning fixture
+on:
+  workflow_dispatch:
+jobs:
+  acceptance-scenario-matrix-planning:
+    runs-on: ubuntu-latest
+    timeout-minutes: $($StepTimeoutMinutes + 5)
+    steps:
+      - name: Plan acceptance scenario matrix
+        timeout-minutes: $StepTimeoutMinutes
+        run: pwsh scripts/plan-acceptance-scenario-matrix.ps1
+"@
+    [IO.File]::WriteAllText($path, $content, [Text.UTF8Encoding]::new($false))
+    return $path
+}
+
+function Assert-ThrowsContaining {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    $rejected = $false
+    try { & $Action }
+    catch { $rejected = $_.Exception.Message.Contains($ExpectedMessage, [StringComparison]::Ordinal) }
+    Assert-Contract $rejected "$Context must fail with '$ExpectedMessage'."
+}
+
+function Assert-PlanningArtifactRejected {
+    param(
+        [Parameter(Mandatory)] [object] $Artifact,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Selection,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    Assert-ThrowsContaining -ExpectedMessage $ExpectedMessage -Context $Context -Action {
+        Assert-NervAcceptancePlanningArtifact `
+            -Artifact $Artifact `
+            -Manifest $Manifest `
+            -Selection $Selection `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 `
+            -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+            -ManifestDigest $ManifestDigest `
+            -Event 'workflow_dispatch'
+    }
+}
+
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
 
@@ -100,6 +171,10 @@ try {
     $missingImpactRoot.scenarios[0].impact.paths[0] = 'backend/services/Business/DoesNotExist/**'
     Assert-ManifestRejected -Name 'missing-impact-static-root' -Manifest $missingImpactRoot -ExpectedMessage 'impact path static root must exist with exact casing'
 
+    $wrongCaseImpactRoot = Copy-ManifestObject
+    $wrongCaseImpactRoot.scenarios[0].impact.paths[0] = 'backend/services/Business/erp/**'
+    Assert-ManifestRejected -Name 'wrong-case-impact-static-root' -Manifest $wrongCaseImpactRoot -ExpectedMessage 'impact path static root must exist with exact casing'
+
     $nonBooleanV1Dependency = Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 30
     $nonBooleanV1Dependency.members[0].dependencies.postgres = 'false'
     Assert-ManifestRejected -Name 'non-boolean-v1-dependency' -Manifest (Copy-ManifestObject) -V1Manifest $nonBooleanV1Dependency -ExpectedMessage 'v1 dependency must be a JSON boolean'
@@ -115,6 +190,18 @@ try {
     $placeholderProhibitedActions = Copy-ManifestObject
     $placeholderProhibitedActions.scenarios[0].cleanupProtocol.prohibitedActions = @('placeholder')
     Assert-ManifestRejected -Name 'placeholder-prohibited-actions' -Manifest $placeholderProhibitedActions -ExpectedMessage "cleanupProtocol.prohibitedActions must contain 'broad-process-kill'"
+
+    foreach ($prohibitedAction in @('broad-process-kill', 'unknown-database-delete', 'docker-prune', 'redis-flushall')) {
+        $missingProhibitedAction = Copy-ManifestObject
+        $missingProhibitedAction.scenarios[0].cleanupProtocol.prohibitedActions = @(
+            $missingProhibitedAction.scenarios[0].cleanupProtocol.prohibitedActions |
+                Where-Object { -not [string]::Equals([string]$_, $prohibitedAction, [StringComparison]::Ordinal) }
+        )
+        Assert-ManifestRejected `
+            -Name "missing-prohibited-action-$prohibitedAction" `
+            -Manifest $missingProhibitedAction `
+            -ExpectedMessage "cleanupProtocol.prohibitedActions must contain '$prohibitedAction'"
+    }
 
     $nonCanonicalBlockedIdentity = Copy-ManifestObject
     $nonCanonicalBlockedIdentity.scenarios[5].testProjects[0].frozenTestIdentities[0] = 'x'
@@ -195,6 +282,352 @@ try {
         & $driftMutation.Apply $drift
         Assert-ManifestRejected -Name $driftMutation.Name -Manifest $drift -ExpectedMessage $driftMutation.Message
     }
+
+    $pullRequestSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $manifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('backend/services/Business/Erp/Application/Orders.cs') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract ([string]::Equals([string]$pullRequestSelection.selectionMode, 'pull-request-impact', [StringComparison]::Ordinal)) 'Pull request selection must report impact mode.'
+    Assert-Contract ([string]::Equals((@($pullRequestSelection.scenarios.id) -join '|'), 'erp-return-closure|sales-order-demand|wms-delivery-erp', [StringComparison]::Ordinal)) 'Pull request impact selection must use ordinal scenario order and include every exact matching active scenario.'
+
+    $wrongCaseSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $manifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('backend/services/Business/erp/Application/Orders.cs') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract (@($wrongCaseSelection.scenarios).Count -eq 0) 'Pull request impact matching must be ordinal and reject wrong-case paths.'
+
+    $unmatchedSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $manifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('README.md') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract (@($unmatchedSelection.scenarios).Count -eq 0) 'A successful pull request impact evaluation may select zero scenarios.'
+
+    foreach ($conservativeCase in @(
+        @{ Name = 'rules-failed'; Paths = @('README.md'); RulesSucceeded = $false },
+        @{ Name = 'paths-missing'; Paths = @(); RulesSucceeded = $true }
+    )) {
+        $selection = Select-NervAcceptanceScenarioMatrix `
+            -Manifest $manifest `
+            -Event 'pull_request' `
+            -ChangedPaths $conservativeCase.Paths `
+            -ImpactRulesSucceeded $conservativeCase.RulesSucceeded
+        Assert-Contract ([string]::Equals([string]$selection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal)) "Pull request $($conservativeCase.Name) must fail open to conservative active/core selection."
+        Assert-Contract (@($selection.scenarios).Count -eq 5) "Pull request $($conservativeCase.Name) must select all five active/core scenarios."
+    }
+
+    $mainSelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'push'
+    Assert-Contract ([string]::Equals([string]$mainSelection.selectionMode, 'main-active-core', [StringComparison]::Ordinal) -and @($mainSelection.scenarios).Count -eq 5) 'Main push must select all active/core scenarios.'
+
+    $nightlySelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'schedule'
+    Assert-Contract ([string]::Equals([string]$nightlySelection.selectionMode, 'nightly-active', [StringComparison]::Ordinal) -and @($nightlySelection.scenarios).Count -eq 5) 'Nightly must select every active scenario.'
+
+    foreach ($dispatchAll in @('lane', 'full')) {
+        $dispatchSelection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection $dispatchAll
+        Assert-Contract (@($dispatchSelection.scenarios).Count -eq 5) "workflow_dispatch '$dispatchAll' must select every active scenario."
+    }
+    $dispatchSingle = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection 'mes-produced-lot-inventory'
+    Assert-Contract ([string]::Equals((@($dispatchSingle.scenarios.id) -join '|'), 'mes-produced-lot-inventory', [StringComparison]::Ordinal)) 'workflow_dispatch must support one named active scenario.'
+    Assert-ThrowsContaining -ExpectedMessage 'is not active' -Context 'Blocked workflow_dispatch selection' -Action {
+        Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event 'workflow_dispatch' -DispatchSelection 'equipment-unavailable-scheduling-mes' | Out-Null
+    }
+    $deferredManifest = Copy-JsonObject $manifest
+    $deferredManifest.scenarios[5].status = 'deferred'
+    Assert-ThrowsContaining -ExpectedMessage 'is not active' -Context 'Deferred workflow_dispatch selection' -Action {
+        Select-NervAcceptanceScenarioMatrix -Manifest $deferredManifest -Event 'workflow_dispatch' -DispatchSelection 'equipment-unavailable-scheduling-mes' | Out-Null
+    }
+
+    $planningManifest = Copy-JsonObject $manifest
+    $planningManifest.scenarios[1].testProjects[0].path = 'backend/tests/Nerv.IIP.Second.FullChain.Tests/Nerv.IIP.Second.FullChain.Tests.csproj'
+    $planningSelection = Select-NervAcceptanceScenarioMatrix -Manifest $planningManifest -Event 'workflow_dispatch' -DispatchSelection 'full'
+    $planningProjects = @(Get-NervAcceptancePlanningProjects -Scenarios $planningSelection.scenarios)
+    Assert-Contract ($planningProjects.Count -eq 2) 'Planning must group selected scenarios into two ordinal-unique projects.'
+    Assert-Contract ([string]::Equals([string]$planningProjects[0].path, 'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj', [StringComparison]::Ordinal)) 'Planning projects must be ordinal-sorted.'
+    Assert-Contract (@($planningProjects[0].expectedTestIdentities).Count -eq 4 -and @($planningProjects[1].expectedTestIdentities).Count -eq 1) 'Planning must aggregate each selected identity into exactly one project.'
+
+    $planningWorkflowPath = Write-WorkflowFixture -Name 'planning-workflow' -StepTimeoutMinutes 60
+    $shortPlanningWorkflowPath = Write-WorkflowFixture -Name 'planning-workflow-short' -StepTimeoutMinutes 46
+    $workflowBudget = Get-NervAcceptancePlanningWorkflowBudget `
+        -WorkflowPath $planningWorkflowPath `
+        -JobName 'acceptance-scenario-matrix-planning' `
+        -StepName 'Plan acceptance scenario matrix'
+    Assert-Contract ($workflowBudget.stepTimeoutSeconds -eq 3600) 'Planning must derive the actual step timeout from the supplied workflow.'
+    $requiredBudgetSeconds = Assert-NervAcceptancePlanningBudgetFits `
+        -PlanningBudget $planningManifest.planningBudget `
+        -UniqueProjectCount 2 `
+        -StepTimeoutSeconds $workflowBudget.stepTimeoutSeconds
+    Assert-Contract ($requiredBudgetSeconds -eq 2760) 'Planning budget must use the approved checked arithmetic formula.'
+    $shortWorkflowBudget = Get-NervAcceptancePlanningWorkflowBudget `
+        -WorkflowPath $shortPlanningWorkflowPath `
+        -JobName 'acceptance-scenario-matrix-planning' `
+        -StepName 'Plan acceptance scenario matrix'
+    Assert-ThrowsContaining -ExpectedMessage 'must be strictly less than' -Context 'Shortened planning workflow budget' -Action {
+        Assert-NervAcceptancePlanningBudgetFits -PlanningBudget $planningManifest.planningBudget -UniqueProjectCount 2 -StepTimeoutSeconds $shortWorkflowBudget.stepTimeoutSeconds | Out-Null
+    }
+    Assert-ThrowsContaining -ExpectedMessage 'exactly one' -Context 'Current workflow missing planning step' -Action {
+        Get-NervAcceptancePlanningWorkflowBudget `
+            -WorkflowPath $workflowPath `
+            -JobName 'acceptance-scenario-matrix-planning' `
+            -StepName 'Plan acceptance scenario matrix' | Out-Null
+    }
+
+    $projectExpected = @($planningProjects[0].expectedTestIdentities)
+    $closedDiscovery = Assert-NervAcceptanceDiscoveryClosure `
+        -ProjectPath ([string]$planningProjects[0].path) `
+        -ExpectedTestIdentities $projectExpected `
+        -DiscoveryOutput (($projectExpected | ForEach-Object { "  $_" }) -join "`n")
+    Assert-Contract ([string]::Equals((@($closedDiscovery) -join '|'), ($projectExpected -join '|'), [StringComparison]::Ordinal)) 'Discovery closure must return the exact ordinal identity set.'
+    foreach ($discoveryMutation in @(
+        @{ Name = 'zero'; Output = ''; Message = 'identity set does not exactly equal' },
+        @{ Name = 'missing'; Output = (($projectExpected | Select-Object -Skip 1) -join "`n"); Message = 'identity set does not exactly equal' },
+        @{ Name = 'extra'; Output = (($projectExpected + 'Nerv.IIP.Extra.Tests.Unregistered_test') -join "`n"); Message = 'identity set does not exactly equal' },
+        @{ Name = 'duplicate'; Output = (($projectExpected + $projectExpected[0]) -join "`n"); Message = 'duplicate discovered identity' }
+    )) {
+        Assert-ThrowsContaining -ExpectedMessage $discoveryMutation.Message -Context "Discovery $($discoveryMutation.Name) mutation" -Action {
+            Assert-NervAcceptanceDiscoveryClosure `
+                -ProjectPath ([string]$planningProjects[0].path) `
+                -ExpectedTestIdentities $projectExpected `
+                -DiscoveryOutput $discoveryMutation.Output | Out-Null
+        }
+    }
+
+    $manifestDigest = Get-NervAcceptanceManifestDigest -ManifestPath $manifestPath
+    Assert-Contract ($manifestDigest -cmatch '^[0-9a-f]{64}$') 'Manifest digest must be a lowercase SHA-256 hex string.'
+    $artifactPath = Join-Path $fixtureRoot 'artifacts/planning.json'
+    $calls = [Collections.Generic.List[object]]::new()
+    $projectCommandAction = {
+        param([string] $Operation, [string] $ProjectPath, [string[]] $Arguments, [int] $TimeoutSeconds)
+
+        $calls.Add([pscustomobject]@{ operation = $Operation; projectPath = $ProjectPath; arguments = @($Arguments); timeoutSeconds = $TimeoutSeconds })
+        if ([string]::Equals($Operation, 'discovery', [StringComparison]::Ordinal)) {
+            $project = @($planningProjects | Where-Object { [string]::Equals([string]$_.path, $ProjectPath, [StringComparison]::Ordinal) })[0]
+            return [pscustomobject]@{ Stdout = ((@($project.expectedTestIdentities) | ForEach-Object { "  $_" }) -join "`n"); Stderr = ''; ExitCode = 0 }
+        }
+        return [pscustomobject]@{ Stdout = ''; Stderr = ''; ExitCode = 0 }
+    }.GetNewClosure()
+
+    $artifact = Invoke-NervAcceptanceScenarioMatrixPlanning `
+        -Manifest $planningManifest `
+        -Selection $planningSelection `
+        -RepositoryRoot $repoRoot `
+        -Repository 'Mang-X/Nerv-IIP' `
+        -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -RunId '123456789' `
+        -RunAttempt 2 `
+        -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+        -ManifestDigest $manifestDigest `
+        -Event 'workflow_dispatch' `
+        -WorkflowPath $planningWorkflowPath `
+        -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+        -WorkflowStepName 'Plan acceptance scenario matrix' `
+        -ArtifactPath $artifactPath `
+        -ProjectCommandAction $projectCommandAction
+    Assert-Contract (@($calls | Where-Object { [string]::Equals([string]$_.operation, 'restore', [StringComparison]::Ordinal) }).Count -eq 2) 'Planning must restore each unique project exactly once.'
+    Assert-Contract (@($calls | Where-Object { [string]::Equals([string]$_.operation, 'discovery', [StringComparison]::Ordinal) }).Count -eq 2) 'Planning must discover each unique project exactly once.'
+    foreach ($restoreCall in @($calls | Where-Object { [string]::Equals([string]$_.operation, 'restore', [StringComparison]::Ordinal) })) {
+        Assert-Contract ([string]::Equals(($restoreCall.arguments -join '|'), "restore|$($restoreCall.projectPath)", [StringComparison]::Ordinal)) 'Restore must receive only the exact selected project path.'
+    }
+    foreach ($discoveryCall in @($calls | Where-Object { [string]::Equals([string]$_.operation, 'discovery', [StringComparison]::Ordinal) })) {
+        $expectedProject = @($planningProjects | Where-Object { [string]::Equals([string]$_.path, [string]$discoveryCall.projectPath, [StringComparison]::Ordinal) })[0]
+        $expectedFilter = (@($expectedProject.expectedTestIdentities | ForEach-Object { "FullyQualifiedName=$_" }) -join '|')
+        Assert-Contract ([string]::Equals(($discoveryCall.arguments -join '|'), "test|$($discoveryCall.projectPath)|--configuration|Release|--no-restore|--list-tests|--filter|$expectedFilter", [StringComparison]::Ordinal)) 'Discovery must use Release --no-restore --list-tests and one exact selected-identity filter.'
+    }
+    Assert-Contract (Test-Path -LiteralPath $artifactPath -PathType Leaf) 'Successful planning must write the declared artifact.'
+    $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
+    Assert-Contract (-not ($artifactBytes.Length -ge 3 -and $artifactBytes[0] -eq 0xEF -and $artifactBytes[1] -eq 0xBB -and $artifactBytes[2] -eq 0xBF)) 'Planning artifact must be UTF-8 without BOM.'
+    $persistedArtifact = Get-Content -LiteralPath $artifactPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-NervAcceptancePlanningArtifact `
+        -Artifact $persistedArtifact `
+        -Manifest $planningManifest `
+        -Selection $planningSelection `
+        -Repository 'Mang-X/Nerv-IIP' `
+        -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -RunId '123456789' `
+        -RunAttempt 2 `
+        -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+        -ManifestDigest $manifestDigest `
+        -Event 'workflow_dispatch' | Out-Null
+    Assert-Contract ([string]::Equals((@($persistedArtifact.projects.path) -join '|'), (@($planningProjects.path) -join '|'), [StringComparison]::Ordinal)) 'Artifact projects must retain stable ordinal ordering.'
+
+    foreach ($artifactMutation in @(
+        @{ Name = 'unknown-field'; Apply = { param($value) $value | Add-Member -NotePropertyName extra -NotePropertyValue $true }; Message = 'unknown field' },
+        @{ Name = 'missing-field'; Apply = { param($value) $value.PSObject.Properties.Remove('runId') }; Message = 'missing required field' },
+        @{ Name = 'sha'; Apply = { param($value) $value.testedSha = '1123456789abcdef0123456789abcdef01234567' }; Message = 'testedSha does not match' },
+        @{ Name = 'run'; Apply = { param($value) $value.runId = '987654321' }; Message = 'runId does not match' },
+        @{ Name = 'attempt'; Apply = { param($value) $value.runAttempt = 3 }; Message = 'runAttempt does not match' },
+        @{ Name = 'digest'; Apply = { param($value) $value.manifestDigest = ('f' * 64) }; Message = 'manifestDigest does not match' },
+        @{ Name = 'scenario'; Apply = { param($value) $value.scenarios[0].id = 'drifted-scenario' }; Message = 'scenario set does not exactly equal' },
+        @{ Name = 'project'; Apply = { param($value) $value.projects[0].path = 'backend/tests/Drifted/Drifted.csproj' }; Message = 'project set does not exactly equal' },
+        @{ Name = 'identity'; Apply = { param($value) $value.projects[0].discoveredTestIdentities[0] = 'Nerv.IIP.Drifted.Tests.Drifted' }; Message = 'discovered identities do not exactly equal' },
+        @{ Name = 'non-active'; Apply = { param($value) $value.scenarios[0].status = 'blocked' }; Message = 'must record only active scenarios' }
+    )) {
+        $mutatedArtifact = Copy-JsonObject $persistedArtifact
+        & $artifactMutation.Apply $mutatedArtifact
+        Assert-PlanningArtifactRejected `
+            -Artifact $mutatedArtifact `
+            -Manifest $planningManifest `
+            -Selection $planningSelection `
+            -ManifestDigest $manifestDigest `
+            -ExpectedMessage $artifactMutation.Message `
+            -Context "Artifact $($artifactMutation.Name) mutation"
+    }
+
+    $nonActiveSelection = Copy-JsonObject $planningSelection
+    $nonActiveSelection.scenarios[0] = Copy-JsonObject $planningManifest.scenarios[5]
+    $nonActiveArtifact = Copy-JsonObject $persistedArtifact
+    $nonActiveArtifact.scenarios[0].id = [string]$nonActiveSelection.scenarios[0].id
+    Assert-ThrowsContaining -ExpectedMessage 'selection must contain only active scenarios' -Context 'Non-active scenario selection' -Action {
+        Assert-NervAcceptancePlanningArtifact `
+            -Artifact $nonActiveArtifact `
+            -Manifest $planningManifest `
+            -Selection $nonActiveSelection `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 `
+            -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+            -ManifestDigest $manifestDigest `
+            -Event 'workflow_dispatch' | Out-Null
+    }
+
+    [IO.File]::WriteAllText($artifactPath, "stale-success`n", [Text.UTF8Encoding]::new($false))
+    $failingProjectAction = {
+        param([string] $Operation, [string] $ProjectPath, [string[]] $Arguments, [int] $TimeoutSeconds)
+        if ([string]::Equals($Operation, 'discovery', [StringComparison]::Ordinal)) {
+            return [pscustomobject]@{ Stdout = ''; Stderr = ''; ExitCode = 0 }
+        }
+        return [pscustomobject]@{ Stdout = ''; Stderr = ''; ExitCode = 0 }
+    }
+    Assert-ThrowsContaining -ExpectedMessage 'identity set does not exactly equal' -Context 'Failed planning discovery' -Action {
+        Invoke-NervAcceptanceScenarioMatrixPlanning `
+            -Manifest $planningManifest `
+            -Selection $planningSelection `
+            -RepositoryRoot $repoRoot `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 `
+            -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+            -ManifestDigest $manifestDigest `
+            -Event 'workflow_dispatch' `
+            -WorkflowPath $planningWorkflowPath `
+            -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+            -WorkflowStepName 'Plan acceptance scenario matrix' `
+            -ArtifactPath $artifactPath `
+            -ProjectCommandAction $failingProjectAction | Out-Null
+    }
+    Assert-Contract (-not (Test-Path -LiteralPath $artifactPath)) 'Failed planning must remove any stale or partial success artifact.'
+
+    Assert-Contract (Test-Path -LiteralPath $plannerPath -PathType Leaf) 'The planning entrypoint must exist.'
+    $fakeBin = Join-Path $fixtureRoot 'fake-bin'
+    [IO.Directory]::CreateDirectory($fakeBin) | Out-Null
+    $fakeCommandLog = Join-Path $fixtureRoot 'fake-dotnet-commands.log'
+    $fakeEnvironmentLog = Join-Path $fixtureRoot 'fake-dotnet-environment.log'
+    $activeIdentities = @($manifest.scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
+    } | ForEach-Object { $_.testProjects.frozenTestIdentities })
+    if ($IsWindows) {
+        $fakeDotnetPath = Join-Path $fakeBin 'dotnet.cmd'
+        $identityCommands = ($activeIdentities | ForEach-Object { "  echo $_" }) -join "`r`n"
+        $fakeDotnetContent = @"
+@echo off
+>>"%NERV_ACCEPTANCE_FAKE_COMMAND_LOG%" echo %*
+>>"%NERV_ACCEPTANCE_FAKE_ENVIRONMENT_LOG%" echo %MSBUILDDISABLENODEREUSE%^|%DOTNET_CLI_USE_MSBUILD_SERVER%
+echo %* | findstr /C:"--list-tests" >nul
+if not errorlevel 1 (
+$identityCommands
+)
+exit /b 0
+"@
+        [IO.File]::WriteAllText($fakeDotnetPath, $fakeDotnetContent, [Text.ASCIIEncoding]::new())
+    }
+    else {
+        $fakeDotnetPath = Join-Path $fakeBin 'dotnet'
+        $identityCommands = ($activeIdentities | ForEach-Object { "    printf '%s\n' '$_'" }) -join "`n"
+        $fakeDotnetContent = @"
+#!/bin/sh
+printf '%s\n' "`$*" >> "`$NERV_ACCEPTANCE_FAKE_COMMAND_LOG"
+printf '%s|%s\n' "`$MSBUILDDISABLENODEREUSE" "`$DOTNET_CLI_USE_MSBUILD_SERVER" >> "`$NERV_ACCEPTANCE_FAKE_ENVIRONMENT_LOG"
+case " `$* " in
+  *" --list-tests "*)
+$identityCommands
+    ;;
+esac
+exit 0
+"@
+        [IO.File]::WriteAllText($fakeDotnetPath, $fakeDotnetContent, [Text.UTF8Encoding]::new($false))
+        [IO.File]::SetUnixFileMode(
+            $fakeDotnetPath,
+            [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute -bor
+                [IO.UnixFileMode]::GroupRead -bor [IO.UnixFileMode]::GroupExecute -bor
+                [IO.UnixFileMode]::OtherRead -bor [IO.UnixFileMode]::OtherExecute)
+    }
+    $entrySuccessArtifactPath = Join-Path $fixtureRoot 'entry-success/planning.json'
+    $savedPath = [Environment]::GetEnvironmentVariable('PATH')
+    $savedNodeReuse = [Environment]::GetEnvironmentVariable('MSBUILDDISABLENODEREUSE')
+    $savedBuildServer = [Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER')
+    $savedFakeCommandLog = [Environment]::GetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_COMMAND_LOG')
+    $savedFakeEnvironmentLog = [Environment]::GetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_ENVIRONMENT_LOG')
+    try {
+        [Environment]::SetEnvironmentVariable('PATH', "$fakeBin$([IO.Path]::PathSeparator)$savedPath")
+        [Environment]::SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', 'sentinel-node-reuse')
+        [Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', 'sentinel-build-server')
+        [Environment]::SetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_COMMAND_LOG', $fakeCommandLog)
+        [Environment]::SetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_ENVIRONMENT_LOG', $fakeEnvironmentLog)
+        & $plannerPath `
+            -ManifestPath $manifestPath `
+            -V1ManifestPath $v1ManifestPath `
+            -WorkflowPath (Write-WorkflowFixture -Name 'entry-success-workflow' -StepTimeoutMinutes 30) `
+            -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+            -WorkflowStepName 'Plan acceptance scenario matrix' `
+            -ArtifactPath $entrySuccessArtifactPath `
+            -Event 'workflow_dispatch' `
+            -DispatchSelection 'full' `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 6>$null | Out-Null
+        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('MSBUILDDISABLENODEREUSE'), 'sentinel-node-reuse', [StringComparison]::Ordinal)) 'Planner must restore the prior MSBuild node-reuse environment value.'
+        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER'), 'sentinel-build-server', [StringComparison]::Ordinal)) 'Planner must restore the prior dotnet build-server environment value.'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('PATH', $savedPath)
+        [Environment]::SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', $savedNodeReuse)
+        [Environment]::SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', $savedBuildServer)
+        [Environment]::SetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_COMMAND_LOG', $savedFakeCommandLog)
+        [Environment]::SetEnvironmentVariable('NERV_ACCEPTANCE_FAKE_ENVIRONMENT_LOG', $savedFakeEnvironmentLog)
+    }
+    $fakeCommands = [IO.File]::ReadAllLines($fakeCommandLog)
+    Assert-Contract ($fakeCommands.Count -eq 2) 'The real planner entrypoint must execute exactly one restore and one discovery for the shared selected project.'
+    Assert-Contract ($fakeCommands[0].StartsWith('restore backend/tests/Nerv.IIP.Business.FullChain.Tests/', [StringComparison]::Ordinal)) 'The planner entrypoint must execute restore first.'
+    Assert-Contract ($fakeCommands[1].Contains('--configuration Release --no-restore --list-tests --filter', [StringComparison]::Ordinal)) 'The planner entrypoint must execute only governed Release discovery after restore.'
+    $fakeEnvironment = [IO.File]::ReadAllLines($fakeEnvironmentLog)
+    Assert-Contract ($fakeEnvironment.Count -eq 2 -and @($fakeEnvironment | Where-Object { -not [string]::Equals([string]$_, '1|0', [StringComparison]::Ordinal) }).Count -eq 0) 'Both dotnet commands must observe disabled MSBuild node reuse and persistent build server.'
+    Assert-Contract (Test-Path -LiteralPath $entrySuccessArtifactPath -PathType Leaf) 'The planner entrypoint must write a success artifact only after fixture discovery closes.'
+
+    $entryArtifactPath = Join-Path $fixtureRoot 'entry/planning.json'
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $entryArtifactPath)) | Out-Null
+    [IO.File]::WriteAllText($entryArtifactPath, "stale-success`n", [Text.UTF8Encoding]::new($false))
+    $entryFailure = $null
+    try {
+        & $plannerPath `
+            -ManifestPath $manifestPath `
+            -V1ManifestPath $v1ManifestPath `
+            -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+            -WorkflowStepName 'Plan acceptance scenario matrix' `
+            -ArtifactPath $entryArtifactPath `
+            -Event 'workflow_dispatch' `
+            -DispatchSelection 'full' `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2
+    }
+    catch { $entryFailure = $_ }
+    Assert-Contract ($null -ne $entryFailure -and $entryFailure.Exception.Message.Contains('exactly one', [StringComparison]::Ordinal)) 'The real workflow must fail closed before restore/discovery while its planning job/step is absent.'
+    Assert-Contract (-not (Test-Path -LiteralPath $entryArtifactPath)) 'Preflight failure against the real workflow must not leave a success artifact.'
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }

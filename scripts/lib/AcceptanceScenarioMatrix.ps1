@@ -1,14 +1,18 @@
 # Script-Governance:
-#   Category: library
+#   Category: library, check, generate
 #   SideEffects:
 #     - Reads acceptance scenario matrix and FullChain v1 manifest files supplied by the caller
 #     - Reads repository directories to verify impact path roots with ordinal casing
+#     - Reads a GitHub Actions workflow supplied by the caller to bind planning to its actual step timeout
+#     - Runs selected project restore and discovery through ScriptAutomation, with an injectable fixture action for tests
 #   Writes:
-#     - None
+#     - A caller-declared acceptance scenario planning artifact
 #   Cleanup:
-#     - None
+#     - Removes stale or partial caller-declared planning artifacts on failure
 #   Requires:
 #     - PowerShell 7
+
+. (Join-Path $PSScriptRoot 'CiWorkflowBudgets.ps1')
 
 function Test-NervAcceptanceInteger {
     param([AllowNull()] [object] $Value)
@@ -449,4 +453,442 @@ function Import-NervAcceptanceScenarioMatrixManifest {
     $v1Manifest = Get-Content -LiteralPath (Resolve-Path $V1ManifestPath) -Raw | ConvertFrom-Json -Depth 30
     Assert-NervAcceptanceV1Closure -Manifest $manifest -V1Manifest $v1Manifest -RepositoryRoot $RepositoryRoot
     return $manifest
+}
+
+function Get-NervAcceptanceScenariosByOrdinal {
+    param([AllowEmptyCollection()] [object[]] $Scenarios)
+
+    $byId = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in @($Scenarios)) { $byId.Add([string]$scenario.id, $scenario) }
+    $ids = [string[]]@($byId.Keys)
+    [Array]::Sort($ids, [StringComparer]::Ordinal)
+    return @($ids | ForEach-Object { $byId[$_] })
+}
+
+function Test-NervAcceptanceImpactPathMatch {
+    param(
+        [Parameter(Mandatory)] [string] $Pattern,
+        [Parameter(Mandatory)] [string] $ChangedPath
+    )
+
+    if ($Pattern.EndsWith('/**', [StringComparison]::Ordinal)) {
+        $root = $Pattern.Substring(0, $Pattern.Length - 3)
+        return $ChangedPath.StartsWith("$root/", [StringComparison]::Ordinal)
+    }
+    return [string]::Equals($Pattern, $ChangedPath, [StringComparison]::Ordinal)
+}
+
+function Select-NervAcceptanceScenarioMatrix {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [ValidateSet('pull_request', 'push', 'schedule', 'workflow_dispatch')] [string] $Event,
+        [AllowEmptyCollection()] [string[]] $ChangedPaths = @(),
+        [bool] $ImpactRulesSucceeded = $true,
+        [string] $DispatchSelection
+    )
+
+    $active = @(Get-NervAcceptanceScenariosByOrdinal -Scenarios @($Manifest.scenarios | Where-Object {
+        [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal)
+    }))
+    $activeCore = @($active | Where-Object { [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) })
+
+    if ([string]::Equals($Event, 'push', [StringComparison]::Ordinal)) {
+        return [pscustomobject]@{ selectionMode = 'main-active-core'; reasons = @('main'); scenarios = @($activeCore) }
+    }
+    if ([string]::Equals($Event, 'schedule', [StringComparison]::Ordinal)) {
+        return [pscustomobject]@{ selectionMode = 'nightly-active'; reasons = @('nightly'); scenarios = @($active) }
+    }
+    if ([string]::Equals($Event, 'workflow_dispatch', [StringComparison]::Ordinal)) {
+        Assert-NervAcceptanceString -Value $DispatchSelection -Context 'workflow_dispatch selection'
+        if ([string]::Equals($DispatchSelection, 'lane', [StringComparison]::Ordinal) -or
+            [string]::Equals($DispatchSelection, 'full', [StringComparison]::Ordinal)) {
+            return [pscustomobject]@{ selectionMode = 'workflow-dispatch-all-active'; reasons = @("dispatch:$DispatchSelection"); scenarios = @($active) }
+        }
+        $matches = @($Manifest.scenarios | Where-Object { [string]::Equals([string]$_.id, $DispatchSelection, [StringComparison]::Ordinal) })
+        if ($matches.Count -ne 1) { throw "workflow_dispatch scenario '$DispatchSelection' does not exist exactly once." }
+        if (-not [string]::Equals([string]$matches[0].status, 'active', [StringComparison]::Ordinal)) {
+            throw "workflow_dispatch scenario '$DispatchSelection' is not active."
+        }
+        return [pscustomobject]@{ selectionMode = 'workflow-dispatch-scenario'; reasons = @("dispatch:$DispatchSelection"); scenarios = @($matches[0]) }
+    }
+
+    $paths = @($ChangedPaths)
+    $pathsValid = $paths.Count -gt 0
+    foreach ($path in $paths) {
+        if ([string]::IsNullOrWhiteSpace([string]$path) -or
+            -not [string]::Equals([string]$path, ([string]$path).Trim(), [StringComparison]::Ordinal) -or
+            ([string]$path).Contains('\', [StringComparison]::Ordinal)) {
+            $pathsValid = $false
+            break
+        }
+    }
+    if (-not $ImpactRulesSucceeded -or -not $pathsValid) {
+        $reason = if (-not $ImpactRulesSucceeded) { 'impact-rules-failed' } else { 'changed-paths-missing-or-invalid' }
+        return [pscustomobject]@{ selectionMode = 'conservative-active-core'; reasons = @($reason); scenarios = @($activeCore) }
+    }
+
+    $selected = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    $reasons = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in $activeCore) {
+        foreach ($changedPath in $paths) {
+            $matched = $false
+            foreach ($impactPath in @($scenario.impact.paths)) {
+                if (Test-NervAcceptanceImpactPathMatch -Pattern ([string]$impactPath) -ChangedPath ([string]$changedPath)) {
+                    $matched = $true
+                    break
+                }
+            }
+            if ($matched) {
+                $selected[[string]$scenario.id] = $scenario
+                [void]$reasons.Add("impact:$changedPath")
+            }
+        }
+    }
+    $selectedScenarios = @(Get-NervAcceptanceScenariosByOrdinal -Scenarios @($selected.Values))
+    $reasonValues = [string[]]@($reasons)
+    [Array]::Sort($reasonValues, [StringComparer]::Ordinal)
+    return [pscustomobject]@{ selectionMode = 'pull-request-impact'; reasons = @($reasonValues); scenarios = @($selectedScenarios) }
+}
+
+function Get-NervAcceptancePlanningProjects {
+    param([AllowEmptyCollection()] [object[]] $Scenarios)
+
+    $projectByPath = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in @($Scenarios)) {
+        foreach ($testProject in @($scenario.testProjects)) {
+            $path = [string]$testProject.path
+            if (-not $projectByPath.ContainsKey($path)) {
+                $projectByPath.Add($path, [pscustomobject]@{
+                    path = $path
+                    scenarioIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                    expectedTestIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                })
+            }
+            $project = $projectByPath[$path]
+            [void]$project.scenarioIds.Add([string]$scenario.id)
+            foreach ($identity in @($testProject.frozenTestIdentities)) {
+                if (-not $project.expectedTestIdentities.Add([string]$identity)) {
+                    throw "Planning project '$path' received duplicate frozen identity '$identity'."
+                }
+            }
+        }
+    }
+
+    $paths = [string[]]@($projectByPath.Keys)
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    $result = [Collections.Generic.List[object]]::new()
+    foreach ($path in $paths) {
+        $scenarioIds = [string[]]@($projectByPath[$path].scenarioIds)
+        $identities = [string[]]@($projectByPath[$path].expectedTestIdentities)
+        [Array]::Sort($scenarioIds, [StringComparer]::Ordinal)
+        [Array]::Sort($identities, [StringComparer]::Ordinal)
+        $result.Add([pscustomobject]@{ path = $path; scenarioIds = @($scenarioIds); expectedTestIdentities = @($identities) })
+    }
+    return $result.ToArray()
+}
+
+function ConvertTo-NervAcceptanceCheckedInt64 {
+    param(
+        [Parameter(Mandatory)] [Numerics.BigInteger] $Value,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    if ($Value -lt [int64]::MinValue -or $Value -gt [int64]::MaxValue) { throw "$Context exceeds Int64 checked arithmetic bounds." }
+    return [int64]$Value
+}
+
+function Get-NervAcceptancePlanningWorkflowBudget {
+    param(
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $JobName,
+        [Parameter(Mandatory)] [string] $StepName
+    )
+
+    $jobs = @(Get-NervCiWorkflowBudgets -Path $WorkflowPath)
+    $jobMatches = @($jobs | Where-Object { [string]::Equals([string]$_.Name, $JobName, [StringComparison]::Ordinal) })
+    if ($jobMatches.Count -ne 1) { throw "Workflow '$WorkflowPath' must define exactly one '$JobName' planning job." }
+    $stepMatches = @($jobMatches[0].Steps | Where-Object { [string]::Equals([string]$_.Name, $StepName, [StringComparison]::Ordinal) })
+    if ($stepMatches.Count -ne 1 -or $null -eq $stepMatches[0].TimeoutMinutes) {
+        throw "Workflow '$WorkflowPath' job '$JobName' must define exactly one timed '$StepName' planning step."
+    }
+    $timeoutSeconds = ConvertTo-NervAcceptanceCheckedInt64 -Value (([Numerics.BigInteger]$stepMatches[0].TimeoutMinutes) * 60) -Context 'planning workflow step timeout'
+    if ($timeoutSeconds -le 0) { throw "Workflow '$WorkflowPath' planning step timeout must be positive." }
+    return [pscustomobject]@{ jobName = $JobName; stepName = $StepName; stepTimeoutSeconds = $timeoutSeconds }
+}
+
+function Assert-NervAcceptancePlanningBudgetFits {
+    param(
+        [Parameter(Mandatory)] [object] $PlanningBudget,
+        [Parameter(Mandatory)] [int] $UniqueProjectCount,
+        [Parameter(Mandatory)] [int64] $StepTimeoutSeconds
+    )
+
+    Assert-NervAcceptancePlanningBudget -Budget $PlanningBudget
+    if ($UniqueProjectCount -lt 0) { throw 'Planning unique project count must not be negative.' }
+    if ($StepTimeoutSeconds -le 0) { throw 'Planning workflow step timeout must be positive.' }
+    $perProject = ([Numerics.BigInteger][int64]$PlanningBudget.restorePerProjectSeconds) + [int64]$PlanningBudget.discoveryPerProjectSeconds
+    $required = ([Numerics.BigInteger]$UniqueProjectCount * $perProject) +
+        [int64]$PlanningBudget.artifactWriteSeconds + [int64]$PlanningBudget.safetyMarginSeconds
+    $requiredSeconds = ConvertTo-NervAcceptanceCheckedInt64 -Value $required -Context 'planning budget'
+    if ($requiredSeconds -ge $StepTimeoutSeconds) {
+        throw "Planning budget $requiredSeconds seconds must be strictly less than workflow step timeout $StepTimeoutSeconds seconds."
+    }
+    return $requiredSeconds
+}
+
+function Assert-NervAcceptanceDiscoveryClosure {
+    param(
+        [Parameter(Mandatory)] [string] $ProjectPath,
+        [Parameter(Mandatory)] [string[]] $ExpectedTestIdentities,
+        [AllowEmptyString()] [string] $DiscoveryOutput = ''
+    )
+
+    $expected = [string[]]@($ExpectedTestIdentities)
+    [Array]::Sort($expected, [StringComparer]::Ordinal)
+    $observed = [Collections.Generic.List[string]]::new()
+    $observedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($line in @($DiscoveryOutput -split "`r?`n")) {
+        $candidate = ([string]$line).Trim()
+        if ($candidate -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$') { continue }
+        if (-not $observedSet.Add($candidate)) { throw "Planning project '$ProjectPath' has duplicate discovered identity '$candidate'." }
+        $observed.Add($candidate)
+    }
+    $observedValues = [string[]]$observed.ToArray()
+    [Array]::Sort($observedValues, [StringComparer]::Ordinal)
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $observedValues -Right $expected)) {
+        throw "Planning project '$ProjectPath' discovered identity set does not exactly equal its selected frozen identity set."
+    }
+    return $observedValues
+}
+
+function Get-NervAcceptanceManifestDigest {
+    param([Parameter(Mandatory)] [string] $ManifestPath)
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [IO.File]::ReadAllBytes((Resolve-Path $ManifestPath).Path)
+        return ([Convert]::ToHexString($sha256.ComputeHash($bytes))).ToLowerInvariant()
+    }
+    finally { $sha256.Dispose() }
+}
+
+function Assert-NervAcceptancePlanningProvenance {
+    param(
+        [Parameter(Mandatory)] [string] $Repository,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $Event
+    )
+
+    if ($Repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Planning repository must be an owner/name identifier.' }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'Planning testedSha must be a lowercase 40-character Git SHA.' }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'Planning runId must be a positive decimal identifier.' }
+    if ($RunAttempt -le 0) { throw 'Planning runAttempt must be positive.' }
+    Assert-NervAcceptanceString -Value $ManifestPath -Context 'planning manifestPath'
+    if ($ManifestPath.StartsWith('/', [StringComparison]::Ordinal) -or $ManifestPath.Contains('\', [StringComparison]::Ordinal) -or $ManifestPath.Contains('../', [StringComparison]::Ordinal)) {
+        throw 'Planning manifestPath must be normalized and repository-relative.'
+    }
+    if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'Planning manifestDigest must be a lowercase SHA-256 digest.' }
+    if (@('pull_request', 'push', 'schedule', 'workflow_dispatch') -cnotcontains $Event) { throw "Planning event '$Event' is invalid." }
+}
+
+function New-NervAcceptancePlanningArtifact {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Selection,
+        [Parameter(Mandatory)] [object[]] $Projects,
+        [Parameter(Mandatory)] [Collections.Generic.Dictionary[string, string[]]] $DiscoveredByProject,
+        [Parameter(Mandatory)] [string] $Repository,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $Event
+    )
+
+    $scenarioRows = @($Selection.scenarios | ForEach-Object {
+        [pscustomobject][ordered]@{ id = [string]$_.id; status = [string]$_.status; tier = [string]$_.tier }
+    })
+    $projectRows = @($Projects | ForEach-Object {
+        [pscustomobject][ordered]@{
+            path = [string]$_.path
+            scenarioIds = @($_.scenarioIds)
+            expectedTestIdentities = @($_.expectedTestIdentities)
+            discoveredTestIdentities = @($DiscoveredByProject[[string]$_.path])
+        }
+    })
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        repository = $Repository
+        testedSha = $TestedSha
+        runId = $RunId
+        runAttempt = $RunAttempt
+        manifestPath = $ManifestPath
+        manifestDigest = $ManifestDigest
+        event = $Event
+        selectionMode = [string]$Selection.selectionMode
+        selectionReasons = @($Selection.reasons)
+        scenarios = @($scenarioRows)
+        projects = @($projectRows)
+    }
+}
+
+function Assert-NervAcceptancePlanningArtifact {
+    param(
+        [Parameter(Mandatory)] [object] $Artifact,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Selection,
+        [Parameter(Mandatory)] [string] $Repository,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $Event
+    )
+
+    $fields = @('schemaVersion', 'repository', 'testedSha', 'runId', 'runAttempt', 'manifestPath', 'manifestDigest', 'event', 'selectionMode', 'selectionReasons', 'scenarios', 'projects')
+    Assert-NervAcceptanceObjectSchema -Object $Artifact -AllowedFields $fields -RequiredFields $fields -Context 'planning artifact'
+    if (-not (Test-NervAcceptanceInteger -Value $Artifact.schemaVersion) -or [int64]$Artifact.schemaVersion -ne 1) { throw 'Planning artifact schemaVersion must be 1.' }
+    $selectionIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($selectedScenario in @($Selection.scenarios)) {
+        $selectedId = [string]$selectedScenario.id
+        if (-not [string]::Equals([string]$selectedScenario.status, 'active', [StringComparison]::Ordinal)) {
+            throw 'Planning artifact selection must contain only active scenarios.'
+        }
+        if (-not $selectionIds.Add($selectedId)) { throw "Planning artifact selection contains duplicate scenario '$selectedId'." }
+        $manifestMatches = @($Manifest.scenarios | Where-Object { [string]::Equals([string]$_.id, $selectedId, [StringComparison]::Ordinal) })
+        if ($manifestMatches.Count -ne 1 -or -not [string]::Equals([string]$manifestMatches[0].status, 'active', [StringComparison]::Ordinal)) {
+            throw "Planning artifact selection scenario '$selectedId' is not one active manifest scenario."
+        }
+    }
+    foreach ($comparison in @(
+        @{ Name = 'repository'; Expected = $Repository },
+        @{ Name = 'testedSha'; Expected = $TestedSha },
+        @{ Name = 'runId'; Expected = $RunId },
+        @{ Name = 'manifestPath'; Expected = $ManifestPath },
+        @{ Name = 'manifestDigest'; Expected = $ManifestDigest },
+        @{ Name = 'event'; Expected = $Event },
+        @{ Name = 'selectionMode'; Expected = [string]$Selection.selectionMode }
+    )) {
+        if (-not [string]::Equals([string]$Artifact.PSObject.Properties[$comparison.Name].Value, [string]$comparison.Expected, [StringComparison]::Ordinal)) {
+            throw "Planning artifact $($comparison.Name) does not match expected provenance."
+        }
+    }
+    if (-not (Test-NervAcceptanceInteger -Value $Artifact.runAttempt) -or [int64]$Artifact.runAttempt -ne $RunAttempt) { throw 'Planning artifact runAttempt does not match expected provenance.' }
+    Assert-NervAcceptanceStringArray -Value $Artifact.selectionReasons -Context 'planning artifact selectionReasons' -AllowEmpty
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($Artifact.selectionReasons)) -Right ([string[]]@($Selection.reasons)))) {
+        throw 'Planning artifact selectionReasons do not exactly equal the selection result.'
+    }
+
+    if ($Artifact.scenarios -isnot [array]) { throw 'Planning artifact scenarios must be an array.' }
+    $expectedScenarios = @($Selection.scenarios)
+    $actualScenarios = @($Artifact.scenarios)
+    foreach ($scenario in $actualScenarios) {
+        Assert-NervAcceptanceObjectSchema -Object $scenario -AllowedFields @('id', 'status', 'tier') -RequiredFields @('id', 'status', 'tier') -Context 'planning artifact scenario'
+        if (-not [string]::Equals([string]$scenario.status, 'active', [StringComparison]::Ordinal)) { throw 'Planning artifact must record only active scenarios.' }
+    }
+    $actualScenarioIds = [string[]]@($actualScenarios | ForEach-Object { [string]$_.id })
+    $expectedScenarioIds = [string[]]@($expectedScenarios | ForEach-Object { [string]$_.id })
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $actualScenarioIds -Right $expectedScenarioIds)) { throw 'Planning artifact scenario set does not exactly equal the selected scenario set.' }
+    for ($index = 0; $index -lt $expectedScenarios.Count; $index++) {
+        if (-not [string]::Equals([string]$actualScenarios[$index].status, [string]$expectedScenarios[$index].status, [StringComparison]::Ordinal) -or
+            -not [string]::Equals([string]$actualScenarios[$index].tier, [string]$expectedScenarios[$index].tier, [StringComparison]::Ordinal)) {
+            throw "Planning artifact scenario '$($expectedScenarioIds[$index])' status/tier does not match the manifest selection."
+        }
+    }
+
+    if ($Artifact.projects -isnot [array]) { throw 'Planning artifact projects must be an array.' }
+    $expectedProjects = @(Get-NervAcceptancePlanningProjects -Scenarios $Selection.scenarios)
+    $actualProjects = @($Artifact.projects)
+    $actualProjectPaths = [string[]]@($actualProjects | ForEach-Object { [string]$_.path })
+    $expectedProjectPaths = [string[]]@($expectedProjects | ForEach-Object { [string]$_.path })
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $actualProjectPaths -Right $expectedProjectPaths)) { throw 'Planning artifact project set does not exactly equal the selected project set.' }
+    for ($index = 0; $index -lt $expectedProjects.Count; $index++) {
+        $actual = $actualProjects[$index]
+        $expected = $expectedProjects[$index]
+        Assert-NervAcceptanceObjectSchema -Object $actual -AllowedFields @('path', 'scenarioIds', 'expectedTestIdentities', 'discoveredTestIdentities') -RequiredFields @('path', 'scenarioIds', 'expectedTestIdentities', 'discoveredTestIdentities') -Context "planning artifact project '$($expected.path)'"
+        foreach ($arrayName in @('scenarioIds', 'expectedTestIdentities', 'discoveredTestIdentities')) {
+            Assert-NervAcceptanceStringArray -Value $actual.PSObject.Properties[$arrayName].Value -Context "planning artifact project '$($expected.path)' $arrayName"
+        }
+        if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($actual.scenarioIds)) -Right ([string[]]@($expected.scenarioIds)))) {
+            throw "Planning artifact project '$($expected.path)' scenarioIds do not exactly equal the selected scenarios."
+        }
+        if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($actual.expectedTestIdentities)) -Right ([string[]]@($expected.expectedTestIdentities)))) {
+            throw "Planning artifact project '$($expected.path)' expected identities do not exactly equal the selected frozen identities."
+        }
+        if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left ([string[]]@($actual.discoveredTestIdentities)) -Right ([string[]]@($expected.expectedTestIdentities)))) {
+            throw "Planning artifact project '$($expected.path)' discovered identities do not exactly equal the selected frozen identities."
+        }
+    }
+    return $Artifact
+}
+
+function Invoke-NervAcceptanceScenarioMatrixPlanning {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Selection,
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $Repository,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $Event,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $WorkflowJobName,
+        [Parameter(Mandatory)] [string] $WorkflowStepName,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [scriptblock] $ProjectCommandAction
+    )
+
+    if (Test-Path -LiteralPath $ArtifactPath -PathType Leaf) { Remove-Item -LiteralPath $ArtifactPath -Force }
+    Assert-NervAcceptancePlanningProvenance -Repository $Repository -TestedSha $TestedSha -RunId $RunId -RunAttempt $RunAttempt -ManifestPath $ManifestPath -ManifestDigest $ManifestDigest -Event $Event
+    $projects = @(Get-NervAcceptancePlanningProjects -Scenarios $Selection.scenarios)
+    $workflowBudget = Get-NervAcceptancePlanningWorkflowBudget -WorkflowPath $WorkflowPath -JobName $WorkflowJobName -StepName $WorkflowStepName
+    [void](Assert-NervAcceptancePlanningBudgetFits -PlanningBudget $Manifest.planningBudget -UniqueProjectCount $projects.Count -StepTimeoutSeconds $workflowBudget.stepTimeoutSeconds)
+
+    $discoveredByProject = [Collections.Generic.Dictionary[string, string[]]]::new([StringComparer]::Ordinal)
+    foreach ($project in $projects) {
+        $path = [string]$project.path
+        $restoreArguments = [string[]]@('restore', $path)
+        if ($null -eq $ProjectCommandAction) {
+            Invoke-DotNetOutput -Name "acceptance-matrix-restore-$([IO.Path]::GetFileNameWithoutExtension($path))" -WorkingDirectory $RepositoryRoot -TimeoutSeconds ([int]$Manifest.planningBudget.restorePerProjectSeconds) -Arguments $restoreArguments | Out-Null
+        }
+        else {
+            & $ProjectCommandAction 'restore' $path $restoreArguments ([int]$Manifest.planningBudget.restorePerProjectSeconds) | Out-Null
+        }
+        $filter = (@($project.expectedTestIdentities | ForEach-Object { "FullyQualifiedName=$_" }) -join '|')
+        $discoveryArguments = [string[]]@('test', $path, '--configuration', 'Release', '--no-restore', '--list-tests', '--filter', $filter)
+        $discovery = if ($null -eq $ProjectCommandAction) {
+            Invoke-DotNetOutput -Name "acceptance-matrix-discovery-$([IO.Path]::GetFileNameWithoutExtension($path))" -WorkingDirectory $RepositoryRoot -TimeoutSeconds ([int]$Manifest.planningBudget.discoveryPerProjectSeconds) -Arguments $discoveryArguments
+        }
+        else {
+            & $ProjectCommandAction 'discovery' $path $discoveryArguments ([int]$Manifest.planningBudget.discoveryPerProjectSeconds)
+        }
+        if ($null -eq $discovery -or -not (Test-NervAcceptanceObjectProperty -Object $discovery -Name 'Stdout')) {
+            throw "Planning project '$path' discovery did not return governed stdout."
+        }
+        $discoveredByProject.Add($path, [string[]]@(Assert-NervAcceptanceDiscoveryClosure -ProjectPath $path -ExpectedTestIdentities ([string[]]@($project.expectedTestIdentities)) -DiscoveryOutput ([string]$discovery.Stdout)))
+    }
+
+    $artifact = New-NervAcceptancePlanningArtifact -Manifest $Manifest -Selection $Selection -Projects $projects -DiscoveredByProject $discoveredByProject -Repository $Repository -TestedSha $TestedSha -RunId $RunId -RunAttempt $RunAttempt -ManifestPath $ManifestPath -ManifestDigest $ManifestDigest -Event $Event
+    Assert-NervAcceptancePlanningArtifact -Artifact $artifact -Manifest $Manifest -Selection $Selection -Repository $Repository -TestedSha $TestedSha -RunId $RunId -RunAttempt $RunAttempt -ManifestPath $ManifestPath -ManifestDigest $ManifestDigest -Event $Event | Out-Null
+
+    $artifactDirectory = Split-Path -Parent ([IO.Path]::GetFullPath($ArtifactPath))
+    [IO.Directory]::CreateDirectory($artifactDirectory) | Out-Null
+    $temporaryPath = Join-Path $artifactDirectory ".$([IO.Path]::GetFileName($ArtifactPath)).$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+        [IO.File]::WriteAllText($temporaryPath, (($artifact | ConvertTo-Json -Depth 50) + "`n"), [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temporaryPath -Destination $ArtifactPath
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) { Remove-Item -LiteralPath $temporaryPath -Force }
+    }
+    return $artifact
 }
