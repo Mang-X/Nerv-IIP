@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-17T10:00:00Z" queuing="2026-08-17T10:00:00Z" start="2026-08-17T10:00:00Z" finish="2026-08-17T10:00:00.100Z" />
+  <Results>
+    <UnitTestResult testId="77777777-7777-7777-7777-777777777701" duration="00:00:00" outcome="NotExecuted">
+      <Output><StdOut>setup line&#10;  SKIP: fixture dependency unavailable.  </StdOut></Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest id="77777777-7777-7777-7777-777777777701" storage="StdOut.Skip.Tests.dll">
+      <TestMethod className="Fixture.StdOutSkipTests" name="UsesFallback" />
+    </UnitTest>
+  </TestDefinitions>
+  <ResultSummary outcome="Completed">
+    <Counters total="1" executed="0" passed="0" failed="0" notExecuted="1" />
+  </ResultSummary>
+</TestRun>
