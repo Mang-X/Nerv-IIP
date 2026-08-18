@@ -216,9 +216,7 @@ describe('generated API client contract', () => {
   })
 
   it('requires a non-null reason in the generated team-member removal request', () => {
-    expectTypeOf<
-      NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest
-    >().toEqualTypeOf<{
+    expectTypeOf<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest>().toEqualTypeOf<{
       organizationId: string
       environmentId: string
       reason: string
