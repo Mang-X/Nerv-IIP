@@ -29,7 +29,7 @@ try {
     Write-Utf8TestFile (Join-Path $discoveryDirectory 'nerv-cafe-654321.json') '{"sessionId":"nerv-cafe-654321"}'
     Write-Utf8TestFile `
         (Join-Path $discoveryDirectory 'nerv-abcd-123456.guardian-stop.ack.json') `
-        '{"sessionId":"nerv-abcd-123456.guardian-stop.ack","state":"Stopped"}'
+        '{invalid-json'
     Write-Utf8TestFile `
         (Join-Path $discoveryDirectory 'nerv-dead-beef12.json') `
         '{"sessionId":"nerv-feed-abcdef","state":"Stopped"}'
@@ -45,9 +45,14 @@ try {
     Assert-True ($discoveredManifests.Count -eq 1) "Manifest discovery must return exactly the one valid manifest; removing any independent manifest predicate must make this assertion fail. Actual: $(@($discoveredManifests | ForEach-Object { [string]$_.sessionId }) -join ', ')."
     Assert-True ([string]::Equals([string]$discoveredManifests[0].sessionId, $discoverySessionId, [StringComparison]::Ordinal)) 'Manifest discovery must not lose a valid manifest.'
     Assert-True ($discoveryWarnings.Count -eq 7) "Manifest discovery must emit exactly one warning for each rejected candidate; actual count: $($discoveryWarnings.Count)."
-    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-bad.json', [StringComparison]::Ordinal) }).Count -eq 1) 'Invalid JSON must emit exactly one visible warning.'
+    $invalidJsonWarnings = @($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-bad.json', [StringComparison]::Ordinal) })
+    Assert-True ($invalidJsonWarnings.Count -eq 1) 'Invalid JSON must emit exactly one visible warning.'
+    Assert-True ($invalidJsonWarnings[0].Message.Contains('invalid full-stack session manifest candidate', [StringComparison]::Ordinal)) 'A malformed manifest candidate must retain its invalid JSON warning.'
     Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-cafe-654321.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A canonical manifest without state must emit exactly one visible warning.'
-    Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('guardian-stop.ack.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A fully populated file outside the manifest namespace must emit exactly one visible warning.'
+    $invalidGuardianWarnings = @($discoveryWarnings | Where-Object { $_.Message.Contains('guardian-stop.ack.json', [StringComparison]::Ordinal) })
+    Assert-True ($invalidGuardianWarnings.Count -eq 1) 'A malformed sidecar outside the manifest namespace must emit exactly one visible warning.'
+    Assert-True ($invalidGuardianWarnings[0].Message.Contains('outside the manifest namespace', [StringComparison]::Ordinal)) 'A malformed sidecar must be classified by its file name before its JSON payload is parsed.'
+    Assert-True (-not $invalidGuardianWarnings[0].Message.Contains('invalid full-stack session manifest candidate', [StringComparison]::Ordinal)) 'A malformed sidecar outside the manifest namespace must not emit an invalid JSON warning.'
     Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-dead-beef12.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A canonical file with a mismatched payload sessionId must emit exactly one visible warning.'
     Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-0001-000001.json', [StringComparison]::Ordinal) }).Count -eq 1) 'A null JSON payload must emit exactly one visible warning.'
     Assert-True (@($discoveryWarnings | Where-Object { $_.Message.Contains('nerv-0002-000002.json', [StringComparison]::Ordinal) }).Count -eq 1) 'An array JSON payload must emit exactly one visible warning.'

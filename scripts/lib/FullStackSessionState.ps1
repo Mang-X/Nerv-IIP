@@ -16,6 +16,7 @@ Set-StrictMode -Version Latest
 
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
 $script:NervFullStackManifestFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\.json$'
+$script:NervFullStackSidecarFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\..+\.json$'
 $script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
@@ -456,8 +457,22 @@ function Get-NervFullStackManifests {
         -Items @(Get-ChildItem -LiteralPath $directory -Filter 'nerv-*.json' -File) `
         -KeySelector { param($row) [string]$row.Name } `
         -Comparer ([StringComparer]::Ordinal)
+    $manifestPatternOptions = [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant
 
     foreach ($candidate in $candidates) {
+        $isManifestFileName = [regex]::IsMatch(
+                [string]$candidate.Name,
+                $script:NervFullStackManifestFileNamePattern,
+                $manifestPatternOptions)
+        if (-not $isManifestFileName -and [regex]::IsMatch(
+                [string]$candidate.Name,
+                $script:NervFullStackSidecarFileNamePattern,
+                $manifestPatternOptions)) {
+            Write-Warning "Skipping non-manifest full-stack session file '$($candidate.FullName)': the file name is outside the manifest namespace."
+            continue
+        }
+
         $manifest = $null
         try {
             $manifest = Get-Content -LiteralPath $candidate.FullName -Raw | ConvertFrom-Json -Depth 30 -NoEnumerate
@@ -467,12 +482,7 @@ function Get-NervFullStackManifests {
             continue
         }
 
-        $manifestPatternOptions = [Text.RegularExpressions.RegexOptions]::IgnoreCase -bor
-            [Text.RegularExpressions.RegexOptions]::CultureInvariant
-        if (-not [regex]::IsMatch(
-                [string]$candidate.Name,
-                $script:NervFullStackManifestFileNamePattern,
-                $manifestPatternOptions)) {
+        if (-not $isManifestFileName) {
             Write-Warning "Skipping non-manifest full-stack session file '$($candidate.FullName)': the file name is outside the manifest namespace."
             continue
         }
