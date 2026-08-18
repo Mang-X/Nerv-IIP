@@ -32,7 +32,7 @@
         "externalProcesses": true
       },
       "impact": {
-        "paths": ["backend/services/erp/**", "backend/services/demand-planning/**", "backend/services/master-data/**", "backend/common/Nerv.IIP.Contracts.Erp/**", "backend/common/Nerv.IIP.Contracts.DemandPlanning/**"],
+        "paths": ["backend/services/Business/Erp/**", "backend/services/Business/DemandPlanning/**", "backend/services/Business/MasterData/**", "backend/common/Contracts/Nerv.IIP.Contracts.Erp/**", "backend/common/Contracts/Nerv.IIP.Contracts.DemandPlanning/**"],
         "owners": ["ERP", "DemandPlanning", "MasterData"]
       },
       "runPolicy": {
@@ -93,7 +93,7 @@
         "externalProcesses": true
       },
       "impact": {
-        "paths": ["backend/services/wms/**", "backend/services/erp/**", "backend/services/inventory/**", "backend/common/Nerv.IIP.Contracts.Wms/**", "backend/common/Nerv.IIP.Contracts.Erp/**"],
+        "paths": ["backend/services/Business/Wms/**", "backend/services/Business/Erp/**", "backend/services/Business/Inventory/**", "backend/common/Contracts/Nerv.IIP.Contracts.Wms/**", "backend/common/Contracts/Nerv.IIP.Contracts.Erp/**"],
         "owners": ["WMS", "ERP", "Inventory"]
       },
       "runPolicy": {
@@ -154,7 +154,7 @@
         "externalProcesses": true
       },
       "impact": {
-        "paths": ["backend/services/mes/**", "backend/services/inventory/**", "backend/common/Nerv.IIP.Contracts.Mes/**", "backend/common/Nerv.IIP.Contracts.Inventory/**", "frontend/apps/business-console/**"],
+        "paths": ["backend/services/Business/Mes/**", "backend/services/Business/Inventory/**", "backend/common/Contracts/Nerv.IIP.Contracts.Mes/**", "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/**", "frontend/apps/business-console/**"],
         "owners": ["MES", "Inventory"]
       },
       "runPolicy": {
@@ -215,7 +215,7 @@
         "externalProcesses": true
       },
       "impact": {
-        "paths": ["backend/services/industrial-telemetry/**", "backend/services/maintenance/**", "backend/common/Nerv.IIP.Contracts.IndustrialTelemetry/**", "backend/common/Nerv.IIP.Contracts.Maintenance/**"],
+        "paths": ["backend/services/Business/IndustrialTelemetry/**", "backend/services/Business/Maintenance/**", "backend/common/Contracts/Nerv.IIP.Contracts.IndustrialTelemetry/**", "backend/common/Contracts/Nerv.IIP.Contracts.Maintenance/**"],
         "owners": ["IndustrialTelemetry", "Maintenance"]
       },
       "runPolicy": {
@@ -275,7 +275,7 @@
         "externalProcesses": false
       },
       "impact": {
-        "paths": ["backend/services/erp/**", "backend/services/wms/**", "backend/common/Nerv.IIP.Contracts.Erp/**", "backend/common/Nerv.IIP.Contracts.Wms/**"],
+        "paths": ["backend/services/Business/Erp/**", "backend/services/Business/Wms/**", "backend/common/Contracts/Nerv.IIP.Contracts.Erp/**", "backend/common/Contracts/Nerv.IIP.Contracts.Wms/**"],
         "owners": ["ERP", "WMS"]
       },
       "runPolicy": {
@@ -336,7 +336,7 @@
         "externalProcesses": true
       },
       "impact": {
-        "paths": ["backend/services/master-data/**", "backend/services/scheduling/**", "backend/services/mes/**", "backend/common/Nerv.IIP.Contracts.MasterData/**", "backend/common/Nerv.IIP.Contracts.Scheduling/**", "backend/common/Nerv.IIP.Contracts.Mes/**"],
+        "paths": ["backend/services/Business/MasterData/**", "backend/services/Business/Scheduling/**", "backend/services/Business/Mes/**", "backend/common/Contracts/Nerv.IIP.Contracts.MasterData/**", "backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/**", "backend/common/Contracts/Nerv.IIP.Contracts.Mes/**"],
         "owners": ["MasterData", "Scheduling", "MES"]
       },
       "runPolicy": {

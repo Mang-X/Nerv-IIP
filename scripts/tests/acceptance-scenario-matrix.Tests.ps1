@@ -44,15 +44,20 @@ function Assert-ManifestRejected {
     param(
         [Parameter(Mandatory)] [string] $Name,
         [Parameter(Mandatory)] [object] $Manifest,
-        [Parameter(Mandatory)] [string] $ExpectedMessage
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [AllowNull()] [object] $V1Manifest
     )
 
     $path = Write-ManifestFixture -Name $Name -Manifest $Manifest
+    $fixtureV1ManifestPath = $v1ManifestPath
+    if ($null -ne $V1Manifest) {
+        $fixtureV1ManifestPath = Write-ManifestFixture -Name "$Name-v1" -Manifest $V1Manifest
+    }
     $rejected = $false
     try {
         Import-NervAcceptanceScenarioMatrixManifest `
             -ManifestPath $path `
-            -V1ManifestPath $v1ManifestPath `
+            -V1ManifestPath $fixtureV1ManifestPath `
             -RepositoryRoot $repoRoot | Out-Null
     }
     catch {
@@ -90,6 +95,30 @@ try {
         -not [string]::IsNullOrWhiteSpace([string]$blocked.blockedReason) -and
         @($blocked.testProjects.frozenTestIdentities).Count -gt 0
     ) 'The future equipment-unavailable scenario must remain blocked/extended with #1240 ownership, a reason, and a canonical identity.'
+
+    $missingImpactRoot = Copy-ManifestObject
+    $missingImpactRoot.scenarios[0].impact.paths[0] = 'backend/services/Business/DoesNotExist/**'
+    Assert-ManifestRejected -Name 'missing-impact-static-root' -Manifest $missingImpactRoot -ExpectedMessage 'impact path static root must exist with exact casing'
+
+    $nonBooleanV1Dependency = Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 30
+    $nonBooleanV1Dependency.members[0].dependencies.postgres = 'false'
+    Assert-ManifestRejected -Name 'non-boolean-v1-dependency' -Manifest (Copy-ManifestObject) -V1Manifest $nonBooleanV1Dependency -ExpectedMessage 'v1 dependency must be a JSON boolean'
+
+    $diagnosticCaptureDisabled = Copy-ManifestObject
+    $diagnosticCaptureDisabled.scenarios[0].diagnosticProtocol.captureBeforeCleanup = $false
+    Assert-ManifestRejected -Name 'diagnostic-capture-disabled' -Manifest $diagnosticCaptureDisabled -ExpectedMessage 'diagnosticProtocol.captureBeforeCleanup must be true'
+
+    $diagnosticRedactionDisabled = Copy-ManifestObject
+    $diagnosticRedactionDisabled.scenarios[0].diagnosticProtocol.redactSecrets = $false
+    Assert-ManifestRejected -Name 'diagnostic-redaction-disabled' -Manifest $diagnosticRedactionDisabled -ExpectedMessage 'diagnosticProtocol.redactSecrets must be true'
+
+    $placeholderProhibitedActions = Copy-ManifestObject
+    $placeholderProhibitedActions.scenarios[0].cleanupProtocol.prohibitedActions = @('placeholder')
+    Assert-ManifestRejected -Name 'placeholder-prohibited-actions' -Manifest $placeholderProhibitedActions -ExpectedMessage "cleanupProtocol.prohibitedActions must contain 'broad-process-kill'"
+
+    $nonCanonicalBlockedIdentity = Copy-ManifestObject
+    $nonCanonicalBlockedIdentity.scenarios[5].testProjects[0].frozenTestIdentities[0] = 'x'
+    Assert-ManifestRejected -Name 'non-canonical-blocked-identity' -Manifest $nonCanonicalBlockedIdentity -ExpectedMessage 'frozen identity must be a canonical FullyQualifiedName'
 
     $missingScenario = Copy-ManifestObject
     $missingScenario.scenarios = @($missingScenario.scenarios | Select-Object -First 5)

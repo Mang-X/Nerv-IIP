@@ -2,6 +2,7 @@
 #   Category: library
 #   SideEffects:
 #     - Reads acceptance scenario matrix and FullChain v1 manifest files supplied by the caller
+#     - Reads repository directories to verify impact path roots with ordinal casing
 #   Writes:
 #     - None
 #   Cleanup:
@@ -65,6 +66,54 @@ function Test-NervAcceptanceObjectProperty {
         if ([string]::Equals([string]$property.Name, $Name, [StringComparison]::Ordinal)) { return $true }
     }
     return $false
+}
+
+function Test-NervAcceptanceRepositoryPath {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $RelativePath,
+        [switch] $RequireDirectory
+    )
+
+    $current = [IO.Path]::GetFullPath($RepositoryRoot)
+    foreach ($segment in $RelativePath.Split('/')) {
+        $matches = @(Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue | Where-Object {
+            [string]::Equals([string]$_.Name, $segment, [StringComparison]::Ordinal)
+        })
+        if ($matches.Count -ne 1) { return $false }
+        $current = $matches[0].FullName
+    }
+    if ($RequireDirectory) { return Test-Path -LiteralPath $current -PathType Container }
+    return Test-Path -LiteralPath $current
+}
+
+function Assert-NervAcceptanceImpactPath {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $ScenarioId,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    Assert-NervAcceptanceString -Value $Path -Context "scenario '$ScenarioId' impact path"
+    if ($Path.StartsWith('/', [StringComparison]::Ordinal) -or $Path.Contains('\', [StringComparison]::Ordinal) -or
+        $Path.Contains('../', [StringComparison]::Ordinal) -or $Path.EndsWith('/..', [StringComparison]::Ordinal)) {
+        throw "scenario '$ScenarioId' impact path '$Path' must be repository-relative and normalized."
+    }
+    $hasWildcard = $Path.Contains('*', [StringComparison]::Ordinal) -or $Path.Contains('?', [StringComparison]::Ordinal) -or $Path.Contains('[', [StringComparison]::Ordinal)
+    if ($hasWildcard) {
+        if (-not $Path.EndsWith('/**', [StringComparison]::Ordinal) -or $Path.Substring(0, $Path.Length - 3).Contains('*', [StringComparison]::Ordinal) -or
+            $Path.Substring(0, $Path.Length - 3).Contains('?', [StringComparison]::Ordinal) -or $Path.Substring(0, $Path.Length - 3).Contains('[', [StringComparison]::Ordinal)) {
+            throw "scenario '$ScenarioId' impact path '$Path' uses an unsupported glob; only an exact '/**' suffix is allowed."
+        }
+        $staticRoot = $Path.Substring(0, $Path.Length - 3)
+        if (-not (Test-NervAcceptanceRepositoryPath -RepositoryRoot $RepositoryRoot -RelativePath $staticRoot -RequireDirectory)) {
+            throw "scenario '$ScenarioId' impact path static root must exist with exact casing: '$staticRoot'."
+        }
+        return
+    }
+    if (-not (Test-NervAcceptanceRepositoryPath -RepositoryRoot $RepositoryRoot -RelativePath $Path)) {
+        throw "scenario '$ScenarioId' exact impact path must exist with exact casing: '$Path'."
+    }
 }
 
 function Assert-NervAcceptanceStringArray {
@@ -179,7 +228,8 @@ function Assert-NervAcceptanceScenarioShape {
         [Parameter(Mandatory)] [object] $Scenario,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $Ids,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $Aliases,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $Identities
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $Identities,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
     )
 
     $requiredFields = @(
@@ -234,6 +284,7 @@ function Assert-NervAcceptanceScenarioShape {
         if ([string]$project.path -cnotmatch '^backend/.+\.csproj$') { throw "scenario '$id' test project path must be canonical." }
         Assert-NervAcceptanceStringArray -Value $project.frozenTestIdentities -Context "scenario '$id' frozenTestIdentities"
         foreach ($identity in @($project.frozenTestIdentities)) {
+            if ([string]$identity -cnotmatch '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$') { throw "scenario '$id' frozen identity must be a canonical FullyQualifiedName." }
             if (-not $Identities.Add([string]$identity)) { throw "scenario '$id' frozen identity must be ordinal-unique." }
         }
     }
@@ -245,6 +296,7 @@ function Assert-NervAcceptanceScenarioShape {
 
     Assert-NervAcceptanceObjectSchema -Object $Scenario.impact -AllowedFields @('paths', 'owners') -RequiredFields @('paths', 'owners') -Context "scenario '$id' impact"
     Assert-NervAcceptanceStringArray -Value $Scenario.impact.paths -Context "scenario '$id' impact.paths"
+    foreach ($impactPath in @($Scenario.impact.paths)) { Assert-NervAcceptanceImpactPath -Path ([string]$impactPath) -ScenarioId $id -RepositoryRoot $RepositoryRoot }
     Assert-NervAcceptanceStringArray -Value $Scenario.impact.owners -Context "scenario '$id' impact.owners"
 
     Assert-NervAcceptanceObjectSchema -Object $Scenario.runPolicy -AllowedFields @('pullRequest', 'main', 'nightly', 'workflowDispatch') -RequiredFields @('pullRequest', 'main', 'nightly', 'workflowDispatch') -Context "scenario '$id' runPolicy"
@@ -274,6 +326,8 @@ function Assert-NervAcceptanceScenarioShape {
     Assert-NervAcceptanceStringArray -Value $Scenario.diagnosticProtocol.schemas -Context "scenario '$id' diagnosticProtocol.schemas"
     Assert-NervAcceptanceBoolean -Value $Scenario.diagnosticProtocol.captureBeforeCleanup -Context "scenario '$id' diagnosticProtocol.captureBeforeCleanup"
     Assert-NervAcceptanceBoolean -Value $Scenario.diagnosticProtocol.redactSecrets -Context "scenario '$id' diagnosticProtocol.redactSecrets"
+    if (-not [bool]$Scenario.diagnosticProtocol.captureBeforeCleanup) { throw "scenario '$id' diagnosticProtocol.captureBeforeCleanup must be true." }
+    if (-not [bool]$Scenario.diagnosticProtocol.redactSecrets) { throw "scenario '$id' diagnosticProtocol.redactSecrets must be true." }
 
     Assert-NervAcceptanceObjectSchema -Object $Scenario.evidenceProtocol -AllowedFields @('machineReadableResult', 'exactIdentitySet', 'incrementalSummary', 'requireBusinessKeys', 'requireDependencyVersions') -RequiredFields @('machineReadableResult', 'exactIdentitySet', 'incrementalSummary', 'requireBusinessKeys', 'requireDependencyVersions') -Context "scenario '$id' evidenceProtocol"
     Assert-NervAcceptanceString -Value $Scenario.evidenceProtocol.machineReadableResult -Context "scenario '$id' evidenceProtocol.machineReadableResult"
@@ -289,6 +343,10 @@ function Assert-NervAcceptanceScenarioShape {
         if (-not [bool]$Scenario.cleanupProtocol.PSObject.Properties[$name].Value) { throw "scenario '$id' cleanupProtocol.$name must be true." }
     }
     Assert-NervAcceptanceStringArray -Value $Scenario.cleanupProtocol.prohibitedActions -Context "scenario '$id' cleanupProtocol.prohibitedActions"
+    $prohibitedActions = [Collections.Generic.HashSet[string]]::new([string[]]@($Scenario.cleanupProtocol.prohibitedActions), [StringComparer]::Ordinal)
+    foreach ($requiredAction in @('broad-process-kill', 'unknown-database-delete', 'docker-prune', 'redis-flushall')) {
+        if (-not $prohibitedActions.Contains($requiredAction)) { throw "scenario '$id' cleanupProtocol.prohibitedActions must contain '$requiredAction'." }
+    }
 }
 
 function Assert-NervAcceptanceV1Closure {
@@ -300,6 +358,14 @@ function Assert-NervAcceptanceV1Closure {
 
     if (-not (Test-NervAcceptanceInteger -Value $V1Manifest.schemaVersion) -or [int64]$V1Manifest.schemaVersion -ne 1) { throw 'FullChain v1 manifest schemaVersion must be 1.' }
     $v1Members = @($V1Manifest.members)
+    foreach ($v1Member in $v1Members) {
+        foreach ($dependencyName in @('postgres', 'redis', 'externalProcesses')) {
+            if (-not (Test-NervAcceptanceObjectProperty -Object $v1Member.dependencies -Name $dependencyName) -or
+                $v1Member.dependencies.PSObject.Properties[$dependencyName].Value -isnot [bool]) {
+                throw "FullChain v1 dependency must be a JSON boolean: member '$($v1Member.id)', field '$dependencyName'."
+            }
+        }
+    }
     $active = @($Manifest.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) })
     $activeAliases = @($active | ForEach-Object { [string]$_.v1Alias })
     $v1Ids = @($v1Members | ForEach-Object { [string]$_.id })
@@ -363,7 +429,7 @@ function Import-NervAcceptanceScenarioMatrixManifest {
     $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $aliases = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $identities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    foreach ($scenario in $scenarios) { Assert-NervAcceptanceScenarioShape -Scenario $scenario -Ids $ids -Aliases $aliases -Identities $identities }
+    foreach ($scenario in $scenarios) { Assert-NervAcceptanceScenarioShape -Scenario $scenario -Ids $ids -Aliases $aliases -Identities $identities -RepositoryRoot $RepositoryRoot }
 
     $expectedIds = @('sales-order-demand', 'wms-delivery-erp', 'mes-produced-lot-inventory', 'telemetry-runtime-maintenance', 'erp-return-closure', 'equipment-unavailable-scheduling-mes')
     $observedIds = @($scenarios | ForEach-Object { [string]$_.id })
