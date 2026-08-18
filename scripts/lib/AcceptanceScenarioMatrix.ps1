@@ -487,7 +487,7 @@ function Test-NervAcceptanceChangedPath {
         -not [string]::Equals($text, $text.Trim(), [StringComparison]::Ordinal) -or
         $text.StartsWith('/', [StringComparison]::Ordinal) -or
         $text.Contains('\', [StringComparison]::Ordinal) -or
-        $text -cmatch '^[A-Za-z]:/' -or
+        $text.Contains(':', [StringComparison]::Ordinal) -or
         $text.EndsWith('/', [StringComparison]::Ordinal)) {
         return $false
     }
@@ -554,7 +554,7 @@ function Test-NervAcceptanceEntrypointRule {
         return @($Entrypoint.PSObject.Properties).Count -eq 2 -and
             (Test-NervAcceptanceObjectProperty -Object $Entrypoint -Name 'scenario') -and
             $Entrypoint.scenario -is [string] -and
-            [string]$Entrypoint.scenario -cmatch '^man-[0-9]+$'
+            [string]$Entrypoint.scenario -cmatch '^man-[0-9]+\z'
     }
     if ([string]::Equals($kind, 'dotnet', [StringComparison]::Ordinal)) {
         return @($Entrypoint.PSObject.Properties).Count -eq 1

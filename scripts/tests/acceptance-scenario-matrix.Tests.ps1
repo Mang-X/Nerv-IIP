@@ -361,6 +361,11 @@ try {
         '../README.md',
         '/tmp/README.md',
         'C:/repo/README.md',
+        'C:',
+        'C:repo/README.md',
+        'c:repo/README.md',
+        'Z:foo',
+        'docs/name:part.md',
         'backend//README.md',
         'backend\README.md',
         './README.md',
@@ -433,6 +438,37 @@ try {
             [string]::Equals((@($malformedEntrypointEventSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
             @($malformedEntrypointEventSelection.scenarios).Count -eq 5
         ) "Malformed active/core entrypoint must conservatively select active/core scenarios for event '$($entrypointEventCase.Event)'."
+    }
+
+    foreach ($fullstackScenarioSuffixCase in @(
+        @{ Name = 'trailing-lf'; Suffix = "`n" },
+        @{ Name = 'trailing-crlf'; Suffix = "`r`n" },
+        @{ Name = 'trailing-cr'; Suffix = "`r" },
+        @{ Name = 'trailing-nul'; Suffix = [string][char]0 },
+        @{ Name = 'trailing-unicode-line-separator'; Suffix = [string][char]0x2028 }
+    )) {
+        $malformedFullstackManifest = Copy-JsonObject $manifest
+        $malformedFullstackManifest.scenarios[2].entrypoint.scenario = "man-528$($fullstackScenarioSuffixCase.Suffix)"
+        foreach ($fullstackEventCase in @(
+            @{ Event = 'pull_request'; Parameters = @{ ChangedPaths = @('README.md'); ImpactRulesSucceeded = $true } },
+            @{ Event = 'push'; Parameters = @{} },
+            @{ Event = 'schedule'; Parameters = @{} },
+            @{ Event = 'workflow_dispatch'; Parameters = @{ DispatchSelection = 'full' } }
+        )) {
+            $fullstackEventParameters = @{
+                Manifest = $malformedFullstackManifest
+                Event = $fullstackEventCase.Event
+            }
+            foreach ($parameter in $fullstackEventCase.Parameters.GetEnumerator()) {
+                $fullstackEventParameters[$parameter.Key] = $parameter.Value
+            }
+            $malformedFullstackSelection = Select-NervAcceptanceScenarioMatrix @fullstackEventParameters
+            Assert-Contract (
+                [string]::Equals([string]$malformedFullstackSelection.selectionMode, 'conservative-active-core', [StringComparison]::Ordinal) -and
+                [string]::Equals((@($malformedFullstackSelection.reasons) -join '|'), 'impact-rules-invalid', [StringComparison]::Ordinal) -and
+                @($malformedFullstackSelection.scenarios).Count -eq 5
+            ) "Fullstack scenario mutation '$($fullstackScenarioSuffixCase.Name)' must conservatively select active/core scenarios for event '$($fullstackEventCase.Event)'."
+        }
     }
 
     $malformedImpactRulesManifest = Copy-JsonObject $manifest
@@ -697,6 +733,11 @@ try {
         @{ Name = 'manifest-path-terminal-parent-segment'; Property = 'manifestPath'; Value = 'a/..'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-path-current-segment'; Property = 'manifestPath'; Value = 'a/./b'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-path-drive-absolute'; Property = 'manifestPath'; Value = 'C:/repo/matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-drive-designator'; Property = 'manifestPath'; Value = 'C:'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-drive-relative-uppercase'; Property = 'manifestPath'; Value = 'C:repo/matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-drive-relative-lowercase'; Property = 'manifestPath'; Value = 'c:repo/matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-drive-relative-other'; Property = 'manifestPath'; Value = 'Z:foo'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
+        @{ Name = 'manifest-path-colon-segment'; Property = 'manifestPath'; Value = 'scripts/name:part.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-path-empty-segment'; Property = 'manifestPath'; Value = 'scripts//matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-path-backslash'; Property = 'manifestPath'; Value = 'scripts\matrix.json'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
         @{ Name = 'manifest-path-trailing-slash'; Property = 'manifestPath'; Value = 'scripts/matrix.json/'; ExpectedName = 'ManifestPath'; Message = 'normalized and repository-relative' },
