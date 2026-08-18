@@ -112,8 +112,6 @@ token 之上。
 6. **文档站页**（`apps/design-system/docs/components/<surface>/<name>.md`，实时演示；
    决策性正文用 `@include` 嵌 DESIGN 源，不复制）。
 
-`skills/new-component` 技能（仓库内维护）把这条流程做成了可执行清单。
-
 ## 新增设计 token
 
 token 只能位于 `packages/ui/src/styles/theme.css`（PC/共享）或对应场景 token 表
