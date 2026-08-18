@@ -732,6 +732,135 @@ describe('master-data scheduling page', () => {
     expect(wrapper.text()).toContain('调休')
   })
 
+  it('a failed holiday add rolls the list back and keeps the draft (no phantom holiday, retry in place)', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    const holidayForm = wrapper.findAll('form').find((f) => f.find('#holiday-name').exists())!
+    await holidayForm.find('input[type="date"]').setValue('2026-10-01')
+    await holidayForm.find('#holiday-name').setValue('国庆节')
+    await flushPromises()
+    await holidayForm.trigger('submit')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    // 本地集合回滚：界面上不能留下服务端并不存在的幻影节假日。
+    expect(wrapper.text()).not.toContain('国庆节')
+    // 草稿保留：用户能原地重试，不用重填日期与名称。
+    expect((holidayForm.find('input[type="date"]').element as HTMLInputElement).value).toBe(
+      '2026-10-01',
+    )
+    expect((holidayForm.find('#holiday-name').element as HTMLInputElement).value).toBe('国庆节')
+
+    // 下一次写回（切周三）不得再把这条幻影节假日发给服务端。
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '周三')!
+      .trigger('click')
+    await flushPromises()
+    const [, patch] = actionStub.calUpdate.mock.calls[1]!
+    expect(patch.holidays.some((h: { date?: string }) => h.date === '2026-10-01')).toBe(false)
+  })
+
+  it('a failed exception add rolls the list back and keeps the draft', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('管理节假日'))!
+      .trigger('click')
+    await flushPromises()
+
+    const exceptionForm = wrapper.findAll('form').find((f) => f.find('#exception-reason').exists())!
+    await exceptionForm.find('input[type="date"]').setValue('2026-10-08')
+    await exceptionForm.find('select').setValue('false')
+    await exceptionForm.find('#exception-reason').setValue('补休')
+    await flushPromises()
+    await exceptionForm.trigger('submit')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('补休')
+    expect((exceptionForm.find('input[type="date"]').element as HTMLInputElement).value).toBe(
+      '2026-10-08',
+    )
+    expect((exceptionForm.find('#exception-reason').element as HTMLInputElement).value).toBe('补休')
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '周三')!
+      .trigger('click')
+    await flushPromises()
+    const [, patch] = actionStub.calUpdate.mock.calls[1]!
+    expect(patch.exceptions.some((e: { date?: string }) => e.date === '2026-10-08')).toBe(false)
+  })
+
+  it('a failed weekday toggle (turning a day on) rolls the working times back', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    const wed = () => wrapper.findAll('button').find((b) => b.text().trim() === '周三')!
+    expect(wed().attributes('aria-pressed')).toBe('false')
+    await wed().trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    // 加方向回滚：周三不能停留在「点亮」状态，服务端并没有这一天。
+    expect(wed().attributes('aria-pressed')).toBe('false')
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '周四')!
+      .trigger('click')
+    await flushPromises()
+    const [, patch] = actionStub.calUpdate.mock.calls[1]!
+    expect(
+      patch.workingTimes.some((w: { dayOfWeek?: string }) => w.dayOfWeek === 'wednesday'),
+    ).toBe(false)
+  })
+
+  it('a failed weekday toggle (turning a day off) restores the whole working-time snapshot, not just the day flag', async () => {
+    actionStub.calUpdate.mockRejectedValueOnce(new Error('保存失败'))
+    const wrapper = mount(SchedulingPage, { global: { stubs: calStubs } })
+    await flushPromises()
+    await selectStandardCalendar(wrapper)
+
+    const mon = () => wrapper.findAll('button').find((b) => b.text().trim() === '周一')!
+    expect(mon().attributes('aria-pressed')).toBe('true')
+    await mon().trigger('click')
+    await flushPromises()
+
+    expect(stub.toastError).toHaveBeenCalled()
+    expect(mon().attributes('aria-pressed')).toBe('true')
+
+    // 删方向必须还原整份快照：反向「补一条 { dayOfWeek }」会把周一原有的时段抹平。
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '周三')!
+      .trigger('click')
+    await flushPromises()
+    const [, patch] = actionStub.calUpdate.mock.calls[1]!
+    const mondays = patch.workingTimes.filter(
+      (w: { dayOfWeek?: string }) => w.dayOfWeek === 'monday',
+    )
+    expect(mondays).toHaveLength(1)
+    expect(mondays[0].startsAt).toBe('08:00:00')
+    expect(mondays[0].endsAt).toBe('17:00:00')
+  })
+
   it('persistCalendar de-duplicates workingTimes/holidays/exceptions before sending', async () => {
     // 注入带重复项的明细，断言写回的 patch 中各集合已按键去重（保留第一条）。
     actionStub.calFetchDetail.mockResolvedValueOnce({

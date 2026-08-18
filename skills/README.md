@@ -1,27 +1,95 @@
 # skills/ — 项目专属 Agent Skills（源目录）
 
-本目录是 Nerv-IIP 项目专属技能的**单一事实源**，随仓库版本化、随 PR 评审演进。
-每个技能一个子目录，入口为 `SKILL.md`（frontmatter `name` + `description` +
-正文指令），格式遵循 Agent Skills 约定，可被 Claude Code / Codex 等安装消费。
+本目录是 Nerv-IIP **项目专属**技能的单一事实源，受 git 跟踪、随 PR 评审演进。
+每个技能一个子目录，入口为 `SKILL.md`。
 
-## 安装到本机 agent
+## 先判断该放哪一层
 
-```bash
-# 从仓库本地路径安装（--copy 复制为快照；技能更新后重跑同一命令覆盖）
-npx skills add ./skills/new-component --copy
-```
+技能有三层，装法和归属规则各不相同。新增技能前先定层，放错层的后果是它对某些
+harness 不可见、或永远不会更新。
 
-> 注意：`skills update` 对 `--copy` 安装不可用，更新一律重跑 `add --copy`
-> （与 doc-steward 技能仓库同一惯例）。
+| 层 | 位置 | 装法 | 放什么 |
+|---|---|---|---|
+| **项目专属** | `skills/`（**受 git 跟踪**） | 手工 `npx skills add ./skills/<name> --copy` | 只有本仓库才成立的流程 |
+| 第三方技能 | `.agents/skills/`（gitignored） | [`skills-lock.json`](../skills-lock.json) → `npx skills experimental_install` | 外部来源技能，带 hash 锁 |
+| 跨 harness 通用 | `~/.agents/skills/` + `~/.agents/.skill-lock.json` | `npx skills add -g` | 与本仓库无关的通用技能 |
+
+判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
+放这里会把项目仓库变成通用技能的仓库。
+
+`skills update` 对 `--copy` 安装不可用：项目专属技能改动后，更新一律重跑
+`npx skills add ./skills/<name> --copy` 覆盖。
+
+`~/.claude/skills/` 不是可选层：它只有 Claude Code 能读，`skills` CLI 也管不了它，
+不要往那里安装。
+
+## 写作规范
+
+**REQUIRED BACKGROUND：** 通用技能写法由 `writing-skills` 技能拥有（来源
+`obra/superpowers`，经 `skills-lock.json` 装入 `.agents/skills/`，该目录 gitignored、
+需先跑一次安装），包括 TDD 式的基线测试、SDO 发现性优化、何时该用流程图、token 预算。
+本节只写**本仓库追加**的约定，不复述它。
+
+1. **`description` 只写触发条件，绝不概述工作流。** 这是 `writing-skills` 的实测结论：
+   描述里概述了流程，代理会照描述执行而跳过正文——一份描述写"任务之间做代码评审"，
+   导致代理只做了一次评审，而技能正文明确要求两次。写「当需要 X 时使用」，
+   不写「本技能先 A 再 B 最后 C」。
+
+2. **开头声明这是引导还是清单。** 需要执行者保留判断的技能，第一段写明
+   「本技能是引导，不是清单」，并说清哪些判断留给执行者。否则代理会机械照单执行。
+
+3. **权威来源段：链接，不复述。** 规则的唯一住所是 ADR / DESIGN / AGENTS.md，
+   技能只负责路由过去。设一段「权威依据（读，不要复述）」列出链接。
+   复述会产生第二个住所，规范一改技能就悄悄过期——这也是本规范
+   不再要求「规范变更时同 PR 检查技能是否同步」的原因：不复述就没有同步成本。
+
+4. **与其它技能重叠时写明所有权边界。** 例：「本技能拥有组件定名与实现约束；
+   门禁命令归 `frontend-gate`；设计取向归 `frontend-design`。」
+
+5. **昂贵或只应人工触发的流程加 `disable-model-invocation: true`。** 真机走查、
+   起栈彩排、PDA 实机这类动辄几十分钟的流程，不加就会被自动触发烧掉时间。
+   需要用户点名调用时配合 `argument-hint`。该字段在已安装的技能里广泛使用，
+   可用 `grep -rl 'disable-model-invocation' .agents/skills/` 查当前实例。
+
+6. **多 harness 适配器放 `agents/`。** 让 codex 等消费同一份技能源。`openai.yaml`
+   当前的字段是 `display_name` / `short_description` / `default_prompt`，但**形状由消费方
+   CLI 决定、且已知存在包一层 `interface:` 的变体**——落地前照抄一个已安装实例，
+   不要凭记忆写：`cat .agents/skills/documentation/agents/openai.yaml`。
+
+7. **引用仓库文件用相对路径**（`frontend/DESIGN/...`）；技能在仓库根目录上下文执行。
+
+8. **不要用 `@file` 语法引用其它技能**——它会立即强制加载并烧掉上下文。
+   用技能名加显式标记（`REQUIRED BACKGROUND:` / `REQUIRED SUB-SKILL:`）。
+
+## 落地前检查
+
+- [ ] 定了层：确认这条流程换个仓库不成立，才放 `skills/`
+- [ ] `description` 只有触发条件，无工作流概述
+- [ ] 权威来源段只有链接，正文没有复述 ADR / DESIGN 的规则原文
+- [ ] 与相邻技能的所有权边界已写明
+- [ ] 昂贵流程已加 `disable-model-invocation: true`
+- [ ] 按 `writing-skills` 的要求做过基线验证（无技能时代理怎么做，有技能后是否照做）
+- [ ] 安装后在本会话实际触发过一次，确认它真的可被发现和加载
 
 ## 现有技能
 
 | 技能 | 用途 |
 |---|---|
-| `new-component` | 在 NvUI 组件库新建/上提品牌组件的完整流程（判层、R1–R5 定名、实现约束、六件套 DoD） |
+| `new-component` | 在 NvUI 组件库新建或上提品牌组件（判层、R1–R5 定名、实现约束、六件套 DoD） |
 
-## 新增技能的规矩
+## 已知欠账
 
-1. 技能内容只写**本仓库特有**的流程与约定，通用知识不进技能；
-2. 引用仓库文件用相对路径（`frontend/DESIGN/...`），技能在仓库根目录上下文执行；
-3. 技能引用的规范文件（ADR / DESIGN / AGENTS.md）变更时，同 PR 检查技能是否需要同步。
+以下两项在本规范落地时查实，尚未修：
+
+1. **`new-component` 未接入任何自动安装通道。** 它不在 `skills-lock.json`、
+   不在 `.agents/skills/`、不在 `.claude/skills/`——`scripts/setup-worktree.ps1`
+   为新 worktree 自动装齐 39 个第三方技能，却不装本仓库自己的技能，因此除非有人
+   手工跑过 `npx skills add`，它对任何 agent 都不可见。两条候选解法（未验证哪条可行）：
+   把 `skills/*` 登记进 `skills-lock.json`（当前所有条目都是 `sourceType: github`，
+   本地路径是否受支持待验），或让 `setup-worktree.ps1` 遍历 `skills/*` 逐个 `add --copy`。
+
+2. **`new-component` 的 `description` 违反上文第 1 条**：它以
+   「……的完整流程——判层、R1–R5 定名、实现约束、六件套 DoD 清单」概述了工作流。
+   按 `writing-skills` 的 Iron Law，改动技能的行为塑造内容前需要先有基线测试，
+   因此此处只登记缺陷与判据，不在本 PR 顺手改：修复后的描述必须只剩触发条件，
+   且改动前后都要验证技能仍能被正确发现（缩短描述可能损害发现性）。

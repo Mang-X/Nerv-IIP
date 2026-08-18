@@ -17,9 +17,22 @@ $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $testEvidenceArtifactsLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceArtifacts.ps1'
 $testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
 $testEvidenceParsingLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceParsing.ps1'
+$testEvidencePolicyLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidencePolicy.ps1'
 $testEvidencePrivacyLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidencePrivacy.ps1'
 $testEvidenceProvenanceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceProvenance.ps1'
 $facadeOwnedResponsibilityContracts = @(
+    [pscustomobject]@{
+        LibraryName = 'TestEvidencePolicy.ps1'
+        FunctionNames = @(
+            'New-NervTestEvidenceViolation',
+            'Import-NervTestEvidencePolicy',
+            'Test-NervQuarantineRuleMetadata',
+            'Get-NervSourceSkipAssignments',
+            'Test-NervTestEvidencePolicy',
+            'Test-NervRuleApplies',
+            'Get-NervTestEvidenceViolations'
+        )
+    },
     [pscustomobject]@{
         LibraryName = 'TestEvidencePrivacy.ps1'
         FunctionNames = @(
@@ -71,7 +84,7 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidencePolicy.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -184,7 +197,7 @@ Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwne
     -ResponsibilityContracts $facadeOwnedResponsibilityContracts
 
 $missingRegistryContracts = @($facadeOwnedResponsibilityContracts | Where-Object {
-    -not [string]::Equals([string]$_.LibraryName, 'TestEvidenceProvenance.ps1', [StringComparison]::Ordinal)
+    -not [string]::Equals([string]$_.LibraryName, 'TestEvidencePolicy.ps1', [StringComparison]::Ordinal)
 })
 $missingRegistryFailure = $null
 try {
@@ -197,8 +210,8 @@ catch {
 }
 Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRegistryFailure)) `
     'Removing an imported facade-owned library from the responsibility registry must fail closed.'
-Assert-True ([string]$missingRegistryFailure).Contains('TestEvidenceProvenance.ps1', [StringComparison]::Ordinal) `
-    'The missing-registry mutation failure must identify the imported Provenance library that escaped registration.'
+Assert-True ([string]$missingRegistryFailure).Contains('TestEvidencePolicy.ps1', [StringComparison]::Ordinal) `
+    'The missing-registry mutation failure must identify the imported Policy library that escaped registration.'
 
 $nonPrefixedRegistryFailure = $null
 try {
@@ -266,6 +279,24 @@ $approvedSkipReason = Get-NervRetainedSkipReason ([pscustomobject]@{
     skipReason = 'Authorization=Bearer skip-secret'
 })
 Assert-Equal 'Authorization=Bearer <redacted>' $approvedSkipReason 'Approved skip reasons must use the shared redactor output.'
+
+$retainedSkipBoundaryCases = @(
+    [pscustomobject]@{ Length = 511; Expected = ('x' * 511) },
+    [pscustomobject]@{ Length = 512; Expected = ('x' * 512) },
+    [pscustomobject]@{ Length = 513; Expected = ('x' * 512) }
+)
+foreach ($case in $retainedSkipBoundaryCases) {
+    $actual = Get-NervRetainedSkipReason ([pscustomobject]@{
+        skipPolicyId = 'approved-boundary-fixture'
+        skipReason = ('x' * $case.Length)
+    })
+    Assert-Equal $case.Expected $actual "Approved skip reason length $($case.Length) must retain the exact existing 512-character boundary behavior."
+    Assert-Equal ([Math]::Min($case.Length, 512)) $actual.Length "Approved skip reason length $($case.Length) produced an unexpected retained length."
+}
+
+$retainedFailureText = ConvertTo-NervRetainedFailureText 'raw failure body that must not be retained'
+Assert-Equal 'Test failed; raw failure details are intentionally omitted by evidence privacy policy.' $retainedFailureText 'Failure retention must preserve the fixed privacy-policy prose.'
+Assert-True (-not $retainedFailureText.Contains('raw failure body', [StringComparison]::Ordinal)) 'Failure retention must not expose the raw failure body.'
 
 $redactionFailureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-redaction-contract-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -390,6 +421,28 @@ $facadeFunctions = @($testEvidenceAst.FindAll({
     param($node)
     $node -is [Management.Automation.Language.FunctionDefinitionAst]
 }, $true))
+$expectedFacadeFunctionNames = @(
+    'Test-NervOrdinalEquals',
+    'Resolve-NervTrxOutcomeMapping',
+    'Get-NervOrdinalCompositeKey',
+    'Get-NervOrdinalSet',
+    'Get-NervOrdinalSorted',
+    'Get-NervOrdinalGroups',
+    'Get-NervOrdinalSortedBy',
+    'Get-NervOrdinalRankedTop',
+    'Test-NervHasProperty',
+    'Get-NervTestEvidenceLaneJobs',
+    'Test-NervTestEvidenceLaneName',
+    'New-NervTestEvidenceRunMetadata',
+    'Find-NervQuotedTextEnd',
+    'Get-NervStableEvidenceGuid'
+)
+$actualFacadeFunctionNames = @(Get-NervOrdinalSorted -Unique -Values @($facadeFunctions | ForEach-Object { [string]$_.Name }))
+$sortedExpectedFacadeFunctionNames = @(Get-NervOrdinalSorted -Unique -Values $expectedFacadeFunctionNames)
+Assert-True ([string]::Equals(($actualFacadeFunctionNames -join '|'), ($sortedExpectedFacadeFunctionNames -join '|'), [StringComparison]::Ordinal)) `
+    "TestEvidence.ps1 must retain exactly the 14 shared facade functions after the Policy split. Expected=[$($sortedExpectedFacadeFunctionNames -join ', ')] Actual=[$($actualFacadeFunctionNames -join ', ')]"
+Assert-Equal $sortedExpectedFacadeFunctionNames.Count $facadeFunctions.Count `
+    'TestEvidence.ps1 must not duplicate any shared facade function.'
 $lastFacadeFunctionEnd = (@($facadeFunctions | ForEach-Object { [int]$_.Extent.EndOffset }) | Measure-Object -Maximum).Maximum
 $responsibilityContractStates = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
@@ -445,11 +498,14 @@ foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
 
 $artifactsLibraryAst = $responsibilityContractStates['TestEvidenceArtifacts.ps1'].Ast
 $baselineLibraryDefinitions = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Definitions)
+$facadePolicyImport = @($responsibilityContractStates['TestEvidencePolicy.ps1'].Imports)[0]
 $facadePrivacyImport = @($responsibilityContractStates['TestEvidencePrivacy.ps1'].Imports)[0]
 $facadeParsingImport = @($responsibilityContractStates['TestEvidenceParsing.ps1'].Imports)[0]
 $facadeArtifactsImport = @($responsibilityContractStates['TestEvidenceArtifacts.ps1'].Imports)[0]
 $facadeProvenanceImport = @($responsibilityContractStates['TestEvidenceProvenance.ps1'].Imports)[0]
 $facadeBaselineImport = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Imports)[0]
+Assert-True ($facadePolicyImport.Extent.StartOffset -lt $facadePrivacyImport.Extent.StartOffset) `
+    'TestEvidence.ps1 must load TestEvidencePolicy.ps1 before TestEvidencePrivacy.ps1.'
 Assert-True ($facadePrivacyImport.Extent.StartOffset -lt $facadeParsingImport.Extent.StartOffset) `
     'TestEvidence.ps1 must load TestEvidencePrivacy.ps1 before TestEvidenceParsing.ps1.'
 Assert-True ($facadeParsingImport.Extent.StartOffset -lt $facadeArtifactsImport.Extent.StartOffset) `
@@ -624,11 +680,9 @@ $safeFailureSharedCalls = @($safeFailureAssignments[0].Right.FindAll({
 }, $true))
 Assert-Equal 1 $safeFailureSharedCalls.Count 'Collector $safeFailure assignment must call Protect-ScriptAutomationText directly exactly once.'
 
-$sourceScannerFunction = $testEvidenceAst.Find({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string]$node.Name, 'Get-NervSourceSkipAssignments', [StringComparison]::Ordinal)
-}, $true)
+$sourceScannerFunctions = @(Get-NervFunctionDefinitionsFromAsts -Asts $testEvidenceDefinitionAsts -FunctionName 'Get-NervSourceSkipAssignments')
+Assert-Equal 1 $sourceScannerFunctions.Count 'TestEvidence responsibilities must define Get-NervSourceSkipAssignments exactly once before its structure is inspected.'
+$sourceScannerFunction = $sourceScannerFunctions[0]
 $sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
     param($node)
     $node -is [Management.Automation.Language.CommandAst] -and
@@ -1343,6 +1397,11 @@ Assert-Equal 'backend-shard-1' $records[0].lane 'Shard lane must not alter schem
 Assert-Equal 'Nerv.IIP.Sample.Tests.dll' $records[0].assembly 'Assembly must come from UnitTest storage.'
 Assert-Equal 1250.0 ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('passed'), [StringComparison]::OrdinalIgnoreCase) }).durationMilliseconds 'Duration must use invariant TimeSpan parsing.'
 Assert-Equal 'Set NERV_IIP_TEST_POSTGRES to run the fixture.' ($records | Where-Object { [string]::Equals([string]$_.outcome, [string]('skipped'), [StringComparison]::OrdinalIgnoreCase) }).skipReason 'Skip reason mismatch.'
+$stdoutFallbackParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'stdout-skip-fallback.trx')) -RunMetadata $run
+$stdoutFallbackRecords = @($stdoutFallbackParseResult.Records)
+Assert-Equal 1 $stdoutFallbackRecords.Count 'StdOut fallback fixture must yield exactly one retained record.'
+Assert-Equal 'skipped' $stdoutFallbackRecords[0].outcome 'StdOut fallback fixture must remain a skipped result.'
+Assert-Equal 'SKIP: fixture dependency unavailable.' $stdoutFallbackRecords[0].skipReason 'A NotExecuted result without ErrorInfo/Message must retain the trimmed StdOut SKIP line.'
 Assert-Equal 3000.0 $parseResult.TrxElapsedMilliseconds 'TRX elapsed time must remain separate from summed test duration.'
 Assert-Equal 1 @($parseResult.TrxRuns).Count 'TRX parse result must retain one run for the fixture.'
 Assert-Equal 'backend-shard-1' $parseResult.TrxRuns[0].lane 'TRX run lane mismatch.'
@@ -1858,6 +1917,26 @@ function New-NervLaneProvenanceFor {
 $imported = ConvertFrom-NervDotNetConsoleSummary -Text (Get-Content (Join-Path $fixtures 'github-backend-console.log.txt') -Raw) -RunMetadata $metadata
 Assert-Equal 'project' $imported.granularity 'Console import is project-granularity.'
 Assert-Equal 822000 ($imported.assemblies | Where-Object { [string]::Equals([string]$_.assembly, [string]('Nerv.IIP.BusinessGateway.Web.Tests.dll'), [StringComparison]::OrdinalIgnoreCase) }).elapsedMilliseconds '13m42s must normalize to milliseconds.'
+$expectedConsoleAssemblies = @(
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.BusinessGateway.Web.Tests.dll'; Passed = 500; Failed = 0; Skipped = 8; Executed = 500; Total = 508 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.dll'; Passed = 88; Failed = 0; Skipped = 1; Executed = 88; Total = 89 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.Wms.Web.Tests.dll'; Passed = 140; Failed = 0; Skipped = 5; Executed = 140; Total = 145 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.Inventory.Web.Tests.dll'; Passed = 90; Failed = 0; Skipped = 2; Executed = 90; Total = 92 },
+    [pscustomobject]@{ Assembly = 'Nerv.IIP.Business.FullChain.Tests.dll'; Passed = 12; Failed = 0; Skipped = 5; Executed = 12; Total = 17 }
+)
+Assert-Equal $expectedConsoleAssemblies.Count @($imported.assemblies).Count 'Console import must retain exactly the five fixture assemblies.'
+foreach ($expectedAssembly in $expectedConsoleAssemblies) {
+    $actualAssemblies = @($imported.assemblies | Where-Object {
+        [string]::Equals([string]$_.assembly, [string]$expectedAssembly.Assembly, [StringComparison]::Ordinal)
+    })
+    Assert-Equal 1 $actualAssemblies.Count "Console import must retain assembly '$($expectedAssembly.Assembly)' exactly once."
+    $actualAssembly = $actualAssemblies[0]
+    Assert-Equal $expectedAssembly.Passed $actualAssembly.passed "Console import passed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Failed $actualAssembly.failed "Console import failed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Skipped $actualAssembly.skipped "Console import skipped count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Executed $actualAssembly.executed "Console import executed count changed for '$($expectedAssembly.Assembly)'."
+    Assert-Equal $expectedAssembly.Total $actualAssembly.total "Console import total count changed for '$($expectedAssembly.Assembly)'."
+}
 $baselineA = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 $baselineB = New-NervTestEvidenceBaseline -Summaries @($imported) -SourceMetadata $metadata -GeneratedAtUtc ([DateTimeOffset]'2026-08-03T14:11:22Z')
 Assert-Equal ($baselineA | ConvertTo-Json -Depth 100) ($baselineB | ConvertTo-Json -Depth 100) 'Baseline generation must be deterministic.'
@@ -2948,6 +3027,7 @@ foreach ($registeredPath in @(
     'collect-test-evidence.ps1',
     'generate-test-evidence-baseline.ps1',
     'scripts/lib/TestEvidence.ps1',
+    'scripts/lib/TestEvidencePolicy.ps1',
     'scripts/lib/TestEvidencePrivacy.ps1',
     'scripts/lib/TestEvidenceParsing.ps1',
     'scripts/lib/TestEvidenceArtifacts.ps1',
@@ -2957,6 +3037,10 @@ foreach ($registeredPath in @(
 )) {
     Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
 }
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePolicy.ps1` | `check` library | 已受治理 |',
+    [StringComparison]::Ordinal)) `
+    'Script governance registry must retain the TestEvidencePolicy.ps1 migration row.'
 Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidencePrivacy.ps1` | `check` library | 已受治理 |',
     [StringComparison]::Ordinal)) `
@@ -2977,14 +3061,18 @@ Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidenceProvenance.ps1` | `check` library | 已受治理 |',
     [StringComparison]::Ordinal)) `
     'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains('### 七份收口声明', [StringComparison]::Ordinal)) `
-    'Script governance must count all seven executable ordinal closure declarations.'
-Assert-True ($scriptGovernanceDoc.Contains('**七份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
+Assert-True ($scriptGovernanceDoc.Contains('### 八份收口声明', [StringComparison]::Ordinal)) `
+    'Script governance must count all eight executable ordinal closure declarations.'
+Assert-True ($scriptGovernanceDoc.Contains('**八份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
     'Script governance must keep the closeout declaration count aligned in its strength-bound heading.'
 Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
     [StringComparison]::Ordinal)) `
     'Script governance must document the zero-finding, zero-exemption facade ordinal declaration.'
+Assert-True ($scriptGovernanceDoc.Contains(
+    '| `scripts/lib/TestEvidencePolicy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
+    [StringComparison]::Ordinal)) `
+    'Script governance must document the zero-finding, zero-exemption Policy ordinal declaration.'
 Assert-True ($scriptGovernanceDoc.Contains(
     '| `scripts/lib/TestEvidencePrivacy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
     [StringComparison]::Ordinal)) `
@@ -3142,6 +3230,8 @@ foreach ($capturedScopeCandidate in @(
 $evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 $evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -DisplayName 'TestEvidence.ps1'
 Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
+$policyEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidencePolicyLibraryPath -DisplayName 'TestEvidencePolicy.ps1'
+Assert-True ($policyEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidencePolicy.ps1 must compare identifiers ordinally (#1509):`n  $(@($policyEvidenceSweep.Findings) -join "`n  ")"
 $privacyEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidencePrivacyLibraryPath -DisplayName 'TestEvidencePrivacy.ps1'
 Assert-True ($privacyEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidencePrivacy.ps1 must compare identifiers ordinally (#1509):`n  $(@($privacyEvidenceSweep.Findings) -join "`n  ")"
 $parsingEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceParsingLibraryPath -DisplayName 'TestEvidenceParsing.ps1'
