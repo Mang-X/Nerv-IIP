@@ -111,7 +111,11 @@ public sealed class PlatformGatewayHostIsolationTests
             Assert.True(buildEntered.Wait(BuildMustCompleteWithin));
             request = client.GetAsync("/health");
 
-            await WaitUntilAsync(() => PlatformGatewayTestHostGate.RequestsWaiting > 0);
+            Assert.True(
+                SpinWait.SpinUntil(
+                    () => PlatformGatewayTestHostGate.RequestsWaiting > 0,
+                    BuildMustCompleteWithin),
+                "Timed out waiting for a request to enter the gateway gate's waiting state.");
 
             Assert.Equal(0, PlatformGatewayTestHostGate.RequestsInFlight);
             Assert.True(PlatformGatewayTestHostGate.RequestsWaiting > 0);
@@ -141,16 +145,6 @@ public sealed class PlatformGatewayHostIsolationTests
             Assert.Equal(expectedToken, result.Item1);
             Assert.Same(expectedJwks, result.Item2);
         });
-    }
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        var timeoutAt = DateTime.UtcNow + BuildMustCompleteWithin;
-        while (!condition())
-        {
-            Assert.True(DateTime.UtcNow < timeoutAt, "Timed out waiting for the gateway gate diagnostic state.");
-            await Task.Delay(10);
-        }
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateFactory(
