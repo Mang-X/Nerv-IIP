@@ -4,9 +4,10 @@
 `625ca49b5bef50a340657f333149bc58cc057a02`。它只记录当前事实、漂移和后续批次，
 不修改测试、provider、trait、manifest、workflow 或共享脚本。
 
-本盘点采用 PR #1662 的 provider 证明范围术语作为讨论参考，但不依赖该未合并 PR
-中的文件。仓库当前证据格式、失败条件和可接受结论仍以
-[测试证据治理](./test-evidence-governance.md)及现行 manifest、policy、runner 为准。
+本盘点不定义 lane、测试归属或执行语义。三条真实依赖 lane 的唯一归属与失败语义以
+[真实依赖测试 Lane 架构](./real-dependency-test-lanes.md)为准；证据格式以
+[测试证据治理](./test-evidence-governance.md)为准；现行 manifest、policy、runner 与真实
+CI artifact 分别提供路由合同和单次执行事实。本文只保存四层核对结果、运行快照和漂移清单。
 
 ## 判定方法
 
@@ -22,15 +23,13 @@
 因此，`Postgres`、`Redis`、`CAP`、`Docker` 或 `FullChain` 出现在名称、trait、项目路径、
 过滤器、manifest 或 lane 名中，都不能单独作为实际执行证明。
 
-## 五类证明范围
+## 权威边界
 
-| 类别 | 实际身份要求 | 可以证明 | 不允许宣称 |
-| --- | --- | --- | --- |
-| InMemory/fake | 明示内存 provider、fake/stub/no-op 和进程内边界 | 纯逻辑、状态转换、应用编排、替身分支 | SQL、migration、schema、数据库约束/事务/锁、真实 transport、跨进程恢复 |
-| PostgreSQL | 实际 Npgsql 连接、数据库所有权、readiness/版本、精确测试结果与 cleanup | 本次覆盖的 migration、SQL、schema、约束、事务/锁/并发或重启行为 | 未执行身份、Redis/CAP、真实服务拓扑或未覆盖场景 |
-| Redis | 实际 Redis endpoint、readiness/版本、精确身份和 cleanup | 本次覆盖的 Redis 数据结构、锁、幂等或重启行为 | CAP transport、PostgreSQL 隔离、HTTP/full chain |
-| CAP | 明示实际 transport；InMemory 与 RabbitMQ/Redis 等 transport 分开记录 | 本次 transport 下的 publish/consume/outbox/inbox/retry/DLQ 行为 | 由 `cap-*` trait 推断真实 broker，或把进程内消息替身称为跨进程链路 |
-| FullChain | manifest 精确身份、public entrypoint、实际服务拓扑与全部依赖的 readiness/result/cleanup | 该入口、拓扑和依赖下的端到端场景 | 仅 dotnet + 单 provider、进程内 handler/context，或 manifest 外场景 |
+本文出现的 InMemory/fake、PostgreSQL、Redis、CAP 与 FullChain 只是在四层核对中描述实际
+provider、transport 和进程边界，不构成另一套分类或归属规则。测试应归入 `postgres`、
+`redis-cap` 还是 `full-chain`，以及各 lane 能证明和禁止宣称什么，均直接采用
+[Lane 与唯一归属](./real-dependency-test-lanes.md#lane-与唯一归属)的裁决；本文只记录与该裁决
+不一致或缺少执行证据的身份。
 
 ## 当前可复核运行基线
 
@@ -38,11 +37,19 @@
 [`32104975404`](https://github.com/Mang-X/Nerv-IIP/actions/runs/32104975404) 已完成且 CI Summary
 为 success。下表只把对应 artifact 的结果归给实际被选中的身份。
 
-| lane | manifest 选中 | 实际结果 | provider/readiness | cleanup | 允许结论 |
-| --- | ---: | --- | --- | --- | --- |
-| `postgres` | 14 个 member | expected=discovered=passed=73，failed=skipped=0 | PostgreSQL 18.6，readiness passed | passed | 只证明这 73 个精确身份的 PostgreSQL 行为 |
-| `redis-cap` | 1 个 member、2 个 identity | expected=discovered=passed=2，failed=skipped=0 | PostgreSQL 18.6、Redis 8.10.0，二者 readiness passed | passed | 只证明 DemandPlanning 的 2 个精确 Redis/CAP 身份 |
-| `full-chain` | 5 个 member | expected=discovered=passed=5，failed=skipped=0 | PostgreSQL 18.6、Redis 8.10.0，二者 readiness passed | passed | 按各 member 的 entrypoint/dependency 边界分别解释，不把项目其余测试算入 |
+| lane | manifest 快照 | CI workflow 与 artifact 实际选中 | 实际结果 | provider/readiness | cleanup | 允许结论 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `postgres` | 17 个 member：15 active、2 deferred；active 共 81 个 identity | workflow 硬编码 14 个 member；artifact 的 `selectedMemberIds` 同为 14 个 | expected=discovered=passed=73，failed=skipped=0 | PostgreSQL 18.6，readiness passed | passed | 只证明 artifact 中这 14 个 member 的 73 个精确身份；不能扩张到未选中的 active member |
+| `redis-cap` | 1 个 active member、2 个 identity | artifact 选中 1 个 member | expected=discovered=passed=2，failed=skipped=0 | PostgreSQL 18.6、Redis 8.10.0，二者 readiness passed | passed | 只证明 DemandPlanning 的 2 个精确 Redis/CAP 身份 |
+| `full-chain` | 5 个 active member | artifact 选中 5 个 member | expected=discovered=passed=5，failed=skipped=0 | PostgreSQL 18.6、Redis 8.10.0，二者 readiness passed | passed | 按各 member 的 entrypoint/dependency 边界分别解释，不把项目其余测试算入 |
+
+`postgres` 的 81 与 73 相差 8，全部来自 active member
+`masterdata-device-reference-concurrency`。这 8 个 identity 在 policy 中的 `requiredLane` 为
+`postgres`，在 manifest 中也归属该 member；但 workflow 的 `$members` 和本次 artifact 的
+`selectedMemberIds` 都没有它，因此本次是**零执行**，不能写成通过或借用
+`masterdata-postgres-profile` 的结果。`test-evidence-governance.md` 记录的 64 是早期 core 接线
+口径；本次 artifact 的 73 是 workflow 实际选择口径；manifest active 的 81 是路由合同口径，
+三者不可互相替代。
 
 `backend-shard-*` 的绿色结果只证明测试方法返回了 passed。若方法在缺依赖时直接
 `return`，该结果是需要治理的假阳性，不是 provider 证据。
@@ -57,6 +64,7 @@
 | INV-004 | `Nerv.IIP.Business.Scheduling.Web.Tests`；`SchedulingListPlansPostgresProfileTests.cs` 的 2 个 `[Fact]` | 名称/注释称 PostgreSQL，注释把 `return` 称为 skipped；项目已有 PostgreSQL member，但 expected identities 不含这 2 项 | 有变量时为进程内 Npgsql/EF PostgreSQL；无变量时直接 `return`；`backend-shard-1` 仍以约 4.4/10.4 ms 记为 passed | 不能借同项目其他 PostgreSQL identity 的 artifact；当前结果也不是可观测 skip | NERV-879 |
 | INV-005 | `Nerv.IIP.FileStorage.Web.Tests`；`FileStoragePostgreSqlServiceTests.cs` 的 22 个 `[Fact]` | 类名及部分方法名含 `PostgreSql`；无 provider trait；fast shard 执行。另有 `FileStorageRestartPersistenceTests` 由 PostgreSQL lane 归责 | 被测类型为 `PostgreSqlFileStorageService`，但 fixture 的 `CreateDbContext` 使用 `UseInMemoryDatabase`；进程内执行 | 可证明实现级逻辑/状态，不可证明 SQL、migration、constraint、transaction 或真实 PostgreSQL。不得借 restart identity 的证据扩张 | NERV-880 |
 | INV-006 | `Nerv.IIP.Business.FullChain.Tests`；manifest 外 10 个 `[Fact]`，以及 `erp-return-closure` 1 项 | 整个项目从 fast shard 排除；full-chain manifest/policy 只选择 5 个 identity。`erp-return-closure` 被路由到 full-chain | manifest 外 10 项没有 hosted 实际 lane 结果。`erp-return-closure` 本次确实在 full-chain lane 执行，但 entrypoint=`dotnet`、PostgreSQL=true、Redis=false、externalProcesses=false；测试使用进程内 EF contexts、InMemory dead-letter store 与 no-op mediator | 项目名/排除规则不能证明 10 项执行；`erp-return-closure` 只能证明其 PostgreSQL context 行为，不能宣称真实服务拓扑、public entrypoint 或 Redis full chain | NERV-881 |
+| INV-007 | PostgreSQL member `masterdata-device-reference-concurrency` 的 8 个 manifest identity | policy 的 `requiredLane=postgres`；manifest 为 `status=active`，但 workflow `$members` 未包含该 member | run `32104975404` 的 PostgreSQL artifact 未选择该 member，expected/discovered/passed 均未覆盖这 8 项 | active 路由合同不能替代执行证据；8 项均为零执行，不能宣称通过。修复涉及共享 workflow/治理，须独立 Scope-Gate，不并入六张服务迁移票 | 待独立 Scope-Gate |
 
 ## 固定测试身份
 
@@ -85,8 +93,28 @@ INV-003 为 `Postgres_store_persists_task_attempt_and_audit_records`。INV-004 �
 - `Postgres_list_marks_invalidated_plan_with_latest_reason`
 - `Postgres_list_breaks_exact_timestamp_ties_deterministically_by_id`
 
-INV-005 固定为 `FileStoragePostgreSqlServiceTests.cs` 当前 22 个 `[Fact]`。后续实施必须在票面
-保留基线方法清单；新增身份不自动进入该批次。
+INV-005 不复制一份会随源码漂移的方法名清单；封闭批次由不可变快照提交
+`625ca49b5bef50a340657f333149bc58cc057a02`、路径
+`backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs`
+和 blob `08e5c93010fae6fb80e3f65bac7e1aa8f26389c0` 共同确定。以下命令从该 blob 复算精确身份，
+必须得到 22 行，且输出的 SHA-256 为
+`f2faffa1080cdd06742d548dc0ad09a4a79d1cfc03a872964103796cfd05da03`；新增、删除或改名均不
+自动改变该批次：
+
+```bash
+git show 625ca49b5bef50a340657f333149bc58cc057a02:backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStoragePostgreSqlServiceTests.cs \
+  | sed -n '/^    \[Fact\]$/{n;s/^    public async Task \([^(]*\)(.*/\1/p;}' \
+  | tee /tmp/nerv-880-inv-005-identities.txt
+wc -l /tmp/nerv-880-inv-005-identities.txt
+shasum -a 256 /tmp/nerv-880-inv-005-identities.txt
+```
+
+INV-007 的 8 项不在本文复制；它们以同一快照的 manifest member 为封闭来源，可复算为：
+
+```bash
+git show 625ca49b5bef50a340657f333149bc58cc057a02:scripts/postgres-test-lane.json \
+  | jq -r '.members[] | select(.id == "masterdata-device-reference-concurrency") | .expectedTestIdentities[]'
+```
 
 INV-006 中未被 manifest 选择的 10 项为：
 
