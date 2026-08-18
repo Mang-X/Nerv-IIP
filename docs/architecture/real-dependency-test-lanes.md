@@ -18,7 +18,7 @@
 
 `scripts/acceptance-scenario-matrix.json` 已登记六个 `full-chain` 场景：五个既有 v1 场景映射为 `active/core`，`equipment-unavailable-scheduling-mes` 登记为 `blocked/extended` 并保留明确阻塞原因、owner 和未来冻结身份。导入器要求五个 active/core 场景与 `scripts/full-chain-test-lane.json` 在 alias、project、entrypoint、identity、dependencies 和 diagnostic schemas 上双向闭合；blocked 场景只冻结规划合同，不要求未来 project/entrypoint 已存在或可 discovery。选择器已覆盖 PR ordinal impact、`main`、nightly 和 `workflow_dispatch`，并以保守选择处理影响规则失败或 changed paths 缺失；规划预算绑定具名 workflow job/step 的实际 timeout，按项目聚合后每个项目只允许一次 restore 和一次 Release `--no-restore --list-tests` discovery，成功 artifact 还必须闭合 SHA、run/attempt、manifest digest、选择原因、项目与身份。
 
-这仍是**纯规划合同**。当前 `.github/workflows/ci.yml` 只有 Script Governance 的 fixture 合同入口，不含 planning/matrix runtime、执行或聚合 job；planner 读取真实 workflow 时会在零外部命令下失败关闭。v1 五场景 manifest/runner 继续是唯一实际执行权威，本轮没有新 runtime、ERP 等价或旧 job/manifest/runner 退出证据。NERV-669 关于 scenario runner 精确构建所需服务的结论保留为未来真实 runtime 接入后的独立复评项，不在本轮改变构建命令。
+这仍是**纯规划合同**。当前 `.github/workflows/ci.yml` 只有 Script Governance 的 fixture 合同入口，不含 planning/matrix runtime、执行或聚合 job；planner 读取真实 workflow 时会在零外部命令下失败关闭。v1 五场景 manifest/runner 继续是唯一实际执行权威，本轮没有新 runtime、ERP 等价或旧 job/manifest/runner 退出证据。`MAN-669 PR-C` 关于 scenario runner 精确构建所需服务的裁决明确不由 MAN-669 实现；该项保留给 NERV-673 在未来接入真实 runtime 后独立复评，不在本轮改变构建命令。
 
 ## 触发层级与 branch protection
 
