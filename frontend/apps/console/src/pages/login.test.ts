@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createConsoleI18n } from '@/i18n'
+import { formatConsoleLockoutMessage } from '@/api/auth'
 import LoginPage from './login.vue'
 
 const api = vi.hoisted(() => {
@@ -22,7 +23,10 @@ const router = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
-vi.mock('@/api/auth', () => api)
+vi.mock('@/api/auth', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/auth')>()),
+  ...api,
+}))
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
@@ -63,5 +67,16 @@ describe('Login page', () => {
     )
     expect(appError).not.toHaveBeenCalled()
     expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('formats the lockout deadline as local HH:mm', () => {
+    expect(
+      formatConsoleLockoutMessage('2026-08-18T08:30:00.0000000+00:00', 'zh-CN', 'Asia/Shanghai'),
+    ).toBe('账户已锁定，请于 16:30 后重试。')
+  })
+
+  it('falls back safely when the lockout deadline is missing or invalid', () => {
+    expect(formatConsoleLockoutMessage()).toBe('账户已锁定，请稍后重试。')
+    expect(formatConsoleLockoutMessage('not-a-date')).toBe('账户已锁定，请稍后重试。')
   })
 })

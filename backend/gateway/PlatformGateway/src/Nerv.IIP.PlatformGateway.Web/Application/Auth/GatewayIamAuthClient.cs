@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.Json;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
@@ -126,9 +127,17 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
                 return response;
             }
 
-            var statusCode = response.StatusCode;
-            response.Dispose();
-            throw ToGatewayException(statusCode);
+            GatewayAuthException exception;
+            try
+            {
+                exception = ToGatewayException(response);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+
+            throw exception;
         }
         catch (GatewayAuthException)
         {
@@ -148,6 +157,37 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         }
     }
 
+    private static GatewayAuthException ToGatewayException(HttpResponseMessage response)
+    {
+        var statusCode = response.StatusCode;
+        if (statusCode == HttpStatusCode.Unauthorized)
+        {
+            var failureCode = ReadSingleHeader(response, GatewayAuthResponseHeaders.LoginFailure);
+            if (failureCode is "iam-account-locked" or "iam-invalid-credentials")
+            {
+                var lockoutUntilUtc = failureCode == "iam-account-locked"
+                    ? ReadUtcTimestampHeader(response, GatewayAuthResponseHeaders.LockoutUntilUtc)
+                    : null;
+                var remainingAttempts = failureCode == "iam-invalid-credentials"
+                    ? ReadRemainingAttemptsHeader(response)
+                    : null;
+                return GatewayAuthException.LoginRejected(
+                    failureCode,
+                    lockoutUntilUtc,
+                    remainingAttempts);
+            }
+
+            return GatewayAuthException.Unauthorized("iam-unauthorized");
+        }
+
+        if ((int)statusCode >= 500)
+        {
+            return GatewayAuthException.Unavailable("iam-unavailable");
+        }
+
+        return GatewayAuthException.BadGateway($"iam-unexpected-status-{(int)statusCode}");
+    }
+
     private static GatewayAuthException ToGatewayException(HttpStatusCode statusCode)
     {
         if (statusCode == HttpStatusCode.Unauthorized)
@@ -161,6 +201,48 @@ public sealed class HttpGatewayIamAuthClient(HttpClient httpClient) : IGatewayIa
         }
 
         return GatewayAuthException.BadGateway($"iam-unexpected-status-{(int)statusCode}");
+    }
+
+    private static string? ReadSingleHeader(HttpResponseMessage response, string name)
+    {
+        if (!response.Headers.TryGetValues(name, out var values))
+        {
+            return null;
+        }
+
+        using var enumerator = values.GetEnumerator();
+        if (!enumerator.MoveNext())
+        {
+            return null;
+        }
+
+        var value = enumerator.Current;
+        return enumerator.MoveNext() ? null : value;
+    }
+
+    private static DateTimeOffset? ReadUtcTimestampHeader(HttpResponseMessage response, string name)
+    {
+        return DateTimeOffset.TryParseExact(
+                ReadSingleHeader(response, name),
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var value)
+            && value.Offset == TimeSpan.Zero
+                ? value
+                : null;
+    }
+
+    private static int? ReadRemainingAttemptsHeader(HttpResponseMessage response)
+    {
+        return int.TryParse(
+                ReadSingleHeader(response, GatewayAuthResponseHeaders.RemainingAttempts),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var value)
+            && value is >= 1 and <= 2
+                ? value
+                : null;
     }
 
     private sealed record IamAuthResponse(
