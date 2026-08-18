@@ -16,6 +16,10 @@
 
 本 ADR 只决定三件事：通用文件上传的协议与入口拓扑；staging/final 生命周期和 `ObjectKey` 的目标语义；所有 storage provider 共同遵守的 complete 提交不变量。
 
+**本 ADR 接受的是目标架构约束，不是交付证明。** 它只完成 #992 四层拆分中的第 1 层文档裁决，
+不证明代码测试、真实运行、CI、PR 合并或 tracker 完成；实现进度与逐层交付状态以票面和
+`docs/architecture/implementation-readiness.md` 为准。
+
 以下内容不在本 ADR 范围内：
 
 - 不设计或实现 `IStorageProvider`、Local/S3-compatible 适配及其选择、注册或能力矩阵；
@@ -24,20 +28,6 @@
 - 不同步 FileStorage 基线、schema catalog、deployment baseline、implementation readiness、公开契约、OpenAPI、generated client 或业务代码；
 - 不扩展扫描、加密、多副本、保留、删除、备份恢复、legal hold、WORM 或 residency 语义；
 - 不合并或修改独立 `VersionedArchive` 合规归档接口的 API、versioning、object lock 或 legal hold 语义。
-
-## 当前实现事实
-
-| 主题 | 当前事实 | 本 ADR 接受的目标 |
-| --- | --- | --- |
-| 上传传输 | 默认 `server-proxy` 只生成无对应 PUT endpoint 的 URL；显式配置可启用自研部分 tus `HEAD`/`PATCH` | 唯一公开上传协议为 tus，服务端采用 `tusdotnet` |
-| 入口拓扑 | Console/浏览器经 PlatformGateway 鉴权并代理到 FileStorage 自研 tus endpoint | 保持受控 Gateway proxy，且与传输协议、storage provider 分轴描述 |
-| 公开分类字段 | `CreateUploadSessionResponse.UploadMode` 与 `Provider` 是两个独立且可观察的 string 字段，当前生产实现恰好返回同值 | 收敛为单一传输分类，例如 `uploadProtocol: "tus"`；兼容和版本演进属于实现工作 |
-| 字节定位 | 本地文件名由 `uploadSessionId` 的 SHA-256 派生；complete 前后原地不动 | tus 只写 staging，final 只由内部 `ObjectKey` 定位 |
-| `ObjectKey` | 仅生成、持久化并从 session 复制到 `StoredFile`，没有参与字节读写 | provider 无关且不公开的 final 唯一物理定位符 |
-| complete | 仅 `tus` 分支校验大小和可选 checksum；非 tus 可跳过；没有 promote 或 final 复验 | 所有 provider 统一证明存在性、size、canonical SHA-256、promote 和 final 回读复验 |
-| 持久化 | PostgreSQL 可以原子保存 metadata，但不能覆盖尚不存在的字节提交动作 | final 字节事实先成立，随后同一数据库事务提交 session 与 `StoredFile` 可用事实 |
-
-表中的目标均尚未实现。特别是，当前 `ObjectKey` 的字面格式只是元数据候选，不能据此推导 Local 路径安全、provider 适配已完成或迁移只需切换配置。
 
 ## 决策
 
@@ -183,9 +173,3 @@ sequenceDiagram
 4. canonical SHA-256 成为每个 completed 文件的服务端权威事实，增加完整字节读取成本，但获得跨 provider 一致的完整性证明、幂等判定和审计依据。
 5. staging 与 final 分离后，上传过期清理、提交恢复和 final 生命周期可以独立治理；清理实现必须遵守“不删除唯一恢复副本”的顺序。
 6. 本 ADR 与现有基线和公开契约会暂时并存冲突；权威文档和生成链的机械同步、兼容裁决及运行时代码由 #992 的独立后续层交付，不能从 ADR 已接受推导为实现完成。
-
-## 实施状态声明
-
-本 ADR 接受的是目标架构约束，不是交付证明。截至 2026-08-17，仓库仍使用默认 `server-proxy` placeholder 或显式配置的自研 tus 路径，字节仍按 `uploadSessionId` 定位，`ObjectKey` 仍未定位 final，provider 通用 complete 校验、幂等 promote、final 回读复验、可恢复提交意图和 canonical checksum 持久化均尚未实现。
-
-本 ADR 只完成 #992 四层拆分中的第 1 层文档裁决；#992 继续保持开放。Provider/Local 生产语义、迁移 runbook 与周边文档/契约同步分别由其余独立层完成。本 ADR 不证明代码测试、真实运行、CI、PR 合并或 tracker 完成。
