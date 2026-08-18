@@ -14,7 +14,7 @@
 | 技术（Technology） | 当前状态（Current status） | 文档（Documentation） | 仓库（Repository） |
 |---|---|---|---|
 | Node.js | 必需。`.node-version` 固定为 `22.22.3`；Vite+ 在 lint/fmt 路径加载 TypeScript 配置时要求 `>=22.18.0`。 | [Node.js 文档](https://nodejs.org/api/) | [nodejs/node](https://github.com/nodejs/node) |
-| pnpm | 必需的包管理器；`packageManager` 将其固定为 `pnpm@11.13.1`。 | [pnpm 文档](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
+| pnpm | 必需的包管理器；`packageManager` 将其固定为 `pnpm@11.22.0`。 | [pnpm 文档](https://pnpm.io/) | [pnpm/pnpm](https://github.com/pnpm/pnpm) |
 | Vite+ | 必需的工作区工具链，用于 check、fmt、lint、test 和 run 任务。 | [Vite+ 文档](https://viteplus.dev/) | [voidzero-dev/vite-plus](https://github.com/voidzero-dev/vite-plus) |
 | Vite | 通过 Vite+ 核心覆盖使用；应用级 dev/build 配置仍与 Vite 兼容。 | [Vite 文档](https://vite.dev/guide/) | [vitejs/vite](https://github.com/vitejs/vite) |
 | Vitest | 官方 Vitest 固定为 Vite+ 内置的精确版本，使 `vp test` 与工作区包共用一个 runner 实例。 | [Vitest 文档](https://vitest.dev/guide/) | [vitest-dev/vitest](https://github.com/vitest-dev/vitest) |
