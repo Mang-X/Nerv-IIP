@@ -37,21 +37,7 @@ FileStorage 还包含独立的 `VersionedArchive` 合规归档子系统。它通
 - 不扩展 retention 或删除语义，不修改 `VersionedArchive` 行为；
 - 不钉死 C# 方法签名、配置键名、identity marker 文件格式、具体系统调用或第三方库。
 
-## 当前实现事实与目标状态
-
-| 主题 | 当前实现事实 | 本 ADR 接受的目标 |
-| --- | --- | --- |
-| 抽象轴 | `IFileStorageUploadProvider` 同时暴露 `UploadMode` 与 `Provider`，实际只生成传输指令 | `ITusStore` 负责 staging 上传面，`IStorageProvider` 负责 final 字节面，application/数据库拥有文件事实 |
-| provider 选择 | `FileStorage:UploadProvider` 在 `tus` 与默认 `server-proxy` 之间选择；不存在 final provider 选择 | 通用文件运行实例显式选择 LocalFileSystem 或 S3-compatible，严格二选一 |
-| 本地 root | `FileStorage:Tus:RootPath` 未配置时回落系统临时目录 | 非 Development 必须使用显式、绝对、已初始化的持久 root，配置或身份无效时失败关闭 |
-| staging/final | `SHA256(uploadSessionId).bin` 在 complete 前后原地承载字节 | staging/final 分区；Local 位于同一 filesystem/mount；final 只由 canonical `ObjectKey` 定位 |
-| `ObjectKey` | 当前候选为 `{organizationId}/{fileId}`，尚未参与物理定位 | 固定为跨 Local/S3/OS 唯一解释的 `v1/{organizationDigest}/{fileDigest}` canonical contract |
-| Local 耐久 | append 对文件调用 `Flush(flushToDisk: true)`，没有 final rename 或目录持久化 | durable staging、同文件系统 atomic no-overwrite rename、final 回读复验和崩溃幂等收敛 |
-| 路径安全 | upload session hash 限制了当前临时文件名，但没有通用 `ObjectKey` confinement | canonicalize 后仍位于受控树内，不跟随 link/reparse，不允许路径逃逸或 TOCTOU 绕过 |
-| 健康 | 没有通用文件 Local root 的 identity、mount、free bytes、inode 或 read-only 状态治理 | startup blocked、runtime critical/unready、capacity restricted 三类状态分离 |
-| 合规归档 | `VersionedArchive` 使用独立 MinIO 接口和 bucket | 只复用底层 MinIO client/config/secret 机制，接口、bucket 与合规语义保持分离 |
-
-表中的目标均尚未实现。特别是，当前 `ObjectKey = "{organizationId}/{fileId}"` 只是 provider 无关的相对元数据候选，不符合本 ADR 接受的 canonical contract，不能据此证明 Local 路径安全、final 已存在或 provider 已可迁移。
+本 ADR 的裁决只能被显式 ADR 修订取代。实施发现与本 ADR 冲突时，必须通过显式 ADR 修订重新裁决，不能在代码 PR 中静默改变语义，也不得让实施层的容量准入动作矩阵、健康状态分类或路径安全口径与本 ADR 分叉。
 
 ## 继承 ADR 0023 的约束
 
@@ -61,7 +47,7 @@ FileStorage 还包含独立的 `VersionedArchive` 合规归档子系统。它通
 2. tusdotnet 只负责传输、offset 恢复和 staging 写入，不能生成 completed/available 文件事实。
 3. staging 可续传、可过期、不可下载；final 只由相对、provider 无关且不公开的 `ObjectKey` 定位。本 ADR 在不改变该所有权的前提下冻结其 canonical 编码。
 4. complete 对所有 provider 都必须证明实际字节存在、size 与 canonical SHA-256，并执行幂等 promote、final 回读复验和冲突检测。
-5. FileStorage application 和 PostgreSQL 独占 upload-session 共享栅栏、持久 `committing` 意图、Tx1/Tx2 与唯一 completed/available 文件事实。provider 不提交业务状态，也不得持有数据库事务跨越 storage I/O。
+5. FileStorage application 和 PostgreSQL 独占 upload-session 共享栅栏、持久 `committing` 意图、Tx1/Tx2 与唯一 completed/available 文件事实。provider 不提交业务状态，也不得持有数据库事务跨越 storage I/O。staging 上传面、`ObjectKey` locator 面与 `IStorageProvider` final 面都只消费这些已冻结的提交意图与提交证据：不得另造第二套提交协议，不得重新定义共享栅栏、Tx1/Tx2 或恢复流程的所有权，也不得由上传面或 locator 面持有 Tx1/Tx2。
 
 ## 决策
 
@@ -245,23 +231,6 @@ runtime critical/unready 的优先级高于该表。mount 丢失/替换、root �
 
 第 4 层在前三层裁决稳定后同步 FileStorage baseline、database schema catalog、deployment baseline、implementation readiness 等旧叙述。本 ADR 只记录目标与当前冲突，不修改这些文件，也不把目标写成当前交付状态。
 
-## 实施票映射
-
-本 ADR 不承载运行时代码。目标落地继续由独立票与独立 PR 承担：
-
-| 实施面 | 责任票 |
-| --- | --- |
-| ADR 0023 的 durable `open/committing/completed` 状态与不可变 intent、entity/schema/migration、application-owned 共享栅栏、PATCH mutation 临界区、Tx1/Tx2、并发 complete/重放、重启 recoverer 与故障注入 | #1628；先于 #999/#994 落地，不由 provider PR 另造第二套提交协议 |
-| tusdotnet 与各 provider 的 `ITusStore` 上传面，以及实际 PATCH mutation 接入 #1628 共享栅栏并在写入前复核 durable state | #999；S3 `ITusStore` 与 #997 协同；#999 不拥有 Tx1/Tx2 |
-| canonical `ObjectKey` 生成、legacy key 全量审计/迁移，以及 staging/final/promote locator 接缝 | #994；消费 #1628 冻结 intent 与提交证据，不重定义共享栅栏、Tx1/Tx2 或 recoverer |
-| S3-compatible `IStorageProvider`、bucket/prefix、credential、preflight、真实 MinIO contract，以及通用 provider selector 与 archive selector 的独立 DI/config/组合测试 | #997 |
-| Local root、显式 initialization/identity、路径/链接安全、持久化/atomic rename、mount/capacity probe、支持矩阵与跨平台部署 | #1012 |
-| 逻辑配额、磁盘/inode emergency reserve 动作准入与 degraded/critical readiness | #1018；消费 #1012 探测结果，动作矩阵不得与本 ADR 分叉 |
-| GC 按 `ObjectKey` 经 `IStorageProvider` 删除，staging expiry 归 tusdotnet | #1611 |
-| 离线搬迁与切换 | #1013 和父票第 3 层 |
-
-实施发现与本 ADR 冲突时，必须通过显式 ADR 修订重新裁决，不能在代码 PR 中静默改变语义。
-
 ## 已考虑的替代方案
 
 1. **继续把 tus、server-proxy 和 S3 当作同一类 Upload Provider。** 拒绝。ADR 0023 已将协议、入口拓扑和字节后端分轴；继续混用会让 complete 证据按传输分叉。
@@ -281,9 +250,3 @@ runtime critical/unready 的优先级高于该表。mount 丢失/替换、root �
 5. capacity restricted 保留读与自救操作，运维状态不再等同于简单 healthy/unhealthy 布尔值。
 6. `VersionedArchive` 与通用文件只共享最底层 MinIO 接线，防止合规语义泄漏；选择 Local 仍可能需要为归档子系统单独运行 MinIO。
 7. 本 ADR 与当前 FileStorage baseline、schema catalog、deployment baseline、implementation readiness 及运行时代码暂时并存冲突；机械同步与实现证明必须由后续独立层完成。
-
-## 实施状态声明
-
-本 ADR 接受的是目标架构约束，不是交付证明。截至 2026-08-17，仓库尚未实现目标 `IStorageProvider`、Local/S3-compatible 运行时二选一、tusdotnet `ITusStore`、Local 持久 root/identity、路径 confinement、atomic promote、final 回读复验或三类健康状态。现有字节仍由 `LocalTusFileStore` 按 upload session 身份存放，非 `tus` complete 仍可跳过物理字节验证。
-
-本 ADR 只完成 #992 四层拆分中的第 2 层文档裁决。第 3 层迁移契约/runbook 与第 4 层周边文档同步仍须独立交付；#994、#999、#997、#1012、#1018、#1611 等实施票仍须分别提供代码、测试和真实基础设施证据。本 ADR 不证明代码测试、真实运行、CI、PR 合并、迁移或 tracker 完成。

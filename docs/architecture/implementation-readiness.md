@@ -268,6 +268,14 @@ FileStorage 的 metadata、upload session 和 download grant 在 AppHost 中默�
 
 #992 保持开放。其余三层——Provider 抽象与 Local 生产语义（ADR 0024 / #1627）、离线迁移契约与 runbook、周边文档与契约同步——各自独立交付，ADR 已接受不推导为实现完成。
 
+## FileStorage storage provider 与 Local 生产语义交付缺口（ADR 0024 / #992）
+
+`docs/adr/0024-filestorage-storage-provider-and-local-production-semantics.md` 已接受的目标——`IStorageProvider` final 字节面、LocalFileSystem/S3-compatible 部署期严格二选一、tusdotnet `ITusStore` 上传面、Local 显式持久 root 与稳定 storage identity、`v1/{organizationDigest}/{fileDigest}` canonical `ObjectKey`、路径 confinement、durable staging 与同文件系统 atomic no-overwrite promote、final 回读复验，以及 startup blocked / runtime critical / capacity restricted 三类健康状态——在仓库中尚未实现，属未达成的交付缺口而非决策变更。2026-08-18 实测：`IStorageProvider` 在 `docs/` 之外零命中；`LocalTusFileStore` 在缺 `FileStorage:Tus:RootPath` 时回落 `Path.Combine(Path.GetTempPath(), "nerv-iip", "filestorage", "tus")`；`TusUploadCompletionValidator.ValidateAsync` 对非 `tus` provider 直接返回 `null`，跳过物理字节校验。FileStorage 当前实现现态见本文件「FileStorage MVP 已完成范围」与 `docs/architecture/file-storage-baseline.md`。
+
+目标落地由独立票承接，2026-08-18 经 `gh issue view` 核实以下票全部存在且为 OPEN：#1628（ADR 0023 的 durable `open/committing/completed` 状态与不可变 intent、entity/schema/migration、application-owned 共享栅栏、PATCH mutation 临界区、Tx1/Tx2、并发 complete/重放、重启恢复与故障注入；按拆分口径先于 #999 与 #994 落地）、#999（tusdotnet 与各 provider 的 `ITusStore` 上传面，S3 `ITusStore` 与 #997 协同）、#994（canonical `ObjectKey` 生成、legacy key 全量审计/迁移与 staging/final/promote locator 接缝）、#997（S3-compatible `IStorageProvider`、bucket/prefix/credential/preflight、真实 MinIO contract，以及通用 provider selector 与 archive selector 的独立 DI/config/组合测试）、#1012（Local root、显式 initialization/identity、路径/链接安全、持久化/atomic rename、mount/capacity probe、支持矩阵与跨平台部署）、#1018（逻辑配额、磁盘/inode emergency reserve 动作准入与 degraded/critical readiness）、#1611（GC 改经 `ObjectKey` 由 `IStorageProvider` 删除并解除 tus/扫描耦合）、#1013（Local ↔ MinIO 离线搬迁与切换）、#1005（PostgreSQL 与字节的备份恢复 Runbook）。父票 #992 四层拆分中，第 2 层 ADR 裁决已由 #1627 交付并关闭，第 3 层迁移契约/runbook 与第 4 层周边文档同步仍须独立交付。各实施票仍须分别提供代码、测试和真实基础设施证据；ADR 接受不构成代码测试、真实运行、CI、PR 合并、迁移或 tracker 完成的证明。
+
+第 4 层同步之前，`docs/architecture/file-storage-baseline.md`、`docs/architecture/database-schema-catalog.md`、`docs/architecture/deployment-baseline.md` 与本文件的既有 FileStorage 叙述仍按 MVP 现态描述，与 ADR 0024 的目标并存冲突。
+
 ## MES 到 Scheduling 齐套读取（MAN-572 / #1037）
 
 BusinessScheduling 的 `HttpSchedulingMaterialReadinessProvider` 通过 MES 受管内部 endpoint 读取同一 organization/environment/work-order 的权威齐套事实，不信任调用方提交的 `isReady`。MES FastEndpoints 成功响应当前可直接返回 readiness DTO；provider 同时兼容平台 `ResponseData` envelope，避免把 HTTP 200 的 raw DTO 误判为 `mes.materialReadinessSourceUnavailable`。AppHost 为 Scheduling 注入 MES 动态 BaseUrl、resource reference、内部 bearer token，并在启动 Scheduling 前等待 MES 健康。MES 非 2xx、不可达、超时、空响应、畸形 JSON 或响应工单与请求不一致时继续 fail closed 为 `mes.materialReadinessSourceUnavailable`；本修复没有新增或修改业务 HTTP endpoint，现有 `getBusinessMesMaterialReadiness` 仍按 facade matrix 的 `exposed` 两跳策略由 BusinessGateway 暴露，无需刷新 OpenAPI 或 generated client。
