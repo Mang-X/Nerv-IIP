@@ -721,7 +721,8 @@ function Assert-NervAcceptancePlanningProvenance {
         throw 'Planning manifestPath must be normalized and repository-relative.'
     }
     if ($ManifestDigest -cnotmatch '^[0-9a-f]{64}$') { throw 'Planning manifestDigest must be a lowercase SHA-256 digest.' }
-    if (@('pull_request', 'push', 'schedule', 'workflow_dispatch') -cnotcontains $Event) { throw "Planning event '$Event' is invalid." }
+    $allowedEvents = [Collections.Generic.HashSet[string]]::new([string[]]@('pull_request', 'push', 'schedule', 'workflow_dispatch'), [StringComparer]::Ordinal)
+    if (-not $allowedEvents.Contains($Event)) { throw "Planning event '$Event' is invalid." }
 }
 
 function New-NervAcceptancePlanningArtifact {
