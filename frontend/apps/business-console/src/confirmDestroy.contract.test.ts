@@ -11,7 +11,7 @@ import { parse } from 'vue/compiler-sfc'
  *   → 渲染成 `DialogClose`，`@click` 里 `onOpenChange(false)` **无条件执行、不看
  *   `defaultPrevented`**。于是「失败保留原因原地重试」与「pending 期间禁点」只在控制器层成立，
  *   真 UI 走不到（#1607）。
- * - **规则 5**：`NvAlertDialog` 不得出现在带 `v-for` 的元素子树内——N 行就是 N 个弹层实例（#1608）。
+ * - **规则 5**：`NvAlertDialog` **自身**不得带 `v-for`，也不得落在带 `v-for` 的元素子树内\n *   ——两种写法都是 N 行 N 个弹层实例（#1608）。
  *
  * ## 这道门禁保证什么、不保证什么
  *
@@ -115,7 +115,7 @@ function hasVFor(node: TemplateNode) {
 export interface ConfirmDestroyFindings {
   /** 模板里出现 `<NvAlertDialogAction>` 的行号（规则 3）。 */
   actionTags: number[]
-  /** 出现在某个带 `v-for` 元素子树内的 `<NvAlertDialog>` 行号（规则 5）。 */
+  /** 自身带 `v-for`、或落在带 `v-for` 元素子树内的 `<NvAlertDialog>` 行号（规则 5）。 */
   loopedDialogs: number[]
 }
 
@@ -137,10 +137,13 @@ export function scanConfirmDestroy(source: string, filename: string): ConfirmDes
   const visit = (node: TemplateNode, insideLoop: boolean) => {
     for (const child of node.children ?? []) {
       if (!isElement(child)) continue
+      // 元素自己带 v-for 时，它**本身**就已经被循环出 N 份，所以要连同 `insideLoop` 一起判。
+      // 第一版写成 `insideLoop && ...`（只看祖先），于是 `<NvAlertDialog v-for>` 这种最自然的
+      // 反模式写法整个漏掉——PR #1630 审核实测出来的盲区，下面变异对照里有对应正样本钉住。
+      const looped = insideLoop || hasVFor(child)
       if (child.tag === 'NvAlertDialogAction') findings.actionTags.push(child.loc.start.line)
-      if (insideLoop && child.tag === 'NvAlertDialog')
-        findings.loopedDialogs.push(child.loc.start.line)
-      visit(child, insideLoop || hasVFor(child))
+      if (looped && child.tag === 'NvAlertDialog') findings.loopedDialogs.push(child.loc.start.line)
+      visit(child, looped)
     }
   }
   visit(ast, false)
@@ -193,7 +196,7 @@ describe('confirm-destroy 写法门禁（规则 3 / 规则 5）', () => {
     expect(
       offenders,
       offenders.length
-        ? `以下 NvAlertDialog 落在 v-for 子树内，N 行就是 N 个实例（confirm-destroy 规则 5）：\n` +
+        ? `以下 NvAlertDialog 自身带 v-for 或落在 v-for 子树内，N 行就是 N 个实例（confirm-destroy 规则 5）：\n` +
             `${offenders.join('\n')}\n` +
             `把弹层提到循环外声明为页面层单实例，用 target ref 指向当前行。`
         : '',
@@ -310,6 +313,34 @@ describe('门禁判定的变异对照', () => {
         '<template v-for="row in rows" :key="row.id">',
         '  <NvAlertDialog v-model:open="row.open" />',
         '</template>',
+      ].join('\n')
+      expect(fixture(template).loopedDialogs).toEqual([3])
+    })
+
+    /**
+     * `v-for` 长在**弹层自身**上——最自然的那种反模式写法，也是第一版谓词的盲区
+     * （PR #1630 审核实测：返回 `[]`）。真因是判定写成 `insideLoop && ...` 只看祖先，
+     * 而 `v-for` 在自己身上时 `insideLoop` 还是 false。下面三条把它钉死。
+     */
+    it('v-for 长在 NvAlertDialog 自身上（自闭合）', () => {
+      const template = '<NvAlertDialog v-for="row in rows" :key="row.id" v-model:open="row.open" />'
+      expect(fixture(template).loopedDialogs).toEqual([2])
+    })
+
+    it('v-for 长在 NvAlertDialog 自身上（带子树）', () => {
+      const template = [
+        '<NvAlertDialog v-for="row in rows" :key="row.id" v-model:open="row.open">',
+        '  <NvAlertDialogContent />',
+        '</NvAlertDialog>',
+      ].join('\n')
+      expect(fixture(template).loopedDialogs).toEqual([2])
+    })
+
+    it('自身带 v-for 时只记一次，不因为祖先也在循环里而重复计数', () => {
+      const template = [
+        '<div v-for="group in groups" :key="group.id">',
+        '  <NvAlertDialog v-for="row in group.rows" :key="row.id" />',
+        '</div>',
       ].join('\n')
       expect(fixture(template).loopedDialogs).toEqual([3])
     })
