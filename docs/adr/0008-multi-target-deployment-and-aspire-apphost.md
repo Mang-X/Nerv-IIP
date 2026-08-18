@@ -53,12 +53,6 @@ Nerv-IIP 面向私有化、混合部署和工程联调场景。目标环境可�
 7. 后续如引入 Kubernetes，应作为新的部署目标接入同一部署模型，不替代当前 Aspire、Compose、安装包和整合脚本策略。
 8. 脚本实现细则、辅助函数契约和迁移清单见 `docs/architecture/script-automation-governance.md`。
 
-## 2026-05-17 修订
-
-第四阶段已按本 ADR 落地平台级 AppHost，位置为 `infra/aspire/Nerv.IIP.AppHost`。当前覆盖范围是 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 从默认资源调整为 `Messaging:Provider=RabbitMQ` profile 下的可选资源。
-
-Knowledge、AI Integration 和 Qdrant 仍属于完整 AppHost 后续范围。当前覆盖范围不改变本 ADR 的最终目标，只说明已经完成第一批真实基础设施拓扑，而不是完整交付拓扑。
-
 ## 范围之外
 
 1. 本 ADR 不冻结最终 CI/CD 平台、镜像仓库、制品仓库或签名机制。

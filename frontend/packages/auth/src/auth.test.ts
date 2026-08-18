@@ -30,10 +30,12 @@ const session = {
 }
 
 const messages = {
+  accountLocked: (lockoutUntilUtc?: string) => `Locked until ${lockoutUntilUtc ?? 'later'}.`,
   invalidCredentialsOrExpiredSession: 'Bad credentials.',
   loginFallback: 'Login failed.',
   refreshFallback: 'Refresh failed.',
   principalFallback: 'Principal failed.',
+  remainingAttempts: (count: number) => `${count} attempts remaining.`,
   invalidSession: 'Invalid session.',
   loginFailed: 'Unable to sign in.',
   unknownUser: 'Unknown user',
@@ -82,6 +84,48 @@ describe('console auth api factory', () => {
 
     await expect(api.loginConsole({ loginName: 'admin', password: 'bad' })).rejects.toMatchObject({
       message: 'Bad credentials.',
+      status: 401,
+    } satisfies Partial<ConsoleAuthError>)
+  })
+
+  it('maps safe lockout metadata to a user-facing login error', async () => {
+    const { api, client } = createApi()
+    client.loginConsoleUser.mockResolvedValue({
+      data: { success: false },
+      response: new Response(null, {
+        headers: {
+          'X-Nerv-Iam-Lockout-Until-Utc': '2026-08-18T08:30:00.0000000+00:00',
+          'X-Nerv-Iam-Login-Failure': 'iam-account-locked',
+        },
+        status: 401,
+      }),
+    })
+
+    await expect(api.loginConsole({ loginName: 'admin', password: 'bad' })).rejects.toMatchObject({
+      code: 'iam-account-locked',
+      lockoutUntilUtc: '2026-08-18T08:30:00.0000000+00:00',
+      message: 'Locked until 2026-08-18T08:30:00.0000000+00:00.',
+      status: 401,
+    } satisfies Partial<ConsoleAuthError>)
+  })
+
+  it('maps remaining attempts to a user-facing login warning', async () => {
+    const { api, client } = createApi()
+    client.loginConsoleUser.mockResolvedValue({
+      data: { success: false },
+      response: new Response(null, {
+        headers: {
+          'X-Nerv-Iam-Login-Failure': 'iam-invalid-credentials',
+          'X-Nerv-Iam-Remaining-Attempts': '2',
+        },
+        status: 401,
+      }),
+    })
+
+    await expect(api.loginConsole({ loginName: 'admin', password: 'bad' })).rejects.toMatchObject({
+      code: 'iam-invalid-credentials',
+      message: '2 attempts remaining.',
+      remainingAttempts: 2,
       status: 401,
     } satisfies Partial<ConsoleAuthError>)
   })

@@ -101,13 +101,14 @@ public sealed class ArchiveSkillCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<SkillItem> Handle(ArchiveSkillCommand request, CancellationToken cancellationToken)
     {
+        var reason = MasterDataArchiveReason.NormalizeRequired(request.Reason);
         var skill = await UpdateSkillCommandHandler.FindAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             request.SkillCode,
             cancellationToken);
-        skill.Disable(MasterDataArchiveReason.Normalize(request.Reason));
+        skill.Disable(reason);
         return ListSkillsQueryHandler.ToItem(skill);
     }
 }
