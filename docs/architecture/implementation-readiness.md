@@ -260,6 +260,14 @@ MES `business-mes.work-order-cost-capitalized` 消费者不再把“资本化事
 
 FileStorage 的 metadata、upload session 和 download grant 在 AppHost 中默认写入独立 PostgreSQL database resource：`file-storage-db` 对应 `nerv_iip_filestorage`，以 `FileStorageDb` connection reference 注入并作为启动 wait dependency。Development AppHost 显式选择 PostgreSQL 且允许 Web host 自动迁移；Aspire production publish 为 FileStorage 输出 `ASPNETCORE_ENVIRONMENT=Production`、`DOTNET_ENVIRONMENT=Production` 和 `Persistence:AutoMigrate=false`。PostgreSQL 是所有环境唯一的 metadata 实现；选择 InMemory 会给出 AppHost/PostgreSQL 指引后 fail fast，缺 provider、缺连接串或非 Development 启用 Web-host AutoMigrate 也会失败。诊断不回显连接串。PoC/production 通过 `scripts/install/migrate-file-storage.ps1` 执行显式受治理 migration。真实 PostgreSQL 重启 smoke 已覆盖 upload session 完成后的 metadata、usage 和 download grant 跨 Web host 重启仍可读取。
 
+## FileStorage tus/staging/final 目标架构与当前差距（ADR 0023 / #992）
+
+[ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 已冻结通用文件上传的目标约束：tus 是唯一公开传输协议、服务端目标实现为 `tusdotnet`、staging 与 final 分离且 final 只由内部 `ObjectKey` 定位、complete 对所有 storage provider 统一证明字节存在性与 size、由服务端计算并持久化 canonical SHA-256、幂等 promote 到 `ObjectKey` 并按同一 key 回读复验。它是 #992 拆解的第 1 层文档裁决（#1617），只裁决目标约束，不构成交付证明。
+
+截至 2026-08-17 的实现差距（逐条对照上述目标）：默认上传仍为 `server-proxy` placeholder 且没有对应字节 PUT endpoint，字节链路只在显式配置 `FileStorage:UploadProvider=tus` 时走自研部分 tus `HEAD`/`PATCH`；`CreateUploadSessionResponse` 仍暴露 `UploadMode` 与 `Provider` 两个独立 string 字段，当前实现恰好返回同值；字节仍由 `uploadSessionId` 派生的 `SHA256(uploadSessionId).bin` 就地承载，complete 前后位置不变；`ObjectKey` 只被生成、持久化并从 upload session 复制到 `StoredFile`，不参与实际读、写、下载或删除；complete 的实际大小与可选 checksum 校验只在 provider 等于 `tus` 的分支执行，其他 provider 可跳过字节证明；staging 到 final 的幂等 promote、final 回读复验、可恢复的持久 `committing` 提交意图与 canonical checksum 持久化均尚未实现。因此不能据当前 `ObjectKey` 的字面格式推导 Local 路径安全已就绪、provider 适配已完成或迁移只需切换配置。
+
+#992 保持开放。其余三层——Provider 抽象与 Local 生产语义（ADR 0024 / #1627）、离线迁移契约与 runbook、周边文档与契约同步——各自独立交付，ADR 已接受不推导为实现完成。
+
 ## MES 到 Scheduling 齐套读取（MAN-572 / #1037）
 
 BusinessScheduling 的 `HttpSchedulingMaterialReadinessProvider` 通过 MES 受管内部 endpoint 读取同一 organization/environment/work-order 的权威齐套事实，不信任调用方提交的 `isReady`。MES FastEndpoints 成功响应当前可直接返回 readiness DTO；provider 同时兼容平台 `ResponseData` envelope，避免把 HTTP 200 的 raw DTO 误判为 `mes.materialReadinessSourceUnavailable`。AppHost 为 Scheduling 注入 MES 动态 BaseUrl、resource reference、内部 bearer token，并在启动 Scheduling 前等待 MES 健康。MES 非 2xx、不可达、超时、空响应、畸形 JSON 或响应工单与请求不一致时继续 fail closed 为 `mes.materialReadinessSourceUnavailable`；本修复没有新增或修改业务 HTTP endpoint，现有 `getBusinessMesMaterialReadiness` 仍按 facade matrix 的 `exposed` 两跳策略由 BusinessGateway 暴露，无需刷新 OpenAPI 或 generated client。
