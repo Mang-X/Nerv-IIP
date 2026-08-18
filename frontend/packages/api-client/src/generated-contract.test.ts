@@ -4,6 +4,8 @@ import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
 import type {
   BusinessConsoleApprovalChainResponse,
+  BusinessConsoleArchiveProductCategoryRequest,
+  BusinessConsoleArchiveSkillRequest,
   BusinessConsoleAssignQualityInspectionTaskRequest,
   BusinessConsoleAuthorizedWorkScope,
   BusinessConsoleBarcodePrintBatchResponse,
@@ -200,6 +202,15 @@ import {
 } from './business-console'
 
 describe('generated API client contract', () => {
+  it('requires archive reasons for ProductCategory and Skill requests', () => {
+    expectTypeOf<BusinessConsoleArchiveProductCategoryRequest>().toEqualTypeOf<{
+      reason: string
+    }>()
+    expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
+      reason: string
+    }>()
+  })
+
   it('exports the maintenance lifecycle API through the stable business-console barrel', () => {
     expect(assignBusinessConsoleMaintenanceWorkOrder).toBeTypeOf('function')
     expect(assignBusinessConsoleMaintenanceWorkOrderMutationOptions).toBeTypeOf('function')

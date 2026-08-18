@@ -454,7 +454,7 @@ public sealed class BusinessConsoleArchiveProductCategoryRequestValidator : Vali
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.CategoryCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Reason).MaximumLength(500);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 
@@ -517,7 +517,7 @@ public sealed class BusinessConsoleArchiveSkillRequestValidator : Validator<Busi
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Reason).MaximumLength(500);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 

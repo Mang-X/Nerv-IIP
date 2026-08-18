@@ -357,7 +357,7 @@ public sealed record BusinessConsoleArchiveProductCategoryRequest(
     [property: RouteParam] string CategoryCode,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleProductCategoryItem(
     string CategoryCode,
@@ -411,7 +411,7 @@ public sealed record BusinessConsoleArchiveSkillRequest(
     [property: RouteParam] string SkillCode,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleSkillItem(
     string SkillCode,
