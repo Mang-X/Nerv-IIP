@@ -7,6 +7,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
+using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.SecurityAudit;
@@ -52,7 +53,7 @@ public sealed class PostgreSqlIamAuthService(
                 new { reason = "unknown-or-disabled-user", loginName },
                 DateTimeOffset.UtcNow,
                 cancellationToken);
-            throw Unauthorized();
+            throw InvalidCredentials();
         }
 
         if (user.IsLockedOut(now))
@@ -67,7 +68,7 @@ public sealed class PostgreSqlIamAuthService(
                 new { reason = "locked-out", user.FailedLoginCount, user.LockoutUntilUtc },
                 now,
                 cancellationToken);
-            throw Unauthorized();
+            throw AccountLocked(user.LockoutUntilUtc);
         }
 
         if (!passwordService.Verify(user, password))
@@ -87,12 +88,26 @@ public sealed class PostgreSqlIamAuthService(
                 now,
                 cancellationToken);
             await userRepository.PersistFailedLoginAsync(user, cancellationToken);
-            throw Unauthorized();
+            if (user.IsLockedOut(now))
+            {
+                throw AccountLocked(user.LockoutUntilUtc);
+            }
+
+            var remainingAttempts = Math.Max(
+                0,
+                authenticationOptions.Value.FailedLoginLockoutThreshold - user.FailedLoginCount);
+            throw InvalidCredentials(remainingAttempts <= 2 ? remainingAttempts : null);
         }
 
         user.RecordSuccessfulLogin(now);
         return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
+
+    private static IamLoginRejectedException InvalidCredentials(int? remainingAttempts = null) =>
+        new(IamLoginFailureCodes.InvalidCredentials, remainingAttempts: remainingAttempts);
+
+    private static IamLoginRejectedException AccountLocked(DateTimeOffset? lockoutUntilUtc) =>
+        new(IamLoginFailureCodes.AccountLocked, lockoutUntilUtc);
 
     public async Task<AuthResponse> RefreshAsync(
         string refreshToken,
