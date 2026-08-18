@@ -80,7 +80,7 @@ public sealed class GetSkillQueryHandler(ApplicationDbContext dbContext)
             x.EnvironmentId == request.EnvironmentId &&
             x.SkillCode == request.SkillCode,
             cancellationToken)
-            ?? throw new KnownException($"Skill '{request.SkillCode}' was not found.");
+            ?? throw new KnownException($"未找到技能 '{request.SkillCode}'。");
         return ListSkillsQueryHandler.ToItem(skill);
     }
 }

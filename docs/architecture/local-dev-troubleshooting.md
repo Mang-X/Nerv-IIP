@@ -45,6 +45,9 @@
    例如 `relation "...table..." does not exist`。已观察到的本地失败包括 AppHub
    `apphub.registration_idempotency`、MES 执行表、Maintenance readiness 表，以及 Notification 的
    `notification_messages` / `notification_tasks`。
+   FileStorage 不支持 Development InMemory metadata；必须从 `./nerv.ps1 dev` 启动，由 AppHost 注入
+   `Persistence__Provider=PostgreSQL`、`FileStorageDb` 和 `Persistence__AutoMigrate=true`。直接运行其 Web
+   项目或设置 `Persistence:Provider=InMemory` 会在启动阶段失败，以避免磁盘 tus 字节变成无 metadata 的孤儿。
 
 8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL
    为 `18`、Redis 为 `8`；不得使用 `latest` 或未固定的 Aspire provider 默认值。PostgreSQL 18+ 的

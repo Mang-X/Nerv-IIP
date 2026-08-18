@@ -42,7 +42,7 @@ public sealed class CreateWorkshopCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Workshop '{code}' already exists.");
+            throw new KnownException($"车间 '{code}' 已存在。");
         }
 
         var workshop = Workshop.Create(
@@ -55,7 +55,7 @@ public sealed class CreateWorkshopCommandHandler(
             request.Description);
         await repository.AddAsync(workshop, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for workshop creation."),
+            dbContext ?? throw new KnownException("创建车间需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -84,7 +84,7 @@ public sealed class AddTeamMemberCommandHandler(ITeamMemberRepository repository
     {
         if (await repository.ExistsActiveAsync(request.OrganizationId, request.EnvironmentId, request.TeamCode, request.UserId, cancellationToken))
         {
-            throw new KnownException($"Team member '{request.TeamCode}:{request.UserId}' already exists.");
+            throw new KnownException($"班组成员 '{request.TeamCode}:{request.UserId}' 已存在。");
         }
 
         var member = TeamMember.Assign(
@@ -142,7 +142,7 @@ public sealed class RemoveTeamMemberCommandHandler(ApplicationDbContext dbContex
                 x.UserId == request.UserId &&
                 !x.Disabled,
                 cancellationToken)
-            ?? throw new KnownException($"Team member '{request.TeamCode}:{request.UserId}' was not found.");
+            ?? throw new KnownException($"未找到班组成员 '{request.TeamCode}:{request.UserId}'。");
 
         var before = new
         {

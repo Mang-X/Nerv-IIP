@@ -262,7 +262,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                         x.TaxId == taxId,
                         cancellationToken))
                 {
-                    throw new KnownException($"Business partner tax id '{taxId}' already exists.");
+                    throw new KnownException($"业务伙伴税号 '{taxId}' 已存在。");
                 }
 
                 var partnerName = request.Name ?? partner.Name;
@@ -493,7 +493,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 referenceData.Update(request.Name ?? referenceData.Name);
                 return Detail(referenceData);
             default:
-                throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
+                throw new KnownException($"不支持主数据资源类型 '{request.ResourceType}'。");
         }
     }
 
@@ -513,7 +513,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
         }
 
         var auditContext = request.AuditContext
-            ?? throw new KnownException("An authenticated audit context is required for scope lineage changes.");
+            ?? throw new KnownException("变更范围沿袭关系需要经过认证的审计上下文。");
         var resourceType = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
         MasterDataScopeContextAudit.Add(
             dbContext,
@@ -636,7 +636,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
         {
             if (string.IsNullOrWhiteSpace(reference.Code))
             {
-                throw new KnownException($"SKU field '{reference.Field}' must reference an active '{reference.CodeSet}' code.");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 必须引用已启用的 '{reference.CodeSet}' 代码。");
             }
 
             var exists = await referenceDataRepository.ExistsActiveAsync(
@@ -647,7 +647,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU field '{reference.Field}' references inactive or missing reference data '{reference.CodeSet}:{reference.Code}'.");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 的值不存在或未启用。");
             }
         }
     }
@@ -668,12 +668,12 @@ public sealed class UpdateMasterDataResourceCommandHandler(
     {
         if (MasterDataDictionaryRules.IsSystemManagedReferenceData(referenceData.CodeSet, referenceData.Code))
         {
-            throw new KnownException($"system-managed reference data '{referenceData.CodeSet}:{referenceData.Code}' cannot be updated.");
+            throw new KnownException($"系统管理的参考数据 '{referenceData.CodeSet}:{referenceData.Code}' 不能修改。");
         }
     }
 
     internal static KnownException NotFound(string resourceType, string code) =>
-        new($"Master data resource '{resourceType}:{code}' was not found.");
+        new KnownException($"未找到主数据资源 '{resourceType}:{code}'。");
 
     internal static MasterDataResourceDetail Detail(Sku x) =>
         new(
@@ -829,10 +829,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         CancellationToken cancellationToken)
     {
         var reason = request.Reason.Trim();
-        if (string.IsNullOrWhiteSpace(reason)) throw new KnownException("A lifecycle change reason is required.");
-        if (reason.Length > 500) throw new KnownException("Lifecycle change reason cannot exceed 500 characters.");
-        if (string.IsNullOrWhiteSpace(request.ActorId)) throw new KnownException("A trusted lifecycle actor is required.");
-        if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("A governed lifecycle operation identity is required.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new KnownException("必须填写生命周期变更原因。");
+        if (reason.Length > 500) throw new KnownException("生命周期变更原因不能超过 500 个字符。");
+        if (string.IsNullOrWhiteSpace(request.ActorId)) throw new KnownException("必须提供可信的生命周期操作人。");
+        if (string.IsNullOrWhiteSpace(request.OperationId)) throw new KnownException("必须提供受治理的生命周期操作标识。");
         var type = GetMasterDataResourceDetailQueryHandler.NormalizeType(request.ResourceType);
         var guardsSharedReferences =
             type == "device-asset" ||
@@ -991,14 +991,14 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 AddAudit(request, type, referenceData.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(referenceData);
             default:
-                throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'.");
+                throw new KnownException($"不支持主数据资源类型 '{request.ResourceType}'。");
         }
     }
 
     private async Task<bool> IsReplayAsync(SetMasterDataResourceEnabledCommand request, string resourceType, string resourceIdentity, string reason, CancellationToken cancellationToken)
     {
         var operationId = request.OperationId.Trim();
-        if (string.IsNullOrWhiteSpace(operationId)) throw new KnownException("A governed lifecycle operation identity is required.");
+        if (string.IsNullOrWhiteSpace(operationId)) throw new KnownException("必须提供受治理的生命周期操作标识。");
         var existing = await dbContext.LifecycleAuditEntries.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId &&
             x.EnvironmentId == request.EnvironmentId &&
@@ -1011,7 +1011,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             !string.Equals(existing.Reason, reason, StringComparison.Ordinal) ||
             !string.Equals(existing.ActorId, actor, StringComparison.Ordinal))
         {
-            throw new KnownException($"Lifecycle operation '{operationId}' conflicts with its previously persisted payload.");
+            throw new KnownException($"生命周期操作 '{operationId}' 与此前持久化的请求内容冲突。");
         }
         return true;
     }
@@ -1098,7 +1098,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (referencedBySku)
         {
-            throw new KnownException($"Unit of measure '{request.Code}' cannot be disabled because it is referenced by active SKU records.");
+            throw new KnownException($"计量单位 '{request.Code}' 仍被启用的 SKU 引用，不能停用。请先调整相关 SKU 的计量单位。");
         }
 
         var referencedByConversion = await dbContext.UomConversions.AnyAsync(x =>
@@ -1109,7 +1109,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (referencedByConversion)
         {
-            throw new KnownException($"Unit of measure '{request.Code}' cannot be disabled because it is referenced by active UOM conversion records.");
+            throw new KnownException($"计量单位 '{request.Code}' 仍被启用的计量单位换算关系引用，不能停用。请先处理相关换算关系。");
         }
     }
 
@@ -1123,7 +1123,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (referencedByDevice)
         {
-            throw new KnownException($"Work center '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+            throw new KnownException($"工作中心 '{request.Code}' 仍被启用的设备资产引用，不能停用。请先调整相关设备资产的工作中心。");
         }
 
         var downstreamUsage = await downstreamReferenceChecker.GetWorkCenterUsageAsync(
@@ -1133,10 +1133,7 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
             cancellationToken);
         if (downstreamUsage.HasActiveReference)
         {
-            var references = downstreamUsage.References.Count == 0
-                ? "unknown ProductEngineering reference"
-                : string.Join(", ", downstreamUsage.References.Take(5));
-            throw new KnownException($"Work center '{request.Code}' cannot be disabled because ProductEngineering references it: {references}.");
+            throw new KnownException("工程数据存在引用，不能停用。");
         }
     }
 

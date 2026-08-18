@@ -3,13 +3,13 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
 
-public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
+public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory factory)
+    : IClassFixture<FileStorageWebApplicationFactory>
 {
     [Fact]
     public async Task File_storage_api_endpoints_require_internal_service_authorization()

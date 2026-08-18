@@ -14,6 +14,16 @@ using Nerv.IIP.Persistence;
 using Nerv.IIP.ServiceAuth;
 
 var builder = WebApplication.CreateBuilder(args);
+if (string.Equals(
+        builder.Configuration["Persistence:Provider"]?.Trim(),
+        "InMemory",
+        StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException(
+        "FileStorage does not support Persistence:Provider=InMemory. " +
+        "Start FileStorage through the Aspire AppHost with PostgreSQL persistence.");
+}
+
 var persistence = PersistenceStartupGovernance.Resolve(
     builder.Configuration,
     builder.Environment,
@@ -22,7 +32,6 @@ var persistence = PersistenceStartupGovernance.Resolve(
         NonDevelopmentMigrationRemedy =
             "Use scripts/install/migrate-file-storage.ps1 or a migration bundle outside Development."
     });
-var usePostgreSql = persistence.UsePostgreSql;
 var storageProvider = builder.Configuration["Storage:Provider"]?.Trim();
 var minioEndpoint = builder.Configuration["Storage:MinIO:Endpoint"];
 var minioAccessKey = builder.Configuration["Storage:MinIO:AccessKey"];
@@ -86,16 +95,9 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 });
 builder.Services.AddSingleton<VersionedArchiveService>();
 
-if (usePostgreSql)
-{
-    builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
-    builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
-    builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
-}
-else
-{
-    builder.Services.AddSingleton<IFileStorageService, InMemoryFileStorageService>();
-}
+builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
 
 builder.Services.AddFileStoragePersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
 builder.Services.AddNervIipCaching(builder.Configuration, "file-storage");
@@ -103,7 +105,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
-if (usePostgreSql && persistence.AutoMigrate)
+if (persistence.AutoMigrate)
 {
     using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<FileStorageDatabaseMigrationRunner>().MigrateAsync();

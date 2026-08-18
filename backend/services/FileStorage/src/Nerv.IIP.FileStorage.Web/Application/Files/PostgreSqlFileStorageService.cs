@@ -232,8 +232,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileListResponse>.BadRequest("OrganizationId and EnvironmentId are required.");
         }
 
-        var skip = InMemoryFileStorageService.NormalizeSkip(request.Skip);
-        var take = InMemoryFileStorageService.NormalizeTake(request.Take);
+        var skip = FileStorageRequestValidation.NormalizeSkip(request.Skip);
+        var take = FileStorageRequestValidation.NormalizeTake(request.Take);
         var query = dbContext.StoredFiles
             .AsNoTracking()
             .Where(file => file.OrganizationId == request.OrganizationId && file.EnvironmentId == request.EnvironmentId);

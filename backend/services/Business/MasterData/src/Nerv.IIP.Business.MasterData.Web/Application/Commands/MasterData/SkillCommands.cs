@@ -53,7 +53,7 @@ public sealed class CreateSkillCommandHandler(ISkillRepository repository, Maste
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
-            throw new KnownException($"Skill '{allocation.Code}' already exists.");
+            throw new KnownException($"技能 '{allocation.Code}' 已存在。");
         }
 
         var skill = Skill.Create(
@@ -92,7 +92,7 @@ public sealed class UpdateSkillCommandHandler(ApplicationDbContext dbContext)
             x.EnvironmentId == environmentId &&
             x.SkillCode == skillCode,
             cancellationToken)
-            ?? throw new KnownException($"Skill '{skillCode}' was not found.");
+            ?? throw new KnownException($"未找到技能 '{skillCode}'。");
     }
 }
 

@@ -4,15 +4,16 @@
 
 ## 仓库启动面盘点
 
-2026-07-22 盘点到 18 个具有持久化启动判断的 Web 服务，分为三组：
+2026-07-22 盘点到 18 个具有持久化启动判断的 Web 服务；FileStorage 在 2026-08-17 收敛为 PostgreSQL-only 后，现分为四组：
 
 | 分组 | 服务 | Provider 现状 | 连接串 | AutoMigrate 现状 |
 | --- | --- | --- | --- | --- |
-| 本次统一入口 | FileStorage、AppHub、Ops、Notification | Development 必须显式选择 `InMemory` 或 `PostgreSQL`；非 Development 只允许 `PostgreSQL` | 服务专名，部分兼容 `PostgreSQL` 别名，见下表 | 只允许 Development；InMemory 必须为 false |
+| FileStorage 例外 | FileStorage | 所有环境只允许 `PostgreSQL`；`InMemory` 会给出 AppHost/PostgreSQL 指引后 fail fast | `FileStorageDb`，兼容 `PostgreSQL` | 只允许 Development |
+| 本次统一入口 | AppHub、Ops、Notification | Development 必须显式选择 `InMemory` 或 `PostgreSQL`；非 Development 只允许 `PostgreSQL` | 服务专名，部分兼容 `PostgreSQL` 别名，见下表 | 只允许 Development；InMemory 必须为 false |
 | 仍待后续迁移 | IAM | Infrastructure 仍解析 `Persistence:Provider`，缺省为 `InMemory` | `IamDb` | Web 层已有 Development-only 判断 |
 | PostgreSQL-only 业务服务 | Approval、BarcodeLabel、DemandPlanning、ERP、IndustrialTelemetry、Inventory、Maintenance、MasterData、MES、ProductEngineering、Quality、Scheduling、WMS | 不提供 InMemory 运行 profile，直接要求 PostgreSQL | `PostgreSQL` | 各服务 Web 层仍保留等价 Development-only 判断 |
 
-本次只迁移 issue 指定的四个代表服务。IAM 和 13 个 PostgreSQL-only 业务服务的等价判断属于后续收敛范围；本文档不把它们声明为已迁移。
+issue #1075 只迁移其指定的四个代表服务；issue #1612 随后在 FileStorage 服务边界删除 InMemory metadata 实现，不改变共享治理入口对其他服务的规则。IAM 和 13 个 PostgreSQL-only 业务服务的等价判断属于后续收敛范围；本文档不把它们声明为已迁移。
 
 ## 统一运行时入口
 
@@ -34,17 +35,18 @@ var persistence = PersistenceStartupGovernance.Resolve(
 3. PostgreSQL 必须配置至少一个服务登记的非空连接串别名；前置别名为空白时继续检查后续别名。
 4. 非 Development 只允许 PostgreSQL，且 Web-host `AutoMigrate` 必须为 false。
 5. 错误只报告服务名、环境、规范化 provider 状态、是否存在连接配置、AutoMigrate 状态和修复建议；不输出连接串、用户名或密码。
+6. FileStorage 是服务级例外：所有环境都拒绝 `InMemory`，本地开发必须通过 Aspire AppHost 获得 PostgreSQL 与 Development-only AutoMigrate 配置。
 
 代表服务矩阵：
 
 | 服务 | Development 默认配置 | PostgreSQL 连接串查找顺序 | 非 Development 迁移建议 |
 | --- | --- | --- | --- |
-| FileStorage | `Persistence:Provider=InMemory` | `FileStorageDb` → `PostgreSQL` | `scripts/install/migrate-file-storage.ps1` 或 migration bundle |
+| FileStorage | 无独立默认；AppHost 注入 `Persistence:Provider=PostgreSQL` | `FileStorageDb` → `PostgreSQL` | `scripts/install/migrate-file-storage.ps1` 或 migration bundle |
 | AppHub | `Persistence:Provider=InMemory` | `AppHubDb` → `PostgreSQL` | 显式 migrator、release script 或 migration bundle |
 | Ops | `Persistence:Provider=InMemory` | `OpsDb` | 显式 migrator、release script 或 migration bundle |
 | Notification | `Persistence:Provider=InMemory` | `NotificationDb` → `PostgreSQL` | 显式 migrator、release script 或 migration bundle |
 
-Development 的 InMemory 值写入各服务 `appsettings.Development.json`，因此是显式 profile，而不是代码内静默回退。AppHost 仍可通过环境配置显式覆盖为 PostgreSQL。
+AppHub、Ops、Notification 的 Development InMemory 值写入各自 `appsettings.Development.json`，因此是显式 profile，而不是代码内静默回退。FileStorage 不再包含该 profile；AppHost 为它显式注入 PostgreSQL。
 
 ## 独立 PostgreSQL 测试包
 

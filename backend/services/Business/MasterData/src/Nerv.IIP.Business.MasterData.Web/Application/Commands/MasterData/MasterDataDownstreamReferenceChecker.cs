@@ -35,7 +35,8 @@ public sealed class NullMasterDataDownstreamReferenceChecker : IMasterDataDownst
 
 public sealed class HttpProductEngineeringReferenceUsageChecker(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalTokenProvider) : IMasterDataDownstreamReferenceChecker
+    IInternalServiceTokenProvider internalTokenProvider,
+    ILogger<HttpProductEngineeringReferenceUsageChecker> logger) : IMasterDataDownstreamReferenceChecker
 {
     public async Task<MasterDataDownstreamReferenceUsage> GetWorkCenterUsageAsync(
         string organizationId,
@@ -55,28 +56,38 @@ public sealed class HttpProductEngineeringReferenceUsageChecker(
         }
         catch (HttpRequestException exception)
         {
-            throw new KnownException("ProductEngineering work center usage check is unavailable.", exception);
+            throw DownstreamFailure(exception);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new KnownException("ProductEngineering work center usage check timed out.", exception);
+            throw DownstreamFailure(exception);
         }
 
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                throw new KnownException($"ProductEngineering work center usage check failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).");
+                throw DownstreamFailure(new HttpRequestException(
+                    $"ProductEngineering work center usage check failed with HTTP {(int)response.StatusCode} ({response.ReasonPhrase}).",
+                    null,
+                    response.StatusCode));
             }
 
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ProductEngineeringWorkCenterUsageResponse>>(cancellationToken);
             if (envelope?.Data is null || !envelope.Success)
             {
-                throw new KnownException($"ProductEngineering work center usage check failed: {envelope?.Message ?? "empty response"}");
+                throw DownstreamFailure(new InvalidOperationException(
+                    $"ProductEngineering work center usage response was invalid. Code={envelope?.Code}; Message={envelope?.Message ?? "empty response"}"));
             }
 
             return new MasterDataDownstreamReferenceUsage(envelope.Data.HasActiveReference, envelope.Data.References ?? []);
         }
+    }
+
+    private KnownException DownstreamFailure(Exception diagnostic)
+    {
+        logger.LogWarning(diagnostic, "工程数据工作中心引用检查失败。");
+        return new KnownException("无法确认工程数据中的工作中心使用情况，当前操作已取消。", diagnostic);
     }
 
     private sealed record ProductEngineeringWorkCenterUsageResponse(bool HasActiveReference, IReadOnlyCollection<string>? References);

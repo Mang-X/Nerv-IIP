@@ -59,7 +59,9 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
-        var service = new InMemoryFileStorageService(
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(
+            dbContext,
             new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default);
         var created = (await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None)).Value!;
@@ -270,15 +272,14 @@ public sealed class FileStorageTusProviderTests
             var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
             await using var factory = CreateFactoryWithTusProvider(
                 rootPath,
-                uploadSessionTtlSeconds: 2,
                 timeProvider: timeProvider);
             var client = CreateInternalServiceClient(factory);
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: 5);
             await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, Encoding.UTF8.GetBytes("hello"));
 
             // Expiry is a comparison against the injected clock, not a timer, so advancing past the
-            // 2 s TTL is enough — no wall-clock wait and no window where the assertion races the TTL.
-            timeProvider.Advance(TimeSpan.FromSeconds(3));
+            // fixed 15 minute TTL is enough — no wall-clock wait and no window where the assertion races the TTL.
+            timeProvider.Advance(TimeSpan.FromMinutes(16));
 
             var response = await SendTusHeadAsync(client, created.Upload.Url);
 
@@ -294,7 +295,7 @@ public sealed class FileStorageTusProviderTests
     [Fact]
     public async Task TusUploadEndpoint_ServerProxySession_ReturnsNotFound()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = CreateFactory();
         var client = CreateInternalServiceClient(factory);
         var createdResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
         createdResponse.EnsureSuccessStatusCode();
@@ -478,10 +479,9 @@ public sealed class FileStorageTusProviderTests
 
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
-        double? uploadSessionTtlSeconds = null,
         TimeProvider? timeProvider = null)
     {
-        return new WebApplicationFactory<Program>()
+        return CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureAppConfiguration((_, configuration) =>
@@ -489,8 +489,7 @@ public sealed class FileStorageTusProviderTests
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
                         ["FileStorage:UploadProvider"] = "tus",
-                        ["FileStorage:Tus:RootPath"] = rootPath,
-                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        ["FileStorage:Tus:RootPath"] = rootPath
                     });
                 });
 
@@ -499,6 +498,11 @@ public sealed class FileStorageTusProviderTests
                     builder.ConfigureServices(services => services.AddSingleton(clock));
                 }
             });
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        return new FileStorageWebApplicationFactory();
     }
 
     private static HttpClient CreateInternalServiceClient(WebApplicationFactory<Program> factory)
@@ -553,7 +557,9 @@ public sealed class FileStorageTusProviderTests
         var response = await client.PostAsJsonAsync(
             "/api/files/v1/upload-sessions",
             (request ?? CreateUploadRequest()) with { ExpectedSizeBytes = expectedSizeBytes, Checksum = null });
-        response.EnsureSuccessStatusCode();
+        Assert.True(
+            response.IsSuccessStatusCode,
+            $"Upload session creation returned {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
         return (await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
     }
 

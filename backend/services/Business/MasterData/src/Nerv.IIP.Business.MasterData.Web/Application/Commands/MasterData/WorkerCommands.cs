@@ -49,13 +49,13 @@ public sealed class CreateWorkerCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Worker '{code}' already exists.");
+            throw new KnownException($"人员 '{code}' 已存在。");
         }
 
         var userId = string.IsNullOrWhiteSpace(request.UserId) ? code : request.UserId.Trim();
         if (await repository.UserIdTakenAsync(request.OrganizationId, request.EnvironmentId, userId, cancellationToken))
         {
-            throw new KnownException($"Worker identity '{userId}' is already registered.");
+            throw new KnownException($"人员身份 '{userId}' 已登记。");
         }
 
         var worker = Worker.Create(
@@ -70,7 +70,7 @@ public sealed class CreateWorkerCommandHandler(
             request.Phone);
         await repository.AddAsync(worker, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for worker creation."),
+            dbContext ?? throw new KnownException("创建人员需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,

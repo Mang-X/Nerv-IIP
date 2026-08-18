@@ -119,7 +119,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
                 cancellationToken);
             if (persisted is null)
             {
-                throw new KnownException($"SKU '{allocation.Code}' idempotency record exists but resource was not found.");
+                throw new KnownException($"SKU '{allocation.Code}' 的幂等记录已存在，但未找到对应资源。");
             }
 
             return new MasterDataResourceResult("sku", persisted.Code, persisted.Name);
@@ -127,7 +127,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 
         if (await _repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {
-            throw new KnownException($"SKU '{allocation.Code}' already exists.");
+            throw new KnownException($"SKU '{allocation.Code}' 已存在。");
         }
 
         var sku = Sku.CreateIndustrial(
@@ -203,7 +203,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
         {
             if (string.IsNullOrWhiteSpace(reference.Code))
             {
-                throw new KnownException($"SKU field '{reference.Field}' must reference an active '{reference.CodeSet}' code.");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 必须引用已启用的 '{reference.CodeSet}' 代码。");
             }
 
             var exists = await _referenceDataRepository.ExistsActiveAsync(
@@ -214,7 +214,7 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
                 cancellationToken);
             if (!exists)
             {
-                throw new KnownException($"SKU field '{reference.Field}' references inactive or missing reference data '{reference.CodeSet}:{reference.Code}'.");
+                throw new KnownException($"SKU 字段 '{reference.Field}' 的值不存在或未启用。");
             }
         }
     }
@@ -298,7 +298,7 @@ public static class SkuCategoryValidator
         var code = category.Trim();
         if (code.Length == 0)
         {
-            throw new KnownException("SKU field 'Category' must reference an active product category.");
+            throw new KnownException("SKU 字段 'Category' 必须引用已启用的产品分类。");
         }
 
         // 两条数据源哪条在就用哪条：handler 有三个构造重载，只认 dbContext 会让不带它的那条
@@ -327,7 +327,7 @@ public static class SkuCategoryValidator
                 }
 
                 throw new KnownException(
-                    $"SKU field 'Category' references disabled product category '{code}'.");
+                    $"SKU 字段 'Category' 引用的产品分类 '{code}' 已停用。");
             }
 
             // 实体里完全没有这个 code，才轮到 legacy 兼容（且仅更新路径）。
@@ -355,7 +355,7 @@ public static class SkuCategoryValidator
         }
 
         throw new KnownException(
-            $"SKU field 'Category' references inactive or missing product category '{code}'.");
+            $"SKU 字段 'Category' 引用的产品分类 '{code}' 不存在或未启用。");
     }
 }
 
@@ -383,7 +383,7 @@ internal static class SkuChannelUomValidator
 
         if (dbContext is null)
         {
-            throw new KnownException("SKU channel UOM validation requires master data persistence context.");
+            throw new KnownException("校验 SKU 渠道计量单位需要主数据持久化上下文。");
         }
 
         var businessDate = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -402,7 +402,7 @@ internal static class SkuChannelUomValidator
                 cancellationToken);
             if (!hasConversion)
             {
-                throw new KnownException($"SKU channel UOM '{channelUom}' requires an active direct conversion to base UOM '{baseUom}'.");
+                throw new KnownException($"计量单位 '{channelUom}' 到 '{baseUom}' 缺少启用的直接换算关系。");
             }
         }
     }
@@ -440,7 +440,7 @@ public sealed class CreateUnitOfMeasureCommandHandler(IUnitOfMeasureRepository r
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Unit of measure '{code}' already exists.");
+            throw new KnownException($"计量单位 '{code}' 已存在。");
         }
 
         var uom = UnitOfMeasure.Create(
@@ -490,7 +490,7 @@ public sealed class CreateUomConversionCommandHandler(IUomConversionRepository r
             request.EffectiveFrom,
             cancellationToken))
         {
-            throw new KnownException($"UOM conversion '{request.FromUomCode}->{request.ToUomCode}' already exists.");
+            throw new KnownException($"计量单位换算关系 '{request.FromUomCode}->{request.ToUomCode}' 已存在。");
         }
 
         var conversion = UomConversion.Create(
@@ -551,13 +551,13 @@ public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerReposito
         var code = allocation.Code;
         if (await repository.ExistsCodeAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Business partner '{code}' already exists.");
+            throw new KnownException($"业务伙伴 '{code}' 已存在。");
         }
 
         if (!string.IsNullOrWhiteSpace(request.TaxId) &&
             await repository.ExistsTaxIdAsync(request.OrganizationId, request.EnvironmentId, request.TaxId.Trim(), cancellationToken))
         {
-            throw new KnownException($"Business partner tax id '{request.TaxId}' already exists.");
+            throw new KnownException($"业务伙伴税号 '{request.TaxId}' 已存在。");
         }
 
         var partner = BusinessPartner.Create(
@@ -612,7 +612,7 @@ public sealed class CreateDepartmentCommandHandler(IDepartmentRepository reposit
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Department '{code}' already exists.");
+            throw new KnownException($"部门 '{code}' 已存在。");
         }
 
         var department = Department.Create(
@@ -662,7 +662,7 @@ public sealed class CreateTeamCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Team '{code}' already exists.");
+            throw new KnownException($"班组 '{code}' 已存在。");
         }
 
         var team = Team.Create(
@@ -675,7 +675,7 @@ public sealed class CreateTeamCommandHandler(
             request.WorkshopCode);
         await repository.AddAsync(team, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for team creation."),
+            dbContext ?? throw new KnownException("创建班组需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -731,7 +731,7 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
             request.EffectiveFrom,
             cancellationToken))
         {
-            throw new KnownException($"Personnel skill '{request.UserId}:{request.SkillCode}' already exists.");
+            throw new KnownException($"人员技能 '{request.UserId}:{request.SkillCode}' 已存在。");
         }
 
         var skill = PersonnelSkill.Assign(
@@ -775,7 +775,7 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
     {
         if (string.IsNullOrWhiteSpace(code))
         {
-            throw new KnownException($"Personnel skill field '{field}' must reference an active '{codeSet}' code.");
+            throw new KnownException($"人员技能字段 '{field}' 必须引用已启用的 '{codeSet}' 代码。");
         }
 
         var trimmedCode = code.Trim();
@@ -787,7 +787,7 @@ public sealed class AssignPersonnelSkillCommandHandler : ICommandHandler<AssignP
             cancellationToken);
         if (!exists)
         {
-            throw new KnownException($"Personnel skill field '{field}' references inactive or missing reference data '{codeSet}:{trimmedCode}'.");
+            throw new KnownException($"人员技能字段 '{field}' 的值 '{trimmedCode}' 不存在或未启用。");
         }
     }
 }
@@ -826,7 +826,7 @@ public sealed class CreateSiteCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Site '{code}' already exists.");
+            throw new KnownException($"站点 '{code}' 已存在。");
         }
 
         var site = Site.Create(
@@ -837,7 +837,7 @@ public sealed class CreateSiteCommandHandler(
             request.Timezone);
         await repository.AddAsync(site, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for site creation."),
+            dbContext ?? throw new KnownException("创建站点需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -884,7 +884,7 @@ public sealed class CreateProductionLineCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Production line '{code}' already exists.");
+            throw new KnownException($"产线 '{code}' 已存在。");
         }
 
         var line = ProductionLine.Create(
@@ -896,7 +896,7 @@ public sealed class CreateProductionLineCommandHandler(
             request.WorkshopCode);
         await repository.AddAsync(line, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for production line creation."),
+            dbContext ?? throw new KnownException("创建产线需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -946,7 +946,7 @@ public sealed class CreateShiftCommandHandler(IShiftRepository repository, Maste
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Shift '{code}' already exists.");
+            throw new KnownException($"班次 '{code}' 已存在。");
         }
 
         var shift = Shift.Create(
@@ -1009,7 +1009,7 @@ public sealed class CreateWorkCenterCommandHandler(
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Work center '{code}' already exists.");
+            throw new KnownException($"工作中心 '{code}' 已存在。");
         }
 
         var workCenter = WorkCenter.CreateResource(
@@ -1032,7 +1032,7 @@ public sealed class CreateWorkCenterCommandHandler(
             request.Bottleneck);
         await repository.AddAsync(workCenter, cancellationToken);
         MasterDataScopeContextAudit.AddCreated(
-            dbContext ?? throw new KnownException("A scope audit store is required for work center creation."),
+            dbContext ?? throw new KnownException("创建工作中心需要范围审计存储。"),
             request.AuditContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -1083,7 +1083,7 @@ public sealed class CreateWorkCalendarCommandHandler(IWorkCalendarRepository rep
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Work calendar '{code}' already exists.");
+            throw new KnownException($"工作日历 '{code}' 已存在。");
         }
 
         var calendar = WorkCalendar.Create(
@@ -1228,7 +1228,7 @@ public sealed class RegisterDeviceAssetCommandHandler
         var code = allocation.Code;
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
         {
-            throw new KnownException($"Device asset '{code}' already exists.");
+            throw new KnownException($"设备资产 '{code}' 已存在。");
         }
 
         var asset = DeviceAsset.RegisterCapability(
@@ -1301,7 +1301,7 @@ internal static class DeviceAssetCommandValidator
 
         if (code.Length != 3 || code.Any(x => !char.IsAsciiLetter(x)))
         {
-            throw new KnownException("Device asset purchase currency code must be a 3-letter ISO 4217 code.");
+            throw new KnownException("设备资产采购币种代码必须是 3 位 ISO 4217 字母代码。");
         }
 
         return code.ToUpperInvariant();
@@ -1322,7 +1322,7 @@ internal static class DeviceAssetCommandValidator
         var invalid = components.FirstOrDefault(x => x.Quantity <= 0m);
         if (invalid is not null)
         {
-            throw new KnownException($"Device asset component '{invalid.ComponentCode}' quantity must be greater than zero.");
+            throw new KnownException($"设备资产组件 '{invalid.ComponentCode}' 的数量必须大于零。");
         }
     }
 }
@@ -1367,18 +1367,18 @@ public sealed class CreateReferenceDataCodeCommandHandler(IReferenceDataCodeRepo
     {
         if (!MasterDataDictionaryRules.IsStandardCodeSet(request.CodeSet))
         {
-            throw new KnownException($"Reference data code set '{request.CodeSet}' is not reserved by the master-data dictionary rules.");
+            throw new KnownException($"参考数据代码集 '{request.CodeSet}' 未在主数据字典规则中登记。");
         }
 
         if (MasterDataDictionaryRules.IsSystemEnumCodeSet(request.CodeSet) &&
             !MasterDataDictionaryRules.IsSystemManagedReferenceData(request.CodeSet, request.Code))
         {
-            throw new KnownException($"Reference data code '{request.CodeSet}:{request.Code}' is not allowed in a system enum reference data code set.");
+            throw new KnownException($"参考数据代码 '{request.CodeSet}:{request.Code}' 不允许加入系统枚举代码集。");
         }
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.CodeSet, request.Code, cancellationToken))
         {
-            throw new KnownException($"Reference data code '{request.CodeSet}:{request.Code}' already exists.");
+            throw new KnownException($"参考数据代码 '{request.CodeSet}:{request.Code}' 已存在。");
         }
 
         var code = ReferenceDataCode.Create(

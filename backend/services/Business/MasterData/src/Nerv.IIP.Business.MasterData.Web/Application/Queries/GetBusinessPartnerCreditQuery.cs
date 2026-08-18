@@ -22,11 +22,11 @@ public sealed class GetBusinessPartnerCreditQueryHandler(ApplicationDbContext db
                 !x.Disabled &&
                 (x.PartnerType == "customer" || x.PartnerRoles.Contains("customer")),
                 cancellationToken)
-            ?? throw new KnownException($"Customer master data '{request.CustomerCode}' was not found or is not active.");
+            ?? throw new KnownException($"客户主数据 '{request.CustomerCode}' 不存在或未启用。");
 
         if (!partner.CreditLimit.HasValue || string.IsNullOrWhiteSpace(partner.CreditCurrencyCode))
         {
-            throw new KnownException($"Customer '{request.CustomerCode}' does not have a credit limit master-data profile.");
+            throw new KnownException($"客户 '{request.CustomerCode}' 未配置信用额度主数据。");
         }
 
         return new BusinessPartnerCreditProfile(
