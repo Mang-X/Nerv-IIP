@@ -1,10 +1,10 @@
-# Stryker.NET 单程序集 mutation testing Spike
+# Stryker.NET 单程序集变异测试预研
 
 ## 结论
 
-NERV-870 的结论是**有限 go**：Stryker.NET 4.16.0 可以在当前 .NET 10、macOS arm64 环境中对 Scheduling 的单个纯领域文件稳定地产生非零 mutation 证据，且两次运行的 mutant 状态完全一致。它适合 NERV-873 与 NERV-874 继续做边界冻结的人工或显式 pilot；当前不应接入 required PR CI，也不应把 mutation score 设为 KPI。
+NERV-870 的结论是**有限通过**：Stryker.NET 4.16.0 可以在当前 .NET 10、macOS arm64 环境中对 Scheduling 的单个纯领域文件稳定地产生非零变异证据，且两次运行的变异体状态完全一致。它适合 NERV-873 与 NERV-874 继续做边界冻结的人工或显式试点；当前不应接入 required PR CI，也不应把变异分数设为 KPI。
 
-本次 Spike 只调查工具成本与信号质量，没有修改生产代码、测试、项目文件、包版本、tool manifest、配置、workflow 或脚本。Stryker 的安装、运行目录和原始报告均位于一次性临时目录，未进入仓库。
+本次预研只调查工具成本与信号质量，没有修改生产代码、测试、项目文件、包版本、tool manifest、配置、workflow 或脚本。Stryker 的安装、运行目录和原始报告均位于一次性临时目录，未进入仓库。
 
 ## Gate 2 与范围
 
@@ -13,7 +13,7 @@ NERV-870 的结论是**有限 go**：Stryker.NET 4.16.0 可以在当前 .NET 10�
 - 生产目标：`backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Domain/Services/OrderUrgencyCalculator.cs`。
 - 直接测试项目：`backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Domain.Tests/Nerv.IIP.Business.Scheduling.Domain.Tests.csproj`。
 - 直接测试类：`OrderUrgencyCalculatorTests`。
-- 排除：全仓 mutation、补测试、修生产缺陷、CI 接线，以及 Scheduling 其他领域文件。
+- 排除：全仓变异测试、补测试、修生产缺陷、CI 接线，以及 Scheduling 其他领域文件。
 
 ## 执行环境
 
@@ -34,9 +34,11 @@ NERV-870 的结论是**有限 go**：Stryker.NET 4.16.0 可以在当前 .NET 10�
 以下命令使用新的临时目录；`NERV870_TMP` 只指向本次运行拥有的目录。实际运行前先执行工具 `--help`，下列 mutation 参数均来自该帮助输出。
 
 ```bash
-NERV870_TMP="$(mktemp -d "${TMPDIR%/}/nerv-870-stryker.XXXXXX")"
+NERV870_TMP_ROOT="${TMPDIR:-/tmp}"
+NERV870_TMP="$(mktemp -d "${NERV870_TMP_ROOT%/}/nerv-870-stryker.XXXXXX")"
 
 dotnet tool install dotnet-stryker \
+  --version 4.16.0 \
   --tool-path "$NERV870_TMP/tools"
 
 "$NERV870_TMP/tools/dotnet-stryker" --help
@@ -64,7 +66,7 @@ dotnet tool install dotnet-stryker \
 
 第二次稳定性运行使用完全相同的参数，只把 `--output` 改为另一个临时子目录，避免覆盖首轮原始报告。
 
-## 基线与 mutation 结果
+## 基线与变异测试结果
 
 外部 restore 墙钟为 `3.05s`。随后精确筛选 `OrderUrgencyCalculatorTests` 的基线命令使用 `--no-restore`，结果为 `15 passed / 0 failed / 0 skipped`；测试运行耗时 `0.6502s`，进程墙钟 `2.83s`。
 
@@ -132,28 +134,28 @@ Stryker 的两轮结果如下：
 - 源生成：生产项目引用 `NetCorePal.Extensions.CodeAnalysis`；Stryker 对该项目的分析、构建和 36 个测试成功，说明当前程序集级源生成没有阻塞本次运行。
 - 强类型 ID：`OrderUrgencyCalculator` 本身使用字符串和普通 record，没有直接 mutation 强类型 ID 生成代码。本次成功不能外推为强类型 ID mutation 已验证；NERV-873/874 若选中生成类型，必须单独保留编译与 mutant 证据。
 - 报告：原始 JSON 包含本机仓库绝对路径，不适合直接提交。此次只在临时目录保留；未来若要上传 artifact，需要先定义脱敏、保留期和缺失失败策略。
-- 版本：不固定版本的 `dotnet tool install` 会随时间漂移。后续 pilot 必须固定 `dotnet-stryker` 为 `4.16.0`，升级另行取证。
+- 版本：不固定版本的 `dotnet tool install` 会随时间漂移。后续试点必须固定 `dotnet-stryker` 为 `4.16.0`，升级另行取证。
 - 统计：compile error 不进入 mutation score，文件过滤又发生在项目分析之后；报告必须同时给出生成、过滤、执行和评分口径，禁止只报一个百分比。
 
 ## CI 结论
 
-当前对 required PR CI 是 **no-go**。原因不是本机耗时过高，而是尚缺少受治理的工具版本固定、无网络/restore 策略、原始报告脱敏、artifact 生命周期、预算超时与失败关闭合同；并且只有一台 macOS arm64 机器上的两轮证据，不能代表 GitHub hosted runner 成本。
+当前结论是**不得接入 required PR CI**。原因不是本机耗时过高，而是尚缺少受治理的工具版本固定、无网络/restore 策略、原始报告脱敏、artifact 生命周期、预算超时与失败关闭合同；并且只有一台 macOS arm64 机器上的两轮证据，不能代表 GitHub hosted runner 成本。
 
-可以把它作为显式的本地或手动 pilot：单文件、单测试项目、固定版本、临时输出、两轮状态一致，并以 mutant 分类而非 score 作为决策输入。若未来要进入 CI，应另开治理票，而不是在 NERV-873/874 的领域 pilot 中顺手修改 workflow 或脚本。
+可以把它作为显式的本地或手动试点：单文件、单测试项目、固定版本、临时输出、两轮状态一致，并以变异体分类而非分数作为决策输入。若未来要进入 CI，应另开治理票，而不是在 NERV-873/874 的领域试点中顺手修改 workflow 或脚本。
 
 ## NERV-873 与 NERV-874 前置建议
 
-### NERV-873 Scheduling pilot
+### NERV-873 Scheduling 试点
 
-- **go**，冻结生产目标为 `OrderUrgencyCalculator.cs`，直接测试项目为 `Nerv.IIP.Business.Scheduling.Domain.Tests.csproj`，工具版本固定为 `4.16.0`。
-- 单次 mutation 墙钟预算先定为 2 分钟；超时直接失败并保留诊断，不自动扩大目标或测试项目。该预算约为本机较慢实测的 `3.9x`，仅用于 pilot，不代表 CI SLA。
+- **可以进入试点**，冻结生产目标为 `OrderUrgencyCalculator.cs`，直接测试项目为 `Nerv.IIP.Business.Scheduling.Domain.Tests.csproj`，工具版本固定为 `4.16.0`。
+- 单次变异测试墙钟预算先定为 2 分钟；超时直接失败并保留诊断，不自动扩大目标或测试项目。该预算约为本机较慢实测的 `3.9x`，仅用于试点，不代表 CI SLA。
 - 先用已杀死的“严重级 `Max()` 改 `Min()`”作为保持输出形状但破坏领域语义的 red 证据。
 - 对 28 个高可信缺口按输入校验、业务优先级过期、时间阈值/输出、执行风险四组复核并开精确后续测试 issue；对 3 个合同未冻结项先裁决合同，不为抬分数补脆弱断言。
 - 全部原始报告继续留在临时或受治理 artifact，PR 只提交报告与票面明确允许的测试变更，不修改 CI。
 
-### NERV-874 Inventory pilot
+### NERV-874 Inventory 试点
 
-- **条件 go**：先在 ledger、idempotency、FEFO 三者中只选一个纯领域或无外部依赖的小组件，并冻结一个生产文件和一个直接测试项目；不得把本次 Scheduling 的 30 秒成本外推到 PostgreSQL 测试。
+- **满足条件后可以进入试点**：先在 ledger、idempotency、FEFO 三者中只选一个纯领域或无外部依赖的小组件，并冻结一个生产文件和一个直接测试项目；不得把本次 Scheduling 的 30 秒成本外推到 PostgreSQL 测试。
 - 首选能由纯领域测试证明的 FEFO 顺序或幂等策略；若目标不变量必须依赖 PostgreSQL，票面必须明确 real-provider 证据、独立数据库归属与清理责任，InMemory 结果不得冒充数据库约束。
 - 首次单次 mutation 墙钟预算定为 5 分钟，连续两轮要求 mutant 状态计数完全一致；超预算、零执行、skip、timeout 或清理失败均 fail closed。
 - 版本、restore、测试发现、报告脱敏与统计口径沿用本报告，不接触 workflow、共享脚本或全仓 mutation。
