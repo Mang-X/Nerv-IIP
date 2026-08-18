@@ -72,9 +72,9 @@ jobs:
           }
           else {
               $thresholdArguments = @{
-                  InventoryMaxElapsedMilliseconds = 600000
-                  MesMaxElapsedMilliseconds = 600000
-                  ErpMaxElapsedMilliseconds = 600000
+                  InventoryMaxElapsedMilliseconds = 30000
+                  MesMaxElapsedMilliseconds = 30000
+                  ErpMaxElapsedMilliseconds = 30000
               }
           }
           & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
