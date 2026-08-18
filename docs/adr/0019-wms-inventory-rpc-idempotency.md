@@ -37,7 +37,7 @@ Inventory 的盘点任务回退键也使用 `count-code:<countTaskCode>` 命名�
 2. **超时后的尽力清理**：不采用，因为 WMS 无法判断 Inventory 是否已在超时前提交。清理可能释放本应由后续重试恢复的有效预留或盘点冻结。
 3. **共享对账表**：不采用，因为 ADR 0003 和 ADR 0012 要求服务数据所有权相互隔离；WMS 不得读写 Inventory schema。
 
-## 影响
+## 后果
 
 补偿路径具有确定性：重试同一 WMS 命令。WMS 重新计算相同的键，Inventory 返回已提交的业务事实，WMS 再在本地持久化返回的 Inventory ID。
 

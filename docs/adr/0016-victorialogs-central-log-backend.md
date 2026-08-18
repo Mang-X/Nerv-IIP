@@ -20,7 +20,7 @@ VictoriaLogs 被选为首条中央日志存储路径的后端。VictoriaMetrics 
 7. 提供精简的 `Nerv.IIP.Observability` VictoriaLogs 客户端和安全查询构建器，将平台过滤条件映射为 LogsQL。查询门面支持 service、correlationId、traceId、时间范围和 level 过滤条件。
 8. 不得在 AppHub、IAM、Ops、FileStorage、Notification 或业务 PostgreSQL schema 中存储日志消息正文。PostgreSQL 后续可以在独立的 `observability` schema 中保存可观测性索引或元数据，但本次范围将可搜索的日志正文存储在 VictoriaLogs 中。
 
-## 影响
+## 后果
 
 - AppHost 是 VictoriaLogs 容器的拓扑来源。旧版 Compose 文件可为迁移和发布演练包含相同服务，但不得成为第二套完整平台拓扑。
 - `VictoriaLogs:BaseUrl` 配置 Gateway 的日志查询访问；`OpenTelemetry:Logs:Endpoint` 和 `OpenTelemetry:Logs:Path` 配置服务日志接收。
