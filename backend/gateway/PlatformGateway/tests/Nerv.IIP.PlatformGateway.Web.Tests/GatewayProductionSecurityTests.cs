@@ -8,7 +8,7 @@ public sealed class GatewayProductionSecurityTests
     [Fact]
     public void Production_gateway_requires_cors_allowed_origins()
     {
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -24,7 +24,7 @@ public sealed class GatewayProductionSecurityTests
     [Fact]
     public async Task Production_gateway_allows_only_configured_console_origin()
     {
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -50,7 +50,7 @@ public sealed class GatewayProductionSecurityTests
     [Fact]
     public void Production_gateway_requires_apphub_base_url()
     {
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");

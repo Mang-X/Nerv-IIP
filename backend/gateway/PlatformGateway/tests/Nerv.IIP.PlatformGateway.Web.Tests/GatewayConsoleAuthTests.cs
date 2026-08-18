@@ -329,7 +329,7 @@ public sealed class GatewayConsoleAuthTests
     }
 
     private static WebApplicationFactory<Program> CreateFactory(FakeGatewayIamAuthClient iam) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        PlatformGatewayTestHost.CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IGatewayIamAuthClient>();
             services.AddSingleton<IGatewayIamAuthClient>(iam);

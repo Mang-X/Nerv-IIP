@@ -16,7 +16,7 @@ public sealed class GatewayOpenApiTests
     [Fact]
     public async Task Gateway_exports_console_openapi_document_with_stable_operation_ids()
     {
-        await using var factory = new WebApplicationFactory<Program>();
+        await using var factory = PlatformGatewayTestHost.CreateFactory();
         var client = factory.CreateClient();
 
         var json = await client.GetStringAsync("/swagger/v1/swagger.json");
