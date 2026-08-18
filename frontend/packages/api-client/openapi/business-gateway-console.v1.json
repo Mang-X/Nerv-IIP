@@ -49435,7 +49435,8 @@
         "additionalProperties": false,
         "required": [
           "organizationId",
-          "environmentId"
+          "environmentId",
+          "reason"
         ],
         "properties": {
           "organizationId": {
@@ -49453,7 +49454,8 @@
           "reason": {
             "type": "string",
             "maxLength": 500,
-            "minLength": 0
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -49990,7 +49992,8 @@
           "environmentId",
           "displayName",
           "segments",
-          "createdBy"
+          "createdBy",
+          "changeReason"
         ],
         "properties": {
           "organizationId": {
@@ -50044,7 +50047,8 @@
           "changeReason": {
             "type": "string",
             "maxLength": 500,
-            "minLength": 0
+            "minLength": 0,
+            "nullable": false
           }
         }
       },

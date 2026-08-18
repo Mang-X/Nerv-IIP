@@ -1053,7 +1053,7 @@ public sealed record RemoveTeamMemberRequest(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason = "");
+    string Reason);
 
 public sealed class AddTeamMemberEndpoint(
     ISender sender,
@@ -1647,6 +1647,17 @@ public sealed record CreateCodeRuleVersionRequest(
     DateTimeOffset? EffectiveFromUtc,
     string CreatedBy,
     string ChangeReason);
+
+public sealed class CreateCodeRuleVersionRequestValidator : Validator<CreateCodeRuleVersionRequest>
+{
+    public CreateCodeRuleVersionRequestValidator()
+    {
+        RuleFor(x => x.ChangeReason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(CodeRuleChangeReason.MaximumLength);
+    }
+}
 
 public sealed class CreateCodeRuleVersionEndpoint(ISender sender)
     : MasterDataEndpoint<CreateCodeRuleVersionRequest, ResponseData<CodeRuleVersionResponse>>

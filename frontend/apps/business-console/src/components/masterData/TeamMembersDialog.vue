@@ -18,7 +18,10 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvField,
+  NvFieldDescription,
+  NvFieldError,
   NvFieldLabel,
+  NvInput,
   Spinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
@@ -37,7 +40,7 @@ const teamCodeRef = toRef(props, 'teamCode')
 const {
   members,
   membersPending,
-  memberError,
+  membersError,
   addMember,
   addPending,
   removeMember,
@@ -66,11 +69,34 @@ const selectedUserId = ref('')
 const isLeader = ref(false)
 const showErrors = ref(false)
 const removeTarget = ref<string | null>(null)
+const removeReason = ref('')
+const removeReasonTouched = ref(false)
+
+// 上限与 Gateway / MasterData 两层 validator 一致；原因按用户实际输入计数，提交时才 trim。
+const REMOVE_REASON_MAX_LENGTH = 500
+const removeReasonError = computed(() => {
+  if (removeReason.value.length > REMOVE_REASON_MAX_LENGTH) {
+    return `移除原因不能超过 ${REMOVE_REASON_MAX_LENGTH} 个字符。`
+  }
+  if (removeReason.value.length > 0 && removeReason.value.trim().length === 0) {
+    return '移除原因不能只包含空白字符。'
+  }
+  if (removeReasonTouched.value && removeReason.value.trim().length === 0) {
+    return '请输入移除原因。'
+  }
+  return ''
+})
+const canRemove = computed(
+  () =>
+    removeReason.value.trim().length > 0 &&
+    removeReason.value.length <= REMOVE_REASON_MAX_LENGTH &&
+    !removePending.value,
+)
 
 const canAdd = computed(() => Boolean(selectedUserId.value))
 
 // 成员加载失败一律 toast，不在弹窗里留常驻错误条。
-watch(memberError, (error) => {
+watch(membersError, (error) => {
   if (error) notifyError(error, '成员加载失败，请稍后重试。')
 })
 
@@ -101,14 +127,34 @@ async function submitAdd() {
 
 async function confirmRemove() {
   const userId = removeTarget.value
-  if (!userId) return
+  const reason = removeReason.value.trim()
+  removeReasonTouched.value = true
+  if (!userId || !reason || removeReason.value.length > REMOVE_REASON_MAX_LENGTH) return
   try {
-    await removeMember(userId)
+    await removeMember(userId, reason)
     notifySuccess('已移除成员。')
-    removeTarget.value = null
+    resetRemove()
   } catch (error) {
+    // 失败保留原因与当前成员，便于原地重试，不让真实审计描述丢失。
     notifyOperationFailure('移除成员失败', error, '移除成员失败，请稍后重试。')
   }
+}
+
+function requestRemove(userId: string | undefined) {
+  if (!userId) return
+  removeTarget.value = userId
+  removeReason.value = ''
+  removeReasonTouched.value = false
+}
+
+function resetRemove() {
+  removeTarget.value = null
+  removeReason.value = ''
+  removeReasonTouched.value = false
+}
+
+function onRemoveOpenChange(value: boolean) {
+  if (!value && !removePending.value) resetRemove()
 }
 </script>
 
@@ -162,7 +208,7 @@ async function confirmRemove() {
               size="sm"
               :disabled="removePending"
               :aria-label="`移除成员 ${memberLabel(member.userId)}`"
-              @click="removeTarget = member.userId ?? null"
+              @click="requestRemove(member.userId)"
             >
               <Trash2Icon aria-hidden="true" />移除
             </NvButton>
@@ -176,29 +222,54 @@ async function confirmRemove() {
     </NvDialogContent>
   </NvDialog>
 
-  <NvAlertDialog
-    :open="removeTarget !== null"
-    @update:open="
-      (value) => {
-        if (!value) removeTarget = null
-      }
-    "
-  >
+  <NvAlertDialog :open="removeTarget !== null" @update:open="onRemoveOpenChange">
     <NvAlertDialogContent>
       <NvAlertDialogHeader>
-        <NvAlertDialogTitle>确认移除该成员？</NvAlertDialogTitle>
-        <NvAlertDialogDescription>移除后该工人不再归属本班组。</NvAlertDialogDescription>
-      </NvAlertDialogHeader>
-      <NvAlertDialogFooter>
-        <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-        <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
-        <NvButton
-          type="button"
-          variant="destructive"
-          :disabled="removePending"
-          @click="confirmRemove"
-          >确认移除</NvButton
+        <NvAlertDialogTitle
+          >确认移除成员「{{ memberLabel(removeTarget ?? undefined) }}」？</NvAlertDialogTitle
         >
+        <NvAlertDialogDescription>
+          移除后该工人不再归属本班组；本次原因会写入审计记录。
+        </NvAlertDialogDescription>
+      </NvAlertDialogHeader>
+      <NvField :data-invalid="Boolean(removeReasonError)">
+        <NvFieldLabel for="team-member-remove-reason">
+          移除原因 <span class="text-destructive">*</span>
+        </NvFieldLabel>
+        <NvInput
+          id="team-member-remove-reason"
+          v-model="removeReason"
+          required
+          :maxlength="REMOVE_REASON_MAX_LENGTH"
+          placeholder="说明调整依据，如调入其他班组、岗位变更"
+          :invalid="Boolean(removeReasonError)"
+          :aria-invalid="removeReasonError ? 'true' : undefined"
+          :aria-describedby="
+            removeReasonError ? 'team-member-remove-reason-error' : 'team-member-remove-reason-help'
+          "
+          @blur="removeReasonTouched = true"
+        />
+        <div class="flex items-start justify-between gap-3">
+          <NvFieldError
+            v-if="removeReasonError"
+            id="team-member-remove-reason-error"
+            :errors="[removeReasonError]"
+          />
+          <NvFieldDescription v-else id="team-member-remove-reason-help">
+            请填写可供事后追溯的业务依据。
+          </NvFieldDescription>
+          <span class="ml-auto shrink-0 text-xs text-muted-foreground" aria-live="polite">
+            {{ removeReason.length }} / {{ REMOVE_REASON_MAX_LENGTH }}
+          </span>
+        </div>
+      </NvField>
+      <NvAlertDialogFooter>
+        <NvAlertDialogCancel :disabled="removePending">取消</NvAlertDialogCancel>
+        <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
+        <NvButton type="button" variant="destructive" :disabled="!canRemove" @click="confirmRemove">
+          <Spinner v-if="removePending" aria-hidden="true" />
+          确认移除
+        </NvButton>
       </NvAlertDialogFooter>
     </NvAlertDialogContent>
   </NvAlertDialog>

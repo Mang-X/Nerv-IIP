@@ -769,7 +769,10 @@ public sealed class BusinessConsoleRemoveTeamMemberRequestValidator : Validator<
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.TeamCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.UserId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Reason).MaximumLength(500);
+        RuleFor(x => x.Reason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(500);
     }
 }
 
@@ -841,7 +844,10 @@ public sealed class BusinessConsoleCreateCodeRuleVersionRequestValidator : Valid
         RuleFor(x => x.AppliesTo).MaximumLength(200);
         RuleFor(x => x.Segments).NotEmpty();
         RuleFor(x => x.CreatedBy).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ChangeReason).MaximumLength(500);
+        RuleFor(x => x.ChangeReason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(500);
     }
 }
 
@@ -1414,7 +1420,11 @@ public sealed class RemoveBusinessConsoleTeamMemberEndpoint(
         BusinessConsoleRemoveTeamMemberRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.RemoveTeamMemberAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
+        masterData.RemoveTeamMemberAsync(
+            tokenProvider.BearerToken,
+            request with { Reason = request.Reason.Trim() },
+            RequireAuditContext(request),
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
@@ -1568,7 +1578,10 @@ public sealed class CreateBusinessConsoleCodeRuleVersionEndpoint(
         BusinessConsoleCreateCodeRuleVersionRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateCodeRuleVersionAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateCodeRuleVersionAsync(
+            tokenProvider.BearerToken,
+            request with { ChangeReason = request.ChangeReason.Trim() },
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]
