@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -12,6 +13,7 @@ namespace Nerv.IIP.FileStorage.Web.Tests;
 public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string databaseName = $"filestorage-web-{Guid.NewGuid():N}";
+    private readonly InMemoryDatabaseRoot databaseRoot = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -25,7 +27,8 @@ public sealed class FileStorageWebApplicationFactory : WebApplicationFactory<Pro
             services.RemoveAll<DbContextOptions>();
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
-            services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            services.AddDbContext<ApplicationDbContext>(options =>
+                options.UseInMemoryDatabase(databaseName, databaseRoot));
         });
     }
 }
