@@ -397,6 +397,17 @@ vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
 
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
+  // 批次页的 KPI 条里是 unovis sparkline：它的 tooltip 用 throttle 定时器排到宏任务，
+  // 卸载后仍可能回调到 document，在 jsdom 环境拆掉之后就是 "document is not defined" 的
+  // 未捕获异常（整包退出码 1，但用例全绿）。本文件不断言 KPI 文案，直接桩掉不让它挂载。
+  NvMetricStrip: {
+    props: ['cells'],
+    template: `
+      <div data-testid="metric-strip">
+        <span v-for="cell in cells ?? []" :key="cell.key">{{ cell.label }} {{ cell.value }}</span>
+      </div>
+    `,
+  },
   PageHeader: {
     props: ['title', 'breadcrumbs', 'count'],
     template:
