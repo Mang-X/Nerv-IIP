@@ -519,7 +519,7 @@ public sealed class BusinessGatewayProxyTests
             isActive = true,
             effectiveFromUtc = "2026-06-01T00:00:00Z",
             createdBy = "admin-001",
-            changeReason = "align plant convention",
+            changeReason = "  align plant convention  ",
         });
         var preview = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/preview", new
         {
@@ -543,6 +543,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
         Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
         Assert.Equal("admin-001", masterData.LastCodeRuleVersionRequest.CreatedBy);
+        Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
     }
 
