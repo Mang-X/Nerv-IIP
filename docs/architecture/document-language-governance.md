@@ -17,7 +17,7 @@ git ls-files | awk 'BEGIN{IGNORECASE=1} /(^|\/)(README|CHANGELOG|CONTRIBUTING|SE
 下列受版本控制且由人维护的内容必须默认使用简体中文：
 
 - 根目录和子目录中的 `README.md`、`AGENTS.md`、`CLAUDE.md`、设计说明、产品说明及其他说明文档；
-- `docs/architecture/`、`docs/adr/`、`docs/demo/` 的架构、决策和演示文档；
+- `docs/architecture/`、`docs/adr/` 的架构和决策文档；
 - `docs/superpowers/plans/` 与 `docs/superpowers/specs/` 的历史计划和设计规格；
 - `frontend/DESIGN/`、设计系统组件文档和产品文档；
 - 人工维护的 Copilot 指令、Skill 文档、脚本使用说明及维护说明。
