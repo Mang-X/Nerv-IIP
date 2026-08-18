@@ -61,6 +61,51 @@ public sealed class GatewayConsoleAuthTests
     }
 
     [Fact]
+    public async Task Console_login_exposes_safe_lockout_metadata()
+    {
+        var lockoutUntilUtc = DateTimeOffset.Parse("2026-08-18T08:30:00Z");
+        var iam = new FakeGatewayIamAuthClient
+        {
+            ExceptionToThrow = GatewayAuthException.LoginRejected(
+                "iam-account-locked",
+                lockoutUntilUtc,
+                null)
+        };
+        await using var factory = CreateFactory(iam);
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/console/v1/auth/login",
+            new ConsoleLoginRequest("admin", "wrong"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("iam-account-locked", response.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+        Assert.Equal(
+            lockoutUntilUtc.ToString("O"),
+            response.Headers.GetValues("X-Nerv-Iam-Lockout-Until-Utc").Single());
+    }
+
+    [Fact]
+    public async Task Console_login_exposes_safe_remaining_attempts_metadata()
+    {
+        var iam = new FakeGatewayIamAuthClient
+        {
+            ExceptionToThrow = GatewayAuthException.LoginRejected(
+                "iam-invalid-credentials",
+                null,
+                2)
+        };
+        await using var factory = CreateFactory(iam);
+
+        var response = await factory.CreateClient().PostAsJsonAsync(
+            "/api/console/v1/auth/login",
+            new ConsoleLoginRequest("admin", "wrong"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("iam-invalid-credentials", response.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+        Assert.Equal("2", response.Headers.GetValues("X-Nerv-Iam-Remaining-Attempts").Single());
+    }
+
+    [Fact]
     public async Task Console_refresh_forwards_refresh_token()
     {
         var iam = new FakeGatewayIamAuthClient();
@@ -272,6 +317,63 @@ public sealed class GatewayConsoleAuthTests
     }
 
     [Fact]
+    public async Task Iam_auth_client_maps_safe_login_failure_headers()
+    {
+        var lockoutUntilUtc = DateTimeOffset.Parse("2026-08-18T08:30:00Z");
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            response.Headers.Add("X-Nerv-Iam-Login-Failure", "iam-account-locked");
+            response.Headers.Add("X-Nerv-Iam-Lockout-Until-Utc", lockoutUntilUtc.ToString("O"));
+            return response;
+        }))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            iam.LoginAsync(new ConsoleLoginRequest("admin", "wrong"), CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, exception.StatusCode);
+        Assert.Equal("iam-account-locked", exception.Reason);
+        Assert.Equal(lockoutUntilUtc, exception.LockoutUntilUtc);
+        Assert.Null(exception.RemainingAttempts);
+    }
+
+    [Fact]
+    public async Task Iam_auth_client_fails_closed_and_disposes_malformed_login_failure_response()
+    {
+        var content = new TrackingContent();
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = content
+            };
+            response.Headers.TryAddWithoutValidation(
+                "X-Nerv-Iam-Login-Failure",
+                ["iam-account-locked", "iam-invalid-credentials"]);
+            response.Headers.TryAddWithoutValidation("X-Nerv-Iam-Lockout-Until-Utc", "not-a-timestamp");
+            response.Headers.TryAddWithoutValidation("X-Nerv-Iam-Remaining-Attempts", "999");
+            return response;
+        }))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var iam = new HttpGatewayIamAuthClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            iam.LoginAsync(new ConsoleLoginRequest("admin", "wrong"), CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, exception.StatusCode);
+        Assert.Equal("iam-unauthorized", exception.Reason);
+        Assert.Null(exception.LockoutUntilUtc);
+        Assert.Null(exception.RemainingAttempts);
+        Assert.True(content.IsDisposed);
+    }
+
+    [Fact]
     public async Task Iam_auth_client_login_posts_credentials_then_loads_principal_with_new_access_token()
     {
         var handler = new RecordingHttpMessageHandler(request =>
@@ -419,6 +521,26 @@ public sealed class GatewayConsoleAuthTests
         {
             Requests.Add(new RecordedRequest(request.Method, request.RequestUri!, request.Headers.Authorization));
             return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    private sealed class TrackingContent : HttpContent
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.CompletedTask;
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
         }
     }
 

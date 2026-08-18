@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createBusinessConsoleSkuMutationOptions,
+  removeBusinessConsoleTeamMemberMutationOptions,
   listBusinessConsoleMasterDataResourcesQueryOptions,
   listBusinessConsoleSkusQueryOptions,
   listBusinessConsoleWorkersQueryOptions,
@@ -13,6 +14,7 @@ import {
   useBusinessMasterDataGroups,
   useBusinessMasterDataResources,
   useBusinessSkus,
+  useTeamMembers,
   useBusinessWorkers,
   WORKER_DIRECTORY_MAX_PAGE_SIZE,
 } from './useBusinessMasterData'
@@ -44,6 +46,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleWorkCalendarMutationOptions: mutationOptionStub(),
   createBusinessConsoleTeamMutationOptions: mutationOptionStub(),
   createBusinessConsoleDepartmentMutationOptions: mutationOptionStub(),
+  addBusinessConsoleTeamMemberMutationOptions: mutationOptionStub(),
   listBusinessConsoleMasterDataResourcesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMasterDataResources' }],
     query: vi.fn(),
@@ -56,6 +59,11 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleWorkers' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleTeamMembersQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleTeamMembers' }],
+    query: vi.fn(),
+  })),
+  removeBusinessConsoleTeamMemberMutationOptions: mutationOptionStub(),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -196,6 +204,24 @@ describe('business master data composables', () => {
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
       predicate: expect.any(Function),
+    })
+  })
+
+  it('移除班组成员时把必填原因与业务上下文一起交给 generated mutation', async () => {
+    const { removeMember } = useTeamMembers('TEAM-A')
+
+    await removeMember('usr-1', '调入维修班组')
+
+    expect(removeBusinessConsoleTeamMemberMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(removeBusinessConsoleTeamMemberMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { teamCode: 'TEAM-A', userId: 'usr-1' },
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        reason: '调入维修班组',
+      },
     })
   })
 

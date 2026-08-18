@@ -1,4 +1,4 @@
-# ADR 0010: 自动化脚本可信执行治理
+# ADR 0010：自动化脚本可信执行治理
 
 - 状态：已接受
 - 日期：2026-05-17
@@ -53,7 +53,7 @@ ADR 0008 冻结多部署目标和统一 AppHost/安装脚本方向，ADR 0009 �
 4. 数据库迁移、seed、备份和发布停止条件继续以 `docs/architecture/database-release-runbook.md` 为准。
 5. 部署拓扑、AppHost、Compose、安装包和整合安装脚本边界继续以 `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与 `docs/architecture/deployment-baseline.md` 为准。
 
-## 范围外事项
+## 范围之外
 
 1. 本 ADR 不定义最终 CI/CD 平台或流水线文件格式。
 2. 本 ADR 不要求一次性重写所有历史脚本。

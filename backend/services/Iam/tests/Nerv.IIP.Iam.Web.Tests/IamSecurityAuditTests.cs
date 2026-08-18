@@ -33,7 +33,7 @@ public sealed class IamSecurityAuditTests
         await db.SaveChangesAsync();
         var auth = CreateAuthService(db, passwordService);
 
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+        await Assert.ThrowsAnyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
             "audit-login",
             "wrong-password",
             "test-client",
@@ -60,7 +60,7 @@ public sealed class IamSecurityAuditTests
         {
             var auth = CreateAuthService(db);
 
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+            await Assert.ThrowsAnyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
                 "missing-user",
                 "Password123!",
                 "test-client",
@@ -98,7 +98,7 @@ public sealed class IamSecurityAuditTests
             await db.SaveChangesAsync();
             var auth = CreateAuthService(db, passwordService);
 
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+            await Assert.ThrowsAnyAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
                 "audit-locked",
                 "Password123!",
                 "test-client",

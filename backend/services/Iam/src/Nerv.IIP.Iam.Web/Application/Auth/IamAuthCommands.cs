@@ -1,12 +1,19 @@
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Web.Application.Users;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
-public sealed record AuthCommandResult<T>(bool IsAuthorized, T? Response, string? Detail)
+public sealed record AuthFailure(
+    string Code,
+    DateTimeOffset? LockoutUntilUtc = null,
+    int? RemainingAttempts = null);
+
+public sealed record AuthCommandResult<T>(bool IsAuthorized, T? Response, string? Detail, AuthFailure? Failure = null)
 {
     public static AuthCommandResult<T> Authorized(T response) => new(true, response, null);
-    public static AuthCommandResult<T> Unauthorized(string detail) => new(false, default, detail);
+    public static AuthCommandResult<T> Unauthorized(string detail, AuthFailure? failure = null) =>
+        new(false, default, detail, failure);
 }
 
 public sealed record LoginCommand(
@@ -29,6 +36,12 @@ public sealed class LoginCommandHandler(IIamAuthService auth)
                 request.IpAddress,
                 cancellationToken);
             return AuthCommandResult<AuthResponse>.Authorized(response);
+        }
+        catch (IamLoginRejectedException ex)
+        {
+            return AuthCommandResult<AuthResponse>.Unauthorized(
+                ex.Code,
+                new AuthFailure(ex.Code, ex.LockoutUntilUtc, ex.RemainingAttempts));
         }
         catch (UnauthorizedAccessException ex)
         {
