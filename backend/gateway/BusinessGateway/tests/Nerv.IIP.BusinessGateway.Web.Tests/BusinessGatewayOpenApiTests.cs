@@ -57,11 +57,13 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories", "post", "createBusinessConsoleProductCategory");
         AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}", "put", "updateBusinessConsoleProductCategory");
         AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}/archive", "post", "archiveBusinessConsoleProductCategory");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}/archive", "post", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills", "get", "listBusinessConsoleSkills");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}", "get", "getBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills", "post", "createBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}", "put", "updateBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}/archive", "post", "archiveBusinessConsoleSkill");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/master-data/skills/{skillCode}/archive", "post", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/master-data/business-partners", "post", "createBusinessConsoleBusinessPartner");
         AssertBusinessPartnerCreditFields(document);
         AssertOperationId(paths, "/api/business-console/v1/master-data/units-of-measure", "post", "createBusinessConsoleUnitOfMeasure");

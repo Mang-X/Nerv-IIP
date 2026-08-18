@@ -47223,11 +47223,15 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveProductCategoryRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
         "properties": {
           "reason": {
             "type": "string",
             "maxLength": 500,
-            "minLength": 0
+            "minLength": 0,
+            "nullable": false
           }
         }
       },
@@ -47435,11 +47439,15 @@
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleArchiveSkillRequest": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "reason"
+        ],
         "properties": {
           "reason": {
             "type": "string",
             "maxLength": 500,
-            "minLength": 0
+            "minLength": 0,
+            "nullable": false
           }
         }
       },

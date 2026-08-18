@@ -119,6 +119,7 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
 {
     public async Task<ProductCategoryItem> Handle(ArchiveProductCategoryCommand request, CancellationToken cancellationToken)
     {
+        var reason = MasterDataArchiveReason.NormalizeRequired(request.Reason);
         var category = await UpdateProductCategoryCommandHandler.FindAsync(
             dbContext,
             request.OrganizationId,
@@ -126,7 +127,7 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             request.CategoryCode,
             cancellationToken);
         await EnsureCategoryIsNotReferencedAsync(request, cancellationToken);
-        category.Disable(MasterDataArchiveReason.Normalize(request.Reason));
+        category.Disable(reason);
         var categories = await ListProductCategoriesQueryHandler.LoadCategoriesAsync(
             dbContext,
             request.OrganizationId,
@@ -163,9 +164,22 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
 
 internal static class MasterDataArchiveReason
 {
-    public static string Normalize(string reason)
+    internal const int MaximumLength = 500;
+
+    public static string NormalizeRequired(string? reason)
     {
-        return string.IsNullOrWhiteSpace(reason) ? "archived" : reason.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new KnownException("归档原因不能为空。");
+        }
+
+        var normalized = reason.Trim();
+        if (normalized.Length > MaximumLength)
+        {
+            throw new KnownException($"归档原因不能超过 {MaximumLength} 个字符。");
+        }
+
+        return normalized;
     }
 }
 
