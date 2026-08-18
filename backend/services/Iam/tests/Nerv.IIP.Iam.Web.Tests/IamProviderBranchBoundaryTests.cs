@@ -1,10 +1,6 @@
-using MediatR;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -70,6 +66,94 @@ public sealed class IamProviderBranchBoundaryTests
     }
 
     [Fact]
+    public void Endpoint_provider_boundary_analyzer_uses_web_global_usings_and_fails_closed_on_diagnostics()
+    {
+        const string implicitUsingSource = """
+            sealed class Probe(IConfiguration configuration)
+            {
+                private string? Provider => configuration["Persistence:Provider"];
+            }
+            """;
+        const string invalidSource = """
+            sealed class InvalidProbe(UnknownProviderType provider);
+            """;
+
+        var violations = AnalyzeEndpointProviderBoundary(
+        [
+            new SourceDocument("ImplicitUsingProbe.cs", implicitUsingSource),
+            new SourceDocument("InvalidProbe.cs", invalidSource)
+        ]);
+
+        Assert.Contains(violations, violation =>
+            violation.Contains("ImplicitUsingProbe.cs", StringComparison.Ordinal)
+            && violation.Contains("Persistence:Provider", StringComparison.Ordinal));
+        Assert.Contains(violations, violation =>
+            violation.Contains("InvalidProbe.cs", StringComparison.Ordinal)
+            && violation.Contains("CS0246", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Endpoint_provider_boundary_analyzer_reports_conditional_configuration_lookups()
+    {
+        const string source = """
+            using Microsoft.Extensions.Configuration;
+
+            sealed class Probe(IConfiguration? configuration)
+            {
+                private string? Indexed => configuration?["Persistence:Provider"];
+                private string? Extended => configuration?.GetValue<string>("Persistence:Provider");
+            }
+            """;
+
+        var violations = AnalyzeEndpointProviderBoundary([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Equal(2, violations.Count(violation =>
+            violation.Contains("Persistence:Provider", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Endpoint_provider_boundary_analyzer_resolves_constant_configuration_keys()
+    {
+        const string source = """
+            using Microsoft.Extensions.Configuration;
+
+            sealed class Probe(IConfiguration configuration)
+            {
+                private const string ProviderKey = "Persistence:Provider";
+                private string? Provider => configuration[ProviderKey];
+            }
+            """;
+
+        var violations = AnalyzeEndpointProviderBoundary([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Single(violations, violation =>
+            violation.Contains("Persistence:Provider", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Endpoint_provider_boundary_analyzer_reports_provider_method_groups()
+    {
+        const string source = """
+            using System;
+
+            sealed class Probe
+            {
+                private readonly Func<bool> check = ProviderProbe.IsInMemory;
+            }
+
+            static class ProviderProbe
+            {
+                public static bool IsInMemory() => true;
+            }
+            """;
+
+        var violations = AnalyzeEndpointProviderBoundary([new SourceDocument("Probe.cs", source)]);
+
+        Assert.Single(violations, violation =>
+            violation.Contains("IsInMemory", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void User_application_handlers_use_persistence_abstractions_instead_of_provider_detection()
     {
         var violations = SourceFiles("src/Nerv.IIP.Iam.Web/Application")
@@ -129,6 +213,27 @@ public sealed class IamProviderBranchBoundaryTests
 
     private const string PersistenceProviderConfigurationKey = "Persistence:Provider";
     private const string ConfigurationTypeName = "Microsoft.Extensions.Configuration.IConfiguration";
+    private const string WebGlobalUsings = """
+        global using Microsoft.AspNetCore.Builder;
+        global using Microsoft.AspNetCore.Hosting;
+        global using Microsoft.AspNetCore.Http;
+        global using Microsoft.AspNetCore.Routing;
+        global using Microsoft.Extensions.Configuration;
+        global using Microsoft.Extensions.DependencyInjection;
+        global using Microsoft.Extensions.Hosting;
+        global using Microsoft.Extensions.Logging;
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Net.Http;
+        global using System.Net.Http.Json;
+        global using System.Threading;
+        global using System.Threading.Tasks;
+        """;
+
+    private static readonly Lazy<IReadOnlyCollection<MetadataReference>> MetadataReferences =
+        new(CreateMetadataReferences);
 
     private static readonly string[] ForbiddenApplicationTokens =
     [
@@ -159,10 +264,11 @@ public sealed class IamProviderBranchBoundaryTests
         var syntaxTrees = documents
             .Select(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path))
             .ToArray();
+        var globalUsingsTree = CSharpSyntaxTree.ParseText(WebGlobalUsings, path: "WebGlobalUsings.g.cs");
         var compilation = CSharpCompilation.Create(
             "IamEndpointProviderBoundary",
-            syntaxTrees,
-            CreateMetadataReferences(),
+            syntaxTrees.Prepend(globalUsingsTree),
+            MetadataReferences.Value,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var forbiddenTypes = ForbiddenEndpointTypeNames
             .Select(typeName => compilation.GetTypeByMetadataName(typeName)
@@ -171,6 +277,19 @@ public sealed class IamProviderBranchBoundaryTests
         var configurationType = compilation.GetTypeByMetadataName(ConfigurationTypeName)
             ?? throw new InvalidOperationException($"Could not resolve '{ConfigurationTypeName}'.");
         var violations = new List<SourceViolation>();
+
+        foreach (var diagnostic in compilation.GetDiagnostics()
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Location.SourceTree is not null
+                && syntaxTrees.Contains(diagnostic.Location.SourceTree)))
+        {
+            var line = diagnostic.Location.GetLineSpan().StartLinePosition.Line + 1;
+            violations.Add(new SourceViolation(
+                diagnostic.Location.SourceTree!.FilePath,
+                line,
+                diagnostic.Location.SourceSpan.Start,
+                $"compilation error {diagnostic.Id}: {diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture)}"));
+        }
 
         foreach (var syntaxTree in syntaxTrees)
         {
@@ -186,10 +305,6 @@ public sealed class IamProviderBranchBoundaryTests
 
                 var symbol = semanticModel.GetAliasInfo(identifier)?.Target
                     ?? semanticModel.GetSymbolInfo(identifier).Symbol;
-                if (symbol is IAliasSymbol alias)
-                {
-                    symbol = alias.Target;
-                }
 
                 if (symbol is not INamedTypeSymbol type
                     || !forbiddenTypes.Any(forbidden =>
@@ -205,9 +320,16 @@ public sealed class IamProviderBranchBoundaryTests
                     violations);
             }
 
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            foreach (var name in root.DescendantNodes().OfType<SimpleNameSyntax>())
             {
-                var method = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+                if (name.Ancestors().Any(ancestor => ancestor is UsingDirectiveSyntax)
+                    || (name.Parent is MemberAccessExpressionSyntax memberAccess
+                        && memberAccess.Name != name))
+                {
+                    continue;
+                }
+
+                var method = semanticModel.GetSymbolInfo(name).Symbol as IMethodSymbol;
                 if (method is null
                     || !ForbiddenProviderMethodNames.Contains(method.Name, StringComparer.Ordinal))
                 {
@@ -216,23 +338,27 @@ public sealed class IamProviderBranchBoundaryTests
 
                 AddViolation(
                     syntaxTree,
-                    invocation,
-                    $"calls provider detection method '{method.Name}'",
+                    name,
+                    $"references provider detection method '{method.Name}'",
                     violations);
             }
 
-            foreach (var literal in root.DescendantNodes().OfType<LiteralExpressionSyntax>())
+            foreach (var lookup in ConfigurationLookups(root))
             {
-                if (!literal.IsKind(SyntaxKind.StringLiteralExpression)
-                    || literal.Token.ValueText != PersistenceProviderConfigurationKey
-                    || !IsConfigurationLookup(literal, semanticModel, configurationType))
+                var constant = semanticModel.GetConstantValue(lookup.Key);
+                if (!constant.HasValue
+                    || constant.Value is not string key
+                    || key != PersistenceProviderConfigurationKey
+                    || !IsConfigurationType(
+                        semanticModel.GetTypeInfo(lookup.Receiver).Type,
+                        configurationType))
                 {
                     continue;
                 }
 
                 AddViolation(
                     syntaxTree,
-                    literal,
+                    lookup.Key,
                     $"reads configuration key '{PersistenceProviderConfigurationKey}'",
                     violations);
             }
@@ -247,31 +373,47 @@ public sealed class IamProviderBranchBoundaryTests
             .ToArray();
     }
 
-    private static bool IsConfigurationLookup(
-        LiteralExpressionSyntax literal,
-        SemanticModel semanticModel,
-        INamedTypeSymbol configurationType)
+    private static IEnumerable<ConfigurationLookup> ConfigurationLookups(SyntaxNode root)
     {
-        if (literal.Parent?.Parent is BracketedArgumentListSyntax bracketedArguments
-            && bracketedArguments.Parent is ElementAccessExpressionSyntax elementAccess
-            && IsConfigurationType(
-                semanticModel.GetTypeInfo(elementAccess.Expression).Type,
-                configurationType))
+        foreach (var elementAccess in root.DescendantNodes().OfType<ElementAccessExpressionSyntax>())
         {
-            return true;
+            foreach (var argument in elementAccess.ArgumentList.Arguments)
+            {
+                yield return new ConfigurationLookup(elementAccess.Expression, argument.Expression);
+            }
         }
 
-        if (literal.Parent is not ArgumentSyntax argument
-            || argument.Parent?.Parent is not InvocationExpressionSyntax invocation)
+        foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
-            return false;
+            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                foreach (var argument in invocation.ArgumentList.Arguments)
+                {
+                    yield return new ConfigurationLookup(memberAccess.Expression, argument.Expression);
+                }
+            }
         }
 
-        var receiver = invocation.Expression is MemberAccessExpressionSyntax memberAccess
-            ? memberAccess.Expression
-            : null;
-        return receiver is not null
-            && IsConfigurationType(semanticModel.GetTypeInfo(receiver).Type, configurationType);
+        foreach (var conditionalAccess in root.DescendantNodes().OfType<ConditionalAccessExpressionSyntax>())
+        {
+            if (conditionalAccess.WhenNotNull is ElementBindingExpressionSyntax elementBinding)
+            {
+                foreach (var argument in elementBinding.ArgumentList.Arguments)
+                {
+                    yield return new ConfigurationLookup(conditionalAccess.Expression, argument.Expression);
+                }
+            }
+            else if (conditionalAccess.WhenNotNull is InvocationExpressionSyntax
+            {
+                Expression: MemberBindingExpressionSyntax
+            } conditionalInvocation)
+            {
+                foreach (var argument in conditionalInvocation.ArgumentList.Arguments)
+                {
+                    yield return new ConfigurationLookup(conditionalAccess.Expression, argument.Expression);
+                }
+            }
+        }
     }
 
     private static bool IsConfigurationType(ITypeSymbol? type, INamedTypeSymbol configurationType) =>
@@ -292,23 +434,14 @@ public sealed class IamProviderBranchBoundaryTests
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {
-        _ = typeof(ApplicationDbContext).Assembly;
-        _ = typeof(IConfiguration).Assembly;
-        _ = typeof(DbContext).Assembly;
-        _ = typeof(IMediator).Assembly;
-
-        var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
-        var assemblyPaths = trustedPlatformAssemblies?
+        var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")
+            ?? throw new InvalidOperationException("TRUSTED_PLATFORM_ASSEMBLIES is required for Roslyn boundary analysis.");
+        var assemblyPaths = trustedPlatformAssemblies
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Concat(AppDomain.CurrentDomain.GetAssemblies()
-                .Where(assembly => !assembly.IsDynamic && !string.IsNullOrWhiteSpace(assembly.Location))
-                .Select(assembly => assembly.Location))
-            .Distinct(StringComparer.Ordinal)
-            ?? [
-                typeof(object).Assembly.Location,
-                typeof(IConfiguration).Assembly.Location,
-                typeof(ApplicationDbContext).Assembly.Location,
-            ];
+            .Concat(Directory.EnumerateFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .GroupBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First());
 
         return assemblyPaths
             .Select(path => MetadataReference.CreateFromFile(path))
@@ -345,4 +478,6 @@ public sealed class IamProviderBranchBoundaryTests
     private sealed record SourceDocument(string Path, string Text);
 
     private sealed record SourceViolation(string Path, int Line, int Position, string Reason);
+
+    private sealed record ConfigurationLookup(ExpressionSyntax Receiver, ExpressionSyntax Key);
 }
