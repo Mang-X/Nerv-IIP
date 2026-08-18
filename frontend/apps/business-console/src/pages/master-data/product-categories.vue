@@ -10,7 +10,6 @@ import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -394,14 +393,16 @@ async function confirmArchive() {
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction
+          <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
+          <NvButton
+            type="button"
             variant="destructive"
             :disabled="!canConfirmArchive"
             @click="confirmArchive"
           >
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>

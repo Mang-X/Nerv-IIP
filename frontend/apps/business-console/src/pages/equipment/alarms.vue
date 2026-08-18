@@ -17,7 +17,6 @@ import {
 } from '@/utils/notify'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -1063,9 +1062,11 @@ function formatError(error: unknown) {
         </NvAlertDialogHeader>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel :disabled="batchAck.submitting">取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="batchAck.submitting" @click="confirmBatchAck">
+          <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3），
+               `batchAck.submitting` 的 disabled 一瞬都看不到。variant 不写 = 其默认值 'default'。 -->
+          <NvButton type="button" :disabled="batchAck.submitting" @click="confirmBatchAck">
             确认 {{ ackTargets.length }} 条
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>

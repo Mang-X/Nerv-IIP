@@ -16,7 +16,6 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -776,10 +775,12 @@ function formatError(error: unknown) {
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-          <NvAlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
+          <!-- variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
+          <NvButton type="button" :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认归档
-          </NvAlertDialogAction>
+          </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
     </NvAlertDialog>

@@ -29,7 +29,6 @@ import {
 } from '@/utils/notify'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -95,6 +94,13 @@ const { page, pageSize } = usePagedList(filters, {
 
 const selectedNcr = shallowRef<BusinessConsoleQualityItem>()
 const detailOpen = shallowRef(false)
+/**
+ * 关闭不合格品的二次确认框。原先是**非受控**（只靠 `NvAlertDialogTrigger` 开、
+ * `NvAlertDialogAction` 关），关框时机因此完全落在组件里：点确认即无条件关框
+ * （confirm-destroy 规则 3），关单失败时用户连原因表单都看不见了。改为受控后
+ * 由 `submitCloseNcr` 决定——成功才关，失败留在原地可重试。
+ */
+const closeConfirmOpen = shallowRef(false)
 // 值必须与后端 NonconformanceReport 的状态字完全一致（读面按 Status 精确匹配过滤）。
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -240,6 +246,7 @@ function openNcr(ncr: BusinessConsoleQualityItem) {
   closeForm.reason = ''
   closeForm.reworkWorkOrderId =
     contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
+  closeConfirmOpen.value = false
   detailOpen.value = true
 }
 
@@ -307,6 +314,8 @@ async function submitCloseNcr() {
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
+          // 单据已被他人推进：确认框与抽屉一起收掉，留着也没有可重试的动作。
+          closeConfirmOpen.value = false
           detailOpen.value = false
           selectedNcr.value = undefined
         },
@@ -316,10 +325,12 @@ async function submitCloseNcr() {
     ) {
       return
     }
+    // 普通失败：确认框保持打开，已填的关闭原因与关联单据都还在，用户可原地重试。
     notifyOperationFailure('不合格品关闭失败', error, '不合格品关闭失败，请稍后重试。')
     return
   }
   notifySuccess(`不合格品 ${label} 已关闭。`)
+  closeConfirmOpen.value = false
   detailOpen.value = false
 }
 
@@ -609,7 +620,7 @@ watch(
             </NvFieldGroup>
 
             <NvSheetFooter>
-              <NvAlertDialog>
+              <NvAlertDialog v-model:open="closeConfirmOpen">
                 <NvAlertDialogTrigger as-child>
                   <NvButton
                     type="button"
@@ -630,7 +641,14 @@ watch(
                   </NvAlertDialogHeader>
                   <NvAlertDialogFooter>
                     <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-                    <NvAlertDialogAction @click="submitCloseNcr">确认关闭</NvAlertDialogAction>
+                    <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框
+                         （confirm-destroy 规则 3），关单失败时表单连带确认框一起消失。
+                         `type="button"` 不能省——本框在 <form> 里，缺了会顺带触发表单提交。
+                         variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
+                    <NvButton type="button" :disabled="closeNcrPending" @click="submitCloseNcr">
+                      <Spinner v-if="closeNcrPending" aria-hidden="true" />
+                      确认关闭
+                    </NvButton>
                   </NvAlertDialogFooter>
                 </NvAlertDialogContent>
               </NvAlertDialog>
