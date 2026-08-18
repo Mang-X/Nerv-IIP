@@ -23,6 +23,16 @@ harness 不可见、或永远不会更新。
 `~/.claude/skills/` 不是可选层：它只有 Claude Code 能读，`skills` CLI 也管不了它，
 不要往那里安装。
 
+## 再判一次：该是技能，还是该进 AGENTS.md
+
+本仓库按路径自动加载从仓库根到目标路径的全部 `AGENTS.md`（见根 [`AGENTS.md`](../AGENTS.md)）。
+因此「改某个目录的代码要遵守什么」写进那个目录的 `AGENTS.md` **严格更好**：投递是自动的，
+不需要安装、也不依赖 `description` 被命中。技能的优势是**按语义触发的跨路径流程**——
+PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工作。
+
+判据：**按目录挂得住 → 进 AGENTS.md；跨路径、由任务语义触发 → 才是技能。**
+这条比上面的「换个仓库还成立吗」更常用，因为多数候选技能失败在这一关。
+
 ## 写作规范
 
 **REQUIRED BACKGROUND：** 通用技能写法由 `writing-skills` 技能拥有（来源
@@ -64,6 +74,7 @@ harness 不可见、或永远不会更新。
 ## 落地前检查
 
 - [ ] 定了层：确认这条流程换个仓库不成立，才放 `skills/`
+- [ ] 确认它按目录挂不住（否则应写进那个目录的 `AGENTS.md`，投递自动、无需安装）
 - [ ] `description` 只有触发条件，无工作流概述
 - [ ] 权威来源段只有链接，正文没有复述 ADR / DESIGN 的规则原文
 - [ ] 与相邻技能的所有权边界已写明
@@ -73,23 +84,21 @@ harness 不可见、或永远不会更新。
 
 ## 现有技能
 
-| 技能 | 用途 |
-|---|---|
-| `new-component` | 在 NvUI 组件库新建或上提品牌组件（判层、R1–R5 定名、实现约束、六件套 DoD） |
+当前无项目专属技能。
+
+`new-component` 于 2026-08-18 删除，理由记在此处以免重演：内容约七成复述
+`frontend/packages/ui/AGENTS.md`（该文件按路径自动加载，投递机制严格更好）、
+ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-coverage` 等契约测试
+强制（baseline shrink-only），属于上文「能校验就自动化」的范围；而且它从未接入任何安装
+通道，对 agent 从未可见，因此也没有「删掉会损失什么」的证据。
 
 ## 已知欠账
 
-以下两项在本规范落地时查实，尚未修：
+**`skills/*` 未接入 worktree 自动安装通道。** `scripts/setup-worktree.ps1` 会按
+`skills-lock.json` 为新 worktree 装齐第三方技能，但不处理本目录——在这里新增技能后，
+除非有人手工跑 `npx skills add`，它对任何 agent 都不可见。前身 `new-component` 就是这样
+从未生效过。两条候选解法均未验证可行性：把 `skills/*` 登记进 `skills-lock.json`
+（当前所有条目都是 `sourceType: github`，本地路径是否受支持待验），或让
+`setup-worktree.ps1` 遍历 `skills/*` 逐个 `add --copy`。
 
-1. **`new-component` 未接入任何自动安装通道。** 它不在 `skills-lock.json`、
-   不在 `.agents/skills/`、不在 `.claude/skills/`——`scripts/setup-worktree.ps1`
-   为新 worktree 自动装齐 39 个第三方技能，却不装本仓库自己的技能，因此除非有人
-   手工跑过 `npx skills add`，它对任何 agent 都不可见。两条候选解法（未验证哪条可行）：
-   把 `skills/*` 登记进 `skills-lock.json`（当前所有条目都是 `sourceType: github`，
-   本地路径是否受支持待验），或让 `setup-worktree.ps1` 遍历 `skills/*` 逐个 `add --copy`。
-
-2. **`new-component` 的 `description` 违反上文第 1 条**：它以
-   「……的完整流程——判层、R1–R5 定名、实现约束、六件套 DoD 清单」概述了工作流。
-   按 `writing-skills` 的 Iron Law，改动技能的行为塑造内容前需要先有基线测试，
-   因此此处只登记缺陷与判据，不在本 PR 顺手改：修复后的描述必须只剩触发条件，
-   且改动前后都要验证技能仍能被正确发现（缩短描述可能损害发现性）。
+**新增第一个技能前必须先解决这条**，否则会重演一次"写了但从未生效"。
