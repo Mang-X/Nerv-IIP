@@ -269,7 +269,6 @@ vi.mock('@/composables/useBusinessQuality', async () => {
 
 const uiStubs = {
   NvAlertDialog: { template: '<div><slot /></div>' },
-  NvAlertDialogAction: { template: '<button><slot /></button>' },
   NvAlertDialogCancel: { template: '<button><slot /></button>' },
   NvAlertDialogContent: { template: '<div><slot /></div>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },

@@ -71,7 +71,7 @@ Nerv-IIP 是一个以数字工厂业务平台为当前主线、以通用平台�
 ### 前端
 
 - Node.js >= 22.18.0；仓库根 `.node-version` 保留 22.22.3 作为保守复现基线，当前工具链也允许使用更新的 Current 版本（如 Node.js 26）做本地开发验证。
-- pnpm 11.13.1 工作区。
+- pnpm 11.22.0 工作区。
 - Vite+ 0.2.4 作为工作区统一入口，负责 check、fmt、lint、test、run 与工作区任务编排。
 - Vite 8.1.3 通过 Vite+ 的 `@voidzero-dev/vite-plus-core` override 接入；测试使用 Vite+ 内置并精确钉住的官方 Vitest 4.1.10。
 - Vue 3.5.39、Vue Router 5.2.0 官方文件路由插件、Pinia 4.0.2、Pinia Colada 1.4.2、Pinia Colada Auto Refetch 0.2.6。

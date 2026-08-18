@@ -3,7 +3,6 @@ import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { useBusinessWorkers, useTeamMembers } from '@/composables/useBusinessMasterData'
 import {
   NvAlertDialog,
-  NvAlertDialogAction,
   NvAlertDialogCancel,
   NvAlertDialogContent,
   NvAlertDialogDescription,
@@ -192,8 +191,13 @@ async function confirmRemove() {
       </NvAlertDialogHeader>
       <NvAlertDialogFooter>
         <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-        <NvAlertDialogAction variant="destructive" :disabled="removePending" @click="confirmRemove"
-          >确认移除</NvAlertDialogAction
+        <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
+        <NvButton
+          type="button"
+          variant="destructive"
+          :disabled="removePending"
+          @click="confirmRemove"
+          >确认移除</NvButton
         >
       </NvAlertDialogFooter>
     </NvAlertDialogContent>

@@ -71,12 +71,6 @@ const dialogStubs = {
   NvAlertDialogTitle: { template: '<h2><slot /></h2>' },
   NvAlertDialogDescription: { template: '<p><slot /></p>' },
   NvAlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  NvAlertDialogAction: {
-    props: ['disabled'],
-    emits: ['click'],
-    template:
-      '<button type="button" :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
-  },
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
