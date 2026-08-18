@@ -489,6 +489,17 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
                 "/api/iam/v1/auth/login",
                 new { loginName, password = "wrong-password" });
             Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+            Assert.Equal("iam-invalid-credentials", failed.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+            if (attempt >= 2)
+            {
+                Assert.Equal(
+                    (4 - attempt).ToString(),
+                    failed.Headers.GetValues("X-Nerv-Iam-Remaining-Attempts").Single());
+            }
+            else
+            {
+                Assert.False(failed.Headers.Contains("X-Nerv-Iam-Remaining-Attempts"));
+            }
         }
 
         var resetLogin = await _client.PostAsJsonAsync(
@@ -496,18 +507,41 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             new { loginName, password });
         resetLogin.EnsureSuccessStatusCode();
 
+        HttpResponseMessage? lockoutResponse = null;
         for (var attempt = 0; attempt < 5; attempt++)
         {
             var failed = await _client.PostAsJsonAsync(
                 "/api/iam/v1/auth/login",
                 new { loginName, password = "wrong-password" });
             Assert.Equal(HttpStatusCode.Unauthorized, failed.StatusCode);
+            lockoutResponse = failed;
         }
+
+        Assert.NotNull(lockoutResponse);
+        Assert.Equal("iam-account-locked", lockoutResponse.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+        Assert.True(DateTimeOffset.TryParse(
+            lockoutResponse.Headers.GetValues("X-Nerv-Iam-Lockout-Until-Utc").Single(),
+            out var lockoutUntilUtc));
+        Assert.True(lockoutUntilUtc > DateTimeOffset.UtcNow);
 
         var lockedLogin = await _client.PostAsJsonAsync(
             "/api/iam/v1/auth/login",
             new { loginName, password });
         Assert.Equal(HttpStatusCode.Unauthorized, lockedLogin.StatusCode);
+        Assert.Equal("iam-account-locked", lockedLogin.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+    }
+
+    [Fact]
+    public async Task Login_unknown_account_does_not_expose_attempt_or_lockout_metadata()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/iam/v1/auth/login",
+            new { loginName = $"missing-{Guid.NewGuid():N}", password = "wrong-password" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("iam-invalid-credentials", response.Headers.GetValues("X-Nerv-Iam-Login-Failure").Single());
+        Assert.False(response.Headers.Contains("X-Nerv-Iam-Remaining-Attempts"));
+        Assert.False(response.Headers.Contains("X-Nerv-Iam-Lockout-Until-Utc"));
     }
 
     [Fact]
