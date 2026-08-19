@@ -12,17 +12,85 @@
 
 . (Join-Path $PSScriptRoot 'AcceptanceScenarioMatrix.ps1')
 
+function Get-NervAcceptanceRuntimeFileDigest {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    Assert-NervAcceptanceString -Value $Path -Context "$Context path"
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Context path '$Path' must identify one existing file." }
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([Convert]::ToHexString($sha256.ComputeHash([IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path).Path)))).ToLowerInvariant()
+    }
+    finally { $sha256.Dispose() }
+}
+
+function Assert-NervAcceptanceRuntimeFileDigest {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $ExpectedDigest,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    if ($ExpectedDigest -cnotmatch '^[0-9a-f]{64}$') { throw "$Context expected digest must be a lowercase SHA-256 digest." }
+    $actualDigest = Get-NervAcceptanceRuntimeFileDigest -Path $Path -Context $Context
+    if (-not [string]::Equals($actualDigest, $ExpectedDigest, [StringComparison]::Ordinal)) {
+        throw "$Context bytes do not match the expected SHA-256 digest."
+    }
+    return $actualDigest
+}
+
+function Import-NervAcceptanceRuntimePlanningArtifact {
+    param(
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest
+    )
+
+    [void](Assert-NervAcceptanceRuntimeFileDigest -Path $ArtifactPath -ExpectedDigest $ExpectedArtifactDigest -Context 'runtime planning artifact')
+    try { return Get-Content -LiteralPath (Resolve-Path -LiteralPath $ArtifactPath).Path -Raw | ConvertFrom-Json -Depth 50 }
+    catch { throw "Runtime planning artifact '$ArtifactPath' is not valid JSON: $($_.Exception.Message)" }
+}
+
 function Test-NervAcceptanceRuntimeRunCommand {
     param([AllowNull()] [object] $Run)
 
     if ($Run -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Run)) { return $false }
-    foreach ($line in @(([string]$Run) -split "`r?`n")) {
-        $command = ([string]$line).Trim()
-        if ($command -cmatch '^pwsh(?:\.exe)?(?:\s+-(?:NoLogo|NoProfile|NonInteractive))*\s+(?:-File\s+)?["'']?(?:\./)?scripts/run-acceptance-scenario-matrix\.ps1["'']?(?:\s|$)') {
-            return $true
-        }
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput([string]$Run, [ref]$tokens, [ref]$parseErrors)
+    if (@($parseErrors).Count -ne 0 -or @($ast.EndBlock.Statements).Count -ne 1) { return $false }
+    $statement = $ast.EndBlock.Statements[0]
+    if ($statement -isnot [Management.Automation.Language.PipelineAst] -or @($statement.PipelineElements).Count -ne 1) { return $false }
+    $command = $statement.PipelineElements[0]
+    if ($command -isnot [Management.Automation.Language.CommandAst] -or
+        $command.InvocationOperator -ne [Management.Automation.Language.TokenKind]::Unknown -or
+        @($command.Redirections).Count -ne 0) {
+        return $false
     }
-    return $false
+    $commandName = $command.GetCommandName()
+    if (-not [string]::Equals($commandName, 'pwsh', [StringComparison]::Ordinal) -and
+        -not [string]::Equals($commandName, 'pwsh.exe', [StringComparison]::Ordinal)) {
+        return $false
+    }
+
+    $elements = @($command.CommandElements)
+    $index = 1
+    while ($index -lt $elements.Count -and $elements[$index] -is [Management.Automation.Language.CommandParameterAst]) {
+        $parameterName = [string]$elements[$index].ParameterName
+        if ([string]::Equals($parameterName, 'File', [StringComparison]::Ordinal)) { $index++; break }
+        if (-not [Collections.Generic.HashSet[string]]::new(
+            [string[]]@('NoLogo', 'NoProfile', 'NonInteractive'),
+            [StringComparer]::Ordinal).Contains($parameterName)) {
+            return $false
+        }
+        $index++
+    }
+    if ($index -ge $elements.Count -or $elements[$index] -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $false }
+    $scriptPath = [string]$elements[$index].Value
+    return [string]::Equals($scriptPath, 'scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal) -or
+        [string]::Equals($scriptPath, './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)
 }
 
 function Get-NervAcceptanceRuntimeWorkflowBudget {
@@ -109,52 +177,59 @@ function Get-NervAcceptanceSalesOrderRuntimeScenario {
 
 function Assert-NervAcceptanceScenarioRuntimePreflight {
     param(
-        [Parameter(Mandatory)] [object] $Artifact,
-        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
+        [Parameter(Mandatory)] [string] $V1ManifestPath,
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
         [Parameter(Mandatory)] [string] $Repository,
         [Parameter(Mandatory)] [string] $TestedSha,
         [Parameter(Mandatory)] [string] $RunId,
         [Parameter(Mandatory)] [int] $RunAttempt,
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $ManifestDigest,
         [Parameter(Mandatory)] [string] $Event,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $WorkflowJobName,
         [Parameter(Mandatory)] [string] $WorkflowStepName
     )
 
-    if (-not (Test-NervAcceptanceObjectProperty -Object $Artifact -Name 'scenarios') -or $Artifact.scenarios -isnot [array]) {
+    $artifact = Import-NervAcceptanceRuntimePlanningArtifact -ArtifactPath $ArtifactPath -ExpectedArtifactDigest $ExpectedArtifactDigest
+    [void](Assert-NervAcceptanceRuntimeFileDigest -Path $ManifestFilePath -ExpectedDigest $ExpectedManifestDigest -Context 'runtime acceptance manifest')
+    $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $ManifestFilePath -V1ManifestPath $V1ManifestPath -RepositoryRoot $RepositoryRoot
+
+    if (-not (Test-NervAcceptanceObjectProperty -Object $artifact -Name 'scenarios') -or $artifact.scenarios -isnot [array]) {
         throw 'Runtime planning artifact scenarios must be an array.'
     }
-    $artifactScenarios = @($Artifact.scenarios)
+    $artifactScenarios = @($artifact.scenarios)
     if ($artifactScenarios.Count -ne 1) { throw 'Runtime planning artifact must contain exactly one selected scenario.' }
     if (-not [string]::Equals([string]$artifactScenarios[0].id, 'sales-order-demand', [StringComparison]::Ordinal)) {
         throw "Runtime planning artifact must select only 'sales-order-demand'."
     }
 
-    $scenario = Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest $Manifest
-    $selection = [pscustomobject]@{
-        selectionMode = if (Test-NervAcceptanceObjectProperty -Object $Artifact -Name 'selectionMode') { $Artifact.selectionMode } else { $null }
-        reasons = @(if (Test-NervAcceptanceObjectProperty -Object $Artifact -Name 'selectionReasons') { $Artifact.selectionReasons })
-        scenarios = @($scenario)
+    $scenario = Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest $manifest
+    $selection = Select-NervAcceptanceScenarioMatrix -Manifest $manifest -Event $Event -DispatchSelection 'sales-order-demand'
+    if (@($selection.scenarios).Count -ne 1 -or
+        -not [string]::Equals([string]$selection.scenarios[0].id, 'sales-order-demand', [StringComparison]::Ordinal)) {
+        throw "Runtime event '$Event' does not derive the trusted sales-only selection."
     }
     Assert-NervAcceptancePlanningArtifact `
-        -Artifact $Artifact `
-        -Manifest $Manifest `
+        -Artifact $artifact `
+        -Manifest $manifest `
         -Selection $selection `
         -Repository $Repository `
         -TestedSha $TestedSha `
         -RunId $RunId `
         -RunAttempt $RunAttempt `
         -ManifestPath $ManifestPath `
-        -ManifestDigest $ManifestDigest `
+        -ManifestDigest $ExpectedManifestDigest `
         -Event $Event | Out-Null
 
     $workflowBudget = Get-NervAcceptanceRuntimeWorkflowBudget -WorkflowPath $WorkflowPath -JobName $WorkflowJobName -StepName $WorkflowStepName
     $requiredSeconds = Assert-NervAcceptanceRuntimeBudgetFits -ExecutionBudget $scenario.executionBudget -StepTimeoutSeconds $workflowBudget.stepTimeoutSeconds -ScenarioId ([string]$scenario.id)
     return [pscustomobject][ordered]@{
         scenario = $scenario
-        artifact = $Artifact
+        artifact = $artifact
         requiredSeconds = $requiredSeconds
         workflowBudget = $workflowBudget
     }
@@ -215,14 +290,17 @@ function Add-NervAcceptanceScenarioRuntimeTransition {
 
 function Invoke-NervAcceptanceScenarioRuntime {
     param(
-        [Parameter(Mandatory)] [object] $Artifact,
-        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
+        [Parameter(Mandatory)] [string] $V1ManifestPath,
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
         [Parameter(Mandatory)] [string] $Repository,
         [Parameter(Mandatory)] [string] $TestedSha,
         [Parameter(Mandatory)] [string] $RunId,
         [Parameter(Mandatory)] [int] $RunAttempt,
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $ManifestDigest,
         [Parameter(Mandatory)] [string] $Event,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $WorkflowJobName,
@@ -232,14 +310,17 @@ function Invoke-NervAcceptanceScenarioRuntime {
     )
 
     $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
-        -Artifact $Artifact `
-        -Manifest $Manifest `
+        -ArtifactPath $ArtifactPath `
+        -ExpectedArtifactDigest $ExpectedArtifactDigest `
+        -ManifestFilePath $ManifestFilePath `
+        -ExpectedManifestDigest $ExpectedManifestDigest `
+        -V1ManifestPath $V1ManifestPath `
+        -RepositoryRoot $RepositoryRoot `
         -Repository $Repository `
         -TestedSha $TestedSha `
         -RunId $RunId `
         -RunAttempt $RunAttempt `
         -ManifestPath $ManifestPath `
-        -ManifestDigest $ManifestDigest `
         -Event $Event `
         -WorkflowPath $WorkflowPath `
         -WorkflowJobName $WorkflowJobName `
@@ -314,21 +395,27 @@ function New-NervAcceptanceScenarioEquivalenceVector {
     }
 
     Assert-NervAcceptanceObjectSchema -Object $Result.cleanup `
-        -AllowedFields @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining', 'errors') `
-        -RequiredFields @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining', 'errors') `
+        -AllowedFields @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining', 'errorCodes') `
+        -RequiredFields @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining', 'errorCodes') `
         -Context 'runtime equivalence cleanup'
     $cleanupCounts = [ordered]@{}
     foreach ($name in @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining')) {
         $cleanupCounts[$name] = Assert-NervAcceptanceRuntimeIntegerField -Object $Result.cleanup -Name $name -Context 'runtime equivalence cleanup'
     }
-    Assert-NervAcceptanceStringArray -Value $Result.cleanup.errors -Context 'runtime equivalence cleanup errors' -AllowEmpty
-    $cleanupErrors = [string[]]@($Result.cleanup.errors)
-    [Array]::Sort($cleanupErrors, [StringComparer]::Ordinal)
+    Assert-NervAcceptanceStringArray -Value $Result.cleanup.errorCodes -Context 'runtime equivalence cleanup errorCodes' -AllowEmpty
+    $cleanupErrorCodes = [string[]]@($Result.cleanup.errorCodes)
+    foreach ($errorCode in $cleanupErrorCodes) {
+        if ($errorCode -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
+            throw "Runtime equivalence cleanup errorCode '$errorCode' must be canonical."
+        }
+    }
+    [Array]::Sort($cleanupErrorCodes, [StringComparer]::Ordinal)
 
     Assert-NervAcceptanceObjectSchema -Object $Result.volatile `
-        -AllowedFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc') `
-        -RequiredFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc') `
+        -AllowedFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors') `
+        -RequiredFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors') `
         -Context 'runtime equivalence volatile fields'
+    Assert-NervAcceptanceStringArray -Value $Result.volatile.cleanupErrors -Context 'runtime equivalence volatile cleanupErrors' -AllowEmpty
 
     return [pscustomobject][ordered]@{
         schemaVersion = 1
@@ -352,7 +439,7 @@ function New-NervAcceptanceScenarioEquivalenceVector {
             managedProcessesRemaining = $cleanupCounts.managedProcessesRemaining
             disposableDatabasesRemaining = $cleanupCounts.disposableDatabasesRemaining
             ownedResourcesRemaining = $cleanupCounts.ownedResourcesRemaining
-            errors = @($cleanupErrors)
+            errorCodes = @($cleanupErrorCodes)
         }
     }
 }

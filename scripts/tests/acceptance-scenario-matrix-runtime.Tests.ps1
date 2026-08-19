@@ -31,6 +31,26 @@ function Copy-JsonObject {
     return ($Value | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
 }
 
+function Get-FixtureFileDigest {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return ([Convert]::ToHexString($sha256.ComputeHash([IO.File]::ReadAllBytes($Path)))).ToLowerInvariant()
+    }
+    finally { $sha256.Dispose() }
+}
+
+function Write-JsonFixture {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [object] $Value
+    )
+
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $Path)) | Out-Null
+    [IO.File]::WriteAllText($Path, (($Value | ConvertTo-Json -Depth 50) + "`n"), [Text.UTF8Encoding]::new($false))
+}
+
 function Write-RuntimeWorkflowFixture {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -99,24 +119,29 @@ function New-SalesPlanningArtifact {
 
 function Get-RuntimeArguments {
     param(
-        [Parameter(Mandatory)] [object] $Artifact,
-        [Parameter(Mandatory)] [object] $Manifest,
-        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $SummaryPath,
-        [Parameter(Mandatory)] [scriptblock] $Action
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [string] $Event = 'workflow_dispatch'
     )
 
     return @{
-        Artifact = $Artifact
-        Manifest = $Manifest
+        ArtifactPath = $ArtifactPath
+        ExpectedArtifactDigest = $ExpectedArtifactDigest
+        ManifestFilePath = $ManifestFilePath
+        ExpectedManifestDigest = $ExpectedManifestDigest
+        V1ManifestPath = $v1ManifestPath
+        RepositoryRoot = $repoRoot
         Repository = 'Mang-X/Nerv-IIP'
         TestedSha = '0123456789abcdef0123456789abcdef01234567'
         RunId = '123456789'
         RunAttempt = 2
         ManifestPath = 'scripts/acceptance-scenario-matrix.json'
-        ManifestDigest = $ManifestDigest
-        Event = 'workflow_dispatch'
+        Event = $Event
         WorkflowPath = $WorkflowPath
         WorkflowJobName = 'acceptance-scenario-matrix-runtime'
         WorkflowStepName = 'Run acceptance scenario matrix'
@@ -130,15 +155,36 @@ function Assert-PreflightRejected {
         [Parameter(Mandatory)] [string] $Name,
         [Parameter(Mandatory)] [object] $Artifact,
         [Parameter(Mandatory)] [object] $Manifest,
-        [Parameter(Mandatory)] [string] $ManifestDigest,
         [Parameter(Mandatory)] [string] $WorkflowPath,
-        [Parameter(Mandatory)] [string] $ExpectedMessage
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [switch] $PreserveArtifactManifestDigest,
+        [string] $ExpectedArtifactDigest,
+        [string] $ExpectedManifestDigest,
+        [string] $ArtifactPathOverride,
+        [string] $ManifestFilePathOverride,
+        [string] $Event = 'workflow_dispatch',
+        [switch] $MutateArtifactBytesAfterDigest,
+        [switch] $MutateManifestBytesAfterDigest
     )
 
     $script:preflightActionCount = 0
     $summaryPath = Join-Path $fixtureRoot "$Name-summary.json"
     $action = { $script:preflightActionCount++ }
-    $arguments = Get-RuntimeArguments -Artifact $Artifact -Manifest $Manifest -ManifestDigest $ManifestDigest -WorkflowPath $WorkflowPath -SummaryPath $summaryPath -Action $action
+    $runtimeManifestPath = Join-Path $fixtureRoot "$Name-manifest.json"
+    Write-JsonFixture -Path $runtimeManifestPath -Value $Manifest
+    $runtimeManifestDigest = Get-FixtureFileDigest -Path $runtimeManifestPath
+    $runtimeArtifact = Copy-JsonObject $Artifact
+    if (-not $PreserveArtifactManifestDigest) { $runtimeArtifact.manifestDigest = $runtimeManifestDigest }
+    $runtimeArtifactPath = Join-Path $fixtureRoot "$Name-artifact.json"
+    Write-JsonFixture -Path $runtimeArtifactPath -Value $runtimeArtifact
+    $runtimeArtifactDigest = Get-FixtureFileDigest -Path $runtimeArtifactPath
+    if ([string]::IsNullOrEmpty($ExpectedArtifactDigest)) { $ExpectedArtifactDigest = $runtimeArtifactDigest }
+    if ([string]::IsNullOrEmpty($ExpectedManifestDigest)) { $ExpectedManifestDigest = $runtimeManifestDigest }
+    if ($MutateArtifactBytesAfterDigest) { [IO.File]::AppendAllText($runtimeArtifactPath, " `n", [Text.UTF8Encoding]::new($false)) }
+    if ($MutateManifestBytesAfterDigest) { [IO.File]::AppendAllText($runtimeManifestPath, " `n", [Text.UTF8Encoding]::new($false)) }
+    if (-not [string]::IsNullOrEmpty($ArtifactPathOverride)) { $runtimeArtifactPath = $ArtifactPathOverride }
+    if (-not [string]::IsNullOrEmpty($ManifestFilePathOverride)) { $runtimeManifestPath = $ManifestFilePathOverride }
+    $arguments = Get-RuntimeArguments -ArtifactPath $runtimeArtifactPath -ExpectedArtifactDigest $ExpectedArtifactDigest -ManifestFilePath $runtimeManifestPath -ExpectedManifestDigest $ExpectedManifestDigest -WorkflowPath $WorkflowPath -SummaryPath $summaryPath -Action $action -Event $Event
     $observedMessage = '<no exception>'
     try { Invoke-NervAcceptanceScenarioRuntime @arguments | Out-Null }
     catch { $observedMessage = $_.Exception.Message }
@@ -178,7 +224,7 @@ function New-EquivalenceFixture {
             managedProcessesRemaining = 0
             disposableDatabasesRemaining = 0
             ownedResourcesRemaining = 0
-            errors = @()
+            errorCodes = @()
         }
         volatile = [pscustomobject][ordered]@{
             databaseName = $DatabaseName
@@ -186,6 +232,7 @@ function New-EquivalenceFixture {
             capSuffix = $CapSuffix
             startedAtUtc = $StartedAtUtc
             completedAtUtc = $CompletedAtUtc
+            cleanupErrors = @()
         }
     }
 }
@@ -195,6 +242,9 @@ try {
     $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $manifestPath -V1ManifestPath $v1ManifestPath -RepositoryRoot $repoRoot
     $manifestDigest = Get-NervAcceptanceManifestDigest -ManifestPath $manifestPath
     $artifact = New-SalesPlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest
+    $artifactPath = Join-Path $fixtureRoot 'planning-artifact.json'
+    Write-JsonFixture -Path $artifactPath -Value $artifact
+    $artifactDigest = Get-FixtureFileDigest -Path $artifactPath
     $workflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow'
     $summaryPath = Join-Path $fixtureRoot 'success/runtime-summary.json'
 
@@ -209,7 +259,7 @@ try {
         Assert-Contract ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) 'The injected action must receive the exact validated scenario contract.'
         return [pscustomobject]@{ fixtureResult = 'completed' }
     }
-    $runtimeArguments = Get-RuntimeArguments -Artifact $artifact -Manifest $manifest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $summaryPath -Action $runtimeAction
+    $runtimeArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $summaryPath -Action $runtimeAction
     $runtimeResult = Invoke-NervAcceptanceScenarioRuntime @runtimeArguments
     Assert-Contract ($script:actionCount -eq 1) 'A valid runtime contract must invoke the injected action exactly once.'
     Assert-Contract ([string]::Equals([string]$runtimeResult.summary.status, 'completed', [StringComparison]::Ordinal)) 'Successful injected action must complete the runtime summary.'
@@ -218,57 +268,122 @@ try {
     Assert-Contract ([string]::Equals(($persistedSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-completed', [StringComparison]::Ordinal)) 'Every successful runtime transition must be persisted.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic summary persistence must not leave temporary files.'
 
+    $failedSummaryPath = Join-Path $fixtureRoot 'failure/runtime-summary.json'
+    $script:failedActionCount = 0
+    $failedAction = {
+        $script:failedActionCount++
+        throw [InvalidOperationException]::new('fixture-runtime-action-failed')
+    }
+    $failedArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $failedSummaryPath -Action $failedAction
+    $observedFailure = $null
+    try { Invoke-NervAcceptanceScenarioRuntime @failedArguments | Out-Null }
+    catch { $observedFailure = $_.Exception }
+    Assert-Contract ($script:failedActionCount -eq 1) 'A throwing runtime action must be invoked exactly once.'
+    Assert-Contract ($observedFailure -is [InvalidOperationException]) 'Runtime action failure must preserve the original exception type.'
+    Assert-Contract ([string]::Equals([string]$observedFailure.Message, 'fixture-runtime-action-failed', [StringComparison]::Ordinal)) 'Runtime action failure must preserve the original exception message.'
+    $persistedFailureSummary = Get-Content -LiteralPath $failedSummaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$persistedFailureSummary.status, 'failed', [StringComparison]::Ordinal)) 'A throwing runtime action must persist failed status.'
+    Assert-Contract ([string]::Equals(($persistedFailureSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-failed', [StringComparison]::Ordinal)) 'A throwing runtime action must atomically persist action-failed as its final transition.'
+    Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $failedSummaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Failed summary persistence must not leave temporary files.'
+
     foreach ($mutation in @(
         @{ Name = 'repository'; Artifact = { param($value) $value.repository = 'mang-x/Nerv-IIP' }; Message = 'repository does not match' },
         @{ Name = 'tested-sha'; Artifact = { param($value) $value.testedSha = '1123456789abcdef0123456789abcdef01234567' }; Message = 'testedSha does not match' },
         @{ Name = 'run-id'; Artifact = { param($value) $value.runId = '987654321' }; Message = 'runId does not match' },
         @{ Name = 'run-attempt'; Artifact = { param($value) $value.runAttempt = 3 }; Message = 'runAttempt does not match' },
         @{ Name = 'event-wrong-case'; Artifact = { param($value) $value.event = 'WORKFLOW_DISPATCH' }; Message = 'Planning event' },
+        @{ Name = 'selection-mode-self-derived'; Artifact = { param($value) $value.selectionMode = 'workflow-dispatch-all-active' }; Message = 'selectionMode does not match expected provenance' },
+        @{ Name = 'selection-reasons-self-derived'; Artifact = { param($value) $value.selectionReasons = @('tampered-but-self-derived') }; Message = 'selectionReasons do not exactly equal' },
         @{ Name = 'manifest-path'; Artifact = { param($value) $value.manifestPath = 'scripts/Acceptance-scenario-matrix.json' }; Message = 'manifestPath does not match' },
-        @{ Name = 'manifest-digest'; Artifact = { param($value) $value.manifestDigest = ('f' * 64) }; Message = 'manifestDigest does not match' },
+        @{ Name = 'manifest-digest'; Artifact = { param($value) $value.manifestDigest = ('f' * 64) }; Message = 'manifestDigest does not match'; PreserveManifestDigest = $true },
         @{ Name = 'scenario-missing'; Artifact = { param($value) $value.scenarios = @() }; Message = 'exactly one selected scenario' },
+        @{ Name = 'artifact-scenarios-scalar'; Artifact = { param($value) $value.scenarios = $value.scenarios[0] }; Message = 'scenarios must be an array' },
         @{ Name = 'scenario-extra'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], [pscustomobject]@{ id = 'wms-delivery-erp'; status = 'active'; tier = 'core' }) }; Message = 'exactly one selected scenario' },
         @{ Name = 'scenario-duplicate'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], (Copy-JsonObject $value.scenarios[0])) }; Message = 'exactly one selected scenario' },
         @{ Name = 'scenario-wrong-case'; Artifact = { param($value) $value.scenarios[0].id = 'Sales-order-demand' }; Message = "must select only 'sales-order-demand'" },
         @{ Name = 'scenario-blocked'; Artifact = { param($value) $value.scenarios[0].id = 'equipment-unavailable-scheduling-mes'; $value.scenarios[0].status = 'blocked'; $value.scenarios[0].tier = 'extended' }; Message = "must select only 'sales-order-demand'" },
         @{ Name = 'selected-status-blocked'; Artifact = { param($value) $value.scenarios[0].status = 'blocked' }; Message = 'must record only active scenarios' },
         @{ Name = 'selected-status-deferred'; Artifact = { param($value) $value.scenarios[0].status = 'deferred' }; Message = 'must record only active scenarios' },
-        @{ Name = 'scenario-deferred'; Manifest = { param($value) $value.scenarios[0].status = 'deferred' }; Message = 'must be active/core' },
-        @{ Name = 'alias-drift'; Manifest = { param($value) $value.scenarios[0].v1Alias = 'sales-order-demand-planning-drifted' }; Message = 'v1Alias drifted' },
+        @{ Name = 'scenario-deferred'; Manifest = { param($value) $value.scenarios[0].status = 'deferred' }; Message = 'deferredReason' },
+        @{ Name = 'manifest-test-projects-scalar'; Manifest = { param($value) $value.scenarios[0].testProjects = $value.scenarios[0].testProjects[0] }; Message = 'testProjects must be a non-empty array' },
+        @{ Name = 'manifest-identities-scalar'; Manifest = { param($value) $value.scenarios[0].testProjects[0].frozenTestIdentities = $value.scenarios[0].testProjects[0].frozenTestIdentities[0] }; Message = 'frozenTestIdentities must be an array' },
+        @{ Name = 'alias-drift'; Manifest = { param($value) $value.scenarios[0].v1Alias = 'sales-order-demand-planning-drifted' }; Message = 'v1 alias set must exactly match' },
         @{ Name = 'project-drift'; Artifact = { param($value) $value.projects[0].path = 'backend/tests/Drifted/Drifted.csproj' }; Message = 'project set does not exactly equal' },
-        @{ Name = 'entrypoint-drift'; Manifest = { param($value) $value.scenarios[0].entrypoint.path = 'scripts/verify-drifted.ps1' }; Message = 'entrypoint drifted' },
+        @{ Name = 'artifact-projects-scalar'; Artifact = { param($value) $value.projects = $value.projects[0] }; Message = 'projects must be an array' },
+        @{ Name = 'artifact-identities-scalar'; Artifact = { param($value) $value.projects[0].expectedTestIdentities = $value.projects[0].expectedTestIdentities[0] }; Message = 'expectedTestIdentities must be an array' },
+        @{ Name = 'entrypoint-drift'; Manifest = { param($value) $value.scenarios[0].entrypoint.path = 'scripts/verify-drifted.ps1' }; Message = 'entrypoint must equal v1 entrypoint' },
         @{ Name = 'identity-drift'; Artifact = { param($value) $value.projects[0].discoveredTestIdentities[0] = 'Nerv.IIP.Drifted.Tests.Drifted' }; Message = 'discovered identities do not exactly equal' }
     )) {
         $mutatedArtifact = Copy-JsonObject $artifact
         $mutatedManifest = Copy-JsonObject $manifest
         if ($null -ne $mutation['Artifact']) { & $mutation['Artifact'] $mutatedArtifact }
         if ($null -ne $mutation['Manifest']) { & $mutation['Manifest'] $mutatedManifest }
-        Assert-PreflightRejected -Name $mutation.Name -Artifact $mutatedArtifact -Manifest $mutatedManifest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -ExpectedMessage $mutation.Message
+        Assert-PreflightRejected -Name $mutation.Name -Artifact $mutatedArtifact -Manifest $mutatedManifest -WorkflowPath $workflowPath -ExpectedMessage $mutation.Message -PreserveArtifactManifestDigest:([bool]$mutation['PreserveManifestDigest'])
     }
 
+    Assert-PreflightRejected -Name 'artifact-bytes-after-digest' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'artifact bytes do not match' -MutateArtifactBytesAfterDigest
+    Assert-PreflightRejected -Name 'manifest-bytes-after-digest' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'manifest bytes do not match' -MutateManifestBytesAfterDigest
+    Assert-PreflightRejected -Name 'artifact-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'expected digest must be a lowercase' -ExpectedArtifactDigest $artifactDigest.ToUpperInvariant()
+    Assert-PreflightRejected -Name 'manifest-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'expected digest must be a lowercase' -ExpectedManifestDigest $manifestDigest.ToUpperInvariant()
+    $wrongCaseEventArtifact = Copy-JsonObject $artifact
+    $wrongCaseEventArtifact.event = 'WORKFLOW_DISPATCH'
+    Assert-PreflightRejected -Name 'trusted-event-wrong-case' -Artifact $wrongCaseEventArtifact -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage "Planning event 'WORKFLOW_DISPATCH' is invalid" -Event 'WORKFLOW_DISPATCH'
+
     $shortWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-short' -StepTimeoutMinutes 37
-    Assert-PreflightRejected -Name 'execution-budget-shortened' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -ManifestDigest $manifestDigest -WorkflowPath $shortWorkflowPath -ExpectedMessage 'must be strictly less than'
+    Assert-PreflightRejected -Name 'execution-budget-shortened' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $shortWorkflowPath -ExpectedMessage 'must be strictly less than'
 
     $wrongStepWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-wrong-step' -StepName 'Run drifted acceptance scenario'
-    Assert-PreflightRejected -Name 'workflow-step-drift' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -ManifestDigest $manifestDigest -WorkflowPath $wrongStepWorkflowPath -ExpectedMessage 'exactly one timed'
+    Assert-PreflightRejected -Name 'workflow-step-drift' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $wrongStepWorkflowPath -ExpectedMessage 'exactly one timed'
 
     $wrongCommandWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-wrong-command' -Run 'pwsh scripts/run-full-chain-test-lane.ps1'
-    Assert-PreflightRejected -Name 'workflow-command-drift' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -ManifestDigest $manifestDigest -WorkflowPath $wrongCommandWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+    Assert-PreflightRejected -Name 'workflow-command-drift' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $wrongCommandWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+
+    $hereStringRun = "|`n          @'`n          pwsh scripts/run-acceptance-scenario-matrix.ps1`n          '@ | Out-Null"
+    $hereStringWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-here-string' -Run $hereStringRun
+    Assert-PreflightRejected -Name 'workflow-here-string-data' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $hereStringWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+
+    foreach ($nonExecutingCommand in @(
+        @{ Name = 'comment'; Run = '# pwsh scripts/run-acceptance-scenario-matrix.ps1' },
+        @{ Name = 'assignment'; Run = "`$commandText = 'pwsh scripts/run-acceptance-scenario-matrix.ps1'" },
+        @{ Name = 'echo'; Run = "Write-Output 'pwsh scripts/run-acceptance-scenario-matrix.ps1'" },
+        @{ Name = 'string-data'; Run = "'pwsh scripts/run-acceptance-scenario-matrix.ps1'" }
+    )) {
+        $nonExecutingWorkflowPath = Write-RuntimeWorkflowFixture -Name "runtime-workflow-$($nonExecutingCommand.Name)" -Run $nonExecutingCommand.Run
+        Assert-PreflightRejected -Name "workflow-$($nonExecutingCommand.Name)-data" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $nonExecutingWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+    }
 
     $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
     $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
+    $firstEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_1 pid 101 cap attempt-1-aabbcc at 2026-08-19T01:01:00Z')
+    $secondEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_2 pid 991 cap attempt-2-ddeeff at 2026-08-19T02:01:00Z')
     $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput
     $secondVector = New-NervAcceptanceScenarioEquivalenceVector -Result $secondEquivalenceInput
     $firstVectorJson = $firstVector | ConvertTo-Json -Depth 50 -Compress
     $secondVectorJson = $secondVector | ConvertTo-Json -Depth 50 -Compress
     Assert-Contract ([string]::Equals($firstVectorJson, $secondVectorJson, [StringComparison]::Ordinal)) 'Database names, PIDs, CAP suffixes, and timestamps must not participate in equivalence.'
-    foreach ($volatileName in @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc')) {
+    foreach ($volatileName in @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors')) {
         Assert-Contract (-not $firstVectorJson.Contains($volatileName, [StringComparison]::Ordinal)) "Equivalence vector must exclude volatile field '$volatileName'."
+    }
+    foreach ($volatileValue in @('nerv_shadow_run_1', '101', 'attempt-1-aabbcc', '2026-08-19T01:01:00Z', 'cleanup failed for database')) {
+        Assert-Contract (-not $firstVectorJson.Contains($volatileValue, [StringComparison]::Ordinal)) "Equivalence vector must exclude volatile value '$volatileValue'."
     }
     $stableDrift = Copy-JsonObject $secondEquivalenceInput
     $stableDrift.checkpoints.duplicateConverged = $false
     $stableDriftJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableDrift | ConvertTo-Json -Depth 50 -Compress)
     Assert-Contract (-not [string]::Equals($firstVectorJson, $stableDriftJson, [StringComparison]::Ordinal)) 'A stable business checkpoint drift must change the equivalence vector.'
+
+    $stableCleanupCodeDrift = Copy-JsonObject $secondEquivalenceInput
+    $stableCleanupCodeDrift.cleanup.errorCodes = @('owned-resource-cleanup-failed')
+    $stableCleanupCodeJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableCleanupCodeDrift | ConvertTo-Json -Depth 50 -Compress)
+    Assert-Contract (-not [string]::Equals($firstVectorJson, $stableCleanupCodeJson, [StringComparison]::Ordinal)) 'A stable cleanup error code drift must change the equivalence vector.'
+    Assert-Contract ($stableCleanupCodeJson.Contains('owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'The equivalence vector must retain canonical cleanup error codes.'
+
+    $invalidCleanupCode = Copy-JsonObject $firstEquivalenceInput
+    $invalidCleanupCode.cleanup.errorCodes = @('cleanup failed for database nerv_shadow_run_1')
+    $invalidCleanupCodeRejected = $false
+    try { New-NervAcceptanceScenarioEquivalenceVector -Result $invalidCleanupCode | Out-Null }
+    catch { $invalidCleanupCodeRejected = $_.Exception.Message.Contains('must be canonical', [StringComparison]::Ordinal) }
+    Assert-Contract $invalidCleanupCodeRejected 'A free-text cleanup error must not enter the stable error code set.'
 
     $extraEquivalenceField = Copy-JsonObject $firstEquivalenceInput
     $extraEquivalenceField | Add-Member -NotePropertyName ungoverned -NotePropertyValue $true
