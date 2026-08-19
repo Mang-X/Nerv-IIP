@@ -406,20 +406,27 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
 }
 
 function New-NervAcceptanceScenarioRuntimeSummary {
-    param([Parameter(Mandatory)] [object] $Contract)
+    param(
+        [Parameter(Mandatory)] [string] $Repository,
+        [Parameter(Mandatory)] [string] $TestedSha,
+        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [string] $Event
+    )
 
     return [pscustomobject][ordered]@{
         schemaVersion = 1
-        scenarioId = [string]$Contract.scenario.id
-        repository = [string]$Contract.artifact.repository
-        testedSha = [string]$Contract.artifact.testedSha
-        runId = [string]$Contract.artifact.runId
-        runAttempt = [int]$Contract.artifact.runAttempt
-        event = [string]$Contract.artifact.event
+        scenarioId = 'sales-order-demand'
+        repository = $Repository
+        testedSha = $TestedSha
+        runId = $RunId
+        runAttempt = $RunAttempt
+        event = $Event
         status = 'running'
         transitions = @(
-            [pscustomobject][ordered]@{ sequence = 1; state = 'preflight-passed' }
+            [pscustomobject][ordered]@{ sequence = 1; state = 'preflight-started' }
         )
+        result = $null
     }
 }
 
@@ -480,34 +487,62 @@ function Invoke-NervAcceptanceScenarioRuntime {
         [scriptblock] $ReadFileBytesAction
     )
 
-    $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
-        -ArtifactPath $ArtifactPath `
-        -ExpectedArtifactDigest $ExpectedArtifactDigest `
-        -ManifestFilePath $ManifestFilePath `
-        -ExpectedManifestDigest $ExpectedManifestDigest `
-        -V1ManifestPath $V1ManifestPath `
-        -RepositoryRoot $RepositoryRoot `
+    $summary = New-NervAcceptanceScenarioRuntimeSummary `
         -Repository $Repository `
         -TestedSha $TestedSha `
         -RunId $RunId `
         -RunAttempt $RunAttempt `
-        -ManifestPath $ManifestPath `
-        -Event $Event `
-        -WorkflowPath $WorkflowPath `
-        -WorkflowJobName $WorkflowJobName `
-        -WorkflowStepName $WorkflowStepName `
-        -ReadFileBytesAction $ReadFileBytesAction
-
-    $summary = New-NervAcceptanceScenarioRuntimeSummary -Contract $contract
+        -Event $Event
     Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
+    try {
+        $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
+            -ArtifactPath $ArtifactPath `
+            -ExpectedArtifactDigest $ExpectedArtifactDigest `
+            -ManifestFilePath $ManifestFilePath `
+            -ExpectedManifestDigest $ExpectedManifestDigest `
+            -V1ManifestPath $V1ManifestPath `
+            -RepositoryRoot $RepositoryRoot `
+            -Repository $Repository `
+            -TestedSha $TestedSha `
+            -RunId $RunId `
+            -RunAttempt $RunAttempt `
+            -ManifestPath $ManifestPath `
+            -Event $Event `
+            -WorkflowPath $WorkflowPath `
+            -WorkflowJobName $WorkflowJobName `
+            -WorkflowStepName $WorkflowStepName `
+            -ReadFileBytesAction $ReadFileBytesAction
+    }
+    catch {
+        Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'preflight-failed' -Status 'failed' -SummaryPath $SummaryPath
+        throw
+    }
+
+    Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'preflight-passed' -SummaryPath $SummaryPath
     Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'action-started' -SummaryPath $SummaryPath
     try {
-        $actionResult = & $RuntimeAction $contract
+        $actionResults = @(& $RuntimeAction $contract)
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'action-completed' -Status 'completed' -SummaryPath $SummaryPath
-        return [pscustomobject][ordered]@{ contract = $contract; summary = $summary; actionResult = $actionResult }
     }
     catch {
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'action-failed' -Status 'failed' -SummaryPath $SummaryPath
+        throw
+    }
+
+    Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-started' -SummaryPath $SummaryPath
+    try {
+        $validatedResult = Assert-NervAcceptanceScenarioRuntimeResult -Results $actionResults -ValidatedScenario $contract.scenario
+        $summary.result = $validatedResult
+        Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-passed' -Status 'passed' -SummaryPath $SummaryPath
+        return [pscustomobject][ordered]@{
+            contract = $contract
+            summary = $summary
+            actionResult = $actionResults[0]
+            equivalenceVector = $validatedResult
+        }
+    }
+    catch {
+        Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-failed' -Status 'failed' -SummaryPath $SummaryPath
         throw
     }
 }
@@ -623,6 +658,17 @@ function New-NervAcceptanceScenarioEquivalenceVector {
         -RequiredFields @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors') `
         -Context 'runtime equivalence volatile fields'
     Assert-NervAcceptanceStringArray -Value $Result.volatile.cleanupErrors -Context 'runtime equivalence volatile cleanupErrors' -AllowEmpty
+    foreach ($name in @('databaseName', 'capSuffix', 'startedAtUtc', 'completedAtUtc')) {
+        Assert-NervAcceptanceString -Value $Result.volatile.PSObject.Properties[$name].Value -Context "runtime equivalence volatile $name"
+    }
+    if ($Result.volatile.processIds -isnot [array]) {
+        throw 'Runtime equivalence volatile processIds must be an array.'
+    }
+    foreach ($processId in @($Result.volatile.processIds)) {
+        if (-not (Test-NervAcceptanceInteger -Value $processId) -or [int64]$processId -lt 0) {
+            throw 'Runtime equivalence volatile processIds must contain only non-negative JSON integers.'
+        }
+    }
 
     return [pscustomobject][ordered]@{
         schemaVersion = 1
@@ -649,4 +695,55 @@ function New-NervAcceptanceScenarioEquivalenceVector {
             errorCodes = @($cleanupErrorCodes)
         }
     }
+}
+
+function Assert-NervAcceptanceScenarioRuntimeResult {
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Results,
+        [Parameter(Mandatory)] [object] $ValidatedScenario
+    )
+
+    $observedResults = @($Results)
+    if ($observedResults.Count -ne 1) {
+        throw "Acceptance scenario runtime action must produce exactly one result; observed $($observedResults.Count)."
+    }
+    $vector = New-NervAcceptanceScenarioEquivalenceVector -Result $observedResults[0] -ValidatedScenario $ValidatedScenario
+
+    if (-not [string]::Equals([string]$vector.conclusion, 'passed', [StringComparison]::Ordinal)) {
+        throw "Runtime equivalence conclusion must be 'passed'."
+    }
+    $requiredTestCounts = [ordered]@{
+        expected = 1L
+        discovered = 1L
+        passed = 1L
+        failed = 0L
+        skipped = 0L
+    }
+    foreach ($name in $requiredTestCounts.Keys) {
+        $observed = [int64]$vector.test.PSObject.Properties[$name].Value
+        $required = [int64]$requiredTestCounts[$name]
+        if ($observed -ne $required) {
+            throw "Runtime equivalence test $name must be $required; observed $observed."
+        }
+    }
+    foreach ($name in @('sourceStateCommittedBeforeMutation', 'http200BusinessErrorRejected', 'duplicateConverged', 'outOfOrderConverged', 'firstConsumeFailureRecovered')) {
+        if (-not [bool]$vector.checkpoints.PSObject.Properties[$name].Value) {
+            throw "Runtime equivalence checkpoint '$name' must be true."
+        }
+    }
+    foreach ($name in @('capturedBeforeCleanup', 'secretsRedacted')) {
+        if (-not [bool]$vector.diagnostics.PSObject.Properties[$name].Value) {
+            throw "Runtime equivalence diagnostic '$name' must be true."
+        }
+    }
+    foreach ($name in @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining')) {
+        $observed = [int64]$vector.cleanup.PSObject.Properties[$name].Value
+        if ($observed -ne 0) {
+            throw "Runtime equivalence cleanup $name must be 0; observed $observed."
+        }
+    }
+    if (@($vector.cleanup.errorCodes).Count -ne 0) {
+        throw 'Runtime equivalence cleanup errorCodes must be empty.'
+    }
+    return $vector
 }

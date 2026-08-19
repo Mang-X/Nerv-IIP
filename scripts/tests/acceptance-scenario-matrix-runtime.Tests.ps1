@@ -11,6 +11,7 @@
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$runnerPath = Join-Path $repoRoot 'scripts/run-acceptance-scenario-matrix.ps1'
 $runtimeLibraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
 $manifestPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $v1ManifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
@@ -29,7 +30,7 @@ function Assert-Contract([bool] $Condition, [string] $Message) {
 function Copy-JsonObject {
     param([Parameter(Mandatory)] [object] $Value)
 
-    return ($Value | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50)
+    return ($Value | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50 -DateKind String)
 }
 
 function Get-FixtureFileDigest {
@@ -170,6 +171,38 @@ function Get-RuntimeArguments {
     return $arguments
 }
 
+function Get-RunnerArguments {
+    param(
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $SummaryPath,
+        [Parameter(Mandatory)] [scriptblock] $Action
+    )
+
+    return @{
+        ArtifactPath = $ArtifactPath
+        ExpectedArtifactDigest = $ExpectedArtifactDigest
+        ManifestFilePath = $ManifestFilePath
+        ExpectedManifestDigest = $ExpectedManifestDigest
+        V1ManifestPath = $v1ManifestPath
+        RepositoryRoot = $repoRoot
+        Repository = 'Mang-X/Nerv-IIP'
+        TestedSha = '0123456789abcdef0123456789abcdef01234567'
+        RunId = '123456789'
+        RunAttempt = 2
+        ManifestPath = 'scripts/acceptance-scenario-matrix.json'
+        Event = 'workflow_dispatch'
+        WorkflowPath = $WorkflowPath
+        WorkflowJobName = 'acceptance-scenario-matrix-runtime'
+        WorkflowStepName = 'Run acceptance scenario matrix'
+        SummaryPath = $SummaryPath
+        RuntimeAction = $Action
+    }
+}
+
 function Assert-PreflightRejected {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -223,7 +256,10 @@ function Assert-PreflightRejected {
     catch { $observedMessage = $_.Exception.Message }
     Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Preflight mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
     Assert-Contract ($script:preflightActionCount -eq 0) "Preflight mutation '$Name' must execute zero injected actions."
-    Assert-Contract (-not (Test-Path -LiteralPath $summaryPath)) "Preflight mutation '$Name' must not create a runtime summary."
+    Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) "Preflight mutation '$Name' must persist a final summary."
+    $failedSummary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$failedSummary.status, 'failed', [StringComparison]::Ordinal)) "Preflight mutation '$Name' must persist failed status."
+    Assert-Contract ([string]::Equals(($failedSummary.transitions.state -join '|'), 'preflight-started|preflight-failed', [StringComparison]::Ordinal)) "Preflight mutation '$Name' must persist preflight failure before rethrowing."
 }
 
 function Replace-FirstOrdinal {
@@ -281,7 +317,10 @@ function Assert-RawJsonPreflightRejected {
     catch { $observedMessage = $_.Exception.Message }
     Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Raw JSON mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
     Assert-Contract ($script:rawJsonActionCount -eq 0) "Raw JSON mutation '$Name' must execute zero injected actions."
-    Assert-Contract (-not (Test-Path -LiteralPath $summaryPath)) "Raw JSON mutation '$Name' must not create a runtime summary."
+    Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) "Raw JSON mutation '$Name' must persist a final summary."
+    $failedSummary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$failedSummary.status, 'failed', [StringComparison]::Ordinal)) "Raw JSON mutation '$Name' must persist failed status."
+    Assert-Contract ([string]::Equals(($failedSummary.transitions.state -join '|'), 'preflight-started|preflight-failed', [StringComparison]::Ordinal)) "Raw JSON mutation '$Name' must persist preflight failure before rethrowing."
 }
 
 function New-EquivalenceFixture {
@@ -328,6 +367,39 @@ function New-EquivalenceFixture {
     }
 }
 
+function Assert-ResultRejected {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Results,
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $WorkflowPath
+    )
+
+    $summaryPath = Join-Path $fixtureRoot "result-$Name-summary.json"
+    $capturedResults = @($Results)
+    $action = { return $capturedResults }.GetNewClosure()
+    $arguments = Get-RunnerArguments `
+        -ArtifactPath $ArtifactPath `
+        -ExpectedArtifactDigest $ArtifactDigest `
+        -ManifestFilePath $manifestPath `
+        -ExpectedManifestDigest $ManifestDigest `
+        -WorkflowPath $WorkflowPath `
+        -SummaryPath $summaryPath `
+        -Action $action
+    $observedMessage = '<no exception>'
+    try { & $runnerPath @arguments | Out-Null }
+    catch { $observedMessage = $_.Exception.Message }
+    Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Result mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
+    Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) "Result mutation '$Name' must persist a final summary."
+    $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$summary.status, 'failed', [StringComparison]::Ordinal)) "Result mutation '$Name' must persist failed status."
+    Assert-Contract ([string]::Equals([string]$summary.transitions[-1].state, 'result-validation-failed', [StringComparison]::Ordinal)) "Result mutation '$Name' must persist result-validation-failed as the final transition."
+    Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) "Result mutation '$Name' must not leave temporary summary files."
+}
+
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
     $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $manifestPath -V1ManifestPath $v1ManifestPath -RepositoryRoot $repoRoot
@@ -339,25 +411,65 @@ try {
     $workflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow'
     $summaryPath = Join-Path $fixtureRoot 'success/runtime-summary.json'
 
-    $script:actionCount = 0
+    $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
+    $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
+
+    $actionContracts = [Collections.Generic.List[object]]::new()
     $runtimeAction = {
         param([object] $Contract)
-        $script:actionCount++
+        $actionContracts.Add($Contract)
         Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) 'Runtime summary must exist before the injected action runs.'
         $summaryBeforeAction = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
         Assert-Contract ([string]::Equals([string]$summaryBeforeAction.status, 'running', [StringComparison]::Ordinal)) 'Runtime summary must be running before the injected action runs.'
         Assert-Contract ([string]::Equals([string]$summaryBeforeAction.transitions[-1].state, 'action-started', [StringComparison]::Ordinal)) 'The action-started transition must be atomically persisted before invocation.'
         Assert-Contract ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) 'The injected action must receive the exact validated scenario contract.'
-        return [pscustomobject]@{ fixtureResult = 'completed' }
-    }
-    $runtimeArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $summaryPath -Action $runtimeAction
-    $runtimeResult = Invoke-NervAcceptanceScenarioRuntime @runtimeArguments
-    Assert-Contract ($script:actionCount -eq 1) 'A valid runtime contract must invoke the injected action exactly once.'
-    Assert-Contract ([string]::Equals([string]$runtimeResult.summary.status, 'completed', [StringComparison]::Ordinal)) 'Successful injected action must complete the runtime summary.'
-    Assert-Contract ([string]::Equals((@($runtimeResult.summary.transitions.state) -join '|'), 'preflight-passed|action-started|action-completed', [StringComparison]::Ordinal)) 'Runtime state transitions must be stable and complete.'
+        return $firstEquivalenceInput
+    }.GetNewClosure()
+    $runnerArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $summaryPath -Action $runtimeAction
+    $runtimeResult = & $runnerPath @runnerArguments
+    Assert-Contract ($actionContracts.Count -eq 1) 'A valid runtime contract must invoke the injected action exactly once.'
+    Assert-Contract ([string]::Equals([string]$runtimeResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'A valid single result must pass the runtime summary.'
+    Assert-Contract ([string]::Equals((@($runtimeResult.summary.transitions.state) -join '|'), 'preflight-started|preflight-passed|action-started|action-completed|result-validation-started|result-validation-passed', [StringComparison]::Ordinal)) 'Runtime state transitions must be stable and complete.'
     $persistedSummary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
-    Assert-Contract ([string]::Equals(($persistedSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-completed', [StringComparison]::Ordinal)) 'Every successful runtime transition must be persisted.'
+    Assert-Contract ([string]::Equals(($persistedSummary.transitions.state -join '|'), 'preflight-started|preflight-passed|action-started|action-completed|result-validation-started|result-validation-passed', [StringComparison]::Ordinal)) 'Every successful runtime transition must be persisted.'
+    Assert-Contract ([string]::Equals([string]$persistedSummary.result.test.identity, [string]$firstEquivalenceInput.test.identity, [StringComparison]::Ordinal)) 'Final summary must persist the validated frozen test identity.'
+    Assert-Contract ($persistedSummary.result.test.expected -eq 1 -and $persistedSummary.result.test.discovered -eq 1 -and $persistedSummary.result.test.passed -eq 1 -and $persistedSummary.result.test.failed -eq 0 -and $persistedSummary.result.test.skipped -eq 0) 'Final summary must persist the exact validated result counts.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic summary persistence must not leave temporary files.'
+
+    Assert-ResultRejected -Name 'missing' -Results @() -ExpectedMessage 'exactly one result' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-ResultRejected -Name 'extra' -Results @($firstEquivalenceInput, $secondEquivalenceInput) -ExpectedMessage 'exactly one result' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+
+    foreach ($mutation in @(
+        @{ Name = 'unknown-field'; Apply = { param($value) $value | Add-Member -NotePropertyName unknown -NotePropertyValue $true }; Message = 'unknown field' },
+        @{ Name = 'wrong-case-field'; Apply = { param($value) $value.test.PSObject.Properties.Remove('expected'); $value.test | Add-Member -NotePropertyName Expected -NotePropertyValue 1 }; Message = 'unknown field' },
+        @{ Name = 'expected-type'; Apply = { param($value) $value.test.expected = '1' }; Message = 'must be a non-negative JSON integer' },
+        @{ Name = 'expected-count'; Apply = { param($value) $value.test.expected = 0 }; Message = 'expected must be 1' },
+        @{ Name = 'discovered-count'; Apply = { param($value) $value.test.discovered = 0 }; Message = 'discovered must be 1' },
+        @{ Name = 'passed-count'; Apply = { param($value) $value.test.passed = 0 }; Message = 'passed must be 1' },
+        @{ Name = 'failed-count'; Apply = { param($value) $value.test.failed = 1 }; Message = 'failed must be 0' },
+        @{ Name = 'skipped-count'; Apply = { param($value) $value.test.skipped = 1 }; Message = 'skipped must be 0' },
+        @{ Name = 'conclusion-failed'; Apply = { param($value) $value.conclusion = 'failed' }; Message = "conclusion must be 'passed'" },
+        @{ Name = 'committed-source'; Apply = { param($value) $value.checkpoints.sourceStateCommittedBeforeMutation = $false }; Message = "checkpoint 'sourceStateCommittedBeforeMutation' must be true" },
+        @{ Name = 'http200-business-error'; Apply = { param($value) $value.checkpoints.http200BusinessErrorRejected = $false }; Message = "checkpoint 'http200BusinessErrorRejected' must be true" },
+        @{ Name = 'duplicate'; Apply = { param($value) $value.checkpoints.duplicateConverged = $false }; Message = "checkpoint 'duplicateConverged' must be true" },
+        @{ Name = 'out-of-order'; Apply = { param($value) $value.checkpoints.outOfOrderConverged = $false }; Message = "checkpoint 'outOfOrderConverged' must be true" },
+        @{ Name = 'first-consume-failure'; Apply = { param($value) $value.checkpoints.firstConsumeFailureRecovered = $false }; Message = "checkpoint 'firstConsumeFailureRecovered' must be true" },
+        @{ Name = 'checkpoint-type'; Apply = { param($value) $value.checkpoints.duplicateConverged = 'true' }; Message = 'must be a boolean' },
+        @{ Name = 'diagnostic-schema-missing'; Apply = { param($value) $value.diagnostics.schemas = @('demand_planning', 'erp') }; Message = 'schemas must exactly equal' },
+        @{ Name = 'diagnostic-schema-extra'; Apply = { param($value) $value.diagnostics.schemas = @('demand_planning', 'erp', 'master_data', 'public') }; Message = 'schemas must exactly equal' },
+        @{ Name = 'diagnostic-capture'; Apply = { param($value) $value.diagnostics.capturedBeforeCleanup = $false }; Message = "diagnostic 'capturedBeforeCleanup' must be true" },
+        @{ Name = 'diagnostic-redaction'; Apply = { param($value) $value.diagnostics.secretsRedacted = $false }; Message = "diagnostic 'secretsRedacted' must be true" },
+        @{ Name = 'process-cleanup'; Apply = { param($value) $value.cleanup.managedProcessesRemaining = 1 }; Message = 'managedProcessesRemaining must be 0' },
+        @{ Name = 'database-cleanup'; Apply = { param($value) $value.cleanup.disposableDatabasesRemaining = 1 }; Message = 'disposableDatabasesRemaining must be 0' },
+        @{ Name = 'owned-resource-cleanup'; Apply = { param($value) $value.cleanup.ownedResourcesRemaining = 1 }; Message = 'ownedResourcesRemaining must be 0' },
+        @{ Name = 'cleanup-error'; Apply = { param($value) $value.cleanup.errorCodes = @('owned-resource-cleanup-failed') }; Message = 'errorCodes must be empty' },
+        @{ Name = 'volatile-process-id-type'; Apply = { param($value) $value.volatile.processIds = @('101') }; Message = 'processIds must contain only non-negative JSON integers' },
+        @{ Name = 'volatile-started-at-type'; Apply = { param($value) $value.volatile.startedAtUtc = 123 }; Message = 'startedAtUtc must be a trimmed non-empty string' }
+    )) {
+        $mutatedResult = Copy-JsonObject $firstEquivalenceInput
+        & $mutation.Apply $mutatedResult
+        Assert-ResultRejected -Name $mutation.Name -Results @($mutatedResult) -ExpectedMessage $mutation.Message -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    }
 
     $externalManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/acceptance-scenario-matrix.json'
     Write-JsonFixture -Path $externalManifestPath -Value $manifest
@@ -434,21 +546,22 @@ try {
     Assert-Contract ($script:manifestSwitchActionCount -eq 0) 'Manifest snapshot switch must execute zero runtime actions.'
 
     $failedSummaryPath = Join-Path $fixtureRoot 'failure/runtime-summary.json'
-    $script:failedActionCount = 0
+    $failedActionCalls = [Collections.Generic.List[object]]::new()
     $failedAction = {
-        $script:failedActionCount++
+        param([object] $Contract)
+        $failedActionCalls.Add($Contract)
         throw [InvalidOperationException]::new('fixture-runtime-action-failed')
-    }
-    $failedArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $failedSummaryPath -Action $failedAction
+    }.GetNewClosure()
+    $failedArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $failedSummaryPath -Action $failedAction
     $observedFailure = $null
-    try { Invoke-NervAcceptanceScenarioRuntime @failedArguments | Out-Null }
+    try { & $runnerPath @failedArguments | Out-Null }
     catch { $observedFailure = $_.Exception }
-    Assert-Contract ($script:failedActionCount -eq 1) 'A throwing runtime action must be invoked exactly once.'
+    Assert-Contract ($failedActionCalls.Count -eq 1) 'A throwing runtime action must be invoked exactly once.'
     Assert-Contract ($observedFailure -is [InvalidOperationException]) 'Runtime action failure must preserve the original exception type.'
     Assert-Contract ([string]::Equals([string]$observedFailure.Message, 'fixture-runtime-action-failed', [StringComparison]::Ordinal)) 'Runtime action failure must preserve the original exception message.'
     $persistedFailureSummary = Get-Content -LiteralPath $failedSummaryPath -Raw | ConvertFrom-Json -Depth 50
     Assert-Contract ([string]::Equals([string]$persistedFailureSummary.status, 'failed', [StringComparison]::Ordinal)) 'A throwing runtime action must persist failed status.'
-    Assert-Contract ([string]::Equals(($persistedFailureSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-failed', [StringComparison]::Ordinal)) 'A throwing runtime action must atomically persist action-failed as its final transition.'
+    Assert-Contract ([string]::Equals(($persistedFailureSummary.transitions.state -join '|'), 'preflight-started|preflight-passed|action-started|action-failed', [StringComparison]::Ordinal)) 'A throwing runtime action must atomically persist action-failed as its final transition.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $failedSummaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Failed summary persistence must not leave temporary files.'
 
     foreach ($mutation in @(
@@ -568,8 +681,6 @@ try {
         Assert-RawJsonPreflightRejected -Name "v1-wrong-case-$($v1CasingMutation.Name)" -ArtifactJson $validArtifactJson -ManifestJson $validManifestJson -V1ManifestJson $wrongCaseV1Json -WorkflowPath $workflowPath -ExpectedMessage $v1CasingMutation.Message
     }
 
-    $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
-    $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
     $firstEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_1 pid 101 cap attempt-1-aabbcc at 2026-08-19T01:01:00Z')
     $secondEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_2 pid 991 cap attempt-2-ddeeff at 2026-08-19T02:01:00Z')
     $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario
