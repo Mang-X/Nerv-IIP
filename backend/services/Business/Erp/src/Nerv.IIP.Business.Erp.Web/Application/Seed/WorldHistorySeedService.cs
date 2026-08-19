@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
 
@@ -635,7 +636,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 organizationId,
                 environmentId,
                 WorldHistoryErpSpec.CostCandidateNo(plan.Index),
-                "purchase-receipt",
+                WmsSourceDocumentTypes.PurchaseReceipt,
                 plan.PurchaseReceiptNo,
                 plan.TotalAmount,
                 WorldHistorySpec.CurrencyCode);

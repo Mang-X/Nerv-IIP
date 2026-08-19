@@ -357,7 +357,7 @@ public sealed class GatewayConsoleNotificationTests
         FakeGatewayNotificationClient notification,
         FakeGatewayAuthorizationClient? auth = null)
     {
-        return new WebApplicationFactory<Program>()
+        return PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IGatewayNotificationClient>();

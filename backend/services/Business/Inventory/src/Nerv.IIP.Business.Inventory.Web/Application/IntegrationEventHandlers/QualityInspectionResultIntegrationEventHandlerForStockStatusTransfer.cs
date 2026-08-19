@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -100,7 +101,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             .Where(x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.SkuCode == payload.SkuCode
-                && x.QualityStatus == "quality"
+                && x.QualityStatus == InventoryQualityStatuses.Quality
                 && x.OnHandQuantity >= payload.InspectedQuantity)
             .OrderBy(x => x.SiteCode)
             .ThenBy(x => x.LocationCode)
@@ -135,7 +136,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 integrationEvent.EnvironmentId,
                 sourceStatus,
                 targetStatus,
-                "quality",
+                InventoryMovementSourceServices.Quality,
                 payload.SourceDocumentId,
                 payload.InspectionRecordId,
                 integrationEvent.IdempotencyKey,
@@ -185,7 +186,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         var outboundExists = await dbContext.StockMovements.AnyAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
-                && x.SourceService == "quality"
+                && x.SourceService == InventoryMovementSourceServices.Quality
                 && x.SourceDocumentId == payload.SourceDocumentId
                 && x.IdempotencyKey == outboundKey,
             cancellationToken);
@@ -197,7 +198,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         return await dbContext.StockMovements.AnyAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId
                 && x.EnvironmentId == integrationEvent.EnvironmentId
-                && x.SourceService == "quality"
+                && x.SourceService == InventoryMovementSourceServices.Quality
                 && x.SourceDocumentId == payload.SourceDocumentId
                 && x.IdempotencyKey == inboundKey,
             cancellationToken);
