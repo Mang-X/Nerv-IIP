@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
@@ -101,9 +102,9 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
 {
     private static readonly string[] SupportedSourceServices =
     [
-        "purchase-receipt",
+        WmsSourceDocumentTypes.PurchaseReceipt,
         "erp",
-        "wms",
+        QualityInspectionSourceTypes.Wms,
     ];
 
     public async Task<InspectionSourceDocumentVerification> VerifyAsync(

@@ -48,12 +48,12 @@ public static class WorldHistoryWmsSpec
     public const string LineNo = "10";
 
     /// <summary>暂存 / 拣货行的质量状态（与 Inventory <c>StockQualityStatus</c> 同字面量）。</summary>
-    public const string QualityInspection = "quality";
-    public const string Unrestricted = "unrestricted";
+    public const string QualityInspection = WmsReceivingQualityStatuses.Quality;
+    public const string Unrestricted = WmsReceivingQualityStatuses.Unrestricted;
 
     #region 源单据类型
 
-    public const string PurchaseReceiptSourceType = "purchase-receipt";
+    public const string PurchaseReceiptSourceType = WmsSourceDocumentTypes.PurchaseReceipt;
     public const string ProductionReceiptSourceType = "production-receipt";
     /// <summary>
     /// 发货出库单的源单据类型。**必须与运行期入口同字面量**

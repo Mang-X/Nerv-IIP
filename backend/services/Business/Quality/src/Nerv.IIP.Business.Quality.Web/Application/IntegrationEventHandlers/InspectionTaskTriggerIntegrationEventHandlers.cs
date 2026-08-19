@@ -59,7 +59,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 sourceType: QualityInspectionSourceTypes.Receiving,
-                sourceService: "wms",
+                sourceService: QualityInspectionSourceTypes.Wms,
                 sourceDocumentId: payload.PublicReference,
                 sourceDocumentLineId: line.LineReference,
                 skuCode: line.SkuCode,
@@ -124,7 +124,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 batchNo: line.LotNo,
                 serialNo: null,
                 workCenterId: null,
-                sourceDocumentType: "purchase-receipt",
+                sourceDocumentType: WmsSourceDocumentTypes.PurchaseReceipt,
                 occurredAtUtc: integrationEvent.OccurredAtUtc,
                 triggerIdempotencyKey: $"{integrationEvent.IdempotencyKey}:{line.LineReference}",
                 cancellationToken);
