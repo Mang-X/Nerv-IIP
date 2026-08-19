@@ -74,6 +74,11 @@ pipeline
 
 每个 Gateway 必须有对应的弹性策略测试，验证非幂等客户端在收到 5xx 错误时不触发重试。参考 `GatewayHttpClientResilienceTests.Non_idempotent_gateway_clients_do_not_retry_server_errors`。
 
+## 已考虑的替代方案
+
+1. **所有网关 HTTP 客户端统一使用 `AddStandardResilienceHandler()`**：这是 BusinessGateway 落地时的现状——「6 个 HTTP 客户端全部使用了 `AddStandardResilienceHandler()`，未区分读写操作的弹性需求」。背景记录了落选理由——「对于非幂等写操作（如工单创建、生产报工、库存移动、用户管理），网络超时后重试可能导致下游服务执行两次相同的写入，产生重复记录」；后果补充这次取舍的两面：写操作可用性略有降低，但「重复数据比暂时失败危害更大，客户端（Business Console）可以提示用户重试」。
+2. **把 `AddGatewayNonIdempotentSafeResilience()` 提取到 `backend/common` 下的共享包**：第 4 节把「复制」与「共享」并列为两个选项并给出裁决理由——复制方案「代码量极小（约 20 行），两个 Gateway 项目无直接引用关系，复制比共享依赖更简单」，共享方案「当第三个 Gateway 出现时再考虑」，因此「当前选择复制，保持 Gateway 项目独立」。
+
 ## 后果
 
 - BusinessGateway 的 5 个业务服务客户端改用 `NonIdempotentSafe` 策略后，写操作失败不再自动重试，避免重复记录风险。

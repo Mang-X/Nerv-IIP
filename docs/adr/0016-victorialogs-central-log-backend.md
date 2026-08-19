@@ -20,6 +20,12 @@ VictoriaLogs 被选为首条中央日志存储路径的后端。VictoriaMetrics 
 7. 提供精简的 `Nerv.IIP.Observability` VictoriaLogs 客户端和安全查询构建器，将平台过滤条件映射为 LogsQL。查询门面支持 service、correlationId、traceId、时间范围和 level 过滤条件。
 8. 不得在 AppHub、IAM、Ops、FileStorage、Notification 或业务 PostgreSQL schema 中存储日志消息正文。PostgreSQL 后续可以在独立的 `observability` schema 中保存可观测性索引或元数据，但本次范围将可搜索的日志正文存储在 VictoriaLogs 中。
 
+## 已考虑的替代方案
+
+1. **继续以 Aspire Dashboard 承担集中日志**：背景记录了落选理由——「Aspire Dashboard 仍是本地短期诊断界面，但它不是持久化日志存储」，因此平台需要「一个仅处理日志的后端，以提供集中存储和受控检索」。
+2. **把可搜索的日志正文存进 PostgreSQL schema**：决策第 8 条排除了这一落点——「不得在 AppHub、IAM、Ops、FileStorage、Notification 或业务 PostgreSQL schema 中存储日志消息正文」，并把 PostgreSQL 的后续用途限定为「独立的 `observability` schema 中保存可观测性索引或元数据」。原文只记录了该选择与范围划分，未保留日志正文存 PostgreSQL 落选的理由。
+3. **前端直接调用日志后端或诊断界面**：决策第 6 条只经 PlatformGateway 门面 API 暴露日志搜索，并禁止「前端代码不得直接调用 VictoriaLogs、LogsQL、Collector 或 Aspire Dashboard」。原文只记录了该禁止，未保留前端直连落选的理由。
+
 ## 后果
 
 - AppHost 是 VictoriaLogs 容器的拓扑来源。旧版 Compose 文件可为迁移和发布演练包含相同服务，但不得成为第二套完整平台拓扑。

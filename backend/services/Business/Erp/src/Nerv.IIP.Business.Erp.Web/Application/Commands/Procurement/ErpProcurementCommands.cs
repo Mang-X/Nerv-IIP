@@ -323,7 +323,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 ApprovalTemplateCodes.PurchaseOrderRelease,
-                "business-erp",
+                ApprovalSourceServices.BusinessErp,
                 ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
@@ -756,7 +756,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 ApprovalTemplateCodes.PurchaseOrderRelease,
-                "business-erp",
+                ApprovalSourceServices.BusinessErp,
                 ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
@@ -1253,7 +1253,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                         request.OrganizationId,
                         request.EnvironmentId,
                         ApprovalTemplateCodes.PurchaseOrderRelease,
-                        "business-erp",
+                        ApprovalSourceServices.BusinessErp,
                         ApprovalDocumentTypes.PurchaseOrder,
                         request.PurchaseOrderNo,
                         null,
@@ -1271,7 +1271,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
             var approval = await _approvalClient.StartApprovalAsync(
-                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, "business-erp", ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalSourceServices.BusinessErp, ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
             change.AssignApprovalChain(approval.ChainId);
             return approval.ChainId;
