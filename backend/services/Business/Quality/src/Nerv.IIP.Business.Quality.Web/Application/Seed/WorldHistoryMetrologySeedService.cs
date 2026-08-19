@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 
@@ -359,7 +360,7 @@ public sealed class WorldHistoryMetrologySeedService(ApplicationDbContext dbCont
                     fact.EffectivenessResult!,
                     verifiedAtUtc,
                     inspectionRecordId,
-                    "passed");
+                    QualityInspectionDispositionStatuses.Passed);
                 Backdate(capa, x => x.UpdatedAtUtc, verifiedAtUtc);
 
                 if (fact.ClosedAtUtc is { } closedAtUtc)
@@ -416,7 +417,7 @@ public sealed class WorldHistoryMetrologySeedService(ApplicationDbContext dbCont
     {
         var rows = await dbContext.InspectionRecords
             .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Result == "passed")
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Result == QualityInspectionDispositionStatuses.Passed)
             .Select(x => new { x.SkuCode, x.Id, x.CreatedAtUtc })
             .ToArrayAsync(cancellationToken);
 

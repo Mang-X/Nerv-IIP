@@ -1,6 +1,8 @@
 import {
+  cancelBusinessConsoleInventoryCountTaskMutationOptions,
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
+  restartBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
   listBusinessConsoleInventoryCountAdjustmentsQueryOptions,
   listBusinessConsoleInventoryCountTasksQueryOptions,
@@ -426,6 +428,16 @@ export function useInventoryCounts() {
     ...confirmBusinessConsoleInventoryCountAdjustmentMutationOptions(),
     onSuccess: invalidateCountQueries,
   })
+  // 重盘：把 recount-required 的死单重新冻结台账、重取快照后放回待实盘。
+  const restartCountTaskMutation = useMutation({
+    ...restartBusinessConsoleInventoryCountTaskMutationOptions(),
+    onSuccess: invalidateCountQueries,
+  })
+  // 关闭：任务不再盘了就作废收尾，台账同时解冻。
+  const cancelCountTaskMutation = useMutation({
+    ...cancelBusinessConsoleInventoryCountTaskMutationOptions(),
+    onSuccess: invalidateCountQueries,
+  })
 
   return {
     confirmAdjustment: (
@@ -448,6 +460,27 @@ export function useInventoryCounts() {
       createCountTaskMutation.mutateAsync({ body }),
     createCountTaskError: createCountTaskMutation.error,
     createCountTaskPending: createCountTaskMutation.isLoading,
+    restartCountTask: (countTaskId: string) =>
+      restartCountTaskMutation.mutateAsync({
+        path: { countTaskId },
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+        },
+      }),
+    restartCountTaskError: restartCountTaskMutation.error,
+    restartCountTaskPending: restartCountTaskMutation.isLoading,
+    cancelCountTask: (countTaskId: string, reason: string) =>
+      cancelCountTaskMutation.mutateAsync({
+        path: { countTaskId },
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+        },
+        body: { reason },
+      }),
+    cancelCountTaskError: cancelCountTaskMutation.error,
+    cancelCountTaskPending: cancelCountTaskMutation.isLoading,
     countTasks,
     countTaskRows: computed<BusinessConsoleInventoryCountTaskLineResponse[]>(
       () => countTasks.value?.items ?? [],

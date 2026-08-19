@@ -844,7 +844,10 @@ public sealed class BusinessConsoleCreateCodeRuleVersionRequestValidator : Valid
         RuleFor(x => x.AppliesTo).MaximumLength(200);
         RuleFor(x => x.Segments).NotEmpty();
         RuleFor(x => x.CreatedBy).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ChangeReason).MaximumLength(500);
+        RuleFor(x => x.ChangeReason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(500);
     }
 }
 
@@ -1575,7 +1578,10 @@ public sealed class CreateBusinessConsoleCodeRuleVersionEndpoint(
         BusinessConsoleCreateCodeRuleVersionRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        masterData.CreateCodeRuleVersionAsync(tokenProvider.BearerToken, request, cancellationToken);
+        masterData.CreateCodeRuleVersionAsync(
+            tokenProvider.BearerToken,
+            request with { ChangeReason = request.ChangeReason.Trim() },
+            cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

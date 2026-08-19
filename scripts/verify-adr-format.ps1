@@ -89,6 +89,12 @@ foreach ($file in $adrFiles) {
 
     $hasBackground = @($sections | Where-Object { [string]::Equals($_, '背景', [StringComparison]::Ordinal) }).Count -gt 0
     if (-not $hasBackground) { $findings.Add("${name}: 缺少 '## 背景'") }
+    # 备选方案必写：决策记录不写它打败了谁，会招来反复重议。原文确实没保留权衡时，
+    # 小节内写明「本记录未保留当时的备选权衡」即可，但小节本身不能缺。
+    $hasAlternatives = @($sections | Where-Object {
+            [string]::Equals($_, '已考虑的替代方案', [StringComparison]::Ordinal)
+        }).Count -gt 0
+    if (-not $hasAlternatives) { $findings.Add("${name}: 缺少 '## 已考虑的替代方案'") }
     $hasDecision = @($sections | Where-Object {
             [string]::Equals($_, '决策', [StringComparison]::Ordinal) -or
             $_.StartsWith('决策 ', [StringComparison]::Ordinal)

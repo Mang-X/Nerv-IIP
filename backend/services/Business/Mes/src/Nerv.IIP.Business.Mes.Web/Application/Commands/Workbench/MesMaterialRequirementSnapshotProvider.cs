@@ -6,6 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.ServiceAuth;
+using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -101,7 +102,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
     IMemoryCache? uomConversionCache = null)
     : IMesMaterialRequirementSnapshotProvider
 {
-    private const string ActiveProductionVersionStatus = "active";
+    private const string ActiveProductionVersionStatus = ProductionEngineeringContractStatuses.Active;
     private const string PublishedEngineeringStatus = "published";
     private readonly MesMaterialRequirementInventoryOptions inventoryOptions = inventoryOptions ?? new MesMaterialRequirementInventoryOptions();
 

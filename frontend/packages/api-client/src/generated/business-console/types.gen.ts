@@ -5531,7 +5531,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     isActive?: boolean;
     effectiveFromUtc?: string | null;
     createdBy: string;
-    changeReason?: string;
+    changeReason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCodeRulePreviewResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6242,6 +6242,33 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRestartStockCountTaskResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRestartStockCountTaskResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRestartStockCountTaskResponse = {
+    countTaskId?: string;
+    status?: string;
+    expectedLedgerVersion?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRestartStockCountTaskRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCancelStockCountTaskResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelStockCountTaskResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelStockCountTaskResponse = {
+    countTaskId?: string;
+    status?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelStockCountTaskRequest = {
+    reason: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse | null;
 };
@@ -6734,7 +6761,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     environmentId?: string;
     deliveryOrderNo?: string | null;
     salesOrderNo?: string;
-    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLine>;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpDeliveryOrderLine> | null;
     idempotencyKey?: string | null;
 };
 
@@ -18448,6 +18475,82 @@ export type ConfirmBusinessConsoleInventoryCountAdjustmentResponses = {
 };
 
 export type ConfirmBusinessConsoleInventoryCountAdjustmentResponse = ConfirmBusinessConsoleInventoryCountAdjustmentResponses[keyof ConfirmBusinessConsoleInventoryCountAdjustmentResponses];
+
+export type RestartBusinessConsoleInventoryCountTaskData = {
+    body?: never;
+    path: {
+        countTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/inventory/count-tasks/{countTaskId}/recount';
+};
+
+export type RestartBusinessConsoleInventoryCountTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RestartBusinessConsoleInventoryCountTaskError = RestartBusinessConsoleInventoryCountTaskErrors[keyof RestartBusinessConsoleInventoryCountTaskErrors];
+
+export type RestartBusinessConsoleInventoryCountTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRestartStockCountTaskResponse;
+};
+
+export type RestartBusinessConsoleInventoryCountTaskResponse = RestartBusinessConsoleInventoryCountTaskResponses[keyof RestartBusinessConsoleInventoryCountTaskResponses];
+
+export type CancelBusinessConsoleInventoryCountTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelStockCountTaskRequest;
+    path: {
+        countTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/inventory/count-tasks/{countTaskId}/cancel';
+};
+
+export type CancelBusinessConsoleInventoryCountTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CancelBusinessConsoleInventoryCountTaskError = CancelBusinessConsoleInventoryCountTaskErrors[keyof CancelBusinessConsoleInventoryCountTaskErrors];
+
+export type CancelBusinessConsoleInventoryCountTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCancelStockCountTaskResponse;
+};
+
+export type CancelBusinessConsoleInventoryCountTaskResponse = CancelBusinessConsoleInventoryCountTaskResponses[keyof CancelBusinessConsoleInventoryCountTaskResponses];
 
 export type HealthEndpointData = {
     body?: never;

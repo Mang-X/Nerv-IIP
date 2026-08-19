@@ -543,6 +543,17 @@ public sealed class BusinessGatewayAuthorizationTests
             countedQuantity = 1,
             idempotencyKey = "idem-001",
         },
+        "/api/business-console/v1/inventory/count-tasks/count-001/recount" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+        },
+        "/api/business-console/v1/inventory/count-tasks/count-001/cancel" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reason = "authorization test",
+        },
         "/api/business-console/v1/planning/demands" => new
         {
             organizationId = "org-001",
@@ -1184,6 +1195,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/count-adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/adjustments", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/recount", BusinessGatewayPermissions.InventoryCountsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/cancel", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-plans/019f87d0-3f7f-7ad0-a829-7724ea91c111/activate", BusinessGatewayPermissions.QualityInspectionPlansManage);
