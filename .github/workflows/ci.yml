@@ -646,8 +646,9 @@ jobs:
     name: PostgreSQL Provider Tests
     # NERV-688 拆解③第八批（收尾）：Inventory + MasterData + Scheduling + AppHub + BarcodeLabel
     # + FileStorage + IndustrialTelemetry + Quality + MES + WMS + ERP + DemandPlanning
-    # + 跨业务 Acceptance + Maintenance。层级 A；显式 step 预算合计 94m，
-    # 小于 101m job 预算，为 service setup 和 action post steps 保留 7m。
+    # + 跨业务 Acceptance + Maintenance。层级 A；显式 step 预算合计 90m，
+    # 小于 101m job 预算，为 service setup 和 action post steps 保留 11m。
+    # NERV-1854：原 5m 的 apt 安装步骤换成 1m 的零网络 psql 断言，step 预算合计由 94m 降到 90m。
     timeout-minutes: 101
     runs-on: ubuntu-latest
     needs: impact-plan
@@ -689,31 +690,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Install PostgreSQL client
-        timeout-minutes: 5
+      - name: Verify PostgreSQL client
+        timeout-minutes: 1
         shell: bash
         run: |
-          # NERV-1694：这两条 apt 命令的故障形态是挂死（卡满 step 预算）而不是慢，所以用
-          # 「单次尝试超时 + 有限重试」把挂死转成快速失败再重试，而不是放大 step 预算。
-          # 预算算术：单次尝试 90s × 最多 3 次 + 2 次重试间隔 5s = 最坏 280s，严格小于
-          # 本 step 既有的 timeout-minutes 预算 5 分钟（300s），因此本次不改动任何超时预算。
-          # `timeout` 放在 `sudo` 之后，让它以 root 身份直接终止挂死的 apt-get 进程组。
-          # `-o Acquire::Retries=3` 是 apt 自身的传输层重试，与外层重试互补。
-          # update 与 install 都在同一次尝试的超时与重试范围内（任一条都可能挂死）。
-          apt_attempt=1
-          while true; do
-            if sudo timeout 90 bash -c 'apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install --yes postgresql-client'; then
-              echo "apt 安装成功（第 ${apt_attempt} 次尝试）。"
-              break
-            fi
-            if [ "${apt_attempt}" -ge 3 ]; then
-              echo "apt 安装失败：已连续尝试 3 次仍未成功（多为网络挂死或软件源不可用），失败退出。" >&2
-              exit 1
-            fi
-            echo "apt 安装第 ${apt_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
-            apt_attempt=$((apt_attempt + 1))
-            sleep 5
-          done
+          # NERV-1854：本步骤原先是 `apt-get install postgresql-client`，是本仓库当前 CI 最主要的
+          # 失败源（2026-08-19 一天之内 main 与多个 PR 各红一次）。根因不是「apt 偶发慢」而是确定性
+          # 挂死：ubuntu-latest 的 /etc/apt/apt-mirrors.txt 把 http://azure.archive.ubuntu.com 排在
+          # priority:1，该主机不可达时每个索引都要先耗满连接超时再回落到 archive.ubuntu.com，这段
+          # 耗时对每次尝试都要重复支付，因此「单次尝试超时 + 有限重试」在这个故障形态下必然三连败。
+          # 真正的解法是不要 apt：run 32234996271 的成功日志显示该次 install 只有「1 newly installed
+          # / Setting up postgresql-client (16+257build1.1)」——装进去的只是那个不含任何文件的元包，
+          # 它依赖的 postgresql-client-16 早已随 runner 镜像预装的 PostgreSQL 16 一并存在，也就是
+          # /usr/bin/psql 在本步骤之前就已经可用。删掉这次安装后 psql 的来源、版本与之前完全一致。
+          # 保留一个零网络的可用性断言：镜像哪天真的不再预装 psql，本步骤会在 1 秒内大声失败并指名
+          # 修复方向，而不是让下游 lane 以「命令找不到」的形态间接失败。
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "::error::runner 镜像未预装 psql，PostgreSQL lane 无法运行。请在本步骤改回受控的 apt 安装（并按 NERV-1854 摘掉 azure 镜像），不要放任下游 lane 以「命令找不到」失败。" >&2
+            exit 1
+          fi
+          psql --version
 
       - name: Resolve PostgreSQL evidence environment
         timeout-minutes: 3
@@ -844,31 +840,75 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Install PostgreSQL and Redis clients
-        timeout-minutes: 5
+      - name: Verify PostgreSQL client
+        timeout-minutes: 1
         shell: bash
         run: |
-          # NERV-1694：这两条 apt 命令的故障形态是挂死（卡满 step 预算）而不是慢，所以用
-          # 「单次尝试超时 + 有限重试」把挂死转成快速失败再重试，而不是放大 step 预算。
-          # 预算算术：单次尝试 90s × 最多 3 次 + 2 次重试间隔 5s = 最坏 280s，严格小于
-          # 本 step 既有的 timeout-minutes 预算 5 分钟（300s），因此本次不改动任何超时预算。
-          # `timeout` 放在 `sudo` 之后，让它以 root 身份直接终止挂死的 apt-get 进程组。
-          # `-o Acquire::Retries=3` 是 apt 自身的传输层重试，与外层重试互补。
-          # update 与 install 都在同一次尝试的超时与重试范围内（任一条都可能挂死）。
+          # NERV-1854：与 PostgreSQL Provider Tests 同源——psql 由 runner 镜像预装的 PostgreSQL 16
+          # 提供，原先那次 `apt-get install postgresql-client` 只装了一个空壳元包，删掉它可以让本 job
+          # 的 apt 面从两个包缩到一个包（redis-tools），命中概率同比下降。断言零网络、失败大声。
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "::error::runner 镜像未预装 psql，Redis/CAP lane 无法运行。请在本步骤改回受控的 apt 安装（并按 NERV-1854 摘掉 azure 镜像），不要放任下游 lane 以「命令找不到」失败。" >&2
+            exit 1
+          fi
+          psql --version
+
+      - name: Install Redis client
+        timeout-minutes: 4
+        shell: bash
+        run: |
+          # NERV-1854：redis-tools 与 psql 不同，runner 镜像确实没有预装（成功日志里 libjemalloc2、
+          # liblzf1、redis-tools 三个包都是真装进去的），因此这里仍然需要 apt，但要先把确定性挂死源
+          # 摘掉再谈重试：
+          # 1) 摘 azure 镜像。/etc/apt/apt-mirrors.txt 的 priority:1 是 http://azure.archive.ubuntu.com，
+          #    2026-08-19 的多次失败日志里它对四个 suite 的 InRelease 全是 `Ign:`（连接超时），apt 之后
+          #    才回落到 https://archive.ubuntu.com。这段等待对每次尝试都必然重复支付，是重试无效的根因；
+          #    删掉该行后剩下的 archive/security 两个 https 镜像依旧构成完整的 suite 覆盖。
+          # 2) 把 apt 自身的传输层重试压到 1 次。原先的 `Acquire::Retries=3` 会让每个索引在不可达镜像
+          #    上按退避重试三轮，把单次尝试的浪费成倍放大，与外层重试叠加后彻底吃掉 step 预算。
+          # 3) 加短连接超时与 `Acquire::Languages=none`：前者让不可达镜像快速失败而不是慢速拖死，后者
+          #    去掉纯属浪费的 Translation-* 下载。
+          # 已安装则整步跳过：镜像若将来预装 redis-tools，本步骤自动退化为零网络。
+          if command -v redis-cli >/dev/null 2>&1; then
+            echo "redis-cli 已由 runner 镜像提供，跳过 apt 安装。"
+            redis-cli --version
+            exit 0
+          fi
+
+          mirror_list=/etc/apt/apt-mirrors.txt
+          if [ -f "${mirror_list}" ]; then
+            remaining=$(grep -cv 'azure\.archive\.ubuntu\.com' "${mirror_list}" || true)
+            if [ "${remaining}" -gt 0 ]; then
+              sudo sed -i '/azure\.archive\.ubuntu\.com/d' "${mirror_list}"
+              echo "已从 ${mirror_list} 摘除 azure 镜像，剩余镜像："
+              cat "${mirror_list}"
+            else
+              echo "::warning::${mirror_list} 除 azure 镜像外没有其他条目，保持原样以免把镜像列表清空。"
+            fi
+          else
+            echo "::warning::${mirror_list} 不存在（runner 镜像形态已变），跳过镜像摘除，直接按原有软件源安装。"
+          fi
+
+          # 预算算术：单次尝试 60s × 最多 3 次 + 2 次重试间隔 5s = 最坏 190s，严格小于本 step 的
+          # timeout-minutes 预算 4 分钟（240s）。`timeout` 放在 `sudo` 之后，以 root 身份终止挂死的
+          # apt-get 进程组（否则 SIGTERM 因 EPERM 送不到 root 子进程，重试会被孤儿进程的 dpkg 锁挡死，
+          # 这一点在 NERV-1713 的 Playwright 步骤上已经实证过）。
+          apt_options='-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::Languages=none'
           apt_attempt=1
           while true; do
-            if sudo timeout 90 bash -c 'apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install --yes postgresql-client redis-tools'; then
-              echo "apt 安装成功（第 ${apt_attempt} 次尝试）。"
+            if sudo timeout 60 bash -c "apt-get ${apt_options} update && apt-get ${apt_options} install --yes --no-install-recommends redis-tools"; then
+              echo "redis-tools 安装成功（第 ${apt_attempt} 次尝试）。"
               break
             fi
             if [ "${apt_attempt}" -ge 3 ]; then
-              echo "apt 安装失败：已连续尝试 3 次仍未成功（多为网络挂死或软件源不可用），失败退出。" >&2
+              echo "::error::redis-tools 安装失败：已连续尝试 3 次仍未成功（软件源不可用），失败退出。" >&2
               exit 1
             fi
-            echo "apt 安装第 ${apt_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
+            echo "redis-tools 安装第 ${apt_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
             apt_attempt=$((apt_attempt + 1))
             sleep 5
           done
+          redis-cli --version
 
       - name: Resolve Redis/CAP evidence environment
         timeout-minutes: 3
