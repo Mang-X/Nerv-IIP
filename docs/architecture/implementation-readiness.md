@@ -2,6 +2,10 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Stryker.NET 单程序集变异测试预研（NERV-870）
+
+NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
+
 ## Business FullChain Acceptance CI 接入（NERV-767 / #1391）
 
 `.github/workflows/ci.yml` 已接入稳定展示名 `Business FullChain Acceptance`。PR 复用 `full_chain` 影响信号；影响计划失败或输出缺失时保守运行，`main` push 始终运行。job 安装并验证 Aspire CLI 13.4.6，同时按 lockfile 安装 frontend 依赖与 Playwright Chromium（MAN-528 的现有 fullstack smoke 会运行真实代理页面），再预拉取 PostgreSQL 18 与 Redis 8。`scripts/run-full-chain-test-lane.ps1` 通过 run/attempt 专属 Compose project 启动真实依赖、执行协议级 readiness，然后按 `scripts/full-chain-test-lane.json` 的固定顺序运行五个 active/core 场景：Maintenance Runtime Hours、MES Inventory Produced Lot、ERP-WMS Delivery Completion、Sales Order Demand Planning 与 ERP Return Closure。前三类跨服务场景继续复用现有受治理 fullstack/acceptance 入口，直接 PostgreSQL 场景由 runner 执行精确测试；各入口统一把唯一 TRX 写入成员专属目录。

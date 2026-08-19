@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.Services;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Seed;
@@ -821,7 +822,7 @@ public static class WorldHistorySchedulingSpec
             if (random.Chance(0.12))
             {
                 risks.Add(new ExecutionRiskFact(
-                    "equipment.maintenanceWindow", ExecutionRiskCategory.Equipment, false, plan.PlanId, observedAtUtc));
+                    EquipmentRuntimeReasonCodes.MaintenanceWindow, ExecutionRiskCategory.Equipment, false, plan.PlanId, observedAtUtc));
             }
 
             facts.Add(new WorldHistoryUrgencyFact(

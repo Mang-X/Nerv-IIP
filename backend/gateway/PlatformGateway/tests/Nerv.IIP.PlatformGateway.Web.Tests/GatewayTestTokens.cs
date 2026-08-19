@@ -42,6 +42,9 @@ yKndmINUKXFRt+mFo0HU2Ec=
     private static readonly DateTimeOffset DefaultIssuedAtUtc = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset DefaultExpiresAtUtc = new(2036, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private static readonly RSA Rsa = CreateDevelopmentRsa();
+    private static readonly Lock RsaLock = new();
+    private static readonly string PublicJwks = CreatePublicJwksJson(includeAlgorithm: true);
+    private static readonly string PublicJwksWithoutAlgorithm = CreatePublicJwksJson(includeAlgorithm: false);
 
     public static string ValidAccessToken(
         int permissionVersion = 7,
@@ -50,18 +53,21 @@ yKndmINUKXFRt+mFo0HU2Ec=
     {
         var issuedAt = issuedAtUtc ?? DefaultIssuedAtUtc;
         var expiresAt = expiresAtUtc ?? DefaultExpiresAtUtc;
-        var token = new JwtSecurityToken(
-            issuer: "nerv-iip-iam",
-            audience: "nerv-iip-api",
-            claims: CreateClaims(permissionVersion, issuedAt),
-            notBefore: issuedAt.UtcDateTime,
-            expires: expiresAt.UtcDateTime,
-            signingCredentials: new SigningCredentials(
-                new RsaSecurityKey(Rsa) { KeyId = RsaKid },
-                SecurityAlgorithms.RsaSha256));
-        token.Header["kid"] = RsaKid;
+        lock (RsaLock)
+        {
+            var token = new JwtSecurityToken(
+                issuer: "nerv-iip-iam",
+                audience: "nerv-iip-api",
+                claims: CreateClaims(permissionVersion, issuedAt),
+                notBefore: issuedAt.UtcDateTime,
+                expires: expiresAt.UtcDateTime,
+                signingCredentials: new SigningCredentials(
+                    new RsaSecurityKey(Rsa) { KeyId = RsaKid },
+                    SecurityAlgorithms.RsaSha256));
+            token.Header["kid"] = RsaKid;
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 
     public static string ValidRsaAccessToken(
@@ -71,35 +77,26 @@ yKndmINUKXFRt+mFo0HU2Ec=
     {
         var issuedAt = issuedAtUtc ?? DefaultIssuedAtUtc;
         var expiresAt = expiresAtUtc ?? DefaultExpiresAtUtc;
-        var token = new JwtSecurityToken(
-            issuer: "nerv-iip-iam",
-            audience: "nerv-iip-api",
-            claims: CreateClaims(permissionVersion, issuedAt),
-            notBefore: issuedAt.UtcDateTime,
-            expires: expiresAt.UtcDateTime,
-            signingCredentials: new SigningCredentials(
-                new RsaSecurityKey(Rsa) { KeyId = RsaKid },
-                SecurityAlgorithms.RsaSha256));
-        token.Header["kid"] = RsaKid;
+        lock (RsaLock)
+        {
+            var token = new JwtSecurityToken(
+                issuer: "nerv-iip-iam",
+                audience: "nerv-iip-api",
+                claims: CreateClaims(permissionVersion, issuedAt),
+                notBefore: issuedAt.UtcDateTime,
+                expires: expiresAt.UtcDateTime,
+                signingCredentials: new SigningCredentials(
+                    new RsaSecurityKey(Rsa) { KeyId = RsaKid },
+                    SecurityAlgorithms.RsaSha256));
+            token.Header["kid"] = RsaKid;
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 
-    public static string PublicJwksJson()
-    {
-        var parameters = Rsa.ExportParameters(false);
-        return $$"""
-        {"keys":[{"kty":"RSA","use":"sig","kid":"{{RsaKid}}","alg":"RS256","n":"{{Base64UrlEncoder.Encode(parameters.Modulus)}}","e":"{{Base64UrlEncoder.Encode(parameters.Exponent)}}"}]}
-        """;
-    }
+    public static string PublicJwksJson() => PublicJwks;
 
-    public static string PublicJwksJsonWithoutAlgorithm()
-    {
-        var parameters = Rsa.ExportParameters(false);
-        return $$"""
-        {"keys":[{"kty":"RSA","use":"sig","kid":"{{RsaKid}}","n":"{{Base64UrlEncoder.Encode(parameters.Modulus)}}","e":"{{Base64UrlEncoder.Encode(parameters.Exponent)}}"}]}
-        """;
-    }
+    public static string PublicJwksJsonWithoutAlgorithm() => PublicJwksWithoutAlgorithm;
 
     public static string Hs256AccessTokenWithRsaKid()
     {
@@ -140,5 +137,14 @@ yKndmINUKXFRt+mFo0HU2Ec=
         var rsa = RSA.Create();
         rsa.ImportFromPem(DevelopmentPrivateKeyPem);
         return rsa;
+    }
+
+    private static string CreatePublicJwksJson(bool includeAlgorithm)
+    {
+        var parameters = Rsa.ExportParameters(false);
+        var algorithm = includeAlgorithm ? "\"alg\":\"RS256\"," : string.Empty;
+        return $$"""
+        {"keys":[{"kty":"RSA","use":"sig","kid":"{{RsaKid}}",{{algorithm}}"n":"{{Base64UrlEncoder.Encode(parameters.Modulus)}}","e":"{{Base64UrlEncoder.Encode(parameters.Exponent)}}"}]}
+        """;
     }
 }

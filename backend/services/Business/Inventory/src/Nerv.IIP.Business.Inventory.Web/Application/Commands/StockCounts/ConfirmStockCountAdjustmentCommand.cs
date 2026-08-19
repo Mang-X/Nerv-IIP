@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAgg
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
+using Nerv.IIP.Contracts.Approval;
 using Microsoft.Extensions.Options;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
@@ -110,7 +111,8 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                     task.OrganizationId,
                     task.EnvironmentId,
                     approvalOptions.TemplateCode,
-                    "inventory",
+                    // #1702：发起侧与回写消费侧共用审批契约的来源服务常量（漂移即回写静默丢事件）。
+                    ApprovalSourceServices.Inventory,
                     approvalOptions.DocumentType,
                     task.CountTaskCode,
                     "system:inventory",

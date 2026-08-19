@@ -30,6 +30,9 @@ public static class InventoryIntegrationEventSources
 public static class InventoryMovementSourceServices
 {
     public const string Quality = "quality";
+
+    /// <summary>WMS 侧发起的库存移动/预留所写的来源服务短名（与事件信封来源 <c>business-wms</c> 是两个面）。</summary>
+    public const string Wms = "wms";
 }
 
 public static class InventoryMovementRequestTypes

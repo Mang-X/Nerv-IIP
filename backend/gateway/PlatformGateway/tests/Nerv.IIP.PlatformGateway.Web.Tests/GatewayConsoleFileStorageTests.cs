@@ -451,7 +451,7 @@ public sealed class GatewayConsoleFileStorageTests
         FakeGatewayFileStorageClient files,
         FakeGatewayAuthorizationClient? auth = null)
     {
-        return new WebApplicationFactory<Program>()
+        return PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IGatewayFileStorageClient>();

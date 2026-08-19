@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 
@@ -258,7 +259,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 .AsNoTracking()
                 .AnyAsync(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId
                     && x.DeviceAssetId == alarm.DeviceAssetId
-                    && x.State == "faulted"
+                    && x.State == EquipmentRuntimeDeviceStates.Faulted
                     && x.OccurredAtUtc == alarm.RaisedAtUtc,
                     cancellationToken);
             if (!exists)

@@ -49,7 +49,7 @@ public sealed class PrepareMesMaterialIssueOutboundCommandHandler(ApplicationDbC
     : ICommandHandler<PrepareMesMaterialIssueOutboundCommand, PrepareMesMaterialIssueOutboundResult>
 {
     public const string LineNo = "1";
-    private const string MaterialIssueQualityStatus = "unrestricted";
+    private const string MaterialIssueQualityStatus = WmsReceivingQualityStatuses.Unrestricted;
     private const string MaterialIssueOwnerType = "production";
 
     public async Task<PrepareMesMaterialIssueOutboundResult> Handle(

@@ -38,7 +38,7 @@ import {
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon } from '@lucide/vue'
+import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon, TruckIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -227,6 +227,8 @@ function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
 // 信用解冻复核：仅 credit-held 行出现入口；提交后走审批中心，审批通过订单恢复「已下达」。
 const creditHoldOpen = shallowRef(false)
 const creditHoldOrder = shallowRef<BusinessConsoleErpSalesOrderItem | null>(null)
+const releaseDeliveryOpen = shallowRef(false)
+const releaseDeliveryOrder = shallowRef<BusinessConsoleErpSalesOrderItem | null>(null)
 
 function isCreditHeld(row: BusinessConsoleErpSalesOrderItem) {
   return (row.status ?? '').toLowerCase() === 'credit-held'
@@ -251,6 +253,35 @@ async function submitCreditHoldRelease() {
       '提交信用解冻复核失败，请稍后重试。',
     )
   }
+}
+
+// 发货单是从销售订单释放出来的，所以「释放发货」的入口在这里，而不是发货单列表页。
+// 只有已下达（released）的订单能发货；信用冻结中的订单先走解冻复核。
+function isDeliverable(row: BusinessConsoleErpSalesOrderItem) {
+  return Boolean(row.salesOrderNo) && (row.status ?? '').toLowerCase() === 'released'
+}
+
+function openReleaseDeliveryDialog(row: BusinessConsoleErpSalesOrderItem) {
+  releaseDeliveryOrder.value = row
+  releaseDeliveryOpen.value = true
+}
+
+async function submitReleaseDelivery() {
+  const salesOrderNo = releaseDeliveryOrder.value?.salesOrderNo
+  if (!salesOrderNo) return
+  try {
+    await orders.releaseDeliveryOrder(salesOrderNo)
+  } catch (error) {
+    // 失败保留弹框：订单可能已经没有未发行了，把原因显示出来而不是把人弹回列表。
+    notifyOperationFailure(
+      '释放发货失败',
+      orders.releaseDeliveryOrderError.value ?? error,
+      '释放发货失败，请稍后重试。',
+    )
+    return
+  }
+  releaseDeliveryOpen.value = false
+  notifySuccess(`销售订单 ${salesOrderNo} 已按未发数量释放发货单`)
 }
 
 function openDialog() {
@@ -387,6 +418,17 @@ async function submit() {
             解冻复核
           </NvButton>
           <NvButton
+            v-if="isDeliverable(row)"
+            size="sm"
+            variant="ghost"
+            type="button"
+            :disabled="orders.releaseDeliveryOrderPending.value"
+            @click="openReleaseDeliveryDialog(row)"
+          >
+            <TruckIcon aria-hidden="true" />
+            释放发货
+          </NvButton>
+          <NvButton
             size="sm"
             variant="ghost"
             type="button"
@@ -428,6 +470,39 @@ async function submit() {
           >
             <Spinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
             提交解冻复核
+          </NvButton>
+        </NvDialogFooter>
+      </NvDialogContent>
+    </NvDialog>
+
+    <NvDialog v-model:open="releaseDeliveryOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>释放发货</NvDialogTitle>
+          <NvDialogDescription>
+            订单 {{ releaseDeliveryOrder?.salesOrderNo ?? '-' }}（客户
+            {{
+              resolvePartner(releaseDeliveryOrder?.customerCode) ??
+              releaseDeliveryOrder?.customerCode ??
+              '-'
+            }}）。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <p class="text-sm text-muted-foreground">
+          将按该订单当前全部未发行与剩余数量整单释放一张发货单，随后可在「销售发货」跟进出库。
+        </p>
+        <NvDialogFooter>
+          <NvDialogClose as-child>
+            <NvButton type="button" variant="outline">取消</NvButton>
+          </NvDialogClose>
+          <NvButton
+            type="button"
+            :disabled="orders.releaseDeliveryOrderPending.value"
+            @click="submitReleaseDelivery"
+          >
+            <Spinner v-if="orders.releaseDeliveryOrderPending.value" aria-hidden="true" />
+            <TruckIcon v-else aria-hidden="true" />
+            释放发货
           </NvButton>
         </NvDialogFooter>
       </NvDialogContent>

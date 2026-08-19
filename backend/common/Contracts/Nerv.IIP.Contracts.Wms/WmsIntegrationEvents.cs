@@ -31,6 +31,13 @@ public static class WmsIntegrationEventSources
 public static class WmsSourceDocumentTypes
 {
     public const string MesMaterialIssueRequest = "mes-material-issue-request";
+
+    /// <summary>
+    /// ERP 采购订单派生的入库单源单据类型。ERP 侧按源单据取消在途入库、以及入库完成回写采购收货时
+    /// 都比这个值；历史别名 <c>erp-purchase-order</c> 仍在消费侧兼容匹配，写入侧一律用本常量（#1370 ③）。
+    /// </summary>
+    public const string PurchaseOrder = "purchase-order";
+
     public const string PurchaseReceipt = "purchase-receipt";
     public const string PurchaseReceiptReturn = "purchase-receipt-return";
     public const string SalesReturnRma = "sales-return-rma";
