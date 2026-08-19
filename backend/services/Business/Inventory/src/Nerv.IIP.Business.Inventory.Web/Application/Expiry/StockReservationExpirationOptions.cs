@@ -20,7 +20,7 @@ public sealed class StockReservationExpirationOptions
     {
         var lifetime = sourceService.Trim().ToLowerInvariant() switch
         {
-            "wms" or InventoryIntegrationEventSources.BusinessWms => WmsDefaultLifetime,
+            InventoryMovementSourceServices.Wms or InventoryIntegrationEventSources.BusinessWms => WmsDefaultLifetime,
             "mes" or InventoryIntegrationEventSources.BusinessMes => MesDefaultLifetime,
             _ => DefaultLifetime,
         };

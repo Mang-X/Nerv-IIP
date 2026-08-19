@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 
@@ -11,7 +12,8 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// 《工厂世界观设定集》L1 背景历史引擎的 **仓储域侧**（二期）。
 ///
 /// 产出（设定集 §7）：与一期 ERP/MES 单据一一对应的收货入库单、完工入库单、发货出库单、领料出库单，
-/// 每单一条作业行、一条上架 / 拣货任务，全部走到终态（入库 Completed、出库 Completed）。
+/// 每单一条作业行、一条上架 / 拣货任务。**是否走到终态由计划的 <c>CompletedAtUtc</c> 决定**
+/// （缺省的设定集全部闭环；为 null 的单据只落单据本体，不收单 / 不建任务 / 不过账）。
 ///
 /// 与其余域的一致性靠 <see cref="WorldHistoryWmsSpec.BuildDocuments"/> 一个确定性纯函数达成：
 /// 源单据号与时刻全部由共享形状推出，两侧不通信、不跨库查询、不建跨 schema 外键。
@@ -35,18 +37,19 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
     /// <summary>每批单据数。批内共享一次预查与一次 <c>SaveChanges</c>，批末清变更跟踪器。</summary>
     public const int BatchSize = 200;
 
-    private const string InspectionPassedEventType = "quality.InspectionPassed";
-
+    // documents：本次要落库的**计划**，缺省取设定集 WorldHistoryWmsSpec.BuildDocuments。
+    // 单据是否闭环由计划的 CompletedAtUtc 决定，seed 与校验器读同一份，不各自写死。
     public async Task<WorldHistoryWmsSeedReport> SeedAsync(
         string organizationId,
         string environmentId,
         DateOnly asOfDate,
         double scale,
+        WorldHistoryWarehouseDocuments? documents = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(scale);
 
-        var documents = WorldHistoryWmsSpec.BuildDocuments(asOfDate, scale);
+        documents ??= WorldHistoryWmsSpec.BuildDocuments(asOfDate, scale);
         var counters = new SeedCounters();
 
         await WriteInboundOrdersAsync(organizationId, environmentId, documents.InboundOrders, counters, cancellationToken);
@@ -54,7 +57,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
         // fail-closed：单据终态 / 任务数量 / 计划对账 / 时间戳边界对不上就让 seed 失败。
         var validation = await new WorldHistoryConsistencyValidator(dbContext)
-            .ValidateAsync(organizationId, environmentId, asOfDate, scale, cancellationToken);
+            .ValidateAsync(organizationId, environmentId, asOfDate, scale, documents, cancellationToken);
 
         return new WorldHistoryWmsSeedReport(
             InboundOrdersWritten: counters.InboundOrders,
@@ -130,6 +133,14 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         dbContext.InboundOrders.Add(order);
         counters.InboundOrders++;
 
+        // 终态口径以计划为准（设定集裁决点四）：计划没给完成时刻，这张单据就是有意留在流程中的，
+        // 只落单据本体——不收单、不建上架任务、不产生过账请求，那些都是「已闭环」才有的下游事实。
+        if (document.CompletedAtUtc is not { } completedAtUtc)
+        {
+            Backdate(order, x => x.CreatedAtUtc, document.CreatedAtUtc.UtcDateTime);
+            return;
+        }
+
         // 上架时机由领域层的门禁决定，两条路径不能互换：
         // - 免检行（完工入库）只能在 Open 状态下建上架任务，收单后单据即不可变；
         // - 待检行（采购收货）必须先收单进 PendingQualityCheck、拿到放行结论后才允许上架。
@@ -138,10 +149,10 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         {
             WriteMovementRequests(
                 order.Complete(document.MovementIdempotencyKey, order.Version),
-                document.CompletedAtUtc,
+                completedAtUtc,
                 counters);
             order.ApplyInspectionResult(
-                InspectionPassedEventType,
+                QualityIntegrationEventTypes.InspectionPassed,
                 document.InspectionRecordId!,
                 document.SkuCode,
                 document.LotNo,
@@ -155,7 +166,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             task = CreatePutawayTask(order, document);
             WriteMovementRequests(
                 order.Complete(document.MovementIdempotencyKey, order.Version),
-                document.CompletedAtUtc,
+                completedAtUtc,
                 counters);
         }
 
@@ -164,7 +175,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         counters.WarehouseTasks++;
 
         Backdate(order, x => x.CreatedAtUtc, document.CreatedAtUtc.UtcDateTime);
-        Backdate(order, x => x.CompletedAtUtc, (DateTime?)document.CompletedAtUtc.UtcDateTime);
+        Backdate(order, x => x.CompletedAtUtc, (DateTime?)completedAtUtc.UtcDateTime);
         Backdate(task, x => x.CreatedAtUtc, document.TaskCreatedAtUtc.UtcDateTime);
         Backdate(task, x => x.CompletedAtUtc, (DateTime?)document.TaskCompletedAtUtc.UtcDateTime);
     }
@@ -245,6 +256,13 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         dbContext.OutboundOrders.Add(order);
         counters.OutboundOrders++;
 
+        // 同入库：终态口径以计划为准，计划留在流程中的单据不建拣货任务、不复核、不过账。
+        if (document.CompletedAtUtc is not { } completedAtUtc)
+        {
+            Backdate(order, x => x.CreatedAtUtc, document.CreatedAtUtc.UtcDateTime);
+            return;
+        }
+
         var task = order.CreatePickingTask(
             document.WarehouseTaskNo,
             WorldHistoryWmsSpec.LineNo,
@@ -260,11 +278,11 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             passed: true,
             document.MovementIdempotencyKey,
             order.Version);
-        WriteMovementRequests(requests, document.CompletedAtUtc, counters);
+        WriteMovementRequests(requests, completedAtUtc, counters);
         order.MarkInventoryPostingCompleted();
 
         Backdate(order, x => x.CreatedAtUtc, document.CreatedAtUtc.UtcDateTime);
-        Backdate(order, x => x.CompletedAtUtc, (DateTime?)document.CompletedAtUtc.UtcDateTime);
+        Backdate(order, x => x.CompletedAtUtc, (DateTime?)completedAtUtc.UtcDateTime);
         Backdate(task, x => x.CreatedAtUtc, document.CreatedAtUtc.UtcDateTime);
         Backdate(task, x => x.CompletedAtUtc, (DateTime?)document.TaskCompletedAtUtc.UtcDateTime);
     }

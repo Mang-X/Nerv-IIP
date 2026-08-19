@@ -198,7 +198,7 @@ public sealed class GatewayConsoleIamAdminTests
         FakeGatewayAuthorizationClient auth,
         FakeGatewayIamAuthClient iam,
         FakeGatewayIamAdminClient admin) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        PlatformGatewayTestHost.CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IGatewayAuthorizationClient>();
             services.AddSingleton<IGatewayAuthorizationClient>(auth);
