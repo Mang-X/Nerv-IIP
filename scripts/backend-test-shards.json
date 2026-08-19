@@ -88,7 +88,8 @@
         "backend/tests/Nerv.IIP.Sdk.Observability.Tests/Nerv.IIP.Sdk.Observability.Tests.csproj",
         "backend/tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
         "backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
-        "backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj"
+        "backend/tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj",
+        "backend/tests/Nerv.IIP.VocabularyGovernance.Tests/Nerv.IIP.VocabularyGovernance.Tests.csproj"
       ],
       "excludedTestClasses": [
         "Nerv.IIP.AppHub.Web.Tests.AppHubPostgresProfileTests",
