@@ -89,7 +89,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
     ///
     /// 逐行内容不与规格逐字段比对：同一环境在不同 <c>asOfDate</c> 上重复启动时，先前落库的行
     /// 保留当时的时间戳（幂等按单号跳过），因此这里校验的是**不变量**——条数、号段格式、
-    /// 时间边界、引用完整性、状态分布下限。
+    /// 时间边界、引用完整性，以及状态分布中**库侧能判定的那一侧**
+    /// （如停机不得全部未恢复；「至少留几起进行中」是设定集的形状要求，见 <see cref="CheckDowntimeEventsAsync"/>）。
     /// </summary>
     public async Task<WorldHistoryFloorEventsValidationReport> ValidateFloorEventsAsync(
         string organizationId,
@@ -170,9 +171,26 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             }
         }
 
-        if (rows.Length > 0 && rows.Count(x => x.ToUtc is null) == 0)
+        // 期望口径不是「库里至少留一起未恢复」——那是把「当前停机区块非空」这个**设定集形状要求**
+        // 写死成 fail-closed 的库断言，而库状态根本分不清下面两种「全部已恢复」：
+        // ① 种子没留（真缺陷）；② 演示当场把最后几起点了恢复（ConfirmDowntimeRecoveryCommand 就是
+        // 按 DowntimeEventNo 关掉种子行的），或跨天重启后旧行被合法关闭（asOfDate 缺省取当天）。
+        // 把二者一律判红，等于用门禁禁止演示操作，重启即 seed 失败。
+        //
+        // 真正的不变量拆成两条，各自放在能判定它的那一层：
+        // ① 「最近若干起保持进行中」是**设定集纯函数的性质**，唯一权威是
+        //    WorldHistoryFloorEventsSpec.OpenDowntimeEventCount(asOfDate, scale)——期望条数从此外置，
+        //    调 OpenDowntimeShare / MaxOpenDowntimeEvents 不必再同步改门禁；该性质由设定集自身断言
+        //    与「刚播完种」的种子断言守（见 WorldHistoryFloorEventsSeedServiceTests）。
+        // ② 库侧能守、而原断言守不到的是**反向**：历史停机不可能全部未恢复。设定集本次只要求
+        //    expectedOpen 起进行中，落库行若全是 ToUtc = null，「设备与停机」页一条已恢复记录都没有，
+        //    历史就是假的。这一侧对幂等重播与演示操作都成立（已恢复的行不会自己变回进行中）。
+        var expectedOpen = WorldHistoryFloorEventsSpec.OpenDowntimeEventCount(asOfDate, scale);
+        if (rows.Length > expectedOpen && rows.All(x => x.ToUtc is null))
         {
-            failures.Add("停机事件全部已恢复，「当前停机」将为空——设定集要求最近若干起保持进行中。");
+            failures.Add(
+                $"停机事件 {rows.Length} 起全部未恢复，设定集本次只要求 {expectedOpen} 起保持进行中" +
+                "——历史停机必须留下已恢复记录，否则「设备与停机」页没有历史可看。");
         }
 
         return rows.Length;

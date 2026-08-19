@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
+using DomainWorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -199,6 +200,39 @@ public sealed class WorldHistoryFloorEventsSeedServiceTests
         Assert.True(first.DowntimeEventsWritten > 0);
     }
 
+    /// <summary>
+    /// 「最近若干起保持进行中」的期望条数**归设定集所有**，不是库校验器写死的「至少 1 起」。
+    ///
+    /// 库校验器分不清「种子没留」与「演示当场点了恢复 / 跨天重启后旧行被关闭」，因此这条形状要求
+    /// 放在唯一能判定它的这一层：纯函数自洽（计划里进行中的条数 == 期望条数）＋ 只要有停机就必须
+    /// 有当前停机。调 <c>OpenDowntimeShare</c> / <c>MaxOpenDowntimeEvents</c> 只需改设定集，门禁自动跟随。
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AsOfDates))]
+    public void Open_downtime_expectation_is_owned_by_the_spec(int year, int month, int day)
+    {
+        var asOfDate = new DateOnly(year, month, day);
+        var events = WorldHistoryFloorEventsSpec.BuildDowntimeEvents(asOfDate, TestScale);
+        var expectedOpen = WorldHistoryFloorEventsSpec.OpenDowntimeEventCount(asOfDate, TestScale);
+
+        Assert.Equal(expectedOpen, events.Count(x => x.IsOpen));
+        Assert.InRange(expectedOpen, 0, WorldHistoryFloorEventsSpec.MaxOpenDowntimeEvents);
+
+        // 只要设定集产出了停机，就必须留下「当前停机」；一起都没有才允许期望为 0。
+        Assert.True(events.Count == 0 || expectedOpen > 0);
+
+        // 进行中的必须是**最近**几起（单号顺序即时间顺序），否则「当前停机」列出来的是陈年旧事。
+        if (events.Count > expectedOpen && expectedOpen > 0)
+        {
+            var openOrdinals = events
+                .Select((downtime, index) => (downtime, index))
+                .Where(pair => pair.downtime.IsOpen)
+                .Select(pair => pair.index)
+                .ToArray();
+            Assert.Equal(Enumerable.Range(events.Count - expectedOpen, expectedOpen), openOrdinals);
+        }
+    }
+
     /// <summary>设定集 §7 要求的全量规模：停机 400–800、交接 900–1300、不良 600–1200（scale=1.0）。</summary>
     [Fact]
     public void Full_scale_volumes_match_the_world_bible_shape()
@@ -298,6 +332,79 @@ public sealed class WorldHistoryFloorEventsSeedServiceTests
         }
 
         throw new InvalidOperationException($"No world-bible SKU routes through {workCenterId}.");
+    }
+
+    /// <summary>
+    /// 正向变异：**真正违反不变量**的数据——全部停机都写成未恢复，历史里一条已恢复记录都没有。
+    /// 旧断言（「全部已恢复才算红」）对这份数据是绿的，新断言必须抓红。
+    /// </summary>
+    [Fact]
+    public async Task Downtime_validation_fails_when_every_event_is_still_open()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedWorkOrderChainAsync(dbContext, AsOfDate);
+        await new WorldHistoryFloorEventsSeedService(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+        await ReplaceDowntimeRowsAsync(dbContext, AsOfDate, allOpen: true);
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(dbContext)
+                .ValidateFloorEventsAsync("org-001", "env-dev", AsOfDate, TestScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("全部未恢复", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 反向变异：**原断言会红、但实际合法**的数据——演示当场把最后几起停机点了恢复
+    /// （<c>ConfirmDowntimeRecoveryCommand</c> 的真实效果），于是库里全部已恢复。
+    /// 这不是种子缺陷，重启不该因此 fail-closed，新断言必须绿。
+    /// </summary>
+    [Fact]
+    public async Task Downtime_validation_passes_when_the_demo_recovered_every_open_event()
+    {
+        await using var dbContext = CreateDbContext();
+        await SeedWorkOrderChainAsync(dbContext, AsOfDate);
+        await new WorldHistoryFloorEventsSeedService(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+        await ReplaceDowntimeRowsAsync(dbContext, AsOfDate, allOpen: false);
+
+        Assert.Empty(await dbContext.WorkCenterUnavailabilities.Where(x => x.ToUtc == null).ToArrayAsync());
+
+        var report = await new WorldHistoryConsistencyValidator(dbContext)
+            .ValidateFloorEventsAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        Assert.Equal(
+            WorldHistoryFloorEventsSpec.DowntimeEventCount(AsOfDate, TestScale),
+            report.DowntimeEventsChecked);
+    }
+
+    /// <summary>按设定集的号段与内容重建停机表，只改「是否恢复」这一个维度。</summary>
+    private static async Task ReplaceDowntimeRowsAsync(ApplicationDbContext dbContext, DateOnly asOfDate, bool allOpen)
+    {
+        dbContext.WorkCenterUnavailabilities.RemoveRange(await dbContext.WorkCenterUnavailabilities.ToArrayAsync());
+        await dbContext.SaveChangesAsync();
+
+        var upperBound = WorldHistoryFloorEventsSpec.UpperBound(asOfDate);
+        foreach (var downtime in WorldHistoryFloorEventsSpec.BuildDowntimeEvents(asOfDate, TestScale))
+        {
+            DateTimeOffset? restoredAtUtc = null;
+            if (!allOpen)
+            {
+                var restored = downtime.ToUtc ?? downtime.FromUtc.AddMinutes(30);
+                restoredAtUtc = restored > upperBound ? upperBound : restored;
+            }
+
+            dbContext.WorkCenterUnavailabilities.Add(DomainWorkCenterUnavailability.Open(
+                "org-001",
+                "env-dev",
+                downtime.DowntimeEventNo,
+                downtime.WorkCenterId,
+                downtime.FromUtc,
+                restoredAtUtc,
+                downtime.Reason,
+                downtime.DeviceAssetId));
+        }
+
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
     }
 
     /// <summary>不良必须挂真实工序：工单链没落库时宁可不写，也不造假工单号。</summary>
