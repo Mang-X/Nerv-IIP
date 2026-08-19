@@ -61,6 +61,10 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
         Assert.Equal("purchase-order", WorldHistoryApprovalSpec.PurchaseDocumentType);
 
+        // #1684：NCR 处置模板码收敛进契约（参与跨服务确定性回链盐串），权威码值 = 落库事实 APT-WB-NCR-001。
+        Assert.Equal("APT-WB-NCR-001", ApprovalTemplateCodes.NcrDisposition);
+        Assert.Equal(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
+
         Assert.Equal("erp-sales-credit-release", ApprovalTemplateCodes.SalesCreditRelease);
         Assert.Equal(ApprovalTemplateCodes.SalesCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode);
 

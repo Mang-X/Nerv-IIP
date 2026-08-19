@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Contracts.Approval;
 using System.Globalization;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
@@ -45,6 +46,9 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         var plans = await LoadInspectionPlansAsync(organizationId, environmentId, cancellationToken);
 
         var facts = WorldHistoryQualitySpec.BuildInspectionFacts(asOfDate, scale);
+        // #1684：审批域只为前 K 张 NCR 造历史处置审批链（K 为跨服务标定下界），
+        // 覆盖面内回填确定性链 id，覆盖面外保持 null（否则指向审批库里不存在的链）。
+        var approvalCoveredNcrCodes = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, scale);
         var counters = new SeedCounters();
 
         for (var batchStart = 0; batchStart < facts.Count; batchStart += BatchSize)
@@ -61,7 +65,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             {
                 if (!existing.ContainsKey(fact.TriggerIdempotencyKey))
                 {
-                    WriteInspectionChain(organizationId, environmentId, fact, plans[fact.PlanCode], counters);
+                    WriteInspectionChain(organizationId, environmentId, fact, plans[fact.PlanCode], approvalCoveredNcrCodes, counters);
                     added++;
                 }
             }
@@ -197,6 +201,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         string environmentId,
         WorldHistoryInspectionFact fact,
         InspectionPlan plan,
+        IReadOnlySet<string> approvalCoveredNcrCodes,
         SeedCounters counters)
     {
         var task = InspectionTask.CreatePending(
@@ -277,13 +282,14 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             return;
         }
 
-        WriteNonconformanceChain(fact, plan, record, counters);
+        WriteNonconformanceChain(fact, plan, record, approvalCoveredNcrCodes, counters);
     }
 
     private void WriteNonconformanceChain(
         WorldHistoryInspectionFact fact,
         InspectionPlan plan,
         InspectionRecord record,
+        IReadOnlySet<string> approvalCoveredNcrCodes,
         SeedCounters counters)
     {
         var openedAtUtc = fact.NcrOpenedAtUtc!.Value;
@@ -299,9 +305,13 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
         counters.NonconformanceReports++;
 
         // 返工 / 让步 / 报废都需要 MRB 评审通过后才能提交处置（领域层强约束）。
+        // #1684：覆盖面内（前 K 张）NCR 按跨服务确定性公式回填处置审批链 id——审批域种子用同一公式
+        // 给对应链定 id，NCR 详情页审批区据此可解析；覆盖面外必须保持 null，否则指向不存在的链。
         ncr.SubmitDisposition(
             fact.DispositionType!,
-            dispositionApprovalChainId: null,
+            dispositionApprovalChainId: approvalCoveredNcrCodes.Contains(fact.NcrCode!)
+                ? WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(fact.NcrCode!).ToString()
+                : null,
             [fact.AttachmentFileId],
             [MrbReviewInput.Approve(fact.MrbReviewerUserId!, "MRB 评审通过", fact.NcrDispositionAtUtc!.Value)]);
 

@@ -126,6 +126,14 @@ public sealed class WorldHistoryApprovalConsistencyValidator(ApplicationDbContex
             failures.Add($"{documentId} 发起人应为 {fact.StartedByActorRef}，实际 {chain.StartedBy}。");
         }
 
+        // #1684：NCR 处置审批链的 id 必须等于跨服务确定性公式的值，
+        // 否则 Quality 侧按同一公式回填的 DispositionApprovalChainId 会指向不存在的链。
+        if (string.Equals(chain.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal) &&
+            chain.Id.Id != Nerv.IIP.Contracts.Approval.WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(documentId))
+        {
+            failures.Add($"{documentId} 处置审批链 id {chain.Id.Id:D} 与跨服务确定性公式不符，Quality 侧回链将指向不存在的链。");
+        }
+
         // #1683：来源服务 / 单据类型是回写消费侧的分流依据，漂移一个字就静默丢事件
         // （种子写 erp、ERP 消费侧认 business-erp → 审批通过后采购订单永停 pending，且无任何报错）。
         // 这两项此前完全没有校验，词表漂移对本校验器结构性无感知，故在此逐字 fail-closed。
