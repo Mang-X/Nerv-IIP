@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -115,6 +116,51 @@ public sealed class StockCountApprovalTests
             Assert.Equal(expectedAdjustmentStatus, persistedAdjustment.Status);
             Assert.Equal(approvalResult == ApprovalResults.Approved, persistedAdjustment.MovementId is not null);
         }
+    }
+
+    [Fact]
+    public async Task Cancelling_a_pending_approval_task_is_rejected_so_the_approval_write_back_never_poisons()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"inventory-count-cancel-pending-{Guid.CreateVersion7():N}", databaseRoot);
+
+        await using var dbContext = CreateDbContext(options);
+        var ledger = NewLedgerWithOnHand(10m);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        task.SubmitForApproval(ledger, 7m);
+        var adjustment = StockCountAdjustment.RecordPendingApproval(task, "idem-count-approval-001", "chain-count-001", 15m);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockCountTasks.Add(task);
+        dbContext.StockCountAdjustments.Add(adjustment);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        // 关闭出口必须与重盘守卫同口径：待审批先走完审批。放行的话审批链还在跑，
+        // 回写命令随后踩到 EnsureStatus(pending-approval) 抛异常，从 CAP 消费者逃逸成毒消息。
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new CancelStockCountTaskCommandHandler(dbContext).Handle(
+                new CancelStockCountTaskCommand(task.Id, "盘点范围调整"),
+                CancellationToken.None));
+        Assert.Contains("pending-approval", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(StockCountTaskStatuses.PendingApproval, dbContext.StockCountTasks.Single().Status);
+        Assert.True(dbContext.StockLedgers.Single().IsFrozenForCount);
+
+        // 审批回写照常落地，没有异常逃逸到消费者。
+        var handler = new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(ApprovalCompletedEvent(ApprovalResults.Rejected), CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(options);
+        Assert.Equal(StockCountTaskStatuses.RecountRequired, verificationDbContext.StockCountTasks.Single().Status);
+        Assert.Equal(StockCountAdjustmentStatuses.Voided, verificationDbContext.StockCountAdjustments.Single().Status);
+        Assert.False(verificationDbContext.StockLedgers.Single().IsFrozenForCount);
+
+        // 审批走完之后，这张任务既可以重盘，也可以关闭——出口没有被守卫堵死。
+        var restarted = await new RestartStockCountTaskCommandHandler(verificationDbContext).Handle(
+            new RestartStockCountTaskCommand(task.Id),
+            CancellationToken.None);
+        Assert.Equal(StockCountTaskStatuses.Open, restarted.Status);
     }
 
     private static StockLedger NewLedgerWithOnHand(decimal quantity)
