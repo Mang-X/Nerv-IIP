@@ -45,6 +45,34 @@ Nerv-IIP 需要同时支撑事务数据、缓存、异步消息、对象文件�
 9. 内置归档 profile 使用平台已经需要的 File Storage 和 PostgreSQL 元数据能力，可以覆盖 Docker 和无容器脚本安装；同时把日志正文的大容量存储留在对象或文件系统层，避免业务库成为日志库。
 10. PostgreSQL 已是平台事务数据默认依赖，作为日志索引元数据存储不会引入新基础设施；它的分区、B-tree 和 BRIN 索引能力足以覆盖首版按时间、服务、实例、操作任务和 correlationId 定位 chunk 的需求。
 
+## 已考虑的替代方案
+
+**每个服务各自选一套基础设施。** 背景排除该做法：「0 到 1 阶段不能把基础设施做成每个服务各选一套，否则维护成本会迅速失控」；理由第 3 条把统一消息 provider 配置、缓存、对象存储与观测方案的收益记为减少平台服务之间的技术碎片化，后果第 4 条承认代价是「少量特殊服务不能随意自行选型」。
+
+**0 到 1 阶段就按服务拆分独立数据库。** 决策第 2 条把它降级为条件性选项：优先在同一 PostgreSQL 集群下按服务隔离 schema「控制运维成本」，只有当工具链、AppHost 资源或 `EnsureCreated()` 本地验证要求更强隔离时，才在同一集群内按服务拆分 database；理由第 2 条记录该顺序能在保持服务级数据边界的同时降低早期运维复杂度。
+
+**默认就引入消息 broker。** 决策第 5 条把默认 profile 定为 CAP `InMemory` 进程内传输，RabbitMQ 只作为多实例、跨进程和生产扩展 profile；理由第 3 条给出的落选理由是让单机部署「不承担不必要的 broker（消息代理）依赖」，后果第 1 条据此声明单机与默认本地部署不再因 PostgreSQL 持久化而强制引入 broker。
+
+**通过共享数据库表或直接写入他服务 schema 传播跨服务状态。** 决策第 11 条禁止该协作方式；理由第 5 条给出的落选理由是「通过事件而不是共享表传播状态，能从机制上维持服务边界的可持续性」，后果第 2 条要求团队显式管理 schema 边界与事件契约，而不是「依赖数据库便利性进行跨服务联动」。
+
+**让业务代码直接感知具体数据库 provider。** 决策第 12 条改为显式 database profile；实施说明第 6 条要求 provider 选择收敛在 Infrastructure/Program 注册层，Domain、Application、Endpoint、SDK 和公开契约「不得依赖 PostgreSQL、GaussDB、DMDB 或其它 provider 的专有 API」，后果第 7 条同时把目标限定为低成本、低感知而非完全无感。
+
+**把 SQL Server 或 Azure 相关服务作为默认基线。** 决策第 14 条只允许在客户环境强依赖 Microsoft 体系时于实施阶段评估该替代，「但不改变默认基线」；理由第 1 条记录默认基线的取舍标准是私有化可落地性、社区成熟度与后续演进空间。
+
+**把 Kingbase、OceanBase 直接纳入信创支持矩阵。** 决策第 13 条优先评估 netcorepal 模板已有 profile 覆盖的 GaussDB 与 DMDB；这两者的落选理由是「未出现在当前模板公开参数中」，必须先完成 EF Core provider、CAP storage/outbox、迁移和集成测试评估后才能进入支持矩阵。
+
+**由应用直接把日志写入业务数据库。** 决策第 16 条规定日志持久化不写入业务 PostgreSQL schema；理由第 8 条给出的落选理由是让应用写 stdout/stderr 或 OTLP、再由节点/Collector/Agent 采集转发，「比应用直接写数据库更容易统一限流、重试、保留、归档和替换后端」。
+
+**让日志、审计与业务事务数据共用同一语义表或同一保留策略。** 决策第 10 条不允许该共用；理由第 4 条给出的落选理由是拆开可以避免「诊断需求、合规需求与业务一致性需求相互污染」，决策第 19 条据此要求原始日志正文既不进业务 schema，也不复用 Ops `AuditRecord`。
+
+**把 InfluxDB 当作应用日志默认后端，或把 SQLite 当作生产日志检索与保留后端。** 决策第 18 条否决两者：InfluxDB 的默认定位是指标/时间序列场景，SQLite 只允许作为开发诊断、小型单机临时缓存或 collector/agent 内部队列实现细节。原文只记录了这两条适用边界，未展开更多落选理由。
+
+**把 Elastic、OpenSearch、ClickHouse 作为 `observability` 索引的默认存储。** 决策第 20 条只把它们保留为外部增强 adapter（适配器），默认使用 PostgreSQL 独立 schema 或独立 database；理由第 10 条给出的落选理由是 PostgreSQL 已是平台事务数据默认依赖、作为日志索引元数据存储不引入新基础设施，且其分区、B-tree 和 BRIN 索引能力足以覆盖首版定位需求。
+
+**默认绑定特定商业观测平台。** 决策第 9 条统一采用 OpenTelemetry，把可视化与观测聚合定为部署期可选适配，「不默认绑定特定商业平台或收费体系」；原文只记录了该选择与私有化、混合部署的场景前提，未展开更多落选理由。
+
+**把 PostgreSQL 专有检索能力写成默认索引契约。** 实施说明第 16 条要求 `LogChunk` 首版索引模型保持跨数据库可迁移，JSONB、GIN、trigram、全文检索等 PostgreSQL 专有能力只允许作为 PostgreSQL profile 的可选优化。
+
 ## 后果
 
 1. 单机和默认本地部署不再因为 PostgreSQL 持久化而强制引入消息 broker；启用 `Messaging:Provider=RabbitMQ` 的 profile 仍需要标准 broker 编排和运维。
