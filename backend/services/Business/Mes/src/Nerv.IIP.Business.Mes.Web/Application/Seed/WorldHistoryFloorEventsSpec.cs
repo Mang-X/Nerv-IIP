@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.Quality;
+
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
 /// <summary>
@@ -300,7 +302,10 @@ public static class WorldHistoryFloorEventsSpec
     /// <summary>处置分布（设定集 §7）：返工 60% / 让步放行 + 筛选 25% / 报废 15%。</summary>
     public static readonly IReadOnlyList<string> DispositionTypes =
     [
-        "rework", "conditional-release", "sort-and-screen", "scrap",
+        QualityNcrDispositionTypes.Rework,
+        QualityNcrDispositionTypes.ConditionalRelease,
+        QualityNcrDispositionTypes.SortAndScreen,
+        QualityNcrDispositionTypes.Scrap,
     ];
 
     private static readonly IReadOnlyList<int> DispositionWeights = [60, 13, 12, 15];

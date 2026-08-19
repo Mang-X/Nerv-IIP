@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Quality;
 using System.Globalization;
 using System.Text;
 
@@ -356,9 +357,9 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             return;
         }
 
-        CheckDispositionShare(seededReports, "rework", WorldHistoryQualitySpec.ReworkDispositionShare, failures);
-        CheckDispositionShare(seededReports, "conditional-release", WorldHistoryQualitySpec.ConditionalReleaseDispositionShare, failures);
-        CheckDispositionShare(seededReports, "scrap", WorldHistoryQualitySpec.ScrapDispositionShare, failures);
+        CheckDispositionShare(seededReports, QualityNcrDispositionTypes.Rework, WorldHistoryQualitySpec.ReworkDispositionShare, failures);
+        CheckDispositionShare(seededReports, QualityNcrDispositionTypes.ConditionalRelease, WorldHistoryQualitySpec.ConditionalReleaseDispositionShare, failures);
+        CheckDispositionShare(seededReports, QualityNcrDispositionTypes.Scrap, WorldHistoryQualitySpec.ScrapDispositionShare, failures);
     }
 
     private static void CheckDispositionShare(
