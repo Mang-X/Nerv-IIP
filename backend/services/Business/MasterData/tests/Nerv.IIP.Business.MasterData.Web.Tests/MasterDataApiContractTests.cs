@@ -24,6 +24,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
+using Nerv.IIP.Business.MasterData.Domain.DomainEvents;
 using Nerv.IIP.Business.MasterData.Infrastructure;
 using Nerv.IIP.Business.MasterData.Infrastructure.Repositories;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
@@ -509,20 +510,53 @@ public sealed class MasterDataApiContractTests
         Assert.Contains("未找到父产品分类 'CAT-MISSING'。", exception.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Product_category_archive_uses_default_reason_when_request_reason_is_blank()
+    public static TheoryData<string> InvalidArchiveReasons => new()
+    {
+        "",
+        " ",
+        "\t",
+        "　",
+        new string('停', 501),
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidArchiveReasons))]
+    public async Task Product_category_archive_rejects_invalid_reason_without_changing_the_aggregate(string reason)
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.ProductCategories.Add(ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null));
+        var category = ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null);
+        dbContext.ProductCategories.Add(category);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        category.ClearDomainEvents();
+
+        await Assert.ThrowsAsync<KnownException>(() => new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", reason),
+            CancellationToken.None));
+
+        Assert.False(category.Disabled);
+        Assert.Empty(category.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>());
+    }
+
+    [Fact]
+    public async Task Product_category_archive_accepts_500_characters_and_audits_the_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var category = ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null);
+        dbContext.ProductCategories.Add(category);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        category.ClearDomainEvents();
+        var reason = new string('停', 500);
 
         var archived = await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
-            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", " "),
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", reason),
             CancellationToken.None);
 
         Assert.False(archived.Enabled);
+        Assert.Equal(reason, Assert.Single(category.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
     }
 
     [Fact]
@@ -604,20 +638,82 @@ public sealed class MasterDataApiContractTests
         Assert.False(archived.Enabled);
     }
 
-    [Fact]
-    public async Task Skill_archive_uses_default_reason_when_request_reason_is_blank()
+    [Theory]
+    [MemberData(nameof(InvalidArchiveReasons))]
+    public async Task Skill_archive_rejects_invalid_reason_without_changing_the_aggregate(string reason)
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null));
+        var skill = Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null);
+        dbContext.Skills.Add(skill);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        skill.ClearDomainEvents();
+
+        await Assert.ThrowsAsync<KnownException>(() => new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", reason),
+            CancellationToken.None));
+
+        Assert.False(skill.Disabled);
+        Assert.Empty(skill.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>());
+    }
+
+    [Fact]
+    public async Task Skill_archive_accepts_500_characters_and_audits_the_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var skill = Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null);
+        dbContext.Skills.Add(skill);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        skill.ClearDomainEvents();
+        var reason = new string('停', 500);
 
         var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
-            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", ""),
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", reason),
             CancellationToken.None);
 
         Assert.False(archived.Enabled);
+        Assert.Equal(reason, Assert.Single(skill.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+    }
+
+    [Fact]
+    public async Task Catalog_archive_commands_audit_trimmed_reasons()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var category = ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null);
+        var skill = Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null);
+        dbContext.ProductCategories.Add(category);
+        dbContext.Skills.Add(skill);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        category.ClearDomainEvents();
+        skill.ClearDomainEvents();
+
+        await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "  产品线调整  "),
+            CancellationToken.None);
+        await new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", "  资质目录调整  "),
+            CancellationToken.None);
+
+        Assert.Equal("产品线调整", Assert.Single(category.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+        Assert.Equal("资质目录调整", Assert.Single(skill.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+    }
+
+    [Theory]
+    [InlineData(typeof(ArchiveProductCategoryRequest))]
+    [InlineData(typeof(ArchiveSkillRequest))]
+    public void Catalog_archive_request_reason_has_no_default_value(Type requestType)
+    {
+        var reason = Assert.Single(
+            Assert.Single(requestType.GetConstructors()).GetParameters(),
+            parameter => parameter.Name == "Reason");
+
+        Assert.False(reason.IsOptional);
+        Assert.False(reason.HasDefaultValue);
     }
 
     [Fact]
@@ -1983,6 +2079,131 @@ public sealed class MasterDataApiContractTests
             new ListTeamMembersQuery("org-001", "env-dev", "T-001"),
             CancellationToken.None);
         Assert.Empty(activeList.Members);
+    }
+
+    public static TheoryData<string?> InvalidTeamMemberRemovalReasons => new()
+    {
+        null,
+        "",
+        " ",
+        "\t",
+        "　",
+        new string('停', 501),
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidTeamMemberRemovalReasons))]
+    public async Task Team_member_removal_rejects_invalid_reason_before_changing_state(string? reason)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+
+        await Assert.ThrowsAsync<KnownException>(() => new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                reason!,
+                new("corr-invalid", "cause-invalid", "user:test", "op-invalid")),
+            CancellationToken.None));
+
+        Assert.False(member.Disabled);
+        Assert.Empty(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>());
+        Assert.Empty(dbContext.ScopeContextAuditEntries.Local);
+    }
+
+    [Fact]
+    public async Task Team_member_removal_accepts_500_characters_and_writes_the_real_reason_to_both_audits()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+        var reason = new string('停', 500);
+
+        await new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                reason,
+                new("corr-remove", "cause-remove", "user:test", "op-remove")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(member.Disabled);
+        Assert.Equal(reason, Assert.Single(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+        Assert.Equal(reason, Assert.Single(dbContext.ScopeContextAuditEntries.Local).Reason);
+        Assert.DoesNotContain(
+            dbContext.ScopeContextAuditEntries.Local,
+            audit => string.Equals(audit.Reason, "removed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Team_member_removal_trims_the_reason_before_domain_and_scope_context_audit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var member = TeamMember.Assign(
+            "org-001",
+            "env-dev",
+            "T-001",
+            "user-001",
+            false,
+            new DateOnly(2026, 1, 1),
+            null);
+        dbContext.TeamMembers.Add(member);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        member.ClearDomainEvents();
+
+        await new RemoveTeamMemberCommandHandler(dbContext).Handle(
+            new RemoveTeamMemberCommand(
+                "org-001",
+                "env-dev",
+                "T-001",
+                "user-001",
+                "  调离班组  ",
+                new("corr-remove", "cause-remove", "user:test", "op-remove")),
+            CancellationToken.None);
+
+        Assert.Equal("调离班组", Assert.Single(member.GetDomainEvents().OfType<MasterDataAggregateDisabledDomainEvent>()).Reason);
+        Assert.Equal("调离班组", Assert.Single(dbContext.ScopeContextAuditEntries.Local).Reason);
+    }
+
+    [Fact]
+    public void Team_member_removal_request_reason_has_no_default_value()
+    {
+        var reason = Assert.Single(
+            Assert.Single(typeof(RemoveTeamMemberRequest).GetConstructors()).GetParameters(),
+            parameter => parameter.Name == "Reason");
+
+        Assert.False(reason.IsOptional);
+        Assert.False(reason.HasDefaultValue);
     }
 
     [Fact]

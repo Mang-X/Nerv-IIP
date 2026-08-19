@@ -48,7 +48,10 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForStockCountAdjustm
         }
 
         var document = integrationEvent.Payload.DocumentReference;
-        if (!string.Equals(document.SourceService, "inventory", StringComparison.OrdinalIgnoreCase)
+        // #1702：来源服务同样共用审批契约常量——此前这里是裸字面量 "inventory"，
+        // 与发起侧各写各的；不匹配即下面的静默 return（无日志、无异常、无死信），
+        // 盘点调整单永停 pending-approval、账面不动、库存仍冻结。
+        if (!string.Equals(document.SourceService, ApprovalSourceServices.Inventory, StringComparison.OrdinalIgnoreCase)
             // #1344：回写消费侧与发起侧、种子模板共用同一个单据类型常量（三方任一漂移即回写静默丢事件）。
             || !string.Equals(document.DocumentType, ApprovalDocumentTypes.StockCountVariance, StringComparison.OrdinalIgnoreCase))
         {

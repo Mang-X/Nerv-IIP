@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CashReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PaymentExecutionAggregate;
@@ -1220,6 +1221,121 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
 
         Assert.NotNull(salesOrderId);
+    }
+
+    [Fact]
+    public async Task Whole_order_release_creates_one_delivery_for_every_open_line_and_replays_idempotently()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await SeedReleasedSalesOrderAsync(dbContext, "QT-WHOLE", "SO-WHOLE");
+        var handler = new ReleaseDeliveryOrderCommandHandler(dbContext);
+
+        // 不带行 = 整单释放：服务端按销售订单当前未发行与剩余数量成单。
+        var deliveryOrderId = await handler.Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-WHOLE", null, "idem-whole-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var delivery = dbContext.DeliveryOrders.Include(x => x.Lines).Single(x => x.Id == deliveryOrderId);
+        Assert.Equal(2, delivery.Lines.Count);
+        Assert.Equal(3m, delivery.Lines.Single(x => x.SalesOrderLineNo == "LINE-001").Quantity);
+        Assert.Equal(5m, delivery.Lines.Single(x => x.SalesOrderLineNo == "LINE-002").Quantity);
+
+        // 同一幂等键重放：未发量已经变了，指纹不能含派生数量，否则这里会被判成幂等冲突而不是回既有单。
+        var replayed = await handler.Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-WHOLE", null, "idem-whole-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(deliveryOrderId, replayed);
+        Assert.Single(dbContext.DeliveryOrders.Where(x => x.SalesOrderNo == "SO-WHOLE"));
+    }
+
+    [Fact]
+    public async Task Whole_order_release_rejects_a_sales_order_with_nothing_left_to_deliver()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await SeedReleasedSalesOrderAsync(dbContext, "QT-WHOLE-2", "SO-WHOLE-2");
+        var handler = new ReleaseDeliveryOrderCommandHandler(dbContext);
+        await handler.Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-WHOLE-2", null, "idem-whole-2-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-WHOLE-2", null, "idem-whole-2-002"),
+            CancellationToken.None));
+
+        Assert.Contains("没有可发货的未发行", exception.Message, StringComparison.Ordinal);
+        Assert.Single(dbContext.DeliveryOrders.Where(x => x.SalesOrderNo == "SO-WHOLE-2"));
+    }
+
+    [Fact]
+    public async Task Partial_release_still_takes_explicit_lines_and_leaves_the_rest_open()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await SeedReleasedSalesOrderAsync(dbContext, "QT-PARTIAL", "SO-PARTIAL");
+        var handler = new ReleaseDeliveryOrderCommandHandler(dbContext);
+
+        var partialId = await handler.Handle(
+            new ReleaseDeliveryOrderCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "SO-PARTIAL",
+                [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")],
+                "idem-partial-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var partial = dbContext.DeliveryOrders.Include(x => x.Lines).Single(x => x.Id == partialId);
+        Assert.Single(partial.Lines);
+        Assert.Equal("LOT-FG-001", partial.Lines.Single().LotNo);
+
+        // 剩下的未发量还能整单释放收尾：LINE-001 只剩 2，LINE-002 仍是 5。
+        var restId = await handler.Handle(
+            new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-PARTIAL", null, "idem-partial-rest"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var rest = dbContext.DeliveryOrders.Include(x => x.Lines).Single(x => x.Id == restId);
+        Assert.Equal(2m, rest.Lines.Single(x => x.SalesOrderLineNo == "LINE-001").Quantity);
+        Assert.Equal(5m, rest.Lines.Single(x => x.SalesOrderLineNo == "LINE-002").Quantity);
+    }
+
+    private static async Task SeedReleasedSalesOrderAsync(
+        Infrastructure.ApplicationDbContext dbContext,
+        string quotationNo,
+        string salesOrderNo)
+    {
+        await new CreateQuotationCommandHandler(dbContext).Handle(
+            new CreateQuotationCommand(
+                "org-001",
+                "env-dev",
+                quotationNo,
+                "CUST-001",
+                FutureDate(30),
+                [
+                    new QuotationCommandLine("LINE-001", "SKU-FG-1", "EA", 3m, 10m, FutureDate(45)),
+                    new QuotationCommandLine("LINE-002", "SKU-FG-2", "EA", 5m, 10m, FutureDate(45)),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", quotationNo),
+            CancellationToken.None);
+        await new CreateSalesOrderCommandHandler(
+            dbContext,
+            new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 100000m, "CNY"))).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", salesOrderNo, quotationNo, "SITE-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 
     private static DateOnly FutureDate(int days)

@@ -179,12 +179,50 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
     }
 
+    /// <summary>
+    /// 重盘：重新冻结台账、按当前版本重取快照，把任务放回可实盘状态。
+    /// 覆盖两种卡死：审批驳回后停在 recount-required 的任务；以及台账在快照之后被改动、
+    /// 确认差异每次都被拒（拒绝会回滚事务，状态仍留在 open）的任务——后者同样只有重取快照才能继续。
+    /// 之前那次实盘数与差异一并作废：它们是对旧快照的读数，留着会让下一次确认拿旧读数直接过账。
+    /// 已确认、已作废不可重开；待审批必须先走完审批，不能靠重盘绕过。
+    /// </summary>
+    public void RestartRecount(StockLedger ledger)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (Status != StockCountTaskStatuses.RecountRequired && Status != StockCountTaskStatuses.Open)
+        {
+            throw new InvalidOperationException(
+                $"Stock count task in status '{Status}' cannot be restarted for recount; only open or recount-required tasks can.");
+        }
+
+        EnsureSameDimension(ledger);
+        ledger.FreezeForCount(CountTaskCode);
+        ExpectedLedgerVersion = ledger.LedgerVersion;
+        CountedQuantity = null;
+        VarianceQuantity = null;
+        Status = StockCountTaskStatuses.Open;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// 关闭（作废）盘点任务并解冻台账。与 <see cref="RestartRecount"/> 同一条原则：待审批必须先走完审批。
+    /// 作废一张待审批任务只动任务本身——审批链还在跑，`StockCountAdjustment` 仍是 pending-approval，
+    /// 审批人随后批准/驳回时回写命令不会被幂等跳过，而 ConfirmApprovedAdjustment /
+    /// RequireRecountAfterApprovalRejection 都要求任务处于 pending-approval，于是抛异常从 CAP 消费者
+    /// 逃逸、无限重试成毒消息。宁可在这里拒绝。
+    /// </summary>
     public void Cancel(StockLedger ledger, string reason)
     {
         ArgumentNullException.ThrowIfNull(ledger);
         if (Status == StockCountTaskStatuses.Confirmed)
         {
             throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
+        }
+
+        if (Status == StockCountTaskStatuses.PendingApproval)
+        {
+            throw new InvalidOperationException(
+                "Stock count task in status 'pending-approval' cannot be cancelled; the variance approval must complete first.");
         }
 
         if (Status == StockCountTaskStatuses.Cancelled)

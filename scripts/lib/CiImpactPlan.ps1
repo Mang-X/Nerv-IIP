@@ -118,6 +118,28 @@ function Get-NervCiImpactPlan {
             [regex]::IsMatch($Path, 'IntegrationEventHandler\.cs$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
     }
 
+    # 跨服务事件的实际收发点：转换器把领域事件译成集成事件（发信侧），
+    # 处理器消费别的服务发来的集成事件（收信侧）。改这两处等于改跨服务契约的
+    # 内容，必须同时验收 Redis/CAP 传输与 FullChain 场景，所以两个 lane 都选中。
+    # 目录名带尾斜杠比对，避免 'IntegrationEventConvertersLegacy' 这类同前缀目录被误收。
+    function Test-CrossServiceIntegrationEventPath {
+        param([Parameter(Mandatory)] [string] $Path)
+
+        return $Path.StartsWith('backend/services/', [StringComparison]::Ordinal) -and
+            ($Path.Contains('/Application/IntegrationEventConverters/', [StringComparison]::Ordinal) -or
+                $Path.Contains('/Application/IntegrationEventHandlers/', [StringComparison]::Ordinal))
+    }
+
+    # 世界观种子引擎是 FullChain lane 赖以运行的数据基础：种子造错数据，
+    # 五条场景本身就跑在错数据上。所以改种子必须跑 FullChain；种子不涉及
+    # CAP 传输面本身，不牵连 redis_cap。
+    function Test-FullChainSeedPath {
+        param([Parameter(Mandatory)] [string] $Path)
+
+        return $Path.StartsWith('backend/services/', [StringComparison]::Ordinal) -and
+            $Path.Contains('/Application/Seed/', [StringComparison]::Ordinal)
+    }
+
     $normalizedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($rawPath in $ChangedPaths) {
         if ([string]::IsNullOrWhiteSpace($rawPath)) { throw 'Changed repository paths cannot be empty.' }
@@ -286,9 +308,10 @@ function Get-NervCiImpactPlan {
             if ($erpAcceptanceBusinessServiceNameSet.Contains($serviceName)) {
                 Select-Impact -Name 'erp_sales_order_demand' -Reason $reason
             }
-            if (Test-MessagingImpactPath -Path $path) {
+            if ((Test-MessagingImpactPath -Path $path) -or (Test-CrossServiceIntegrationEventPath -Path $path)) {
                 foreach ($flag in @('redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
+            if (Test-FullChainSeedPath -Path $path) { Select-Impact -Name 'full_chain' -Reason $reason }
             continue
         }
 
@@ -312,6 +335,12 @@ function Get-NervCiImpactPlan {
             if (Test-MessagingImpactPath -Path $path) {
                 Select-Impact -Name 'redis_cap' -Reason $reason
             }
+            # 平台侧服务（AppHub/Ops/Iam/Notification）走这条兜底分支，
+            # 它们的转换器/处理器/种子与业务服务同样是跨服务行为源头。
+            if (Test-CrossServiceIntegrationEventPath -Path $path) {
+                foreach ($flag in @('redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+            }
+            if (Test-FullChainSeedPath -Path $path) { Select-Impact -Name 'full_chain' -Reason $reason }
             continue
         }
 

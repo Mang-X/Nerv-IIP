@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-27
+- 修订依据：[ADR 0025：现场采集、控制下发与 historian 转为平台自有能力](0025-field-capability-scope-shift.md)
 
 ## 背景
 
@@ -53,6 +54,15 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 5. 先做 APS lite 而不是完整优化器，可以支持 P0 交付，同时控制算法、数据量和运维复杂度。
 6. 对设备可用性采用统一 reason code，可以让 APS 的不可排解释、MES 的开工阻断和 Console 的设备异常页面使用同一事实语言。
 
+## 已考虑的替代方案
+
+1. **维持 ADR 0012 的「APS 完全后置」判断**：背景记录了落选理由——「如果继续把 APS 完全后置，甘特图会变成展示壳，MES 派工也会继续依赖手工判断或静态规则」；理由第 1 条补充，没有 APS lite 时 MES PC 很难解释某个工单为什么可以派、派到哪台设备、何时开工。
+2. **把 APS 放进 MES 执行域**：理由第 2 条记录了落选理由——「把 APS 放进 MES 会让执行事实和计划推算耦合，后续难以支持独立排程工作台、方案对比和模拟」；决策第 5 条据此禁止 MES 在执行域内部隐藏独立调度算法。
+3. **把 APS 放进前端甘特图**：理由第 3 条记录了落选理由——「把 APS 放进甘特图会导致页面承担领域决策，后端无法复现、审计或给接口调用者提供一致结果」。
+4. **把 APS 放进 IndustrialTelemetry**：背景把它与前两项并列为不可接受的落点——「APS 不能被误放到前端甘特图、MES 执行域或 IndustrialTelemetry 中」。原文只记录了这一排除，未单独保留该落点的落选理由。
+5. **P0 直接交付全局最优求解器与复杂仿真**：理由第 5 条记录了落选理由——「先做 APS lite 而不是完整优化器，可以支持 P0 交付，同时控制算法、数据量和运维复杂度」；决策第 10 条把全局最优求解器、复杂仿真与自动重排策略后置。
+6. **由 APS 与 MES 各自从报警列表、维修工单或页面状态拼接设备可用性**：背景记录了落选理由——「如果 APS 和 MES 各自从报警列表、维修工单或页面状态中拼接可用性，系统会出现同一台设备在排程、派工和开工检查中给出不同结论的问题」；理由第 6 条给出统一 reason code 的收益：APS 的不可排解释、MES 的开工阻断和 Console 的设备异常页面使用同一事实语言。
+
 ## 后果
 
 1. `docs/architecture/business-platform-domain-architecture.md` 中 “APS 后置” 的旧判断必须改为 “APS lite 进入 P0，高级优化后置”。
@@ -68,15 +78,6 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 11. #207 落地后，MES readiness 和 BusinessScheduling availability adapter 必须回归到同一设备 reason code catalog。任何新设备阻断原因都要同时覆盖 contracts、服务测试、Gateway facade 和前端文案。
 12. 设备运行事实不成为主平台能力。主平台 Console、PlatformGateway、AppHub、Ops 或 IAM 不得承载 IndustrialTelemetry、Maintenance、APS 或 MES 的行业规则。
 
-## 2026-07-03 补遗：现场能力范围转向
-
-MAN-419 / #737 对本 ADR 做追加更正，不删除 2026-05-27 的原始判断。原决策第 8、10、23 条和后果第 6 条中“PLC/DCS/SCADA 仍是外部系统或 Connector 来源”“不下发控制命令”“高频 historian 后置”“现场控制闭环仍是后续专题”等表述，保留为当时 P0 交付边界；从 2026-07-03 起，它们不再表示 Nerv-IIP 永久放弃现场采集、控制或 historian 能力。
-
-1. 现场采集进入平台自有路线：#683 先以 OPC UA Connector 打通真实设备到 IndustrialTelemetry HTTP 采样入库的第一条通道，#684 在该框架上补 Modbus TCP 与 MQTT。采集连接、节点/寄存器/topic 映射、断线重连、bucket 聚合、source sequence 幂等和状态快照都属于 Connector Host + IndustrialTelemetry 的能力边界。
-2. 设备控制进入分阶段路线：#687 复用 Ops operation task、approval gate 和 Connector Host claim/result 机制，下发 write-tag、start-stop 和 parameter-set 等命令；值域校验、审计、审批和回执必须可追踪。主平台控制面只提供通用任务/审批/审计骨架，控制语义仍属于 IndustrialTelemetry/Connector 业务边界。
-3. Historian 与报警深化进入后续能力路线：#689 负责 raw/hourly/daily 分层存储、降采样和保留策略；#685、#686、#690 分别补报警通知联动、ack/shelve/escalation 和 DeviceStateChanged 下游消费。当前已交付代码仍只证明 tag mapping、bucket summary、device state snapshot、alarm raise/clear、runtime availability 和 Maintenance/MES/Scheduling 的现有消费者。
-4. 本补遗不会将完整行业套件一次性标为已交付。README 和就绪性文档必须继续按“已交付 / 进行中 / 规划中”标注现场能力，避免把未完成的 Issue、设计方向或路线图写成当前代码事实。
-
 ## 实施说明
 
 1. #206 是 APS lite 的执行入口，先定义 `SchedulingProblem`、`SchedulePlan`、资源负载、冲突项和不可排原因契约，再实现确定性启发式内核。
@@ -89,3 +90,4 @@ MAN-419 / #737 对本 ADR 做追加更正，不删除 2026-05-27 的原始判断
 8. 首个算法 fixture 使用减振器制造场景：前减总成、后减总成、管焊接、活塞杆装配、注油封口、阻尼测试/包装，多工作中心、多设备、一个维护窗口和一个急单插入。验收重点是输出稳定、工序顺序正确、维护窗口被避开、急单影响可解释、甘特 DTO 足够渲染。
 9. P0 不要求 solver、线性规划、遗传算法、仿真或自动重排。若后续引入求解器，必须新增 ADR 或更新本 ADR，明确依赖、授权、部署、可解释性和失败降级策略。
 10. #207 专用设计规格为 `docs/superpowers/specs/2026-06-01-business-iiot-runtime-facts-aps-mes-design.md`。后续 plan 和 worker 分配必须以该规格为准，先落 contracts/reason codes/后端事实链路，再开放 Business Console 页面。
+11. 2026-07-03 起，决策第 8、10、23 条与后果第 6 条中「PLC/DCS/SCADA 仍是外部系统或 Connector 来源」「不下发控制命令」「高频 historian 后置」「现场控制闭环仍是后续专题」不再表示 Nerv-IIP 永久放弃现场采集、控制或 historian 能力。ADR 0025 把这三项转为平台自有的主动交付路线（采集 #683/#684、控制 #687、historian 与报警深化 #689/#685/#686/#690）；APS 高级优化器、仿真与自动重排仍按本 ADR 与 ADR 0022 后置。上述原条款文本保留为 2026-05-27 的当时事实。
