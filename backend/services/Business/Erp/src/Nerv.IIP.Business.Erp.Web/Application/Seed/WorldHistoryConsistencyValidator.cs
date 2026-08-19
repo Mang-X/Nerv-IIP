@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Contracts.Erp;
 using System.Globalization;
 using System.Text;
 
@@ -169,6 +170,11 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             }
         }
 
+        await CheckReceiptQualityStatusesAsync(
+            organizationId,
+            environmentId,
+            failures,
+            cancellationToken);
         await CheckPayablesAsync(organizationId, environmentId, purchasePlans, asOfDate, failures, cancellationToken);
 
         var opportunities = (await dbContext.Opportunities
@@ -186,6 +192,36 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 failures.Add($"{opportunityNo} 缺失或客户 '{opportunities.GetValueOrDefault(opportunityNo)}' 与订单计划 {plan.CustomerCode} 不符。");
             }
+        }
+    }
+
+    /// <summary>
+    /// 世界史种子直接调用领域方法并静默落库，不经过命令验证器；因此必须在种子自己的
+    /// fail-closed 校验器里逐行复核 ERP 收货质检值域，避免未知值绕过白名单。
+    /// </summary>
+    private async Task CheckReceiptQualityStatusesAsync(
+        string organizationId,
+        string environmentId,
+        List<string> failures,
+        CancellationToken cancellationToken)
+    {
+        var receiptLines = await dbContext.PurchaseReceipts
+            .AsNoTracking()
+            .Where(receipt => receipt.OrganizationId == organizationId &&
+                receipt.EnvironmentId == environmentId &&
+                receipt.PurchaseReceiptNo.StartsWith("PR-2026-"))
+            .SelectMany(receipt => receipt.Lines.Select(line => new
+            {
+                receipt.PurchaseReceiptNo,
+                line.PurchaseOrderLineNo,
+                line.QualityStatus,
+            }))
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var line in receiptLines.Where(line => !ErpReceiptQualityStatuses.IsSupported(line.QualityStatus)))
+        {
+            failures.Add(
+                $"收货单 {line.PurchaseReceiptNo} 行 {line.PurchaseOrderLineNo} 的质检状态 '{line.QualityStatus}' 不在 ERP 受理值域内。");
         }
     }
 
