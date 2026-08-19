@@ -193,6 +193,27 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Unreserved_outbound_can_consume_all_available_quantity_without_touching_reserved_stock()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        ledger.Reserve(reservation);
+
+        ledger.ApplyMovement(NewMovement("outbound", -2m, "idem-out-001"));
+
+        Assert.Equal(8m, ledger.OnHandQuantity);
+        Assert.Equal(8m, ledger.ReservedQuantity);
+        Assert.Equal(0m, ledger.AvailableQuantity);
+    }
+
+    [Fact]
     public void Moving_average_valuation_updates_ledger_value()
     {
         var ledger = NewLedger();
