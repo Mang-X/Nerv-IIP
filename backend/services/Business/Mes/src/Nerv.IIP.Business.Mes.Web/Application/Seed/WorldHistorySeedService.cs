@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using NetCorePal.Extensions.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -117,7 +118,7 @@ public sealed class WorldHistorySeedService(
 
             if (added > 0)
             {
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await SaveHistoryFactsAsync(cancellationToken);
                 written += added;
             }
 
@@ -258,7 +259,7 @@ public sealed class WorldHistorySeedService(
 
             if (added > 0)
             {
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await SaveHistoryFactsAsync(cancellationToken);
                 written += added;
             }
 
@@ -269,6 +270,42 @@ public sealed class WorldHistorySeedService(
     }
 
     #endregion
+
+    /// <summary>
+    /// 落盘一批历史事实：**先丢弃本批实体上挂着的领域事件，再写库**。
+    ///
+    /// <para><b>为什么必须清。</b>本块写的每一步都会 <c>AddDomainEvent</c>，且其中多数有跨服务转换器：
+    /// <c>WorkOrderReleased/Completed/Closed</c>（→ Scheduling、Erp 成本）、
+    /// <c>OperationTaskCompleted</c>、<c>ProductionReportRecorded</c>、
+    /// <c>MaterialIssueRequestCreated/Requested</c> 与 <c>MaterialLineSideReceiptConfirmed</c>
+    /// （后三者 → Inventory 的 <c>InventoryMovementRequestedIntegrationEvent</c>，是**会真扣库存**的出库请求）。
+    /// 本文件规模约 3600 张工单：一旦这些事件被派发出去，启动瞬间就是几万条 CAP 消息，
+    /// 且会打破库存域「现存量 = 世界观流水代数和」的恒等式（WMS 那批已踩过，见提交 <c>e4deae3</c>）。
+    /// 历史事实只落 MES 自己的账，绝不驱动下游——与 Maintenance / WMS / Inventory 三个兄弟种子同一姿势。</para>
+    ///
+    /// <para><b>当前是否真的会派发：实测为否，但仍然清。</b>
+    /// <c>WorldHistorySeedDomainEventTests</c> 实测：本仓栈里裸 <c>DbContext.SaveChangesAsync()</c>
+    /// 一条领域事件都不派发（派发只发生在 netcorepal 的 <c>IUnitOfWork.SaveEntitiesAsync()</c> 上，
+    /// 该测试用同一个 <c>DbContext</c> 做了阳性对照）。所以这里是**防御式**清除
+    /// （与 Inventory 的 <c>WorldHistoryReservationSeedService</c> 同一理由）：
+    /// 事件在写盘后仍原样挂在被跟踪实体上，只要有人把 seed 改走 UoW 路径、
+    /// 或在同一 <c>DbContext</c> 作用域里顺手走一次命令管线，这批事件就会被一次性冲出去。
+    /// 不依赖「框架当前不派发」这个前提，是这里唯一稳的姿势。</para>
+    ///
+    /// <para><b>按变更跟踪器穷举，而不是逐个聚合手写。</b>本块写 6 类聚合（工单 / 工序任务 / 齐套需求 / 领料单 / 报工 / 完工入库）、十余处状态迁移，
+    /// 逐处补 <c>ClearDomainEvents()</c> 必然漏（新增写入点时更会漏）。
+    /// 这里从 <c>ChangeTracker</c> 取全部 <see cref="Entity"/> 实体统一清，
+    /// 新增写入点自动被覆盖。</para>
+    /// </summary>
+    private async Task SaveHistoryFactsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries<Entity>())
+        {
+            entry.Entity.ClearDomainEvents();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
 
     private async Task<HashSet<string>> LoadExistingWorkOrderIdsAsync(
         string organizationId,

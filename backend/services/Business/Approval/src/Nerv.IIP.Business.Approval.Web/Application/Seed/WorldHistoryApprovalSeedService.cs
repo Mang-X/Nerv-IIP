@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Seed;
 
@@ -85,7 +86,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
 
     #region 审批模板
 
-    /// <summary>按 <c>TemplateCode</c> 幂等补齐五张世界观审批模板；已存在的一律不动（保留租户事实）。</summary>
+    /// <summary>按 <c>TemplateCode</c> 幂等补齐六张世界观审批模板；已存在的一律不动（保留租户事实）。</summary>
     private async Task<int> SeedTemplatesAsync(
         string organizationId,
         string environmentId,
@@ -94,6 +95,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
         var templateCodes = new[]
         {
             WorldHistoryApprovalSpec.PurchaseTemplateCode,
+            WorldHistoryApprovalSpec.PurchaseChangeTemplateCode,
             WorldHistoryApprovalSpec.NcrTemplateCode,
             WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode,
             WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
@@ -123,7 +125,34 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
                 [
                     new ApprovalTemplateStepDefinition(
                         StepNo: 1,
-                        StepName: "总经理审批",
+                        StepName: WorldHistoryApprovalSpec.PurchaseReleaseStepName,
+                        ParallelGroupKey: null,
+                        ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
+                        ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                        DueInHours: StepDueInHours),
+                ]);
+            dbContext.ApprovalTemplates.Add(template);
+            Backdate(template, x => x.CreatedAtUtc, goLiveUtc);
+            Backdate(template, x => x.UpdatedAtUtc, goLiveUtc);
+            written++;
+        }
+
+        // #1685：采购订单**变更**再审批模板。与下达模板同单据类型（purchase-order）、同审批人（厂长），
+        // 只有模板码与步骤名不同——审批人收件箱据此区分「采购订单下达」与「采购订单变更」两类待办。
+        // 少这张模板，种子态下 ERP 发起变更审批必 400「审批模板不存在」。已存在时一律不动。
+        if (!existing.Contains(WorldHistoryApprovalSpec.PurchaseChangeTemplateCode))
+        {
+            var template = ApprovalTemplate.Create(
+                organizationId,
+                environmentId,
+                WorldHistoryApprovalSpec.PurchaseChangeTemplateCode,
+                WorldHistoryApprovalSpec.PurchaseChangeDocumentType,
+                version: 1,
+                isActive: true,
+                [
+                    new ApprovalTemplateStepDefinition(
+                        StepNo: 1,
+                        StepName: WorldHistoryApprovalSpec.PurchaseChangeStepName,
                         ParallelGroupKey: null,
                         ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
                         ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
@@ -360,7 +389,16 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             fact.DocumentId,
             documentLineId: null,
             amount: fact.Amount);
-        var chain = ApprovalChain.Start(template, documentReference, fact.StartedByActorRef);
+        // NCR 处置审批链的 id 按跨服务确定性公式生成：Quality 种子用同一公式把该 id 回填到
+        // NonconformanceReport.DispositionApprovalChainId，两个库不通信也能精确互指（#1684）。
+        // 采购订单审批链没有跨服务回链方，保持生产同款的 Start（Guid.CreateVersion7()）。
+        var chain = string.Equals(fact.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal)
+            ? ApprovalChain.StartWithSeededIdentity(
+                new ApprovalChainId(WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(fact.DocumentId)),
+                template,
+                documentReference,
+                fact.StartedByActorRef)
+            : ApprovalChain.Start(template, documentReference, fact.StartedByActorRef);
 
         if (fact.IsCompleted)
         {

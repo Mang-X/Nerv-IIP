@@ -21,15 +21,42 @@ public static class ApprovalTemplateCodes
     /// （<c>PO-2026-####</c>）挂的都是 <c>APT-WB-PO-001</c>；ERP 侧旧字面量
     /// <c>erp-purchase-order-release</c> 从未有模板落库，弃用。
     ///
-    /// 采购订单变更再审批（<c>RequestPurchaseOrderChangeCommand</c>，旧字面量
-    /// <c>erp-purchase-order-change</c> 同样从未落库）也走本模板：同一单据类型
-    /// （purchase-order）、同一审批人（总经理），种子只此一张采购模板。
-    /// **已知体验问题**：变更链与下达链的 <c>documentId</c> 都是采购订单号，<c>documentId</c>
-    /// 不具区分力，只有 <c>chainId</c> 不同——审批人收件箱会出现「同模板同单号两条链」，
-    /// 只能靠发起时间 / 金额分辨。要在收件箱上区分变更与下达，须拆出独立的变更模板码
-    /// 并由种子补一张同码模板（未纳入本次收敛）。
+    /// 本码**只覆盖下达**（新建采购订单、采购申请转单、RFQ 转单）。采购订单变更再审批
+    /// （<c>RequestPurchaseOrderChangeCommand</c>）自 #1685 起改走独立的
+    /// <see cref="PurchaseOrderChange"/>：#1344 收敛时两者共用本码，而变更链与下达链的
+    /// <c>documentId</c> 都是采购订单号、<c>documentType</c> 也同为
+    /// <see cref="ApprovalDocumentTypes.PurchaseOrder"/>，只有 <c>chainId</c> 不同——审批人收件箱
+    /// 出现「同模板同单号两条链」，只能靠发起时间 / 金额分辨（#1344 当时记为已知体验问题）。
+    /// 拆出独立模板码后，收件箱待办的「当前步骤」列显示不同步骤名（总经理审批 / 采购变更审批）、
+    /// 审批链列表的「模板」列直接显示两个不同的码，该体验问题已消除。
     /// </summary>
     public const string PurchaseOrderRelease = "APT-WB-PO-001";
+
+    /// <summary>
+    /// 采购订单**变更**再审批模板（#1685 从 <see cref="PurchaseOrderRelease"/> 拆出，
+    /// 沿用种子历史模板的 <c>APT-WB-</c> 号段）。ERP 变更发起侧
+    /// （<c>RequestPurchaseOrderChangeCommandHandler</c> 的修订重提 / 变更两个分支）与审批种子
+    /// （<c>WorldHistoryApprovalSeedService.SeedTemplatesAsync</c>）逐字共用本码。
+    ///
+    /// 单据类型**刻意仍是** <see cref="ApprovalDocumentTypes.PurchaseOrder"/>：documentType 描述
+    /// 「被审的是哪种单据」，被审对象仍是同一张采购订单；而 ERP 回写消费侧
+    /// （<c>ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder</c>）、审批委托的单据范围、
+    /// 界面单据类型词表三处都按 documentType 判定，换新值必须三处同步，漏一处即回写静默丢事件
+    /// （#1683 同款坑）。区分下达与变更的职责由**模板码**承担，不由单据类型承担。
+    ///
+    /// 顺带闭合的一个结构性隐患：审批链的待办唯一键
+    /// （<c>ApprovalChain.BuildPendingIdentityKey</c>）由 <c>(org, env, templateCode, 单据引用)</c> 构成，
+    /// 共用模板码时同一张采购订单的下达链与变更链的待办唯一键完全相同。
+    /// </summary>
+    public const string PurchaseOrderChange = "APT-WB-PO-002";
+
+    /// <summary>
+    /// NCR 处置评审审批模板（世界观历史号段，#1684）。权威取落库事实：种子模板与全部世界观历史
+    /// NCR 处置审批链（<c>NCR-2026-####</c>）挂的都是 <c>APT-WB-NCR-001</c>。收敛进契约的原因是
+    /// 该码现在参与跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals"/>）：
+    /// Approval 侧种子与 Quality 侧回链两边都要逐字引用同一个码，任何一侧写字面量都会让回链静默指空。
+    /// </summary>
+    public const string NcrDisposition = "APT-WB-NCR-001";
 
     /// <summary>销售订单「信用解冻」审批模板（#1290 / #1305）：ERP 发起侧与种子逐字共用。</summary>
     public const string SalesCreditRelease = "erp-sales-credit-release";

@@ -32,6 +32,20 @@ public static class ApprovalDocumentTypes
     public const string EngineeringChangeOrder = "engineering-change-order";
 
     /// <summary>
+    /// 销售订单「信用解冻」审批（#1290）。**三方共用**：ERP 发起侧
+    /// （<c>ReleaseSalesOrderCreditHoldCommandHandler</c>）、审批种子模板
+    /// （<c>WorldHistoryApprovalSpec.SalesCreditReleaseDocumentType</c>，随
+    /// <see cref="ApprovalTemplateCodes.SalesCreditRelease"/> 一起落库）、
+    /// ERP 回写消费侧（<c>ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder</c>
+    /// 里按 <c>(SourceService, DocumentType)</c> 分流出来的信用解冻分支）。
+    ///
+    /// 此前三处各写各的字面量：种子漂移即发起 400（模板按
+    /// <c>(templateCode, documentType)</c> 双条件命中），消费侧漂移即回写静默丢事件
+    /// ——审批通过了但销售订单永停 <c>credit-held</c>，无日志、无异常、无死信。
+    /// </summary>
+    public const string SalesOrderCreditRelease = "sales-order-credit-release";
+
+    /// <summary>
     /// NCR 处置审批的**受理集合**：权威码值 + 历史别名。
     ///
     /// 别名只用于「读既有链」的向后兼容（本次收敛前由界面发起的链落的是 <c>quality-ncr</c>），

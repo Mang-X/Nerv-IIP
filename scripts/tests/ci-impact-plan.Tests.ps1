@@ -484,6 +484,57 @@ Assert-ImpactCase -Name 'integration-event-handler' -Paths @('backend/services/B
     backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 } -Services @('mes')
 
+# NERV-1711 正例：集成事件转换器是跨服务契约的发信侧，业务服务与平台侧服务都必须
+# 同时选中 redis_cap 与 full_chain。
+Assert-ImpactCase -Name 'integration-event-converter-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesIntegrationEventConverters.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'integration-event-converter-platform-service' -Paths @('backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/IntegrationEventConverters/AuditRecordedIntegrationEventConverter.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $true
+}
+
+# NERV-1711 正例：平台侧服务的集成事件处理器是收信侧，先前只选中 redis_cap，
+# 现在必须同样跑 FullChain。
+Assert-ImpactCase -Name 'integration-event-handler-platform-service' -Paths @('backend/services/Notification/src/Nerv.IIP.Notification.Web/Application/IntegrationEventHandlers/AlertRaisedIntegrationEventHandler.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $true
+}
+
+# NERV-1711 正例：世界观种子是 FullChain lane 的数据基础，必须选中 full_chain；
+# 种子本身不改 CAP 传输面，不得连带选中 redis_cap。
+Assert-ImpactCase -Name 'world-history-seed-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
+    backend = $true; redis_cap = $false; full_chain = $true
+}
+
+# NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+# NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
+# 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+# NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
+# 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
+Assert-ImpactCase -Name 'test-project-seed-directory-not-a-service' -Paths @('backend/tests/Nerv.IIP.Business.Mes.Tests/Application/Seed/SeedFixture.cs') -Flags @{
+    backend = $true; redis_cap = $false; full_chain = $false
+}
+
+Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' -Paths @('backend/tests/Nerv.IIP.Business.Mes.Tests/Application/IntegrationEventHandlers/HandlerTests.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $false
+}
+
 Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
 } -Services @('mes')

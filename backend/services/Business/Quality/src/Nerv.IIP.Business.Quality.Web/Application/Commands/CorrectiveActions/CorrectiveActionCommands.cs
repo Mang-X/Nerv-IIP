@@ -141,7 +141,7 @@ public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
             throw new KnownException($"CAPA {capa.CapaCode} 的效果验证检验记录 {inspectionRecordId} 不属于同一组织和环境，请选择对应范围内的检验记录后重试。");
         }
 
-        if (!string.Equals(inspection.Result, "passed", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(inspection.Result, QualityInspectionDispositionStatuses.Passed, StringComparison.OrdinalIgnoreCase))
         {
             throw new KnownException($"CAPA {capa.CapaCode} 的效果验证检验记录 {inspectionRecordId} 当前结果不是合格，请先完成检验并达到合格后再验证 CAPA。");
         }

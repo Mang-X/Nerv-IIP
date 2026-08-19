@@ -17,12 +17,16 @@ public sealed class OrderUrgencyCalculatorTests
 
         Assert.Equal(-2m, result.SlackHours);
         Assert.Equal(0.8m, result.CriticalRatio);
+        Assert.Equal(2m, result.ExpectedDelayHours);
+        Assert.Equal(Now.AddHours(10), result.TimeCriticality.EstimatedCompletionUtc);
         Assert.Equal(OrderUrgencyLevel.Urgent, result.Level);
         Assert.Equal(BusinessPriorityLevel.P1, result.BusinessPriority.Level);
         Assert.Equal(OrderUrgencyLevel.Urgent, result.TimeCriticality.Level);
         Assert.Equal(OrderUrgencyLevel.HighRisk, result.ExecutionRisk.Level);
         Assert.Contains("business.priority.p1", result.BusinessPriority.ReasonCodes);
-        Assert.Contains("time.cr.belowOne", result.TimeCriticality.ReasonCodes);
+        Assert.Equal(
+            ["time.cr.belowOne", "time.slack.negative"],
+            result.TimeCriticality.ReasonCodes);
         Assert.Contains("equipment.unavailable", result.ExecutionRisk.ReasonCodes);
     }
 
@@ -135,6 +139,102 @@ public sealed class OrderUrgencyCalculatorTests
         Assert.Equal(["material.shortage", "quality.hold"], result.ExecutionRisk.ReasonCodes);
     }
 
+    [Fact]
+    public void Zero_remaining_cycle_is_valid_and_keeps_time_outputs_exact()
+    {
+        var result = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddHours(8),
+            remainingCycle: TimeSpan.Zero));
+
+        Assert.Null(result.CriticalRatio);
+        Assert.Equal(8m, result.SlackHours);
+        Assert.Equal(0m, result.ExpectedDelayHours);
+        Assert.Equal(Now, result.TimeCriticality.EstimatedCompletionUtc);
+        Assert.Equal(0m, result.TimeCriticality.RemainingCycleHours);
+    }
+
+    [Theory]
+    [InlineData(null, "WO-001")]
+    [InlineData("", "WO-001")]
+    [InlineData("   ", "WO-001")]
+    [InlineData(" SO-777 ", "SO-777")]
+    public void Business_reference_falls_back_to_order_id_or_is_trimmed(
+        string? businessReference,
+        string expected)
+    {
+        var result = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddDays(2),
+            remainingCycle: TimeSpan.FromHours(8),
+            businessReference: businessReference));
+
+        Assert.Equal(expected, result.BusinessReference);
+    }
+
+    [Theory]
+    [InlineData(-1, OrderUrgencyLevel.Normal, true)]
+    [InlineData(0, OrderUrgencyLevel.Normal, true)]
+    [InlineData(1, OrderUrgencyLevel.Critical, false)]
+    public void P0_priority_expires_at_the_inclusive_boundary(
+        int expiresAfterHours,
+        OrderUrgencyLevel expected,
+        bool expectedExpiredReason)
+    {
+        var result = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddDays(2),
+            remainingCycle: TimeSpan.FromHours(8),
+            priority: BusinessPriorityLevel.P0,
+            priorityExpiresAtUtc: Now.AddHours(expiresAfterHours)));
+
+        Assert.Equal(expected, result.BusinessPriority.UrgencyLevel);
+        Assert.Equal(
+            expectedExpiredReason,
+            result.BusinessPriority.ReasonCodes.Contains("business.priority.expired"));
+    }
+
+    [Theory]
+    [InlineData(0, 0, OrderUrgencyLevel.HighRisk, "time.slack.withinShift")]
+    [InlineData(8, 8, OrderUrgencyLevel.HighRisk, "time.slack.withinShift")]
+    [InlineData(16, 8, OrderUrgencyLevel.Normal, "time.withinCommitment")]
+    [InlineData(48, 40, OrderUrgencyLevel.Attention, "time.cr.attention")]
+    public void Time_thresholds_preserve_their_exact_domain_boundaries(
+        int dueAfterHours,
+        int remainingHours,
+        OrderUrgencyLevel expected,
+        string expectedReason)
+    {
+        var result = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddHours(dueAfterHours),
+            remainingCycle: TimeSpan.FromHours(remainingHours)));
+
+        Assert.Equal(expected, result.TimeCriticality.Level);
+        Assert.Equal([expectedReason], result.TimeCriticality.ReasonCodes);
+    }
+
+    [Fact]
+    public void Non_blocking_risk_is_attention_while_no_risk_is_normal()
+    {
+        var noRisk = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddDays(2),
+            remainingCycle: TimeSpan.FromHours(8)));
+        var nonBlockingRisk = OrderUrgencyCalculator.Calculate(Input(
+            dueUtc: Now.AddDays(2),
+            remainingCycle: TimeSpan.FromHours(8),
+            risks:
+            [
+                new ExecutionRiskFact(
+                    "material.watch",
+                    ExecutionRiskCategory.Material,
+                    false,
+                    "MAT-001",
+                    Now),
+            ]));
+
+        Assert.Equal(OrderUrgencyLevel.Normal, noRisk.ExecutionRisk.Level);
+        Assert.Equal(["execution.risk.none"], noRisk.ExecutionRisk.ReasonCodes);
+        Assert.Equal(OrderUrgencyLevel.Attention, nonBlockingRisk.ExecutionRisk.Level);
+        Assert.Equal(["material.watch"], nonBlockingRisk.ExecutionRisk.ReasonCodes);
+    }
+
     private static OrderUrgencyCalculationInput Input(
         DateTimeOffset? dueUtc,
         TimeSpan remainingCycle,
@@ -142,15 +242,17 @@ public sealed class OrderUrgencyCalculatorTests
         BusinessPriorityLevel priority = BusinessPriorityLevel.P2,
         IReadOnlyCollection<ExecutionRiskFact>? risks = null,
         bool sourceMissing = false,
-        bool sourceStale = false)
+        bool sourceStale = false,
+        string? businessReference = "SO-001",
+        DateTimeOffset? priorityExpiresAtUtc = null)
     {
         return new OrderUrgencyCalculationInput(
             "WO-001",
-            "SO-001",
+            businessReference!,
             calculatedAtUtc ?? Now,
             dueUtc,
             remainingCycle,
-            new BusinessPriorityFact(priority, "planner", "capacity commitment", Now, null, 1),
+            new BusinessPriorityFact(priority, "planner", "capacity commitment", Now, priorityExpiresAtUtc, 1),
             risks ?? [],
             sourceMissing,
             sourceStale,

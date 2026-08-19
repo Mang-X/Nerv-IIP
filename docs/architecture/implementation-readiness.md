@@ -2,6 +2,10 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Stryker.NET 单程序集变异测试预研（NERV-870）
+
+NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
+
 ## Business Integration Acceptance manifest v2 规划合同（NERV-673②-1 / #1646）
 
 `scripts/acceptance-scenario-matrix.json` 已以 schema v2 登记六个场景：`sales-order-demand`、`wms-delivery-erp`、`mes-produced-lot-inventory`、`telemetry-runtime-maintenance`、`erp-return-closure` 五个 `active/core` 场景，以及 `equipment-unavailable-scheduling-mes` 一个 `blocked/extended` 场景。`scripts/lib/AcceptanceScenarioMatrix.ps1` 已落地严格 schema、v1 双向闭合、影响选择、项目聚合、规划预算、Release discovery 身份闭合和 planning artifact provenance 合同；`scripts/plan-acceptance-scenario-matrix.ps1` 是受治理的纯规划入口，只允许按选中项目执行一次 restore 和一次 `--no-restore --list-tests` discovery，并在成功后原子写入规划 artifact。四个 owning path 已接入 CI impact routing，精确选择 `scripts + backend + full_chain`；Script Governance 已增加纯 fixture 合同 step，`compat-fast` 也显式执行同一合同。
