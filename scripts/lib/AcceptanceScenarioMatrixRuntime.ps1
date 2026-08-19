@@ -34,7 +34,7 @@ function Assert-NervAcceptanceCanonicalPhysicalPath {
     }
     $testPathType = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) { 'Container' } else { 'Leaf' }
     if (-not (Test-Path -LiteralPath $canonicalPath -PathType $testPathType)) {
-        throw "$Context path '$canonicalPath' must identify one existing $($PathType.ToLowerInvariant())."
+        throw "$Context must identify one existing $($PathType.ToLowerInvariant())."
     }
 
     $item = Get-Item -LiteralPath $canonicalPath -Force
@@ -117,7 +117,7 @@ function Read-NervAcceptanceRuntimeJsonSnapshot {
     )
 
     Assert-NervAcceptanceString -Value $Path -Context "$Context path"
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Context path '$Path' must identify one existing file." }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Context must identify one existing file." }
     if (-not [string]::IsNullOrEmpty($ExpectedDigest) -and $ExpectedDigest -cnotmatch '^[0-9a-f]{64}$') {
         throw "$Context expected digest must be a lowercase SHA-256 digest."
     }
@@ -144,7 +144,7 @@ function Read-NervAcceptanceRuntimeJsonSnapshot {
         $json = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
         $value = $json | ConvertFrom-Json -Depth 50
     }
-    catch { throw "$Context '$Path' is not valid UTF-8 JSON: $($_.Exception.Message)" }
+    catch { throw "$Context is not valid UTF-8 JSON: $($_.Exception.Message)" }
     return [pscustomobject][ordered]@{ digest = $actualDigest; value = $value }
 }
 
@@ -268,16 +268,16 @@ function Get-NervAcceptanceRuntimeWorkflowBudget {
 
     $jobs = Get-NervCiWorkflowBudgets -Path $WorkflowPath
     $jobMatches = @($jobs | Where-Object { [string]::Equals([string]$_.Name, $JobName, [StringComparison]::Ordinal) })
-    if ($jobMatches.Count -ne 1) { throw "Workflow '$WorkflowPath' must define exactly one '$JobName' runtime job." }
+    if ($jobMatches.Count -ne 1) { throw 'Runtime workflow must define exactly one configured runtime job.' }
     $stepMatches = @($jobMatches[0].Steps | Where-Object { [string]::Equals([string]$_.Name, $StepName, [StringComparison]::Ordinal) })
     if ($stepMatches.Count -ne 1 -or $null -eq $stepMatches[0].TimeoutMinutes) {
-        throw "Workflow '$WorkflowPath' job '$JobName' must define exactly one timed '$StepName' runtime step."
+        throw 'Runtime workflow job must define exactly one timed configured runtime step.'
     }
     if (-not (Test-NervAcceptanceRuntimeRunCommand -Run $stepMatches[0].Run)) {
-        throw "Workflow '$WorkflowPath' job '$JobName' timed step '$StepName' must invoke scripts/run-acceptance-scenario-matrix.ps1."
+        throw 'Runtime workflow timed step must invoke scripts/run-acceptance-scenario-matrix.ps1.'
     }
     $timeoutSeconds = ConvertTo-NervAcceptanceCheckedInt64 -Value (([Numerics.BigInteger]$stepMatches[0].TimeoutMinutes) * 60) -Context 'runtime workflow step timeout'
-    if ($timeoutSeconds -le 0) { throw "Workflow '$WorkflowPath' runtime step timeout must be positive." }
+    if ($timeoutSeconds -le 0) { throw 'Runtime workflow step timeout must be positive.' }
     return [pscustomobject]@{ jobName = $JobName; stepName = $StepName; stepTimeoutSeconds = $timeoutSeconds }
 }
 
@@ -406,18 +406,12 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
 }
 
 function New-NervAcceptanceScenarioRuntimeSummary {
-    param(
-        [Parameter(Mandatory)] [string] $Repository,
-        [Parameter(Mandatory)] [string] $TestedSha,
-        [Parameter(Mandatory)] [string] $RunId
-    )
-
     return [pscustomobject][ordered]@{
         schemaVersion = 1
         scenarioId = 'sales-order-demand'
-        repository = $Repository
-        testedSha = $TestedSha
-        runId = $RunId
+        repository = $null
+        testedSha = $null
+        runId = $null
         runAttempt = $null
         event = $null
         status = 'running'
@@ -427,6 +421,37 @@ function New-NervAcceptanceScenarioRuntimeSummary {
         result = $null
         failureClassification = $null
     }
+}
+
+function Resolve-NervAcceptanceScenarioRuntimePhysicalInput {
+    param(
+        [AllowNull()] [AllowEmptyString()] [string] $Value,
+        [Parameter(Mandatory)] [string] $Context,
+        [Parameter(Mandatory)] [ValidateSet('File', 'Directory')] [string] $PathType
+    )
+
+    $expectedPathType = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) { 'directory' } else { 'file' }
+    $failureMessage = "$Context must identify one existing canonical $expectedPathType."
+    if ([string]::IsNullOrWhiteSpace($Value) -or
+        -not [string]::Equals($Value, $Value.Trim(), [StringComparison]::Ordinal)) {
+        throw $failureMessage
+    }
+    try { $fullPath = [IO.Path]::GetFullPath($Value) }
+    catch { throw $failureMessage }
+    $providedPath = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) {
+        [IO.Path]::TrimEndingDirectorySeparator($Value)
+    }
+    else { $Value }
+    $canonicalPath = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) {
+        [IO.Path]::TrimEndingDirectorySeparator($fullPath)
+    }
+    else { $fullPath }
+    $testPathType = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) { 'Container' } else { 'Leaf' }
+    if (-not [string]::Equals($providedPath, $canonicalPath, [StringComparison]::Ordinal) -or
+        -not (Test-Path -LiteralPath $canonicalPath -PathType $testPathType)) {
+        throw $failureMessage
+    }
+    return $canonicalPath
 }
 
 function Assert-NervAcceptanceScenarioRuntimeInvocation {
@@ -455,6 +480,71 @@ function Assert-NervAcceptanceScenarioRuntimeInvocation {
     return [pscustomobject][ordered]@{
         runAttempt = [int]$parsedRunAttempt
         event = $Event
+    }
+}
+
+function Assert-NervAcceptanceScenarioRuntimeRawInputs {
+    param(
+        [AllowNull()] [AllowEmptyString()] [string] $ArtifactPath,
+        [AllowNull()] [AllowEmptyString()] [string] $ExpectedArtifactDigest,
+        [AllowNull()] [AllowEmptyString()] [string] $ManifestFilePath,
+        [AllowNull()] [AllowEmptyString()] [string] $ExpectedManifestDigest,
+        [AllowNull()] [AllowEmptyString()] [string] $V1ManifestPath,
+        [AllowNull()] [AllowEmptyString()] [string] $RepositoryRoot,
+        [AllowNull()] [AllowEmptyString()] [string] $Repository,
+        [AllowNull()] [AllowEmptyString()] [string] $TestedSha,
+        [AllowNull()] [AllowEmptyString()] [string] $RunId,
+        [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
+        [AllowNull()] [AllowEmptyString()] [string] $ManifestPath,
+        [AllowNull()] [AllowEmptyString()] [string] $Event,
+        [AllowNull()] [AllowEmptyString()] [string] $WorkflowPath,
+        [AllowNull()] [AllowEmptyString()] [string] $WorkflowJobName,
+        [AllowNull()] [AllowEmptyString()] [string] $WorkflowStepName
+    )
+
+    $validatedArtifactPath = Resolve-NervAcceptanceScenarioRuntimePhysicalInput -Value $ArtifactPath -Context 'Acceptance scenario runtime planning artifact path' -PathType File
+    if ($ExpectedArtifactDigest -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'Acceptance scenario runtime artifact digest must be a lowercase SHA-256 digest.'
+    }
+    $validatedManifestFilePath = Resolve-NervAcceptanceScenarioRuntimePhysicalInput -Value $ManifestFilePath -Context 'Acceptance scenario runtime acceptance manifest path' -PathType File
+    if ($ExpectedManifestDigest -cnotmatch '^[0-9a-f]{64}$') {
+        throw 'Acceptance scenario runtime manifest digest must be a lowercase SHA-256 digest.'
+    }
+    $validatedV1ManifestPath = Resolve-NervAcceptanceScenarioRuntimePhysicalInput -Value $V1ManifestPath -Context 'Acceptance scenario runtime FullChain v1 manifest path' -PathType File
+    $validatedRepositoryRoot = Resolve-NervAcceptanceScenarioRuntimePhysicalInput -Value $RepositoryRoot -Context 'Acceptance scenario runtime repository root' -PathType Directory
+    if (-not (Test-NervAcceptanceRepositoryIdentifier -Repository $Repository)) {
+        throw 'Acceptance scenario runtime repository must be a canonical owner/name identifier.'
+    }
+    if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') {
+        throw 'Acceptance scenario runtime tested SHA must be a lowercase 40-character Git SHA.'
+    }
+    if ($RunId -cnotmatch '^[1-9][0-9]*$') {
+        throw 'Acceptance scenario runtime run id must be a canonical positive decimal identifier.'
+    }
+    $runtimeInvocation = Assert-NervAcceptanceScenarioRuntimeInvocation -RunAttempt $RunAttempt -Event $Event
+    if (-not (Test-NervAcceptanceChangedPath -Path $ManifestPath)) {
+        throw 'Acceptance scenario runtime manifest repository-relative path must be canonical.'
+    }
+    $validatedWorkflowPath = Resolve-NervAcceptanceScenarioRuntimePhysicalInput -Value $WorkflowPath -Context 'Acceptance scenario runtime workflow path' -PathType File
+    Assert-NervAcceptanceString -Value $WorkflowJobName -Context 'Acceptance scenario runtime workflow job name'
+    Assert-NervAcceptanceString -Value $WorkflowStepName -Context 'Acceptance scenario runtime workflow step name'
+
+    return [pscustomobject][ordered]@{
+        artifactPath = $validatedArtifactPath
+        expectedArtifactDigest = $ExpectedArtifactDigest
+        manifestFilePath = $validatedManifestFilePath
+        expectedManifestDigest = $ExpectedManifestDigest
+        v1ManifestPath = $validatedV1ManifestPath
+        repositoryRoot = $validatedRepositoryRoot
+        repository = $Repository
+        testedSha = $TestedSha
+        runId = $RunId
+        runAttempt = $runtimeInvocation.runAttempt
+        manifestPath = $ManifestPath
+        event = $runtimeInvocation.event
+        workflowPath = $validatedWorkflowPath
+        workflowJobName = $WorkflowJobName
+        workflowStepName = $WorkflowStepName
     }
 }
 
@@ -495,37 +585,30 @@ function Add-NervAcceptanceScenarioRuntimeTransition {
 
 function Invoke-NervAcceptanceScenarioRuntime {
     param(
-        [Parameter(Mandatory)] [string] $ArtifactPath,
-        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest,
-        [Parameter(Mandatory)] [string] $ManifestFilePath,
-        [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
-        [Parameter(Mandatory)] [string] $V1ManifestPath,
-        [Parameter(Mandatory)] [string] $RepositoryRoot,
-        [Parameter(Mandatory)] [string] $Repository,
-        [Parameter(Mandatory)] [string] $TestedSha,
-        [Parameter(Mandatory)] [string] $RunId,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ExpectedArtifactDigest,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ExpectedManifestDigest,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $V1ManifestPath,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Repository,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $TestedSha,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunId,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
-        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ManifestPath,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event,
-        [Parameter(Mandatory)] [string] $WorkflowPath,
-        [Parameter(Mandatory)] [string] $WorkflowJobName,
-        [Parameter(Mandatory)] [string] $WorkflowStepName,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $WorkflowJobName,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $WorkflowStepName,
         [Parameter(Mandatory)] [string] $SummaryPath,
         [Parameter(Mandatory)] [scriptblock] $RuntimeAction,
         [scriptblock] $ReadFileBytesAction
     )
 
-    $summary = New-NervAcceptanceScenarioRuntimeSummary `
-        -Repository $Repository `
-        -TestedSha $TestedSha `
-        -RunId $RunId
+    $summary = New-NervAcceptanceScenarioRuntimeSummary
     Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
     try {
-        $runtimeInvocation = Assert-NervAcceptanceScenarioRuntimeInvocation -RunAttempt $RunAttempt -Event $Event
-        $summary.runAttempt = $runtimeInvocation.runAttempt
-        $summary.event = $runtimeInvocation.event
-        Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
-        $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
+        $validatedInputs = Assert-NervAcceptanceScenarioRuntimeRawInputs `
             -ArtifactPath $ArtifactPath `
             -ExpectedArtifactDigest $ExpectedArtifactDigest `
             -ManifestFilePath $ManifestFilePath `
@@ -535,13 +618,35 @@ function Invoke-NervAcceptanceScenarioRuntime {
             -Repository $Repository `
             -TestedSha $TestedSha `
             -RunId $RunId `
-            -RunAttempt $runtimeInvocation.runAttempt `
+            -RunAttempt $RunAttempt `
             -ManifestPath $ManifestPath `
-            -Event $runtimeInvocation.event `
+            -Event $Event `
             -WorkflowPath $WorkflowPath `
             -WorkflowJobName $WorkflowJobName `
-            -WorkflowStepName $WorkflowStepName `
+            -WorkflowStepName $WorkflowStepName
+        $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
+            -ArtifactPath $validatedInputs.artifactPath `
+            -ExpectedArtifactDigest $validatedInputs.expectedArtifactDigest `
+            -ManifestFilePath $validatedInputs.manifestFilePath `
+            -ExpectedManifestDigest $validatedInputs.expectedManifestDigest `
+            -V1ManifestPath $validatedInputs.v1ManifestPath `
+            -RepositoryRoot $validatedInputs.repositoryRoot `
+            -Repository $validatedInputs.repository `
+            -TestedSha $validatedInputs.testedSha `
+            -RunId $validatedInputs.runId `
+            -RunAttempt $validatedInputs.runAttempt `
+            -ManifestPath $validatedInputs.manifestPath `
+            -Event $validatedInputs.event `
+            -WorkflowPath $validatedInputs.workflowPath `
+            -WorkflowJobName $validatedInputs.workflowJobName `
+            -WorkflowStepName $validatedInputs.workflowStepName `
             -ReadFileBytesAction $ReadFileBytesAction
+        $summary.repository = $validatedInputs.repository
+        $summary.testedSha = $validatedInputs.testedSha
+        $summary.runId = $validatedInputs.runId
+        $summary.runAttempt = $validatedInputs.runAttempt
+        $summary.event = $validatedInputs.event
+        Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
     }
     catch {
         $summary.failureClassification = 'preflight-failed'

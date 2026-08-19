@@ -213,8 +213,8 @@ function Assert-RunnerBoundaryRejected {
         [Parameter(Mandatory)] [string] $ArtifactDigest,
         [Parameter(Mandatory)] [string] $ManifestDigest,
         [Parameter(Mandatory)] [string] $WorkflowPath,
-        [string] $Event = 'workflow_dispatch',
-        [string] $RunAttempt = '2'
+        [hashtable] $Overrides = @{},
+        [string[]] $SecretMarkers = @()
     )
 
     $summaryPath = Join-Path $fixtureRoot "runner-boundary-$Name-summary.json"
@@ -227,9 +227,8 @@ function Assert-RunnerBoundaryRejected {
         -ExpectedManifestDigest $ManifestDigest `
         -WorkflowPath $WorkflowPath `
         -SummaryPath $summaryPath `
-        -Action $action `
-        -Event $Event `
-        -RunAttempt $RunAttempt
+        -Action $action
+    foreach ($key in $Overrides.Keys) { $arguments[$key] = $Overrides[$key] }
     $observedMessage = '<no exception>'
     try { & $runnerPath @arguments | Out-Null }
     catch { $observedMessage = $_.Exception.Message }
@@ -240,8 +239,14 @@ function Assert-RunnerBoundaryRejected {
     Assert-Contract ([string]::Equals([string]$summary.status, 'failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must persist failed status."
     Assert-Contract ([string]::Equals(($summary.transitions.state -join '|'), 'preflight-started|preflight-failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must persist preflight failure."
     Assert-Contract ([string]::Equals([string]$summary.failureClassification, 'preflight-failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must classify the preflight failure."
-    Assert-Contract ($null -eq $summary.event) "Runner boundary mutation '$Name' must not persist an unvalidated raw event."
-    Assert-Contract ($null -eq $summary.runAttempt) "Runner boundary mutation '$Name' must not persist an unvalidated raw run attempt."
+    foreach ($field in @('repository', 'testedSha', 'runId', 'event', 'runAttempt')) {
+        Assert-Contract ($null -eq $summary.PSObject.Properties[$field].Value) "Runner boundary mutation '$Name' must keep unvalidated summary field '$field' null."
+    }
+    $summaryJson = $summary | ConvertTo-Json -Depth 50 -Compress
+    foreach ($marker in $SecretMarkers) {
+        Assert-Contract (-not $observedMessage.Contains($marker, [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' exception must not echo raw marker '$marker'."
+        Assert-Contract (-not $summaryJson.Contains($marker, [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' summary must not persist raw marker '$marker'."
+    }
 }
 
 function Assert-PreflightRejected {
@@ -463,6 +468,11 @@ try {
         $summaryBeforeAction = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
         Assert-Contract ([string]::Equals([string]$summaryBeforeAction.status, 'running', [StringComparison]::Ordinal)) 'Runtime summary must be running before the injected action runs.'
         Assert-Contract ([string]::Equals([string]$summaryBeforeAction.transitions[-1].state, 'action-started', [StringComparison]::Ordinal)) 'The action-started transition must be atomically persisted before invocation.'
+        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.repository, 'Mang-X/Nerv-IIP', [StringComparison]::Ordinal)) 'The validated repository must be published before the action runs.'
+        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.testedSha, '0123456789abcdef0123456789abcdef01234567', [StringComparison]::Ordinal)) 'The validated tested SHA must be published before the action runs.'
+        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.runId, '123456789', [StringComparison]::Ordinal)) 'The validated run id must be published before the action runs.'
+        Assert-Contract ($summaryBeforeAction.runAttempt -eq 2) 'The validated run attempt must be published before the action runs.'
+        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.event, 'workflow_dispatch', [StringComparison]::Ordinal)) 'The validated event must be published before the action runs.'
         Assert-Contract ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) 'The injected action must receive the exact validated scenario contract.'
         return $firstEquivalenceInput
     }.GetNewClosure()
@@ -539,11 +549,54 @@ try {
     Assert-Contract (-not $compoundSummaryJson.Contains('attempt-1-aabbcc', [StringComparison]::Ordinal)) 'A failed final summary must exclude the volatile CAP suffix.'
     Assert-Contract ([string]::Equals([string]$compoundSummary.transitions[-1].state, 'result-validation-failed', [StringComparison]::Ordinal)) 'A compound failure must persist result-validation-failed as final transition.'
 
-    Assert-RunnerBoundaryRejected -Name 'event-unknown' -Event 'WORKFLOW_DISPATCH_INVALID' -ExpectedMessage 'runtime event must be one of' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
-    Assert-RunnerBoundaryRejected -Name 'attempt-non-integer' -RunAttempt 'abc-secret-attempt' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
-    Assert-RunnerBoundaryRejected -Name 'attempt-overflow' -RunAttempt '2147483648' -ExpectedMessage 'runtime run attempt must fit Int32' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
-    Assert-RunnerBoundaryRejected -Name 'attempt-zero' -RunAttempt '0' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
-    Assert-RunnerBoundaryRejected -Name 'attempt-leading-zero' -RunAttempt '02' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'artifact-digest-empty' -Overrides @{ ExpectedArtifactDigest = '' } -ExpectedMessage 'runtime artifact digest must be a lowercase SHA-256 digest' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'event-unknown' -Overrides @{ Event = 'WORKFLOW_DISPATCH_INVALID' } -ExpectedMessage 'runtime event must be one of' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-non-integer' -Overrides @{ RunAttempt = 'abc-secret-attempt' } -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-overflow' -Overrides @{ RunAttempt = '2147483648' } -ExpectedMessage 'runtime run attempt must fit Int32' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-zero' -Overrides @{ RunAttempt = '0' } -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-leading-zero' -Overrides @{ RunAttempt = '02' } -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+
+    foreach ($boundaryMutation in @(
+        @{ Name = 'artifact-digest-missing'; Key = 'ExpectedArtifactDigest'; Value = $null; Message = 'runtime artifact digest must be a lowercase SHA-256 digest' },
+        @{ Name = 'manifest-digest-empty'; Key = 'ExpectedManifestDigest'; Value = ''; Message = 'runtime manifest digest must be a lowercase SHA-256 digest' },
+        @{ Name = 'manifest-digest-missing'; Key = 'ExpectedManifestDigest'; Value = $null; Message = 'runtime manifest digest must be a lowercase SHA-256 digest' },
+        @{ Name = 'repository-empty'; Key = 'Repository'; Value = ''; Message = 'runtime repository must be a canonical owner/name identifier' },
+        @{ Name = 'repository-missing'; Key = 'Repository'; Value = $null; Message = 'runtime repository must be a canonical owner/name identifier' },
+        @{ Name = 'tested-sha-empty'; Key = 'TestedSha'; Value = ''; Message = 'runtime tested SHA must be a lowercase 40-character Git SHA' },
+        @{ Name = 'tested-sha-missing'; Key = 'TestedSha'; Value = $null; Message = 'runtime tested SHA must be a lowercase 40-character Git SHA' },
+        @{ Name = 'run-id-empty'; Key = 'RunId'; Value = ''; Message = 'runtime run id must be a canonical positive decimal identifier' },
+        @{ Name = 'run-id-missing'; Key = 'RunId'; Value = $null; Message = 'runtime run id must be a canonical positive decimal identifier' },
+        @{ Name = 'artifact-path-empty'; Key = 'ArtifactPath'; Value = ''; Message = 'runtime planning artifact path must identify one existing canonical file' },
+        @{ Name = 'artifact-path-missing'; Key = 'ArtifactPath'; Value = $null; Message = 'runtime planning artifact path must identify one existing canonical file' },
+        @{ Name = 'manifest-file-path-empty'; Key = 'ManifestFilePath'; Value = ''; Message = 'runtime acceptance manifest path must identify one existing canonical file' },
+        @{ Name = 'manifest-file-path-missing'; Key = 'ManifestFilePath'; Value = $null; Message = 'runtime acceptance manifest path must identify one existing canonical file' },
+        @{ Name = 'v1-manifest-path-empty'; Key = 'V1ManifestPath'; Value = ''; Message = 'runtime FullChain v1 manifest path must identify one existing canonical file' },
+        @{ Name = 'v1-manifest-path-missing'; Key = 'V1ManifestPath'; Value = $null; Message = 'runtime FullChain v1 manifest path must identify one existing canonical file' },
+        @{ Name = 'workflow-path-empty'; Key = 'WorkflowPath'; Value = ''; Message = 'runtime workflow path must identify one existing canonical file' },
+        @{ Name = 'workflow-path-missing'; Key = 'WorkflowPath'; Value = $null; Message = 'runtime workflow path must identify one existing canonical file' }
+    )) {
+        Assert-RunnerBoundaryRejected -Name $boundaryMutation.Name -Overrides @{ $boundaryMutation.Key = $boundaryMutation.Value } -ExpectedMessage $boundaryMutation.Message -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    }
+
+    foreach ($secretMutation in @(
+        @{ Name = 'repository-secret'; Key = 'Repository'; Marker = 'SECRET_RAW_REPOSITORY_MARKER'; Message = 'runtime repository must be a canonical owner/name identifier' },
+        @{ Name = 'tested-sha-secret'; Key = 'TestedSha'; Marker = 'SECRET_RAW_SHA_MARKER'; Message = 'runtime tested SHA must be a lowercase 40-character Git SHA' },
+        @{ Name = 'run-id-secret'; Key = 'RunId'; Marker = 'SECRET_RAW_RUN_MARKER'; Message = 'runtime run id must be a canonical positive decimal identifier' },
+        @{ Name = 'artifact-digest-secret'; Key = 'ExpectedArtifactDigest'; Marker = 'SECRET_RAW_ARTIFACT_DIGEST_MARKER'; Message = 'runtime artifact digest must be a lowercase SHA-256 digest' },
+        @{ Name = 'manifest-digest-secret'; Key = 'ExpectedManifestDigest'; Marker = 'SECRET_RAW_MANIFEST_DIGEST_MARKER'; Message = 'runtime manifest digest must be a lowercase SHA-256 digest' },
+        @{ Name = 'artifact-path-secret'; Key = 'ArtifactPath'; Marker = 'SECRET_RAW_ARTIFACT_PATH_MARKER'; Message = 'runtime planning artifact path must identify one existing canonical file' },
+        @{ Name = 'manifest-file-path-secret'; Key = 'ManifestFilePath'; Marker = 'SECRET_RAW_MANIFEST_PATH_MARKER'; Message = 'runtime acceptance manifest path must identify one existing canonical file' },
+        @{ Name = 'v1-manifest-path-secret'; Key = 'V1ManifestPath'; Marker = 'SECRET_RAW_V1_PATH_MARKER'; Message = 'runtime FullChain v1 manifest path must identify one existing canonical file' },
+        @{ Name = 'repository-root-secret'; Key = 'RepositoryRoot'; Marker = 'SECRET_RAW_REPOSITORY_ROOT_MARKER'; Message = 'runtime repository root must identify one existing canonical directory' },
+        @{ Name = 'manifest-repository-path-secret'; Key = 'ManifestPath'; Marker = 'SECRET_RAW_MANIFEST_REPOSITORY_PATH_MARKER'; Message = 'must equal the authoritative repository manifest' },
+        @{ Name = 'event-secret'; Key = 'Event'; Marker = 'SECRET_RAW_EVENT_MARKER'; Message = 'runtime event must be one of' },
+        @{ Name = 'run-attempt-secret'; Key = 'RunAttempt'; Marker = 'SECRET_RAW_ATTEMPT_MARKER'; Message = 'runtime run attempt must be a canonical positive integer' },
+        @{ Name = 'workflow-path-secret'; Key = 'WorkflowPath'; Marker = 'SECRET_RAW_WORKFLOW_PATH_MARKER'; Message = 'runtime workflow path must identify one existing canonical file' },
+        @{ Name = 'workflow-job-secret'; Key = 'WorkflowJobName'; Marker = 'SECRET_RAW_WORKFLOW_JOB_MARKER'; Message = 'must define exactly one configured runtime job' },
+        @{ Name = 'workflow-step-secret'; Key = 'WorkflowStepName'; Marker = 'SECRET_RAW_WORKFLOW_STEP_MARKER'; Message = 'must define exactly one timed configured runtime step' }
+    )) {
+        Assert-RunnerBoundaryRejected -Name $secretMutation.Name -Overrides @{ $secretMutation.Key = $secretMutation.Marker } -SecretMarkers @($secretMutation.Marker) -ExpectedMessage $secretMutation.Message -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    }
 
     $externalManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/acceptance-scenario-matrix.json'
     Write-JsonFixture -Path $externalManifestPath -Value $manifest
@@ -556,7 +609,7 @@ try {
     Assert-PreflightRejected -Name 'manifest-symbolic-link' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $manifestLinkPath -ExpectedMessage 'must not contain a symbolic link'
 
     $manifestAliasPath = Join-Path $repoRoot 'scripts/../scripts/acceptance-scenario-matrix.json'
-    Assert-PreflightRejected -Name 'manifest-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $manifestAliasPath -ExpectedMessage 'must be a canonical absolute path'
+    Assert-PreflightRejected -Name 'manifest-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $manifestAliasPath -ExpectedMessage 'must identify one existing canonical file'
 
     $externalV1ManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/full-chain-test-lane.json'
     Write-JsonFixture -Path $externalV1ManifestPath -Value (Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 50)
@@ -564,7 +617,7 @@ try {
     Assert-PreflightRejected -Name 'v1-manifest-external-copy' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -V1ManifestPathOverride $externalV1ManifestPath -ExpectedMessage 'must equal the authoritative FullChain v1 manifest'
 
     $repositoryRootAlias = Join-Path $repoRoot 'scripts/..'
-    Assert-PreflightRejected -Name 'repository-root-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -RepositoryRootOverride $repositoryRootAlias -ExpectedMessage 'repository root must be a canonical absolute path'
+    Assert-PreflightRejected -Name 'repository-root-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -RepositoryRootOverride $repositoryRootAlias -ExpectedMessage 'repository root must identify one existing canonical directory'
 
     $switchedArtifact = Copy-JsonObject $artifact
     $switchedArtifact | Add-Member -NotePropertyName ungovernedSnapshotMarker -NotePropertyValue 'digest-bytes'
@@ -675,8 +728,8 @@ try {
 
     Assert-PreflightRejected -Name 'artifact-bytes-after-digest' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'artifact bytes do not match' -MutateArtifactBytesAfterDigest
     Assert-PreflightRejected -Name 'manifest-bytes-after-digest' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'manifest bytes do not match' -MutateManifestBytesAfterDigest
-    Assert-PreflightRejected -Name 'artifact-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'expected digest must be a lowercase' -ExpectedArtifactDigest $artifactDigest.ToUpperInvariant()
-    Assert-PreflightRejected -Name 'manifest-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'expected digest must be a lowercase' -ExpectedManifestDigest $manifestDigest.ToUpperInvariant()
+    Assert-PreflightRejected -Name 'artifact-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'runtime artifact digest must be a lowercase' -ExpectedArtifactDigest $artifactDigest.ToUpperInvariant()
+    Assert-PreflightRejected -Name 'manifest-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'runtime manifest digest must be a lowercase' -ExpectedManifestDigest $manifestDigest.ToUpperInvariant()
     $wrongCaseEventArtifact = Copy-JsonObject $artifact
     $wrongCaseEventArtifact.event = 'WORKFLOW_DISPATCH'
     Assert-PreflightRejected -Name 'trusted-event-wrong-case' -Artifact $wrongCaseEventArtifact -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'runtime event must be one of' -Event 'WORKFLOW_DISPATCH'
