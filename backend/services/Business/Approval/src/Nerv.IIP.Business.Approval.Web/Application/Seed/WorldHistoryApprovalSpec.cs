@@ -47,7 +47,14 @@ public static class WorldHistoryApprovalSpec
     /// （#1327：三方此前各写各的字面量，种子态处置审批结构性走不通）。
     /// </summary>
     public const string NcrDocumentType = ApprovalDocumentTypes.NcrDisposition;
-    public const string NcrSourceService = "quality";
+
+    /// <summary>
+    /// NCR 处置审批链的来源服务：取自审批契约的唯一事实来源（#1702 收敛，此前是裸字面量）。
+    /// 该值逐字参与 <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256（键上有唯一索引），
+    /// 也是未来任何质量侧回写消费者的分流依据——漂移即历史链 pending 唯一键改变、回写静默丢事件。
+    /// 与库存流水来源 <c>InventoryMovementSourceServices.Quality</c> 同值不同义，不可互相引用。
+    /// </summary>
+    public const string NcrSourceService = ApprovalSourceServices.Quality;
 
     /// <summary>
     /// 销售订单「信用解冻」审批模板（#1290）。与两张历史模板不同，它不挂任何历史链，
@@ -55,7 +62,13 @@ public static class WorldHistoryApprovalSpec
     /// 编码必须与 ERP 侧字面量逐字一致，因此不落在 <c>APT-WB-</c> 号段。
     /// </summary>
     public const string SalesCreditReleaseTemplateCode = ApprovalTemplateCodes.SalesCreditRelease;
-    public const string SalesCreditReleaseDocumentType = "sales-order-credit-release";
+
+    /// <summary>
+    /// 信用解冻审批的单据类型：取自审批契约的唯一事实来源（#1702 收敛，此前三处各写各的字面量）。
+    /// ERP 发起侧 / 本种子模板 / ERP 回写消费侧共用——种子漂移即发起 400（模板按
+    /// <c>(templateCode, documentType)</c> 双条件命中），消费侧漂移即回写静默丢事件。
+    /// </summary>
+    public const string SalesCreditReleaseDocumentType = ApprovalDocumentTypes.SalesOrderCreditRelease;
 
     /// <summary>
     /// 盘点差异审批模板（#1344 扩修）。同样不挂历史链，只保证 Inventory
