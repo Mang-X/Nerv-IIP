@@ -52,6 +52,13 @@ function Get-NervCiImpactPlan {
             'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
         ),
         [StringComparer]::Ordinal)
+    $acceptanceScenarioMatrixRuntimeOwningPathSet = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
+            'scripts/run-acceptance-scenario-matrix.ps1'
+            'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
+        ),
+        [StringComparer]::Ordinal)
     $knownBusinessServices = @($knownBusinessServiceNames | ForEach-Object { ConvertTo-NervCiImpactServiceId -Name $_ })
     $flags = [ordered]@{
         backend = $false
@@ -374,6 +381,10 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
+            if ($acceptanceScenarioMatrixRuntimeOwningPathSet.Contains($path)) {
+                foreach ($flag in @('backend', 'full_chain', 'erp_sales_order_demand')) { Select-Impact -Name $flag -Reason $reason }
+                continue
+            }
             if ($acceptanceScenarioMatrixOwningPathSet.Contains($path)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue

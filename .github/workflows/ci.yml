@@ -1794,6 +1794,11 @@ jobs:
         shell: pwsh
         run: ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
 
+      - name: Test acceptance scenario matrix runtime contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1
+
       - name: Test PostgreSQL lane contract
         timeout-minutes: 5
         shell: pwsh
