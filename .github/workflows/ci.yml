@@ -1064,12 +1064,25 @@ jobs:
         run: |
           # NERV-1694：Playwright 安装（含 `--with-deps` 内部触发的 apt）会挂死到 15 分钟 step
           # 预算，而成功路径实测只需约 3 分钟；因此同样改为「单次尝试超时 + 有限重试」。
+          # NERV-1713：上面那套重试在带 `--with-deps` 时是无效的，已由 run 32216581187 实证——挂死
+          # 发生在 `--with-deps` 内部 `Switching to root user` 起的 `sudo apt-get` 里，而这里的
+          # `timeout` 是 runner 身份，SIGTERM/SIGKILL 因 EPERM 送不到那个 root 子进程；它成为孤儿
+          # 并继续持有 /var/lib/apt/lists/lock，第 2、3 次重试各只跑 3 秒就被同一个 PID 的锁挡死。
+          # `--kill-after` 只能保证外层 pnpm/node 被清掉、step 按时进入重试，清不掉 root 子进程。
+          # 因此本次去掉 `--with-deps`：apt 挂死面与孤儿锁面一起消失，本步骤只剩浏览器归档下载，
+          # 全程 runner 身份、可被 `timeout` 精确终止，重试才真正成立。
+          # 系统依赖改由 ubuntu-latest runner 镜像的预装承担：该镜像预装 Google Chrome、Chromium、
+          # Microsoft Edge 与 Firefox，Playwright 对 ubuntu24.04-x64 声明的 chromium 依赖集合
+          # （libnss3、libnspr4、libgbm1、libdrm2、libasound2t64、libatk-bridge2.0-0t64、
+          # libcups2t64、libxkbcommon0 等）都落在这些浏览器 deb 包的依赖闭包内。这一点是包级论证而
+          # 不是运行时观测，真正的验收是 FullChain 里那次真实代理页面走查：Chromium 起不来时
+          # Playwright 会明确列出缺失的库并让该 lane 失败关闭，属于大声失败而不是静默降级。届时应当
+          # 单列一个受控的系统依赖安装步骤，而不是把 apt 挂死面塞回本步骤。
           # 预算算术：单次尝试 240s（外加最多 30s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 5s
           # = 最坏 820s，严格小于本 step 既有的 timeout-minutes 预算 15 分钟（900s），故不改超时预算。
-          # `--with-deps` 本次刻意不动：去掉它可能导致 Chromium 起不来，属于需单独验证的改动。
           playwright_attempt=1
           while true; do
-            if timeout --kill-after=30 240 pnpm -C frontend --filter @nerv-iip/business-console exec playwright install --with-deps chromium; then
+            if timeout --kill-after=30 240 pnpm -C frontend --filter @nerv-iip/business-console exec playwright install chromium; then
               echo "Playwright Chromium 安装成功（第 ${playwright_attempt} 次尝试）。"
               break
             fi
