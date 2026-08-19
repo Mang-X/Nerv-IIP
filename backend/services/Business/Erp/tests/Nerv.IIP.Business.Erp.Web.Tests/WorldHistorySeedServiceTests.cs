@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
+using Nerv.IIP.Contracts.Erp;
 using NetCorePal.Extensions.DependencyInjection;
 using Xunit.Abstractions;
 
@@ -175,6 +176,59 @@ public sealed class WorldHistorySeedServiceTests(ITestOutputHelper output)
         var unreceived = purchasePlans.Where(x => !x.IsReceived).Select(x => WorldHistoryErpSpec.PayableNo(x.Index));
         var payableNos = payables.Select(x => x.PayableNo).ToHashSet(StringComparer.Ordinal);
         Assert.All(unreceived, no => Assert.DoesNotContain(no, payableNos));
+    }
+
+    [Fact]
+    public async Task History_seed_uses_supported_payable_quality_status_for_every_received_purchase_order()
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        await new WorldHistorySeedService(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var receiptLines = (await dbContext.PurchaseReceipts
+                .AsNoTracking()
+                .Include(receipt => receipt.Lines)
+                .ToArrayAsync())
+            .SelectMany(receipt => receipt.Lines)
+            .ToArray();
+        var received = WorldHistorySeedService.BuildPurchasePlans(AsOfDate, TestScale).Count(plan => plan.IsReceived);
+
+        Assert.Equal(received, receiptLines.Length);
+        Assert.All(receiptLines, line =>
+        {
+            Assert.True(
+                ErpReceiptQualityStatuses.IsSupported(line.QualityStatus),
+                $"收货行 {line.PurchaseOrderLineNo} 的质检状态 '{line.QualityStatus}' 不在 ERP 受理值域内。");
+            Assert.Equal(ErpReceiptQualityStatuses.Unrestricted, line.QualityStatus);
+        });
+        Assert.Equal(received, receiptLines.Count(line => ErpReceiptQualityStatuses.IsPayable(line.QualityStatus)));
+    }
+
+    [Fact]
+    public async Task History_validator_rejects_a_persisted_receipt_quality_status_outside_the_erp_vocabulary()
+    {
+        await using var provider = CreateProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        await new WorldHistorySeedService(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, TestScale);
+
+        var receipt = await dbContext.PurchaseReceipts
+            .Include(candidate => candidate.Lines)
+            .FirstAsync();
+        var line = Assert.Single(receipt.Lines);
+        dbContext.Entry(line).Property(candidate => candidate.QualityStatus).CurrentValue = "passed";
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(dbContext)
+                .ValidateAsync("org-001", "env-dev", AsOfDate, TestScale));
+
+        Assert.Contains(
+            exception.Failures,
+            failure => failure.Contains("质检状态 'passed' 不在 ERP 受理值域内", StringComparison.Ordinal));
     }
 
     [Fact]

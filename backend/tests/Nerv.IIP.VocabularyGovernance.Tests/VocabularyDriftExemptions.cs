@@ -100,12 +100,7 @@ internal static class VocabularyDriftExemptions
 
         // ── 检验处置/NCR 处置族（QualityInspectionDispositionStatuses / QualityNcrDispositionTypes） ──
         // #1370 ③ 批次 B 已销账：Mes/Quality 的 NCR 处置类型与 Quality 的检验处置结果全部改常量引用，
-        // 对应豁免已删除。下面这条 Erp 的 "passed" 经复核属同值不同义，保留。
-        // 同值不同义：Erp 采购收货行的 QualityStatus 走的是 ErpReceiptQualityStatuses 值域
-        // （unrestricted/quality/blocked + accepted/qualified/available/inspection/rejected 别名），
-        // 与 Quality 的检验处置结果（passed/conditional-release/rejected）是两套目录，不可互相引用。
-        ..Group("passed", "同值不同义：Erp 采购收货行质检状态（ErpReceiptQualityStatuses 值域），非 Quality 检验处置结果。",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Seed/WorldHistorySeedService.cs"),
+        // 对应豁免已删除。Erp 世界史种子的同名误用由 #1828 改为 ErpReceiptQualityStatuses 常量并删除豁免。
 
         // ── "rejected"（审批结果 vs 检验处置 vs 扫描结果 vs 控制命令状态） ──────────
         // 同值不同义：条码扫描结果（accepted/rejected）与设备控制命令状态（completed/failed/rejected）
