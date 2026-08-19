@@ -41,7 +41,7 @@ public sealed class GatewayCacheInvalidationTests
     }
 
     private static WebApplicationFactory<Program> CreateFactory(RecordingCache cache) =>
-        new WebApplicationFactory<Program>()
+        PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAppCache>();
