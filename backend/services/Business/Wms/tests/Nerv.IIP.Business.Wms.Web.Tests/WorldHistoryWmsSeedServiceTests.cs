@@ -80,10 +80,13 @@ public sealed class WorldHistoryWmsSeedServiceTests(ITestOutputHelper output)
         var upperBound = new DateTimeOffset(AsOfDate.ToDateTime(TimeOnly.MaxValue), TimeSpan.Zero);
         var documents = WorldHistoryWmsSpec.BuildDocuments(AsOfDate, 0.2d);
 
+        // 完成时刻可空（为 null 即计划把这张单据留在流程中），只对真正给出的时刻做边界断言。
         var moments = documents.InboundOrders
-            .SelectMany(x => new[] { x.CreatedAtUtc, x.CompletedAtUtc, x.TaskCreatedAtUtc, x.TaskCompletedAtUtc })
+            .SelectMany(x => new DateTimeOffset?[] { x.CreatedAtUtc, x.CompletedAtUtc, x.TaskCreatedAtUtc, x.TaskCompletedAtUtc })
             .Concat(documents.OutboundOrders
-                .SelectMany(x => new[] { x.CreatedAtUtc, x.TaskCompletedAtUtc, x.CompletedAtUtc }));
+                .SelectMany(x => new DateTimeOffset?[] { x.CreatedAtUtc, x.TaskCompletedAtUtc, x.CompletedAtUtc }))
+            .Where(x => x is not null)
+            .Select(x => x!.Value);
 
         foreach (var moment in moments)
         {
@@ -240,6 +243,82 @@ public sealed class WorldHistoryWmsSeedServiceTests(ITestOutputHelper output)
             new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale));
 
         Assert.Contains(exception.Failures, failure => failure.Contains("未落库", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 反向变异：**原断言会红、但实际合法**的数据——设定集把一张入库单与一张出库单留在流程中
+    /// （计划的 <c>CompletedAtUtc</c> 为 null）。旧门禁写死「历史单据必须已完成 + 必须有完成时间」，
+    /// 这份数据在旧门禁下必红，只能靠另开 IB-WQ- / OB-WQ- 号段 + 加载处白名单才绕得过去；
+    /// 新门禁以计划为口径，必须放行。
+    /// </summary>
+    [Fact]
+    public async Task Validator_accepts_documents_the_plan_deliberately_leaves_in_progress()
+    {
+        await using var db = CreateDbContext();
+        var plan = WithInProgressDocuments(WorldHistoryWmsSpec.BuildDocuments(AsOfDate, SmallScale));
+
+        var report = await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale, plan);
+
+        // 在制单据确实落了库、确实没走到终态——不是「被跳过所以没人管」。
+        var inProgressInbound = await db.InboundOrders
+            .SingleAsync(x => x.InboundOrderNo == plan.InboundOrders[0].InboundOrderNo);
+        Assert.NotEqual(InboundOrderStatus.Completed, inProgressInbound.Status);
+        Assert.Null(inProgressInbound.CompletedAtUtc);
+        var inProgressOutbound = await db.OutboundOrders
+            .SingleAsync(x => x.OutboundOrderNo == plan.OutboundOrders[0].OutboundOrderNo);
+        Assert.NotEqual(OutboundOrderStatus.Completed, inProgressOutbound.Status);
+        Assert.Null(inProgressOutbound.CompletedAtUtc);
+
+        Assert.Equal(plan.InboundOrders.Count, report.Validation.InboundOrdersChecked);
+        Assert.Equal(plan.OutboundOrders.Count, report.Validation.OutboundOrdersChecked);
+    }
+
+    /// <summary>
+    /// 正向变异之一：计划说「仍在流程中」，库里却是已完成的终态单据——**真正违反不变量**，必须红。
+    /// 旧门禁对这份数据是绿的（它只会喊「必须已完成」，已完成正合它意）。
+    /// </summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_a_completed_order_should_still_be_in_progress()
+    {
+        await using var db = CreateDbContext();
+        // 先按缺省计划落成全部闭环，再拿「留在流程中」的计划去对账。
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale);
+        var plan = WithInProgressDocuments(WorldHistoryWmsSpec.BuildDocuments(AsOfDate, SmallScale));
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryWmsConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale, plan));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("已完成，计划口径为仍在流程中", StringComparison.Ordinal));
+        Assert.Contains(exception.Failures, failure => failure.Contains("却留下了完成时间", StringComparison.Ordinal));
+        Assert.Contains(exception.Failures, failure => failure.Contains("却已标记已过账", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 正向变异之二：计划说「已完成」，库里却停在流程中——同样违反不变量，必须红。
+    /// 这一条证明放宽后并没有把终态要求整个丢掉。
+    /// </summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_an_in_progress_order_should_be_completed()
+    {
+        await using var db = CreateDbContext();
+        var inProgressPlan = WithInProgressDocuments(WorldHistoryWmsSpec.BuildDocuments(AsOfDate, SmallScale));
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", AsOfDate, SmallScale, inProgressPlan);
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryWmsConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", AsOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("计划口径为已完成", StringComparison.Ordinal));
+        Assert.Contains(exception.Failures, failure => failure.Contains("没有完成时间", StringComparison.Ordinal));
+    }
+
+    /// <summary>把计划里的第一张入库单与第一张出库单改成「仍在流程中」，其余原样。</summary>
+    private static WorldHistoryWarehouseDocuments WithInProgressDocuments(WorldHistoryWarehouseDocuments documents)
+    {
+        var inbounds = documents.InboundOrders.ToArray();
+        var outbounds = documents.OutboundOrders.ToArray();
+        inbounds[0] = inbounds[0] with { CompletedAtUtc = null };
+        outbounds[0] = outbounds[0] with { CompletedAtUtc = null };
+        return new WorldHistoryWarehouseDocuments(inbounds, outbounds);
     }
 
     private static ApplicationDbContext CreateDbContext()

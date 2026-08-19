@@ -43,7 +43,7 @@ import {
   NvSelectValue,
   Spinner,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, ClipboardPlusIcon } from '@lucide/vue'
+import { CheckCircle2Icon, ClipboardPlusIcon, RotateCcwIcon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -57,6 +57,8 @@ definePage({
 
 const route = useRoute()
 const {
+  cancelCountTask,
+  cancelCountTaskPending,
   confirmAdjustment,
   confirmAdjustmentPending,
   countAdjustmentRows,
@@ -66,6 +68,8 @@ const {
   createCountTask,
   createCountTaskPending,
   filters,
+  restartCountTask,
+  restartCountTaskPending,
 } = useInventoryCounts()
 
 // 受控值：UI 说人话，下发仍是后端码值。
@@ -86,6 +90,7 @@ const OWNER_OPTIONS = [
 
 const taskSheetOpen = shallowRef(false)
 const adjustmentSheetOpen = shallowRef(false)
+const closeSheetOpen = shallowRef(false)
 let adjustmentKeySequence = 0
 
 const taskForm = reactive({
@@ -105,6 +110,11 @@ const adjustmentForm = reactive({
   countTaskId: '',
   countedQuantity: '0',
   idempotencyKey: '',
+})
+const closeForm = reactive({
+  countTaskId: '',
+  countTaskCode: '',
+  reason: '',
 })
 
 // 状态码值 → 中文标签：界面说人话，下发与过滤仍用后端码值。
@@ -183,6 +193,9 @@ const canCreateTask = computed(
     isNonEmpty(taskForm.uomCode) &&
     isNonEmpty(taskForm.siteCode) &&
     isNonEmpty(taskForm.locationCode),
+)
+const canCloseTask = computed(
+  () => isNonEmpty(closeForm.countTaskId) && isNonEmpty(closeForm.reason),
 )
 const canConfirmAdjustment = computed(
   () =>
@@ -270,6 +283,57 @@ async function submitAdjustment() {
   const approvalPending = response?.data?.status === 'pending-approval'
   adjustmentSheetOpen.value = false
   notifySuccess(approvalPending ? '库存调整已进入审批' : '库存调整已确认')
+}
+
+// 重盘：重新冻结台账、按当前版本重取快照后放回待实盘。
+// 两种死单都靠它出去：审批驳回停在「需复盘」的；以及台账在快照之后被改动、确认差异每次都被拒
+// （拒绝回滚事务，状态仍留在「待实盘」）的。已确认 / 已作废 / 待审批不能重开。
+function canRestartRow(row: CountTaskRow) {
+  return Boolean(row.countTaskId) && (row.status === 'recount-required' || row.status === 'open')
+}
+
+async function restart(row: CountTaskRow) {
+  const countTaskId = row.countTaskId ?? ''
+  if (!canRestartRow(row)) return
+  try {
+    await restartCountTask(countTaskId)
+  } catch (error) {
+    notifyOperationFailure('重盘失败', error, '重盘失败，请稍后重试。')
+    return
+  }
+  notifySuccess(`盘点任务 ${row.countTaskCode || countTaskId} 已重新开盘`)
+}
+
+function openClose(row: CountTaskRow) {
+  closeForm.countTaskId = row.countTaskId ?? ''
+  closeForm.countTaskCode = row.countTaskCode ?? ''
+  closeForm.reason = ''
+  closeSheetOpen.value = true
+}
+
+async function submitClose() {
+  if (!canCloseTask.value) return
+  try {
+    await cancelCountTask(closeForm.countTaskId.trim(), closeForm.reason.trim())
+  } catch (error) {
+    // 失败保留弹框与已填原因，不把人赶回列表重填一遍。
+    notifyOperationFailure('关闭盘点任务失败', error, '关闭盘点任务失败，请稍后重试。')
+    return
+  }
+  closeSheetOpen.value = false
+  notifySuccess(`盘点任务 ${closeForm.countTaskCode || closeForm.countTaskId} 已关闭`)
+}
+
+// 已确认的任务不能再关闭（差异已经过账），已作废的不用再关。
+// 待审批同样不能关：审批链还在跑，把任务作废掉会让随后的审批回写在服务端抛异常、
+// 从消费者逃逸成毒消息——与「重盘不能绕过审批」是同一条原则。
+function canCloseRow(row: CountTaskRow) {
+  return (
+    Boolean(row.countTaskId) &&
+    row.status !== 'confirmed' &&
+    row.status !== 'cancelled' &&
+    row.status !== 'pending-approval'
+  )
 }
 
 function openAdjustment(row: CountTaskRow) {
@@ -364,6 +428,17 @@ function isNonEmpty(value: string) {
           <NvDropdownMenuItem :disabled="row.status !== 'open'" @click="openAdjustment(row)">
             <CheckCircle2Icon aria-hidden="true" />
             确认差异
+          </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            :disabled="!canRestartRow(row) || restartCountTaskPending"
+            @click="restart(row)"
+          >
+            <RotateCcwIcon aria-hidden="true" />
+            重盘
+          </NvDropdownMenuItem>
+          <NvDropdownMenuItem :disabled="!canCloseRow(row)" @click="openClose(row)">
+            <XCircleIcon aria-hidden="true" />
+            关闭任务
           </NvDropdownMenuItem>
         </NvRowActions>
       </template>
@@ -528,6 +603,44 @@ function isNonEmpty(value: string) {
               <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
+            </NvButton>
+          </div>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
+    <NvDialog v-model:open="closeSheetOpen">
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>关闭盘点任务</NvDialogTitle>
+          <NvDialogDescription class="sr-only">
+            关闭盘点任务 {{ closeForm.countTaskCode || closeForm.countTaskId }}，并解除台账冻结。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid content-start gap-4" @submit.prevent="submitClose">
+          <CarriedContextSummary
+            label="盘点任务"
+            :items="[{ label: '任务号', value: closeForm.countTaskCode || closeForm.countTaskId }]"
+          />
+          <NvFieldGroup class="grid gap-3">
+            <NvField>
+              <NvFieldLabel for="count-close-reason">关闭原因</NvFieldLabel>
+              <NvInput
+                id="count-close-reason"
+                v-model="closeForm.reason"
+                placeholder="例如：盘点范围调整，任务不再执行"
+                required
+              />
+            </NvField>
+          </NvFieldGroup>
+          <div class="flex justify-end">
+            <NvButton
+              type="submit"
+              variant="destructive"
+              :disabled="cancelCountTaskPending || !canCloseTask"
+            >
+              <Spinner v-if="cancelCountTaskPending" aria-hidden="true" />
+              <XCircleIcon v-else aria-hidden="true" />
+              关闭任务
             </NvButton>
           </div>
         </form>

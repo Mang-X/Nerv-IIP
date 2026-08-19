@@ -10,10 +10,12 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
@@ -779,9 +781,93 @@ public sealed class ErpProcurementEndpointContractTests
         var secondChainId = await handler.Handle(command, CancellationToken.None);
 
         Assert.NotEqual(firstChainId, secondChainId);
-        // #1344：变更再审批与下达共用同一张种子模板（同单据类型、同审批人，种子只此一张采购模板），
-        // 旧字面量 erp-purchase-order-change 同样从未落库。
-        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
+        // #1685：变更再审批走独立的变更模板 APT-WB-PO-002（由审批种子补齐同码同单据类型的模板），
+        // 与下达模板分开，审批人收件箱据此区分两类待办；旧字面量 erp-purchase-order-change 从未落库、已弃用。
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, approvalClient.LastRequest!.TemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest.TemplateCode);
+        // 单据类型不变：ERP 回写消费侧按 purchase-order 分流，改了这里变更审批通过后回写会被静默丢弃。
+        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, approvalClient.LastRequest.DocumentType);
+    }
+
+    /// <summary>
+    /// #1685 的回写闭环：变更审批换了模板码之后，审批通过的回写必须照旧落到采购订单上。
+    ///
+    /// 回写消费侧 <c>ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder</c> 按
+    /// <c>(sourceService, documentType)</c> 分流、完全不看模板码，因此换模板码不影响回写；
+    /// 但**换 documentType 会**——本用例刻意把发起侧实际发出的 documentType / sourceService
+    /// 原样回灌进集成事件（模拟审批服务的真实回发），谁把发起侧的 documentType 改成回写侧不认的值，
+    /// 事件就会被静默丢弃、变更永不生效，本用例必红（#1683 同款静默丢事件坑）。
+    /// </summary>
+    [Fact]
+    public async Task Approved_purchase_order_change_writes_back_through_the_document_type_the_command_actually_sent()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-CHANGE-WRITEBACK-001",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-create-001");
+        order.ReleaseAfterApproval("approval-create-001");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        var chainId = await new RequestPurchaseOrderChangeCommandHandler(dbContext, approvalClient).Handle(
+            new RequestPurchaseOrderChangeCommand(
+                "org-001",
+                "env-dev",
+                "PO-CHANGE-WRITEBACK-001",
+                [new PurchaseOrderLineChangeDraft("LINE-001", 6m, 12m, new DateOnly(2026, 6, 9))],
+                "供应商交期调整",
+                "user:buyer-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, approvalClient.LastRequest!.TemplateCode);
+
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            new ApprovalCompletedIntegrationEvent(
+                "evt-po-change-approved-001",
+                ApprovalIntegrationEventTypes.ApprovalApproved,
+                ApprovalIntegrationEventVersions.V1,
+                DateTimeOffset.UtcNow,
+                ApprovalIntegrationEventSources.BusinessApproval,
+                "corr-po-change-001",
+                "cause-po-change-001",
+                "org-001",
+                "env-dev",
+                "system:approval",
+                $"business-approval:approved:org-001:env-dev:{chainId}",
+                new ApprovalCompletedPayload(
+                    chainId,
+                    ApprovalResults.Approved,
+                    "user",
+                    "user-admin",
+                    null,
+                    null,
+                    // 原样回灌发起侧实际发出的来源服务与单据类型：这就是审批服务回发时携带的值。
+                    new ApprovalDocumentReferencePayload(
+                        approvalClient.LastRequest.SourceService,
+                        approvalClient.LastRequest.DocumentType,
+                        approvalClient.LastRequest.DocumentId,
+                        null))),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reloaded = dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .Include(x => x.ChangeHistory)
+            .Single(x => x.PurchaseOrderNo == "PO-CHANGE-WRITEBACK-001");
+        Assert.Equal(6m, reloaded.Lines.Single().OrderedQuantity);
+        Assert.Equal(72m, reloaded.TotalAmount);
+        Assert.Equal(chainId, reloaded.ChangeHistory.Single().ApprovalChainId);
     }
 
     [Fact]
@@ -806,7 +892,9 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal(chainId, order.ApprovalChainId);
         Assert.Equal(70m, order.TotalAmount);
         Assert.Equal(70m, approvalClient.LastRequest!.Amount);
-        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest.TemplateCode);
+        // #1685：驳回后修订重提同样走变更模板（走的是 RequestPurchaseOrderChangeCommand 的修订分支）。
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, approvalClient.LastRequest.TemplateCode);
+        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, approvalClient.LastRequest.DocumentType);
     }
 
     [Fact]

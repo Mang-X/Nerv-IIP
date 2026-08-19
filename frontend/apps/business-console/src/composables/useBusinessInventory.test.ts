@@ -3,8 +3,10 @@ import { nextTick, shallowRef, watchEffect } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  cancelBusinessConsoleInventoryCountTaskMutationOptions,
   confirmBusinessConsoleInventoryCountAdjustmentMutationOptions,
   createBusinessConsoleInventoryCountTaskMutationOptions,
+  restartBusinessConsoleInventoryCountTaskMutationOptions,
   getBusinessConsoleInventoryAvailabilityQueryOptions,
   listBusinessConsoleInventoryExpiryAlertsQueryOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
@@ -34,6 +36,18 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
+    })),
+  })),
+  restartBusinessConsoleInventoryCountTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars,
+    })),
+  })),
+  cancelBusinessConsoleInventoryCountTaskMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars,
     })),
   })),
   getBusinessConsoleInventoryAvailabilityQueryOptions: vi.fn(() => ({
@@ -323,5 +337,31 @@ describe('business inventory composables', () => {
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
       predicate: expect.any(Function),
     })
+  })
+
+  it('sends recount and close with the task id on the route and the scope on the query', async () => {
+    const { cancelCountTask, restartCountTask } = useInventoryCounts()
+
+    await restartCountTask('count-stuck')
+    await cancelCountTask('count-stuck', '盘点范围调整')
+
+    // 重盘没有请求体：任务号走路由、组织范围走 query，多塞一份会和路由值对不上。
+    expect(
+      vi.mocked(restartBusinessConsoleInventoryCountTaskMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { countTaskId: 'count-stuck' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(
+      vi.mocked(cancelBusinessConsoleInventoryCountTaskMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { countTaskId: 'count-stuck' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reason: '盘点范围调整' },
+    })
+    // 两者都改了盘点任务状态：不失效读面，表格会停在旧状态。
+    expect(coladaState.invalidateQueries).toHaveBeenCalled()
   })
 })

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Infrastructure;
+using Nerv.IIP.Contracts.Approval;
 using System.Globalization;
 using System.Text;
 
@@ -36,6 +37,8 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
     {
         var facts = WorldHistoryQualitySpec.BuildInspectionFacts(asOfDate, scale);
         var factByTriggerKey = facts.ToDictionary(fact => fact.TriggerIdempotencyKey, StringComparer.Ordinal);
+        // #1684：处置审批回链覆盖面（NCR-2026-0001..K）与 seed 共用同一确定性复算，写入与校验不可能漂移。
+        var approvalCoveredNcrCodes = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, scale);
         var workOrderFacts = WorldHistoryPhase2Spec.BuildWorkOrderFacts(asOfDate, scale);
         var workOrderQuantities = workOrderFacts
             .Where(fact => fact.HasFinalInspection)
@@ -60,7 +63,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 continue;
             }
 
-            CheckTask(task, fact, records, reports, workOrderQuantities, lowerBound, upperBound, failures);
+            CheckTask(task, fact, records, reports, workOrderQuantities, approvalCoveredNcrCodes, lowerBound, upperBound, failures);
         }
 
         CheckDistributions(facts, tasks, reports, failures);
@@ -109,6 +112,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         Dictionary<string, RecordProjection> records,
         Dictionary<string, ReportProjection> reports,
         Dictionary<string, WorldHistoryWorkOrderPlan> workOrderQuantities,
+        IReadOnlySet<string> approvalCoveredNcrCodes,
         DateTimeOffset lowerBound,
         DateTimeOffset upperBound,
         List<string> failures)
@@ -171,7 +175,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             return;
         }
 
-        CheckNonconformanceReport(task, record, fact, report, lowerBound, upperBound, failures);
+        CheckNonconformanceReport(task, record, fact, report, approvalCoveredNcrCodes, lowerBound, upperBound, failures);
     }
 
     private static void CheckTimestamps(
@@ -214,6 +218,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         RecordProjection record,
         WorldHistoryInspectionFact fact,
         ReportProjection report,
+        IReadOnlySet<string> approvalCoveredNcrCodes,
         DateTimeOffset lowerBound,
         DateTimeOffset upperBound,
         List<string> failures)
@@ -221,6 +226,29 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         if (string.IsNullOrWhiteSpace(record.NonconformanceReportId))
         {
             failures.Add($"{task.SourceDocumentId} 的检验记录没有回链 {fact.NcrCode}。");
+        }
+
+        // 8) 处置审批回链（#1684）：覆盖面内（NCR-2026-0001..K，K 为审批域标定下界）的历史 NCR
+        // 必须带可解析且与跨服务确定性公式一致的处置审批链 id；覆盖面外必须为 null。
+        if (approvalCoveredNcrCodes.Contains(fact.NcrCode!))
+        {
+            var expectedChainId = WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(fact.NcrCode!);
+            if (string.IsNullOrWhiteSpace(report.DispositionApprovalChainId))
+            {
+                failures.Add($"{fact.NcrCode} 在处置审批覆盖面内却没有回链处置审批链 id（NCR 详情页审批区将恒空）。");
+            }
+            else if (!Guid.TryParse(report.DispositionApprovalChainId, out var actualChainId))
+            {
+                failures.Add($"{fact.NcrCode} 的处置审批链 id '{report.DispositionApprovalChainId}' 不是可解析的链 id。");
+            }
+            else if (actualChainId != expectedChainId)
+            {
+                failures.Add($"{fact.NcrCode} 的处置审批链 id {actualChainId:D} 与跨服务确定性公式的 {expectedChainId:D} 不符。");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(report.DispositionApprovalChainId))
+        {
+            failures.Add($"{fact.NcrCode} 在处置审批覆盖面外却带了处置审批链 id {report.DispositionApprovalChainId}（审批库里不存在该链）。");
         }
 
         if (!string.Equals(report.Status, "closed", StringComparison.Ordinal))
@@ -481,6 +509,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 x.DefectQuantity,
                 x.Status,
                 x.DispositionType,
+                x.DispositionApprovalChainId,
                 x.ReworkWorkOrderId,
                 x.ScrapMovementId,
                 x.ReturnDocumentId,
@@ -581,6 +610,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         decimal DefectQuantity,
         string Status,
         string? DispositionType,
+        string? DispositionApprovalChainId,
         string? ReworkWorkOrderId,
         string? ScrapMovementId,
         string? ReturnDocumentId,

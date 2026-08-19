@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FastEndpoints;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
@@ -1052,7 +1053,7 @@ public sealed record RemoveTeamMemberRequest(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason = "");
+    string Reason);
 
 public sealed class AddTeamMemberEndpoint(
     ISender sender,
@@ -1354,7 +1355,7 @@ public sealed record ArchiveProductCategoryRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string CategoryCode,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record ListSkillsRequest(
     string OrganizationId,
@@ -1395,7 +1396,7 @@ public sealed record ArchiveSkillRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string SkillCode,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
     : MasterDataEndpoint<CreateReferenceDataCodeRequest, ResponseData<MasterDataResourceResponse>>
@@ -1646,6 +1647,17 @@ public sealed record CreateCodeRuleVersionRequest(
     DateTimeOffset? EffectiveFromUtc,
     string CreatedBy,
     string ChangeReason);
+
+public sealed class CreateCodeRuleVersionRequestValidator : Validator<CreateCodeRuleVersionRequest>
+{
+    public CreateCodeRuleVersionRequestValidator()
+    {
+        RuleFor(x => x.ChangeReason)
+            .NotEmpty()
+            .Must(reason => !string.IsNullOrWhiteSpace(reason))
+            .MaximumLength(CodeRuleChangeReason.MaximumLength);
+    }
+}
 
 public sealed class CreateCodeRuleVersionEndpoint(ISender sender)
     : MasterDataEndpoint<CreateCodeRuleVersionRequest, ResponseData<CodeRuleVersionResponse>>

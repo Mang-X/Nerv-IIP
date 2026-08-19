@@ -75,6 +75,43 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         return new ApprovalChain(template, documentReference, startedBy);
     }
 
+    /// <summary>
+    /// 【仅限世界观种子】以调用方给定的**确定性** id 发起审批链（#1684）。
+    ///
+    /// <para>
+    /// 用途只有一个：L1 背景历史种子跨服务回链——Quality 侧按同一确定性公式
+    /// （<c>Nerv.IIP.Contracts.Approval.WorldHistoryNcrDispositionApprovals</c>）把链 id 回填到
+    /// <c>NonconformanceReport.DispositionApprovalChainId</c>，两个库不通信也能精确互指。
+    /// 子实体（<see cref="ApprovalStep"/> / <see cref="ApprovalDecision"/>）的 <c>ChainId</c>
+    /// 由 EF 按导航关系回填，因此确定性 id 必须在这里、也只能在这里进入聚合，
+    /// 不允许落库前用 EF Entry 覆写主键（Added 实体改键不保证向下传播，失败模式是
+    /// 子实体外键指向不存在的链且种子照样「成功」）。
+    /// </para>
+    ///
+    /// <para>
+    /// **生产路径禁止调用**：生产审批链一律走 <see cref="Start"/>（id 为 <c>Guid.CreateVersion7()</c>）。
+    /// 该禁令由 Approval 测试工程的源码扫描契约测试
+    /// （<c>ApprovalChainSeededIdentityContractTests</c>）钉住：本方法只允许出现在
+    /// 世界观种子服务里，其他生产代码引用即红。
+    /// </para>
+    /// </summary>
+    public static ApprovalChain StartWithSeededIdentity(
+        ApprovalChainId seededChainId,
+        ApprovalTemplate template,
+        ApprovalDocumentReference documentReference,
+        string startedBy)
+    {
+        ArgumentNullException.ThrowIfNull(seededChainId);
+        if (seededChainId.Id == Guid.Empty)
+        {
+            throw new ArgumentException("世界观种子审批链 id 不能是空 Guid。", nameof(seededChainId));
+        }
+
+        var chain = new ApprovalChain(template, documentReference, startedBy);
+        chain.Id = seededChainId;
+        return chain;
+    }
+
     public static string BuildPendingIdentityKey(string organizationId, string environmentId, string templateCode, ApprovalDocumentReference documentReference)
     {
         var identity = string.Join('\n',
