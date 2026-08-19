@@ -57,6 +57,10 @@ Redis 上同时持有相同逻辑锁并各自消费相同逻辑 topic，证明�
 
 `test-evidence-policy.json` 及后续 lane/scenario manifest 是测试归属和预期执行数的权威来源；env gate 只兼容本地启用方式。每次绿色结果必须回答：选择了什么、为什么选择、测试了哪个 SHA、各选中单元预期与实际执行多少、通过/失败/跳过多少、依赖版本是什么、清理是否完成。
 
+当前名称、trait、路由合同与实际 artifact 的增量漂移盘点见
+[测试 provider、lane 与 trait 盘点](./test-provider-lane-inventory.md)；该盘点不改变本页的
+唯一归属或执行语义。
+
 选中的每条 policy rule 或 scenario 都必须生成机器可读结果并满足其 `expectedRuntimeTestCount`；job 未创建、被取消、缺少 artifact、执行数为零、全部 skip、只执行部分预期测试、非法 quarantine、测试失败或清理残留均为红灯。未选中的 lane 不制造 VSTest skip，由 summary 以 `skipped by policy` 和具体影响理由表示；合法 optional skip 仍须显式计数和说明。
 
 测试步骤保留自然退出码；证据采集使用 `if: always()`。禁止 `continue-on-error`、`|| true`、吞掉退出码，或用单个已执行测试掩盖同一 lane 中其他被选单元的零执行。
