@@ -235,8 +235,7 @@ function Test-NervAcceptanceRuntimeRunCommand {
         return $false
     }
     $commandName = $command.GetCommandName()
-    if (-not [string]::Equals($commandName, 'pwsh', [StringComparison]::Ordinal) -and
-        -not [string]::Equals($commandName, 'pwsh.exe', [StringComparison]::Ordinal)) {
+    if (-not [string]::Equals($commandName, 'pwsh', [StringComparison]::Ordinal)) {
         return $false
     }
 

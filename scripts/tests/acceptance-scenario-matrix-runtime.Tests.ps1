@@ -503,6 +503,9 @@ try {
     $wrongCommandWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-wrong-command' -Run 'pwsh scripts/run-full-chain-test-lane.ps1'
     Assert-PreflightRejected -Name 'workflow-command-drift' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $wrongCommandWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
 
+    $windowsCommandOnUbuntuWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-windows-command-on-ubuntu' -Run 'pwsh.exe scripts/run-acceptance-scenario-matrix.ps1'
+    Assert-PreflightRejected -Name 'workflow-windows-command-on-ubuntu' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $windowsCommandOnUbuntuWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+
     $hereStringRun = "|`n          @'`n          pwsh scripts/run-acceptance-scenario-matrix.ps1`n          '@ | Out-Null"
     $hereStringWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-here-string' -Run $hereStringRun
     Assert-PreflightRejected -Name 'workflow-here-string-data' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $hereStringWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
