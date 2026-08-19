@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 
@@ -283,7 +284,9 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 plan.DeviceAssetId,
                 plan.ExternalAlarmId,
                 plan.Severity == "critical" ? "high" : "medium",
-                openedBy: "industrialTelemetry",
+                // 与运行路径同源：OpenWorkOrderWhenAlarmRaisedHandler 把该常量直接作为 openedBy
+                // 传入 CreateMaintenanceWorkOrderCommand，种子在模拟同一条路径（#1370 ③ 批次 D）。
+                openedBy: IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
                 diagnosticDescription: $"报警 {plan.AlarmCode}：观测值 {plan.ObservedValue}{plan.UnitCode} 越限（阈值 {plan.ThresholdValue}{plan.UnitCode}）",
                 failureModeCode: plan.FailureModeCode,
                 failureCauseCode: plan.FailureCauseCode,
