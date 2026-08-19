@@ -52,7 +52,7 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
-    public void Net_requirement_formula_uses_actual_available_quantity_when_safety_stock_exceeds_available()
+    public void Safety_stock_deficit_is_replenished_in_first_requirement_bucket()
     {
         var input = NewInput(
             availability:
@@ -67,14 +67,215 @@ public sealed class MrpCalculatorTests
         var suggestions = MrpCalculator.Calculate(input);
 
         var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Equal(14m, workOrder.Quantity);
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
         var explanation = document.RootElement.GetProperty("netRequirementExplanation");
         Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
         Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
         Assert.Equal(0m, explanation.GetProperty("availableToNetQuantity").GetDecimal());
         Assert.Equal(12m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
-        Assert.Equal(10m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
-        Assert.Contains("10 - 0 - 0 = 10", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+        Assert.Equal(14m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal(14m, explanation.GetProperty("plannedQuantity").GetDecimal());
+        Assert.Contains("10 - 0 - 0 + 4 safety-stock = 14", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+        Assert.Contains(workOrder.PeggingLinks, x =>
+            x.SourceType == "safety-stock"
+            && x.Quantity == 4m
+            && x.GrossDemandQuantity == 0m);
+    }
+
+    [Fact]
+    public void Safety_stock_deficit_without_demand_uses_the_normal_buy_planning_path()
+    {
+        var input = NewInput(
+            demands: [],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", 2m),
+            ],
+            productionVersions: [],
+            bomComponents: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot(
+                    "SKU-RM-1000",
+                    "pcs",
+                    "SITE-01",
+                    0,
+                    5m,
+                    null,
+                    null,
+                    null,
+                    ProcurementType: "buy"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var purchase = Assert.Single(suggestions);
+        Assert.Equal("planned-purchase", purchase.SuggestionType);
+        Assert.Equal("SKU-RM-1000", purchase.SkuCode);
+        Assert.Equal(3m, purchase.Quantity);
+        Assert.Equal(3m, purchase.NetRequirementExplanation.NetRequirementQuantity);
+        Assert.Equal(3m, purchase.NetRequirementExplanation.PlannedQuantity);
+        Assert.Equal(0m, purchase.NetRequirementExplanation.GrossDemandQuantity);
+        Assert.Equal("safety-stock", purchase.NetRequirementExplanation.PrimarySourceType);
+        Assert.Contains("0 - 0 - 0 + 3 safety-stock = 3", purchase.NetRequirementExplanation.Formula, StringComparison.Ordinal);
+        var safetyPegging = Assert.Single(purchase.PeggingLinks);
+        Assert.Equal("safety-stock", safetyPegging.SourceType);
+        Assert.Equal(3m, safetyPegging.Quantity);
+        Assert.Equal(0m, safetyPegging.GrossDemandQuantity);
+    }
+
+    [Fact]
+    public void Partial_scheduled_receipt_is_consumed_once_across_demand_and_safety_deficit()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot(
+                    "SKU-FG-1000",
+                    "pcs",
+                    "SITE-01",
+                    3m,
+                    new DateOnly(2026, 6, 1),
+                    "erp",
+                    "purchase-order",
+                    "PO-SAFETY-PARTIAL"),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 12m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Equal(11m, workOrder.Quantity);
+        Assert.Equal(11m, workOrder.NetRequirementExplanation.NetRequirementQuantity);
+        Assert.Equal(3m, workOrder.NetRequirementExplanation.ScheduledReceiptQuantity);
+        Assert.Contains("10 - 0 - 3 + 4 safety-stock = 11", workOrder.NetRequirementExplanation.Formula, StringComparison.Ordinal);
+        var receiptPegging = Assert.Single(workOrder.PeggingLinks, x => x.PeggingType == "scheduled-receipt");
+        Assert.Equal(3m, receiptPegging.Quantity);
+        Assert.DoesNotContain(suggestions, x => x.SuggestionType == "cancel");
+    }
+
+    [Fact]
+    public void Full_scheduled_receipt_covers_demand_and_safety_deficit_without_new_or_cancel_supply()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot(
+                    "SKU-FG-1000",
+                    "pcs",
+                    "SITE-01",
+                    14m,
+                    new DateOnly(2026, 6, 1),
+                    "erp",
+                    "purchase-order",
+                    "PO-SAFETY-FULL"),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 12m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        Assert.Empty(suggestions);
+    }
+
+    [Fact]
+    public void Safety_stock_floor_is_replenished_once_then_later_bucket_plans_only_demand()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 1)),
+                new DemandSnapshot("DEMAND-002", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 2)),
+            ],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 0m),
+            ],
+            bomComponents: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 2m, null, null, null),
+            ]);
+
+        var workOrders = MrpCalculator.Calculate(input)
+            .Where(x => x.SuggestionType == "planned-work-order")
+            .OrderBy(x => x.RequiredDate)
+            .ToArray();
+
+        Assert.Equal(2, workOrders.Length);
+        Assert.Equal(new DateOnly(2026, 6, 1), workOrders[0].RequiredDate);
+        Assert.Equal(5m, workOrders[0].Quantity);
+        Assert.Contains("3 - 0 - 0 + 2 safety-stock = 5", workOrders[0].NetRequirementExplanation.Formula, StringComparison.Ordinal);
+        Assert.Equal(new DateOnly(2026, 6, 2), workOrders[1].RequiredDate);
+        Assert.Equal(4m, workOrders[1].Quantity);
+        Assert.Equal("4 - 0 - 0 = 4", workOrders[1].NetRequirementExplanation.Formula);
+    }
+
+    [Fact]
+    public void Safety_stock_replenishment_preserves_decimal_uom_precision_and_non_negative_boundaries()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 0.333m, new DateOnly(2026, 6, 1)),
+            ],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "box", "SITE-01", 0.111m),
+            ],
+            bomComponents: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0.50m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("box", "pcs", 3m, 0m, 2, "half-up"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions);
+        Assert.Equal("pcs", workOrder.UomCode);
+        Assert.Equal(1.17m, workOrder.Quantity);
+        Assert.Equal(1.00m, workOrder.NetRequirementExplanation.GrossDemandQuantity);
+        Assert.Equal(0.33m, workOrder.NetRequirementExplanation.OnHandQuantity);
+        Assert.Equal(0.50m, workOrder.NetRequirementExplanation.SafetyStockQuantity);
+        Assert.Equal(1.17m, workOrder.NetRequirementExplanation.NetRequirementQuantity);
+        Assert.Equal(1.17m, workOrder.NetRequirementExplanation.PlannedQuantity);
+        Assert.Contains("1 - 0 - 0 + 0.17 safety-stock = 1.17", workOrder.NetRequirementExplanation.Formula, StringComparison.Ordinal);
+        Assert.Contains(workOrder.NetRequirementExplanation.UomConversions, x => x.Contains("0.333 box -> 1.00 pcs", StringComparison.Ordinal));
+        Assert.All(suggestions, suggestion =>
+        {
+            Assert.True(suggestion.Quantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.GrossDemandQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.OnHandQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.ReservedQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.AvailableToNetQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.ScheduledReceiptQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.SafetyStockQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.NetRequirementQuantity >= 0m);
+            Assert.True(suggestion.NetRequirementExplanation.PlannedQuantity >= 0m);
+            Assert.All(suggestion.PeggingLinks, link =>
+            {
+                Assert.True(link.Quantity >= 0m);
+                Assert.True(link.GrossDemandQuantity >= 0m);
+            });
+        });
     }
 
     [Fact]
@@ -292,10 +493,17 @@ public sealed class MrpCalculatorTests
 
         var suggestions = MrpCalculator.Calculate(input);
 
-        var exception = Assert.Single(suggestions);
-        Assert.Equal("cancel", exception.SuggestionType);
+        var exception = Assert.Single(suggestions, x => x.SuggestionType == "cancel");
         Assert.Equal(3m, exception.Quantity);
         Assert.Equal("scheduled-receipt-unneeded", exception.ReasonCode);
+        var safetyReceipt = Assert.Single(suggestions, x => x.SuggestionType == "reschedule-in");
+        Assert.Equal(3m, safetyReceipt.Quantity);
+        Assert.Equal("scheduled-receipt-late", safetyReceipt.ReasonCode);
+        var safetyPegging = Assert.Single(safetyReceipt.PeggingLinks, x => x.SourceType == "safety-stock");
+        Assert.Equal("safety-stock", safetyPegging.PeggingType);
+        Assert.Equal(3m, safetyPegging.Quantity);
+        Assert.Equal(0m, safetyPegging.GrossDemandQuantity);
+        Assert.DoesNotContain(suggestions, x => x.SuggestionType is "planned-purchase" or "planned-work-order");
         var receipt = Assert.Single(exception.PeggingLinks);
         Assert.Equal(3m, receipt.Quantity);
     }

@@ -210,6 +210,12 @@ BusinessMasterData 的 DeviceAsset 注册、更新和从 disabled 重新启用�
 
 DeviceAsset 注册/更新/重新启用、BusinessPartner 角色更新，以及 BusinessPartner 或父 DeviceAsset 停用前的被引用检查，按同一 organization/environment PostgreSQL transaction-scoped advisory lock 串行，并在锁释放前完成校验、聚合变更与保存。父设备停用门禁按 GUID 语义识别既有大写、花括号等可解析存量写法，不依赖字符串格式相等。真实 PostgreSQL 并发回归使用 caller-owned transaction 覆盖双向父子赋值、供应商/父设备赋值与停用、供应商/父设备停用与子设备重新启用、供应商赋值与 supplier 角色移除竞态，证明冲突路径不能同时提交并留下无效 active 引用；同时验证协调器不提交/回滚调用方事务、锁内保存、取消传播和调用方 rollback 后无残留变更。provider-light 测试只验证命令与校验逻辑，不作为串行化证据。本项未新增或修改 endpoint、schema、migration、公开契约或 facade declaration。
 
+## DemandPlanning MRP 安全库存补货（MAN-425 / #773）
+
+DemandPlanning MRP 现在把首次适用 bucket 的安全库存缺口 `max(0, safetyStock - projectedAvailable)` 作为同一净需求路径的补货需求，公式显式记录 `gross - available - scheduled receipts + safety-stock deficit = net`；缺口在单次运行内每个 SKU/UOM/site 只补一次，后续 bucket 只规划新增需求。无需求但低于安全库存的物料同样沿既有 make/buy、提前期、批量、UOM、BOM 与 pegging 路径生成建议；计划收货先同时覆盖需求和安全库存缺口，部分收货只消费一次，完整覆盖不会产生额外新建或取消建议，晚到收货仍保留 `reschedule-in` 诊断。
+
+`RunMrpCommandHandler` 到 `demand_planning.planning_suggestions`/`demand_planning.mrp_pegging_links` 的持久化行为已由 session 自建并清理的 Docker PostgreSQL 18.4 实例验证。安全库存 pegging reference 使用 `safety-stock:` 可读前缀与规范化 SKU/UOM/site key 的稳定 SHA-256 摘要，最长合法业务标识仍保持在既有 128 字符持久化边界内；计划收货异常建议与普通补货建议复用同一 safety pegging 映射。本次没有新增或修改业务 HTTP endpoint、公开契约、数据库 schema 或 migration；facade coverage、OpenAPI 与 generated client 无需刷新。
+
 ## Quality 复检历史与 MES hold 自动释放闭环（MAN-516 / #954）
 
 BusinessQuality 现在将首检幂等和复检历史分开建模：原有创建命令继续按来源业务键返回首条记录；新增 predecessor-targeted 复检命令只允许对非合格记录追加不可变 successor，并记录 `attempt_number` 与 `reinspection_of_inspection_record_id`。每个前置记录最多一个直接 successor，命令重放返回同一 successor；多次复检需以上一次未通过结果作为新的 predecessor。计划检验复用原方案和来源/批次/库存维度，已 superseded 的历史方案仍可用于该记录复检，但跨组织、环境、方案或合格终态均 fail closed。`AddQualityReinspectionHistory` migration 增加正数约束、自引用 Restrict 外键、前置唯一索引，并把来源唯一键扩展到 attempt。
