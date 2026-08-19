@@ -323,7 +323,9 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 order.EnvironmentId,
                 ApprovalTemplateCodes.SalesCreditRelease,
                 ApprovalSourceServices.BusinessErp,
-                "sales-order-credit-release",
+                // #1702：发起侧与种子模板、ERP 回写消费侧共用审批契约的单据类型常量
+                // （种子漂移即发起 400，消费侧漂移即回写静默丢事件）。
+                ApprovalDocumentTypes.SalesOrderCreditRelease,
                 order.SalesOrderNo,
                 null,
                 request.StartedBy,
@@ -340,12 +342,16 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
 
 public sealed record DeliveryOrderCommandLine(string SalesOrderLineNo, decimal Quantity, string? LocationCode = null, string? LotNo = null);
 
+/// <summary>
+/// 释放发货：<c>Lines</c> 留空表示整单释放，服务端按销售订单当前全部未发行与剩余数量成单；
+/// 传了行就按行释放（部分释放）。
+/// </summary>
 public sealed record ReleaseDeliveryOrderCommand(
     string OrganizationId,
     string EnvironmentId,
     string? DeliveryOrderNo,
     string SalesOrderNo,
-    IReadOnlyCollection<DeliveryOrderCommandLine> Lines,
+    IReadOnlyCollection<DeliveryOrderCommandLine>? Lines,
     string? IdempotencyKey = null) : ICommand<DeliveryOrderId>;
 
 public sealed class ReleaseDeliveryOrderCommandValidator : AbstractValidator<ReleaseDeliveryOrderCommand>
@@ -356,7 +362,7 @@ public sealed class ReleaseDeliveryOrderCommandValidator : AbstractValidator<Rel
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.DeliveryOrderNo).MaximumLength(100);
         RuleFor(x => x.SalesOrderNo).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Lines).NotEmpty();
+        // Lines 可空：整单释放不带行，服务端按销售订单未发数量成单。带了行就逐行校验。
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
             line.RuleFor(x => x.SalesOrderLineNo).NotEmpty().MaximumLength(100);
@@ -369,9 +375,21 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
+    /// <summary>
+    /// 整单释放的幂等指纹只认「这是一次整单释放」这件事，绝不能改成按服务端派生出来的行与数量算：
+    /// 首次释放后未发量必然变小，派生指纹随之改变，同一幂等键重放会被判成幂等冲突，
+    /// 而不是幂等返回既有发货单。
+    /// </summary>
+    private const string WholeOrderFingerprintMarker = "whole-order";
+
     public async Task<DeliveryOrderId> Handle(ReleaseDeliveryOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "delivery-order", request.DeliveryOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SalesOrderNo, request.Lines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}")), cancellationToken);
+        var requestedLines = request.Lines ?? [];
+        var isWholeOrderRelease = requestedLines.Count == 0;
+        var fingerprint = isWholeOrderRelease
+            ? ErpCodingService.Fingerprint(request.SalesOrderNo, WholeOrderFingerprintMarker)
+            : ErpCodingService.Fingerprint(request.SalesOrderNo, requestedLines.Select(x => $"{x.SalesOrderLineNo}:{x.Quantity}"));
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "delivery-order", request.DeliveryOrderNo, request.IdempotencyKey, fingerprint, cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.DeliveryOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.DeliveryOrderNo == allocation.Code, cancellationToken)).Id;
@@ -385,13 +403,24 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
                 && x.SalesOrderNo == request.SalesOrderNo,
                 cancellationToken)
             ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+        var drafts = isWholeOrderRelease
+            ? order.Lines
+                .Where(x => x.OpenQuantity > 0m)
+                .Select(x => new DeliveryOrderLineDraft(x.LineNo, x.OpenQuantity))
+                .ToArray()
+            : [.. requestedLines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo))];
+        if (drafts.Length == 0)
+        {
+            throw new KnownException($"销售订单 {request.SalesOrderNo} 没有可发货的未发行，无法释放发货。");
+        }
+
         DeliveryOrder delivery;
         try
         {
             delivery = DeliveryOrder.Release(
                 order,
                 allocation.Code,
-                request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo)));
+                drafts);
         }
         catch (InvalidOperationException exception)
         {

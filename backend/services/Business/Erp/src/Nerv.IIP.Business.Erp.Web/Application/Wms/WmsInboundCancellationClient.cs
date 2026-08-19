@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Wms;
 
@@ -30,7 +31,7 @@ public sealed class HttpWmsInboundCancellationClient(
             Content = JsonContent.Create(new CancelInboundOrdersForSourceHttpRequest(
                 organizationId,
                 environmentId,
-                "purchase-order",
+                WmsSourceDocumentTypes.PurchaseOrder,
                 purchaseOrderNo,
                 reason)),
         };

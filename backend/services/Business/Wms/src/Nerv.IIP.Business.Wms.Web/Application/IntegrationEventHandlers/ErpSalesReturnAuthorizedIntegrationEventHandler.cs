@@ -75,7 +75,7 @@ public sealed class ErpSalesReturnAuthorizedIntegrationEventHandler(
                     line.LocationCode,
                     line.LotNo,
                     null,
-                    "quality",
+                    WmsReceivingQualityStatuses.Quality,
                     "company",
                     null)));
             dbContext.InboundOrders.Add(inbound);

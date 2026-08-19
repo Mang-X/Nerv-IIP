@@ -35,14 +35,58 @@ public static class WorldHistoryApprovalSpec
     /// </summary>
     public const string PurchaseSourceService = ApprovalSourceServices.BusinessErp;
 
-    public const string NcrTemplateCode = "APT-WB-NCR-001";
+    /// <summary>
+    /// 采购订单**变更**再审批模板码（#1685）：取自审批契约的唯一事实来源，
+    /// ERP 变更发起侧（<c>RequestPurchaseOrderChangeCommandHandler</c>）与本侧种子逐字共用。
+    ///
+    /// 不挂任何世界观历史链——历史里的采购审批全是下达链；本模板只保证走查 / 演示时
+    /// 实时发起的变更审批开箱可用（少这张模板，种子态发起变更必 400「审批模板不存在」）。
+    /// </summary>
+    public const string PurchaseChangeTemplateCode = ApprovalTemplateCodes.PurchaseOrderChange;
+
+    /// <summary>
+    /// 变更模板的单据类型**刻意沿用**下达的 <see cref="ApprovalDocumentTypes.PurchaseOrder"/>：
+    /// 被审对象仍是同一张采购订单，而 ERP 回写消费侧、审批委托的单据范围、界面单据类型词表
+    /// 三处都按 documentType 判定，换新值必须三处同步（漏一处即回写静默丢事件，#1683 同款坑）。
+    /// 区分下达与变更由模板码承担。
+    /// </summary>
+    public const string PurchaseChangeDocumentType = ApprovalDocumentTypes.PurchaseOrder;
+
+    /// <summary>
+    /// 变更审批的来源服务：与下达同为 ERP，仍取审批契约常量（回写消费侧按它分流）。
+    /// </summary>
+    public const string PurchaseChangeSourceService = ApprovalSourceServices.BusinessErp;
+
+    /// <summary>下达模板的步骤名。</summary>
+    public const string PurchaseReleaseStepName = "总经理审批";
+
+    /// <summary>
+    /// 变更模板的步骤名，与 <see cref="PurchaseReleaseStepName"/> **刻意不同**：
+    /// 审批人收件箱的待办表只有「单据 / 当前步骤 / 单据类型 / 到期时间」四列，
+    /// 单据号与单据类型在两类链上完全一致，能在收件箱上分辨两类待办的正是这一列。
+    /// </summary>
+    public const string PurchaseChangeStepName = "采购变更审批";
+
+    /// <summary>
+    /// NCR 处置评审审批模板码：取自审批契约的唯一事实来源（#1684 收敛）——该码现在还参与
+    /// 跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals.SeededDispositionChainId"/>），
+    /// Quality 侧回链与本侧种子必须逐字同码。
+    /// </summary>
+    public const string NcrTemplateCode = ApprovalTemplateCodes.NcrDisposition;
 
     /// <summary>
     /// NCR 处置审批的单据类型：取自审批契约的唯一事实来源，种子 / 前端发起面 / Quality 白名单三方共用
     /// （#1327：三方此前各写各的字面量，种子态处置审批结构性走不通）。
     /// </summary>
     public const string NcrDocumentType = ApprovalDocumentTypes.NcrDisposition;
-    public const string NcrSourceService = "quality";
+
+    /// <summary>
+    /// NCR 处置审批链的来源服务：取自审批契约的唯一事实来源（#1702 收敛，此前是裸字面量）。
+    /// 该值逐字参与 <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256（键上有唯一索引），
+    /// 也是未来任何质量侧回写消费者的分流依据——漂移即历史链 pending 唯一键改变、回写静默丢事件。
+    /// 与库存流水来源 <c>InventoryMovementSourceServices.Quality</c> 同值不同义，不可互相引用。
+    /// </summary>
+    public const string NcrSourceService = ApprovalSourceServices.Quality;
 
     /// <summary>
     /// 销售订单「信用解冻」审批模板（#1290）。与两张历史模板不同，它不挂任何历史链，
@@ -50,7 +94,13 @@ public static class WorldHistoryApprovalSpec
     /// 编码必须与 ERP 侧字面量逐字一致，因此不落在 <c>APT-WB-</c> 号段。
     /// </summary>
     public const string SalesCreditReleaseTemplateCode = ApprovalTemplateCodes.SalesCreditRelease;
-    public const string SalesCreditReleaseDocumentType = "sales-order-credit-release";
+
+    /// <summary>
+    /// 信用解冻审批的单据类型：取自审批契约的唯一事实来源（#1702 收敛，此前三处各写各的字面量）。
+    /// ERP 发起侧 / 本种子模板 / ERP 回写消费侧共用——种子漂移即发起 400（模板按
+    /// <c>(templateCode, documentType)</c> 双条件命中），消费侧漂移即回写静默丢事件。
+    /// </summary>
+    public const string SalesCreditReleaseDocumentType = ApprovalDocumentTypes.SalesOrderCreditRelease;
 
     /// <summary>
     /// 盘点差异审批模板（#1344 扩修）。同样不挂历史链，只保证 Inventory
@@ -152,6 +202,12 @@ public static class WorldHistoryApprovalSpec
     /// 以及 2026-07-01..08-15 每日 × scale 1.0 逐点复算质量域实际 NCR 数，
     /// 本下界处处 ≤ 实际值（实测比值最低 0.265，本系数 0.18 留有 ≥30% 余量）。
     /// 语义上即「重大处置需审批的 NCR 子集」，无需覆盖全部 NCR。
+    ///
+    /// #1684 起系数与小样本门槛落在契约包
+    /// <see cref="WorldHistoryNcrDispositionApprovals.CoveredNcrCount"/>（唯一事实来源）：
+    /// Quality 侧用同一函数加自己那份 <c>WorldHistoryProcurementSpec</c> 副本复算 K，
+    /// 决定哪些 NCR 允许回填处置审批链 id——本方法与 Quality 侧的复算必须逐 K 一致
+    /// （两侧黄金向量测试钉住）。
     /// </summary>
     public static int NcrReferenceCount(DateOnly asOfDate, double scale)
     {
@@ -160,8 +216,9 @@ public static class WorldHistoryApprovalSpec
             return 0;
         }
 
-        var totalPurchaseOrders = WorldHistoryProcurementSpec.TotalPurchaseOrders(asOfDate, scale);
-        return totalPurchaseOrders < 30 ? 0 : (int)Math.Floor(totalPurchaseOrders * 0.18d);
+        return WorldHistoryNcrDispositionApprovals.CoveredNcrCount(
+            WorldHistoryProcurementSpec.TotalPurchaseOrders(asOfDate, scale),
+            scale);
     }
 
     /// <summary>

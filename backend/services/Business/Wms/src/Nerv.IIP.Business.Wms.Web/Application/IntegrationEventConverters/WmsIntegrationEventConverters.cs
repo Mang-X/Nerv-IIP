@@ -332,7 +332,7 @@ internal static class InventoryMovementRequestEventMapping
 
         return new InventoryMovementRequestedPayload(
             request.MovementType,
-            "wms",
+            InventoryMovementSourceServices.Wms,
             request.SourceDocumentId,
             request.SourceDocumentLineId,
             request.IdempotencyKey,

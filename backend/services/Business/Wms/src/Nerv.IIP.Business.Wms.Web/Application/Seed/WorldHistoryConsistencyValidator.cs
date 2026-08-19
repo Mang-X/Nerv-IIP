@@ -12,7 +12,8 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// <summary>
 /// 《工厂世界观设定集》§7 一致性校验器的 **仓储域侧**（二期）。
 ///
-/// 覆盖：单据总量与计划对账、每张单据都落到终态、每张单据至少一条作业任务且计划量 == 执行量 == 行数量、
+/// 覆盖：单据总量与计划对账、**每张单据的终态与计划口径互洽**（已闭环 ⇔ 有完成时间 ⇔ 下游过账 / 复核齐备）、
+/// 每张已闭环单据至少一条作业任务且计划量 == 执行量 == 行数量、
 /// 上架 / 拣货的起止库位与单据一致、出库复核已通过、库存过账请求已标记过账、
 /// 时间戳落在历史区间且不在周日、与固定演示事实隔离。
 /// **fail-closed**：任何一条不成立即抛 <see cref="WorldHistoryWmsConsistencyException"/>。
@@ -25,14 +26,17 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
     private static readonly string[] ReservedInfixes = ["-DEMO-", "-SCALE-"];
 
+    // documents：本次要对账的**计划**，缺省取设定集 WorldHistoryWmsSpec.BuildDocuments。
+    // 期望口径（含每张单据是否应当已闭环）全部从这里读，校验器不再自持任何终态常量。
     public async Task<WorldHistoryWmsValidationReport> ValidateAsync(
         string organizationId,
         string environmentId,
         DateOnly asOfDate,
         double scale,
+        WorldHistoryWarehouseDocuments? documents = null,
         CancellationToken cancellationToken = default)
     {
-        var documents = WorldHistoryWmsSpec.BuildDocuments(asOfDate, scale);
+        documents ??= WorldHistoryWmsSpec.BuildDocuments(asOfDate, scale);
         var inboundPlan = documents.InboundOrders.ToDictionary(x => x.InboundOrderNo, StringComparer.Ordinal);
         var outboundPlan = documents.OutboundOrders.ToDictionary(x => x.OutboundOrderNo, StringComparer.Ordinal);
         var failures = new List<string>();
@@ -115,10 +119,20 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         DateTime upperBound,
         List<string> failures)
     {
-        // 1) 终态：历史入库单必须已完成（收货单要过来料门禁，完工入库单直接完成）。
-        if (inbound.Status != InboundOrderStatus.Completed)
+        // 1) 终态：**口径来自计划，不是校验器里的枚举常量**。
+        //    原先写死「历史入库单必须已完成」，于是「当前在制」单据只能另开号段（IB-WQ-）并在加载处
+        //    白名单排除才躲得过门禁——形态从全量硬断言退化成「硬断言 + 号段例外」，性质没变：
+        //    只要想让某张历史单据留在流程中，就必须同步改门禁。
+        //    真不变量是**单据事实与计划口径互洽**：计划给了完成时刻 ⇒ 必须已完成、必须留下完成时间、
+        //    下游终态事实（上架任务终态 / 过账 / 复核）齐备；计划把它留在流程中 ⇒ **反过来**
+        //    不得已完成、不得有完成时间、不得已过账，下游终态事实一并不要求。
+        if (plan.ExpectsCompletion && inbound.Status != InboundOrderStatus.Completed)
         {
-            failures.Add($"入库单 {inbound.InboundOrderNo} 状态为 {inbound.Status}，历史单据必须已完成。");
+            failures.Add($"入库单 {inbound.InboundOrderNo} 状态为 {inbound.Status}，计划口径为已完成。");
+        }
+        else if (!plan.ExpectsCompletion && inbound.Status == InboundOrderStatus.Completed)
+        {
+            failures.Add($"入库单 {inbound.InboundOrderNo} 已完成，计划口径为仍在流程中。");
         }
 
         if (!string.Equals(inbound.SourceDocumentType, plan.SourceDocumentType, StringComparison.Ordinal) ||
@@ -134,21 +148,29 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
                 $"入库单 {inbound.InboundOrderNo} 有 {inbound.LineCount} 行、收货 {inbound.ReceivedQuantity}，计划为 1 行 {plan.Quantity}。");
         }
 
-        if (plan.RequiresQualityInspection && !inbound.IsReleasedForPutaway)
+        if (plan.ExpectsCompletion && plan.RequiresQualityInspection && !inbound.IsReleasedForPutaway)
         {
             failures.Add($"入库单 {inbound.InboundOrderNo} 走了来料检验，却没有放行上架的检验结论。");
         }
 
-        // 3) 作业任务：至少一条，且计划量 == 执行量 == 行数量，起止库位与计划一致。
+        // 3) 作业任务：已闭环的单据至少一条且已完成；仍在流程中的单据不要求有任务，
+        //    但只要有任务，类型 / 搬运路径 / 计划量仍须与计划一致。
         CheckTasks(
             inbound.InboundOrderNo, plan.Quantity, WarehouseTaskType.Putaway,
             plan.PutawayFromLocationCode, plan.PutawayToLocationCode,
-            tasksByOrder, lowerBound, upperBound, failures);
+            tasksByOrder, lowerBound, upperBound, plan.ExpectsCompletion, failures);
 
-        // 4) 库存过账请求：历史里必须已过账，否则页面会显示成一堆待过账积压。
-        if (!postedRequestKeys.Contains(plan.MovementIdempotencyKey))
+        // 4) 库存过账请求：已闭环的必须已过账（否则页面显示成一堆待过账积压）；
+        //    仍在流程中的**反过来**不得已过账（那是「还没干完却已经动了账」的真缺陷）。
+        var inboundPosted = postedRequestKeys.Contains(plan.MovementIdempotencyKey);
+        if (plan.ExpectsCompletion && !inboundPosted)
         {
             failures.Add($"入库单 {inbound.InboundOrderNo} 的库存过账请求 {plan.MovementIdempotencyKey} 未标记已过账。");
+        }
+        else if (!plan.ExpectsCompletion && inboundPosted)
+        {
+            failures.Add(
+                $"入库单 {inbound.InboundOrderNo} 计划口径为仍在流程中，库存过账请求 {plan.MovementIdempotencyKey} 却已标记已过账。");
         }
 
         CheckMoment($"入库单 {inbound.InboundOrderNo} 创建", inbound.CreatedAtUtc, lowerBound, upperBound, failures);
@@ -159,8 +181,13 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 failures.Add($"入库单 {inbound.InboundOrderNo} 完成时间早于创建时间。");
             }
+
+            if (!plan.ExpectsCompletion)
+            {
+                failures.Add($"入库单 {inbound.InboundOrderNo} 计划口径为仍在流程中，却留下了完成时间 {completedAtUtc:O}。");
+            }
         }
-        else
+        else if (plan.ExpectsCompletion)
         {
             failures.Add($"入库单 {inbound.InboundOrderNo} 没有完成时间。");
         }
@@ -175,9 +202,14 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         DateTime upperBound,
         List<string> failures)
     {
-        if (outbound.Status != OutboundOrderStatus.Completed)
+        // 终态口径同入库：来自计划，双向都守（见 CheckInbound 的裁决注释）。
+        if (plan.ExpectsCompletion && outbound.Status != OutboundOrderStatus.Completed)
         {
-            failures.Add($"出库单 {outbound.OutboundOrderNo} 状态为 {outbound.Status}，历史单据必须已完成。");
+            failures.Add($"出库单 {outbound.OutboundOrderNo} 状态为 {outbound.Status}，计划口径为已完成。");
+        }
+        else if (!plan.ExpectsCompletion && outbound.Status == OutboundOrderStatus.Completed)
+        {
+            failures.Add($"出库单 {outbound.OutboundOrderNo} 已完成，计划口径为仍在流程中。");
         }
 
         if (!string.Equals(outbound.SourceDocumentType, plan.SourceDocumentType, StringComparison.Ordinal) ||
@@ -186,18 +218,24 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             failures.Add($"出库单 {outbound.OutboundOrderNo} 的源单据与计划不符。");
         }
 
+        // 需求量与行数无论是否闭环都必须与计划相符；实发量只有已闭环的单据才该等于计划量。
         if (outbound.LineCount != 1 ||
             Math.Abs(outbound.RequestedQuantity - plan.Quantity) > QuantityTolerance ||
-            Math.Abs(outbound.IssuedQuantity - plan.Quantity) > QuantityTolerance)
+            (plan.ExpectsCompletion && Math.Abs(outbound.IssuedQuantity - plan.Quantity) > QuantityTolerance))
         {
             failures.Add(
                 $"出库单 {outbound.OutboundOrderNo} 有 {outbound.LineCount} 行、需求 {outbound.RequestedQuantity}、" +
                 $"实发 {outbound.IssuedQuantity}，计划为 1 行 {plan.Quantity}。");
         }
 
-        if (outbound.PackReviewPassed != true || !string.Equals(outbound.PackReviewNo, plan.PackReviewNo, StringComparison.Ordinal))
+        if (plan.ExpectsCompletion &&
+            (outbound.PackReviewPassed != true || !string.Equals(outbound.PackReviewNo, plan.PackReviewNo, StringComparison.Ordinal)))
         {
             failures.Add($"出库单 {outbound.OutboundOrderNo} 的复核未通过或复核单号与计划不符。");
+        }
+        else if (!plan.ExpectsCompletion && outbound.PackReviewPassed is not null)
+        {
+            failures.Add($"出库单 {outbound.OutboundOrderNo} 计划口径为仍在流程中，却已经有复核结论。");
         }
 
         if (Math.Abs(outbound.BackorderQuantity) > QuantityTolerance)
@@ -208,11 +246,17 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         CheckTasks(
             outbound.OutboundOrderNo, plan.Quantity, WarehouseTaskType.Picking,
             plan.PickFromLocationCode, plan.PickToLocationCode,
-            tasksByOrder, lowerBound, upperBound, failures);
+            tasksByOrder, lowerBound, upperBound, plan.ExpectsCompletion, failures);
 
-        if (!postedRequestKeys.Contains(plan.MovementIdempotencyKey))
+        var outboundPosted = postedRequestKeys.Contains(plan.MovementIdempotencyKey);
+        if (plan.ExpectsCompletion && !outboundPosted)
         {
             failures.Add($"出库单 {outbound.OutboundOrderNo} 的库存过账请求 {plan.MovementIdempotencyKey} 未标记已过账。");
+        }
+        else if (!plan.ExpectsCompletion && outboundPosted)
+        {
+            failures.Add(
+                $"出库单 {outbound.OutboundOrderNo} 计划口径为仍在流程中，库存过账请求 {plan.MovementIdempotencyKey} 却已标记已过账。");
         }
 
         CheckMoment($"出库单 {outbound.OutboundOrderNo} 创建", outbound.CreatedAtUtc, lowerBound, upperBound, failures);
@@ -223,8 +267,13 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 failures.Add($"出库单 {outbound.OutboundOrderNo} 完成时间早于创建时间。");
             }
+
+            if (!plan.ExpectsCompletion)
+            {
+                failures.Add($"出库单 {outbound.OutboundOrderNo} 计划口径为仍在流程中，却留下了完成时间 {completedAtUtc:O}。");
+            }
         }
-        else
+        else if (plan.ExpectsCompletion)
         {
             failures.Add($"出库单 {outbound.OutboundOrderNo} 没有完成时间。");
         }
@@ -239,11 +288,17 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         Dictionary<string, IReadOnlyList<TaskProjection>> tasksByOrder,
         DateTime lowerBound,
         DateTime upperBound,
+        bool expectsCompletion,
         List<string> failures)
     {
         if (!tasksByOrder.TryGetValue(orderNo, out var tasks) || tasks.Count == 0)
         {
-            failures.Add($"单据 {orderNo} 没有任何仓储作业任务。");
+            // 仍在流程中的单据允许还没派出作业任务；只有已闭环的单据缺任务才是缺陷。
+            if (expectsCompletion)
+            {
+                failures.Add($"单据 {orderNo} 没有任何仓储作业任务。");
+            }
+
             return;
         }
 
@@ -258,15 +313,17 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             // their parent/child state together. A base-seed restart must not rewrite
             // an active or cancelled automation fact back to a synthetic completion.
             var wcsOwned = task.ExecutionChannel == WarehouseTaskExecutionChannel.Wcs;
-            if (!wcsOwned && task.Status != WarehouseTaskStatus.Completed)
+            if (expectsCompletion && !wcsOwned && task.Status != WarehouseTaskStatus.Completed)
             {
-                failures.Add($"作业任务 {task.TaskNo} 状态为 {task.Status}，历史任务必须已完成。");
+                failures.Add($"作业任务 {task.TaskNo} 状态为 {task.Status}，其单据的计划口径为已完成。");
             }
 
+            // 执行量只有「单据已闭环且非 WCS 托管」时才该等于行数量；其余情况只守区间。
+            var executedMustMatch = expectsCompletion && !wcsOwned;
             if (Math.Abs(task.PlannedQuantity - expectedQuantity) > QuantityTolerance
-                || (!wcsOwned
+                || (executedMustMatch
                     && Math.Abs(task.ExecutedQuantity - expectedQuantity) > QuantityTolerance)
-                || (wcsOwned
+                || (!executedMustMatch
                     && (task.ExecutedQuantity < 0m
                         || task.ExecutedQuantity - expectedQuantity > QuantityTolerance)))
             {
@@ -286,7 +343,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             {
                 CheckMoment($"作业任务 {task.TaskNo} 完成", completedAtUtc, lowerBound, upperBound, failures);
             }
-            else if (!wcsOwned)
+            else if (expectsCompletion && !wcsOwned)
             {
                 failures.Add($"作业任务 {task.TaskNo} 没有完成时间。");
             }
@@ -340,6 +397,12 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
     #region 载入紧凑投影
 
+    // 号段排除（IB-WQ- / OB-WQ- / WT-*-WQ-）**不是为了绕开终态断言**——终态口径现已由计划给出，
+    // 放宽与否与号段无关。留着它的唯一理由是**计划归属**：当前在制队列由
+    // WorldHistoryWarehouseOpsSpec.BuildCurrentQueue 生成、由 WorldHistoryWarehouseOpsSeedService
+    // 自己 fail-closed 校验（含作业池归属与派工对象），不在本校验器对账的这份计划里。
+    // 实测：去掉排除后这些单据会被判成「不在本次计划内（号段被外部占用？）」，与终态无关。
+    //
     // 行级聚合（Count / Sum / All）在投影里会被拆成子查询，InMemory provider 无法翻译，
     // 且行上的 RequiresQualityInspection / IsReleasedForPutaway 是计算属性、根本没有列可翻译。
     // 因此这里连行一起取回来，在内存里压成紧凑投影——一单一行，materialize 的规模与单据数同阶。

@@ -76,7 +76,7 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | DemandPlanning      |      16 |      16 |        0 |        0 |
 | Erp                 |      55 |      43 |       11 |        1 |
 | IndustrialTelemetry |      27 |      24 |        1 |        2 |
-| Inventory           |      17 |      10 |        2 |        5 |
+| Inventory           |      18 |      12 |        1 |        5 |
 | Maintenance         |      26 |      20 |        4 |        2 |
 | MasterData          |      49 |      41 |        4 |        4 |
 | Mes                 |      55 |      52 |        3 |        0 |
@@ -84,11 +84,11 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
 | Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **415** | **343** |   **47** |   **25** |
+| **Total**           | **416** | **345** |   **46** |   **25** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
-`exposed` 行（343）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
+`exposed` 行（345）带有已验证 facade `gatewayOperationIds`，列举于 JSON 登记表中。实际的治理决策，即
 `deferred` 与 `internal` 行，完整列于下方。
 
 对于 MAN-632 可搜索目录，`listBusinessConsoleSearchableDirectory` 为每种类型映射恰好一个权威 owner 和
@@ -141,7 +141,6 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Erp                 | POST   | `/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold`                          | BusinessGateway facade 待交付；供应商发票付款暂扣 UI 是已知的 ERP 前端缺口。                                                                                                          |
 | Erp                 | POST   | `/api/business/v1/erp/sales-return-authorizations`                                              | BusinessGateway facade 待交付；客户退货授权跟随 ERP 退货的 Business Console 菜单阶段。                                                                                                |
 | IndustrialTelemetry | POST   | `/api/business/v1/iiot/tags`                                                                    | BusinessGateway facade 待交付；遥测 tag 创建跟随设备/遥测配置菜单阶段（当前仅暴露 tag 列表 GET）。                                                                                   |
-| Inventory           | POST   | `/api/inventory/v1/count-tasks/{countTaskId}/cancel`                                            | BusinessGateway facade 待交付；盘点任务创建/调整已暴露，取消跟随 Inventory 盘点的 Business Console 菜单阶段。                                                                        |
 | Inventory           | POST   | `/api/inventory/v1/locations`                                                                   | BusinessGateway facade 待交付；Inventory 库位主数据设置 UI 属于后续菜单阶段。                                                                                                         |
 | Maintenance         | POST   | `/api/business/v1/maintenance/downtime-reasons`                                                 | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |
 | Maintenance         | DELETE | `/api/business/v1/maintenance/downtime-reasons/{reasonCode}`                                    | BusinessGateway facade 待交付；停机原因目录配置 UI 属于后续 Maintenance 菜单阶段。                                                                                                    |

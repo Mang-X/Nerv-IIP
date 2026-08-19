@@ -193,6 +193,27 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Unreserved_outbound_can_consume_all_available_quantity_without_touching_reserved_stock()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        ledger.Reserve(reservation);
+
+        ledger.ApplyMovement(NewMovement("outbound", -2m, "idem-out-001"));
+
+        Assert.Equal(8m, ledger.OnHandQuantity);
+        Assert.Equal(8m, ledger.ReservedQuantity);
+        Assert.Equal(0m, ledger.AvailableQuantity);
+    }
+
+    [Fact]
     public void Moving_average_valuation_updates_ledger_value()
     {
         var ledger = NewLedger();
@@ -415,6 +436,103 @@ public sealed class InventoryAggregateTests
         Assert.False(ledger.IsFrozenForCount);
         ledger.ApplyMovement(NewMovement("outbound", -1m, "idem-out-001"));
         Assert.Equal(9m, ledger.OnHandQuantity);
+    }
+
+    [Fact]
+    public void Recount_restart_drops_the_rejected_count_reading_and_refreezes_the_ledger()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        task.SubmitForApproval(ledger, countedQuantity: 7m);
+        task.RequireRecountAfterApprovalRejection(ledger);
+
+        Assert.Equal("recount-required", task.Status);
+        Assert.Equal(7m, task.CountedQuantity);
+        Assert.False(ledger.IsFrozenForCount);
+
+        task.RestartRecount(ledger);
+
+        Assert.Equal("open", task.Status);
+        // 被驳回的那次实盘读数不能留：留着下一次确认会拿旧读数直接过账。
+        Assert.Null(task.CountedQuantity);
+        Assert.Null(task.VarianceQuantity);
+        Assert.True(ledger.IsFrozenForCount);
+        Assert.Equal(ledger.LedgerVersion, task.ExpectedLedgerVersion);
+    }
+
+    [Fact]
+    public void Recount_restart_also_reopens_an_open_task_whose_snapshot_drifted()
+    {
+        // 台账在快照之后被改动时，确认差异每次都被拒；拒绝回滚事务，任务留在 open。
+        // 这条同样是死单，只有重取快照才能继续，所以 open 也必须能重盘。
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.ReleaseCountFreeze();
+        ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-002"));
+        Assert.Throws<StockCountRecountRequiredException>(() =>
+            task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-001"));
+
+        task.RestartRecount(ledger);
+
+        Assert.Equal("open", task.Status);
+        Assert.Equal(ledger.LedgerVersion, task.ExpectedLedgerVersion);
+        Assert.True(ledger.IsFrozenForCount);
+        task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-002");
+        Assert.Equal("confirmed", task.Status);
+    }
+
+    [Fact]
+    public void Recount_restart_is_rejected_for_confirmed_pending_and_cancelled_tasks()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var pendingTask = NewCountTask(ledger);
+        pendingTask.SubmitForApproval(ledger, countedQuantity: 30m);
+
+        // 待审批不能靠重盘绕过审批。
+        var pendingException = Assert.Throws<InvalidOperationException>(() => pendingTask.RestartRecount(ledger));
+        Assert.Contains("pending-approval", pendingException.Message, StringComparison.Ordinal);
+        Assert.Equal("pending-approval", pendingTask.Status);
+
+        var confirmedLedger = NewLedger();
+        confirmedLedger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-002"));
+        var confirmedTask = NewCountTask(confirmedLedger);
+        confirmedTask.ConfirmAdjustment(confirmedLedger, countedQuantity: 9m, "idem-count-001");
+
+        var confirmedException = Assert.Throws<InvalidOperationException>(() => confirmedTask.RestartRecount(confirmedLedger));
+        Assert.Contains("confirmed", confirmedException.Message, StringComparison.Ordinal);
+        Assert.Equal("confirmed", confirmedTask.Status);
+
+        var cancelledLedger = NewLedger();
+        cancelledLedger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-003"));
+        var cancelledTask = NewCountTask(cancelledLedger);
+        cancelledTask.Cancel(cancelledLedger, "operator-cancelled");
+
+        var cancelledException = Assert.Throws<InvalidOperationException>(() => cancelledTask.RestartRecount(cancelledLedger));
+        Assert.Contains("cancelled", cancelledException.Message, StringComparison.Ordinal);
+        Assert.Equal("cancelled", cancelledTask.Status);
+    }
+
+    [Fact]
+    public void Pending_approval_count_task_cannot_be_cancelled()
+    {
+        // 作废一张待审批任务只动任务本身：审批链还在跑，回写命令随后必然踩到 EnsureStatus(pending-approval)
+        // 而抛异常，从 CAP 消费者逃逸成毒消息。与重盘同一条守卫：待审批必须先走完审批。
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        task.SubmitForApproval(ledger, countedQuantity: 30m);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => task.Cancel(ledger, "operator-cancelled"));
+
+        Assert.Contains("pending-approval", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("pending-approval", task.Status);
+        // 审批回写路径仍然走得通，没有被这次拒绝弄坏。
+        task.RequireRecountAfterApprovalRejection(ledger);
+        Assert.Equal("recount-required", task.Status);
     }
 
     [Fact]
