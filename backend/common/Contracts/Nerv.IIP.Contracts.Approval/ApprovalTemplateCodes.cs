@@ -31,6 +31,14 @@ public static class ApprovalTemplateCodes
     /// </summary>
     public const string PurchaseOrderRelease = "APT-WB-PO-001";
 
+    /// <summary>
+    /// NCR 处置评审审批模板（世界观历史号段，#1684）。权威取落库事实：种子模板与全部世界观历史
+    /// NCR 处置审批链（<c>NCR-2026-####</c>）挂的都是 <c>APT-WB-NCR-001</c>。收敛进契约的原因是
+    /// 该码现在参与跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals"/>）：
+    /// Approval 侧种子与 Quality 侧回链两边都要逐字引用同一个码，任何一侧写字面量都会让回链静默指空。
+    /// </summary>
+    public const string NcrDisposition = "APT-WB-NCR-001";
+
     /// <summary>销售订单「信用解冻」审批模板（#1290 / #1305）：ERP 发起侧与种子逐字共用。</summary>
     public const string SalesCreditRelease = "erp-sales-credit-release";
 

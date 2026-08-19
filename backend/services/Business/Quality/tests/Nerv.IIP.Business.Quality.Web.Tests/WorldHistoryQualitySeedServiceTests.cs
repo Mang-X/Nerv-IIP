@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
+using Nerv.IIP.Contracts.Approval;
 using Xunit.Abstractions;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
@@ -341,6 +342,129 @@ public sealed class WorldHistoryQualitySeedServiceTests(ITestOutputHelper output
         var demoPlan = await db.InspectionPlans.SingleAsync(x => x.PlanCode == LeaderDemoSeedService.PlanCode);
         Assert.Equal("SKU-DEMO-001", demoPlan.SkuCode);
         Assert.Equal(4, await db.InspectionPlans.CountAsync());
+    }
+
+    /// <summary>
+    /// #1684 · NCR 处置审批回链黄金向量：覆盖条数 K、NCR 单号公式与确定性链 id 必须与
+    /// Approval 侧逐字一致（Approval 侧有同名逐字副本，两边 Digest 分叉即漂移）。
+    /// </summary>
+    [Fact]
+    public void Ncr_disposition_backlink_matches_the_cross_service_golden_vector()
+    {
+        Assert.Equal(
+            WorldHistoryNcrDispositionApprovalGoldenVector.Digest,
+            WorldHistoryNcrDispositionApprovalGoldenVector.DigestOf(
+                (asOfDate, scale) => WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, scale).Count,
+                WorldHistoryNcrDispositionApprovals.SeededDispositionChainId,
+                WorldHistoryPhase2Spec.NonconformanceReportNo));
+    }
+
+    /// <summary>
+    /// #1684 覆盖面边界：审批域只为 NCR-2026-0001..K 造处置审批链，因此前 K 张 closed NCR
+    /// 必带确定性回链，第 K+1 张起必须为 null（否则指向审批库里不存在的链）。
+    /// 边界两侧（第 K 张与第 K+1 张）各钉一条精确断言。
+    /// </summary>
+    [Fact]
+    public async Task Covered_ncrs_carry_the_deterministic_backlink_and_the_rest_stay_null()
+    {
+        // 用 2026-07-27（审批覆盖面 K > 0 的日期）避免用例空转。
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var covered = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, SmallScale);
+        var boundary = covered.Count;
+        Assert.True(boundary > 0, "所选 asOfDate 的审批覆盖面不应为 0，否则本用例没有覆盖到回链。");
+
+        var reports = await db.NonconformanceReports
+            .AsNoTracking()
+            .Select(x => new { x.NcrCode, x.DispositionApprovalChainId })
+            .ToArrayAsync();
+        Assert.True(
+            reports.Length > boundary,
+            $"NCR 总数（{reports.Length}）必须大于覆盖面边界 K（{boundary}），否则「覆盖面外必须为 null」分支没有被验证。");
+
+        foreach (var report in reports)
+        {
+            if (covered.Contains(report.NcrCode))
+            {
+                Assert.Equal(
+                    WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(report.NcrCode).ToString(),
+                    report.DispositionApprovalChainId);
+            }
+            else
+            {
+                Assert.Null(report.DispositionApprovalChainId);
+            }
+        }
+
+        // 边界两侧精确钉住：第 K 张必带回链，第 K+1 张必为 null。
+        var kthCode = WorldHistoryPhase2Spec.NonconformanceReportNo(boundary);
+        var beyondBoundaryCode = WorldHistoryPhase2Spec.NonconformanceReportNo(boundary + 1);
+        Assert.NotNull(reports.Single(x => x.NcrCode == kthCode).DispositionApprovalChainId);
+        Assert.Null(reports.Single(x => x.NcrCode == beyondBoundaryCode).DispositionApprovalChainId);
+    }
+
+    /// <summary>#1684 fail-closed：覆盖面内的 NCR 丢了回链，校验器必须点名「审批区将恒空」。</summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_a_covered_backlink_is_cleared()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var covered = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, SmallScale);
+        var victim = (await db.NonconformanceReports.ToArrayAsync()).First(x => covered.Contains(x.NcrCode));
+        db.Entry(victim).Property(x => x.DispositionApprovalChainId).CurrentValue = null;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", asOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("没有回链处置审批链 id", StringComparison.Ordinal));
+    }
+
+    /// <summary>#1684 fail-closed：覆盖面外的 NCR 冒出回链（指向审批库里不存在的链），校验器必红。</summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_an_uncovered_ncr_gains_a_backlink()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var covered = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, SmallScale);
+        var victim = (await db.NonconformanceReports.ToArrayAsync()).First(x => !covered.Contains(x.NcrCode));
+        db.Entry(victim).Property(x => x.DispositionApprovalChainId).CurrentValue =
+            WorldHistoryNcrDispositionApprovals.SeededDispositionChainId(victim.NcrCode).ToString();
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", asOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("处置审批覆盖面外却带了处置审批链 id", StringComparison.Ordinal));
+    }
+
+    /// <summary>#1684 fail-closed：覆盖面内回链若与确定性公式不符（指错链），校验器必红。</summary>
+    [Fact]
+    public async Task Validator_fails_closed_when_a_covered_backlink_points_to_the_wrong_chain()
+    {
+        var asOfDate = new DateOnly(2026, 7, 27);
+        await using var db = CreateDbContext();
+        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        var covered = WorldHistoryPhase2Spec.ApprovalCoveredNonconformanceReportNos(asOfDate, SmallScale);
+        var victim = (await db.NonconformanceReports.ToArrayAsync()).First(x => covered.Contains(x.NcrCode));
+        db.Entry(victim).Property(x => x.DispositionApprovalChainId).CurrentValue =
+            Guid.CreateVersion7().ToString();
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<WorldHistoryConsistencyException>(() =>
+            new WorldHistoryConsistencyValidator(db).ValidateAsync("org-001", "env-dev", asOfDate, SmallScale));
+
+        Assert.Contains(exception.Failures, failure => failure.Contains("与跨服务确定性公式的", StringComparison.Ordinal));
     }
 
     [Fact]
