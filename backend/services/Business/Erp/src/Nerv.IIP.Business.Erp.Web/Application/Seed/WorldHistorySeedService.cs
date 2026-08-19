@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Seed;
@@ -621,7 +622,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 new PurchaseReceiptLineDraft(
                     "10",
                     plan.Quantity,
-                    "passed",
+                    ErpReceiptQualityStatuses.Unrestricted,
                     LocationCode: "RM-01",
                     LotNo: $"LOT-{plan.PurchaseOrderNo}",
                     FinalDelivery: true)
