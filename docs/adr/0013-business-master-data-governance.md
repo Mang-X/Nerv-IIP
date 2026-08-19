@@ -37,6 +37,12 @@ BusinessMasterData 是业务平台的首个切片，也是 ProductEngineering、
 3. 业务服务有意按数据库 schema 隔离。公开解析 API 和事件用于取代跨 schema 外键。
 4. 小型且受治理的 MasterData 服务优于巨型主数据服务。字段矩阵负责裁定哪些内容属于 MasterData，哪些内容仍归 ProductEngineering、Quality、Inventory、MES、ERP、Telemetry 或 Maintenance。
 
+## 已考虑的替代方案
+
+1. **把 UOM、SKU 工业属性、Recipe/Formula（配方）边界等主数据决策推迟到 ERP、MES、WMS 或 Quality 实施阶段**：背景记录了落选理由——「如果将这些决策推迟到 ERP、MES、WMS 或 Quality 实施阶段，下游领域就会各自维护一套主数据，平台也会失去稳定的事实来源」。
+2. **巨型主数据服务**：理由第 4 条只记录了取舍结论——「小型且受治理的 MasterData 服务优于巨型主数据服务」，并把归属裁定交给字段矩阵；原文未保留巨型服务落选的进一步理由。
+3. **下游直读 MasterData 数据库、用跨 schema 外键消费主数据**：决策第 4 条禁止下游直接读取 MasterData 数据库或重复创建主数据事实，理由第 3 条记录了落选理由——「业务服务有意按数据库 schema 隔离。公开解析 API 和事件用于取代跨 schema 外键」。
+
 ## 后果
 
 1. MasterData 切片在完成 API、权限 seed 和就绪性文档前，新增一个重整步骤。
