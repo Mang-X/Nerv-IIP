@@ -161,27 +161,13 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs"),
 
         // ── 检验处置/NCR 处置族（QualityInspectionDispositionStatuses / QualityNcrDispositionTypes） ──
-        // 待 #1370 ③ 销账：种子与校验器写/比的都是 NCR 处置类型与检验处置结果本尊，应改常量引用。
-        ..Group("conditional-release", "待 #1370 ③ 销账：NCR/检验处置族，应引用 QualityNcrDispositionTypes.ConditionalRelease。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistoryFloorEventsSpec.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/QualitySeedService.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
-        ..Group("rework", "待 #1370 ③ 销账：NCR 处置族，应引用 QualityNcrDispositionTypes.Rework。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistoryFloorEventsSpec.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/QualitySeedService.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
-        ..Group("scrap", "待 #1370 ③ 销账：NCR 处置族，应引用 QualityNcrDispositionTypes.Scrap。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistoryFloorEventsSpec.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/QualitySeedService.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
-        ..Group("sort-and-screen", "待 #1370 ③ 销账：NCR 处置族，应引用 QualityNcrDispositionTypes.SortAndScreen。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistoryFloorEventsSpec.cs"),
-        ..Group("return-to-supplier", "待 #1370 ③ 销账：NCR 处置族，应引用 QualityNcrDispositionTypes.ReturnToSupplier。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/QualitySeedService.cs"),
-        ..Group("passed", "待 #1370 ③ 销账：检验处置结果族，应引用 QualityInspectionDispositionStatuses.Passed。",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Seed/WorldHistorySeedService.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/CorrectiveActions/CorrectiveActionCommands.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryMetrologySeedService.cs"),
+        // #1370 ③ 批次 B 已销账：Mes/Quality 的 NCR 处置类型与 Quality 的检验处置结果全部改常量引用，
+        // 对应豁免已删除。下面这条 Erp 的 "passed" 经复核属同值不同义，保留。
+        // 同值不同义：Erp 采购收货行的 QualityStatus 走的是 ErpReceiptQualityStatuses 值域
+        // （unrestricted/quality/blocked + accepted/qualified/available/inspection/rejected 别名），
+        // 与 Quality 的检验处置结果（passed/conditional-release/rejected）是两套目录，不可互相引用。
+        ..Group("passed", "同值不同义：Erp 采购收货行质检状态（ErpReceiptQualityStatuses 值域），非 Quality 检验处置结果。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Seed/WorldHistorySeedService.cs"),
 
         // ── "rejected"（审批结果 vs 检验处置 vs 扫描结果 vs 控制命令状态） ──────────
         // 同值不同义：条码扫描结果（accepted/rejected）与设备控制命令状态（completed/failed/rejected）
@@ -220,17 +206,8 @@ internal static class VocabularyDriftExemptions
             "services/Notification/src/Nerv.IIP.Notification.Web/Application/IntegrationEventHandlers/IndustrialTelemetryAlarmIntegrationEventHandlersForNotification.cs"),
 
         // ── 设备运行状态族（EquipmentRuntimeDeviceStates / EquipmentRuntimeReasonCodes） ──
-        // 待 #1370 ③ 销账：IT 世界史种子/校验器写的正是设备运行状态时间线（running/faulted/planned-down），
-        // Scheduling 规格写的正是 equipment.maintenanceWindow 原因码——与 EquipmentRuntime 契约同族。
-        ..Group("faulted", "待 #1370 ③ 销账：设备运行状态族，应引用 EquipmentRuntimeDeviceStates.Faulted。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistorySeedService.cs"),
-        ..Group("running", "待 #1370 ③ 销账：设备运行状态族，应引用 EquipmentRuntimeDeviceStates.Running。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistorySeedService.cs"),
-        ..Group("planned-down", "待 #1370 ③ 销账：设备运行状态族，应引用 EquipmentRuntimeDeviceStates.PlannedDown。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistorySeedService.cs"),
-        ..Group("equipment.maintenanceWindow", "待 #1370 ③ 销账：设备原因码族，应引用 EquipmentRuntimeReasonCodes.MaintenanceWindow。",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Seed/WorldHistorySchedulingSpec.cs"),
+        // #1370 ③ 批次 B 已销账：IT 世界史种子/校验器的 running/faulted/planned-down 与 Scheduling 规格的
+        // equipment.maintenanceWindow 全部改常量引用，对应豁免已删除；以下仅保留同值不同义条目。
         // 同值不同义：MasterData 字典 device-status 码集（running/idle/maintenance/fault/scrapped）
         // 与 EquipmentRuntime 设备运行态（running/idle/faulted/planned-down…）是两套目录：
         // 前者含 fault/scrapped、后者是 faulted——码面已分叉，属两个权威，不可互相引用。
@@ -305,13 +282,8 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Seed/WorldHistoryWmsSpec.cs"),
 
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving） ─────────────
-        // 待 #1370 ③ 销账：检验触发/核验链路两侧（Quality 与 Wms）的 sourceType/sourceService
-        // 匹配面正是该词表的守护对象，应改常量引用。
-        ..Group("receiving", "待 #1370 ③ 销账：检验来源类型匹配面，应引用 QualityInspectionSourceTypes.Receiving。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/InspectionRecords/InspectionExternalFactClients.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs"),
+        // 待 #1370 ③ 销账：检验触发/核验链路两侧（Quality 与 Wms）的 sourceService
+        // 匹配面正是该词表的守护对象，应改常量引用（receiving 一族已由批次 B 销账）。
         ..Group("wms", "待 #1370 ③ 销账：检验来源/库存流水来源服务匹配面，应引用 QualityInspectionSourceTypes.Wms 等契约常量。",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Expiry/StockReservationExpirationOptions.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/InspectionRecords/InspectionExternalFactClients.cs",
@@ -322,11 +294,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs",
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted.cs",
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed.cs"),
-
-        // ── 事件类型族（QualityIntegrationEventTypes） ──────────────────────────────
-        // 待 #1370 ③ 销账：Wms 种子的检验通过事件类型常量重抄，应引用 QualityIntegrationEventTypes.InspectionPassed。
-        ..Group("quality.InspectionPassed", "待 #1370 ③ 销账：事件类型重抄，应引用 QualityIntegrationEventTypes.InspectionPassed。",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Seed/WorldHistorySeedService.cs"),
     ];
 
     private static IEnumerable<VocabularyExemption> Group(

@@ -44,7 +44,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
     {
         var payload = integrationEvent.Payload;
         if (!string.Equals(payload.SourceService, "wms", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(payload.SourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(payload.SourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

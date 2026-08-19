@@ -8,6 +8,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRawS
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryRollupAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 
@@ -496,7 +497,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             var moments = new List<(DateTimeOffset OccurredAtUtc, string State)>();
             if (device.Class.RunsContinuously)
             {
-                moments.Add((GoLiveUtc, "running"));
+                moments.Add((GoLiveUtc, EquipmentRuntimeDeviceStates.Running));
             }
             else
             {
@@ -508,8 +509,8 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                         continue;
                     }
 
-                    moments.Add((intervals[0].StartUtc, "running"));
-                    moments.Add((intervals[^1].EndUtc, "planned-down"));
+                    moments.Add((intervals[0].StartUtc, EquipmentRuntimeDeviceStates.Running));
+                    moments.Add((intervals[^1].EndUtc, EquipmentRuntimeDeviceStates.PlannedDown));
                 }
             }
 
@@ -517,10 +518,10 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             {
                 foreach (var alarm in deviceAlarms)
                 {
-                    moments.Add((alarm.RaisedAtUtc, "faulted"));
+                    moments.Add((alarm.RaisedAtUtc, EquipmentRuntimeDeviceStates.Faulted));
                     if (!alarm.IsOpenAtAsOf)
                     {
-                        moments.Add((alarm.ClearedAtUtc, "running"));
+                        moments.Add((alarm.ClearedAtUtc, EquipmentRuntimeDeviceStates.Running));
                     }
                 }
             }

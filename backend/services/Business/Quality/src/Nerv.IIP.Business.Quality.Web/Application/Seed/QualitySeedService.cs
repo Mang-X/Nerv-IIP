@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 
@@ -23,13 +24,13 @@ public sealed class QualitySeedService(ApplicationDbContext dbContext)
     // （rework/scrap/return-to-supplier/conditional-release）对齐。
     private static readonly ReasonSeed[] Reasons =
     [
-        new("RSN-APPEARANCE", "外观缺陷", "外观", "minor", "rework"),
-        new("RSN-DIMENSION", "尺寸超差", "尺寸", "major", "rework"),
-        new("RSN-FUNC-FAIL", "功能失效", "功能", "critical", "scrap"),
-        new("RSN-MATERIAL", "材料不符", "材料", "major", "return-to-supplier"),
-        new("RSN-PACKAGING", "包装破损", "包装", "minor", "conditional-release"),
-        new("RSN-LABELING", "标识错误", "标识", "minor", "rework"),
-        new("RSN-CONTAMINATION", "污染异物", "清洁度", "critical", "scrap"),
+        new("RSN-APPEARANCE", "外观缺陷", "外观", "minor", QualityNcrDispositionTypes.Rework),
+        new("RSN-DIMENSION", "尺寸超差", "尺寸", "major", QualityNcrDispositionTypes.Rework),
+        new("RSN-FUNC-FAIL", "功能失效", "功能", "critical", QualityNcrDispositionTypes.Scrap),
+        new("RSN-MATERIAL", "材料不符", "材料", "major", QualityNcrDispositionTypes.ReturnToSupplier),
+        new("RSN-PACKAGING", "包装破损", "包装", "minor", QualityNcrDispositionTypes.ConditionalRelease),
+        new("RSN-LABELING", "标识错误", "标识", "minor", QualityNcrDispositionTypes.Rework),
+        new("RSN-CONTAMINATION", "污染异物", "清洁度", "critical", QualityNcrDispositionTypes.Scrap),
     ];
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)

@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 
@@ -230,7 +231,7 @@ public sealed class CreateInspectionRecordCommandHandler(
 
     private async Task VerifySourceDocumentAsync(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
     {
-        if (!string.Equals(request.SourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(request.SourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

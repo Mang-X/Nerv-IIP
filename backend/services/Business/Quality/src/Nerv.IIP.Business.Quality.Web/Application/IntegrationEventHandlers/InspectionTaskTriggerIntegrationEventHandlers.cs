@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -57,7 +58,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
                 dbContext,
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                sourceType: "receiving",
+                sourceType: QualityInspectionSourceTypes.Receiving,
                 sourceService: "wms",
                 sourceDocumentId: payload.PublicReference,
                 sourceDocumentLineId: line.LineReference,
@@ -113,7 +114,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 dbContext,
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                sourceType: "receiving",
+                sourceType: QualityInspectionSourceTypes.Receiving,
                 sourceService: "erp",
                 sourceDocumentId: payload.PurchaseReceiptNo,
                 sourceDocumentLineId: line.LineReference,

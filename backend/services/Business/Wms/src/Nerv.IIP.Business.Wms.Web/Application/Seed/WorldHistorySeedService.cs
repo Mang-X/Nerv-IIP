@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 
@@ -35,8 +36,6 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 {
     /// <summary>每批单据数。批内共享一次预查与一次 <c>SaveChanges</c>，批末清变更跟踪器。</summary>
     public const int BatchSize = 200;
-
-    private const string InspectionPassedEventType = "quality.InspectionPassed";
 
     // documents：本次要落库的**计划**，缺省取设定集 WorldHistoryWmsSpec.BuildDocuments。
     // 单据是否闭环由计划的 CompletedAtUtc 决定，seed 与校验器读同一份，不各自写死。
@@ -153,7 +152,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                 completedAtUtc,
                 counters);
             order.ApplyInspectionResult(
-                InspectionPassedEventType,
+                QualityIntegrationEventTypes.InspectionPassed,
                 document.InspectionRecordId!,
                 document.SkuCode,
                 document.LotNo,

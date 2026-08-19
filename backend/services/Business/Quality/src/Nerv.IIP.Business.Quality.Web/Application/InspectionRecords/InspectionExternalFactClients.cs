@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
@@ -116,7 +117,7 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!string.Equals(sourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(sourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return new InspectionSourceDocumentVerification(true, skuCode, inspectedQuantity);
         }
