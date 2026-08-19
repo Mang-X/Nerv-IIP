@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
@@ -91,7 +92,7 @@ public sealed class PostStockMovementCommandHandler(
         "inbound",
         "outbound",
         "transfer",
-        "adjustment",
+        InventoryMovementTypes.Adjustment,
     };
 
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)

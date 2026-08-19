@@ -35,7 +35,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestP
 
     private async Task HandleValidEventAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (!string.Equals(integrationEvent.Payload.SourceService, "wms", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(integrationEvent.Payload.SourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

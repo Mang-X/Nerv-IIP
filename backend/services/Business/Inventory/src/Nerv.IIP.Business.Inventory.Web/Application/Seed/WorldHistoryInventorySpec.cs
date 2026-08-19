@@ -1,4 +1,5 @@
 using System.Globalization;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Seed;
 
@@ -108,18 +109,21 @@ public static class WorldHistoryInventorySpec
     public const string Inbound = "inbound";
     public const string Outbound = "outbound";
     public const string Transfer = "transfer";
-    public const string Adjustment = "adjustment";
-    public const string StatusTransferOut = "status-transfer-out";
-    public const string StatusTransferIn = "status-transfer-in";
+
+    // 与契约词表同族的三项转引 <see cref="InventoryMovementTypes"/>，不再重抄字面量（#1370 ③）。
+    public const string Adjustment = InventoryMovementTypes.Adjustment;
+    public const string StatusTransferOut = InventoryMovementTypes.StatusTransferOut;
+    public const string StatusTransferIn = InventoryMovementTypes.StatusTransferIn;
 
     #endregion
 
     #region 质量状态（与 <c>StockQualityStatus</c> 同字面量）
 
-    public const string Unrestricted = "unrestricted";
-    public const string QualityInspection = "quality";
-    public const string Restricted = "restricted";
-    public const string Blocked = "blocked";
+    // 四项质量状态转引 <see cref="InventoryQualityStatuses"/>，不再重抄字面量（#1370 ③）。
+    public const string Unrestricted = InventoryQualityStatuses.Unrestricted;
+    public const string QualityInspection = InventoryQualityStatuses.Quality;
+    public const string Restricted = InventoryQualityStatuses.Restricted;
+    public const string Blocked = InventoryQualityStatuses.Blocked;
 
     #endregion
 

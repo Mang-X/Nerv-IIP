@@ -73,20 +73,6 @@ internal static class VocabularyDriftExemptions
         ..Group("BusinessMes", "同值不同义：MES 就绪分类来源标签，非 DP 下游服务引用。",
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesReadinessReasonCodes.cs"),
 
-        // ── 库存移动类型族（InventoryMovementTypes） ────────────────────────────────
-        // 待 #1370 ③ 销账：三处写的都是库存移动/状态转移类型本尊（事件载荷、允许类型清单、种子规格），
-        // 与 InventoryMovementTypes 同族，应改常量引用。
-        ..Group("adjustment", "待 #1370 ③ 销账：库存移动类型族，应引用 InventoryMovementTypes.Adjustment。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/IntegrationEventConverters/BarcodeLabelIntegrationEventConverters.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs"),
-        ..Group("status-transfer-in", "待 #1370 ③ 销账：库存移动类型族，应引用 InventoryMovementTypes.StatusTransferIn。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs"),
-        ..Group("status-transfer-out", "待 #1370 ③ 销账：库存移动类型族，应引用 InventoryMovementTypes.StatusTransferOut。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs"),
-
         // ── 集成事件信封来源族 ──────────────────────────────────────────────────────
         // 待 #1370 ③ 销账：AppHub 事件转换器写的正是事件信封 SourceService，
         // 应引用 AppHubIntegrationEventSources.AppHub。
@@ -122,35 +108,9 @@ internal static class VocabularyDriftExemptions
         ..Group("approved", "同值不同义：MRB 评审决定（质量域内状态），非审批链结果词表。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
 
-        // ── 库存质量状态族（InventoryQualityStatuses 等四表同值） ───────────────────
-        // 待 #1370 ③ 销账：以下写/比的都是库存质量状态本尊（quality/unrestricted/blocked/restricted），
-        // 跨 Inventory / Wms / Erp / BarcodeLabel 多处落库与匹配，应改常量引用；
-        // 销账时还须裁决四张同值词表（Inventory/Wms/Erp/Quality）各自的适用面。
-        ..Group("blocked", "待 #1370 ③ 销账：库存质量状态族，应引用 InventoryQualityStatuses.Blocked。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Expiry/ExpiredStockBlockingService.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs"),
-        ..Group("restricted", "待 #1370 ③ 销账：库存质量状态族，应引用 InventoryQualityStatuses.Restricted。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs"),
-        ..Group("unrestricted", "待 #1370 ③ 销账：库存质量状态族，应引用 InventoryQualityStatuses.Unrestricted（或对应域词表）。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/MesMaterialIssueCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/WmsOutboundOrderRequestedIntegrationEventHandler.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Seed/WorldHistoryWmsSpec.cs"),
-        ..Group("qualified", "待 #1370 ③ 销账：WMS 收货质量状态族，应引用 WmsReceivingQualityStatuses.Qualified。",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs"),
-
         // ── "quality"（票面 (a) 类点名的多义值） ────────────────────────────────────
-        // 待 #1370 ③ 销账：以下是库存质量状态（待检）或库存流水来源服务本尊，
-        // 应分别引用 InventoryQualityStatuses.Quality / InventoryMovementSourceServices.Quality；
-        // ApprovalChainStatusClient 的 "quality" 是审批来源，应引用 ApprovalSourceServices.Quality。
-        ..Group("quality", "待 #1370 ③ 销账：库存质量状态/流水来源服务族，应引用对应契约常量。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/ErpSalesReturnAuthorizedIntegrationEventHandler.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Seed/WorldHistoryWmsSpec.cs"),
+        // 库存质量状态族（quality/unrestricted/blocked/restricted/qualified）已于 #1370 ③ 批次 A 销账；
+        // 此处仅余审批链来源与 MES 区域码两类同名值。
         ..Group("quality", "待 #1370 ③ 销账：审批链来源历史别名清单，应引用 ApprovalSourceServices.Quality。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Approvals/ApprovalChainStatusClient.cs"),
         // 同值不同义：MES 工作台就绪「区域码」（quality/equipment/master-data/product-engineering/supply
@@ -284,44 +244,24 @@ internal static class VocabularyDriftExemptions
         // ── "purchase-order" / "purchase-receipt"（审批单据 vs Coding 文档 vs WMS 源单据） ──
         // 同值不同义：Coding 编码规则的文档类型键与计划输入的源单据类型，
         // 与 ApprovalDocumentTypes.PurchaseOrder（采购订单审批单据类型）不同义（票面 (a) 类 delivery-order 同形态）。
+        // WMS 源单据类型匹配面已于 #1370 ③ 批次 A 销账（改引 WmsSourceDocumentTypes）。
         ..Group("purchase-order", "同值不同义：Coding 编码规则文档类型键，非审批单据类型。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs"),
         ..Group("purchase-order", "同值不同义：计划输入的供给源单据类型，非审批单据类型。",
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
-        // 待 #1370 ③ 销账：WMS 入库/取消链路上的 sourceDocumentType 历史别名匹配面
-        // （purchase-order / erp-purchase-order 并存），应收敛到 WmsSourceDocumentTypes 并裁决别名去留。
-        ..Group("purchase-order", "待 #1370 ③ 销账：WMS 源单据类型历史别名匹配面，应收敛到 WmsSourceDocumentTypes。",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.cs",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Wms/WmsInboundCancellationClient.cs"),
         ..Group("purchase-receipt", "同值不同义：Coding 编码规则文档类型键，非 WMS 源单据类型。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs"),
         ..Group("purchase-receipt", "同值不同义：条码规则源单据类型（BarcodeRule.AllowedSourceDocumentTypes 自成一族，票面 (a) 类）。",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
-        ..Group("purchase-receipt", "待 #1370 ③ 销账：跨服务源单据类型匹配面，应引用 WmsSourceDocumentTypes.PurchaseReceipt。",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.cs",
-            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Seed/WorldHistorySeedService.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/InspectionRecords/InspectionExternalFactClients.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Seed/WorldHistoryWmsSpec.cs"),
 
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving） ─────────────
-        // 待 #1370 ③ 销账：检验触发/核验链路两侧（Quality 与 Wms）的 sourceType/sourceService
-        // 匹配面正是该词表的守护对象，应改常量引用。
+        // 待 #1370 ③ 销账：检验触发/核验链路两侧（Quality 与 Wms）的 sourceType 匹配面
+        // 正是该词表的守护对象，应改常量引用；sourceService 一侧（"wms"）已于批次 A 销账。
         ..Group("receiving", "待 #1370 ③ 销账：检验来源类型匹配面，应引用 QualityInspectionSourceTypes.Receiving。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionRecords/CreateInspectionRecordCommand.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/InspectionRecords/InspectionExternalFactClients.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs"),
-        ..Group("wms", "待 #1370 ③ 销账：检验来源/库存流水来源服务匹配面，应引用 QualityInspectionSourceTypes.Wms 等契约常量。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Expiry/StockReservationExpirationOptions.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/InspectionRecords/InspectionExternalFactClients.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/InspectionTaskTriggerIntegrationEventHandlers.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/InventoryReservationExpiredIntegrationEventHandlerForCancelWmsPicking.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/StockMovementPostedIntegrationEventHandlerForMarkWmsRequestPosted.cs",
-            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventHandlers/StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed.cs"),
 
         // ── 事件类型族（QualityIntegrationEventTypes） ──────────────────────────────
         // 待 #1370 ③ 销账：Wms 种子的检验通过事件类型常量重抄，应引用 QualityIntegrationEventTypes.InspectionPassed。

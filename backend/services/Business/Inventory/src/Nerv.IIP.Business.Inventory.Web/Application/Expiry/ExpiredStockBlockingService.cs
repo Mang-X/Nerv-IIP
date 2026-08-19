@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using MediatR;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 
@@ -12,7 +13,7 @@ public sealed class ExpiredStockBlockingOptions
 
     public int BatchSize { get; set; } = 100;
 
-    public string TargetQualityStatus { get; set; } = "blocked";
+    public string TargetQualityStatus { get; set; } = InventoryQualityStatuses.Blocked;
 
     public TimeSpan Interval { get; set; } = TimeSpan.FromMinutes(30);
 }
