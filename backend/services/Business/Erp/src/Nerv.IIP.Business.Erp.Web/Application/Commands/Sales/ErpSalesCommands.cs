@@ -323,7 +323,9 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 order.EnvironmentId,
                 ApprovalTemplateCodes.SalesCreditRelease,
                 ApprovalSourceServices.BusinessErp,
-                "sales-order-credit-release",
+                // #1702：发起侧与种子模板、ERP 回写消费侧共用审批契约的单据类型常量
+                // （种子漂移即发起 400，消费侧漂移即回写静默丢事件）。
+                ApprovalDocumentTypes.SalesOrderCreditRelease,
                 order.SalesOrderNo,
                 null,
                 request.StartedBy,

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using NetCorePal.Extensions.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
@@ -19,9 +20,14 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 /// 与一期的一致性靠 <see cref="WorldHistoryQualitySpec.BuildInspectionFacts"/> 一个确定性纯函数达成：
 /// 检验任务的源单据号全部来自一期已落库的工单 / 收货单 / 发货单，两侧不通信、不跨库查询、不建跨 schema 外键。
 ///
-/// 领域事件说明：本仓栈里 <c>DbContext.SaveChangesAsync()</c> 不派发领域事件（派发只发生在
-/// netcorepal 的 UnitOfWork/命令管线上），因此这里可以放心调用会 <c>AddDomainEvent</c> 的聚合方法，
-/// 历史数据不会反向触发 CAP 集成事件风暴——与一期 ERP/MES seed 同一前提。
+/// 领域事件说明：本块写的 <see cref="InspectionPlan"/> / <see cref="InspectionRecord"/> /
+/// <see cref="NonconformanceReport"/> 都会 <c>AddDomainEvent</c>，且多数有跨服务转换器
+/// （<c>InspectionPassed/Rejected/ConditionalReleased</c> → <c>InspectionResultIntegrationEvent</c>（MES 放行）、
+/// <c>NonconformanceReportOpened/DispositionDecided/Closed</c>，以及
+/// <c>NonconformanceReportInventoryDispositionRequested</c> → Inventory 的
+/// <c>InventoryMovementRequestedIntegrationEvent</c>——**会真扣库存**）。约 7000 条检验任务的历史事实
+/// 一旦外发就是启动瞬间的 CAP 风暴。因此写盘前一律清空领域事件，见
+/// <see cref="SaveHistoryFactsAsync"/>（与 MES / Maintenance / WMS / Inventory 四个兄弟种子同一姿势）。
 /// </summary>
 public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 {
@@ -72,7 +78,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
             if (added > 0)
             {
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await SaveHistoryFactsAsync(cancellationToken);
             }
 
             dbContext.ChangeTracker.Clear();
@@ -152,11 +158,35 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
 
         if (written > 0)
         {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await SaveHistoryFactsAsync(cancellationToken);
         }
 
         dbContext.ChangeTracker.Clear();
         return written;
+    }
+
+    /// <summary>
+    /// 落盘一批历史事实：**先丢弃本批实体上挂着的领域事件，再写库**。
+    ///
+    /// <para><b>当前是否真的会派发：实测为否，但仍然清。</b>
+    /// MES 侧 <c>WorldHistorySeedDomainEventTests</c> 已对同一套 netcorepal 栈实测：
+    /// 裸 <c>DbContext.SaveChangesAsync()</c> 一条领域事件都不派发，
+    /// 派发只发生在 <c>IUnitOfWork.SaveEntitiesAsync()</c> 上（同一 <c>DbContext</c> 的阳性对照）。
+    /// 所以这里是**防御式**清除：事件在写盘后仍原样挂在被跟踪实体上，
+    /// 只要有人把 seed 改走 UoW 路径、或在同一 <c>DbContext</c> 作用域里顺手走一次命令管线，
+    /// 这批事件就会被一次性冲出去。不依赖「框架当前不派发」这个前提，是这里唯一稳的姿势。</para>
+    ///
+    /// <para><b>按变更跟踪器穷举，而不是逐个聚合手写。</b>逐处补 <c>ClearDomainEvents()</c> 必然漏
+    /// （新增写入点时更会漏）；这里从 <c>ChangeTracker</c> 取全部 <see cref="Entity"/> 实体统一清。</para>
+    /// </summary>
+    private async Task SaveHistoryFactsAsync(CancellationToken cancellationToken)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries<Entity>())
+        {
+            entry.Entity.ClearDomainEvents();
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<Dictionary<string, InspectionPlan>> LoadInspectionPlansAsync(

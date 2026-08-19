@@ -32,4 +32,45 @@ public static class ApprovalSourceServices
     /// 两者字面量恰好相同但语义不同，不可互相引用。
     /// </summary>
     public const string BusinessErp = "business-erp";
+
+    /// <summary>
+    /// Inventory 库存服务。**三方共用**：Inventory 发起侧
+    /// （<c>ConfirmStockCountAdjustmentCommandHandler</c> 盘点差异超阈值分支）、
+    /// 审批链落库的 <c>ApprovalDocumentReference.SourceService</c>、
+    /// Inventory 回写消费侧（<c>ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment</c>）——
+    /// 消费侧的分流条件是 <c>(SourceService, DocumentType)</c> 二元组，任一侧漂移即回写静默丢事件
+    /// （#1344 只把 <c>DocumentType</c> 提进契约、<c>SourceService</c> 仍是裸字面量，本常量补齐另一半）：
+    /// 盘点差异审批通过后调整单永停 <c>pending-approval</c>、账面不动、库存仍冻结，且无日志、无异常、无死信。
+    ///
+    /// 注意与以下**字面量相同但语义不同**者区分，不可互相引用：
+    /// <list type="bullet">
+    /// <item>Inventory 的数据库 schema 名 <c>inventory</c>（EF 迁移 / <c>HasDefaultSchema</c>）；</item>
+    /// <item><c>StockMovement.Post</c> 的 <c>sourceService</c> 参数（库存流水的上游来源单据服务，
+    /// 取值域是 <c>wms</c> / <c>erp</c> / <c>mes</c> 之类，与审批无关）；</item>
+    /// <item><c>Nerv.IIP.Business.Quality</c> 的 <c>InspectionRecord</c> 受理来源集合里的 <c>inventory</c>
+    /// （质检记录来源）。</item>
+    /// </list>
+    /// 集成事件**信封**的发布方标识另有其类：<c>InventoryIntegrationEventSources.BusinessInventory</c>
+    /// （值为 <c>business-inventory</c>），与本常量既不同值也不同义。
+    /// </summary>
+    public const string Inventory = "inventory";
+
+    /// <summary>
+    /// Quality 质量服务。当前**只有种子侧**在用：世界观 NCR 处置审批链落库的
+    /// <c>ApprovalDocumentReference.SourceService</c>（<c>WorldHistoryApprovalSpec.NcrSourceService</c>）。
+    /// 质量域目前没有 <c>ApprovalCompletedIntegrationEvent</c> 消费者，因此本值漂移**不会**立刻表现为回写丢事件；
+    /// 但它逐字参与 <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256（该键上有唯一索引），
+    /// 改值即改历史链的 pending 唯一键，且未来任何质量回写消费侧都必须认同一份取值——因此同样禁止写字面量。
+    ///
+    /// 注意与以下**字面量相同但语义不同**者区分，不可互相引用：
+    /// <list type="bullet">
+    /// <item><c>Nerv.IIP.Contracts.Inventory.InventoryMovementSourceServices.Quality</c>
+    /// （库存移动请求的发起来源，用于状态转移流水）；</item>
+    /// <item><c>InventoryQualityStatuses.Quality</c> / <c>ErpReceiptQualityStatuses.Quality</c>
+    /// （库存质量状态码「待检」，是状态不是服务）；</item>
+    /// <item>Quality 的数据库 schema 名 <c>quality</c>。</item>
+    /// </list>
+    /// 集成事件**信封**的发布方标识另有其值（<c>business-quality</c>），与本常量既不同值也不同义。
+    /// </summary>
+    public const string Quality = "quality";
 }
