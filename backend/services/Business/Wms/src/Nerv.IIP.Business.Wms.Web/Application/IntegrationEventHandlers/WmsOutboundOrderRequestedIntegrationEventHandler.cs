@@ -13,7 +13,7 @@ public sealed class WmsOutboundOrderRequestedIntegrationEventHandler(
     : IIntegrationEventHandler<WmsOutboundOrderRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-wms.outbound-order-requested";
-    private const string ErpFinishedGoodsQualityStatus = "unrestricted";
+    private const string ErpFinishedGoodsQualityStatus = WmsReceivingQualityStatuses.Unrestricted;
     private const string ErpFinishedGoodsOwnerType = "production";
 
     private readonly IntegrationEventConsumerGuard<WmsOutboundOrderRequestedIntegrationEvent> consumerGuard = new(

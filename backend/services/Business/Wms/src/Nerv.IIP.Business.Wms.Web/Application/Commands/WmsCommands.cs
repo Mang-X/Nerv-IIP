@@ -17,6 +17,8 @@ using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 
@@ -566,7 +568,7 @@ public sealed class CreatePickingTaskCommandHandler(
                 new WmsInventoryFefoReservationRequest(
                     outbound.OrganizationId,
                     outbound.EnvironmentId,
-                    "wms",
+                    InventoryMovementSourceServices.Wms,
                     outbound.OutboundOrderNo,
                     line.LineNo,
                     idempotencyKey,
@@ -599,7 +601,7 @@ public sealed class CreatePickingTaskCommandHandler(
             new WmsInventoryReservationRequest(
                 outbound.OrganizationId,
                 outbound.EnvironmentId,
-                "wms",
+                InventoryMovementSourceServices.Wms,
                 outbound.OutboundOrderNo,
                 line.LineNo,
                 idempotencyKey,
@@ -1816,7 +1818,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                 new WmsInventoryReservationRequest(
                     outbound.OrganizationId,
                     outbound.EnvironmentId,
-                    "wms",
+                    InventoryMovementSourceServices.Wms,
                     outbound.OutboundOrderNo,
                     line.LineNo,
                     WmsInventoryReservationIdempotencyKeys.ForOutboundRetry(
@@ -1895,7 +1897,7 @@ public sealed class CreateCountExecutionCommandHandler(
             count.LocationCode,
             null,
             null,
-            "qualified",
+            WmsReceivingQualityStatuses.Qualified,
             "company",
             null,
             WmsInventoryReservationIdempotencyKeys.ForCountExecution(count));
@@ -2057,7 +2059,7 @@ public sealed class CompleteCountExecutionCommandHandler
                 count.UomCode,
                 count.SiteCode,
                 count.LocationCode,
-                "qualified",
+                WmsReceivingQualityStatuses.Qualified,
                 "company",
                 count.VarianceQuantity
                     ?? throw new KnownException("Count execution variance was not calculated."),
@@ -2094,7 +2096,7 @@ public sealed class CompleteCountExecutionCommandHandler
             count.LocationCode,
             null,
             null,
-            "qualified",
+            WmsReceivingQualityStatuses.Qualified,
             "company",
             null,
             varianceQuantity);
