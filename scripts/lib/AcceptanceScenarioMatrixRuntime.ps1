@@ -12,6 +12,102 @@
 
 . (Join-Path $PSScriptRoot 'AcceptanceScenarioMatrix.ps1')
 
+function Assert-NervAcceptanceCanonicalPhysicalPath {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Context,
+        [Parameter(Mandatory)] [ValidateSet('File', 'Directory')] [string] $PathType
+    )
+
+    Assert-NervAcceptanceString -Value $Path -Context "$Context path"
+    $fullPath = [IO.Path]::GetFullPath($Path)
+    $providedPath = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) {
+        [IO.Path]::TrimEndingDirectorySeparator($Path)
+    }
+    else { $Path }
+    $canonicalPath = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) {
+        [IO.Path]::TrimEndingDirectorySeparator($fullPath)
+    }
+    else { $fullPath }
+    if (-not [string]::Equals($providedPath, $canonicalPath, [StringComparison]::Ordinal)) {
+        throw "$Context must be a canonical absolute path."
+    }
+    $testPathType = if ([string]::Equals($PathType, 'Directory', [StringComparison]::Ordinal)) { 'Container' } else { 'Leaf' }
+    if (-not (Test-Path -LiteralPath $canonicalPath -PathType $testPathType)) {
+        throw "$Context path '$canonicalPath' must identify one existing $($PathType.ToLowerInvariant())."
+    }
+
+    $item = Get-Item -LiteralPath $canonicalPath -Force
+    while ($null -ne $item) {
+        if (-not [string]::IsNullOrEmpty([string]$item.LinkTarget) -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "$Context must not contain a symbolic link or reparse point."
+        }
+        $item = if ($item -is [IO.FileInfo]) { $item.Directory } else { $item.Parent }
+    }
+    return $canonicalPath
+}
+
+function Assert-NervAcceptanceRuntimeAuthorityPaths {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ManifestFilePath,
+        [Parameter(Mandatory)] [string] $V1ManifestPath
+    )
+
+    $canonicalRepositoryRoot = Assert-NervAcceptanceCanonicalPhysicalPath -Path $RepositoryRoot -Context 'runtime repository root' -PathType Directory
+    Assert-NervAcceptanceString -Value $ManifestPath -Context 'runtime manifest repository-relative path'
+    if ([IO.Path]::IsPathRooted($ManifestPath)) { throw 'Runtime manifest repository-relative path must not be rooted.' }
+    $expectedManifestPath = [IO.Path]::GetFullPath((Join-Path $canonicalRepositoryRoot $ManifestPath))
+    $relativeManifestPath = [IO.Path]::GetRelativePath($canonicalRepositoryRoot, $expectedManifestPath).Replace([IO.Path]::DirectorySeparatorChar, '/')
+    if (-not [string]::Equals($relativeManifestPath, $ManifestPath, [StringComparison]::Ordinal)) {
+        throw 'Runtime manifest repository-relative path must be canonical and remain inside the repository root.'
+    }
+
+    $canonicalManifestPath = Assert-NervAcceptanceCanonicalPhysicalPath -Path $ManifestFilePath -Context 'runtime acceptance manifest' -PathType File
+    if (-not [string]::Equals($canonicalManifestPath, $expectedManifestPath, [StringComparison]::Ordinal)) {
+        throw 'Runtime acceptance manifest path must equal the authoritative repository manifest.'
+    }
+
+    $expectedV1ManifestPath = [IO.Path]::GetFullPath((Join-Path $canonicalRepositoryRoot 'scripts/full-chain-test-lane.json'))
+    $canonicalV1ManifestPath = Assert-NervAcceptanceCanonicalPhysicalPath -Path $V1ManifestPath -Context 'runtime FullChain v1 manifest' -PathType File
+    if (-not [string]::Equals($canonicalV1ManifestPath, $expectedV1ManifestPath, [StringComparison]::Ordinal)) {
+        throw 'Runtime FullChain v1 manifest path must equal the authoritative FullChain v1 manifest.'
+    }
+
+    return [pscustomobject][ordered]@{
+        repositoryRoot = $canonicalRepositoryRoot
+        manifestPath = $canonicalManifestPath
+        v1ManifestPath = $canonicalV1ManifestPath
+    }
+}
+
+function Assert-NervAcceptanceNoDuplicateJsonProperties {
+    param(
+        [Parameter(Mandatory)] [Text.Json.JsonElement] $Element,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    if ($Element.ValueKind -eq [Text.Json.JsonValueKind]::Object) {
+        $propertyNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($property in $Element.EnumerateObject()) {
+            if (-not $propertyNames.Add($property.Name)) {
+                throw "$Context contains duplicate JSON property '$($property.Name)'."
+            }
+            Assert-NervAcceptanceNoDuplicateJsonProperties -Element $property.Value -Context "$Context.$($property.Name)"
+        }
+        return
+    }
+    if ($Element.ValueKind -eq [Text.Json.JsonValueKind]::Array) {
+        $index = 0
+        foreach ($item in $Element.EnumerateArray()) {
+            Assert-NervAcceptanceNoDuplicateJsonProperties -Element $item -Context "$Context[$index]"
+            $index++
+        }
+    }
+}
+
 function Read-NervAcceptanceRuntimeJsonSnapshot {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -42,11 +138,43 @@ function Read-NervAcceptanceRuntimeJsonSnapshot {
     }
 
     try {
+        $jsonDocument = [Text.Json.JsonDocument]::Parse([ReadOnlyMemory[byte]]([byte[]]$bytes))
+        try { Assert-NervAcceptanceNoDuplicateJsonProperties -Element $jsonDocument.RootElement -Context $Context }
+        finally { $jsonDocument.Dispose() }
         $json = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
         $value = $json | ConvertFrom-Json -Depth 50
     }
     catch { throw "$Context '$Path' is not valid UTF-8 JSON: $($_.Exception.Message)" }
     return [pscustomobject][ordered]@{ digest = $actualDigest; value = $value }
+}
+
+function Assert-NervAcceptanceRuntimeV1ManifestObject {
+    param([Parameter(Mandatory)] [object] $V1Manifest)
+
+    Assert-NervAcceptanceObjectSchema -Object $V1Manifest -AllowedFields @('schemaVersion', 'members') -RequiredFields @('schemaVersion', 'members') -Context 'FullChain v1 manifest'
+    if (-not (Test-NervAcceptanceInteger -Value $V1Manifest.schemaVersion) -or [int64]$V1Manifest.schemaVersion -ne 1) {
+        throw 'FullChain v1 manifest schemaVersion must be 1.'
+    }
+    if ($V1Manifest.members -isnot [array]) { throw 'FullChain v1 manifest members must be an array.' }
+    foreach ($member in @($V1Manifest.members)) {
+        Assert-NervAcceptanceObjectSchema `
+            -Object $member `
+            -AllowedFields @('id', 'service', 'tier', 'status', 'project', 'filter', 'entrypoint', 'dependencies', 'diagnosticSchemas', 'expectedTestIdentities') `
+            -RequiredFields @('id', 'service', 'tier', 'status', 'project', 'filter', 'entrypoint', 'dependencies', 'diagnosticSchemas', 'expectedTestIdentities') `
+            -Context 'FullChain v1 member'
+        foreach ($field in @('id', 'service', 'tier', 'status', 'project', 'filter')) {
+            Assert-NervAcceptanceString -Value $member.PSObject.Properties[$field].Value -Context "FullChain v1 member.$field"
+        }
+        $memberId = [string]$member.id
+        Assert-NervAcceptanceEntrypoint -Entrypoint $member.entrypoint -ScenarioId "FullChain v1 member '$memberId'"
+        Assert-NervAcceptanceObjectSchema -Object $member.dependencies -AllowedFields @('postgres', 'redis', 'externalProcesses') -RequiredFields @('postgres', 'redis', 'externalProcesses') -Context "FullChain v1 member '$memberId' dependencies"
+        foreach ($dependencyName in @('postgres', 'redis', 'externalProcesses')) {
+            Assert-NervAcceptanceBoolean -Value $member.dependencies.PSObject.Properties[$dependencyName].Value -Context "FullChain v1 member '$memberId' dependencies.$dependencyName"
+        }
+        Assert-NervAcceptanceStringArray -Value $member.diagnosticSchemas -Context "FullChain v1 member '$memberId' diagnosticSchemas"
+        Assert-NervAcceptanceStringArray -Value $member.expectedTestIdentities -Context "FullChain v1 member '$memberId' expectedTestIdentities"
+    }
+    return $V1Manifest
 }
 
 function Assert-NervAcceptanceRuntimeManifestObject {
@@ -85,7 +213,8 @@ function Assert-NervAcceptanceRuntimeManifestObject {
         throw "scenario '$($blocked.id)' must be blocked/extended and owned by #1240."
     }
 
-    Assert-NervAcceptanceV1Closure -Manifest $Manifest -V1Manifest $V1Manifest -RepositoryRoot $RepositoryRoot
+    $validatedV1Manifest = Assert-NervAcceptanceRuntimeV1ManifestObject -V1Manifest $V1Manifest
+    Assert-NervAcceptanceV1Closure -Manifest $Manifest -V1Manifest $validatedV1Manifest -RepositoryRoot $RepositoryRoot
     return $Manifest
 }
 
@@ -114,6 +243,7 @@ function Test-NervAcceptanceRuntimeRunCommand {
     $elements = @($command.CommandElements)
     $index = 1
     while ($index -lt $elements.Count -and $elements[$index] -is [Management.Automation.Language.CommandParameterAst]) {
+        if ($null -ne $elements[$index].Argument) { return $false }
         $parameterName = [string]$elements[$index].ParameterName
         if ([string]::Equals($parameterName, 'File', [StringComparison]::Ordinal)) { $index++; break }
         if (-not [Collections.Generic.HashSet[string]]::new(
@@ -232,11 +362,12 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         [scriptblock] $ReadFileBytesAction
     )
 
+    $authorityPaths = Assert-NervAcceptanceRuntimeAuthorityPaths -RepositoryRoot $RepositoryRoot -ManifestPath $ManifestPath -ManifestFilePath $ManifestFilePath -V1ManifestPath $V1ManifestPath
     $artifactSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $ArtifactPath -ExpectedDigest $ExpectedArtifactDigest -Context 'runtime planning artifact' -ReadFileBytesAction $ReadFileBytesAction
-    $manifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $ManifestFilePath -ExpectedDigest $ExpectedManifestDigest -Context 'runtime acceptance manifest' -ReadFileBytesAction $ReadFileBytesAction
-    $v1ManifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $V1ManifestPath -Context 'runtime FullChain v1 manifest' -ReadFileBytesAction $ReadFileBytesAction
+    $manifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $authorityPaths.manifestPath -ExpectedDigest $ExpectedManifestDigest -Context 'runtime acceptance manifest' -ReadFileBytesAction $ReadFileBytesAction
+    $v1ManifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $authorityPaths.v1ManifestPath -Context 'runtime FullChain v1 manifest' -ReadFileBytesAction $ReadFileBytesAction
     $artifact = $artifactSnapshot.value
-    $manifest = Assert-NervAcceptanceRuntimeManifestObject -Manifest $manifestSnapshot.value -V1Manifest $v1ManifestSnapshot.value -RepositoryRoot $RepositoryRoot
+    $manifest = Assert-NervAcceptanceRuntimeManifestObject -Manifest $manifestSnapshot.value -V1Manifest $v1ManifestSnapshot.value -RepositoryRoot $authorityPaths.repositoryRoot
 
     if (-not (Test-NervAcceptanceObjectProperty -Object $artifact -Name 'scenarios') -or $artifact.scenarios -isnot [array]) {
         throw 'Runtime planning artifact scenarios must be an array.'

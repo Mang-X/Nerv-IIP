@@ -15,6 +15,7 @@ $runtimeLibraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrixR
 $manifestPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
 $v1ManifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-acceptance-runtime-$([Guid]::NewGuid().ToString('N'))"
+$repositoryFixtureRoot = Join-Path $repoRoot ".superpowers/sdd/runtime-fixtures/$([Guid]::NewGuid().ToString('N'))"
 
 if (-not (Test-Path -LiteralPath $runtimeLibraryPath -PathType Leaf)) {
     throw "Acceptance scenario matrix runtime library is missing at '$runtimeLibraryPath'."
@@ -141,6 +142,8 @@ function Get-RuntimeArguments {
         [Parameter(Mandatory)] [string] $SummaryPath,
         [Parameter(Mandatory)] [scriptblock] $Action,
         [string] $Event = 'workflow_dispatch',
+        [string] $RepositoryRoot = $repoRoot,
+        [string] $V1ManifestPath = $v1ManifestPath,
         [scriptblock] $ReadFileBytesAction
     )
 
@@ -149,8 +152,8 @@ function Get-RuntimeArguments {
         ExpectedArtifactDigest = $ExpectedArtifactDigest
         ManifestFilePath = $ManifestFilePath
         ExpectedManifestDigest = $ExpectedManifestDigest
-        V1ManifestPath = $v1ManifestPath
-        RepositoryRoot = $repoRoot
+        V1ManifestPath = $V1ManifestPath
+        RepositoryRoot = $RepositoryRoot
         Repository = 'Mang-X/Nerv-IIP'
         TestedSha = '0123456789abcdef0123456789abcdef01234567'
         RunId = '123456789'
@@ -179,6 +182,8 @@ function Assert-PreflightRejected {
         [string] $ExpectedManifestDigest,
         [string] $ArtifactPathOverride,
         [string] $ManifestFilePathOverride,
+        [string] $V1ManifestPathOverride,
+        [string] $RepositoryRootOverride,
         [string] $Event = 'workflow_dispatch',
         [switch] $MutateArtifactBytesAfterDigest,
         [switch] $MutateManifestBytesAfterDigest
@@ -187,9 +192,9 @@ function Assert-PreflightRejected {
     $script:preflightActionCount = 0
     $summaryPath = Join-Path $fixtureRoot "$Name-summary.json"
     $action = { $script:preflightActionCount++ }
-    $runtimeManifestPath = Join-Path $fixtureRoot "$Name-manifest.json"
-    Write-JsonFixture -Path $runtimeManifestPath -Value $Manifest
-    $runtimeManifestDigest = Get-FixtureFileDigest -Path $runtimeManifestPath
+    $runtimeManifestBytesPath = Join-Path $fixtureRoot "$Name-manifest.json"
+    Write-JsonFixture -Path $runtimeManifestBytesPath -Value $Manifest
+    $runtimeManifestDigest = Get-FixtureFileDigest -Path $runtimeManifestBytesPath
     $runtimeArtifact = Copy-JsonObject $Artifact
     if (-not $PreserveArtifactManifestDigest) { $runtimeArtifact.manifestDigest = $runtimeManifestDigest }
     $runtimeArtifactPath = Join-Path $fixtureRoot "$Name-artifact.json"
@@ -198,16 +203,85 @@ function Assert-PreflightRejected {
     if ([string]::IsNullOrEmpty($ExpectedArtifactDigest)) { $ExpectedArtifactDigest = $runtimeArtifactDigest }
     if ([string]::IsNullOrEmpty($ExpectedManifestDigest)) { $ExpectedManifestDigest = $runtimeManifestDigest }
     if ($MutateArtifactBytesAfterDigest) { [IO.File]::AppendAllText($runtimeArtifactPath, " `n", [Text.UTF8Encoding]::new($false)) }
-    if ($MutateManifestBytesAfterDigest) { [IO.File]::AppendAllText($runtimeManifestPath, " `n", [Text.UTF8Encoding]::new($false)) }
+    if ($MutateManifestBytesAfterDigest) { [IO.File]::AppendAllText($runtimeManifestBytesPath, " `n", [Text.UTF8Encoding]::new($false)) }
     if (-not [string]::IsNullOrEmpty($ArtifactPathOverride)) { $runtimeArtifactPath = $ArtifactPathOverride }
-    if (-not [string]::IsNullOrEmpty($ManifestFilePathOverride)) { $runtimeManifestPath = $ManifestFilePathOverride }
-    $arguments = Get-RuntimeArguments -ArtifactPath $runtimeArtifactPath -ExpectedArtifactDigest $ExpectedArtifactDigest -ManifestFilePath $runtimeManifestPath -ExpectedManifestDigest $ExpectedManifestDigest -WorkflowPath $WorkflowPath -SummaryPath $summaryPath -Action $action -Event $Event
+    $runtimeManifestPath = if ([string]::IsNullOrEmpty($ManifestFilePathOverride)) { $manifestPath } else { $ManifestFilePathOverride }
+    $runtimeV1ManifestPath = if ([string]::IsNullOrEmpty($V1ManifestPathOverride)) { $v1ManifestPath } else { $V1ManifestPathOverride }
+    $runtimeRepositoryRoot = if ([string]::IsNullOrEmpty($RepositoryRootOverride)) { $repoRoot } else { $RepositoryRootOverride }
+    $manifestBytesPath = $runtimeManifestBytesPath
+    $canonicalManifestPath = $manifestPath
+    $readFileBytesAction = {
+        param([string] $Path)
+        if ([string]::Equals([IO.Path]::GetFullPath($Path), [IO.Path]::GetFullPath($canonicalManifestPath), [StringComparison]::Ordinal)) {
+            return [IO.File]::ReadAllBytes($manifestBytesPath)
+        }
+        return [IO.File]::ReadAllBytes($Path)
+    }.GetNewClosure()
+    $arguments = Get-RuntimeArguments -ArtifactPath $runtimeArtifactPath -ExpectedArtifactDigest $ExpectedArtifactDigest -ManifestFilePath $runtimeManifestPath -ExpectedManifestDigest $ExpectedManifestDigest -WorkflowPath $WorkflowPath -SummaryPath $summaryPath -Action $action -Event $Event -V1ManifestPath $runtimeV1ManifestPath -RepositoryRoot $runtimeRepositoryRoot -ReadFileBytesAction $readFileBytesAction
     $observedMessage = '<no exception>'
     try { Invoke-NervAcceptanceScenarioRuntime @arguments | Out-Null }
     catch { $observedMessage = $_.Exception.Message }
     Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Preflight mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
     Assert-Contract ($script:preflightActionCount -eq 0) "Preflight mutation '$Name' must execute zero injected actions."
     Assert-Contract (-not (Test-Path -LiteralPath $summaryPath)) "Preflight mutation '$Name' must not create a runtime summary."
+}
+
+function Replace-FirstOrdinal {
+    param(
+        [Parameter(Mandatory)] [string] $Value,
+        [Parameter(Mandatory)] [string] $OldValue,
+        [Parameter(Mandatory)] [string] $NewValue
+    )
+
+    $index = $Value.IndexOf($OldValue, [StringComparison]::Ordinal)
+    if ($index -lt 0) { throw "Raw JSON fixture token '$OldValue' was not found." }
+    return $Value.Substring(0, $index) + $NewValue + $Value.Substring($index + $OldValue.Length)
+}
+
+function Assert-RawJsonPreflightRejected {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $ArtifactJson,
+        [Parameter(Mandatory)] [string] $ManifestJson,
+        [Parameter(Mandatory)] [string] $V1ManifestJson,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $ExpectedMessage
+    )
+
+    $artifactBytes = [Text.UTF8Encoding]::new($false).GetBytes($ArtifactJson)
+    $manifestBytes = [Text.UTF8Encoding]::new($false).GetBytes($ManifestJson)
+    $v1ManifestBytes = [Text.UTF8Encoding]::new($false).GetBytes($V1ManifestJson)
+    $rawArtifactPath = Join-Path $fixtureRoot "$Name-raw-artifact.json"
+    Write-JsonFixture -Path $rawArtifactPath -Value ([pscustomobject]@{ placeholder = $true })
+    $rawArtifactFullPath = [IO.Path]::GetFullPath($rawArtifactPath)
+    $canonicalManifestFullPath = [IO.Path]::GetFullPath($manifestPath)
+    $canonicalV1FullPath = [IO.Path]::GetFullPath($v1ManifestPath)
+    $readRawBytesAction = {
+        param([string] $Path)
+        $fullPath = [IO.Path]::GetFullPath($Path)
+        if ([string]::Equals($fullPath, $rawArtifactFullPath, [StringComparison]::Ordinal)) { return $artifactBytes }
+        if ([string]::Equals($fullPath, $canonicalManifestFullPath, [StringComparison]::Ordinal)) { return $manifestBytes }
+        if ([string]::Equals($fullPath, $canonicalV1FullPath, [StringComparison]::Ordinal)) { return $v1ManifestBytes }
+        return [IO.File]::ReadAllBytes($Path)
+    }.GetNewClosure()
+
+    $script:rawJsonActionCount = 0
+    $summaryPath = Join-Path $fixtureRoot "$Name-raw-summary.json"
+    $arguments = Get-RuntimeArguments `
+        -ArtifactPath $rawArtifactPath `
+        -ExpectedArtifactDigest (Get-FixtureBytesDigest -Bytes $artifactBytes) `
+        -ManifestFilePath $manifestPath `
+        -ExpectedManifestDigest (Get-FixtureBytesDigest -Bytes $manifestBytes) `
+        -WorkflowPath $WorkflowPath `
+        -SummaryPath $summaryPath `
+        -Action { $script:rawJsonActionCount++ } `
+        -ReadFileBytesAction $readRawBytesAction
+    $observedMessage = '<no exception>'
+    try { Invoke-NervAcceptanceScenarioRuntime @arguments | Out-Null }
+    catch { $observedMessage = $_.Exception.Message }
+    Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Raw JSON mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
+    Assert-Contract ($script:rawJsonActionCount -eq 0) "Raw JSON mutation '$Name' must execute zero injected actions."
+    Assert-Contract (-not (Test-Path -LiteralPath $summaryPath)) "Raw JSON mutation '$Name' must not create a runtime summary."
 }
 
 function New-EquivalenceFixture {
@@ -284,6 +358,27 @@ try {
     $persistedSummary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
     Assert-Contract ([string]::Equals(($persistedSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-completed', [StringComparison]::Ordinal)) 'Every successful runtime transition must be persisted.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic summary persistence must not leave temporary files.'
+
+    $externalManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/acceptance-scenario-matrix.json'
+    Write-JsonFixture -Path $externalManifestPath -Value $manifest
+    $externalManifestPath = (Resolve-Path -LiteralPath $externalManifestPath).Path
+    Assert-PreflightRejected -Name 'manifest-external-copy' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $externalManifestPath -ExpectedMessage 'must equal the authoritative repository manifest'
+
+    $manifestLinkPath = Join-Path $repositoryFixtureRoot 'acceptance-scenario-matrix-link.json'
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $manifestLinkPath)) | Out-Null
+    [IO.File]::CreateSymbolicLink($manifestLinkPath, $manifestPath) | Out-Null
+    Assert-PreflightRejected -Name 'manifest-symbolic-link' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $manifestLinkPath -ExpectedMessage 'must not contain a symbolic link'
+
+    $manifestAliasPath = Join-Path $repoRoot 'scripts/../scripts/acceptance-scenario-matrix.json'
+    Assert-PreflightRejected -Name 'manifest-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ManifestFilePathOverride $manifestAliasPath -ExpectedMessage 'must be a canonical absolute path'
+
+    $externalV1ManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/full-chain-test-lane.json'
+    Write-JsonFixture -Path $externalV1ManifestPath -Value (Get-Content -LiteralPath $v1ManifestPath -Raw | ConvertFrom-Json -Depth 50)
+    $externalV1ManifestPath = (Resolve-Path -LiteralPath $externalV1ManifestPath).Path
+    Assert-PreflightRejected -Name 'v1-manifest-external-copy' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -V1ManifestPathOverride $externalV1ManifestPath -ExpectedMessage 'must equal the authoritative FullChain v1 manifest'
+
+    $repositoryRootAlias = Join-Path $repoRoot 'scripts/..'
+    Assert-PreflightRejected -Name 'repository-root-path-alias' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -RepositoryRootOverride $repositoryRootAlias -ExpectedMessage 'repository root must be a canonical absolute path'
 
     $switchedArtifact = Copy-JsonObject $artifact
     $switchedArtifact | Add-Member -NotePropertyName ungovernedSnapshotMarker -NotePropertyValue 'digest-bytes'
@@ -432,6 +527,44 @@ try {
         Assert-PreflightRejected -Name "workflow-trailing-$($trailingCommand.Name)" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $trailingWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
     }
 
+    foreach ($inlineParameter in @(
+        @{ Name = 'switch-value'; Run = 'pwsh -NoLogo:$false scripts/run-acceptance-scenario-matrix.ps1' },
+        @{ Name = 'file-value'; Run = 'pwsh -File:$false scripts/run-acceptance-scenario-matrix.ps1' }
+    )) {
+        $inlineParameterWorkflowPath = Write-RuntimeWorkflowFixture -Name "runtime-workflow-inline-$($inlineParameter.Name)" -Run $inlineParameter.Run
+        Assert-PreflightRejected -Name "workflow-inline-$($inlineParameter.Name)" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $inlineParameterWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+    }
+
+    $validManifestJson = $manifest | ConvertTo-Json -Depth 50 -Compress
+    $validV1ManifestJson = Get-Content -LiteralPath $v1ManifestPath -Raw
+    $validRawManifestDigest = Get-FixtureBytesDigest -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($validManifestJson))
+    $rawArtifact = New-SalesPlanningArtifact -Manifest $manifest -ManifestDigest $validRawManifestDigest
+    $validArtifactJson = $rawArtifact | ConvertTo-Json -Depth 50 -Compress
+
+    $duplicateArtifactJson = Replace-FirstOrdinal -Value $validArtifactJson -OldValue '"path":"backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj"' -NewValue '"path":"backend/tests/Invalid/Invalid.csproj","path":"backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj"'
+    Assert-RawJsonPreflightRejected -Name 'artifact-exact-duplicate-key' -ArtifactJson $duplicateArtifactJson -ManifestJson $validManifestJson -V1ManifestJson $validV1ManifestJson -WorkflowPath $workflowPath -ExpectedMessage 'contains duplicate JSON property'
+
+    $duplicateManifestJson = Replace-FirstOrdinal -Value $validManifestJson -OldValue '"kind":"script","path":"scripts/verify-erp-sales-order-demand-planning.ps1"' -NewValue '"kind":"script","path":"scripts/invalid.ps1","path":"scripts/verify-erp-sales-order-demand-planning.ps1"'
+    $duplicateManifestDigest = Get-FixtureBytesDigest -Bytes ([Text.UTF8Encoding]::new($false).GetBytes($duplicateManifestJson))
+    $duplicateManifestArtifactJson = (New-SalesPlanningArtifact -Manifest $manifest -ManifestDigest $duplicateManifestDigest) | ConvertTo-Json -Depth 50 -Compress
+    Assert-RawJsonPreflightRejected -Name 'v2-manifest-exact-duplicate-key' -ArtifactJson $duplicateManifestArtifactJson -ManifestJson $duplicateManifestJson -V1ManifestJson $validV1ManifestJson -WorkflowPath $workflowPath -ExpectedMessage 'contains duplicate JSON property'
+
+    $duplicateV1ManifestJson = Replace-FirstOrdinal -Value $validV1ManifestJson -OldValue '"dependencies": { "postgres": true, "redis": true, "externalProcesses": true }' -NewValue '"dependencies": { "postgres": false, "postgres": true, "redis": true, "externalProcesses": true }'
+    Assert-RawJsonPreflightRejected -Name 'v1-manifest-exact-duplicate-key' -ArtifactJson $validArtifactJson -ManifestJson $validManifestJson -V1ManifestJson $duplicateV1ManifestJson -WorkflowPath $workflowPath -ExpectedMessage 'contains duplicate JSON property'
+
+    foreach ($v1CasingMutation in @(
+        @{ Name = 'top-schema-version'; Old = '"schemaVersion": 1'; New = '"SchemaVersion": 1'; Message = 'unknown field' },
+        @{ Name = 'top-members'; Old = '"members": ['; New = '"Members": ['; Message = 'unknown field' },
+        @{ Name = 'member-id'; Old = '"id": "maintenance-runtime-hours"'; New = '"Id": "maintenance-runtime-hours"'; Message = 'unknown field' },
+        @{ Name = 'entrypoint-kind'; Old = '"entrypoint": { "kind": "fullstack"'; New = '"entrypoint": { "Kind": "fullstack"'; Message = 'unknown field' },
+        @{ Name = 'dependencies-postgres'; Old = '"dependencies": { "postgres": true'; New = '"dependencies": { "Postgres": true'; Message = 'unknown field' },
+        @{ Name = 'diagnostic-schemas'; Old = '"diagnosticSchemas":'; New = '"DiagnosticSchemas":'; Message = 'unknown field' },
+        @{ Name = 'expected-test-identities'; Old = '"expectedTestIdentities":'; New = '"ExpectedTestIdentities":'; Message = 'unknown field' }
+    )) {
+        $wrongCaseV1Json = Replace-FirstOrdinal -Value $validV1ManifestJson -OldValue $v1CasingMutation.Old -NewValue $v1CasingMutation.New
+        Assert-RawJsonPreflightRejected -Name "v1-wrong-case-$($v1CasingMutation.Name)" -ArtifactJson $validArtifactJson -ManifestJson $validManifestJson -V1ManifestJson $wrongCaseV1Json -WorkflowPath $workflowPath -ExpectedMessage $v1CasingMutation.Message
+    }
+
     $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
     $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
     $firstEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_1 pid 101 cap attempt-1-aabbcc at 2026-08-19T01:01:00Z')
@@ -488,4 +621,5 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
+    if (Test-Path -LiteralPath $repositoryFixtureRoot) { Remove-Item -LiteralPath $repositoryFixtureRoot -Recurse -Force }
 }
