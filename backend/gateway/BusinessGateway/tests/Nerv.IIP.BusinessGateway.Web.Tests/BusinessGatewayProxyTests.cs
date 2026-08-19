@@ -4455,7 +4455,7 @@ public sealed class BusinessGatewayProxyTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var line = Assert.Single(erp.LastReleaseDeliveryOrderRequest!.Lines);
+        var line = Assert.Single(erp.LastReleaseDeliveryOrderRequest!.Lines!);
         Assert.Equal("receiving", line.LocationCode);
         Assert.Equal("LOT-001", line.LotNo);
     }
@@ -6618,6 +6618,52 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Count_task_recount_and_cancel_facades_forward_the_route_task_id_downstream()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var recountResponse = await client.PostAsJsonAsync(
+            "/api/business-console/v1/inventory/count-tasks/count-042/recount?organizationId=org-001&environmentId=env-dev",
+            new { organizationId = "org-001", environmentId = "env-dev" });
+        var cancelResponse = await client.PostAsJsonAsync(
+            "/api/business-console/v1/inventory/count-tasks/count-043/cancel?organizationId=org-001&environmentId=env-dev",
+            new { organizationId = "org-001", environmentId = "env-dev", reason = "盘点范围调整" });
+
+        Assert.Equal(HttpStatusCode.OK, recountResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+        Assert.Equal("count-042", inventory.LastRestartedCountTaskId);
+        Assert.Equal("count-043", inventory.LastCancelledCountTaskId);
+        Assert.Equal("盘点范围调整", inventory.LastCancelledCountTaskReason);
+    }
+
+    [Fact]
+    public async Task Count_task_cancel_facade_rejects_a_blank_reason()
+    {
+        var inventory = new RecordingInventoryClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/inventory/count-tasks/count-044/cancel?organizationId=org-001&environmentId=env-dev",
+            new { organizationId = "org-001", environmentId = "env-dev", reason = "" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(inventory.LastCancelledCountTaskId);
     }
 
     [Fact]
@@ -11143,6 +11189,34 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         BusinessConsoleConfirmStockCountAdjustmentRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
+
+    public string? LastRestartedCountTaskId { get; private set; }
+
+    public string? LastCancelledCountTaskId { get; private set; }
+
+    public string? LastCancelledCountTaskReason { get; private set; }
+
+    public Task<BusinessConsoleRestartStockCountTaskResponse> RestartCountTaskAsync(
+        string internalBearerToken,
+        string countTaskId,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastRestartedCountTaskId = countTaskId;
+        return Task.FromResult(new BusinessConsoleRestartStockCountTaskResponse(countTaskId, "open", 7));
+    }
+
+    public Task<BusinessConsoleCancelStockCountTaskResponse> CancelCountTaskAsync(
+        string internalBearerToken,
+        string countTaskId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCancelledCountTaskId = countTaskId;
+        LastCancelledCountTaskReason = reason;
+        return Task.FromResult(new BusinessConsoleCancelStockCountTaskResponse(countTaskId, "cancelled"));
+    }
 }
 
 internal sealed class RecordingQualityClient : IBusinessQualityClient

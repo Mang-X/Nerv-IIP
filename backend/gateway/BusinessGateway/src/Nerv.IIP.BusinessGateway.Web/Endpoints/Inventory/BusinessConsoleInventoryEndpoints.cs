@@ -232,3 +232,77 @@ public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
+
+[Tags("Business Console Inventory")]
+[HttpPost("/api/business-console/v1/inventory/count-tasks/{countTaskId}/recount")]
+[BusinessGatewayOperationId("restartBusinessConsoleInventoryCountTask")]
+public sealed class RestartBusinessConsoleInventoryCountTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRestartStockCountTaskRequest, BusinessConsoleRestartStockCountTaskResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryCountsManage)
+{
+    protected override string OrganizationId(BusinessConsoleRestartStockCountTaskRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRestartStockCountTaskRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleRestartStockCountTaskResponse> ForwardAsync(
+        BusinessConsoleRestartStockCountTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.RestartCountTaskAsync(
+            tokenProvider.BearerToken,
+            Route<string>("countTaskId") ?? request.CountTaskId,
+            cancellationToken);
+}
+
+public sealed class BusinessConsoleRestartStockCountTaskRequestValidator
+    : Validator<BusinessConsoleRestartStockCountTaskRequest>
+{
+    public BusinessConsoleRestartStockCountTaskRequestValidator()
+    {
+        RuleFor(x => x.CountTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+    }
+}
+
+[Tags("Business Console Inventory")]
+[HttpPost("/api/business-console/v1/inventory/count-tasks/{countTaskId}/cancel")]
+[BusinessGatewayOperationId("cancelBusinessConsoleInventoryCountTask")]
+public sealed class CancelBusinessConsoleInventoryCountTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCancelStockCountTaskRequest, BusinessConsoleCancelStockCountTaskResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryCountsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCancelStockCountTaskRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCancelStockCountTaskRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCancelStockCountTaskResponse> ForwardAsync(
+        BusinessConsoleCancelStockCountTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.CancelCountTaskAsync(
+            tokenProvider.BearerToken,
+            Route<string>("countTaskId") ?? request.CountTaskId,
+            request.Reason,
+            cancellationToken);
+}
+
+public sealed class BusinessConsoleCancelStockCountTaskRequestValidator
+    : Validator<BusinessConsoleCancelStockCountTaskRequest>
+{
+    public BusinessConsoleCancelStockCountTaskRequestValidator()
+    {
+        RuleFor(x => x.CountTaskId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(300);
+    }
+}
