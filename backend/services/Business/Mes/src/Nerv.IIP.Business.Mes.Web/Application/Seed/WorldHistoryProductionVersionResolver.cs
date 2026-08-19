@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.ServiceAuth;
+using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -86,7 +87,7 @@ public sealed class WorldHistoryProductionVersionResolver(
                     if (envelope?.Success == true && envelope.Data is not null &&
                         !string.IsNullOrWhiteSpace(envelope.Data.ProductionVersionId) &&
                         string.Equals(envelope.Data.SkuCode, skuCode, StringComparison.Ordinal) &&
-                        string.Equals(envelope.Data.Status, "active", StringComparison.OrdinalIgnoreCase))
+                        string.Equals(envelope.Data.Status, ProductionEngineeringContractStatuses.Active, StringComparison.OrdinalIgnoreCase))
                     {
                         return envelope.Data.ProductionVersionId;
                     }
