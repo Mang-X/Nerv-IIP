@@ -64,7 +64,7 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
-        if (string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
+        if (string.Equals(integrationEvent.Payload.DocumentReference.SourceService, ApprovalSourceServices.BusinessErp, StringComparison.OrdinalIgnoreCase)
             && string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "sales-order-credit-release", StringComparison.OrdinalIgnoreCase))
         {
             var salesOrder = await dbContext.SalesOrders.SingleOrDefaultAsync(x =>
@@ -93,7 +93,9 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
             return;
         }
 
-        if (!string.Equals(integrationEvent.Payload.DocumentReference.SourceService, "business-erp", StringComparison.OrdinalIgnoreCase)
+        // #1683：来源服务同样共用审批契约常量——种子侧此前写 erp，这里认 business-erp，
+        // 不匹配即下面的静默 return（无日志、无异常、无死信），采购订单永停 pending。
+        if (!string.Equals(integrationEvent.Payload.DocumentReference.SourceService, ApprovalSourceServices.BusinessErp, StringComparison.OrdinalIgnoreCase)
             // #1344：回写消费侧与发起侧共用审批契约的单据类型常量（漂移即回写静默丢事件）。
             || !string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, ApprovalDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase))
         {
