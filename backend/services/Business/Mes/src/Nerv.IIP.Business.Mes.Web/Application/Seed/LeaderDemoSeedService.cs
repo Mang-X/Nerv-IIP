@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.ServiceAuth;
+using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Seed;
 
@@ -68,7 +69,7 @@ public sealed class LeaderDemoSeedService(
     private static void ValidateProductionVersion(ResolveProductionVersionResponse productionVersion)
     {
         if (productionVersion.SkuCode != SkuCode || productionVersion.MbomVersionId != MbomVersionId ||
-            productionVersion.RoutingVersionId != RoutingVersionId || !string.Equals(productionVersion.Status, "active", StringComparison.OrdinalIgnoreCase))
+            productionVersion.RoutingVersionId != RoutingVersionId || !string.Equals(productionVersion.Status, ProductionEngineeringContractStatuses.Active, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("The active ProductEngineering leader-demo production version is incompatible with the frozen MES prerequisite.");
         }

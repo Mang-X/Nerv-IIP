@@ -36,6 +36,8 @@ import { parse } from 'vue/compiler-sfc'
  * ## 已知不覆盖
  *
  * - `<component :is="...">` 动态渲染：只认字面标签。
+ * - `import { NvAlertDialogAction as Confirm }` 这类别名导入：模板 AST 只保留 `<Confirm>`，
+ *   不解析 script 块的 import 映射；组件标签应直接使用导出名。
  * - 经业务组件间接承载的弹层（如 `<MasterDataLifecycleDialog>` 塞进 `v-for`）：那一层由
  *   `pages/master-data/lifecycleDialogSingleInstance.contract.test.ts` 与其 `runtime` 版本管。
  */
@@ -113,6 +115,14 @@ function hasVFor(node: TemplateNode) {
   return (node.props ?? []).some((prop) => prop.type === 7 && prop.name === 'for')
 }
 
+/** Vue 模板里的 kebab-case 与 PascalCase 组件标签等价，比较前统一成 PascalCase。 */
+function normalizeComponentTag(tag: string | undefined) {
+  return (tag ?? '')
+    .split('-')
+    .map((part) => (part ? `${part[0]!.toUpperCase()}${part.slice(1)}` : ''))
+    .join('')
+}
+
 export interface ConfirmDestroyFindings {
   /** 模板里出现 `<NvAlertDialogAction>` 的行号（规则 3）。 */
   actionTags: number[]
@@ -142,8 +152,11 @@ export function scanConfirmDestroy(source: string, filename: string): ConfirmDes
       // 第一版写成 `insideLoop && ...`（只看祖先），于是 `<NvAlertDialog v-for>` 这种最自然的
       // 反模式写法整个漏掉——PR #1630 审核实测出来的盲区，下面变异对照里有对应正样本钉住。
       const looped = insideLoop || hasVFor(child)
-      if (child.tag === 'NvAlertDialogAction') findings.actionTags.push(child.loc.start.line)
-      if (looped && child.tag === 'NvAlertDialog') findings.loopedDialogs.push(child.loc.start.line)
+      const componentTag = normalizeComponentTag(child.tag)
+      if (componentTag === 'NvAlertDialogAction') findings.actionTags.push(child.loc.start.line)
+      if (looped && componentTag === 'NvAlertDialog') {
+        findings.loopedDialogs.push(child.loc.start.line)
+      }
       visit(child, looped)
     }
   }
@@ -257,6 +270,12 @@ describe('门禁判定的变异对照', () => {
     it('自闭合写法也算', () => {
       expect(fixture('<NvAlertDialogAction @click="go" />').actionTags).toHaveLength(1)
     })
+
+    it('kebab-case 的 nv-alert-dialog-action 与 PascalCase 等价，也必须命中（#1863 A2）', () => {
+      expect(
+        fixture('<nv-alert-dialog-action @click="go">确认</nv-alert-dialog-action>').actionTags,
+      ).toHaveLength(1)
+    })
   })
 
   describe('规则 3 不应误伤', () => {
@@ -314,6 +333,15 @@ describe('门禁判定的变异对照', () => {
         '<template v-for="row in rows" :key="row.id">',
         '  <NvAlertDialog v-model:open="row.open" />',
         '</template>',
+      ].join('\n')
+      expect(fixture(template).loopedDialogs).toEqual([3])
+    })
+
+    it('v-for 子树里的 kebab-case nv-alert-dialog 与 PascalCase 等价，也必须命中（#1863 B2）', () => {
+      const template = [
+        '<div v-for="row in rows" :key="row.id">',
+        '  <nv-alert-dialog v-model:open="row.open" />',
+        '</div>',
       ].join('\n')
       expect(fixture(template).loopedDialogs).toEqual([3])
     })

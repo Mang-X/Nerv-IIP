@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.ServiceAuth;
+using ProductionEngineeringContractStatuses = Nerv.IIP.Contracts.ProductEngineering.ProductionEngineeringContractStatuses;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -89,7 +90,7 @@ public sealed class HttpMesProductEngineeringRoutingSnapshotProvider(
     MesProductEngineeringHttpClient productEngineeringClient,
     IInternalServiceTokenProvider? internalTokenProvider = null) : IMesRoutingSnapshotProvider
 {
-    private const string ActiveProductionVersionStatus = "active";
+    private const string ActiveProductionVersionStatus = ProductionEngineeringContractStatuses.Active;
     private const string PublishedRoutingStatus = "published";
 
     public async Task<MesRoutingSnapshotResult> GetSnapshotAsync(

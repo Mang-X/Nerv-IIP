@@ -2,6 +2,16 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## Stryker.NET 单程序集变异测试预研（NERV-870）
+
+NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
+
+## Business Integration Acceptance manifest v2 规划合同（NERV-673②-1 / #1646）
+
+`scripts/acceptance-scenario-matrix.json` 已以 schema v2 登记六个场景：`sales-order-demand`、`wms-delivery-erp`、`mes-produced-lot-inventory`、`telemetry-runtime-maintenance`、`erp-return-closure` 五个 `active/core` 场景，以及 `equipment-unavailable-scheduling-mes` 一个 `blocked/extended` 场景。`scripts/lib/AcceptanceScenarioMatrix.ps1` 已落地严格 schema、v1 双向闭合、影响选择、项目聚合、规划预算、Release discovery 身份闭合和 planning artifact provenance 合同；`scripts/plan-acceptance-scenario-matrix.ps1` 是受治理的纯规划入口，只允许按选中项目执行一次 restore 和一次 `--no-restore --list-tests` discovery，并在成功后原子写入规划 artifact。四个 owning path 已接入 CI impact routing，精确选择 `scripts + backend + full_chain`；Script Governance 已增加纯 fixture 合同 step，`compat-fast` 也显式执行同一合同。
+
+当前 `.github/workflows/ci.yml` **没有** `acceptance-scenario-matrix-planning` job 或 `Plan acceptance scenario matrix` step，也没有 planning/matrix runtime、场景执行或聚合 job。planner 对当前真实 workflow 会在任何 `dotnet restore`、discovery 或其他外部命令之前失败关闭；合同正例使用临时 fake `dotnet`，因此不构成真实项目 discovery 或 hosted runtime 证据。`scripts/full-chain-test-lane.json` 的五个 v1 场景及 `scripts/run-full-chain-test-lane.ps1` 仍是唯一实际执行权威；本轮没有运行新 runtime，没有形成 ERP 专项 job 与 v2 场景的等价证据，也没有形成旧 job、旧 manifest 或旧 runner 的退出证据。`MAN-669 PR-C` 记录的“跨业务验收统一后由 scenario runner 精确构建需要的服务”不由 MAN-669 实现；它仍须由 NERV-673 在未来接入真实 planning/matrix runtime 后独立复评，本轮不据此调整任何构建命令。
+
 ## Business FullChain Acceptance CI 接入（NERV-767 / #1391）
 
 `.github/workflows/ci.yml` 已接入稳定展示名 `Business FullChain Acceptance`。PR 复用 `full_chain` 影响信号；影响计划失败或输出缺失时保守运行，`main` push 始终运行。job 安装并验证 Aspire CLI 13.4.6，同时按 lockfile 安装 frontend 依赖与 Playwright Chromium（MAN-528 的现有 fullstack smoke 会运行真实代理页面），再预拉取 PostgreSQL 18 与 Redis 8。`scripts/run-full-chain-test-lane.ps1` 通过 run/attempt 专属 Compose project 启动真实依赖、执行协议级 readiness，然后按 `scripts/full-chain-test-lane.json` 的固定顺序运行五个 active/core 场景：Maintenance Runtime Hours、MES Inventory Produced Lot、ERP-WMS Delivery Completion、Sales Order Demand Planning 与 ERP Return Closure。前三类跨服务场景继续复用现有受治理 fullstack/acceptance 入口，直接 PostgreSQL 场景由 runner 执行精确测试；各入口统一把唯一 TRX 写入成员专属目录。
@@ -259,6 +269,22 @@ MES `business-mes.work-order-cost-capitalized` 消费者不再把“资本化事
 ## FileStorage AppHost PostgreSQL 持久化接入（MAN-533 / #991）
 
 FileStorage 的 metadata、upload session 和 download grant 在 AppHost 中默认写入独立 PostgreSQL database resource：`file-storage-db` 对应 `nerv_iip_filestorage`，以 `FileStorageDb` connection reference 注入并作为启动 wait dependency。Development AppHost 显式选择 PostgreSQL 且允许 Web host 自动迁移；Aspire production publish 为 FileStorage 输出 `ASPNETCORE_ENVIRONMENT=Production`、`DOTNET_ENVIRONMENT=Production` 和 `Persistence:AutoMigrate=false`。PostgreSQL 是所有环境唯一的 metadata 实现；选择 InMemory 会给出 AppHost/PostgreSQL 指引后 fail fast，缺 provider、缺连接串或非 Development 启用 Web-host AutoMigrate 也会失败。诊断不回显连接串。PoC/production 通过 `scripts/install/migrate-file-storage.ps1` 执行显式受治理 migration。真实 PostgreSQL 重启 smoke 已覆盖 upload session 完成后的 metadata、usage 和 download grant 跨 Web host 重启仍可读取。
+
+## FileStorage tus/staging/final 目标架构与当前差距（ADR 0023 / #992）
+
+[ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 已冻结通用文件上传的目标约束：tus 是唯一公开传输协议、服务端目标实现为 `tusdotnet`、staging 与 final 分离且 final 只由内部 `ObjectKey` 定位、complete 对所有 storage provider 统一证明字节存在性与 size、由服务端计算并持久化 canonical SHA-256、幂等 promote 到 `ObjectKey` 并按同一 key 回读复验。它是 #992 拆解的第 1 层文档裁决（#1617），只裁决目标约束，不构成交付证明。
+
+截至 2026-08-17 的实现差距（逐条对照上述目标）：默认上传仍为 `server-proxy` placeholder 且没有对应字节 PUT endpoint，字节链路只在显式配置 `FileStorage:UploadProvider=tus` 时走自研部分 tus `HEAD`/`PATCH`；`CreateUploadSessionResponse` 仍暴露 `UploadMode` 与 `Provider` 两个独立 string 字段，当前实现恰好返回同值；字节仍由 `uploadSessionId` 派生的 `SHA256(uploadSessionId).bin` 就地承载，complete 前后位置不变；`ObjectKey` 只被生成、持久化并从 upload session 复制到 `StoredFile`，不参与实际读、写、下载或删除；complete 的实际大小与可选 checksum 校验只在 provider 等于 `tus` 的分支执行，其他 provider 可跳过字节证明；staging 到 final 的幂等 promote、final 回读复验、可恢复的持久 `committing` 提交意图与 canonical checksum 持久化均尚未实现。因此不能据当前 `ObjectKey` 的字面格式推导 Local 路径安全已就绪、provider 适配已完成或迁移只需切换配置。
+
+#992 保持开放。其余三层——Provider 抽象与 Local 生产语义（ADR 0024 / #1627）、离线迁移契约与 runbook、周边文档与契约同步——各自独立交付，ADR 已接受不推导为实现完成。
+
+## FileStorage storage provider 与 Local 生产语义交付缺口（ADR 0024 / #992）
+
+`docs/adr/0024-filestorage-storage-provider-and-local-production-semantics.md` 已接受的目标——`IStorageProvider` final 字节面、LocalFileSystem/S3-compatible 部署期严格二选一、tusdotnet `ITusStore` 上传面、Local 显式持久 root 与稳定 storage identity、`v1/{organizationDigest}/{fileDigest}` canonical `ObjectKey`、路径 confinement、durable staging 与同文件系统 atomic no-overwrite promote、final 回读复验，以及 startup blocked / runtime critical / capacity restricted 三类健康状态——在仓库中尚未实现，属未达成的交付缺口而非决策变更。2026-08-18 实测：`IStorageProvider` 在 `docs/` 之外零命中；`LocalTusFileStore` 在缺 `FileStorage:Tus:RootPath` 时回落 `Path.Combine(Path.GetTempPath(), "nerv-iip", "filestorage", "tus")`；`TusUploadCompletionValidator.ValidateAsync` 对非 `tus` provider 直接返回 `null`，跳过物理字节校验。FileStorage 当前实现现态见本文件「FileStorage MVP 已完成范围」与 `docs/architecture/file-storage-baseline.md`。
+
+目标落地由独立票承接，2026-08-18 经 `gh issue view` 核实以下票全部存在且为 OPEN：#1628（ADR 0023 的 durable `open/committing/completed` 状态与不可变 intent、entity/schema/migration、application-owned 共享栅栏、PATCH mutation 临界区、Tx1/Tx2、并发 complete/重放、重启恢复与故障注入；按拆分口径先于 #999 与 #994 落地）、#999（tusdotnet 与各 provider 的 `ITusStore` 上传面，S3 `ITusStore` 与 #997 协同）、#994（canonical `ObjectKey` 生成、legacy key 全量审计/迁移与 staging/final/promote locator 接缝）、#997（S3-compatible `IStorageProvider`、bucket/prefix/credential/preflight、真实 MinIO contract，以及通用 provider selector 与 archive selector 的独立 DI/config/组合测试）、#1012（Local root、显式 initialization/identity、路径/链接安全、持久化/atomic rename、mount/capacity probe、支持矩阵与跨平台部署）、#1018（逻辑配额、磁盘/inode emergency reserve 动作准入与 degraded/critical readiness）、#1611（GC 改经 `ObjectKey` 由 `IStorageProvider` 删除并解除 tus/扫描耦合）、#1013（Local ↔ MinIO 离线搬迁与切换）、#1005（PostgreSQL 与字节的备份恢复 Runbook）。父票 #992 四层拆分中，第 2 层 ADR 裁决已由 #1627 交付并关闭，第 3 层迁移契约/runbook 与第 4 层周边文档同步仍须独立交付。各实施票仍须分别提供代码、测试和真实基础设施证据；ADR 接受不构成代码测试、真实运行、CI、PR 合并、迁移或 tracker 完成的证明。
+
+第 4 层同步之前，`docs/architecture/file-storage-baseline.md`、`docs/architecture/database-schema-catalog.md`、`docs/architecture/deployment-baseline.md` 与本文件的既有 FileStorage 叙述仍按 MVP 现态描述，与 ADR 0024 的目标并存冲突。
 
 ## MES 到 Scheduling 齐套读取（MAN-572 / #1037）
 

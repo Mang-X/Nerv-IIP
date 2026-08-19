@@ -16,6 +16,12 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiImpactPlan.ps1'
 $entrypointPath = Join-Path $repoRoot 'scripts/get-ci-impact-plan.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
+$acceptanceScenarioMatrixOwningPaths = @(
+    'scripts/acceptance-scenario-matrix.json'
+    'scripts/lib/AcceptanceScenarioMatrix.ps1'
+    'scripts/plan-acceptance-scenario-matrix.ps1'
+    'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
+)
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 
@@ -118,6 +124,41 @@ function Assert-ConditionalRoutingWorkflow {
     }
 }
 
+function Assert-AcceptanceScenarioMatrixWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $scriptGovernanceProperty = $parsedWorkflow.jobs.PSObject.Properties['script-governance']
+    Assert-Contract ($null -ne $scriptGovernanceProperty) 'CI must retain the script-governance job.'
+    $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
+    $contractSteps = @($scriptGovernanceSteps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($contractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance scenario matrix contract step.'
+    $contractStep = $contractSteps[0]
+    Assert-Contract ([string]::Equals([string]$contractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance scenario matrix contract step must use the pwsh shell.'
+    Assert-Contract ([string]::Equals([string]$contractStep.run, './scripts/tests/acceptance-scenario-matrix.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance scenario matrix contract step must run only the pure fixture contract.'
+    Assert-Contract ([int]$contractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix contract step must have a 5-minute budget.'
+    Assert-Contract ($null -eq $contractStep.PSObject.Properties['if']) 'The acceptance scenario matrix contract step must not have its own condition.'
+
+    $matrixRuntimeJobs = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
+            $_.Name.Contains('acceptance-scenario-matrix', [StringComparison]::OrdinalIgnoreCase)
+        })
+    Assert-Contract ($matrixRuntimeJobs.Count -eq 0) 'CI must not add an acceptance scenario planning, matrix, or aggregate runtime job.'
+
+    $plannerInvocations = @(
+        foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
+            foreach ($step in @($jobProperty.Value.steps)) {
+                $runProperty = $step.PSObject.Properties['run']
+                if ($null -ne $runProperty -and ([string]$runProperty.Value).Contains('scripts/plan-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) {
+                    [pscustomobject]@{ Job = $jobProperty.Name; Step = [string]$step.name }
+                }
+            }
+        }
+    )
+    Assert-Contract ($plannerInvocations.Count -eq 0) 'CI must not execute the acceptance scenario matrix planner.'
+}
+
 function Assert-ImpactCase {
     param(
         [Parameter(Mandatory)] [string] $Name,
@@ -203,6 +244,20 @@ function Assert-FullChainLaneOwningPathsRoute {
         Assert-ImpactCase -Name "full-chain-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; backend = $true; postgresql = $false; redis_cap = $false; full_chain = $true
         }
+    }
+}
+
+function Assert-AcceptanceScenarioMatrixOwningPathsRoute {
+    $expectedSelectedFlags = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('scripts', 'backend', 'full_chain'),
+        [StringComparer]::Ordinal)
+
+    foreach ($owningPath in $acceptanceScenarioMatrixOwningPaths) {
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($owningPath)
+        foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+            Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $expectedSelectedFlags.Contains([string]$flag.Name)
+        }
+        Assert-Contract (@($plan.business_services).Count -eq 0) "Acceptance scenario matrix owner '$owningPath' must not select business services."
     }
 }
 
@@ -415,6 +470,7 @@ Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gat
 Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
+Assert-AcceptanceScenarioMatrixOwningPathsRoute
 
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
@@ -427,6 +483,57 @@ Assert-ImpactCase -Name 'service-cap-integration' -Paths @('backend/services/Bus
 Assert-ImpactCase -Name 'integration-event-handler' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/WorkOrderCostCapitalizedIntegrationEventHandler.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 } -Services @('mes')
+
+# NERV-1711 正例：集成事件转换器是跨服务契约的发信侧，业务服务与平台侧服务都必须
+# 同时选中 redis_cap 与 full_chain。
+Assert-ImpactCase -Name 'integration-event-converter-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesIntegrationEventConverters.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'integration-event-converter-platform-service' -Paths @('backend/services/Ops/src/Nerv.IIP.Ops.Web/Application/IntegrationEventConverters/AuditRecordedIntegrationEventConverter.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $true
+}
+
+# NERV-1711 正例：平台侧服务的集成事件处理器是收信侧，先前只选中 redis_cap，
+# 现在必须同样跑 FullChain。
+Assert-ImpactCase -Name 'integration-event-handler-platform-service' -Paths @('backend/services/Notification/src/Nerv.IIP.Notification.Web/Application/IntegrationEventHandlers/AlertRaisedIntegrationEventHandler.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $true
+}
+
+# NERV-1711 正例：世界观种子是 FullChain lane 的数据基础，必须选中 full_chain；
+# 种子本身不改 CAP 传输面，不得连带选中 redis_cap。
+Assert-ImpactCase -Name 'world-history-seed-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $true
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
+    backend = $true; redis_cap = $false; full_chain = $true
+}
+
+# NERV-1711 反例：同前缀但不同目录不得触发，钉住「按目录段整段比对」而不是前缀包含。
+Assert-ImpactCase -Name 'integration-event-converters-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConvertersLegacy/LegacyShim.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+Assert-ImpactCase -Name 'seed-prefix-collision' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/SeedlingCatalog/SeedlingCatalogQuery.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+# NERV-1711 反例：同一服务的相邻 Application 子目录仍然只是普通后端改动，
+# 钉住新规则没有退化成「任何 backend/services 路径都跑重 lane」。
+Assert-ImpactCase -Name 'sibling-application-directory-stays-narrow' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrderQuery.cs') -Flags @{
+    backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
+} -Services @('mes')
+
+# NERV-1711 反例：测试工程里的同名目录不在 backend/services/ 之下，
+# 钉住新规则带着服务前缀限定（处理器的 redis_cap 仍由既有 messaging 规则给出）。
+Assert-ImpactCase -Name 'test-project-seed-directory-not-a-service' -Paths @('backend/tests/Nerv.IIP.Business.Mes.Tests/Application/Seed/SeedFixture.cs') -Flags @{
+    backend = $true; redis_cap = $false; full_chain = $false
+}
+
+Assert-ImpactCase -Name 'test-project-integration-event-handlers-not-a-service' -Paths @('backend/tests/Nerv.IIP.Business.Mes.Tests/Application/IntegrationEventHandlers/HandlerTests.cs') -Flags @{
+    backend = $true; redis_cap = $true; full_chain = $false
+}
 
 Assert-ImpactCase -Name 'capitalized-is-not-cap' -Paths @('backend/services/Business/Mes/src/CapitalizedUnitCost.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $false
@@ -516,6 +623,26 @@ finally {
     if (Test-Path -LiteralPath $impactMutationRoot) { Remove-Item -LiteralPath $impactMutationRoot -Recurse -Force }
 }
 
+$acceptanceScenarioMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-scenario-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($acceptanceScenarioMutationRoot) | Out-Null
+    foreach ($owningPath in $acceptanceScenarioMatrixOwningPaths) {
+        $routingEntry = "            '$owningPath'`n"
+        $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($routingEntry, '')
+        Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance scenario matrix mutation must remove owning path '$owningPath'."
+        $mutationPath = Join-Path $acceptanceScenarioMutationRoot "$([IO.Path]::GetFileName($owningPath)).CiImpactPlan.ps1"
+        [IO.File]::WriteAllText($mutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
+        . $mutationPath
+        $mutationFailure = $null
+        try { Assert-AcceptanceScenarioMatrixOwningPathsRoute } catch { $mutationFailure = $_ }
+        Assert-Contract ($null -ne $mutationFailure) "Removing acceptance scenario matrix owning path '$owningPath' must fail the behavioral contract."
+    }
+}
+finally {
+    . $libraryPath
+    if (Test-Path -LiteralPath $acceptanceScenarioMutationRoot) { Remove-Item -LiteralPath $acceptanceScenarioMutationRoot -Recurse -Force }
+}
+
 Assert-Contract (Test-Path -LiteralPath $entrypointPath -PathType Leaf) 'The governed CI impact-plan entrypoint is missing.'
 $entrypointSource = [IO.File]::ReadAllText($entrypointPath)
 Assert-Contract ($entrypointSource.Contains("@('diff', '--name-only', '--no-renames', '--diff-filter=ACMRD'", [StringComparison]::Ordinal)) 'Git diff must disable rename collapsing so both the deleted source path and added destination path are observed.'
@@ -552,10 +679,26 @@ Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordi
 Assert-Contract ($workflow.Contains('run: ./scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal)) 'Script Governance must run the CI impact-plan contract tests.'
 Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
+Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 
 $workflowMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($workflowMutationRoot) | Out-Null
+    $acceptanceScenarioContractStep = @'
+      - name: Test acceptance scenario matrix contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
+
+'@
+    $workflowWithoutAcceptanceScenarioContract = $workflow.Replace($acceptanceScenarioContractStep, '')
+    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceScenarioContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance scenario matrix workflow mutation must remove the canonical contract step.'
+    $workflowWithoutAcceptanceScenarioContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-scenario-contract.yml'
+    [IO.File]::WriteAllText($workflowWithoutAcceptanceScenarioContractPath, $workflowWithoutAcceptanceScenarioContract, [Text.UTF8Encoding]::new($false))
+    $workflowContractFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceScenarioContractPath } catch { $workflowContractFailure = $_ }
+    Assert-Contract ($null -ne $workflowContractFailure) 'Removing the acceptance scenario matrix Script Governance step must fail the workflow contract.'
+
     foreach ($mutation in @(
             @{
                 Name = 'backend-execution-jobs-drop-impact-dependency'

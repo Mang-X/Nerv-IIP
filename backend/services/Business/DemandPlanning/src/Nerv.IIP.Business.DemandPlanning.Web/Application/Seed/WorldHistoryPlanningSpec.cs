@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 
@@ -28,8 +29,8 @@ public static class WorldHistoryPlanningSpec
     public const string SiteCode = WorldHistorySpec.SiteCode;
     public const string UomCode = WorldHistorySpec.UomCode;
     public const string SalesOrderLineNo = "10";
-    public const string PlannedWorkOrderSuggestionType = "planned-work-order";
-    public const string PlannedPurchaseSuggestionType = "planned-purchase";
+    public const string PlannedWorkOrderSuggestionType = DemandPlanningSuggestionTypes.PlannedWorkOrder;
+    public const string PlannedPurchaseSuggestionType = DemandPlanningSuggestionTypes.PlannedPurchase;
 
     /// <summary>需求回看窗口（设定集 §7：近 8–12 周取 10 周）。</summary>
     public const int DemandWindowWeeks = 10;

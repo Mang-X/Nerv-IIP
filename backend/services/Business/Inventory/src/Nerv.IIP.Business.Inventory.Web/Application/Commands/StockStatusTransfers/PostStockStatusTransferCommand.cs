@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 
@@ -98,7 +99,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         var outbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
-            "status-transfer-out",
+            InventoryMovementTypes.StatusTransferOut,
             request.SourceService,
             request.SourceDocumentId,
             request.SourceDocumentLineId,
@@ -155,7 +156,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         var inbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
-            "status-transfer-in",
+            InventoryMovementTypes.StatusTransferIn,
             request.SourceService,
             request.SourceDocumentId,
             request.SourceDocumentLineId,

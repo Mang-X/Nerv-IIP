@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 
@@ -94,8 +95,9 @@ public static class WorldHistoryLabelSpec
     public const int CartonBarcodeLength = 96;
 
     public const string OwnerType = "company";
-    public const string UnrestrictedQualityStatus = "unrestricted";
-    public const string QualityInspectionStatus = "quality";
+    // 两项质量状态转引 <see cref="InventoryQualityStatuses"/>，不再重抄字面量（#1370 ③）。
+    public const string UnrestrictedQualityStatus = InventoryQualityStatuses.Unrestricted;
+    public const string QualityInspectionStatus = InventoryQualityStatuses.Quality;
 
     /// <summary>源单据类型（<c>BarcodeRule.AllowedSourceDocumentTypes</c> 与打印批次共用同一批字面量）。</summary>
     public const string PurchaseReceiptDocumentType = "purchase-receipt";

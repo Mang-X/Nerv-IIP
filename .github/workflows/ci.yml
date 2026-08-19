@@ -693,8 +693,27 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          # NERV-1694：这两条 apt 命令的故障形态是挂死（卡满 step 预算）而不是慢，所以用
+          # 「单次尝试超时 + 有限重试」把挂死转成快速失败再重试，而不是放大 step 预算。
+          # 预算算术：单次尝试 90s × 最多 3 次 + 2 次重试间隔 5s = 最坏 280s，严格小于
+          # 本 step 既有的 timeout-minutes 预算 5 分钟（300s），因此本次不改动任何超时预算。
+          # `timeout` 放在 `sudo` 之后，让它以 root 身份直接终止挂死的 apt-get 进程组。
+          # `-o Acquire::Retries=3` 是 apt 自身的传输层重试，与外层重试互补。
+          # update 与 install 都在同一次尝试的超时与重试范围内（任一条都可能挂死）。
+          apt_attempt=1
+          while true; do
+            if sudo timeout 90 bash -c 'apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install --yes postgresql-client'; then
+              echo "apt 安装成功（第 ${apt_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${apt_attempt}" -ge 3 ]; then
+              echo "apt 安装失败：已连续尝试 3 次仍未成功（多为网络挂死或软件源不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "apt 安装第 ${apt_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
+            apt_attempt=$((apt_attempt + 1))
+            sleep 5
+          done
 
       - name: Resolve PostgreSQL evidence environment
         timeout-minutes: 3
@@ -829,8 +848,27 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client redis-tools
+          # NERV-1694：这两条 apt 命令的故障形态是挂死（卡满 step 预算）而不是慢，所以用
+          # 「单次尝试超时 + 有限重试」把挂死转成快速失败再重试，而不是放大 step 预算。
+          # 预算算术：单次尝试 90s × 最多 3 次 + 2 次重试间隔 5s = 最坏 280s，严格小于
+          # 本 step 既有的 timeout-minutes 预算 5 分钟（300s），因此本次不改动任何超时预算。
+          # `timeout` 放在 `sudo` 之后，让它以 root 身份直接终止挂死的 apt-get 进程组。
+          # `-o Acquire::Retries=3` 是 apt 自身的传输层重试，与外层重试互补。
+          # update 与 install 都在同一次尝试的超时与重试范围内（任一条都可能挂死）。
+          apt_attempt=1
+          while true; do
+            if sudo timeout 90 bash -c 'apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install --yes postgresql-client redis-tools'; then
+              echo "apt 安装成功（第 ${apt_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${apt_attempt}" -ge 3 ]; then
+              echo "apt 安装失败：已连续尝试 3 次仍未成功（多为网络挂死或软件源不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "apt 安装第 ${apt_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
+            apt_attempt=$((apt_attempt + 1))
+            sleep 5
+          done
 
       - name: Resolve Redis/CAP evidence environment
         timeout-minutes: 3
@@ -943,9 +981,38 @@ jobs:
         timeout-minutes: 10
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
+          # NERV-1701：下载 install.sh 与执行该安装脚本是两个各自独立的挂死面（安装脚本内部还要
+          # 再拉一次 CLI 归档），任一处挂死都会卡满 step 预算，因此沿用 NERV-1694 的「单次尝试
+          # 超时 + 有限重试」形状，把挂死转成快速失败再重试，而不是放大 step 预算。
+          # 重试范围覆盖「下载 + 执行安装脚本」两条命令：它们属于同一逻辑单元。重跑安装脚本按其
+          # 自身语义应当是幂等的（同一 --install-path 覆盖安装），但这一点不由本仓库保证；真正的
+          # 兜底是紧随循环之后的版本校验——被 SIGKILL 打断留下的半成品若没被下一次尝试覆盖干净，
+          # 会在那里被抓红而不是带病继续。
+          # 版本校验与 PATH 导出刻意留在重试范围之外：它们不是网络动作，装出来的版本不对属于确定性
+          # 故障，重试只会白白烧掉预算，应当直接大声失败。
+          # 预算算术：单次尝试 = curl 45s（外加最多 10s 的 SIGKILL 兜底）+ 安装脚本 105s（外加最多
+          # 15s 兜底）= 175s；×最多 3 次 + 2 次重试间隔 10s = 最坏 545s，严格小于本 step 既有的
+          # timeout-minutes 预算 10 分钟（600s），因此本次不改动任何超时预算。
+          # curl 另加 --max-time / --retry 作为传输层重试（最坏 3×12+2×2=40s，仍小于外层 45s），
+          # 与外层重试互补，同 apt 那处的 -o Acquire::Retries=3 思路。
+          # 非 root 场景一律加 --kill-after 兜底，否则 SIGTERM 被忽略时 timeout 自己挂住，会退化
+          # 回卡满预算。
           aspire_install_path="${RUNNER_TEMP}/aspire/bin"
-          curl --fail --silent --show-error --location https://aspire.dev/install.sh --output "${RUNNER_TEMP}/aspire-install.sh"
-          bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6 --install-path "$aspire_install_path"
+          aspire_attempt=1
+          while true; do
+            if timeout --kill-after=10 45 curl --fail --silent --show-error --location --max-time 12 --retry 2 --retry-delay 2 https://aspire.dev/install.sh --output "${RUNNER_TEMP}/aspire-install.sh" \
+              && timeout --kill-after=15 105 bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6 --install-path "$aspire_install_path"; then
+              echo "Aspire CLI 安装成功（第 ${aspire_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${aspire_attempt}" -ge 3 ]; then
+              echo "Aspire CLI 安装失败：已连续尝试 3 次仍未成功（多为网络挂死或分发端不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "Aspire CLI 安装第 ${aspire_attempt} 次尝试失败（超时或网络故障），10 秒后重试。" >&2
+            aspire_attempt=$((aspire_attempt + 1))
+            sleep 10
+          done
           "$aspire_install_path/aspire" --version | grep -E '^13\.4\.6\+'
           echo "$aspire_install_path" >> "$GITHUB_PATH"
 
@@ -965,18 +1032,100 @@ jobs:
 
       - name: Install frontend dependencies
         timeout-minutes: 12
-        run: pnpm -C frontend install --frozen-lockfile
+        run: |
+          # NERV-1701：pnpm install 同样没有单次尝试超时和重试，registry 侧挂死会卡满 step 预算，
+          # 因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 单次尝试取 200s；本仓库没有冷缓存安装耗时的实测数据，若某次冷缓存安装确实超过 200s，
+          # 重试仍是收敛的：被打断的那次已经把下载到的包写进了 pnpm store（内容寻址、先写临时再
+          # 改名），下一次尝试直接命中 store 而不会从零重来。
+          # 本块在 workflow 里重复 4 处而没有抽成 composite action：抽走会让 ci.yml 里不再出现
+          # `pnpm -C frontend install --frozen-lockfile` 字面量，直接打破
+          # scripts/tests/full-chain-test-lane.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          # 预算算术：单次尝试 200s（外加最多 20s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 15s
+          # = 最坏 690s，严格小于本 step 既有的 timeout-minutes 预算 12 分钟（720s），因此本次不
+          # 改动任何超时预算。
+          pnpm_attempt=1
+          while true; do
+            if timeout --kill-after=20 200 pnpm -C frontend install --frozen-lockfile; then
+              echo "前端依赖安装成功（第 ${pnpm_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${pnpm_attempt}" -ge 3 ]; then
+              echo "前端依赖安装失败：已连续尝试 3 次仍未成功（多为网络挂死或 registry 不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "前端依赖安装第 ${pnpm_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            pnpm_attempt=$((pnpm_attempt + 1))
+            sleep 15
+          done
 
       - name: Install Playwright Chromium
         timeout-minutes: 15
-        run: pnpm -C frontend --filter @nerv-iip/business-console exec playwright install --with-deps chromium
+        run: |
+          # NERV-1694：Playwright 安装（含 `--with-deps` 内部触发的 apt）会挂死到 15 分钟 step
+          # 预算，而成功路径实测只需约 3 分钟；因此同样改为「单次尝试超时 + 有限重试」。
+          # NERV-1713：上面那套重试在带 `--with-deps` 时是无效的，已由 run 32216581187 实证——挂死
+          # 发生在 `--with-deps` 内部 `Switching to root user` 起的 `sudo apt-get` 里，而这里的
+          # `timeout` 是 runner 身份，SIGTERM/SIGKILL 因 EPERM 送不到那个 root 子进程；它成为孤儿
+          # 并继续持有 /var/lib/apt/lists/lock，第 2、3 次重试各只跑 3 秒就被同一个 PID 的锁挡死。
+          # `--kill-after` 只能保证外层 pnpm/node 被清掉、step 按时进入重试，清不掉 root 子进程。
+          # 因此本次去掉 `--with-deps`：apt 挂死面与孤儿锁面一起消失，本步骤只剩浏览器归档下载，
+          # 全程 runner 身份、可被 `timeout` 精确终止，重试才真正成立。
+          # 系统依赖改由 ubuntu-latest runner 镜像的预装承担：该镜像预装 Google Chrome、Chromium、
+          # Microsoft Edge 与 Firefox，Playwright 对 ubuntu24.04-x64 声明的 chromium 依赖集合
+          # （libnss3、libnspr4、libgbm1、libdrm2、libasound2t64、libatk-bridge2.0-0t64、
+          # libcups2t64、libxkbcommon0 等）都落在这些浏览器 deb 包的依赖闭包内。这一点是包级论证而
+          # 不是运行时观测，真正的验收是 FullChain 里那次真实代理页面走查：Chromium 起不来时
+          # Playwright 会明确列出缺失的库并让该 lane 失败关闭，属于大声失败而不是静默降级。届时应当
+          # 单列一个受控的系统依赖安装步骤，而不是把 apt 挂死面塞回本步骤。
+          # 预算算术：单次尝试 240s（外加最多 30s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 5s
+          # = 最坏 820s，严格小于本 step 既有的 timeout-minutes 预算 15 分钟（900s），故不改超时预算。
+          playwright_attempt=1
+          while true; do
+            if timeout --kill-after=30 240 pnpm -C frontend --filter @nerv-iip/business-console exec playwright install chromium; then
+              echo "Playwright Chromium 安装成功（第 ${playwright_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${playwright_attempt}" -ge 3 ]; then
+              echo "Playwright Chromium 安装失败：已连续尝试 3 次仍未成功，失败退出。" >&2
+              exit 1
+            fi
+            echo "Playwright Chromium 安装第 ${playwright_attempt} 次尝试失败（超时或网络故障），5 秒后重试。" >&2
+            playwright_attempt=$((playwright_attempt + 1))
+            sleep 5
+          done
 
       - name: Prepare FullChain dependency images
         timeout-minutes: 10
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
-          docker pull postgres:18
-          docker pull redis:8
+          # NERV-1701：docker pull 既没有单次尝试超时也没有重试，registry 侧限流或连接挂死都会
+          # 卡满 step 预算，因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 与 apt 的失败语义有两点差异，实现上据此调整：
+          # 1) 常见成因是 registry 限流（HTTP 429）而不是纯粹挂死，退避需要更长，故重试间隔取
+          #    15s（apt 那处是 5s）。
+          # 2) 先用 docker image inspect 探测本地是否已有该镜像，已有则跳过拉取；这样上一次尝试
+          #    里已经拉成功的镜像不会在重试时被重复拉，重试代价只落在真正失败的那一个上。
+          # 两条 pull 属于同一逻辑单元，放在同一次尝试内（任一条失败即整体重试），避免每次尝试的
+          # 最坏耗时翻倍。
+          # 预算算术：单次尝试 = 2 × 75s（各自外加最多 10s 的 SIGKILL 兜底）= 170s；×最多 3 次
+          # + 2 次重试间隔 15s = 最坏 540s，严格小于本 step 既有的 timeout-minutes 预算 10 分钟
+          # （600s），因此本次不改动任何超时预算。
+          docker_attempt=1
+          while true; do
+            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
+              && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
+              echo "依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${docker_attempt}" -ge 3 ]; then
+              echo "依赖镜像拉取失败：已连续尝试 3 次仍未成功（多为 registry 限流或网络挂死），失败退出。" >&2
+              exit 1
+            fi
+            echo "依赖镜像拉取第 ${docker_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            docker_attempt=$((docker_attempt + 1))
+            sleep 15
+          done
 
       - name: Resolve FullChain evidence environment
         timeout-minutes: 3
@@ -1097,8 +1246,33 @@ jobs:
       - name: Prepare PostgreSQL and Redis images
         timeout-minutes: 10
         run: |
-          docker pull postgres:18
-          docker pull redis:8
+          # NERV-1701：docker pull 既没有单次尝试超时也没有重试，registry 侧限流或连接挂死都会
+          # 卡满 step 预算，因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 与 apt 的失败语义有两点差异，实现上据此调整：
+          # 1) 常见成因是 registry 限流（HTTP 429）而不是纯粹挂死，退避需要更长，故重试间隔取
+          #    15s（apt 那处是 5s）。
+          # 2) 先用 docker image inspect 探测本地是否已有该镜像，已有则跳过拉取；这样上一次尝试
+          #    里已经拉成功的镜像不会在重试时被重复拉，重试代价只落在真正失败的那一个上。
+          # 两条 pull 属于同一逻辑单元，放在同一次尝试内（任一条失败即整体重试），避免每次尝试的
+          # 最坏耗时翻倍。
+          # 预算算术：单次尝试 = 2 × 75s（各自外加最多 10s 的 SIGKILL 兜底）= 170s；×最多 3 次
+          # + 2 次重试间隔 15s = 最坏 540s，严格小于本 step 既有的 timeout-minutes 预算 10 分钟
+          # （600s），因此本次不改动任何超时预算。
+          docker_attempt=1
+          while true; do
+            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
+              && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
+              echo "依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${docker_attempt}" -ge 3 ]; then
+              echo "依赖镜像拉取失败：已连续尝试 3 次仍未成功（多为 registry 限流或网络挂死），失败退出。" >&2
+              exit 1
+            fi
+            echo "依赖镜像拉取第 ${docker_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            docker_attempt=$((docker_attempt + 1))
+            sleep 15
+          done
 
       - name: Verify ERP sales-order demand bridge
         timeout-minutes: 15
@@ -1239,7 +1413,32 @@ jobs:
 
       - name: Install frontend dependencies
         timeout-minutes: 12
-        run: pnpm -C frontend install --frozen-lockfile
+        run: |
+          # NERV-1701：pnpm install 同样没有单次尝试超时和重试，registry 侧挂死会卡满 step 预算，
+          # 因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 单次尝试取 200s；本仓库没有冷缓存安装耗时的实测数据，若某次冷缓存安装确实超过 200s，
+          # 重试仍是收敛的：被打断的那次已经把下载到的包写进了 pnpm store（内容寻址、先写临时再
+          # 改名），下一次尝试直接命中 store 而不会从零重来。
+          # 本块在 workflow 里重复 4 处而没有抽成 composite action：抽走会让 ci.yml 里不再出现
+          # `pnpm -C frontend install --frozen-lockfile` 字面量，直接打破
+          # scripts/tests/full-chain-test-lane.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          # 预算算术：单次尝试 200s（外加最多 20s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 15s
+          # = 最坏 690s，严格小于本 step 既有的 timeout-minutes 预算 12 分钟（720s），因此本次不
+          # 改动任何超时预算。
+          pnpm_attempt=1
+          while true; do
+            if timeout --kill-after=20 200 pnpm -C frontend install --frozen-lockfile; then
+              echo "前端依赖安装成功（第 ${pnpm_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${pnpm_attempt}" -ge 3 ]; then
+              echo "前端依赖安装失败：已连续尝试 3 次仍未成功（多为网络挂死或 registry 不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "前端依赖安装第 ${pnpm_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            pnpm_attempt=$((pnpm_attempt + 1))
+            sleep 15
+          done
 
       - name: Test affected frontend workspace
         timeout-minutes: 20
@@ -1318,7 +1517,32 @@ jobs:
 
       - name: Install frontend dependencies
         timeout-minutes: 12
-        run: pnpm -C frontend install --frozen-lockfile
+        run: |
+          # NERV-1701：pnpm install 同样没有单次尝试超时和重试，registry 侧挂死会卡满 step 预算，
+          # 因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 单次尝试取 200s；本仓库没有冷缓存安装耗时的实测数据，若某次冷缓存安装确实超过 200s，
+          # 重试仍是收敛的：被打断的那次已经把下载到的包写进了 pnpm store（内容寻址、先写临时再
+          # 改名），下一次尝试直接命中 store 而不会从零重来。
+          # 本块在 workflow 里重复 4 处而没有抽成 composite action：抽走会让 ci.yml 里不再出现
+          # `pnpm -C frontend install --frozen-lockfile` 字面量，直接打破
+          # scripts/tests/full-chain-test-lane.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          # 预算算术：单次尝试 200s（外加最多 20s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 15s
+          # = 最坏 690s，严格小于本 step 既有的 timeout-minutes 预算 12 分钟（720s），因此本次不
+          # 改动任何超时预算。
+          pnpm_attempt=1
+          while true; do
+            if timeout --kill-after=20 200 pnpm -C frontend install --frozen-lockfile; then
+              echo "前端依赖安装成功（第 ${pnpm_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${pnpm_attempt}" -ge 3 ]; then
+              echo "前端依赖安装失败：已连续尝试 3 次仍未成功（多为网络挂死或 registry 不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "前端依赖安装第 ${pnpm_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            pnpm_attempt=$((pnpm_attempt + 1))
+            sleep 15
+          done
 
       - name: Check frontend format and lint
         timeout-minutes: 10
@@ -1354,7 +1578,32 @@ jobs:
 
       - name: Install frontend dependencies
         timeout-minutes: 12
-        run: pnpm -C frontend install --frozen-lockfile
+        run: |
+          # NERV-1701：pnpm install 同样没有单次尝试超时和重试，registry 侧挂死会卡满 step 预算，
+          # 因此沿用 NERV-1694 的「单次尝试超时 + 有限重试」形状。
+          # 单次尝试取 200s；本仓库没有冷缓存安装耗时的实测数据，若某次冷缓存安装确实超过 200s，
+          # 重试仍是收敛的：被打断的那次已经把下载到的包写进了 pnpm store（内容寻址、先写临时再
+          # 改名），下一次尝试直接命中 store 而不会从零重来。
+          # 本块在 workflow 里重复 4 处而没有抽成 composite action：抽走会让 ci.yml 里不再出现
+          # `pnpm -C frontend install --frozen-lockfile` 字面量，直接打破
+          # scripts/tests/full-chain-test-lane.Tests.ps1 的逐字契约断言，故保持逐处加固。
+          # 预算算术：单次尝试 200s（外加最多 20s 的 SIGKILL 兜底）× 最多 3 次 + 2 次重试间隔 15s
+          # = 最坏 690s，严格小于本 step 既有的 timeout-minutes 预算 12 分钟（720s），因此本次不
+          # 改动任何超时预算。
+          pnpm_attempt=1
+          while true; do
+            if timeout --kill-after=20 200 pnpm -C frontend install --frozen-lockfile; then
+              echo "前端依赖安装成功（第 ${pnpm_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${pnpm_attempt}" -ge 3 ]; then
+              echo "前端依赖安装失败：已连续尝试 3 次仍未成功（多为网络挂死或 registry 不可用），失败退出。" >&2
+              exit 1
+            fi
+            echo "前端依赖安装第 ${pnpm_attempt} 次尝试失败（超时或网络故障），15 秒后重试。" >&2
+            pnpm_attempt=$((pnpm_attempt + 1))
+            sleep 15
+          done
 
       - name: Typecheck affected frontend workspace
         if: matrix.run_typecheck
@@ -1447,8 +1696,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限。step 预算合计 108m（22 个 step：3m checkout
-    # + 21 × 5m；2026-08-18 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
+    # 10m job 预算是快速失败界限。step 预算合计 113m（23 个 step：3m checkout
+    # + 22 × 5m；2026-08-18 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
     # 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -1499,6 +1748,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/ci-impact-plan.Tests.ps1
+
+      - name: Test acceptance scenario matrix contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
 
       - name: Test PostgreSQL lane contract
         timeout-minutes: 5

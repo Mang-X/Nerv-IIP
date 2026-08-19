@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -8,7 +9,7 @@ public sealed class GatewayProductionSecurityTests
     [Fact]
     public void Production_gateway_requires_cors_allowed_origins()
     {
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -24,7 +25,7 @@ public sealed class GatewayProductionSecurityTests
     [Fact]
     public async Task Production_gateway_allows_only_configured_console_origin()
     {
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
@@ -45,12 +46,21 @@ public sealed class GatewayProductionSecurityTests
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("https://console.example.test", response.Headers.GetValues("Access-Control-Allow-Origin").Single());
+
+        using var actualRequest = new HttpRequestMessage(HttpMethod.Get, "/health");
+        actualRequest.Headers.TryAddWithoutValidation("Origin", "https://console.example.test");
+        var actualResponse = await client.SendAsync(actualRequest);
+        actualResponse.EnsureSuccessStatusCode();
+        var exposedHeaders = actualResponse.Headers.GetValues("Access-Control-Expose-Headers").Single();
+        Assert.Contains(GatewayAuthResponseHeaders.LoginFailure, exposedHeaders, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(GatewayAuthResponseHeaders.LockoutUntilUtc, exposedHeaders, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(GatewayAuthResponseHeaders.RemainingAttempts, exposedHeaders, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Production_gateway_requires_apphub_base_url()
     {
-        using var factory = new WebApplicationFactory<Program>()
+        using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");

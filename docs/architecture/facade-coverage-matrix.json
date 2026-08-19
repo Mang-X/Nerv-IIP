@@ -1645,8 +1645,20 @@
       "method": "POST",
       "route": "/api/inventory/v1/count-tasks/{countTaskId}/cancel",
       "operationId": "cancelInventoryCountTask",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; count-task create/adjust are exposed, cancel follows the inventory count Business Console menu phase."
+      "classification": "exposed",
+      "gateways": ["business"],
+      "note": "#1346：盘点任务卡住后原本没有任何出口，网关补了关闭 facade，库存盘点页行内可填原因关闭并解冻台账。",
+      "gatewayOperationIds": ["cancelBusinessConsoleInventoryCountTask"]
+    },
+    {
+      "service": "Inventory",
+      "method": "POST",
+      "route": "/api/inventory/v1/count-tasks/{countTaskId}/recount",
+      "operationId": "restartInventoryCountTask",
+      "classification": "exposed",
+      "gateways": ["business"],
+      "note": "#1346：重盘是盘点死单的出口——审批驳回停在 recount-required 的，以及台账漂移后确认必被拒（拒绝回滚事务，状态留在 open）的，都靠它重取快照后继续。",
+      "gatewayOperationIds": ["restartBusinessConsoleInventoryCountTask"]
     },
     {
       "service": "Inventory",

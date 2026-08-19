@@ -76,6 +76,7 @@ const state = vi.hoisted(() => ({
   approveQuotation: vi.fn(async (_no: string) => undefined),
   createSalesOrder: vi.fn(async (_body: unknown): Promise<unknown> => undefined),
   releaseCreditHold: undefined as unknown as ReturnType<typeof vi.fn>,
+  releaseDeliveryOrder: undefined as unknown as ReturnType<typeof vi.fn>,
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
 }))
@@ -91,6 +92,7 @@ vi.mock('@nerv-iip/ui', async (importOriginal) => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: { keyword: 'SO-DEMO-001' } }),
+  RouterLink: { props: ['to'], template: '<a :href="String(to)"><slot /></a>' },
 }))
 
 function listShape(itemsRef: () => Array<Record<string, unknown>>) {
@@ -138,13 +140,13 @@ vi.mock('@/composables/useBusinessErp', () => ({
       releaseCreditHold: state.releaseCreditHold,
       releaseCreditHoldPending: shallowRef(false),
       releaseCreditHoldError: shallowRef(undefined),
+      releaseDeliveryOrder: state.releaseDeliveryOrder,
+      releaseDeliveryOrderPending: shallowRef(false),
+      releaseDeliveryOrderError: shallowRef(undefined),
     }
   },
   useErpDeliveryOrders: () => ({
     ...listShape(() => state.deliveries),
-    releaseDeliveryOrder: vi.fn(),
-    releaseDeliveryOrderPending: shallowRef(false),
-    releaseDeliveryOrderError: shallowRef(undefined),
   }),
 }))
 
@@ -265,6 +267,7 @@ beforeEach(() => {
   state.approveQuotation = vi.fn(async () => undefined)
   state.createSalesOrder = vi.fn(async () => undefined)
   state.releaseCreditHold = vi.fn().mockResolvedValue('credit-release-approval-started')
+  state.releaseDeliveryOrder = vi.fn().mockResolvedValue(undefined)
   state.toastError.mockReset()
   state.toastSuccess.mockReset()
 })
@@ -600,6 +603,69 @@ describe('ERP sales order and delivery pages', () => {
     await flushPromises()
 
     expect(state.releaseCreditHold).toHaveBeenCalledWith({ salesOrderNo: 'SO-HELD-001' })
+  })
+
+  it('releases a delivery for a released sales order from the sales order page', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-REL-001',
+        customerCode: 'CUST-A',
+        status: 'released',
+        totalAmount: 1000,
+      },
+    ]
+    const wrapper = mount(OrdersPage, {
+      global: { stubs: { ...layoutStub, ...creditDialogStubs } },
+    })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('释放发货'))!
+      .trigger('click')
+    await flushPromises()
+
+    // 语义写在弹框里：整单按未发数量释放。
+    expect(wrapper.text()).toContain('未发行')
+    const confirm = wrapper.findAll('button').filter((b) => b.text().includes('释放发货'))
+    await confirm[confirm.length - 1]!.trigger('click')
+    await flushPromises()
+
+    expect(state.releaseDeliveryOrder).toHaveBeenCalledWith('SO-REL-001')
+  })
+
+  it('hides the release action for orders that are not released yet', async () => {
+    state.salesOrders = [
+      {
+        salesOrderNo: 'SO-HELD-002',
+        customerCode: 'CUST-A',
+        status: 'credit-held',
+        totalAmount: 1000,
+      },
+    ]
+    // 不套弹框外壳桩：真 NvDialog 关闭时不渲染内容，剩下的「释放发货」只能来自行内动作。
+    const wrapper = mount(OrdersPage, { global: { stubs: { ...layoutStub } } })
+    await flushPromises()
+
+    expect(wrapper.findAll('button').some((b) => b.text().includes('释放发货'))).toBe(false)
+  })
+
+  it('deliveries page no longer offers the per-row release action', async () => {
+    state.deliveries = [
+      {
+        deliveryOrderNo: 'DO-001',
+        salesOrderNo: 'SO-REL-001',
+        customerCode: 'CUST-A',
+        status: 'released',
+        lines: [],
+        releasedAtUtc: '2026-08-01T00:00:00Z',
+      },
+    ]
+    const wrapper = mount(DeliveriesPage, { global: { stubs: { ...layoutStub, ...selectStubs } } })
+    await flushPromises()
+
+    // 发货单行本身就是释放结果，行内再挂「释放发货」必然缺行明细 400。
+    expect(wrapper.findAll('button').some((b) => b.text().includes('释放发货'))).toBe(false)
   })
 
   it('deliveries keep keyword search and no status select', async () => {
