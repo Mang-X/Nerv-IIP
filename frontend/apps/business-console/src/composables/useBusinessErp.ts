@@ -507,6 +507,15 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     },
   })
 
+  // 释放发货：发货单是从销售订单释放出来的，入口只能挂在销售订单上。
+  // 不传 lines 即整单释放，服务端按该订单当前全部未发行与剩余数量成单。
+  const releaseDeliveryMutation = useMutation({
+    ...releaseBusinessConsoleErpDeliveryOrderMutationOptions(),
+    onSuccess() {
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
+    },
+  })
+
   return {
     filters,
     ready: computed(() => hasBusinessContext(businessContext)),
@@ -554,6 +563,18 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
       }),
     releaseCreditHoldPending: releaseCreditHoldMutation.isLoading,
     releaseCreditHoldError: releaseCreditHoldMutation.error,
+    releaseDeliveryOrder: (salesOrderNo: string) =>
+      releaseDeliveryMutation.mutateAsync({
+        body: {
+          organizationId: businessContext.organizationId,
+          environmentId: businessContext.environmentId,
+          deliveryOrderNo: null,
+          salesOrderNo,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    releaseDeliveryOrderPending: releaseDeliveryMutation.isLoading,
+    releaseDeliveryOrderError: releaseDeliveryMutation.error,
   }
 }
 
@@ -650,32 +671,16 @@ export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilte
   }
 }
 
-// 发货单：读面（由销售订单履约生成）。
+// 发货单：只读读面。发货单由销售订单释放生成，列表里的行本身就是释放结果，
+// 因此这里没有「释放发货」动作——那个入口在销售订单页（见 useErpSalesOrders）。
 export function useErpDeliveryOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
   const list = useErpDocumentList<
     BusinessConsoleErpDeliveryOrderItem,
     BusinessConsoleErpDeliveryOrderListEnvelope
   >((query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }), initialFilters)
-  const releaseMutation = useMutation({
-    ...releaseBusinessConsoleErpDeliveryOrderMutationOptions(),
-    onSuccess() {
-      void list.refresh()
-    },
-  })
 
   return {
     ...list,
-    releaseDeliveryOrder: (deliveryOrderNo: string) =>
-      releaseMutation.mutateAsync({
-        body: {
-          organizationId: list.organizationId.value,
-          environmentId: list.environmentId.value,
-          deliveryOrderNo,
-          idempotencyKey: makeIdempotencyKey(),
-        },
-      }),
-    releaseDeliveryOrderPending: releaseMutation.isLoading,
-    releaseDeliveryOrderError: releaseMutation.error,
   }
 }
 

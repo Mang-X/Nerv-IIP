@@ -16,9 +16,9 @@ import {
   NvToolbar,
   NvInput,
 } from '@nerv-iip/ui'
-import { RefreshCwIcon, TruckIcon } from '@lucide/vue'
+import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { RouterLink } from 'vue-router'
 import { erpReadState, formatDateTime, readCount } from '../shared'
 
 definePage({
@@ -52,7 +52,6 @@ const columns: NvDataTableColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
     width: 'w-40',
     accessor: (r) => formatDateTime(r.releasedAtUtc),
   },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
 
 const releasedCount = computed(
@@ -70,7 +69,7 @@ const readState = computed(() =>
     error: deliveries.error.value,
     total: deliveries.total.value,
     filtered: Boolean(deliveries.filters.keyword || deliveries.filters.status),
-    emptyHint: '还没有发货单。销售订单履约出货后会在这里生成。',
+    emptyHint: '还没有发货单。发货单从「销售订单」释放生成。',
   }),
 )
 
@@ -116,24 +115,6 @@ const deliveryCells = computed<NvMetricStripCell[]>(() => {
     },
   ]
 })
-
-function isReleasable(row: BusinessConsoleErpDeliveryOrderItem) {
-  return !!row.deliveryOrderNo && (row.status ?? '').toLowerCase() !== 'released'
-}
-
-async function release(row: BusinessConsoleErpDeliveryOrderItem) {
-  if (!row.deliveryOrderNo || !isReleasable(row)) return
-  try {
-    await deliveries.releaseDeliveryOrder(row.deliveryOrderNo)
-    notifySuccess(`发货单 ${row.deliveryOrderNo} 已释放`)
-  } catch (error) {
-    notifyOperationFailure(
-      '释放发货单失败',
-      deliveries.releaseDeliveryOrderError.value ?? error,
-      '释放发货单失败，请稍后重试。',
-    )
-  }
-}
 </script>
 
 <template>
@@ -190,22 +171,19 @@ async function release(row: BusinessConsoleErpDeliveryOrderItem) {
       @update:page="page = $event"
       @update:page-size="(v) => (pageSize = String(v))"
     >
+      <template #empty>
+        <p class="text-sm font-medium">还没有发货单</p>
+        <p class="max-w-md text-sm text-muted-foreground">
+          发货单从销售订单释放生成，去「销售订单」对已下达的订单点「释放发货」。
+        </p>
+        <NvButton size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/erp/sales/orders">去销售订单</RouterLink>
+        </NvButton>
+      </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>
       <template #cell-status="{ row }"><NvStatusBadge :value="row.status ?? '-'" /></template>
-      <template #cell-actions="{ row }">
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="!isReleasable(row) || deliveries.releaseDeliveryOrderPending.value"
-          @click="release(row)"
-        >
-          <TruckIcon aria-hidden="true" />
-          释放发货
-        </NvButton>
-      </template>
     </NvDataTable>
   </BusinessLayout>
 </template>
