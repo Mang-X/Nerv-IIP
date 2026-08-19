@@ -43,8 +43,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
     private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (!string.Equals(payload.SourceService, "wms", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(payload.SourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(payload.SourceService, QualityInspectionSourceTypes.Wms, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(payload.SourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -131,7 +131,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 supplierReturn.LocationCode,
                 supplierReturn.LotNo,
                 supplierReturn.SerialNo,
-                "quality",
+                WmsReceivingQualityStatuses.Quality,
                 supplierReturn.OwnerType,
                 supplierReturn.OwnerId)]);
     }

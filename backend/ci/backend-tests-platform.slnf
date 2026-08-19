@@ -37,7 +37,8 @@
       "tests/Nerv.IIP.Sdk.Observability.Tests/Nerv.IIP.Sdk.Observability.Tests.csproj",
       "tests/Nerv.IIP.ServiceAuth.Tests/Nerv.IIP.ServiceAuth.Tests.csproj",
       "tests/Nerv.IIP.Testing.PostgreSql.Tests/Nerv.IIP.Testing.PostgreSql.Tests.csproj",
-      "tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj"
+      "tests/Nerv.IIP.Testing.Tests/Nerv.IIP.Testing.Tests.csproj",
+      "tests/Nerv.IIP.VocabularyGovernance.Tests/Nerv.IIP.VocabularyGovernance.Tests.csproj"
     ]
   }
 }

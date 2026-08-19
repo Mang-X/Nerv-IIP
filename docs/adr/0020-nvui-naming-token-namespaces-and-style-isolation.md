@@ -9,15 +9,6 @@
 - 执行批次：本 ADR **不改任何代码**。库侧改名与层落地 = MAN-433；分应用代码转换 =
   MAN-435；守护与收口 = MAN-436。附录 A/B/C 是这些批次的执行输入。
 
-## S4 收口更正（2026-07-12 / #896）
-
-S4 以代码事实补齐原附录遗漏：PC 品牌层的最终源码目录是 `components/pc/`，不保留
-`components/pro/` 兼容目录；所有实现文件采用规范的 `Nv*.vue` 名。原
-`DataTablePaginationPro` 实际承担通用 PC 分页职责，最终迁为
-`components/pc/pagination/NvPagination.vue` 并只导出 `NvPagination`，不保留误导性的
-`NvDataTablePagination` 名称。本文“背景”中的 `pro/`、`*Pro` 与旧选择器描述均为
-迁移前事实，不能作为新代码范式。
-
 ## 背景
 
 以下现状为 2026-07-07 对仓库的实地清点结果（非估算）。

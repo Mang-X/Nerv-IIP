@@ -22,6 +22,7 @@ using DomainShiftHandover = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHa
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -563,8 +564,12 @@ public sealed class ConvertPlanToWorkOrderCommandHandler : ICommandHandler<Conve
 
     public async Task<MesAcceptedResponse> Handle(ConvertPlanToWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "DemandPlanning" : request.SourceSystem.Trim();
-        var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType) ? "PlanningSuggestion" : request.SourceDocumentType.Trim();
+        var sourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem)
+            ? DemandPlanningSourceReferences.DemandPlanning
+            : request.SourceSystem.Trim();
+        var sourceDocumentType = string.IsNullOrWhiteSpace(request.SourceDocumentType)
+            ? DemandPlanningSourceReferences.PlanningSuggestion
+            : request.SourceDocumentType.Trim();
         var sourceDocumentId = string.IsNullOrWhiteSpace(request.SourceDocumentId) ? request.ProductionPlanId.Trim() : request.SourceDocumentId.Trim();
         var allocation = await _codingService.AllocateWorkOrderIdAsync(
             request.OrganizationId,

@@ -94,7 +94,7 @@ public sealed class GatewayConsoleLogsTests
         FakeGatewayAuthorizationClient auth,
         FakeVictoriaLogsClient logs,
         bool victoriaLogsEnabled = true) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        PlatformGatewayTestHost.CreateFactory().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IGatewayAuthorizationClient>();
             services.AddSingleton<IGatewayAuthorizationClient>(auth);

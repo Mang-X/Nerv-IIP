@@ -295,13 +295,13 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
 
     private static bool IsPurchaseOrderSource(string sourceDocumentType)
     {
-        return string.Equals(sourceDocumentType, "purchase-order", StringComparison.OrdinalIgnoreCase)
+        return string.Equals(sourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase)
             || string.Equals(sourceDocumentType, "erp-purchase-order", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsErpPurchaseReceiptSource(string sourceDocumentType)
     {
-        return string.Equals(sourceDocumentType, "purchase-receipt", StringComparison.OrdinalIgnoreCase)
+        return string.Equals(sourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
             || string.Equals(sourceDocumentType, "erp-purchase-receipt", StringComparison.OrdinalIgnoreCase);
     }
 

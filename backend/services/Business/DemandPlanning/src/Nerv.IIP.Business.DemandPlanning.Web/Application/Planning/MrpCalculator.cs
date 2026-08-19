@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.DemandPlanning;
+
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
 
 public sealed record MrpCalculationInput(
@@ -230,7 +232,9 @@ public static class MrpCalculator
                 var plannedQuantity = plannedQuantities.Sum();
                 var isMakeItem = IsMakeItem(planningParameter?.ProcurementType, version);
                 var releaseDate = group.Key.RequiredDate.AddDays(-ResolveLeadTimeDays(planningParameter, isMakeItem));
-                var suggestionType = isMakeItem ? "planned-work-order" : "planned-purchase";
+                var suggestionType = isMakeItem
+                    ? DemandPlanningSuggestionTypes.PlannedWorkOrder
+                    : DemandPlanningSuggestionTypes.PlannedPurchase;
                 var reasonCode = isMakeItem ? "net-requirement" : "component-net-requirement";
                 var peggingVersion = isMakeItem ? version : null;
                 var peggingLinks = demandPegging

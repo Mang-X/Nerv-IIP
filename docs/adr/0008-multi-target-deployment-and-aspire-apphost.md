@@ -32,6 +32,11 @@ Nerv-IIP 面向私有化、混合部署和工程联调场景。目标环境可�
 4. Connector Host 的安装位置天然更分散，必须独立于主平台发布包和主平台服务运行方式。
 5. 统一部署模型让开发、测试、演示和交付共享同一套拓扑语义，有利于持续验证服务边界和配置边界。
 
+## 已考虑的替代方案
+
+1. **以手写 Docker Compose 作为最终部署拓扑。** 背景记录现有 `infra/docker-compose.dev.yml`「只承载本地依赖服务的开发编排，不应被理解为最终部署方式已锁定为手写 Docker Compose」；理由第 2 条记录「完整 Compose 应从统一模型派生，而不是长期手写多份」。
+2. **各服务分别生成自己的服务级 Aspire AppHost。** 背景记录「如果各服务分别通过模板生成自己的 Aspire AppHost，平台会快速产生多套局部编排入口，导致环境变量、依赖服务、端口、观测和发布流程漂移」；决策第 3 条据此要求平台领域服务显式传入 `--UseAspire false`。
+
 ## 后果
 
 1. `infra` 需要新增平台级 Aspire AppHost，并逐步把当前本地依赖编排、服务启动、Dashboard 和 Compose 生成收敛到它。
@@ -52,12 +57,6 @@ Nerv-IIP 面向私有化、混合部署和工程联调场景。目标环境可�
 6. Linux 整合安装脚本建议负责运行时检查、目录创建、systemd 单元写入、权限设置、环境文件生成、服务启动和健康检查。
 7. 后续如引入 Kubernetes，应作为新的部署目标接入同一部署模型，不替代当前 Aspire、Compose、安装包和整合脚本策略。
 8. 脚本实现细则、辅助函数契约和迁移清单见 `docs/architecture/script-automation-governance.md`。
-
-## 2026-05-17 修订
-
-第四阶段已按本 ADR 落地平台级 AppHost，位置为 `infra/aspire/Nerv.IIP.AppHost`。当前覆盖范围是 AppHub、IAM、Ops、FileStorage、PlatformGateway、Connector Host、frontend console、PostgreSQL、Redis、MinIO 和 OpenTelemetry Collector；RabbitMQ 从默认资源调整为 `Messaging:Provider=RabbitMQ` profile 下的可选资源。
-
-Knowledge、AI Integration 和 Qdrant 仍属于完整 AppHost 后续范围。当前覆盖范围不改变本 ADR 的最终目标，只说明已经完成第一批真实基础设施拓扑，而不是完整交付拓扑。
 
 ## 范围之外
 

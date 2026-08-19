@@ -86,6 +86,6 @@ public sealed class InventoryReservationExpiredIntegrationEventHandlerForCancelW
     }
 
     private static bool IsWmsReservation(string sourceService) =>
-        string.Equals(sourceService, "wms", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(sourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase) ||
         string.Equals(sourceService, InventoryIntegrationEventSources.BusinessWms, StringComparison.OrdinalIgnoreCase);
 }

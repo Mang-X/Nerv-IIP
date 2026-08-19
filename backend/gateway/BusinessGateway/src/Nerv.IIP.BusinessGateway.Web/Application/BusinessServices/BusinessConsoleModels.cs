@@ -357,7 +357,7 @@ public sealed record BusinessConsoleArchiveProductCategoryRequest(
     [property: RouteParam] string CategoryCode,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleProductCategoryItem(
     string CategoryCode,
@@ -411,7 +411,7 @@ public sealed record BusinessConsoleArchiveSkillRequest(
     [property: RouteParam] string SkillCode,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
-    string Reason = "");
+    [property: Required, MaxLength(500)] string Reason);
 
 public sealed record BusinessConsoleSkillItem(
     string SkillCode,
@@ -604,7 +604,7 @@ public sealed record BusinessConsoleRemoveTeamMemberRequest(
     string EnvironmentId,
     string TeamCode,
     string UserId,
-    string Reason = "");
+    string Reason);
 
 public sealed record BusinessConsoleTeamMemberItem(
     string TeamCode,
@@ -1400,6 +1400,28 @@ public sealed record BusinessConsoleConfirmStockCountAdjustmentResponse(
     decimal OnHandQuantity,
     string Status,
     string? ApprovalChainId);
+
+/// <summary>重盘请求：把停在 recount-required 的盘点任务重新冻结台账、重取快照后放回可实盘。</summary>
+public sealed record BusinessConsoleRestartStockCountTaskRequest(
+    [property: RouteParam] string CountTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleRestartStockCountTaskResponse(
+    string CountTaskId,
+    string Status,
+    long ExpectedLedgerVersion);
+
+/// <summary>关闭（作废）盘点任务请求：解冻台账并把任务收尾，已确认的任务不可关闭。</summary>
+public sealed record BusinessConsoleCancelStockCountTaskRequest(
+    [property: RouteParam] string CountTaskId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
+
+public sealed record BusinessConsoleCancelStockCountTaskResponse(
+    string CountTaskId,
+    string Status);
 
 public sealed record BusinessConsoleQualityListRequest(
     string OrganizationId,
@@ -3515,12 +3537,16 @@ public sealed record BusinessConsoleReleaseErpSalesOrderCreditHoldRequest(
     string SalesOrderNo,
     string? StartedBy = null);
 
+/// <summary>
+/// 释放发货请求：<c>Lines</c> 留空为整单释放，ERP 按销售订单当前未发行与剩余数量成单；
+/// 传行则按行释放（部分释放）。
+/// </summary>
 public sealed record BusinessConsoleReleaseErpDeliveryOrderRequest(
     string OrganizationId,
     string EnvironmentId,
     string? DeliveryOrderNo,
     string SalesOrderNo,
-    IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLine> Lines,
+    IReadOnlyCollection<BusinessConsoleErpDeliveryOrderLine>? Lines = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleErpDeliveryOrderLine(

@@ -28,7 +28,14 @@ public sealed class HttpApprovalChainStatusClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider tokenProvider) : IApprovalChainStatusClient
 {
-    private static readonly string[] QualitySourceServices = [QualityFacts.ServiceName, "business-quality", "quality"];
+    /// <summary>
+    /// 受理的审批链来源服务：Quality 域内标识 + 历史别名。
+    /// <c>business-quality</c> 已收敛到审批契约的唯一事实来源
+    /// （<see cref="ApprovalSourceServices.QualityLegacyAlias"/>，#1370 ③ 销账，取值不变）；
+    /// 权威码值 <c>quality</c> 的字面量待同批次「quality」值族一并销账。
+    /// </summary>
+    private static readonly string[] QualitySourceServices =
+        [QualityFacts.ServiceName, ApprovalSourceServices.QualityLegacyAlias, "quality"];
 
     /// <summary>
     /// 受理的 NCR 处置审批单据类型：权威码值 <c>ncr-disposition</c> + 历史别名，
