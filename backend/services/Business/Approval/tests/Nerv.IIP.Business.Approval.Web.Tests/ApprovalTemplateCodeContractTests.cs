@@ -53,6 +53,136 @@ public sealed class ApprovalTemplateCodeContractTests
         });
     }
 
+    /// <summary>
+    /// #1702 三方漂移契约（族 2：NCR 处置审批来源服务）：种子侧此前是裸字面量 <c>quality</c>，
+    /// 现收敛到 <see cref="ApprovalSourceServices.Quality"/>。该值逐字参与
+    /// <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256（键上有唯一索引），
+    /// 谁把种子常量改回字面量或改值，本用例必红。
+    /// </summary>
+    [Fact]
+    public void Seed_spec_and_contract_pin_the_same_ncr_source_service()
+    {
+        Assert.Equal("quality", ApprovalSourceServices.Quality);
+        Assert.Equal(ApprovalSourceServices.Quality, WorldHistoryApprovalSpec.NcrSourceService);
+    }
+
+    /// <summary>
+    /// #1702：常量对上还不够——真正落库的是 <c>BuildApprovalFacts</c> 产出的事实流。
+    /// 每条 NCR 处置审批事实的来源服务 / 单据类型都必须逐字等于契约常量
+    /// （它们一起进 <c>PendingIdentityKey</c>，也是未来质量侧回写消费者的分流依据）。
+    /// </summary>
+    [Fact]
+    public void Ncr_approval_facts_carry_the_contract_source_service()
+    {
+        var facts = WorldHistoryApprovalSpec.BuildApprovalFacts(new DateOnly(2026, 7, 26), 0.2d);
+        var ncrFacts = facts
+            .Where(x => string.Equals(x.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.NotEmpty(ncrFacts);
+        Assert.All(ncrFacts, fact =>
+        {
+            Assert.Equal(ApprovalSourceServices.Quality, fact.SourceService);
+            Assert.Equal(ApprovalDocumentTypes.NcrDisposition, fact.DocumentType);
+        });
+    }
+
+    /// <summary>
+    /// #1702 三方漂移契约（族 3：信用解冻单据类型）：ERP 发起侧 / 审批种子模板 / ERP 回写消费侧
+    /// 此前三处各写各的字面量，现共用 <see cref="ApprovalDocumentTypes.SalesOrderCreditRelease"/>。
+    /// 种子漂移即发起 400（模板按 <c>(templateCode, documentType)</c> 双条件命中），
+    /// 消费侧漂移即回写静默丢事件（订单永停 credit-held）。
+    /// </summary>
+    [Fact]
+    public void Seed_spec_and_contract_pin_the_same_sales_credit_release_document_type()
+    {
+        Assert.Equal("sales-order-credit-release", ApprovalDocumentTypes.SalesOrderCreditRelease);
+        Assert.Equal(ApprovalDocumentTypes.SalesOrderCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseDocumentType);
+    }
+
+    /// <summary>
+    /// #1702 三方漂移契约（族 1：盘点差异来源服务）：Inventory 发起侧与 Inventory 回写消费侧共用
+    /// <see cref="ApprovalSourceServices.Inventory"/>（#1344 只收敛了同一个 <c>if</c> 里的单据类型）。
+    /// </summary>
+    [Fact]
+    public void Contract_pins_the_inventory_approval_source_service()
+    {
+        Assert.Equal("inventory", ApprovalSourceServices.Inventory);
+    }
+
+    /// <summary>
+    /// #1702：三族改动的 <c>sourceService</c> / <c>documentType</c> 都逐字进
+    /// <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256，而该键在 <c>approval_chains</c> 上有唯一索引
+    /// （同一 (org, env, templateCode, 单据引用) 只允许一条在跑的链）。
+    /// 因此词表漂移不只是回写丢事件：它同时把 pending 唯一键换成另一把——旧的 pending 链拦不住新链，
+    /// 已落库的历史链也再算不出同一个键。本用例把这条因果钉成可执行断言。
+    /// </summary>
+    [Fact]
+    public void Vocabulary_drift_changes_the_pending_identity_key()
+    {
+        var authoritative = ApprovalChain.BuildPendingIdentityKey(
+            "org-001",
+            "env-dev",
+            ApprovalTemplateCodes.SalesCreditRelease,
+            new ApprovalDocumentReference(
+                ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.SalesOrderCreditRelease,
+                "SO-001",
+                documentLineId: null));
+
+        var driftedDocumentType = ApprovalChain.BuildPendingIdentityKey(
+            "org-001",
+            "env-dev",
+            ApprovalTemplateCodes.SalesCreditRelease,
+            new ApprovalDocumentReference(
+                ApprovalSourceServices.BusinessErp,
+                "sales-credit-release",
+                "SO-001",
+                documentLineId: null));
+
+        var driftedSourceService = ApprovalChain.BuildPendingIdentityKey(
+            "org-001",
+            "env-dev",
+            ApprovalTemplateCodes.StockCountVariance,
+            new ApprovalDocumentReference(
+                "business-inventory",
+                ApprovalDocumentTypes.StockCountVariance,
+                "CNT-20260731-000001",
+                documentLineId: null));
+
+        var authoritativeStockCount = ApprovalChain.BuildPendingIdentityKey(
+            "org-001",
+            "env-dev",
+            ApprovalTemplateCodes.StockCountVariance,
+            new ApprovalDocumentReference(
+                ApprovalSourceServices.Inventory,
+                ApprovalDocumentTypes.StockCountVariance,
+                "CNT-20260731-000001",
+                documentLineId: null));
+
+        Assert.NotEqual(authoritative, driftedDocumentType);
+        Assert.NotEqual(authoritativeStockCount, driftedSourceService);
+    }
+
+    /// <summary>
+    /// #1702 同值不同义护栏：<c>quality</c> / <c>inventory</c> 在库存契约里另有其义
+    /// （<c>InventoryMovementSourceServices.Quality</c> 是库存流水来源，<c>inventory</c> 还是 schema 名 /
+    /// 库存流水 sourceService），两族取值恰好同字面量但**不得互相引用**。
+    /// 用「审批契约程序集不引用库存契约程序集」把这条边界钉成可执行断言：
+    /// 谁哪天图省事把审批词表指向库存词表，本用例必红。
+    /// </summary>
+    [Fact]
+    public void Approval_vocabulary_assembly_does_not_borrow_inventory_vocabulary()
+    {
+        var referenced = typeof(ApprovalSourceServices).Assembly
+            .GetReferencedAssemblies()
+            .Select(x => x.Name)
+            .Where(x => x is not null)
+            .ToArray();
+
+        Assert.DoesNotContain("Nerv.IIP.Contracts.Inventory", referenced);
+    }
+
     /// <summary>任何一侧改动常量或种子字面量，本用例必红：权威码值 = 落库事实 APT-WB-PO-001。</summary>
     [Fact]
     public void Seed_spec_and_contract_pin_the_same_purchase_template_vocabulary()
@@ -170,7 +300,7 @@ public sealed class ApprovalTemplateCodeContractTests
                 "org-001",
                 "env-dev",
                 ApprovalTemplateCodes.StockCountVariance,
-                "inventory",
+                ApprovalSourceServices.Inventory,
                 ApprovalDocumentTypes.StockCountVariance,
                 "CNT-20260731-000001",
                 null,
@@ -211,7 +341,7 @@ public sealed class ApprovalTemplateCodeContractTests
                     "org-001",
                     "env-dev",
                     "COUNT-VARIANCE",
-                    "inventory",
+                    ApprovalSourceServices.Inventory,
                     ApprovalDocumentTypes.StockCountVariance,
                     "CNT-20260731-000002",
                     null,

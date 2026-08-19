@@ -33,8 +33,10 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Seed;
 /// 因此这里统一用 <c>quality.InspectionPassed</c>，无需把质量域规格再复制一份到仓储侧。
 /// </para>
 /// <para>
-/// 裁决点四 · **背景历史保持终态，当前队列另行受控派工**。本规格仍只描述已经闭环的
-/// 历史单据；<see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
+/// 裁决点四 · **背景历史保持终态，当前队列另行受控派工**。本规格默认只描述已经闭环的
+/// 历史单据，但**终态口径写在每张单据的 <c>CompletedAtUtc</c> 上**（为 <c>null</c> 即「仍在流程中」），
+/// seed 与校验器一律以计划为准，不再各自写死「必须已完成」——改数据形状不必同改门禁。
+/// <see cref="WorldHistoryInboundDocument.ExecutorUserId"/> /
 /// <see cref="WorldHistoryOutboundDocument.ExecutorUserId"/> 保留为历史叙事字段，不回写终态聚合。
 /// 演示日仍可执行的收货 / 上架 / 拣货 / 复核事实由
 /// <see cref="WorldHistoryWarehouseOpsSpec.BuildCurrentQueue"/> 生成，并通过 WMS 作业池持久化归属。
@@ -315,7 +317,7 @@ public sealed record WorldHistoryInboundDocument(
     string? InspectionRecordId,
     string ExecutorUserId,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset CompletedAtUtc,
+    DateTimeOffset? CompletedAtUtc,
     DateTimeOffset? QualityReleasedAtUtc,
     DateTimeOffset TaskCreatedAtUtc,
     DateTimeOffset TaskCompletedAtUtc)
@@ -323,6 +325,14 @@ public sealed record WorldHistoryInboundDocument(
     /// <summary>收货入库要过来料检验门禁；完工入库已在 MES 终检合格，直接上架。</summary>
     public bool RequiresQualityInspection =>
         string.Equals(QualityStatus, WorldHistoryWmsSpec.QualityInspection, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 这张单据在设定集里**是否应当已经闭环**——终态口径归计划所有，不归校验器的枚举常量所有。
+    ///
+    /// 给了完成时刻就是「已完成」；为 <c>null</c> 就是设定集有意把它留在流程中，
+    /// 校验器据此**反向**要求它不得已完成、不得有完成时间，并跳过下游终态事实（任务终态 / 过账 / 复核）。
+    /// </summary>
+    public bool ExpectsCompletion => CompletedAtUtc is not null;
 }
 
 /// <summary>一张历史出库单（发货出库或领料出库）及其拣货任务与复核。</summary>
@@ -342,4 +352,8 @@ public sealed record WorldHistoryOutboundDocument(
     string ExecutorUserId,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset TaskCompletedAtUtc,
-    DateTimeOffset CompletedAtUtc);
+    DateTimeOffset? CompletedAtUtc)
+{
+    /// <summary>同 <see cref="WorldHistoryInboundDocument.ExpectsCompletion"/>：终态口径由计划给出。</summary>
+    public bool ExpectsCompletion => CompletedAtUtc is not null;
+}
