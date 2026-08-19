@@ -1248,11 +1248,13 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                     request.OrganizationId,
                     request.EnvironmentId,
                     $"{request.PurchaseOrderNo}:revision:{order.Version}");
+                // #1685：变更（含驳回后修订重提）走独立的变更审批模板，与下达模板分开，
+                // 审批人收件箱据此区分两类待办；单据类型仍是 purchase-order，回写消费侧分流不变。
                 var revisedApproval = await _approvalClient.StartApprovalAsync(
                     new PurchaseOrderApprovalRequest(
                         request.OrganizationId,
                         request.EnvironmentId,
-                        ApprovalTemplateCodes.PurchaseOrderRelease,
+                        ApprovalTemplateCodes.PurchaseOrderChange,
                         ApprovalSourceServices.BusinessErp,
                         ApprovalDocumentTypes.PurchaseOrder,
                         request.PurchaseOrderNo,
@@ -1270,8 +1272,9 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
+            // #1685：同上，变更审批走 APT-WB-PO-002；下达路径（创建 / 转单 / RFQ）继续用 PurchaseOrderRelease。
             var approval = await _approvalClient.StartApprovalAsync(
-                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalSourceServices.BusinessErp, ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
+                new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderChange, ApprovalSourceServices.BusinessErp, ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
             change.AssignApprovalChain(approval.ChainId);
             return approval.ChainId;

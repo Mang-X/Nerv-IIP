@@ -191,6 +191,20 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
         Assert.Equal("purchase-order", WorldHistoryApprovalSpec.PurchaseDocumentType);
 
+        // #1685：采购**变更**再审批拆出独立模板码（沿用 APT-WB- 号段），发起侧 / 种子侧共用。
+        Assert.Equal("APT-WB-PO-002", ApprovalTemplateCodes.PurchaseOrderChange);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalTemplateCodes.PurchaseOrderChange);
+
+        // 单据类型刻意与下达相同：换新值就必须同步 ERP 回写消费侧 / 委托单据范围 / 界面词表三处。
+        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, WorldHistoryApprovalSpec.PurchaseChangeDocumentType);
+        Assert.Equal(ApprovalSourceServices.BusinessErp, WorldHistoryApprovalSpec.PurchaseChangeSourceService);
+
+        // 收件箱待办表没有「模板」列，能分辨两类待办的是步骤名，因此两者必须不同。
+        Assert.Equal("总经理审批", WorldHistoryApprovalSpec.PurchaseReleaseStepName);
+        Assert.Equal("采购变更审批", WorldHistoryApprovalSpec.PurchaseChangeStepName);
+        Assert.NotEqual(WorldHistoryApprovalSpec.PurchaseReleaseStepName, WorldHistoryApprovalSpec.PurchaseChangeStepName);
+
         // #1684：NCR 处置模板码收敛进契约（参与跨服务确定性回链盐串），权威码值 = 落库事实 APT-WB-NCR-001。
         Assert.Equal("APT-WB-NCR-001", ApprovalTemplateCodes.NcrDisposition);
         Assert.Equal(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
@@ -401,6 +415,113 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Contains("审批模板不存在", exception.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// #1685 的**核心不变量**：加一个模板码 = 种子里必须有一张同码同单据类型的模板，否则种子态必 400。
+    ///
+    /// 本用例不自建模板，而是跑**真实的种子服务**写库，再拿 ERP 变更发起元组
+    /// （<see cref="ApprovalTemplateCodes.PurchaseOrderChange"/> / business-erp / purchase-order）开链、
+    /// 由厂长一步审批通过。谁删掉种子里的变更模板块、把种子模板的单据类型改成别的值，
+    /// 或让契约常量与种子常量漂移，本用例都必红。
+    /// </summary>
+    [Fact]
+    public async Task Erp_change_start_tuple_reaches_the_template_written_by_the_world_history_seed()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new WorldHistoryApprovalSeedService(dbContext).SeedAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 26),
+            0.05d,
+            CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var seededChangeTemplate = await dbContext.ApprovalTemplates
+            .AsNoTracking()
+            .Include(x => x.Steps)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == "org-001"
+                && x.EnvironmentId == "env-dev"
+                && x.TemplateCode == ApprovalTemplateCodes.PurchaseOrderChange);
+        Assert.NotNull(seededChangeTemplate);
+        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, seededChangeTemplate!.DocumentType);
+        Assert.True(seededChangeTemplate.IsActive, "种子写入的采购变更模板必须是启用状态，否则发起侧仍然开不了链。");
+
+        var chainId = await new StartApprovalChainCommandHandler(dbContext).Handle(
+            new StartApprovalChainCommand(
+                "org-001",
+                "env-dev",
+                ApprovalTemplateCodes.PurchaseOrderChange,
+                ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.PurchaseOrder,
+                "PO-20260731-000010",
+                null,
+                "user:user-emp-057",
+                Amount: 1200m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
+        chain.ResolveStep(1, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, "approve", "同意变更");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(ApprovalChainStatuses.Approved, chain.Status);
+        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, chain.TemplateCode);
+        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, chain.DocumentReference.DocumentType);
+    }
+
+    /// <summary>
+    /// #1685 的**体验目标**：同一张采购订单的下达链与变更链在收件箱里必须能分辨。
+    ///
+    /// 收件箱待办表只有「单据 / 当前步骤 / 单据类型 / 到期时间」四列，单据号与单据类型两类链完全一致，
+    /// 因此判据落在**步骤名**上；顺带钉住两条链的待办唯一键不再相同（共用模板码时它们完全相同）。
+    /// </summary>
+    [Fact]
+    public async Task Seeded_release_and_change_chains_on_the_same_order_are_distinguishable_in_the_inbox()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new WorldHistoryApprovalSeedService(dbContext).SeedAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 26),
+            0.05d,
+            CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var handler = new StartApprovalChainCommandHandler(dbContext);
+        const string purchaseOrderNo = "PO-20260731-000011";
+        var releaseChainId = await handler.Handle(
+            new StartApprovalChainCommand(
+                "org-001", "env-dev", ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.PurchaseOrder, purchaseOrderNo, null, "user:user-emp-057"),
+            CancellationToken.None);
+        var changeChainId = await handler.Handle(
+            new StartApprovalChainCommand(
+                "org-001", "env-dev", ApprovalTemplateCodes.PurchaseOrderChange, ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.PurchaseOrder, purchaseOrderNo, null, "user:user-emp-057"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEqual(releaseChainId, changeChainId);
+        var releaseChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == releaseChainId);
+        var changeChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == changeChainId);
+
+        // 单据号与单据类型两条链一致——这正是收件箱此前分辨不出来的原因。
+        Assert.Equal(releaseChain.DocumentReference.DocumentId, changeChain.DocumentReference.DocumentId);
+        Assert.Equal(releaseChain.DocumentReference.DocumentType, changeChain.DocumentReference.DocumentType);
+
+        // 待办列表展示的「当前步骤」必须不同。
+        Assert.Equal(WorldHistoryApprovalSpec.PurchaseReleaseStepName, releaseChain.Steps.Single().StepName);
+        Assert.Equal(WorldHistoryApprovalSpec.PurchaseChangeStepName, changeChain.Steps.Single().StepName);
+        Assert.NotEqual(releaseChain.Steps.Single().StepName, changeChain.Steps.Single().StepName);
+
+        // 待办唯一键含模板码：共用模板码时两条链的唯一键完全相同（同一张订单只能有一条待办链）。
+        Assert.NotEqual(releaseChain.PendingIdentityKey, changeChain.PendingIdentityKey);
+    }
+
     /// <summary>与 <c>WorldHistoryApprovalSeedService.SeedTemplatesAsync</c> 同形状的采购模板（不落任何演示专属字段）。</summary>
     private static ApprovalTemplate NewSeedShapedPurchaseTemplate()
     {
@@ -414,7 +535,7 @@ public sealed class ApprovalTemplateCodeContractTests
             [
                 new ApprovalTemplateStepDefinition(
                     StepNo: 1,
-                    StepName: "总经理审批",
+                    StepName: WorldHistoryApprovalSpec.PurchaseReleaseStepName,
                     ParallelGroupKey: null,
                     ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
                     ApproverRef: WorldHistoryApprovalSpec.AdminUserId,

@@ -36,6 +36,38 @@ public static class WorldHistoryApprovalSpec
     public const string PurchaseSourceService = ApprovalSourceServices.BusinessErp;
 
     /// <summary>
+    /// 采购订单**变更**再审批模板码（#1685）：取自审批契约的唯一事实来源，
+    /// ERP 变更发起侧（<c>RequestPurchaseOrderChangeCommandHandler</c>）与本侧种子逐字共用。
+    ///
+    /// 不挂任何世界观历史链——历史里的采购审批全是下达链；本模板只保证走查 / 演示时
+    /// 实时发起的变更审批开箱可用（少这张模板，种子态发起变更必 400「审批模板不存在」）。
+    /// </summary>
+    public const string PurchaseChangeTemplateCode = ApprovalTemplateCodes.PurchaseOrderChange;
+
+    /// <summary>
+    /// 变更模板的单据类型**刻意沿用**下达的 <see cref="ApprovalDocumentTypes.PurchaseOrder"/>：
+    /// 被审对象仍是同一张采购订单，而 ERP 回写消费侧、审批委托的单据范围、界面单据类型词表
+    /// 三处都按 documentType 判定，换新值必须三处同步（漏一处即回写静默丢事件，#1683 同款坑）。
+    /// 区分下达与变更由模板码承担。
+    /// </summary>
+    public const string PurchaseChangeDocumentType = ApprovalDocumentTypes.PurchaseOrder;
+
+    /// <summary>
+    /// 变更审批的来源服务：与下达同为 ERP，仍取审批契约常量（回写消费侧按它分流）。
+    /// </summary>
+    public const string PurchaseChangeSourceService = ApprovalSourceServices.BusinessErp;
+
+    /// <summary>下达模板的步骤名。</summary>
+    public const string PurchaseReleaseStepName = "总经理审批";
+
+    /// <summary>
+    /// 变更模板的步骤名，与 <see cref="PurchaseReleaseStepName"/> **刻意不同**：
+    /// 审批人收件箱的待办表只有「单据 / 当前步骤 / 单据类型 / 到期时间」四列，
+    /// 单据号与单据类型在两类链上完全一致，能在收件箱上分辨两类待办的正是这一列。
+    /// </summary>
+    public const string PurchaseChangeStepName = "采购变更审批";
+
+    /// <summary>
     /// NCR 处置评审审批模板码：取自审批契约的唯一事实来源（#1684 收敛）——该码现在还参与
     /// 跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals.SeededDispositionChainId"/>），
     /// Quality 侧回链与本侧种子必须逐字同码。
