@@ -10,7 +10,7 @@ provider 搬迁只保持已经 canonical 的 v1 `ObjectKey`；legacy/non-canonic
 
 ## 执行资格与状态权威
 
-执行资格与状态权威只指向 [Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 和 [implementation-readiness.md](implementation-readiness.md)。本 PR 不修改 readiness，也不在本手册复制动态责任、进度或日期信息。
+执行资格与状态权威只指向 [Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 和 [implementation-readiness.md](implementation-readiness.md)。本手册不承载实施状态或 readiness 同步记录，也不复制动态责任、进度或日期信息。
 
 ## 角色与决策分离
 
@@ -275,7 +275,7 @@ commit target：
 | identity/config 漂移 | 阻断批次，废止漂移后的证据 | 否；重新计划并冻结身份 | source 保持或恢复冻结前授权态 |
 | fence 破坏或发现未冻结 mutation | 立即停止，废止 freeze 后 manifest/copy 资格 | 否；修复 fence 后从 freeze 重建证据 | 业务停服，source 不清理 |
 | digest freeze 前 reconciliation 发现 manifest missing/orphan/conflict | copy/cutover 阻断并输出逐项原因 | 可；修复 source 事实后重新 freeze/reconciliation，并冻结新的 digest | source 冻结、fence 保持，target 不开放 |
-| digest freeze 后发现 manifest 字节/条目 missing/orphan/conflict | 本 run/digest 失败关闭，禁止重解释或重建 | 否；废止该 run 身份，以新 run 重新规划、freeze 并生成 manifest | source 保持 pre-open 冻结、fence 持续，target 不开放 |
+| digest freeze 后发现 manifest 字节/条目 missing/orphan/conflict | 本 run/digest 失败关闭，禁止重解释或重建 | 否；废止该 run 身份，以新 run 重新规划、freeze 并生成 manifest | source 保持冻结、fence 持续，target 不开放 |
 | legacy evidence 缺失或 non-canonical key 未闭合 | 阻断 catalog 与 copy，不猜填 | 否；先取得完整 recorded key/exact readback 或闭合 #994 | source 冻结，target 不开放 |
 | capacity/health 拒绝 | 按 ADR 0024 拒绝相应 I/O；critical 阻断全部动作 | 可；同 identity 恢复健康并重新 preflight | source 保持，target 不新增字节 |
 | target 已存在且 exact readback 为 same | 记录 same，不覆盖 | 可；按同 checkpoint 幂等继续 | target 保留一致对象，仍未开放 |
