@@ -239,7 +239,7 @@ public sealed class FileStorageRestartPersistenceTests
 
     private static WebApplicationFactory<Program> CreateFactory(string connectionString, bool autoMigrate)
     {
-        return new WebApplicationFactory<Program>()
+        return new FileStorageUnconfiguredWebApplicationFactory()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
