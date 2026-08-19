@@ -122,7 +122,7 @@ public sealed class GatewayAuthorizationTests
         FakeGatewayAuthorizationClient auth,
         FakeAppHubClient appHub,
         Action<IWebHostBuilder>? configureBuilder = null) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        PlatformGatewayTestHost.CreateFactory().WithWebHostBuilder(builder =>
         {
             configureBuilder?.Invoke(builder);
             builder.ConfigureServices(services =>

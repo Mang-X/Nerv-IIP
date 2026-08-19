@@ -17,7 +17,7 @@ public sealed class GatewayInstanceTests
     {
         var fake = new FakeAppHubClient();
         var auth = FakeGatewayAuthorizationClient.Allowed();
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAppHubClient>();
@@ -65,7 +65,7 @@ public sealed class GatewayInstanceTests
     public async Task Instance_endpoint_returns_diagnostic_failure_when_apphub_is_unavailable()
     {
         var auth = FakeGatewayAuthorizationClient.Allowed();
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
             .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAppHubClient>();
