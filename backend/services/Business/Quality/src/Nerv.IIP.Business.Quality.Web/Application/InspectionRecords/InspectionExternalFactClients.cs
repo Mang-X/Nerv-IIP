@@ -118,7 +118,7 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!string.Equals(sourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(sourceType, QualityInspectionSourceTypes.Receiving, StringComparison.OrdinalIgnoreCase))
         {
             return new InspectionSourceDocumentVerification(true, skuCode, inspectedQuantity);
         }
