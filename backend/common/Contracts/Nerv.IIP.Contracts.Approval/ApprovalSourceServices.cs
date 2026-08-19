@@ -73,4 +73,21 @@ public static class ApprovalSourceServices
     /// 集成事件**信封**的发布方标识另有其值（<c>business-quality</c>），与本常量既不同值也不同义。
     /// </summary>
     public const string Quality = "quality";
+
+    /// <summary>
+    /// Quality 审批来源服务的**历史别名**（取值 <c>business-quality</c>），
+    /// 与 <see cref="ApprovalDocumentTypes.NcrDispositionAliases"/> 同一姿势：
+    /// 只用于「读既有链」的向后兼容匹配（<c>HttpApprovalChainStatusClient.QualitySourceServices</c>
+    /// 受理集合），**新发起的链一律用 <see cref="Quality"/>**，任何写入面都不得引用本常量。
+    ///
+    /// 之所以进本词表而不是留作裸字面量：受理集合是「审批来源服务」这一概念的取值面，
+    /// 权威只能有一份（#1683 的教训是发起侧与消费侧各写各的字面量、漂移后静默丢事件）。
+    ///
+    /// 注意与**字面量相同但语义不同**者区分，不可互相引用：
+    /// <c>Nerv.IIP.Contracts.Quality.QualityIntegrationEventSources.BusinessQuality</c> 与
+    /// <c>Nerv.IIP.Contracts.Inventory.InventoryIntegrationEventSources.BusinessQuality</c>
+    /// 是集成事件**信封**的发布方标识（<c>IntegrationEvent.SourceService</c>），
+    /// 那两个值随事件信封演进，本常量随审批历史数据固定——一方改值不得带动另一方。
+    /// </summary>
+    public const string QualityLegacyAlias = "business-quality";
 }
