@@ -179,7 +179,9 @@ function Get-RunnerArguments {
         [Parameter(Mandatory)] [string] $ExpectedManifestDigest,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $SummaryPath,
-        [Parameter(Mandatory)] [scriptblock] $Action
+        [Parameter(Mandatory)] [scriptblock] $Action,
+        [string] $Event = 'workflow_dispatch',
+        [string] $RunAttempt = '2'
     )
 
     return @{
@@ -192,15 +194,54 @@ function Get-RunnerArguments {
         Repository = 'Mang-X/Nerv-IIP'
         TestedSha = '0123456789abcdef0123456789abcdef01234567'
         RunId = '123456789'
-        RunAttempt = 2
+        RunAttempt = $RunAttempt
         ManifestPath = 'scripts/acceptance-scenario-matrix.json'
-        Event = 'workflow_dispatch'
+        Event = $Event
         WorkflowPath = $WorkflowPath
         WorkflowJobName = 'acceptance-scenario-matrix-runtime'
         WorkflowStepName = 'Run acceptance scenario matrix'
         SummaryPath = $SummaryPath
         RuntimeAction = $Action
     }
+}
+
+function Assert-RunnerBoundaryRejected {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [string] $ExpectedMessage,
+        [Parameter(Mandatory)] [string] $ArtifactPath,
+        [Parameter(Mandatory)] [string] $ArtifactDigest,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [string] $Event = 'workflow_dispatch',
+        [string] $RunAttempt = '2'
+    )
+
+    $summaryPath = Join-Path $fixtureRoot "runner-boundary-$Name-summary.json"
+    $actionContracts = [Collections.Generic.List[object]]::new()
+    $action = { param([object] $Contract) $actionContracts.Add($Contract); return $firstEquivalenceInput }.GetNewClosure()
+    $arguments = Get-RunnerArguments `
+        -ArtifactPath $ArtifactPath `
+        -ExpectedArtifactDigest $ArtifactDigest `
+        -ManifestFilePath $manifestPath `
+        -ExpectedManifestDigest $ManifestDigest `
+        -WorkflowPath $WorkflowPath `
+        -SummaryPath $summaryPath `
+        -Action $action `
+        -Event $Event `
+        -RunAttempt $RunAttempt
+    $observedMessage = '<no exception>'
+    try { & $runnerPath @arguments | Out-Null }
+    catch { $observedMessage = $_.Exception.Message }
+    Assert-Contract ($observedMessage.Contains($ExpectedMessage, [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must fail with '$ExpectedMessage'; observed '$observedMessage'."
+    Assert-Contract ($actionContracts.Count -eq 0) "Runner boundary mutation '$Name' must execute zero actions."
+    Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) "Runner boundary mutation '$Name' must persist a final summary."
+    $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$summary.status, 'failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must persist failed status."
+    Assert-Contract ([string]::Equals(($summary.transitions.state -join '|'), 'preflight-started|preflight-failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must persist preflight failure."
+    Assert-Contract ([string]::Equals([string]$summary.failureClassification, 'preflight-failed', [StringComparison]::Ordinal)) "Runner boundary mutation '$Name' must classify the preflight failure."
+    Assert-Contract ($null -eq $summary.event) "Runner boundary mutation '$Name' must not persist an unvalidated raw event."
+    Assert-Contract ($null -eq $summary.runAttempt) "Runner boundary mutation '$Name' must not persist an unvalidated raw run attempt."
 }
 
 function Assert-PreflightRejected {
@@ -464,12 +505,45 @@ try {
         @{ Name = 'owned-resource-cleanup'; Apply = { param($value) $value.cleanup.ownedResourcesRemaining = 1 }; Message = 'ownedResourcesRemaining must be 0' },
         @{ Name = 'cleanup-error'; Apply = { param($value) $value.cleanup.errorCodes = @('owned-resource-cleanup-failed') }; Message = 'errorCodes must be empty' },
         @{ Name = 'volatile-process-id-type'; Apply = { param($value) $value.volatile.processIds = @('101') }; Message = 'processIds must contain only non-negative JSON integers' },
+        @{ Name = 'volatile-process-id-duplicate'; Apply = { param($value) $value.volatile.processIds = @(101, 101) }; Message = 'processIds must contain unique integer values' },
         @{ Name = 'volatile-started-at-type'; Apply = { param($value) $value.volatile.startedAtUtc = 123 }; Message = 'startedAtUtc must be a trimmed non-empty string' }
     )) {
         $mutatedResult = Copy-JsonObject $firstEquivalenceInput
         & $mutation.Apply $mutatedResult
         Assert-ResultRejected -Name $mutation.Name -Results @($mutatedResult) -ExpectedMessage $mutation.Message -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
     }
+
+    $compoundCleanupFailure = Copy-JsonObject $firstEquivalenceInput
+    $compoundCleanupFailure.conclusion = 'failed'
+    $compoundCleanupFailure.test.passed = 0
+    $compoundCleanupFailure.test.failed = 1
+    $compoundCleanupFailure.checkpoints.firstConsumeFailureRecovered = $false
+    $compoundCleanupFailure.cleanup.ownedResourcesRemaining = 1
+    $compoundCleanupFailure.cleanup.errorCodes = @('owned-resource-cleanup-failed')
+    $compoundSummaryPath = Join-Path $fixtureRoot 'result-compound-cleanup-summary.json'
+    $compoundAction = { return $compoundCleanupFailure }.GetNewClosure()
+    $compoundArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $compoundSummaryPath -Action $compoundAction
+    $compoundException = $null
+    try { & $runnerPath @compoundArguments | Out-Null }
+    catch { $compoundException = $_.Exception }
+    Assert-Contract ($null -ne $compoundException) 'A compound scenario and cleanup failure must throw.'
+    Assert-Contract ([string]::Equals([string]$compoundException.Data['NervAcceptanceFailureClassification'], 'cleanup-failed', [StringComparison]::Ordinal)) 'A compound failure exception must classify cleanup as the priority failure.'
+    Assert-Contract ($compoundException.Message.Contains('cleanup', [StringComparison]::Ordinal)) 'A compound failure must report cleanup failure before scenario outcome.'
+    Assert-Contract (-not $compoundException.Message.Contains("conclusion must be 'passed'", [StringComparison]::Ordinal)) 'A compound cleanup failure must not be reported only as scenario conclusion failure.'
+    $compoundSummary = Get-Content -LiteralPath $compoundSummaryPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-Contract ([string]::Equals([string]$compoundSummary.failureClassification, 'cleanup-failed', [StringComparison]::Ordinal)) 'A compound failure summary must persist cleanup-failed classification.'
+    Assert-Contract ($compoundSummary.result.cleanup.ownedResourcesRemaining -eq 1) 'A compound failure summary must retain the owned-resource cleanup readback.'
+    Assert-Contract ([string]::Equals(($compoundSummary.result.cleanup.errorCodes -join '|'), 'owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'A compound failure summary must retain canonical cleanup error codes.'
+    $compoundSummaryJson = $compoundSummary | ConvertTo-Json -Depth 50 -Compress
+    Assert-Contract (-not $compoundSummaryJson.Contains('nerv_shadow_run_1', [StringComparison]::Ordinal)) 'A failed final summary must exclude the volatile database name.'
+    Assert-Contract (-not $compoundSummaryJson.Contains('attempt-1-aabbcc', [StringComparison]::Ordinal)) 'A failed final summary must exclude the volatile CAP suffix.'
+    Assert-Contract ([string]::Equals([string]$compoundSummary.transitions[-1].state, 'result-validation-failed', [StringComparison]::Ordinal)) 'A compound failure must persist result-validation-failed as final transition.'
+
+    Assert-RunnerBoundaryRejected -Name 'event-unknown' -Event 'WORKFLOW_DISPATCH_INVALID' -ExpectedMessage 'runtime event must be one of' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-non-integer' -RunAttempt 'abc-secret-attempt' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-overflow' -RunAttempt '2147483648' -ExpectedMessage 'runtime run attempt must fit Int32' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-zero' -RunAttempt '0' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
+    Assert-RunnerBoundaryRejected -Name 'attempt-leading-zero' -RunAttempt '02' -ExpectedMessage 'runtime run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
 
     $externalManifestPath = Join-Path $repositoryFixtureRoot 'external-authority/acceptance-scenario-matrix.json'
     Write-JsonFixture -Path $externalManifestPath -Value $manifest
@@ -605,7 +679,7 @@ try {
     Assert-PreflightRejected -Name 'manifest-digest-wrong-case' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'expected digest must be a lowercase' -ExpectedManifestDigest $manifestDigest.ToUpperInvariant()
     $wrongCaseEventArtifact = Copy-JsonObject $artifact
     $wrongCaseEventArtifact.event = 'WORKFLOW_DISPATCH'
-    Assert-PreflightRejected -Name 'trusted-event-wrong-case' -Artifact $wrongCaseEventArtifact -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage "Planning event 'WORKFLOW_DISPATCH' is invalid" -Event 'WORKFLOW_DISPATCH'
+    Assert-PreflightRejected -Name 'trusted-event-wrong-case' -Artifact $wrongCaseEventArtifact -Manifest (Copy-JsonObject $manifest) -WorkflowPath $workflowPath -ExpectedMessage 'runtime event must be one of' -Event 'WORKFLOW_DISPATCH'
 
     $shortWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-short' -StepTimeoutMinutes 37
     Assert-PreflightRejected -Name 'execution-budget-shortened' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $shortWorkflowPath -ExpectedMessage 'must be strictly less than'

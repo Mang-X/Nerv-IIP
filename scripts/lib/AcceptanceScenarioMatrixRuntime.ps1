@@ -409,9 +409,7 @@ function New-NervAcceptanceScenarioRuntimeSummary {
     param(
         [Parameter(Mandatory)] [string] $Repository,
         [Parameter(Mandatory)] [string] $TestedSha,
-        [Parameter(Mandatory)] [string] $RunId,
-        [Parameter(Mandatory)] [int] $RunAttempt,
-        [Parameter(Mandatory)] [string] $Event
+        [Parameter(Mandatory)] [string] $RunId
     )
 
     return [pscustomobject][ordered]@{
@@ -420,13 +418,43 @@ function New-NervAcceptanceScenarioRuntimeSummary {
         repository = $Repository
         testedSha = $TestedSha
         runId = $RunId
-        runAttempt = $RunAttempt
-        event = $Event
+        runAttempt = $null
+        event = $null
         status = 'running'
         transitions = @(
             [pscustomobject][ordered]@{ sequence = 1; state = 'preflight-started' }
         )
         result = $null
+        failureClassification = $null
+    }
+}
+
+function Assert-NervAcceptanceScenarioRuntimeInvocation {
+    param(
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event
+    )
+
+    $allowedEvents = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('pull_request', 'push', 'schedule', 'workflow_dispatch'),
+        [StringComparer]::Ordinal)
+    if (-not $allowedEvents.Contains($Event)) {
+        throw "Acceptance scenario runtime event must be one of 'pull_request', 'push', 'schedule', or 'workflow_dispatch'."
+    }
+    if ($RunAttempt -cnotmatch '^[1-9][0-9]*$') {
+        throw 'Acceptance scenario runtime run attempt must be a canonical positive integer.'
+    }
+    $parsedRunAttempt = [Numerics.BigInteger]::Parse(
+        $RunAttempt,
+        [Globalization.NumberStyles]::None,
+        [Globalization.CultureInfo]::InvariantCulture)
+    if ($parsedRunAttempt -gt [int]::MaxValue) {
+        throw 'Acceptance scenario runtime run attempt must fit Int32.'
+    }
+
+    return [pscustomobject][ordered]@{
+        runAttempt = [int]$parsedRunAttempt
+        event = $Event
     }
 }
 
@@ -476,9 +504,9 @@ function Invoke-NervAcceptanceScenarioRuntime {
         [Parameter(Mandatory)] [string] $Repository,
         [Parameter(Mandatory)] [string] $TestedSha,
         [Parameter(Mandatory)] [string] $RunId,
-        [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $Event,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $WorkflowJobName,
         [Parameter(Mandatory)] [string] $WorkflowStepName,
@@ -490,11 +518,13 @@ function Invoke-NervAcceptanceScenarioRuntime {
     $summary = New-NervAcceptanceScenarioRuntimeSummary `
         -Repository $Repository `
         -TestedSha $TestedSha `
-        -RunId $RunId `
-        -RunAttempt $RunAttempt `
-        -Event $Event
+        -RunId $RunId
     Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
     try {
+        $runtimeInvocation = Assert-NervAcceptanceScenarioRuntimeInvocation -RunAttempt $RunAttempt -Event $Event
+        $summary.runAttempt = $runtimeInvocation.runAttempt
+        $summary.event = $runtimeInvocation.event
+        Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
         $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
             -ArtifactPath $ArtifactPath `
             -ExpectedArtifactDigest $ExpectedArtifactDigest `
@@ -505,15 +535,16 @@ function Invoke-NervAcceptanceScenarioRuntime {
             -Repository $Repository `
             -TestedSha $TestedSha `
             -RunId $RunId `
-            -RunAttempt $RunAttempt `
+            -RunAttempt $runtimeInvocation.runAttempt `
             -ManifestPath $ManifestPath `
-            -Event $Event `
+            -Event $runtimeInvocation.event `
             -WorkflowPath $WorkflowPath `
             -WorkflowJobName $WorkflowJobName `
             -WorkflowStepName $WorkflowStepName `
             -ReadFileBytesAction $ReadFileBytesAction
     }
     catch {
+        $summary.failureClassification = 'preflight-failed'
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'preflight-failed' -Status 'failed' -SummaryPath $SummaryPath
         throw
     }
@@ -525,14 +556,17 @@ function Invoke-NervAcceptanceScenarioRuntime {
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'action-completed' -Status 'completed' -SummaryPath $SummaryPath
     }
     catch {
+        $summary.failureClassification = 'action-failed'
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'action-failed' -Status 'failed' -SummaryPath $SummaryPath
         throw
     }
 
     Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-started' -SummaryPath $SummaryPath
     try {
-        $validatedResult = Assert-NervAcceptanceScenarioRuntimeResult -Results $actionResults -ValidatedScenario $contract.scenario
-        $summary.result = $validatedResult
+        $resultSnapshot = New-NervAcceptanceScenarioRuntimeResultSnapshot -Results $actionResults -ValidatedScenario $contract.scenario
+        $summary.result = $resultSnapshot
+        Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
+        $validatedResult = Assert-NervAcceptanceScenarioRuntimeResult -ResultSnapshot $resultSnapshot
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-passed' -Status 'passed' -SummaryPath $SummaryPath
         return [pscustomobject][ordered]@{
             contract = $contract
@@ -542,6 +576,9 @@ function Invoke-NervAcceptanceScenarioRuntime {
         }
     }
     catch {
+        $failureClassification = [string]$_.Exception.Data['NervAcceptanceFailureClassification']
+        if ([string]::IsNullOrEmpty($failureClassification)) { $failureClassification = 'result-schema-invalid' }
+        $summary.failureClassification = $failureClassification
         Add-NervAcceptanceScenarioRuntimeTransition -Summary $summary -State 'result-validation-failed' -Status 'failed' -SummaryPath $SummaryPath
         throw
     }
@@ -664,9 +701,13 @@ function New-NervAcceptanceScenarioEquivalenceVector {
     if ($Result.volatile.processIds -isnot [array]) {
         throw 'Runtime equivalence volatile processIds must be an array.'
     }
+    $processIds = [Collections.Generic.HashSet[int64]]::new()
     foreach ($processId in @($Result.volatile.processIds)) {
         if (-not (Test-NervAcceptanceInteger -Value $processId) -or [int64]$processId -lt 0) {
             throw 'Runtime equivalence volatile processIds must contain only non-negative JSON integers.'
+        }
+        if (-not $processIds.Add([int64]$processId)) {
+            throw 'Runtime equivalence volatile processIds must contain unique integer values.'
         }
     }
 
@@ -697,7 +738,18 @@ function New-NervAcceptanceScenarioEquivalenceVector {
     }
 }
 
-function Assert-NervAcceptanceScenarioRuntimeResult {
+function New-NervAcceptanceScenarioRuntimeValidationException {
+    param(
+        [Parameter(Mandatory)] [string] $Classification,
+        [Parameter(Mandatory)] [string] $Message
+    )
+
+    $exception = [InvalidOperationException]::new($Message)
+    $exception.Data['NervAcceptanceFailureClassification'] = $Classification
+    return $exception
+}
+
+function New-NervAcceptanceScenarioRuntimeResultSnapshot {
     param(
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Results,
         [Parameter(Mandatory)] [object] $ValidatedScenario
@@ -707,10 +759,23 @@ function Assert-NervAcceptanceScenarioRuntimeResult {
     if ($observedResults.Count -ne 1) {
         throw "Acceptance scenario runtime action must produce exactly one result; observed $($observedResults.Count)."
     }
-    $vector = New-NervAcceptanceScenarioEquivalenceVector -Result $observedResults[0] -ValidatedScenario $ValidatedScenario
+    return New-NervAcceptanceScenarioEquivalenceVector -Result $observedResults[0] -ValidatedScenario $ValidatedScenario
+}
 
-    if (-not [string]::Equals([string]$vector.conclusion, 'passed', [StringComparison]::Ordinal)) {
-        throw "Runtime equivalence conclusion must be 'passed'."
+function Assert-NervAcceptanceScenarioRuntimeResult {
+    param([Parameter(Mandatory)] [object] $ResultSnapshot)
+
+    foreach ($name in @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining')) {
+        $observed = [int64]$ResultSnapshot.cleanup.PSObject.Properties[$name].Value
+        if ($observed -ne 0) {
+            throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'cleanup-failed' -Message "Runtime equivalence cleanup $name must be 0; observed $observed.")
+        }
+    }
+    if (@($ResultSnapshot.cleanup.errorCodes).Count -ne 0) {
+        throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'cleanup-failed' -Message 'Runtime equivalence cleanup errorCodes must be empty.')
+    }
+    if (-not [string]::Equals([string]$ResultSnapshot.conclusion, 'passed', [StringComparison]::Ordinal)) {
+        throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'scenario-failed' -Message "Runtime equivalence conclusion must be 'passed'.")
     }
     $requiredTestCounts = [ordered]@{
         expected = 1L
@@ -720,30 +785,21 @@ function Assert-NervAcceptanceScenarioRuntimeResult {
         skipped = 0L
     }
     foreach ($name in $requiredTestCounts.Keys) {
-        $observed = [int64]$vector.test.PSObject.Properties[$name].Value
+        $observed = [int64]$ResultSnapshot.test.PSObject.Properties[$name].Value
         $required = [int64]$requiredTestCounts[$name]
         if ($observed -ne $required) {
-            throw "Runtime equivalence test $name must be $required; observed $observed."
+            throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'test-evidence-failed' -Message "Runtime equivalence test $name must be $required; observed $observed.")
         }
     }
     foreach ($name in @('sourceStateCommittedBeforeMutation', 'http200BusinessErrorRejected', 'duplicateConverged', 'outOfOrderConverged', 'firstConsumeFailureRecovered')) {
-        if (-not [bool]$vector.checkpoints.PSObject.Properties[$name].Value) {
-            throw "Runtime equivalence checkpoint '$name' must be true."
+        if (-not [bool]$ResultSnapshot.checkpoints.PSObject.Properties[$name].Value) {
+            throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'checkpoint-failed' -Message "Runtime equivalence checkpoint '$name' must be true.")
         }
     }
     foreach ($name in @('capturedBeforeCleanup', 'secretsRedacted')) {
-        if (-not [bool]$vector.diagnostics.PSObject.Properties[$name].Value) {
-            throw "Runtime equivalence diagnostic '$name' must be true."
+        if (-not [bool]$ResultSnapshot.diagnostics.PSObject.Properties[$name].Value) {
+            throw (New-NervAcceptanceScenarioRuntimeValidationException -Classification 'diagnostics-failed' -Message "Runtime equivalence diagnostic '$name' must be true.")
         }
     }
-    foreach ($name in @('managedProcessesRemaining', 'disposableDatabasesRemaining', 'ownedResourcesRemaining')) {
-        $observed = [int64]$vector.cleanup.PSObject.Properties[$name].Value
-        if ($observed -ne 0) {
-            throw "Runtime equivalence cleanup $name must be 0; observed $observed."
-        }
-    }
-    if (@($vector.cleanup.errorCodes).Count -ne 0) {
-        throw 'Runtime equivalence cleanup errorCodes must be empty.'
-    }
-    return $vector
+    return $ResultSnapshot
 }
