@@ -61,6 +61,9 @@ public sealed class StockCountApprovalTests
         // 且该模板由审批种子补齐落库；此前默认 COUNT-VARIANCE 在种子里根本不存在 → 盘点确认必 400。
         Assert.Equal(ApprovalTemplateCodes.StockCountVariance, approvalClient.Request!.TemplateCode);
         Assert.Equal("APT-WB-CNT-001", approvalClient.Request.TemplateCode);
+        // #1702 三方漂移契约（Inventory 发起侧）：来源服务同样必须逐字等于审批契约常量——
+        // 它是回写消费侧的分流依据之一，漂了就静默丢事件。
+        Assert.Equal(ApprovalSourceServices.Inventory, approvalClient.Request.SourceService);
         Assert.Equal("inventory", approvalClient.Request.SourceService);
         Assert.Equal(ApprovalDocumentTypes.StockCountVariance, approvalClient.Request.DocumentType);
         Assert.Equal("COUNT-001", approvalClient.Request.DocumentId);
@@ -163,6 +166,91 @@ public sealed class StockCountApprovalTests
         Assert.Equal(StockCountTaskStatuses.Open, restarted.Status);
     }
 
+    /// <summary>
+    /// #1702 回写侧成对用例（正路径）：单据引用的来源服务取审批契约唯一事实来源
+    /// <see cref="ApprovalSourceServices.Inventory"/> 时，盘点调整**必须真的落库**——
+    /// 调整单 posted、账面从 10 走到 7、冻结解除、流水生成，而不是在来源服务分流处静默 return。
+    /// 与下一条事故形态用例成对存在：单独看这条绿是看不出断言有没有鉴别力的。
+    /// </summary>
+    [Fact]
+    public async Task Approval_completion_writes_back_for_the_contract_source_service()
+    {
+        var options = CreateDbContextOptions($"inventory-count-source-ok-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        await using var dbContext = CreateDbContext(options);
+        SeedPendingApprovalCount(dbContext);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
+            new CommandExecutingSender(dbContext),
+            deadLetters).HandleAsync(
+            ApprovalCompletedEvent(ApprovalResults.Approved, ApprovalSourceServices.Inventory),
+            CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(options);
+        var adjustment = verificationDbContext.StockCountAdjustments.Single();
+        Assert.Equal(StockCountAdjustmentStatuses.Posted, adjustment.Status);
+        Assert.NotNull(adjustment.MovementId);
+        Assert.Equal(7m, verificationDbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.False(verificationDbContext.StockLedgers.Single().IsFrozenForCount);
+        Assert.Equal(StockCountTaskStatuses.Confirmed, verificationDbContext.StockCountTasks.Single().Status);
+        Assert.Empty(await deadLetters.ListAsync(
+            ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    /// <summary>
+    /// #1702 回写侧成对用例（事故形态）：来源服务写成集成事件信封的发布方标识
+    /// <c>business-inventory</c>（同域最容易误用的同义词）时，回写**静默失效**——
+    /// 调整单永停 pending-approval、账面不动、库存仍冻结、任务仍 pending-approval，
+    /// 而且连死信都没有（无日志、无异常、无死信，走查时只能靠肉眼发现）。
+    /// 本用例证明上一条的绿是「真的回写了」，而不是断言没有鉴别力。
+    /// </summary>
+    [Theory]
+    [InlineData("business-inventory")]
+    [InlineData("inventory-service")]
+    public async Task Approval_completion_silently_drops_a_drifted_source_service_and_leaves_the_adjustment_pending(
+        string driftedSourceService)
+    {
+        var options = CreateDbContextOptions($"inventory-count-source-drift-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        await using var dbContext = CreateDbContext(options);
+        SeedPendingApprovalCount(dbContext);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+
+        await new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
+            new CommandExecutingSender(dbContext),
+            deadLetters).HandleAsync(
+            ApprovalCompletedEvent(ApprovalResults.Approved, driftedSourceService),
+            CancellationToken.None);
+
+        await using var verificationDbContext = CreateDbContext(options);
+        var adjustment = verificationDbContext.StockCountAdjustments.Single();
+        Assert.Equal(StockCountAdjustmentStatuses.PendingApproval, adjustment.Status);
+        Assert.Null(adjustment.MovementId);
+        Assert.Equal(10m, verificationDbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.True(verificationDbContext.StockLedgers.Single().IsFrozenForCount);
+        Assert.Equal(StockCountTaskStatuses.PendingApproval, verificationDbContext.StockCountTasks.Single().Status);
+        Assert.Empty(await deadLetters.ListAsync(
+            ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    /// <summary>盘点差异待审批的落库现场：账面 10 / 盘点 7 / 已冻结 / 调整单 pending-approval。</summary>
+    private static void SeedPendingApprovalCount(ApplicationDbContext dbContext)
+    {
+        var ledger = NewLedgerWithOnHand(10m);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        task.SubmitForApproval(ledger, 7m);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockCountTasks.Add(task);
+        dbContext.StockCountAdjustments.Add(
+            StockCountAdjustment.RecordPendingApproval(task, "idem-count-approval-001", "chain-count-001", 15m));
+    }
+
     private static StockLedger NewLedgerWithOnHand(decimal quantity)
     {
         var ledger = DomainLedgerFactory.NewLedger();
@@ -173,7 +261,9 @@ public sealed class StockCountApprovalTests
         return ledger;
     }
 
-    private static ApprovalCompletedIntegrationEvent ApprovalCompletedEvent(string result)
+    private static ApprovalCompletedIntegrationEvent ApprovalCompletedEvent(
+        string result,
+        string? documentSourceService = null)
     {
         return new ApprovalCompletedIntegrationEvent(
             "evt-approval-001", ApprovalIntegrationEventTypes.ApprovalApproved, ApprovalIntegrationEventVersions.V1,
@@ -181,7 +271,11 @@ public sealed class StockCountApprovalTests
             "corr-001", "cause-001", "org-001", "env-dev", "system:approval", "approval-completed:chain-count-001",
             new ApprovalCompletedPayload(
                 "chain-count-001", result, "user", "u-finance", null, null,
-                new ApprovalDocumentReferencePayload("inventory", "inventory-count-variance", "COUNT-001", null)));
+                new ApprovalDocumentReferencePayload(
+                    documentSourceService ?? ApprovalSourceServices.Inventory,
+                    ApprovalDocumentTypes.StockCountVariance,
+                    "COUNT-001",
+                    null)));
     }
 
     private static ApplicationDbContext CreateDbContext(DbContextOptions<ApplicationDbContext> options) =>

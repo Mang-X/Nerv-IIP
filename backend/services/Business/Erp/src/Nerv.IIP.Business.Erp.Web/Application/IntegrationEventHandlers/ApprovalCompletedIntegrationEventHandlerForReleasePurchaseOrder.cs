@@ -65,7 +65,9 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOr
         }
 
         if (string.Equals(integrationEvent.Payload.DocumentReference.SourceService, ApprovalSourceServices.BusinessErp, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, "sales-order-credit-release", StringComparison.OrdinalIgnoreCase))
+            // #1702：信用解冻单据类型同样共用审批契约常量——此前发起侧 / 种子侧 / 这里三处各写各的字面量，
+            // 不匹配即落到下面的采购分支再静默 return，销售订单永停 credit-held 且无任何报错。
+            && string.Equals(integrationEvent.Payload.DocumentReference.DocumentType, ApprovalDocumentTypes.SalesOrderCreditRelease, StringComparison.OrdinalIgnoreCase))
         {
             var salesOrder = await dbContext.SalesOrders.SingleOrDefaultAsync(x =>
                 x.OrganizationId == integrationEvent.OrganizationId
