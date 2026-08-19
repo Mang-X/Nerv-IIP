@@ -23,9 +23,13 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
         QualityIntegrationEventTypes.InspectionRejected,
     ];
 
-    // Quality 发布 MES 归属检验的 sourceService 词汇为 "mes"（工单级）/"mes-operation"（工序任务级），与 MES 内部及
-    // 契约 QualityIntegrationEventSources.BusinessMes（"business-mes"）不一致（历史跨服务词汇分歧）。此处入站归一化：
-    // 接受 Quality 的 MES 词汇，统一以 business-mes 存储保留上下文/时间线，使 MES 查询与前端（均用 business-mes）一致。
+    // Quality 发布 MES 归属检验的 sourceService 词汇为 "mes"（工单级）/"mes-operation"（工序任务级），
+    // 与契约 QualityIntegrationEventSources.BusinessMes（"business-mes"）不同。
+    // 按 #1370 ③ 批次 D 裁决：这两个是同一「事件信封来源」面上的**历史别名**（非两个面），
+    // 权威取值是 business-mes，别名仅在入站侧接受、不外扩；
+    // 另一侧的 DemandPlanningDownstreamReferences.BusinessMes（"BusinessMes"）属 DP 接受面，是另一个面，与此无关。
+    // 此处入站归一化：接受 Quality 的 MES 别名，统一以 business-mes 存储保留上下文/时间线，
+    // 使 MES 查询与前端（均用 business-mes）一致。
     private static readonly HashSet<string> MesSourceServiceTokens = new(StringComparer.OrdinalIgnoreCase)
     {
         "mes",
