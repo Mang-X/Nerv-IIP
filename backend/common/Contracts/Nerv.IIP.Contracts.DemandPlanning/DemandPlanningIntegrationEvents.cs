@@ -30,7 +30,17 @@ public static class DemandPlanningDownstreamReferences
 {
     public const string BusinessErp = "BusinessErp";
     public const string PurchaseRequisition = "PurchaseRequisition";
+
+    /// <summary>
+    /// 已接受建议的**下游服务引用**（PascalCase）。这是 DP 接受面的对外口径：
+    /// 网关下游服务表、前端排产工作台的精确等值匹配与 <c>accepted_downstream_service</c> 落库列都用这个取值，
+    /// 与事件信封来源面的 <c>Nerv.IIP.Contracts.Quality.QualityIntegrationEventSources.BusinessMes</c>
+    /// （<c>"business-mes"</c>，短横线小写）是**两个面**：一个是「谁接单」，一个是「谁发的事件」，
+    /// 取值不同、不可互相引用（#1370 ③ 批次 D 裁决：两面并存，改的是种子不是契约取值）。
+    /// </summary>
     public const string BusinessMes = "BusinessMes";
+
+    /// <summary>已接受建议的下游单据类型（MES 工单），与 <see cref="BusinessMes"/> 同一口径面。</summary>
     public const string WorkOrder = "WorkOrder";
 }
 

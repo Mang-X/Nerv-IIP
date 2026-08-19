@@ -6,6 +6,12 @@
 
 NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
 
+## Business Integration Acceptance manifest v2 规划合同（NERV-673②-1 / #1646）
+
+`scripts/acceptance-scenario-matrix.json` 已以 schema v2 登记六个场景：`sales-order-demand`、`wms-delivery-erp`、`mes-produced-lot-inventory`、`telemetry-runtime-maintenance`、`erp-return-closure` 五个 `active/core` 场景，以及 `equipment-unavailable-scheduling-mes` 一个 `blocked/extended` 场景。`scripts/lib/AcceptanceScenarioMatrix.ps1` 已落地严格 schema、v1 双向闭合、影响选择、项目聚合、规划预算、Release discovery 身份闭合和 planning artifact provenance 合同；`scripts/plan-acceptance-scenario-matrix.ps1` 是受治理的纯规划入口，只允许按选中项目执行一次 restore 和一次 `--no-restore --list-tests` discovery，并在成功后原子写入规划 artifact。四个 owning path 已接入 CI impact routing，精确选择 `scripts + backend + full_chain`；Script Governance 已增加纯 fixture 合同 step，`compat-fast` 也显式执行同一合同。
+
+当前 `.github/workflows/ci.yml` **没有** `acceptance-scenario-matrix-planning` job 或 `Plan acceptance scenario matrix` step，也没有 planning/matrix runtime、场景执行或聚合 job。planner 对当前真实 workflow 会在任何 `dotnet restore`、discovery 或其他外部命令之前失败关闭；合同正例使用临时 fake `dotnet`，因此不构成真实项目 discovery 或 hosted runtime 证据。`scripts/full-chain-test-lane.json` 的五个 v1 场景及 `scripts/run-full-chain-test-lane.ps1` 仍是唯一实际执行权威；本轮没有运行新 runtime，没有形成 ERP 专项 job 与 v2 场景的等价证据，也没有形成旧 job、旧 manifest 或旧 runner 的退出证据。`MAN-669 PR-C` 记录的“跨业务验收统一后由 scenario runner 精确构建需要的服务”不由 MAN-669 实现；它仍须由 NERV-673 在未来接入真实 planning/matrix runtime 后独立复评，本轮不据此调整任何构建命令。
+
 ## Business FullChain Acceptance CI 接入（NERV-767 / #1391）
 
 `.github/workflows/ci.yml` 已接入稳定展示名 `Business FullChain Acceptance`。PR 复用 `full_chain` 影响信号；影响计划失败或输出缺失时保守运行，`main` push 始终运行。job 安装并验证 Aspire CLI 13.4.6，同时按 lockfile 安装 frontend 依赖与 Playwright Chromium（MAN-528 的现有 fullstack smoke 会运行真实代理页面），再预拉取 PostgreSQL 18 与 Redis 8。`scripts/run-full-chain-test-lane.ps1` 通过 run/attempt 专属 Compose project 启动真实依赖、执行协议级 readiness，然后按 `scripts/full-chain-test-lane.json` 的固定顺序运行五个 active/core 场景：Maintenance Runtime Hours、MES Inventory Produced Lot、ERP-WMS Delivery Completion、Sales Order Demand Planning 与 ERP Return Closure。前三类跨服务场景继续复用现有受治理 fullstack/acceptance 入口，直接 PostgreSQL 场景由 runner 执行精确测试；各入口统一把唯一 TRX 写入成员专属目录。

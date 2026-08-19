@@ -41,14 +41,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/Spc/SpcAnalysisQueries.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/LeaderDemoSeedService.cs",
             "services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs"),
-        // 待 #1370 ③ 销账：以下 Mes 文件比较/断言的是 PE 生产版本状态（消费 PE 契约响应），
-        // 与 ProductionEngineeringContractStatuses.Active 同族，应改为常量引用。
-        ..Group("active", "待 #1370 ③ 销账：PE 生产版本状态匹配面，应引用 ProductionEngineeringContractStatuses.Active。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/LeaderDemoScaleSeedService.cs",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/LeaderDemoSeedService.cs",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistoryProductionVersionResolver.cs"),
 
         // ── "archived" ──────────────────────────────────────────────────────────────
         // 同值不同义：Scheduling 保留策略的 Prometheus 指标标签值，非 PE 契约状态。
@@ -60,12 +52,6 @@ internal static class VocabularyDriftExemptions
         // 非 PlanningSuggestionAccepted 事件里的来源引用。
         ..Group("DemandPlanning", "同值不同义：编码分配请求方标识，非 DP 建议来源引用。",
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Commands/DemandPlanningCodingService.cs"),
-        // 待 #1370 ③ 销账：Mes 计划转工单的 SourceSystem/SourceDocumentType 兜底值正是
-        // DemandPlanningSourceReferences 词表所守护的跨服务引用，应改常量引用。
-        ..Group("DemandPlanning", "待 #1370 ③ 销账：DP 来源引用族兜底值，应引用 DemandPlanningSourceReferences.DemandPlanning。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs"),
-        ..Group("PlanningSuggestion", "待 #1370 ③ 销账：DP 来源引用族兜底值，应引用 DemandPlanningSourceReferences.PlanningSuggestion。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs"),
         // 同值不同义：MES 追溯图节点类型（与 OperationTask/ProductionReport/Material 同一枚举面），
         // 非 DP 下游单据引用；MES 就绪分类的来源标签 "BusinessMes" 同理。
         ..Group("WorkOrder", "同值不同义：MES 追溯图节点类型，非 DP 下游单据引用。",
@@ -74,26 +60,18 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesReadinessReasonCodes.cs"),
 
         // ── 集成事件信封来源族 ──────────────────────────────────────────────────────
-        // 待 #1370 ③ 销账：AppHub 事件转换器写的正是事件信封 SourceService，
-        // 应引用 AppHubIntegrationEventSources.AppHub。
-        ..Group("apphub", "待 #1370 ③ 销账：事件信封来源，应引用 AppHubIntegrationEventSources.AppHub。",
-            "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/IntegrationEventConverters/ApplicationInstanceStatusChangedIntegrationEventConverter.cs",
-            "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/IntegrationEventConverters/ApplicationRegisteredIntegrationEventConverter.cs"),
-        // 待 #1370 ③ 销账：DP 种子把「已接受建议的下游服务」写成 "business-mes"，
-        // 而契约词表 DemandPlanningDownstreamReferences.BusinessMes 取值是 "BusinessMes"——
-        // 两种大小写并存正是 #1683 形态的分叉，销账时须裁决统一口径。
-        ..Group("business-mes", "待 #1370 ③ 销账：DP 下游服务引用与契约词表大小写分叉（business-mes vs BusinessMes），须裁决统一。",
-            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Seed/WorldHistorySeedService.cs"),
+        // #1370 ③ 批次 D 已销账：DP 种子的下游服务/单据类型改引 DemandPlanningDownstreamReferences
+        // （BusinessMes / WorkOrder），对应豁免已删除。裁决口径：PascalCase 的 DP 接受面与短横线小写的
+        // 事件信封来源面（QualityIntegrationEventSources.BusinessMes = "business-mes"）是两个面、并存不合并；
+        // 缺陷在种子而非契约取值，故只改种子。网关读面自用的第三变体 "BusinessMES"
+        // （gateway/BusinessGateway/.../BusinessConsoleSearchService.cs）不在本门禁扫描范围
+        // （只扫 backend/services/**），登记豁免会被 stale 检查判红，故仅在此备案不改不登记。
         // 同值不同义：分布式锁 key 的命名空间片段。锁前缀是既有锁的身份，与事件信封来源的演化无关，
         // 不可互相引用（改锁前缀会使在途锁失效）。
         ..Group("business-inventory", "同值不同义：分布式锁 key 命名空间片段，非事件信封来源。",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs"),
         ..Group("business-product-engineering", "同值不同义：分布式锁 key 命名空间片段，非事件信封来源。",
             $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs"),
-        // 待 #1370 ③ 销账：Quality 审批链来源别名清单（QualityFacts.ServiceName / business-quality / quality
-        // 三种历史拼写并存）就是审批 sourceService 匹配面，应收敛到 ApprovalSourceServices.Quality 并裁决别名去留。
-        ..Group("business-quality", "待 #1370 ③ 销账：审批链来源历史别名，应收敛到 ApprovalSourceServices 词表。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Approvals/ApprovalChainStatusClient.cs"),
 
         // ── 审批链状态匹配面 ────────────────────────────────────────────────────────
         // 待 #1370 ③ 销账：这里比较的是审批链 Status（approved），审批链状态词表尚未入
@@ -184,10 +162,19 @@ internal static class VocabularyDriftExemptions
             "services/AppHub/src/Nerv.IIP.AppHub.Web/Application/Connectors/ConnectorCollectionHealthEvaluator.cs"),
 
         // ── "maintenance"（事件源 vs 站点/owner/字典/启发式） ───────────────────────
-        // 待 #1370 ③ 销账：本文件 3 处 "maintenance" 语义混合——SourceService（库存流水来源服务，
-        // 真违例：该族词表 InventoryMovementSourceServices 目前只有 quality，需补值后改引用）、
-        // SiteCode 与 OwnerType（同值不同义）；按文件粒度整体登记，销账时逐处复核。
-        ..Group("maintenance", "待 #1370 ③ 销账：含库存流水 SourceService 真违例（另两处为 Site/Owner 同值不同义），销账时逐处复核。",
+        // #1370 ③ 批次 D 逐处复核结论（InventoryMovementRequestedPayload 按位置参数逐一确认）：
+        // 第 2 位 SourceService 是真违例 —— 已给 InventoryMovementSourceServices 补 Maintenance = "maintenance"
+        // （纯加法；Inventory 消费端对 payload.SourceService 只透传、无白名单校验，无消费端联动）并改常量引用；
+        // 余下两处永久豁免，各自裁决如下：
+        //   · 第 9 位 SiteCode —— 维修备件出库的站点码，属 MasterData 站点码值域，非库存流水来源服务；
+        //   · 第 13 位 OwnerType —— 库存归属方类型（自有/客供/供应商寄售同一枚举面），非库存流水来源服务。
+        // 二者与 SourceService 只是恰好同值，各自独立演化，不可互相引用。
+        // 注：白名单按（值 × 文件）二元组建索引，同值同文件只能有一条条目，
+        // 故两处裁决逐条写在同一条目的裁决文本里（下方 Adjudication 已逐处列明），不能拆成两条同键条目。
+        ..Group(
+            "maintenance",
+            "同值不同义（逐处）：SiteCode（第 9 位参数，维修备件站点码）与 OwnerType（第 13 位参数，库存归属方类型），"
+            + "均非库存流水来源服务；同文件的 SourceService 真违例已于 #1370 ③ 批次 D 改引 InventoryMovementSourceServices.Maintenance。",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs"),
         ..Group("maintenance", "同值不同义：保养计划 owner 标识，非事件信封来源。",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/MaintenanceSeedService.cs"),
@@ -199,24 +186,15 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/SchedulePlanCalendarProjector.cs"),
         ..Group("maintenance", "同值不同义：维护窗口原因码（排产夹具数据），非事件信封来源。",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/ShockAbsorberSchedulingFixture.cs"),
-        // 待 #1370 ③ 销账：维修工单 openedBy 写的是 IT 服务标识，与
-        // IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry 同值；是否属同一匹配面待销账时裁决。
-        ..Group("industrialTelemetry", "待 #1370 ③ 销账：维修工单 openedBy 服务标识，与 IT 事件源同值，归属待裁决。",
-            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/WorldHistorySeedService.cs"),
+        // #1370 ③ 批次 D 已销账：维修工单种子的 openedBy 改引
+        // IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry——运行路径
+        // （OpenWorkOrderWhenAlarmRaisedHandler）本就把该常量直接作为 openedBy 传入建单命令，
+        // 种子在模拟同一条路径，属同一匹配面；对应豁免已删除。
 
         // ── "inventory" ─────────────────────────────────────────────────────────────
         // 同值不同义：库存目录响应的 sourceKind 字段，非审批来源服务（票面 (a) 类点名的多义值）。
         ..Group("inventory", "同值不同义：库存目录响应 sourceKind，非审批来源服务。",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/ListInventoryDirectoryQuery.cs"),
-
-        // ── DP 建议类型族（DemandPlanningSuggestionTypes） ──────────────────────────
-        // 待 #1370 ③ 销账：MRP 计算器与规划种子规格写的正是建议类型本尊，应改常量引用。
-        ..Group("planned-purchase", "待 #1370 ③ 销账：DP 建议类型族，应引用 DemandPlanningSuggestionTypes.PlannedPurchase。",
-            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs",
-            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Seed/WorldHistoryPlanningSpec.cs"),
-        ..Group("planned-work-order", "待 #1370 ③ 销账：DP 建议类型族，应引用 DemandPlanningSuggestionTypes.PlannedWorkOrder。",
-            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/MrpCalculator.cs",
-            $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Seed/WorldHistoryPlanningSpec.cs"),
 
         // ── "purchase-order" / "purchase-receipt"（审批单据 vs Coding 文档 vs WMS 源单据） ──
         // 同值不同义：Coding 编码规则的文档类型键与计划输入的源单据类型，

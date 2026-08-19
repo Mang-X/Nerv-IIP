@@ -5,6 +5,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggre
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Seed;
 
@@ -26,9 +27,16 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
     /// <summary>每批单据数。批内共享一次预查与一次 <c>SaveChanges</c>，批末清变更跟踪器。</summary>
     public const int BatchSize = 200;
 
-    /// <summary>已接受建议的下游服务/单据类型（MES 工单）。</summary>
-    public const string DownstreamService = "business-mes";
-    public const string DownstreamDocumentType = "work-order";
+    /// <summary>
+    /// 已接受建议的下游服务/单据类型（MES 工单）。取值必须与契约词表
+    /// <see cref="DemandPlanningDownstreamReferences"/> 完全一致：
+    /// <c>AcceptPlanningSuggestionCommand</c> 与 MES 侧消费者都对该字段做取值比对
+    /// （OrdinalIgnoreCase，只忽略大小写、不忽略连字符），
+    /// 历史上种子写的 <c>business-mes</c>/<c>work-order</c> 两侧都匹配不上，
+    /// 种子产出的已接受建议在工作台上永远不会被识别为 MES 工单联动（#1370 ③ 批次 D 销账）。
+    /// </summary>
+    public const string DownstreamService = DemandPlanningDownstreamReferences.BusinessMes;
+    public const string DownstreamDocumentType = DemandPlanningDownstreamReferences.WorkOrder;
 
     public async Task<WorldHistoryPlanningSeedReport> SeedAsync(
         string organizationId,

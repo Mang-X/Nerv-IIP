@@ -33,6 +33,14 @@ public static class InventoryMovementSourceServices
 
     /// <summary>WMS 侧发起的库存移动/预留所写的来源服务短名（与事件信封来源 <c>business-wms</c> 是两个面）。</summary>
     public const string Wms = "wms";
+
+    /// <summary>
+    /// Maintenance 侧发起的备件出库所写的来源服务短名（载荷 <c>SourceService</c> 面）。
+    /// 与事件信封来源 <c>Nerv.IIP.Contracts.Maintenance.MaintenanceIntegrationEventSources.Maintenance</c>
+    /// 恰好同值，但是**两个面**：前者是「这笔库存流水由谁发起」，后者是「这条集成事件由谁发布」，
+    /// 各自独立演化，不可互相引用（#1370 ③ 批次 D 补值；消费端 Inventory 对该字段只透传、无白名单校验）。
+    /// </summary>
+    public const string Maintenance = "maintenance";
 }
 
 public static class InventoryMovementRequestTypes

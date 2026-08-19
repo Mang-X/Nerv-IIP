@@ -27,6 +27,13 @@ public static class QualityIntegrationEventVersions
 public static class QualityIntegrationEventSources
 {
     public const string BusinessQuality = "business-quality";
+
+    /// <summary>
+    /// MES 侧**事件信封来源**服务短名（短横线小写），与可观测性服务名、CAP 消费者名同一口径面；
+    /// 与 DP 接受面的 <c>Nerv.IIP.Contracts.DemandPlanning.DemandPlanningDownstreamReferences.BusinessMes</c>
+    /// （<c>"BusinessMes"</c>，PascalCase）是**两个面**，取值不同、不可互相引用
+    /// （#1370 ③ 批次 D 裁决：两面并存，各自面内保持单一取值）。
+    /// </summary>
     public const string BusinessMes = "business-mes";
 }
 
