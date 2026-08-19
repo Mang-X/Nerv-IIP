@@ -12,45 +12,81 @@
 
 . (Join-Path $PSScriptRoot 'AcceptanceScenarioMatrix.ps1')
 
-function Get-NervAcceptanceRuntimeFileDigest {
+function Read-NervAcceptanceRuntimeJsonSnapshot {
     param(
         [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Context
+        [Parameter(Mandatory)] [string] $Context,
+        [string] $ExpectedDigest,
+        [scriptblock] $ReadFileBytesAction
     )
 
     Assert-NervAcceptanceString -Value $Path -Context "$Context path"
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Context path '$Path' must identify one existing file." }
-    $sha256 = [Security.Cryptography.SHA256]::Create()
-    try {
-        return ([Convert]::ToHexString($sha256.ComputeHash([IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Path).Path)))).ToLowerInvariant()
+    if (-not [string]::IsNullOrEmpty($ExpectedDigest) -and $ExpectedDigest -cnotmatch '^[0-9a-f]{64}$') {
+        throw "$Context expected digest must be a lowercase SHA-256 digest."
     }
+
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
+    $bytes = if ($null -eq $ReadFileBytesAction) {
+        [IO.File]::ReadAllBytes($resolvedPath)
+    }
+    else {
+        [byte[]]@(& $ReadFileBytesAction $resolvedPath)
+    }
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try { $actualDigest = ([Convert]::ToHexString($sha256.ComputeHash($bytes))).ToLowerInvariant() }
     finally { $sha256.Dispose() }
-}
-
-function Assert-NervAcceptanceRuntimeFileDigest {
-    param(
-        [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $ExpectedDigest,
-        [Parameter(Mandatory)] [string] $Context
-    )
-
-    if ($ExpectedDigest -cnotmatch '^[0-9a-f]{64}$') { throw "$Context expected digest must be a lowercase SHA-256 digest." }
-    $actualDigest = Get-NervAcceptanceRuntimeFileDigest -Path $Path -Context $Context
-    if (-not [string]::Equals($actualDigest, $ExpectedDigest, [StringComparison]::Ordinal)) {
+    if (-not [string]::IsNullOrEmpty($ExpectedDigest) -and
+        -not [string]::Equals($actualDigest, $ExpectedDigest, [StringComparison]::Ordinal)) {
         throw "$Context bytes do not match the expected SHA-256 digest."
     }
-    return $actualDigest
+
+    try {
+        $json = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+        $value = $json | ConvertFrom-Json -Depth 50
+    }
+    catch { throw "$Context '$Path' is not valid UTF-8 JSON: $($_.Exception.Message)" }
+    return [pscustomobject][ordered]@{ digest = $actualDigest; value = $value }
 }
 
-function Import-NervAcceptanceRuntimePlanningArtifact {
+function Assert-NervAcceptanceRuntimeManifestObject {
     param(
-        [Parameter(Mandatory)] [string] $ArtifactPath,
-        [Parameter(Mandatory)] [string] $ExpectedArtifactDigest
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $V1Manifest,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
     )
 
-    [void](Assert-NervAcceptanceRuntimeFileDigest -Path $ArtifactPath -ExpectedDigest $ExpectedArtifactDigest -Context 'runtime planning artifact')
-    try { return Get-Content -LiteralPath (Resolve-Path -LiteralPath $ArtifactPath).Path -Raw | ConvertFrom-Json -Depth 50 }
-    catch { throw "Runtime planning artifact '$ArtifactPath' is not valid JSON: $($_.Exception.Message)" }
+    Assert-NervAcceptanceObjectSchema -Object $Manifest -AllowedFields @('schemaVersion', 'lane', 'planningBudget', 'scenarios') -RequiredFields @('schemaVersion', 'lane', 'planningBudget', 'scenarios') -Context 'manifest'
+    if (-not (Test-NervAcceptanceInteger -Value $Manifest.schemaVersion) -or [int64]$Manifest.schemaVersion -ne 2) { throw "Unsupported acceptance scenario manifest schemaVersion '$($Manifest.schemaVersion)'." }
+    if (-not [string]::Equals([string]$Manifest.lane, 'full-chain', [StringComparison]::Ordinal)) { throw "Acceptance scenario manifest lane must be 'full-chain'." }
+    Assert-NervAcceptancePlanningBudget -Budget $Manifest.planningBudget
+
+    if ($Manifest.scenarios -isnot [array]) { throw 'Acceptance scenario manifest scenarios must be an array.' }
+    $scenarios = @($Manifest.scenarios)
+    if ($scenarios.Count -ne 6) { throw "Acceptance scenario manifest must contain exactly 6 scenarios; observed $($scenarios.Count)." }
+    $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $aliases = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $identities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in $scenarios) { Assert-NervAcceptanceScenarioShape -Scenario $scenario -Ids $ids -Aliases $aliases -Identities $identities -RepositoryRoot $RepositoryRoot }
+
+    $expectedIds = @('sales-order-demand', 'wms-delivery-erp', 'mes-produced-lot-inventory', 'telemetry-runtime-maintenance', 'erp-return-closure', 'equipment-unavailable-scheduling-mes')
+    $observedIds = @($scenarios | ForEach-Object { [string]$_.id })
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $observedIds -Right $expectedIds)) { throw 'Acceptance scenario manifest ids are not in the approved stable order.' }
+    for ($index = 0; $index -lt 5; $index++) {
+        if (-not [string]::Equals([string]$scenarios[$index].status, 'active', [StringComparison]::Ordinal) -or
+            -not [string]::Equals([string]$scenarios[$index].tier, 'core', [StringComparison]::Ordinal)) {
+            throw "scenario '$($scenarios[$index].id)' must be active/core."
+        }
+    }
+    $blocked = $scenarios[5]
+    if (-not [string]::Equals([string]$blocked.status, 'blocked', [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$blocked.tier, 'extended', [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$blocked.ownerIssue, '#1240', [StringComparison]::Ordinal)) {
+        throw "scenario '$($blocked.id)' must be blocked/extended and owned by #1240."
+    }
+
+    Assert-NervAcceptanceV1Closure -Manifest $Manifest -V1Manifest $V1Manifest -RepositoryRoot $RepositoryRoot
+    return $Manifest
 }
 
 function Test-NervAcceptanceRuntimeRunCommand {
@@ -89,8 +125,9 @@ function Test-NervAcceptanceRuntimeRunCommand {
     }
     if ($index -ge $elements.Count -or $elements[$index] -isnot [Management.Automation.Language.StringConstantExpressionAst]) { return $false }
     $scriptPath = [string]$elements[$index].Value
-    return [string]::Equals($scriptPath, 'scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal) -or
+    $pathAllowed = [string]::Equals($scriptPath, 'scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal) -or
         [string]::Equals($scriptPath, './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)
+    return $pathAllowed -and $index -eq $elements.Count - 1
 }
 
 function Get-NervAcceptanceRuntimeWorkflowBudget {
@@ -191,12 +228,15 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         [Parameter(Mandatory)] [string] $Event,
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $WorkflowJobName,
-        [Parameter(Mandatory)] [string] $WorkflowStepName
+        [Parameter(Mandatory)] [string] $WorkflowStepName,
+        [scriptblock] $ReadFileBytesAction
     )
 
-    $artifact = Import-NervAcceptanceRuntimePlanningArtifact -ArtifactPath $ArtifactPath -ExpectedArtifactDigest $ExpectedArtifactDigest
-    [void](Assert-NervAcceptanceRuntimeFileDigest -Path $ManifestFilePath -ExpectedDigest $ExpectedManifestDigest -Context 'runtime acceptance manifest')
-    $manifest = Import-NervAcceptanceScenarioMatrixManifest -ManifestPath $ManifestFilePath -V1ManifestPath $V1ManifestPath -RepositoryRoot $RepositoryRoot
+    $artifactSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $ArtifactPath -ExpectedDigest $ExpectedArtifactDigest -Context 'runtime planning artifact' -ReadFileBytesAction $ReadFileBytesAction
+    $manifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $ManifestFilePath -ExpectedDigest $ExpectedManifestDigest -Context 'runtime acceptance manifest' -ReadFileBytesAction $ReadFileBytesAction
+    $v1ManifestSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $V1ManifestPath -Context 'runtime FullChain v1 manifest' -ReadFileBytesAction $ReadFileBytesAction
+    $artifact = $artifactSnapshot.value
+    $manifest = Assert-NervAcceptanceRuntimeManifestObject -Manifest $manifestSnapshot.value -V1Manifest $v1ManifestSnapshot.value -RepositoryRoot $RepositoryRoot
 
     if (-not (Test-NervAcceptanceObjectProperty -Object $artifact -Name 'scenarios') -or $artifact.scenarios -isnot [array]) {
         throw 'Runtime planning artifact scenarios must be an array.'
@@ -306,7 +346,8 @@ function Invoke-NervAcceptanceScenarioRuntime {
         [Parameter(Mandatory)] [string] $WorkflowJobName,
         [Parameter(Mandatory)] [string] $WorkflowStepName,
         [Parameter(Mandatory)] [string] $SummaryPath,
-        [Parameter(Mandatory)] [scriptblock] $RuntimeAction
+        [Parameter(Mandatory)] [scriptblock] $RuntimeAction,
+        [scriptblock] $ReadFileBytesAction
     )
 
     $contract = Assert-NervAcceptanceScenarioRuntimePreflight `
@@ -324,7 +365,8 @@ function Invoke-NervAcceptanceScenarioRuntime {
         -Event $Event `
         -WorkflowPath $WorkflowPath `
         -WorkflowJobName $WorkflowJobName `
-        -WorkflowStepName $WorkflowStepName
+        -WorkflowStepName $WorkflowStepName `
+        -ReadFileBytesAction $ReadFileBytesAction
 
     $summary = New-NervAcceptanceScenarioRuntimeSummary -Contract $contract
     Write-NervAcceptanceScenarioRuntimeSummary -Summary $summary -Path $SummaryPath
@@ -355,7 +397,16 @@ function Assert-NervAcceptanceRuntimeIntegerField {
 }
 
 function New-NervAcceptanceScenarioEquivalenceVector {
-    param([Parameter(Mandatory)] [object] $Result)
+    param(
+        [Parameter(Mandatory)] [object] $Result,
+        [Parameter(Mandatory)] [object] $ValidatedScenario
+    )
+
+    $scenario = Get-NervAcceptanceSalesOrderRuntimeScenario -Manifest ([pscustomobject]@{ scenarios = @($ValidatedScenario) })
+    $expectedIdentity = [string]$scenario.testProjects[0].frozenTestIdentities[0]
+    Assert-NervAcceptanceStringArray -Value $scenario.diagnosticProtocol.schemas -Context 'validated runtime scenario diagnostic schemas'
+    $expectedSchemas = [string[]]@($scenario.diagnosticProtocol.schemas)
+    [Array]::Sort($expectedSchemas, [StringComparer]::Ordinal)
 
     Assert-NervAcceptanceObjectSchema -Object $Result `
         -AllowedFields @('schemaVersion', 'scenarioId', 'conclusion', 'test', 'checkpoints', 'diagnostics', 'cleanup', 'volatile') `
@@ -363,13 +414,19 @@ function New-NervAcceptanceScenarioEquivalenceVector {
         -Context 'runtime equivalence result'
     if (-not (Test-NervAcceptanceInteger -Value $Result.schemaVersion) -or [int64]$Result.schemaVersion -ne 1) { throw 'Runtime equivalence result schemaVersion must be 1.' }
     if (-not [string]::Equals([string]$Result.scenarioId, 'sales-order-demand', [StringComparison]::Ordinal)) { throw "Runtime equivalence result scenarioId must be 'sales-order-demand'." }
-    Assert-NervAcceptanceString -Value $Result.conclusion -Context 'runtime equivalence conclusion'
+    if ($Result.conclusion -isnot [string] -or
+        -not [Collections.Generic.HashSet[string]]::new([string[]]@('passed', 'failed'), [StringComparer]::Ordinal).Contains([string]$Result.conclusion)) {
+        throw "Runtime equivalence conclusion must be one of 'passed' or 'failed'."
+    }
 
     Assert-NervAcceptanceObjectSchema -Object $Result.test `
         -AllowedFields @('identity', 'expected', 'discovered', 'passed', 'failed', 'skipped') `
         -RequiredFields @('identity', 'expected', 'discovered', 'passed', 'failed', 'skipped') `
         -Context 'runtime equivalence test'
     Assert-NervAcceptanceString -Value $Result.test.identity -Context 'runtime equivalence test identity'
+    if (-not [string]::Equals([string]$Result.test.identity, $expectedIdentity, [StringComparison]::Ordinal)) {
+        throw "Runtime equivalence test identity must equal the validated scenario frozen identity."
+    }
     $testCounts = [ordered]@{}
     foreach ($name in @('expected', 'discovered', 'passed', 'failed', 'skipped')) {
         $testCounts[$name] = Assert-NervAcceptanceRuntimeIntegerField -Object $Result.test -Name $name -Context 'runtime equivalence test'
@@ -390,6 +447,9 @@ function New-NervAcceptanceScenarioEquivalenceVector {
     Assert-NervAcceptanceStringArray -Value $Result.diagnostics.schemas -Context 'runtime equivalence diagnostic schemas'
     $schemas = [string[]]@($Result.diagnostics.schemas)
     [Array]::Sort($schemas, [StringComparer]::Ordinal)
+    if (-not (Test-NervAcceptanceOrdinalSequenceEqual -Left $schemas -Right $expectedSchemas)) {
+        throw 'Runtime equivalence diagnostic schemas must exactly equal the validated scenario diagnostic schema set.'
+    }
     foreach ($name in @('capturedBeforeCleanup', 'secretsRedacted')) {
         Assert-NervAcceptanceBoolean -Value $Result.diagnostics.PSObject.Properties[$name].Value -Context "runtime equivalence diagnostic '$name'"
     }
@@ -404,9 +464,26 @@ function New-NervAcceptanceScenarioEquivalenceVector {
     }
     Assert-NervAcceptanceStringArray -Value $Result.cleanup.errorCodes -Context 'runtime equivalence cleanup errorCodes' -AllowEmpty
     $cleanupErrorCodes = [string[]]@($Result.cleanup.errorCodes)
+    $allowedCleanupErrorCodes = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(
+            'action-failed',
+            'dependency-readiness-failed',
+            'discovery-failed',
+            'test-failed',
+            'diagnostics-failed',
+            'managed-process-cleanup-failed',
+            'disposable-database-cleanup-failed',
+            'owned-resource-cleanup-failed',
+            'cleanup-verification-failed',
+            'evidence-write-failed'
+        ),
+        [StringComparer]::Ordinal)
     foreach ($errorCode in $cleanupErrorCodes) {
         if ($errorCode -cnotmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
             throw "Runtime equivalence cleanup errorCode '$errorCode' must be canonical."
+        }
+        if (-not $allowedCleanupErrorCodes.Contains($errorCode)) {
+            throw "Runtime equivalence cleanup errorCode '$errorCode' is not allowed by schemaVersion 1."
         }
     }
     [Array]::Sort($cleanupErrorCodes, [StringComparer]::Ordinal)

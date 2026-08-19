@@ -41,6 +41,20 @@ function Get-FixtureFileDigest {
     finally { $sha256.Dispose() }
 }
 
+function Get-FixtureBytesDigest {
+    param([Parameter(Mandatory)] [byte[]] $Bytes)
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try { return ([Convert]::ToHexString($sha256.ComputeHash($Bytes))).ToLowerInvariant() }
+    finally { $sha256.Dispose() }
+}
+
+function ConvertTo-JsonFixtureBytes {
+    param([Parameter(Mandatory)] [object] $Value)
+
+    return [Text.UTF8Encoding]::new($false).GetBytes(($Value | ConvertTo-Json -Depth 50) + "`n")
+}
+
 function Write-JsonFixture {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -126,10 +140,11 @@ function Get-RuntimeArguments {
         [Parameter(Mandatory)] [string] $WorkflowPath,
         [Parameter(Mandatory)] [string] $SummaryPath,
         [Parameter(Mandatory)] [scriptblock] $Action,
-        [string] $Event = 'workflow_dispatch'
+        [string] $Event = 'workflow_dispatch',
+        [scriptblock] $ReadFileBytesAction
     )
 
-    return @{
+    $arguments = @{
         ArtifactPath = $ArtifactPath
         ExpectedArtifactDigest = $ExpectedArtifactDigest
         ManifestFilePath = $ManifestFilePath
@@ -148,6 +163,8 @@ function Get-RuntimeArguments {
         SummaryPath = $SummaryPath
         RuntimeAction = $Action
     }
+    if ($null -ne $ReadFileBytesAction) { $arguments.ReadFileBytesAction = $ReadFileBytesAction }
+    return $arguments
 }
 
 function Assert-PreflightRejected {
@@ -268,6 +285,59 @@ try {
     Assert-Contract ([string]::Equals(($persistedSummary.transitions.state -join '|'), 'preflight-passed|action-started|action-completed', [StringComparison]::Ordinal)) 'Every successful runtime transition must be persisted.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic summary persistence must not leave temporary files.'
 
+    $switchedArtifact = Copy-JsonObject $artifact
+    $switchedArtifact | Add-Member -NotePropertyName ungovernedSnapshotMarker -NotePropertyValue 'digest-bytes'
+    $switchedArtifactBytes = ConvertTo-JsonFixtureBytes -Value $switchedArtifact
+    $switchedArtifactDigest = Get-FixtureBytesDigest -Bytes $switchedArtifactBytes
+    $script:artifactSnapshotReads = 0
+    $artifactSwitchReader = {
+        param([string] $Path)
+        if ([string]::Equals([IO.Path]::GetFullPath($Path), [IO.Path]::GetFullPath($artifactPath), [StringComparison]::Ordinal)) {
+            $script:artifactSnapshotReads++
+            if ($script:artifactSnapshotReads -eq 1) { return $switchedArtifactBytes }
+        }
+        return [IO.File]::ReadAllBytes($Path)
+    }
+    $script:artifactSwitchActionCount = 0
+    $artifactSwitchAction = { $script:artifactSwitchActionCount++ }
+    $artifactSwitchSummaryPath = Join-Path $fixtureRoot 'artifact-switch-summary.json'
+    $artifactSwitchArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $switchedArtifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $artifactSwitchSummaryPath -Action $artifactSwitchAction -ReadFileBytesAction $artifactSwitchReader
+    $artifactSwitchMessage = '<no exception>'
+    try { Invoke-NervAcceptanceScenarioRuntime @artifactSwitchArguments | Out-Null }
+    catch { $artifactSwitchMessage = $_.Exception.Message }
+    Assert-Contract ($artifactSwitchMessage.Contains('unknown field', [StringComparison]::Ordinal)) "Artifact snapshot switch must reject the first byte snapshot; observed '$artifactSwitchMessage'."
+    Assert-Contract ($script:artifactSnapshotReads -eq 1) 'Runtime must read planning artifact bytes exactly once.'
+    Assert-Contract ($script:artifactSwitchActionCount -eq 0) 'Artifact snapshot switch must execute zero runtime actions.'
+
+    $switchedManifest = Copy-JsonObject $manifest
+    $switchedManifest.scenarios[0].testProjects = $switchedManifest.scenarios[0].testProjects[0]
+    $switchedManifestBytes = ConvertTo-JsonFixtureBytes -Value $switchedManifest
+    $switchedManifestDigest = Get-FixtureBytesDigest -Bytes $switchedManifestBytes
+    $manifestSwitchArtifact = Copy-JsonObject $artifact
+    $manifestSwitchArtifact.manifestDigest = $switchedManifestDigest
+    $manifestSwitchArtifactPath = Join-Path $fixtureRoot 'manifest-switch-artifact.json'
+    Write-JsonFixture -Path $manifestSwitchArtifactPath -Value $manifestSwitchArtifact
+    $manifestSwitchArtifactDigest = Get-FixtureFileDigest -Path $manifestSwitchArtifactPath
+    $script:manifestSnapshotReads = 0
+    $manifestSwitchReader = {
+        param([string] $Path)
+        if ([string]::Equals([IO.Path]::GetFullPath($Path), [IO.Path]::GetFullPath($manifestPath), [StringComparison]::Ordinal)) {
+            $script:manifestSnapshotReads++
+            if ($script:manifestSnapshotReads -eq 1) { return $switchedManifestBytes }
+        }
+        return [IO.File]::ReadAllBytes($Path)
+    }
+    $script:manifestSwitchActionCount = 0
+    $manifestSwitchAction = { $script:manifestSwitchActionCount++ }
+    $manifestSwitchSummaryPath = Join-Path $fixtureRoot 'manifest-switch-summary.json'
+    $manifestSwitchArguments = Get-RuntimeArguments -ArtifactPath $manifestSwitchArtifactPath -ExpectedArtifactDigest $manifestSwitchArtifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $switchedManifestDigest -WorkflowPath $workflowPath -SummaryPath $manifestSwitchSummaryPath -Action $manifestSwitchAction -ReadFileBytesAction $manifestSwitchReader
+    $manifestSwitchMessage = '<no exception>'
+    try { Invoke-NervAcceptanceScenarioRuntime @manifestSwitchArguments | Out-Null }
+    catch { $manifestSwitchMessage = $_.Exception.Message }
+    Assert-Contract ($manifestSwitchMessage.Contains('testProjects must be a non-empty array', [StringComparison]::Ordinal)) "Manifest snapshot switch must validate the first byte snapshot; observed '$manifestSwitchMessage'."
+    Assert-Contract ($script:manifestSnapshotReads -eq 1) 'Runtime must read acceptance manifest bytes exactly once.'
+    Assert-Contract ($script:manifestSwitchActionCount -eq 0) 'Manifest snapshot switch must execute zero runtime actions.'
+
     $failedSummaryPath = Join-Path $fixtureRoot 'failure/runtime-summary.json'
     $script:failedActionCount = 0
     $failedAction = {
@@ -352,12 +422,22 @@ try {
         Assert-PreflightRejected -Name "workflow-$($nonExecutingCommand.Name)-data" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $nonExecutingWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
     }
 
+    foreach ($trailingCommand in @(
+        @{ Name = 'literal'; Run = 'pwsh scripts/run-acceptance-scenario-matrix.ps1 unexpected' },
+        @{ Name = 'expression'; Run = 'pwsh scripts/run-acceptance-scenario-matrix.ps1 $env:GITHUB_RUN_ID' },
+        @{ Name = 'parenthesis'; Run = 'pwsh scripts/run-acceptance-scenario-matrix.ps1 (Get-Date)' },
+        @{ Name = 'splatting'; Run = 'pwsh scripts/run-acceptance-scenario-matrix.ps1 @runtimeArguments' }
+    )) {
+        $trailingWorkflowPath = Write-RuntimeWorkflowFixture -Name "runtime-workflow-trailing-$($trailingCommand.Name)" -Run $trailingCommand.Run
+        Assert-PreflightRejected -Name "workflow-trailing-$($trailingCommand.Name)" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $trailingWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
+    }
+
     $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
     $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
     $firstEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_1 pid 101 cap attempt-1-aabbcc at 2026-08-19T01:01:00Z')
     $secondEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_2 pid 991 cap attempt-2-ddeeff at 2026-08-19T02:01:00Z')
-    $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput
-    $secondVector = New-NervAcceptanceScenarioEquivalenceVector -Result $secondEquivalenceInput
+    $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario
+    $secondVector = New-NervAcceptanceScenarioEquivalenceVector -Result $secondEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario
     $firstVectorJson = $firstVector | ConvertTo-Json -Depth 50 -Compress
     $secondVectorJson = $secondVector | ConvertTo-Json -Depth 50 -Compress
     Assert-Contract ([string]::Equals($firstVectorJson, $secondVectorJson, [StringComparison]::Ordinal)) 'Database names, PIDs, CAP suffixes, and timestamps must not participate in equivalence.'
@@ -367,28 +447,42 @@ try {
     foreach ($volatileValue in @('nerv_shadow_run_1', '101', 'attempt-1-aabbcc', '2026-08-19T01:01:00Z', 'cleanup failed for database')) {
         Assert-Contract (-not $firstVectorJson.Contains($volatileValue, [StringComparison]::Ordinal)) "Equivalence vector must exclude volatile value '$volatileValue'."
     }
+
+    foreach ($stableStringMutation in @(
+        @{ Name = 'conclusion'; Apply = { param($value) $value.conclusion = 'passed-nerv-shadow-run-1-pid-101-attempt-1-aabbcc-20260819' }; Message = 'conclusion must be one of' },
+        @{ Name = 'identity'; Apply = { param($value) $value.test.identity = 'Nerv.IIP.Dynamic.nerv_shadow_run_1.pid_101.attempt_1_aabbcc.20260819' }; Message = 'identity must equal' },
+        @{ Name = 'diagnostic-schema'; Apply = { param($value) $value.diagnostics.schemas = @('demand_planning', 'erp', 'master_data', 'nerv_shadow_run_1_pid_101_attempt_1_aabbcc_20260819') }; Message = 'schemas must exactly equal' },
+        @{ Name = 'cleanup-error-code'; Apply = { param($value) $value.cleanup.errorCodes = @('database-nerv-shadow-run-1-pid-101-attempt-1-aabbcc-at-20260819') }; Message = 'is not allowed by schemaVersion 1' }
+    )) {
+        $mutatedStableResult = Copy-JsonObject $firstEquivalenceInput
+        & $stableStringMutation.Apply $mutatedStableResult
+        $stableStringMessage = '<no exception>'
+        try { New-NervAcceptanceScenarioEquivalenceVector -Result $mutatedStableResult -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
+        catch { $stableStringMessage = $_.Exception.Message }
+        Assert-Contract ($stableStringMessage.Contains($stableStringMutation.Message, [StringComparison]::Ordinal)) "Stable string mutation '$($stableStringMutation.Name)' must fail with '$($stableStringMutation.Message)'; observed '$stableStringMessage'."
+    }
     $stableDrift = Copy-JsonObject $secondEquivalenceInput
     $stableDrift.checkpoints.duplicateConverged = $false
-    $stableDriftJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableDrift | ConvertTo-Json -Depth 50 -Compress)
+    $stableDriftJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableDrift -ValidatedScenario $runtimeResult.contract.scenario | ConvertTo-Json -Depth 50 -Compress)
     Assert-Contract (-not [string]::Equals($firstVectorJson, $stableDriftJson, [StringComparison]::Ordinal)) 'A stable business checkpoint drift must change the equivalence vector.'
 
     $stableCleanupCodeDrift = Copy-JsonObject $secondEquivalenceInput
     $stableCleanupCodeDrift.cleanup.errorCodes = @('owned-resource-cleanup-failed')
-    $stableCleanupCodeJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableCleanupCodeDrift | ConvertTo-Json -Depth 50 -Compress)
+    $stableCleanupCodeJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableCleanupCodeDrift -ValidatedScenario $runtimeResult.contract.scenario | ConvertTo-Json -Depth 50 -Compress)
     Assert-Contract (-not [string]::Equals($firstVectorJson, $stableCleanupCodeJson, [StringComparison]::Ordinal)) 'A stable cleanup error code drift must change the equivalence vector.'
     Assert-Contract ($stableCleanupCodeJson.Contains('owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'The equivalence vector must retain canonical cleanup error codes.'
 
     $invalidCleanupCode = Copy-JsonObject $firstEquivalenceInput
     $invalidCleanupCode.cleanup.errorCodes = @('cleanup failed for database nerv_shadow_run_1')
     $invalidCleanupCodeRejected = $false
-    try { New-NervAcceptanceScenarioEquivalenceVector -Result $invalidCleanupCode | Out-Null }
+    try { New-NervAcceptanceScenarioEquivalenceVector -Result $invalidCleanupCode -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
     catch { $invalidCleanupCodeRejected = $_.Exception.Message.Contains('must be canonical', [StringComparison]::Ordinal) }
     Assert-Contract $invalidCleanupCodeRejected 'A free-text cleanup error must not enter the stable error code set.'
 
     $extraEquivalenceField = Copy-JsonObject $firstEquivalenceInput
     $extraEquivalenceField | Add-Member -NotePropertyName ungoverned -NotePropertyValue $true
     $extraRejected = $false
-    try { New-NervAcceptanceScenarioEquivalenceVector -Result $extraEquivalenceField | Out-Null }
+    try { New-NervAcceptanceScenarioEquivalenceVector -Result $extraEquivalenceField -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
     catch { $extraRejected = $_.Exception.Message.Contains('unknown field', [StringComparison]::Ordinal) }
     Assert-Contract $extraRejected 'An extra equivalence result field must fail closed.'
 }
