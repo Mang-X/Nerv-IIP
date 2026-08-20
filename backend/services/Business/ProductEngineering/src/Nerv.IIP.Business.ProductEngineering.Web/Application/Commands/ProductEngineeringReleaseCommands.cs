@@ -1388,7 +1388,7 @@ public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInte
     {
         if (!string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             || !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
-            || !string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(chain.TemplateCode, ApprovalTemplateCodes.EngineeringChangeOrder, StringComparison.Ordinal)
             || !string.Equals(chain.SourceService, ApprovalSourceServices.ProductEngineering, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(chain.DocumentType, ApprovalDocumentTypes.EngineeringChangeOrder, StringComparison.OrdinalIgnoreCase)
