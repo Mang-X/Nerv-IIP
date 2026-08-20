@@ -83,26 +83,30 @@ public sealed class VocabularyDriftGovernanceTests
 
     /// <summary>
     /// 存量副本分裂登记（按「类型名.成员键」）。本票（#1703）只落地门禁不修存量：
-    /// 以下成员在 main 上已经分裂，待 #1370 ③ 分批销账（裁决「同步副本」还是「承认服务专属分叉并改名」）；
+    /// 以下成员在 main 上已经分裂，待 #1388 分批销账（裁决「同步副本」还是「承认服务专属分叉并改名」）；
     /// 分裂消失后本登记必须同步删除，否则 stale 检查红。
+    ///
+    /// 承接票改判（2026-08-20 owner 裁决）：本组原挂 #1370 ③，实为副本间逐字对拍，与 ③ 的
+    /// 「裸字面量改引常量」不是一类活；#1370 ③ 已于 2026-08-19 四批（#1830/#1829/#1827/#1858）
+    /// 收口，正主是 #1388（8 份副本实为三变体、BuildOrderPlans 无黄金向量）。
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> KnownReplicaDrifts = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         // Erp / DemandPlanning / Scheduling 三份多出 PRQ-/RFQ-/SQ-/OPP-/COST- 五个号段前缀，
-        // 其余五个服务未跟上——号段口径分叉，待 #1370 ③ 销账。
-        ["WorldHistorySpec.NumberSegmentPrefixes"] = "待 #1370 ③ 销账：8 份副本 5 vs 3 分裂（号段前缀清单不一致）。",
-        // Mes 一侧的 BuildOperators 多出 EmployeeName / TeamName / 班组名单，其余四份未跟上，待 #1370 ③ 销账。
-        ["WorldHistoryMesSpec.BuildOperators()"] = "待 #1370 ③ 销账：Mes 副本多出班组字段，其余 4 份未同步。",
-        // Scheduling 一侧的 StandardOperations 缺少 Workshop 归属参数（记录形状已分叉），待 #1370 ③ 销账。
-        ["WorldHistoryMesSpec.StandardOperations"] = "待 #1370 ③ 销账：Scheduling 副本缺 Workshop 车间归属，其余 5 份已带。",
+        // 其余五个服务未跟上——号段口径分叉，待 #1388 销账。
+        ["WorldHistorySpec.NumberSegmentPrefixes"] = "待 #1388 销账：8 份副本 5 vs 3 分裂（号段前缀清单不一致）。",
+        // Mes 一侧的 BuildOperators 多出 EmployeeName / TeamName / 班组名单，其余四份未跟上，待 #1388 销账。
+        ["WorldHistoryMesSpec.BuildOperators()"] = "待 #1388 销账：Mes 副本多出班组字段，其余 4 份未同步。",
+        // Scheduling 一侧的 StandardOperations 缺少 Workshop 归属参数（记录形状已分叉），待 #1388 销账。
+        ["WorldHistoryMesSpec.StandardOperations"] = "待 #1388 销账：Scheduling 副本缺 Workshop 车间归属，其余 5 份已带。",
         // 同一分叉在 record 主构造参数表上的另一面：WorldHistoryOperation 少 Workshop 参数、
-        // WorldHistoryOperator 是 Mes 扩展形状——与上两条同根，待 #1370 ③ 一并销账。
-        ["WorldHistoryOperation.<类型头>"] = "待 #1370 ③ 销账：Scheduling 副本的 record 参数表缺 Workshop，与 StandardOperations 同根分叉。",
-        ["WorldHistoryOperator.<类型头>"] = "待 #1370 ③ 销账：Mes 副本的 record 参数表多出班组字段，与 BuildOperators() 同根分叉。",
-        // Approval 一侧的 BuildPurchasePlan 缺 PurchaseReceiptNo 与在途分支（旧版快照），待 #1370 ③ 销账。
+        // WorldHistoryOperator 是 Mes 扩展形状——与上两条同根，待 #1388 一并销账。
+        ["WorldHistoryOperation.<类型头>"] = "待 #1388 销账：Scheduling 副本的 record 参数表缺 Workshop，与 StandardOperations 同根分叉。",
+        ["WorldHistoryOperator.<类型头>"] = "待 #1388 销账：Mes 副本的 record 参数表多出班组字段，与 BuildOperators() 同根分叉。",
+        // Approval 一侧的 BuildPurchasePlan 缺 PurchaseReceiptNo 与在途分支（旧版快照），待 #1388 销账。
         ["WorldHistoryProcurementSpec.BuildPurchasePlan(int index, DateOnly orderDate, DateOnly asOfDate)"] =
-            "待 #1370 ③ 销账：Approval 副本是旧版（缺收货号与在途分支），其余 4 份已演进。",
-        ["WorldHistoryPurchasePlan.<类型头>"] = "待 #1370 ③ 销账：Approval 副本的 record 参数表是旧版，与 BuildPurchasePlan 同根分叉。",
+            "待 #1388 销账：Approval 副本是旧版（缺收货号与在途分支），其余 4 份已演进。",
+        ["WorldHistoryPurchasePlan.<类型头>"] = "待 #1388 销账：Approval 副本的 record 参数表是旧版，与 BuildPurchasePlan 同根分叉。",
     };
 
     [Fact]
