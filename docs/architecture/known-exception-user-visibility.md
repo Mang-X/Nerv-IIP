@@ -19,7 +19,9 @@ Gateway 传输政策、临时计数边界和后续域票的销账模板。它是
 - 不建立 783 条全仓位点账本或最终销账分母；
 - 不新增全仓 scanner、共享测试项目或 CI 门禁；
 - 不修改生产路由、公开契约、Gateway、前端或业务消息；
-- 不裁决 Maintenance、IndustrialTelemetry 等模块的稳定错误码是否改为自然语言；
+- 本文不裁决 Maintenance、IndustrialTelemetry 等模块的稳定错误码是否改为自然语言；这两个
+  模块在 #1870 基准上的逐值证据与兼容结论见
+  [Maintenance / IndustrialTelemetry 稳定错误值调查与兼容裁决](maintenance-industrial-telemetry-stable-error-contract.md)；
 - 不用本次临时盘点代替后续域票基于当时 `main` 的重新扫描和逐项分类。
 
 ## 两个概念

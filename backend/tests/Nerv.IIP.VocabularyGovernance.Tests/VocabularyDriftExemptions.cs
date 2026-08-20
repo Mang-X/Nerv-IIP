@@ -74,23 +74,45 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs"),
 
         // ── 审批链状态匹配面 ────────────────────────────────────────────────────────
-        // 待 #1370 ③ 销账：这里比较的是审批链 Status（approved），审批链状态词表尚未入
-        // Nerv.IIP.Contracts.Approval（ApprovalResults.Approved 是步骤结果，恰好同值）；
-        // 销账时应把链状态入契约词表后改引用，而不是借用 ApprovalResults。
-        ..Group("approved", "待 #1370 ③ 销账：审批链状态匹配面，链状态词表应入契约后改引用。",
-            $"{Svc}/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Application/Commands/ProductEngineeringReleaseCommands.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Approvals/ApprovalChainStatusClient.cs"),
+        // #1857 已销账：ApprovalChainStatuses 已下沉进 Nerv.IIP.Contracts.Approval，
+        // PE 发布校验与 Quality 放行判定都改引 ApprovalChainStatuses.Approved
+        //（而不是借用同值不同义的 ApprovalResults.Approved），对应豁免已删除。
         // 同值不同义：设备控制命令的审批态 / MRB 评审决定，都是各自域内状态机，非审批链词表。
         ..Group("approved", "同值不同义：设备控制命令审批态（DeviceControlCommand），非审批链结果词表。",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs"),
         ..Group("approved", "同值不同义：MRB 评审决定（质量域内状态），非审批链结果词表。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
 
+        // ── 审批链状态 / 审批动作族（#1857 下沉后新进守护面的取值） ─────────────────
+        // ApprovalChainStatuses 与 ApprovalDecisions 下沉进契约后，pending / withdrawn /
+        // approve / reject / return / withdraw / resubmit / add_signer / transfer 一并进入扫描面。
+        // 其中真违例（Notification 按审批动作分流待办/消息）已改引 ApprovalDecisions.Withdraw；
+        // 下列全部是同值不同义的各域内状态机/动作词，永久豁免。
+        ..Group("pending", "同值不同义：标签打印批次状态（pending/sent-to-printer），非审批链状态。",
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
+        ..Group("pending", "同值不同义：出库单的库存过账状态（pending/posted/failed/not-started），非审批链状态。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
+        ..Group("pending", "同值不同义：质检任务状态（pending/in-progress/completed），非审批链状态。",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionTasks/ListInspectionTasksQuery.cs"),
+        ..Group("pending", "同值不同义：设备控制命令下发审批态（Ops 域内状态机），非审批链状态；与同文件 approved/rejected 同一裁决。",
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs",
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
+        ..Group("pending", "同值不同义：采集点激活状态（pending/active/error/disabled），非审批链状态；与同文件 active 同一裁决。",
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldBibleSpec.cs",
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/IndustrialTelemetryCommands.cs"),
+        ..Group("pending", "同值不同义：成本候选清单的列表状态（该聚合尚无持久化生命周期，pending 是唯一列表态），非审批链状态。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs"),
+        ..Group("transfer", "同值不同义：库存移动类型（调拨），非审批动作。",
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs",
+            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs"),
+        ..Group("transfer", "同值不同义：检验任务转派动作（质量域内动作面），非审批链裁决动作。",
+            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionTasks/InspectionTaskAssignmentCommands.cs"),
+
         // ── "quality"（票面 (a) 类点名的多义值） ────────────────────────────────────
         // 库存质量状态族（quality/unrestricted/blocked/restricted/qualified）已于 #1370 ③ 批次 A 销账；
-        // 此处仅余审批链来源与 MES 区域码两类同名值。
-        ..Group("quality", "待 #1370 ③ 销账：审批链来源历史别名清单，应引用 ApprovalSourceServices.Quality。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Approvals/ApprovalChainStatusClient.cs"),
+        // 审批链来源受理集合已于 #1857 收敛成 ApprovalSourceServices.QualityAliases（对应豁免已删除）；
+        // 此处仅余 MES 区域码一类同名值。
         // 同值不同义：MES 工作台就绪「区域码」（quality/equipment/master-data/product-engineering/supply
         // 同一枚举面），非质量状态、非审批来源。
         ..Group("quality", "同值不同义：MES 就绪区域码，非质量状态/审批来源。",

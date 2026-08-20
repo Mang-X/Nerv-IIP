@@ -90,4 +90,38 @@ public static class ApprovalSourceServices
     /// 那两个值随事件信封演进，本常量随审批历史数据固定——一方改值不得带动另一方。
     /// </summary>
     public const string QualityLegacyAlias = "business-quality";
+
+    /// <summary>
+    /// Quality 审批来源服务的**领域标识别名**（取值 <c>BusinessQuality</c>，PascalCase）。
+    ///
+    /// 它是 <c>Nerv.IIP.Business.Quality.Domain.QualityFacts.ServiceName</c> 的逐字副本：
+    /// 那个常量在 Quality **领域层**，跨服务够不着，而受理集合
+    /// （<see cref="QualityAliases"/>）必须是一份跨服务可见的取值面，
+    /// 因此权威留在契约、领域侧那份视作副本，由 Quality 侧的逐字对拍测试
+    /// （<c>ApprovalSourceServiceVocabularyContractTests</c>）钉死两者相等——
+    /// 任一侧改值即红，不允许静默分叉。
+    ///
+    /// 与 <see cref="QualityLegacyAlias"/> 一样只用于「读既有链」的向后兼容匹配，
+    /// **任何写入面都不得引用**；新发起的链一律用 <see cref="Quality"/>。
+    ///
+    /// 注意它与 <c>QualityIntegrationEventSources.BusinessQuality</c>（值 <c>business-quality</c>）
+    /// 既不同值也不同义——后者是集成事件信封的发布方标识。
+    /// </summary>
+    public const string QualityServiceNameAlias = "BusinessQuality";
+
+    /// <summary>
+    /// Quality 审批来源服务的**受理集合**：权威码值 + 全部历史别名，
+    /// 与 <see cref="ApprovalDocumentTypes.NcrDispositionAliases"/> 同一姿势。
+    ///
+    /// 只用于「读既有链」的向后兼容匹配（<c>HttpApprovalChainStatusClient</c> 的放行判定），
+    /// 新发起的链一律用 <see cref="Quality"/>。
+    ///
+    /// 三个成员缺一不可、且**不可用 <see cref="Quality"/> 顶替其中任何一个**：
+    /// 三者是三种历史拼写（<c>quality</c> / <c>business-quality</c> / <c>BusinessQuality</c>），
+    /// 集合按序数忽略大小写去重，只有 <c>business-quality</c> 与 <c>BusinessQuality</c> 因连字符而互不相等；
+    /// 少任何一个都会让对应拼写落库的既有链**判不通过**（放行判定恒假，无日志无异常）。
+    /// </summary>
+    public static readonly IReadOnlySet<string> QualityAliases = new HashSet<string>(
+        [Quality, QualityLegacyAlias, QualityServiceNameAlias],
+        StringComparer.OrdinalIgnoreCase);
 }

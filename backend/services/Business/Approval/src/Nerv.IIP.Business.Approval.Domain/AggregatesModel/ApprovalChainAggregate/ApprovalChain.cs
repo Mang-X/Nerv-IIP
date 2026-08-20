@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Approval;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -775,15 +776,6 @@ public sealed class ApprovalDocumentReference
     public string? DepartmentId { get; private set; }
 }
 
-public static class ApprovalChainStatuses
-{
-    public const string Pending = "pending";
-    public const string Approved = "approved";
-    public const string Rejected = "rejected";
-    public const string Returned = "returned";
-    public const string Withdrawn = "withdrawn";
-}
-
 public static class ApprovalStepStatuses
 {
     public const string Pending = "pending";
@@ -792,26 +784,6 @@ public static class ApprovalStepStatuses
     public const string Returned = "returned";
     public const string Skipped = "skipped";
     public const string Withdrawn = "withdrawn";
-}
-
-public static class ApprovalDecisions
-{
-    public const string Approve = "approve";
-    public const string Reject = "reject";
-    public const string Return = "return";
-    public const string Withdraw = "withdraw";
-    public const string Resubmit = "resubmit";
-    public const string AddSigner = "add_signer";
-    public const string Transfer = "transfer";
-
-    /// <summary>
-    /// 裁决某一步时允许提交的取值（approve / reject / return）——**唯一权威**。
-    /// 聚合的 <c>ResolveStep</c> 与应用层校验器共用这一份，避免校验器比领域更严
-    /// （曾经校验器写死小写字面量，"Approve" 被拦成无线索的 400，#1311）。
-    /// 大小写不敏感：领域侧本就先归一化成小写再落库。
-    /// </summary>
-    public static readonly IReadOnlySet<string> StepResolutions =
-        new HashSet<string>([Approve, Reject, Return], StringComparer.OrdinalIgnoreCase);
 }
 
 public static class ApprovalConditionMatcher

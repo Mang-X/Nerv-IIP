@@ -5,6 +5,7 @@
 #     - Creates and removes scenario-owned disposable PostgreSQL databases and Docker resources
 #   Writes:
 #     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
+#     - Best-effort memory-dimension evidence inside that same dependency summary
 #     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
 #   Cleanup:
 #     - Delegates exact process, database and container cleanup to each governed scenario entrypoint
@@ -27,6 +28,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 . (Join-Path $PSScriptRoot 'lib/FullChainTestLane.ps1')
 . (Join-Path $PSScriptRoot 'lib/CiWorkflowBudgets.ps1')
+. (Join-Path $PSScriptRoot 'lib/RuntimeMemoryEvidence.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $manifest = Import-NervFullChainTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $repoRoot
@@ -86,7 +88,7 @@ if ([string]::IsNullOrWhiteSpace($adminPostgres)) { throw 'Set NERV_IIP_TEST_POS
 if ([string]::IsNullOrWhiteSpace($redis)) { throw 'Set NERV_IIP_TEST_REDIS before FullChain lane discovery.' }
 
 $summary = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     lane = 'full-chain'
     selectedMemberIds = @($MemberId)
     expected = 0
@@ -115,6 +117,13 @@ foreach ($member in $selectedMembers) {
         diagnosticEvidence = 'not-run'
         cleanup = 'not-run'
         outcome = 'not-run'
+        # #1664 / #1877：内存维度证据。快照刻意贴着 entrypoint 前后取，取在 lane 首尾会把冷启动
+        # 峰值平均掉，正好看不见 137 发生的那一刻。
+        memory = [ordered]@{
+            beforeEntrypoint = 'not-run'
+            afterEntrypoint = 'not-run'
+            kernelOomEvidence = 'not-collected'
+        }
     }
     $memberSummaries.Add($memberSummary)
     $memberSummaryById.Add([string]$member.id, $memberSummary)
@@ -235,6 +244,7 @@ foreach ($member in $selectedMembers) {
             [Environment]::SetEnvironmentVariable('Persistence__Provider', 'PostgreSQL')
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH', $entrypointEvidencePath)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_CONFIGURATION', 'Release')
+            $memberSummary.memory.beforeEntrypoint = Get-NervRuntimeMemorySnapshot -Phase 'before-entrypoint'
             Write-NervFullChainSummarySnapshot
             $entrypointKind = [string]$member.entrypoint.kind
             if ([string]::Equals($entrypointKind, 'fullstack', [StringComparison]::Ordinal)) {
@@ -251,6 +261,8 @@ foreach ($member in $selectedMembers) {
             }
         }
         finally {
+            # finally 而不是成功路径：entrypoint 被杀掉那一刻的内存读数正是本票要的那条证据。
+            $memberSummary.memory.afterEntrypoint = Get-NervRuntimeMemorySnapshot -Phase 'after-entrypoint'
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY', $savedResultsDirectory)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULL_CHAIN_RESULT_FILE', $savedResultFile)
             [Environment]::SetEnvironmentVariable('NERV_IIP_FULLSTACK_STATE_ROOT', $savedFullStackStateRoot)
@@ -273,6 +285,7 @@ foreach ($member in $selectedMembers) {
         $memberFailure = $_
         $memberSummary.outcome = 'failed'
         $memberSummary.cleanup = 'failed'
+        $memberSummary.memory.kernelOomEvidence = Get-NervRuntimeKernelOomEvidence -WorkingDirectory $repoRoot
         try {
             $trx = Get-NervFullChainTrxResult -ResultsDirectory $memberResultsDirectory -ExpectedTestIdentities @($member.expectedTestIdentities) -AllowInvalid
             $memberSummary.passed = $trx.passed

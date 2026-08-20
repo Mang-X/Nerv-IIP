@@ -44,7 +44,8 @@
 
   /* 原生滚动容器的大屏细滚条（虚拟滚动容器无法换 NvScreenScrollArea —— 它们必须
      绑定原生滚动元素；此样式与 NvScreenScrollArea 的 thumb 视觉完全一致）。
-     以 @layer app 覆盖 tokens.css 的 hover-only 定义（ADR 0020 附录 B 备注）。 */
+     以 @layer app 覆盖 tokens.css 的 hover-only 定义
+     （frontend/DESIGN/nvui-naming-map.md 附录 B 备注）。 */
   .nv-scr-scroll {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.13) transparent;
