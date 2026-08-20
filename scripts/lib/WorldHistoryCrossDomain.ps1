@@ -392,7 +392,7 @@ function Get-NervWorldHistoryLinkFinding {
         if ($null -eq $row.exists) { continue }
         if ($row.expected -and -not $row.exists) {
             $findings.Add((New-NervWorldHistoryFinding -Category 'document-missing' -Index $Index -Link $link `
-                -Detail "$($row.kind) 应有 $($row.no)，但 $($row.service) 库里查不到。"))
+                -Detail "$($row.kind) 应有 $($row.no)，但 $($row.service) 库里没有这张单：号查不到，或号在、却没挂在本抽样序号的链上（探针对两者一律判缺失）。"))
         }
         elseif (-not $row.expected -and $row.exists) {
             $findings.Add((New-NervWorldHistoryFinding -Category 'document-unexpected' -Index $Index -Link $link `
