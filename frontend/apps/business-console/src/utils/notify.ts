@@ -5,6 +5,7 @@
  * - 操作结果（成功/失败，含网络/服务器错误）一律用 toast，**不**在页面或弹窗里留常驻文字。
  * - 字段级校验才用内联（红框 + 汇总），不走这里。
  */
+import { stableErrorMessage } from '@nerv-iip/business-core'
 import { toast } from '@nerv-iip/ui'
 import { type WmsReasonContext, wmsReasonMessage } from './wmsReasonCodes'
 
@@ -33,6 +34,8 @@ export function friendlyErrorMessage(
   // 这类代码一旦落到下面的 422/403 泛化分支，就又变回「请检查填写项」——那正是被修的 bug。
   const wmsReason = wmsReasonMessage(raw, reasonContext)
   if (wmsReason) return wmsReason
+  const stableMessage = stableErrorMessage(raw)
+  if (stableMessage) return stableMessage
   if (
     /business-operation-unconfirmed|BusinessOperationUnconfirmedError|权威状态尚未确认|写操作回执不完整|写操作缺少权威回执/i.test(
       raw,

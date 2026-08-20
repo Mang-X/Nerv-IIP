@@ -146,6 +146,55 @@ describe('typed request errors', () => {
 
 describe('describeRequestError', () => {
   it.each([
+    [
+      400,
+      'stored-maintenance-work-order-receipt-is-invalid',
+      '工单创建回执异常，请刷新后重试；仍失败请联系管理员。',
+    ],
+    [
+      400,
+      'source-alarm-already-bound-to-a-different-create-intent',
+      '该报警已关联其他维护工单，请刷新后核对。',
+    ],
+    [
+      400,
+      'stored-maintenance-completion-receipt-is-invalid',
+      '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
+    ],
+    [409, 'idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    [409, 'lifecycle-conflict', '状态已被其他操作更新'],
+  ])(
+    'shows stable wire value %s/%s as exact Chinese without changing determinate status',
+    (status, wireValue, message) => {
+      expect(describeRequestError({ status, message: wireValue }, '原有兜底')).toMatchObject({
+        kind: 'business',
+        status,
+        message,
+        indeterminate: false,
+      })
+    },
+  )
+
+  it('maps a standalone stable business envelope while unknown values keep the original path', () => {
+    expect(describeRequestError({ message: 'idempotency-conflict' }, '原有兜底').message).toBe(
+      '该操作标识已用于其他内容，请刷新后重新发起。',
+    )
+    expect(
+      describeRequestError({ status: 400, message: 'future-stable-error' }, '原有兜底').message,
+    ).toBe('future-stable-error')
+    expect(
+      describeRequestError({ status: 409, message: 'future-stable-error' }, '原有兜底').message,
+    ).toContain('状态已变化')
+  })
+
+  it('keeps a 5xx indeterminate even when its body contains a known stable wire value', () => {
+    expect(describeRequestError({ status: 503, message: 'lifecycle-conflict' })).toMatchObject({
+      message: '服务暂时不可用，请稍后重试；写操作请先刷新核实结果',
+      indeterminate: true,
+    })
+  })
+
+  it.each([
     [401, '登录已失效，请重新登录', false],
     [403, '当前账号无此操作权限', false],
     [404, '业务对象已不存在', false],

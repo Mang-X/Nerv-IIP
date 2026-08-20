@@ -59,6 +59,7 @@ export {
   normalizeMaintenanceWorkOrderStatusFilter,
 } from './labels/equipmentLabels'
 export type { MaintenanceWorkOrderStatusCode } from './labels/equipmentLabels'
+export { stableErrorMessage, STABLE_ERROR_MESSAGES } from './labels/stableErrorMessages'
 export {
   COMMON_INSPECTION_CHARACTERISTICS,
   createMeasurementDraft,
