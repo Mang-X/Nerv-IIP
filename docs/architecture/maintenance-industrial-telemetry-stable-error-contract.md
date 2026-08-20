@@ -133,7 +133,7 @@ Maintenance 路由注册表证据见 `MaintenanceEndpoints.cs` 第 879-887 行�
 两项共享值不是只有两个目标域碰巧同名：MES 的
 [`MesLifecycleConflictException.cs`](../../backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Errors/MesLifecycleConflictException.cs)
 第 8、14 行，WMS 的
-[`WmsLifecycleConflictException.cs`](../../backend/services/Business/WMS/src/Nerv.IIP.Business.Wms.Web/Application/Errors/WmsLifecycleConflictException.cs)
+[`WmsLifecycleConflictException.cs`](../../backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Errors/WmsLifecycleConflictException.cs)
 第 12、56 行，以及 Quality 的
 [`QualityLifecycleConflictException.cs`](../../backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Errors/QualityLifecycleConflictException.cs)
 第 11、29 行均定义相同 wire 值。仅改单域会把既有共享语义拆成两套。
