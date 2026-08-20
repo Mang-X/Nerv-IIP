@@ -1829,6 +1829,14 @@ jobs:
         shell: pwsh
         run: ./scripts/tests/ordinal-string.Tests.ps1
 
+      # #1664：FullChain 的 man-440 两次被内核 SIGKILL（内层 137），而 lane 只报 `exited with 1`，
+      # 结果被当成场景断言失败或抖动。这一步守的是「信号死亡在它经过的每一层都自报家门」，包括
+      # 跨进程继承那一跳——它正是当时唯一断掉的一环。测试自带变异对照，拿掉分类后必须转红。
+      - name: Test script automation signal exit classification
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/script-automation-signal-exit.Tests.ps1
+
       # The checker above only reports on the files it decides to scan; this step is what holds that
       # decision still. #1509 narrowed the exclusion list to three entries and put scripts/lib under
       # a declared library scope, and a boundary nobody re-checks drifts back — so the exclusion list

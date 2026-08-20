@@ -503,6 +503,133 @@ function Write-ScriptAutomationStreamDrainDiagnostics {
     }
 }
 
+# 信号退出码分类（#1664 / #1876）。
+#
+# 受管入口此前把「进程被内核杀掉」和「进程自己判定失败」报成同一句话。两次 hosted runner 上的
+# FullChain 失败里，真正死掉的是一个被 SIGKILL 的 `dotnet test`（内层 137 = 128 + 9），而 lane
+# 只报 `Command 'pwsh' exited with 1`；不下载诊断包就会把它读成场景断言失败或抖动。下面三个函数
+# 的存在就是为了取消那种读法：信号死亡在它经过的每一层都自报家门。
+#
+# POSIX 只保证下列信号的编号在各实现之间一致。SIGBUS、SIGUSR1、SIGUSR2 等在 Linux 与 macOS 上
+# 编号不同，因此刻意不进表——报一个泛化的 `SIG<n>` 比报一个错的名字有用，后者会把排查引向另一
+# 种故障。
+$script:NervScriptAutomationPortableSignalNames = @{
+    1 = 'SIGHUP'
+    2 = 'SIGINT'
+    3 = 'SIGQUIT'
+    4 = 'SIGILL'
+    5 = 'SIGTRAP'
+    6 = 'SIGABRT'
+    8 = 'SIGFPE'
+    9 = 'SIGKILL'
+    11 = 'SIGSEGV'
+    13 = 'SIGPIPE'
+    14 = 'SIGALRM'
+    15 = 'SIGTERM'
+}
+# 跨进程边界的继承靠这个稳定标记，而不是去解析下一层的自然语言失败信息。
+$script:NervScriptAutomationSignalExitMarker = 'NERV-SIGNAL-EXIT'
+
+function Get-ScriptAutomationSignalExit {
+    <#
+        Classifies a child process exit code as a signal termination, or returns $null when the code
+        carries no such meaning.
+    #>
+    param([Parameter(Mandatory)] [int] $ExitCode)
+
+    # Windows 退出码是任意 32 位值，137 在那里就只是 137；只有 Unix 侧的 128 + signal 约定成立。
+    if ([OperatingSystem]::IsWindows()) { return $null }
+    if ($ExitCode -le 128 -or $ExitCode -gt 192) { return $null }
+
+    $signal = $ExitCode - 128
+    $signalName = if ($script:NervScriptAutomationPortableSignalNames.ContainsKey($signal)) {
+        [string] $script:NervScriptAutomationPortableSignalNames[$signal]
+    }
+    else {
+        "SIG$signal"
+    }
+    $hint = if ($signal -eq 9) {
+        'the process was force-killed and never got to report a result; suspect an out-of-memory kill or an external kill'
+    }
+    elseif ($signal -eq 6 -or $signal -eq 11) {
+        'the process crashed; look for a runtime fault rather than a failed assertion'
+    }
+    else {
+        'the process was terminated by a signal rather than exiting on its own'
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $ExitCode
+        Signal = $signal
+        SignalName = $signalName
+        Hint = $hint
+    }
+}
+
+function Format-ScriptAutomationSignalExit {
+    <#
+        Renders the single-line marker a parent process can recognise in a child's captured output.
+        The hint is last so the leading fields stay parseable.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $Command,
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [object] $SignalExit
+    )
+
+    return "$script:NervScriptAutomationSignalExitMarker exitCode=$($SignalExit.ExitCode) signal=$($SignalExit.Signal) signalName=$($SignalExit.SignalName) name=$Name command=$Command hint=$($SignalExit.Hint)"
+}
+
+function Get-ScriptAutomationInheritedSignalExit {
+    <#
+        Recovers a signal termination that happened one or more levels down, from the captured output
+        of a child that itself exited with an ordinary non-zero code.
+    #>
+    param(
+        [AllowNull()] [string] $Stdout,
+        [AllowNull()] [string] $Stderr
+    )
+
+    foreach ($stream in @([string] $Stdout, [string] $Stderr)) {
+        if ([string]::IsNullOrEmpty($stream)) { continue }
+        foreach ($line in ($stream -split "`r?`n")) {
+            $markerIndex = $line.IndexOf($script:NervScriptAutomationSignalExitMarker, [StringComparison]::Ordinal)
+            if ($markerIndex -ge 0) { return $line.Substring($markerIndex).Trim() }
+        }
+    }
+
+    return $null
+}
+
+function Add-ScriptAutomationSignalExitDiagnosis {
+    <#
+        Appends the signal diagnosis to a failure message, and emits the marker so the next level up
+        can inherit it. Callers keep the literal `exited with <code>` prefix intact: three governed
+        scripts parse it with `exited with (?<exitCode>\d+)`.
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $FailureMessage,
+        [Parameter(Mandatory)] [string] $Command,
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [int] $ExitCode,
+        [AllowNull()] [string] $Stdout,
+        [AllowNull()] [string] $Stderr
+    )
+
+    $signalExit = Get-ScriptAutomationSignalExit -ExitCode $ExitCode
+    if ($null -ne $signalExit) {
+        Write-Diagnostic -Level 'ERROR' -Message (Format-ScriptAutomationSignalExit -Command $Command -Name $Name -SignalExit $signalExit)
+        return "$FailureMessage Terminated by signal $($signalExit.SignalName) ($($signalExit.Signal)): $($signalExit.Hint)."
+    }
+
+    $inherited = Get-ScriptAutomationInheritedSignalExit -Stdout $Stdout -Stderr $Stderr
+    if ($null -ne $inherited) {
+        return "$FailureMessage A governed child process was terminated by a signal: $inherited."
+    }
+
+    return $FailureMessage
+}
+
 function Invoke-NativeCommandWithTimeout {
     param(
         [Parameter(Mandatory)]
@@ -607,7 +734,14 @@ function Invoke-NativeCommandWithTimeout {
         $stopwatch.Stop()
 
         if ($exitCode -ne 0) {
-            throw "Command '$Command' exited with $exitCode after $($stopwatch.Elapsed). Logs: $resolvedLogDirectory"
+            $failureMessage = Add-ScriptAutomationSignalExitDiagnosis `
+                -FailureMessage "Command '$Command' exited with $exitCode after $($stopwatch.Elapsed)." `
+                -Command $Command `
+                -Name $Name `
+                -ExitCode $exitCode `
+                -Stdout $drain.Stdout `
+                -Stderr $drain.Stderr
+            throw "$failureMessage Logs: $resolvedLogDirectory"
         }
         if (@($drain.DrainErrors).Count -gt 0) {
             throw "Command '$Command' redirected stream drain failed: $($drain.DrainErrors -join '; '). Logs: $resolvedLogDirectory"
@@ -757,7 +891,14 @@ function Invoke-NativeCommandOutput {
 
         if ($exitCode -ne 0) {
             $safeOutput = Protect-ScriptAutomationText (($stdout, $stderr) -join [Environment]::NewLine)
-            $failure = [InvalidOperationException]::new("Command '$Command' exited with $exitCode. Output: $safeOutput")
+            $failureMessage = Add-ScriptAutomationSignalExitDiagnosis `
+                -FailureMessage "Command '$Command' exited with $exitCode." `
+                -Command $Command `
+                -Name $Name `
+                -ExitCode $exitCode `
+                -Stdout $stdout `
+                -Stderr $stderr
+            $failure = [InvalidOperationException]::new("$failureMessage Output: $safeOutput")
             $failure.Data['ExitCode'] = [int] $exitCode
             throw $failure
         }
