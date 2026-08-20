@@ -1,6 +1,6 @@
 # 文件存储基线说明
 
-本文档定义 Nerv-IIP 主平台提供的通用文件存储能力。File Storage 是平台控制面的一部分，负责文件元数据、访问授权、上传下载会话、对象存储键、保留策略与审计挂点；MinIO 或等价对象存储只作为二进制内容的底层存放位置。
+本文档定义 Nerv-IIP 主平台提供的通用文件存储能力。File Storage 是平台控制面的一部分，负责文件元数据、访问授权、上传下载会话、内部对象键、保留策略与审计挂点。当前通用文件字节仅由显式 tus 的本地存储承载；MinIO 当前只服务独立的 `VersionedArchive` 合规归档边界，不是通用文件的当前字节后端。
 
 ## 定位
 
@@ -9,7 +9,7 @@
 3. 业务服务通过 `fileId`、`FileReference` 或公开 API/SDK 使用文件能力，不直接暴露或持久化对象存储内部 key 作为业务接口。
 4. UI、外部应用、Connector Host 和行业扩展不得直接访问 MinIO；上传下载必须经过 File Storage 授权后获得受控入口或短期 URL。
 5. File Storage 与 IAM 协作完成组织、环境、主体、权限范围和授权授予校验。
-6. 上传协议通过 Upload Provider 抽象支持，tus、S3 multipart 和平台中转上传都只是传输策略，不进入文件领域模型核心。
+6. 当前运行时仍以 `UploadMode`、`Provider` 和上传指令表达传输选择；这是兼容面，不表示 tus、`server-proxy` 与 S3 multipart 是长期并列的 Upload Provider。已批准的目标分轴见“已批准目标，尚未实现”。
 
 ## 首批适用场景
 
@@ -31,11 +31,10 @@
 
 | 对象 | 职责 | 首批说明 |
 | --- | --- | --- |
-| StoredFile | 文件元数据事实 | 保存组织、环境、文件名、内容类型、大小、校验和、状态、用途、保留策略和当前版本。 |
-| FileVersion | 文件内容版本 | 保存对象存储 provider、bucket、objectKey、checksum、size 和创建时间；objectKey 不作为公开业务字段。 |
-| UploadSession | 上传会话 | 控制一次上传的目标、大小、content type、有效期、幂等键、uploadMode、provider、完成状态和失败原因。 |
-| UploadInstructions | 上传指令 | File Storage 根据 UploadSession 和 provider 生成的客户端上传说明，例如 tus endpoint、S3 multipart presigned urls 或平台中转地址。 |
-| UploadProvider | 上传实现策略 | 抽象 tus、S3 multipart、server-proxy 等协议差异；它不是领域聚合，不拥有文件事实。 |
+| StoredFile | 文件元数据事实 | 保存组织、环境、文件名、内容类型、大小、校验和、状态、用途和保留策略等当前文件事实。 |
+| UploadSession | 上传会话 | 控制一次上传的目标、大小、content type、有效期、幂等键、`uploadMode`、`provider`、完成状态和失败原因。当前这些字段仍是公开兼容面。 |
+| UploadInstructions | 上传指令 | 当前 File Storage 根据 UploadSession 和运行时 provider 生成客户端上传说明；默认 `server-proxy` 只返回占位指令，显式 tus 才返回本地 tus URL。 |
+| 上传传输实现 | 当前传输差异 | 当前实现有 `ServerProxyUploadProvider` 和自研本地 tus 链路；它们不是长期可扩展的目标 Upload Provider 抽象。 |
 | DownloadGrant | 下载授权 | 表示一次短期下载许可，可映射为平台中转下载或对象存储预签名 URL。 |
 | FileReference | 业务引用关系 | 记录 ownerService、ownerType、ownerId 与 fileId 的绑定，但不解释业务对象本身。 |
 
@@ -53,39 +52,31 @@ GET  /api/files/v1/files/{fileId}
 POST /api/files/v1/files/{fileId}/download-grants
 ```
 
-当前默认实现仍返回 `uploadMode = server-proxy`、`provider = server-proxy` 的平台控制 placeholder 上传/下载路径；设置 `FileStorage:UploadProvider=tus` 后，创建上传会话会返回 `uploadMode = tus`、`provider = tus` 和 `/api/files/v1/tus/{uploadSessionId}` 上传指令。FileStorage 已新增 PostgreSQL `filestorage` schema 的 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 和 schema convention tests；PostgreSQL-backed API service 是唯一 metadata 实现，所有环境都拒绝 `Persistence:Provider=InMemory`。当前 tus MVP 提供 FileStorage-owned 本地传输入口：`HEAD /api/files/v1/tus/{uploadSessionId}` 查询当前 `Upload-Offset`、`Upload-Length` 和 `Upload-Expires`，`PATCH /api/files/v1/tus/{uploadSessionId}` 按 offset 追加字节，客户端可通过停止发送并再次 `HEAD` 后继续 `PATCH` 实现暂停/续传；`PATCH` 会拒绝超过上传会话声明大小的内容，支持 tus `Upload-Checksum: sha256 <base64>` chunk 校验，不匹配时返回 `460` 且不推进 offset；过期未完成的本地 tus 字节会由后台垃圾回收兜底清理，后续 `HEAD`/`PATCH` 访问过期会话时也会确定性拒绝并清理；complete 时会再次校验本地实际大小、可选 checksum，并按声明 content type/扩展名做魔数复核，若本地 tus store 配置不可用会返回服务端错误而非客户端请求错误。download grant content endpoint 可读取本地 tus 字节。字节存放在本地 `FileStorage:Tus:RootPath`，上传会话 TTL 当前固定为 15 分钟，暂不接 MinIO/S3 multipart。当前 `PATCH` 为了进行 chunk checksum 校验会在 endpoint 内短暂缓冲单个 chunk，生产级大 chunk 流式限额写入/低 LOH 压力优化随对象存储 adapter 或后续传输优化处理。`object_key` 只允许出现在 FileStorage 持久化/内部实现中，公开 API response、SDK DTO、Gateway facade 和 Console generated client 均不得暴露。
+当前默认实现返回 `uploadMode = server-proxy`、`provider = server-proxy` 的占位上传指令；仓库没有相应的字节 `PUT` endpoint，不能把该默认值描述为可用的中转上传路径。只有显式设置 `FileStorage:UploadProvider=tus` 时，创建上传会话才返回 `uploadMode = tus`、`provider = tus` 和 `/api/files/v1/tus/{uploadSessionId}` 上传指令。FileStorage 已有 PostgreSQL `filestorage` schema 的 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 和 schema convention tests；PostgreSQL-backed API service 是唯一 metadata 实现，所有环境都拒绝 `Persistence:Provider=InMemory`。当前 tus MVP 是 FileStorage-owned 自研本地传输入口：`HEAD /api/files/v1/tus/{uploadSessionId}` 查询当前 `Upload-Offset`、`Upload-Length` 和 `Upload-Expires`，`PATCH /api/files/v1/tus/{uploadSessionId}` 按 offset 追加字节，客户端可通过停止发送并再次 `HEAD` 后继续 `PATCH` 实现暂停/续传；`PATCH` 会拒绝超过上传会话声明大小的内容，支持 tus `Upload-Checksum: sha256 <base64>` chunk 校验，不匹配时返回 `460` 且不推进 offset；过期未完成的本地 tus 字节会由后台垃圾回收兜底清理，后续 `HEAD`/`PATCH` 访问过期会话时也会确定性拒绝并清理；complete 时会再次校验本地实际大小、可选 checksum，并按声明 content type/扩展名做魔数复核，若本地 tus store 配置不可用会返回服务端错误而非客户端请求错误。download grant content endpoint 可读取这条本地 tus 链路的字节。字节位置当前由 `uploadSessionId` 的 SHA-256 摘要派生，存放在本地 `FileStorage:Tus:RootPath`；上传会话 TTL 当前固定为 15 分钟，暂不接 MinIO/S3 multipart。`ObjectKey` 虽已在创建会话时生成并持久化，但当前不参与读、写、下载或删除的实际字节 I/O。当前 `PATCH` 为了进行 chunk checksum 校验会在 endpoint 内短暂缓冲单个 chunk，生产级大 chunk 流式限额写入/低 LOH 压力优化随对象存储 adapter 或后续传输优化处理。`object_key` 只允许出现在 FileStorage 持久化/内部实现中，公开 API response、SDK DTO、Gateway facade 和 Console generated client 均不得暴露。
 
 2026-07-05 安全硬化已补齐以下运行路径：上传会话创建时按 `FileStorage:PurposePolicies:{purpose}` 校验 content type、扩展名 allowlist/blocklist，并按 `FileStorage:Quotas:OrganizationPurpose:{org}:{env}:{purpose}:MaxBytes`、`FileStorage:Quotas:Organization:{org}:{env}:MaxBytes` 或用途级 `QuotaBytes` 做配额拒绝；组织级配额使用组织/环境总用量并按 organization/environment 加锁，组织用途级和用途级配额使用对应 purpose 用量并按 organization/environment/purpose 加锁，使 usedBytes 检查和 upload session reservation 写入在当前服务进程内串行化；`GET /api/files/v1/usage` 返回匹配配额口径下的当前已存字节加未过期上传会话预留字节，以及匹配配额。只有 `status == available` 的文件可由 download grant content endpoint 兑换为字节。正式文件生命周期清理由 `FileStorage:PurposePolicies:{purpose}:RetentionSeconds` 触发软删，再按 `FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds` 物理删除 `stored_files`、关联 `upload_sessions` / `download_grants` 和本地 tus 字节。
 
 2026-08-17 起，`FileStorage:PurposePolicies` 的直接子键同时是 purpose 注册目录的单一事实源，Domain 不再维护硬编码白名单。平台内置目录为 `application-package`、`avatar`、`attachment`、`diagnostic-log`、`quality-evidence`、`maintenance-photo` 与 `engineering-document`；PostgreSQL metadata 实现和 `/internal/file-storage/v1/purposes/{purpose}` 共用同一配置解析。未注册值以 HTTP 400 返回稳定错误码 `file-purpose-not-registered`，消息包含实际 purpose 和配置路径，内部边界端点返回同一诊断。NvUI 测试和设计系统示例复用或对齐该目录；本项不引入 owner allowlist、传输 eligibility、策略版本或新的契约生成链。
 
-MVP 后续顺序保持为：
+## 已批准目标，尚未实现
 
-1. server-proxy metadata stub、contracts/SDK、PostgreSQL-backed service 和本地 tus endpoint：稳定 API、schema、SDK DTO、上传 offset 和下载内容消费形状。
-2. tus hardening：已在当前本地 endpoint 上补齐 size/checksum 强校验、过期未完成字节清理和基础协议兼容，作为 FileStorage MVP 的完整本地传输路径。
-3. MinIO/S3 multipart：不进入 MVP，放到后续对象存储部署联调阶段；接入时只作为基础设施 adapter，只发短期指令或预签名 URL。
+以下是已接受的目标架构，不是当前 API、配置、schema、脚本、生产就绪或真实基础设施证明；实现进度仍以 `docs/architecture/implementation-readiness.md`、对应交付和运行证据为准。
 
-## 推荐接口
+### 上传协议、代理和提交
 
-长期推荐接口以 OpenAPI 作为事实来源，并进入 Platform SDK；其中部分接口尚未进入当前 MVP：
+依 [ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md)，通用文件上传的唯一公开协议目标是 tus，服务端目标实现是 `tusdotnet`。PlatformGateway proxy 是受控外部入口拓扑，storage provider 是字节后端；三者必须分轴建模。客户端只访问 Gateway 暴露的受控 tus URL，不取得内部 FileStorage URL、存储地址、`ObjectKey` 或长期凭据。
 
-```text
-POST /api/files/v1/upload-sessions
-GET  /api/files/v1/upload-sessions/{uploadSessionId}/instructions
-POST /api/files/v1/upload-sessions/{uploadSessionId}/complete
-POST /api/files/v1/upload-sessions/{uploadSessionId}/abort
-GET  /api/files/v1/files/{fileId}
-POST /api/files/v1/files/{fileId}/download-grants
-POST /api/files/v1/files/{fileId}/archive
-```
+目标中，tus 只向独立、可续传且可过期但不可下载的 staging 写入；final 与 staging 分离，final 只由内部、provider 无关且不公开的 canonical `ObjectKey` 定位。complete 对所有 provider 都必须统一从实际物理字节证明存在性与实际 size，服务端计算并持久化 canonical SHA-256，按持久 `committing` 意图幂等 promote，再按同一 `ObjectKey` 回读 final 并复验存在性、size 和 checksum，最后原子写入唯一的 `StoredFile` available 事实与 session completed。final 已存在但 size/checksum 不一致时必须失败关闭且不得覆盖；相同内容才可幂等收敛。
 
-`CreateUploadSession` 由服务端选择或校验上传模式，返回 `uploadSessionId` 和当前上传指令；长期也可以拆出 `GetUploadInstructions`。MVP 版本以 `server-proxy` metadata stub 起步，当前已可通过配置使用本地 tus endpoint；以下 provider 抽象用于长期演进：
+### final 字节后端与 Local 语义
 
-1. tus：File Storage 或专用 tus 组件提供断点续传 endpoint，File Storage 仍负责会话创建、权限、完成校验和文件提交。
-2. server-proxy：客户端把文件流提交到 File Storage，由服务写入对象存储，适合小文件或受限网络环境。
-3. S3 multipart：File Storage 创建受限上传会话并发放 MinIO/S3 multipart 预签名 URL，客户端直传对象存储后调用 complete 完成校验；该 provider 不进入 MVP。
+依 [ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md)，`IStorageProvider` 是通用文件 final 字节面的目标基础设施边界，不是上传协议、Gateway 入口、领域聚合或 per-file provider registry。`tusdotnet` `ITusStore` 只负责 staging、offset 和 expiry；FileStorage application/PostgreSQL 仍拥有上传会话准入、共享提交栅栏、持久 `committing` 意图、Tx1/Tx2 及 completed/available 文件事实。
 
-无论采用哪种模式，最终完成写入时都必须校验组织、环境、主体、用途、文件大小、content type、checksum、provider 回执和上传会话有效期。客户端只持有短期上传指令，不持有长期对象存储凭证。
+目标部署只允许在 LocalFileSystem 与 S3-compatible 两个 `IStorageProvider` 实现中严格二选一；同一运行实例不得热切换、按文件动态路由、dual-write、read fallback、多 placement 或多副本。LocalFileSystem 的目标能力包括显式持久 root 与 storage identity、staging/final 同 filesystem 的分区、实际操作时的路径 confinement、atomic no-overwrite promote、final 回读复验，以及 startup blocked、runtime critical/unready、capacity restricted 的健康语义。非 Development 环境缺失、未知或冲突的 provider 配置，或 preflight/identity 不可信时，目标行为是 startup fail-fast，而非回退到 `server-proxy`、系统临时目录或另一 provider。
+
+### 通用文件与合规归档的边界
+
+通用文件 provider 目标与 `VersionedArchive` 是两条独立边界。后者当前经 `IVersionedObjectStore`/`MinioVersionedObjectStore` 直接使用 MinIO versioning、object lock 与 legal hold，不参与通用文件 LocalFileSystem/S3-compatible 选择器、上传会话、`StoredFile` 或 download grant。依 [ADR 0027](../adr/0027-filestorage-offline-migration-cutover-and-rollback.md) 及其[离线迁移与切换运行手册](file-storage-offline-migration-runbook.md)，两条轨道的迁移、验证、切换和清理也必须分别取证；不得把合规语义引入通用文件面。
 
 ## 上传安全与治理
 
@@ -94,7 +85,7 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 1. 每种 filePurpose 需要配置最大文件大小、允许的 content type、允许的扩展名和默认保留策略。
 2. 上传会话必须有短有效期，过期会话不能 complete，底层临时对象需要异步清理。
 3. 客户端声明的 content type、文件名和扩展名只能作为输入，最终以服务端校验和对象存储元数据为准。
-4. complete 时必须校验 size、checksum、provider 回执、part 列表和对象实际存在性。
+4. 当前显式 tus 的 complete 会校验本地实际大小和可选 checksum；对所有 provider 的实际字节存在性、size、服务端 canonical SHA-256、幂等 promote 与 final 回读复验，是“已批准目标，尚未实现”中的统一不变量。
 5. 可执行文件、脚本、压缩包等高风险类型默认不进入普通预览或知识引入流程。
 6. 上传、下载授权、归档和删除都必须写入可审计事件；审计事实最终由服务端生成。
 7. 每个组织和环境应预留容量配额与单日上传量限制；首批可以先建配置口径，不要求完整计费或配额后台。
@@ -105,30 +96,10 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 2. tus complete 对 zip、png、jpeg 和 pdf 做魔数复核；普通文本/日志类按声明策略治理。
 3. 配额优先级为组织+环境+用途、组织+环境、用途默认；超配额在上传会话创建阶段返回冲突，不创建临时会话。
 
-## Upload Provider 抽象
-
-Upload Provider 是 File Storage 的基础设施扩展点，建议以平台语义定义接口，而不是把 tus 或 S3 API 直接上抛到业务层：
-
-```text
-CreateUploadSession
-GetUploadInstructions
-CompleteUploadSession
-AbortUploadSession
-VerifyUploadedObject
-```
-
-provider 能力建议：
-
-1. `TusUploadProvider`：当前已生成 tus 上传指令形状，并提供本地 `HEAD`/`PATCH` offset endpoint、基础 tus header 校验、按 session 串行追加、size/checksum 校验、过期未完成上传清理和 download grant content 读取；生产入口需要由 Gateway/auth 层保护，更完整的 tus creation/OPTIONS discovery 可后续补齐。
-2. `ServerProxyUploadProvider`：保留平台中转上传路径，用于小文件或内网限制场景。
-3. `S3MultipartUploadProvider`：对接 MinIO/S3，生成 multipart uploadId、part presigned urls，完成后校验 ETag、size 和 checksum；该 provider 放在 post-MVP 的对象存储部署联调阶段。
-
-provider 选择可以由文件用途、大小、客户端能力、网络环境或部署配置决定，但选择结果必须记录在 `UploadSession` 中，便于审计和故障诊断。
-
 ## 存储与元数据边界
 
-1. File Storage 元数据可写入 PostgreSQL；MVP 字节传输先通过 FileStorage-owned 本地 tus store 补齐，MinIO 或等价对象存储作为 post-MVP 的底层二进制存放后端接入。
-2. 数据库中保存 provider、uploadMode、bucket、objectKey、checksum、size、contentType、retentionUntil、createdBy、ownerService 等治理字段。
+1. 当前 File Storage 元数据由 PostgreSQL 承载；当前字节传输只在显式 tus 时经 FileStorage-owned 本地 tus store 落盘。已批准目标中的 LocalFileSystem/S3-compatible final 后端尚未实现。
+2. 当前 `stored_files` 持久化 `fileId`、组织/环境、owner、用途、文件名、内容类型、`sizeBytes`、`checksum`、`ObjectKey`、状态及创建/完成/删除/物理清理时间；`upload_sessions` 持久化上传会话 ID、目标文件、同一上下文、预期大小、`checksum`、`ObjectKey`、`provider`、创建/过期/完成状态与时间。
 3. `objectKey` 是内部存储定位信息，不能出现在前端、外部应用或 Connector Host 的长期业务契约中。
 4. 业务服务只保存 `fileId` 或 `FileReference`，不能保存预签名 URL 作为长期事实。
 5. 文件归档或删除必须先改变 File Storage 事实状态，再按保留策略异步清理底层对象。
@@ -152,10 +123,10 @@ provider 选择可以由文件用途、大小、客户端能力、网络环境�
 
 ## 首批验收标准
 
-1. 能创建上传会话并完成一个文件写入。
-2. 能通过 Upload Provider 抽象生成 S3 multipart、tus 或 server-proxy 中至少一种上传指令，且接口不泄漏长期对象存储凭证。
+1. 显式 tus 配置下，能创建上传会话并完成一个本地文件写入；默认 `server-proxy` 占位指令不具备该字节写入能力。
+2. 当前默认 `server-proxy` 仅生成占位上传指令；显式 tus 可生成并使用当前自研的本地 `HEAD`/`PATCH` 上传指令。长期唯一公开协议与 final provider 的目标见“已批准目标，尚未实现”。
 3. 能通过 `fileId` 查询文件元数据，响应中不暴露内部 objectKey。
 4. 能为有权限主体生成短期下载授权。
-5. 文件元数据包含组织、环境、ownerService、ownerType、ownerId、contentType、size、checksum、uploadMode、provider、filePurpose 和状态。
+5. 当前 `FileMetadataResponse` 包含 `fileId`、组织、环境、`OwnerReference`、`filePurpose`、文件名、内容类型、`sizeBytes`、`checksum`、状态、创建时间和完成时间；`uploadMode`、`provider` 只属于当前 `CreateUploadSessionResponse`，不属于文件元数据响应。
 6. 上传会话过期后不能 complete，过期临时对象可以被后台任务安全清理。
 7. Knowledge、Ops 或 AppHub 至少一个服务能以 `fileId` 形式引用文件，不直接保存对象存储 key 作为业务事实。
