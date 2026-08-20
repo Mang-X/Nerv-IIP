@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Seed;
 
@@ -40,7 +41,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
             organizationId, environmentId, RawMaterialSkuCode, "pcs", SiteCode, LocationCode, null, null,
             StockQualityStatus.Unrestricted, StockOwnerType.Company, null);
         var stockMovement = StockMovement.Post(
-            organizationId, environmentId, "inbound", "leader-demo-seed", SourceDocumentId, "10", IdempotencyKey,
+            organizationId, environmentId, InventoryMovementTypes.Inbound, "leader-demo-seed", SourceDocumentId, "10", IdempotencyKey,
             RawMaterialSkuCode, "pcs", SiteCode, LocationCode, null, null, StockQualityStatus.Unrestricted, StockOwnerType.Company, null, Quantity, 1m);
         stockLedger.ApplyMovement(stockMovement);
         dbContext.StockLedgers.Add(stockLedger);
