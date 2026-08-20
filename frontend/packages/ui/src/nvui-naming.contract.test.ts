@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 
 import * as ui from './index'
 
-// ADR 0020 (NvUI) Appendix A — the FULL old→new mapping, frozen. `Nv*` is the canonical
+// NvUI Appendix A (frontend/DESIGN/nvui-naming-map.md, moved out of ADR 0020 — rules stay
+// in the ADR, the per-item map lives there) — the FULL old→new mapping, frozen. `Nv*` is the canonical
 // brand name. The old names (`*Pro` / `Screen*` / bare) were `@deprecated` aliases in
 // #787; the #789 closeout REMOVED every alias, so `NV_ALL` must still resolve while
 // `OLD_ALL` must no longer resolve, and the barrels must expose zero `@deprecated`.
@@ -17,7 +18,7 @@ const transitionalPcIdentifier = /(?:^|[\s"'`.])ds-/m
 const transitionalScreenIdentifier = /(?:^|[\s"'`.])sb-/m
 
 // --- Frozen Appendix A (ui): 182 Nv names (incl. renamed derived types) + 174 old.
-// (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see ADR 0020 Appendix A.)
+// (NvCombobox / NvSearchSelect added post-freeze by MAN-439 — new components, see nvui-naming-map.md Appendix A.)
 // (NvMetricRing / NvMetricStrip added post-freeze — distinct PC components named per ADR 0020
 //  §1.1(2) PC 素名规则 [R1–R5 是 screen/touch/mobile 专用，PC 不适用]; see Appendix A 收口后新增块.)
 // (NvEntityPicker / NvCascadePicker added post-freeze — blocks 层实体选择弹窗 / 级联选择器，

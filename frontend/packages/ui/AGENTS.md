@@ -7,7 +7,8 @@
 ## 分层与改动边界
 
 - `components/ui/` = shadcn 原版，**byte-for-byte 零改动**（无 `Nv`、无
-  `--nv-`）。定制 = 复制重建到品牌层，绝不改原版。附录 A 未列品牌版的原版件
+  `--nv-`）。定制 = 复制重建到品牌层，绝不改原版。`frontend/DESIGN/nvui-naming-map.md`
+  附录 A 未列品牌版的原版件
   （`Alert`/`Empty`/`Toaster` 等）经 barrel 直接供 app 使用是合法现状。
   **例外**：`file-preview/`、`file-upload/`、`date-picker/` 三个目录只是住在这里的
   自研受治理源码（沿用原版命名，无 `Nv`），`sonner/index.ts` 是原版 barrel 上的
@@ -23,7 +24,8 @@
 ## 命名
 
 - 新组件命名走 ADR 0020 §1.2 的 **R1–R5 判定流程**；已冻结的逐件结果 =
-  附录 A，不要即兴起名。
+  `frontend/DESIGN/nvui-naming-map.md` 附录 A，不要即兴起名。新增组件改那份映射表，
+  不要回头编辑 ADR。
 - 包名永不改（ADR 0020 Decision 2）：品牌由 `Nv*` 前缀承载，不是包重命名。
 
 ## 令牌 / CSS 层（ADR 0020 §4）
