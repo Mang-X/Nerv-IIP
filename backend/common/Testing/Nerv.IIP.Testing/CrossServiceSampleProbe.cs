@@ -187,7 +187,12 @@ public static class CrossServiceSampleProbe
 /// <param name="Kind">本服务内的单据类别，用于人读与定位。</param>
 /// <param name="DocumentNo">按各域 spec 推出的单据号。</param>
 /// <param name="Expected">按本服务自己的 spec，这张单**是否应该存在**（废弃单等合法缺失即 false）。</param>
-/// <param name="Exists">真库里**是否真的查到**这张单；见证行（不拥有该单的服务）为 null。</param>
+/// <param name="Exists">
+/// 真库里**是否真的查到**这张单，且它确实挂在本抽样序号的链上；
+/// 见证行（不拥有该单的服务）为 null。
+/// 探针必须用 <paramref name="DocumentNo"/> 本身作查询键，命中后再回读单据上的反向引用逐字比对——
+/// 按外键查、却打印按号段推出来的号，两者从不比对，号段漂移时证据表照样写「存在」。
+/// </param>
 /// <param name="Quantity">跨域可比的数量；本行没有数量维度时为 null。</param>
 /// <param name="Amount">金额；只有 ERP 侧的单据有钱。</param>
 /// <param name="TimestampUtc">该业务事实发生的时刻。</param>

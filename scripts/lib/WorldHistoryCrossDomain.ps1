@@ -33,24 +33,32 @@ Set-StrictMode -Version Latest
 <#
     容差口径（本票验收第 3 条）。
 
-    Quantity = 0.0001
-      数量在库里是 decimal，两侧都从同一份确定性 spec 推出同一个值，理论上应逐位相等。
-      留 1e-4 只为吸收 numeric(18,n) 的标度往返，不足以掩盖任何真实的少造/多造
-      —— 世界观里最小的数量步长是 1 件，比它大四个数量级。
+    先说实测的列精度，因为容差只有相对它才有意义。探针读到的每一列——ERP 的
+    `SalesOrder.TotalAmount` / `SalesOrderLine.OrderedQuantity` / `DeliveryOrderLine.ShippedQuantity` /
+    `AccountReceivable.Amount`，MES 的 `WorkOrder.Quantity` / `OperationTask.PlannedQuantity` /
+    `FinishedGoodsReceiptRequest.Quantity`，质量的 `InspectionTask.Quantity`，库存的
+    `StockMovement.Quantity`，仓储的 `InboundOrderLine.ReceivedQuantity` /
+    `OutboundOrderLine.IssuedQuantity`——在各服务的 ModelSnapshot 里都是 **`numeric(18,6)`**
+    （逐列查过，不是按 decimal 默认精度推的）。
 
-    Amount = 0.01
-      金额记到分。ERP 的金额列是 decimal(18,2)，一分是可表示的最小差异，
-      因此取一分：比它小的差异不可能来自真实数据，只可能来自表示误差。
+    Quantity = Amount = 0.0000005
+      `numeric(18,6)` 的最小可表示步长是 1e-6，两侧的值又都由同一份确定性 decimal 算术推出、
+      往返不损失精度，所以**任何在这一列里可表示的差异（≥ 1e-6）都是真实差异，必须判红**。
+      容差取半个最小步长：比较用闭区间（`-le`），于是差 1e-6 判红、差 5e-7 判绿——
+      后者在这一列里根本无法被存下来，只可能是舍入残差。
+      本轮之前这两个值是 0.0001 / 0.01，论证写的是「金额列是 decimal(18,2)，一分是最小可表示差异」
+      —— 前提错了（实为 6 位标度），后果是**恰好差一分的真实金额差异会被闭区间放行**。
 
     TimestampTicks = 10（= 1 微秒）
       PostgreSQL 的 timestamptz 精度是**微秒**，.NET 的 DateTimeOffset 是 100ns（tick）。
       同一个时刻写进库再读回来最多损失 9 个 tick，因此「同一时刻」的判据取 1 微秒。
       放宽到秒级会让「差了半秒」的真实漂移变成绿灯，收紧到 0 会让往返截断变成假红。
+      这一条与数量/金额不同：微秒截断是**真实存在**的表示误差，确实需要吸收。
 #>
 function Get-NervWorldHistoryCrossDomainTolerance {
     return [ordered]@{
-        Quantity       = [decimal] '0.0001'
-        Amount         = [decimal] '0.01'
+        Quantity       = [decimal] '0.0000005'
+        Amount         = [decimal] '0.0000005'
         TimestampTicks = [long] 10
     }
 }
@@ -367,8 +375,13 @@ function Get-NervWorldHistoryLinkFinding {
     }
 
     # 1. 各侧对「这张单该不该存在」的判断必须一致——不一致即共享 spec 已经漂移。
-    $expectations = @($Rows | ForEach-Object { [bool] $_.expected } | Sort-Object -Unique)
-    if ($expectations.Count -gt 1) {
+    # 布尔去重不走 Sort-Object：这里只要「各侧是不是都一样」，直接比对即可。
+    $expectationTrue = $false
+    $expectationFalse = $false
+    foreach ($row in $Rows) {
+        if ($row.expected) { $expectationTrue = $true } else { $expectationFalse = $true }
+    }
+    if ($expectationTrue -and $expectationFalse) {
         $detail = ($Rows | ForEach-Object { "$($_.kind)=$($_.expected)" }) -join ', '
         $findings.Add((New-NervWorldHistoryFinding -Category 'expectation-drift' -Index $Index -Link $link `
             -Detail "各侧对该单是否应存在的判断不一致：$detail。"))

@@ -133,7 +133,7 @@ $targets = @(
 $summary = [ordered]@{
     runId                 = $RunId
     startedAtUtc          = (Get-Date).ToUniversalTime().ToString('o')
-    scale                 = $Scale
+    requestedScale        = $Scale
     goLiveDate            = '2026-01-05'
     services              = [ordered]@{}
     consistencyValidator  = 'fail-closed: seed throws WorldHistoryConsistencyException on any unbalanced chain'
@@ -223,6 +223,12 @@ foreach ($target in $targets) {
 $crossDomain = Get-NervWorldHistoryCrossDomainReport -Probes @($probes)
 $summary.crossDomain = $crossDomain
 
+# -Scale 不下传给被调用的测试（缩放比例由测试自己固定），因此 summary 里把「请求的」
+# 和「实际生成的」分开写：顶层只留 requestedScale，实际值取各侧探针上报的基准。
+# 原先顶层那个 `scale` 与 crossDomain.scale 同名不同义，-Scale 0.1 跑出来两个数字会打架。
+$summary.effectiveScale = $crossDomain.scale
+$summary.scaleNote = '-Scale 只作证据标注，不下传给被调用的 Postgres 测试；effectiveScale 取各服务探针上报的基准值。'
+
 if (-not $crossDomain.succeeded) {
     $failed = $true
     Write-Host ''
@@ -247,7 +253,8 @@ $markdown = New-Object System.Text.StringBuilder
 [void]$markdown.AppendLine('# L1 背景历史一致性校验证据')
 [void]$markdown.AppendLine()
 [void]$markdown.AppendLine("- Run: ``$RunId``")
-[void]$markdown.AppendLine("- Scale: ``$Scale``")
+[void]$markdown.AppendLine("- Scale（``-Scale`` 参数，仅标注、不下传）: ``$Scale``")
+[void]$markdown.AppendLine("- 实际生成缩放（各侧探针上报）: ``$($crossDomain.scale)``")
 [void]$markdown.AppendLine("- 结论: " + $(if ($failed) { '**失败**' } else { '**通过**' }))
 [void]$markdown.AppendLine()
 

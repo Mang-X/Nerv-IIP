@@ -57,7 +57,7 @@ internal static class WorldHistoryCrossDomainProbe
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                     batchKeys.Contains(x.IdempotencyKey))
-                .Select(x => new { x.IdempotencyKey, x.CreatedAtUtc })
+                .Select(x => new { x.IdempotencyKey, x.SourceDocumentId, x.CreatedAtUtc })
                 .ToArrayAsync(cancellationToken))
             .ToDictionary(x => x.IdempotencyKey, StringComparer.Ordinal);
 
@@ -67,6 +67,19 @@ internal static class WorldHistoryCrossDomainProbe
             var cartonKey = CartonBatchKey(plan.Index, cartonTemplateCode);
             batches.TryGetValue(lotKey, out var lotBatch);
             batches.TryGetValue(cartonKey, out var cartonBatch);
+
+            // 幂等键命中后回读源单据号逐字比对：挂错源单据的批次不算「这一批存在」。
+            if (lotBatch is not null &&
+                !string.Equals(lotBatch.SourceDocumentId, WorldHistoryMesSpec.FinishedGoodsReceiptNo(plan.WorkOrderNo), StringComparison.Ordinal))
+            {
+                lotBatch = null;
+            }
+
+            if (cartonBatch is not null &&
+                !string.Equals(cartonBatch.SourceDocumentId, WorldHistorySpec.DeliveryOrderNo(plan.Index), StringComparison.Ordinal))
+            {
+                cartonBatch = null;
+            }
 
             lines.Add(CrossServiceSampleProbe.FormatRow(Prefix, new CrossServiceSampleProbeRow(
                 Index: plan.Index,

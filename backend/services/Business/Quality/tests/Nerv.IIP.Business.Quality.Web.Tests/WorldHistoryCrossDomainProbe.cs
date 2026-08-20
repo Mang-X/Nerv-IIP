@@ -8,6 +8,11 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 /// <summary>
 /// 质量域侧的跨域抽样探针（#1826）。见 <c>scripts/verify-world-history.ps1</c> 的对账口径。
+///
+/// <para>
+/// 检验任务按**触发幂等键**命中（键本身由源单据号推出），命中后再回读单据上的
+/// <c>SourceDocumentId</c> 逐字比对，确认它确实挂在本抽样序号的链上。
+/// </para>
 /// </summary>
 internal static class WorldHistoryCrossDomainProbe
 {
@@ -52,8 +57,21 @@ internal static class WorldHistoryCrossDomainProbe
 
         foreach (var plan in sampledPlans)
         {
+            var deliveryOrderNo = WorldHistorySpec.DeliveryOrderNo(plan.Index);
             tasks.TryGetValue(OperationInspectionKey(plan.WorkOrderNo), out var operationTask);
             tasks.TryGetValue(OutboundInspectionKey(plan.Index), out var outboundTask);
+
+            // 触发幂等键里已经嵌了源单据号，这里再回读单据上的 SourceDocumentId 逐字比对：
+            // 键命中但挂在别的单据上，对跨域抽样来说和不存在是一回事。
+            if (operationTask is not null && !string.Equals(operationTask.SourceDocumentId, plan.WorkOrderNo, StringComparison.Ordinal))
+            {
+                operationTask = null;
+            }
+
+            if (outboundTask is not null && !string.Equals(outboundTask.SourceDocumentId, deliveryOrderNo, StringComparison.Ordinal))
+            {
+                outboundTask = null;
+            }
 
             lines.Add(CrossServiceSampleProbe.FormatRow(Prefix, new CrossServiceSampleProbeRow(
                 Index: plan.Index,
@@ -71,7 +89,7 @@ internal static class WorldHistoryCrossDomainProbe
                 Index: plan.Index,
                 Link: CrossServiceSampleProbe.Links.OutboundInspection,
                 Kind: "quality-outbound-inspection",
-                DocumentNo: WorldHistorySpec.DeliveryOrderNo(plan.Index),
+                DocumentNo: deliveryOrderNo,
                 // #1374：出货检验在完工装箱环节成立，与发运与否无关。
                 Expected: plan.IsProductionClosed,
                 Exists: outboundTask is not null,

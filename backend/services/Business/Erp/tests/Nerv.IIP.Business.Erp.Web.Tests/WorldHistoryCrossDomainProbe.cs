@@ -15,6 +15,13 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 /// 见证行没有 <c>exists</c>——它只说「按算术这张单应该存在、数量应该是多少」，
 /// 由脚本拿去和 MES / 库存 / 仓储上报的实查结果对账。
 /// </para>
+///
+/// <para>
+/// 查库一律**用证据行里打印的那个单据号本身作查询键**，并回读单据上的反向引用
+/// （发货单的销售订单号、应收的来源单据号）确认它确实挂在本抽样序号的链上。
+/// 若改用外键去查、却打印按号段推出来的号，两者从不比对，号段一旦漂移证据表照样
+/// 写「DO-2026-00001 存在」——那正是本票要根治的那类「看起来可追、其实没验」。
+/// </para>
 /// </summary>
 internal static class WorldHistoryCrossDomainProbe
 {
@@ -39,6 +46,8 @@ internal static class WorldHistoryCrossDomainProbe
 
         var sampledPlans = indexes.Select(index => plans[index - 1]).ToArray();
         var salesOrderNos = sampledPlans.Select(plan => plan.SalesOrderNo).ToArray();
+        var deliveryOrderNos = sampledPlans.Select(plan => WorldHistorySpec.DeliveryOrderNo(plan.Index)).ToArray();
+        var receivableNos = sampledPlans.Select(plan => WorldHistorySpec.ReceivableNo(plan.Index)).ToArray();
 
         var orders = (await dbContext.SalesOrders
                 .AsNoTracking()
@@ -57,7 +66,7 @@ internal static class WorldHistoryCrossDomainProbe
         var deliveries = (await dbContext.DeliveryOrders
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    salesOrderNos.Contains(x.SalesOrderNo))
+                    deliveryOrderNos.Contains(x.DeliveryOrderNo))
                 .Select(x => new
                 {
                     x.DeliveryOrderNo,
@@ -67,21 +76,35 @@ internal static class WorldHistoryCrossDomainProbe
                     ShippedQuantity = x.Lines.Sum(line => line.ShippedQuantity),
                 })
                 .ToArrayAsync(cancellationToken))
-            .ToDictionary(x => x.SalesOrderNo, StringComparer.Ordinal);
+            .ToDictionary(x => x.DeliveryOrderNo, StringComparer.Ordinal);
 
         var receivables = (await dbContext.AccountReceivables
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                    salesOrderNos.Contains(x.SourceDocumentNo))
+                    receivableNos.Contains(x.ReceivableNo))
                 .Select(x => new { x.ReceivableNo, x.SourceDocumentNo, x.Amount, x.CreatedAtUtc })
                 .ToArrayAsync(cancellationToken))
-            .ToDictionary(x => x.SourceDocumentNo, StringComparer.Ordinal);
+            .ToDictionary(x => x.ReceivableNo, StringComparer.Ordinal);
 
         foreach (var plan in sampledPlans)
         {
+            var deliveryOrderNo = WorldHistorySpec.DeliveryOrderNo(plan.Index);
+            var receivableNo = WorldHistorySpec.ReceivableNo(plan.Index);
             orders.TryGetValue(plan.SalesOrderNo, out var order);
-            deliveries.TryGetValue(plan.SalesOrderNo, out var delivery);
-            receivables.TryGetValue(plan.SalesOrderNo, out var receivable);
+            deliveries.TryGetValue(deliveryOrderNo, out var delivery);
+            receivables.TryGetValue(receivableNo, out var receivable);
+
+            // 反向引用不对就不算「这张单存在」：单据号命中但挂在别的订单上，
+            // 对跨域抽样来说和不存在是一回事。
+            if (delivery is not null && !string.Equals(delivery.SalesOrderNo, plan.SalesOrderNo, StringComparison.Ordinal))
+            {
+                delivery = null;
+            }
+
+            if (receivable is not null && !string.Equals(receivable.SourceDocumentNo, plan.SalesOrderNo, StringComparison.Ordinal))
+            {
+                receivable = null;
+            }
 
             lines.Add(CrossServiceSampleProbe.FormatRow(Prefix, new CrossServiceSampleProbeRow(
                 Index: plan.Index,
@@ -122,7 +145,7 @@ internal static class WorldHistoryCrossDomainProbe
                 Index: plan.Index,
                 Link: CrossServiceSampleProbe.Links.DeliveryOrder,
                 Kind: "erp-delivery-order",
-                DocumentNo: WorldHistorySpec.DeliveryOrderNo(plan.Index),
+                DocumentNo: deliveryOrderNo,
                 Expected: plan.HasDelivery || plan.HasPendingShipment,
                 Exists: delivery is not null,
                 Quantity: delivery?.ShippedQuantity,
@@ -133,7 +156,7 @@ internal static class WorldHistoryCrossDomainProbe
                 Index: plan.Index,
                 Link: CrossServiceSampleProbe.Links.Shipment,
                 Kind: "erp-shipment",
-                DocumentNo: WorldHistorySpec.DeliveryOrderNo(plan.Index),
+                DocumentNo: deliveryOrderNo,
                 Expected: plan.HasDelivery,
                 Exists: delivery?.ShippedAtUtc is not null,
                 Quantity: delivery?.ShippedAtUtc is null ? null : delivery.ShippedQuantity,
@@ -145,7 +168,7 @@ internal static class WorldHistoryCrossDomainProbe
                 Index: plan.Index,
                 Link: CrossServiceSampleProbe.Links.Receivable,
                 Kind: "erp-receivable",
-                DocumentNo: WorldHistorySpec.ReceivableNo(plan.Index),
+                DocumentNo: receivableNo,
                 Expected: plan.HasDelivery,
                 Exists: receivable is not null,
                 Amount: receivable?.Amount,
@@ -156,7 +179,7 @@ internal static class WorldHistoryCrossDomainProbe
                 Index: plan.Index,
                 Link: CrossServiceSampleProbe.Links.OutboundInspection,
                 Kind: "erp-outbound-inspection-witness",
-                DocumentNo: WorldHistorySpec.DeliveryOrderNo(plan.Index),
+                DocumentNo: deliveryOrderNo,
                 Expected: plan.IsProductionClosed,
                 Exists: null,
                 Quantity: plan.Quantity)));

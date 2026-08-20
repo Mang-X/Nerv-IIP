@@ -45,7 +45,7 @@ internal static class WorldHistoryCrossDomainProbe
                 .AsNoTracking()
                 .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
                     movementKeys.Contains(x.IdempotencyKey))
-                .Select(x => new { x.IdempotencyKey, x.Quantity, x.PostedAtUtc })
+                .Select(x => new { x.IdempotencyKey, x.SourceDocumentId, x.Quantity, x.PostedAtUtc })
                 .ToArrayAsync(cancellationToken))
             .ToDictionary(x => x.IdempotencyKey, StringComparer.Ordinal);
 
@@ -53,6 +53,19 @@ internal static class WorldHistoryCrossDomainProbe
         {
             movements.TryGetValue(FinishedGoodsMovementKey(plan.WorkOrderNo), out var finishedGoods);
             movements.TryGetValue(DeliveryMovementKey(plan.Index), out var delivery);
+
+            // 幂等键命中后回读源单据号逐字比对：挂错源单据的流水不算「这一笔存在」。
+            if (finishedGoods is not null &&
+                !string.Equals(finishedGoods.SourceDocumentId, WorldHistoryMesSpec.FinishedGoodsReceiptNo(plan.WorkOrderNo), StringComparison.Ordinal))
+            {
+                finishedGoods = null;
+            }
+
+            if (delivery is not null &&
+                !string.Equals(delivery.SourceDocumentId, WorldHistorySpec.DeliveryOrderNo(plan.Index), StringComparison.Ordinal))
+            {
+                delivery = null;
+            }
 
             lines.Add(CrossServiceSampleProbe.FormatRow(Prefix, new CrossServiceSampleProbeRow(
                 Index: plan.Index,

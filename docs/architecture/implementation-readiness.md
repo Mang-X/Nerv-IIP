@@ -572,7 +572,7 @@ DemandPlanning 同时保留当前 10 周活动需求/MPS 窗口语义，并为�
 8. **隔离**：任何单据号、标签值都不含 `-DEMO-` / `-SCALE-`。
 9. 各域输出 20 行抽样全链引用。
 
-跨域的「抽样 20 单全链可追」由 `scripts/verify-world-history.ps1` 产出：它跑六个服务的校验证据，六个服务各自在自己的真库里查同一批抽样订单序号下自己拥有的单据，脚本按 `(序号, link)` 把六份输出对账（#1826），落到 `artifacts/world-history/<runId>/`。对账口径、容差取值（数量 `0.0001`、金额一分、时间戳 1 微秒）与合法缺失判据见 `scripts/lib/WorldHistoryCrossDomain.ps1`，其鉴别力由 `scripts/tests/world-history-cross-domain.Tests.ps1` 的变异矩阵钉住。本票之前这一段是纯号段代数、从不查库，存在与否由 reviewer 逐个 grep；该脚本仍不是 CI 门禁。
+跨域的「抽样 20 单全链可追」由 `scripts/verify-world-history.ps1` 产出：它跑六个服务的校验证据，六个服务各自在自己的真库里查同一批抽样订单序号下自己拥有的单据，脚本按 `(序号, link)` 把六份输出对账（#1826），落到 `artifacts/world-history/<runId>/`。对账口径、容差取值（数量与金额各 `0.0000005`，即所读列 `numeric(18,6)` 最小步长的一半；时间戳 1 微秒，即 `timestamptz` 的精度）与合法缺失判据见 `scripts/lib/WorldHistoryCrossDomain.ps1`，其鉴别力由 `scripts/tests/world-history-cross-domain.Tests.ps1` 的变异矩阵钉住。本票之前这一段是纯号段代数、从不查库，存在与否由 reviewer 逐个 grep；该脚本仍不是 CI 门禁。
 
 #### 耗时实测（2026-07-26，Windows 10.0.26200、.NET 10、Docker PostgreSQL 18）
 

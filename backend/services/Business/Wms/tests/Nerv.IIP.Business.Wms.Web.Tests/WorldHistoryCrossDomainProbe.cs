@@ -44,6 +44,7 @@ internal static class WorldHistoryCrossDomainProbe
                 .Select(x => new
                 {
                     x.InboundOrderNo,
+                    x.SourceDocumentId,
                     x.CreatedAtUtc,
                     ReceivedQuantity = x.Lines.Sum(line => line.ReceivedQuantity),
                 })
@@ -57,6 +58,7 @@ internal static class WorldHistoryCrossDomainProbe
                 .Select(x => new
                 {
                     x.OutboundOrderNo,
+                    x.SourceDocumentId,
                     x.CreatedAtUtc,
                     IssuedQuantity = x.Lines.Sum(line => line.IssuedQuantity),
                 })
@@ -67,6 +69,19 @@ internal static class WorldHistoryCrossDomainProbe
         {
             inbounds.TryGetValue(InboundOrderNo(plan.WorkOrderNo), out var inbound);
             outbounds.TryGetValue(OutboundOrderNo(plan.Index), out var outbound);
+
+            // 单号命中后回读源单据号逐字比对：挂错源单据的仓储单不算「这一张存在」。
+            if (inbound is not null &&
+                !string.Equals(inbound.SourceDocumentId, WorldHistoryMesSpec.FinishedGoodsReceiptNo(plan.WorkOrderNo), StringComparison.Ordinal))
+            {
+                inbound = null;
+            }
+
+            if (outbound is not null &&
+                !string.Equals(outbound.SourceDocumentId, WorldHistorySpec.DeliveryOrderNo(plan.Index), StringComparison.Ordinal))
+            {
+                outbound = null;
+            }
 
             lines.Add(CrossServiceSampleProbe.FormatRow(Prefix, new CrossServiceSampleProbeRow(
                 Index: plan.Index,
