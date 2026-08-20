@@ -103,7 +103,7 @@ CAP RedisStreams 在订阅和读取 consumer group 前会创建缺失的 stream 
 2. Docker Compose、安装包和显式 Collector 测试路径由 OpenTelemetry Collector 统一接收并转发 telemetry；Collector 可以将日志转发到 VictoriaLogs，将 OTLP/HTTP 数据转发到 standalone Aspire Dashboard 作为短期可视化入口。
 3. PoC、私有化和生产部署必须在部署 profile 中选择日志后端、索引策略、保留周期和清理任务；当前内置 logs-only 后端为 VictoriaLogs。
 4. 日志不得写入业务 PostgreSQL schema，也不得复用 Ops `AuditRecord` 表。审计事实、业务事实和诊断日志保持独立存储与独立 retention。
-5. 运维日志包、诊断包、导出包和长期归档附件通过 File Storage 保存到 MinIO 或等价对象存储，只在业务表中保留 `fileId`/`FileReference`。
+5. 运维日志包、诊断包、导出包和长期归档附件的目标业务边界是 File Storage，业务表只保留 `fileId`/`FileReference`。当前通用文件字节面尚未具备对象存储 provider selector，不能把这一目标写成已可保存到 MinIO、客户对象存储或本地目录。
 6. VictoriaLogs 容器镜像固定为 `victoriametrics/victoria-logs:v1.50.0`，持久卷为 `nerv-iip-victoria-logs`，本地 retention 默认 `30d` 并通过 `-retentionPeriod` 显式传入；官方默认值 `7d` 不能替代部署 profile 的显式保留策略。
 7. 无观测后端时的最低兜底是滚动 JSONL 文件：按大小和日期滚动，限制保留文件数或保留天数，仅用于短期现场诊断。
 8. 若需要本地或 PoC 可视化排障，优先提供 `aspire-dashboard` 部署 profile：通过微软官方容器镜像接收 OTLP 并展示结构化日志、trace 和 metric；该 profile 只面向开发、联调、PoC 和短期诊断。不要把本地 AppHost 的 `OTEL_EXPORTER_OTLP_ENDPOINT` 手工覆盖到 Collector，除非正在测试 Collector 转发链路。
@@ -125,7 +125,7 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 
 1. 热日志：每个服务宿主通过 Serilog File sink 写滚动 JSONL 文件，目录按 `service.name`、部署环境、实例或节点分区；滚动策略按日期和大小双限制，保留天数、单文件大小和总占用上限由部署 profile 配置。
 2. 采集可靠性：OpenTelemetry Collector 可启用 `file_storage` 作为发送队列，降低短时后端不可用造成的丢失；它只保障转发，不作为查询存储。
-3. 归档 worker：关闭后的滚动日志文件由 Log Archive Worker 压缩为 `.jsonl.gz` chunk，计算 `sha256`、时间范围、行数、level 范围和标签摘要后上传到 File Storage。File Storage 的 provider 可以是 MinIO、客户对象存储或脚本安装下的本地文件目录。
+3. 归档 worker：关闭后的滚动日志文件由 Log Archive Worker 压缩为 `.jsonl.gz` chunk，计算 `sha256`、时间范围、行数、level 范围和标签摘要后交给 File Storage。通用文件 final 字节面的 provider 选择仍是已批准但尚未实现的目标；当前不得把该归档链路描述为已经可以在 MinIO、客户对象存储或脚本安装下的本地文件目录之间选择。
 4. 集中后端：当前通过 VictoriaLogs 保存可检索日志正文，PlatformGateway 通过 `VictoriaLogs:BaseUrl` 调用 LogsQL query API，服务侧通过 `OpenTelemetry:Logs:Endpoint` + `OpenTelemetry:Logs:Path` 写入 OTLP logs。
 5. 查询索引：平台维护独立 `observability` schema 或等价独立元数据存储时，只保存 `LogChunk`、可选 `LogEntryIndex`、`fileId`、时间范围、服务、实例、`operationTaskId`、`correlationId`、`traceId`、level、保留到期时间等索引字段。原始日志正文不写入 AppHub、Ops、Iam、FileStorage 等业务 schema。
 6. 控制台查询：PlatformGateway 通过 VictoriaLogs adapter 或后续索引/chunk adapter，在受限时间窗口内扫描并返回平台中立 DTO。近实时查看可先读取 VictoriaLogs 或热日志；历史归档可走归档 chunk。
@@ -259,7 +259,17 @@ Windows 脚本默认使用 PowerShell，Linux 脚本默认使用 Bash。脚本�
 8. 脚本自动化治理已冻结为 ADR 0010；现有验证脚本按 docs/architecture/script-automation-governance.md 迁移到共享 helper 和静态门禁，迁移完成前不得把 legacy verify 脚本解释为 release-install 入口。`scripts/install/start-nerv-iip-apphost.ps1` 是受治理的 release-install 启动入口，负责设置受控环境变量、Aspire 参数、生产 CORS origins、内部 token 和密钥后启动平台 AppHost；它不注册 Windows Service/systemd，也不绕过 AppHost 拓扑。`scripts/install/migrate-file-storage.ps1` 是 FileStorage 的显式 release migrator：连接串只从当前进程的 `NERV_IIP_FILE_STORAGE_DB` 读取，输出脱敏 release/service/database/migration/correlation/log 状态，不负责备份、删库或 seed；PoC/production 必须先完成 runbook 的备份 preflight 再执行。`scripts/package/create-nerv-iip-package.ps1` 是受治理的 zip 交付物生成入口。
 9. 本地开发统一入口收敛为根目录 `.\nerv.ps1 dev`，该命令只作为薄 CLI 包装，真实启动逻辑仍位于受脚本治理约束的 `scripts/dev.ps1`。完整平台启动必须走 Aspire CLI/AppHost；linked worktree 默认使用 isolated mode；`.\nerv.ps1 stop/status/wait/logs/describe` 是唯一受支持的本地 AppHost 运维入口。`.\nerv.ps1 dev -InfraOnly` 只启动 `infra/docker-compose.dev.yml` 中的依赖服务。启动和停止脚本必须使用有超时的 helper、输出阶段性诊断，并在失败时暴露日志目录或资源状态；不得让成功、失败或 CLI 卡死都表现为无反馈等待。
 10. 并行真实全栈验证使用 `.\nerv.ps1 fullstack run -Scenario smoke` 创建一次性 Aspire session。每个 session 使用随机公开端口、独立 DCP 代理、专属 PostgreSQL/Redis/MinIO/VictoriaLogs 卷和所有权标签；URL 从 manifest 发现，不引入全局 Nginx，也不形成第二套服务拓扑。默认最多三个活动 session，不设置最低可用内存门槛。自动化成功或失败都会精确回收该 session 的 AppHost、项目进程、容器和卷并保留 `artifacts/fullstack/<sessionId>/`；交互 `fullstack start` 只用于诊断，交接前必须 `fullstack stop`。
-11. 本地 MinIO 容器镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`，避免继续依赖停止更新的 Docker image line；FileStorage 仍通过对象存储 provider 抽象与 MinIO 或等价 S3-compatible backend 交互。
+11. 本地 MinIO 容器镜像使用 `pgsty/minio:RELEASE.2026-04-17T00-00-00Z`，避免继续依赖停止更新的 Docker image line。当前 AppHost/legacy Compose 对 FileStorage 的 MinIO 配置及 `ComplianceArchiveBucket` 服务于独立的 `VersionedArchive`：它由 `MinioVersionedObjectStore` 实现，保持 MinIO-only 的 versioning、object lock、retention 和 legal hold 语义；这不是通用文件 final 字节面的 provider selector，也不会因将来通用 provider 选择 LocalFileSystem 而改选 Local。
+
+## 已批准目标（尚未实现）
+
+本节记录 [ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) 与 [ADR 0027](../adr/0027-filestorage-offline-migration-cutover-and-rollback.md) 已接受的目标契约，不能作为当前部署能力、配置接口、安装参数或演练结果。
+
+1. 通用文件 final 字节面目标为 `IStorageProvider`，部署期只能在 `LocalFileSystem` 与 S3-compatible 之间严格二选一；每个 FileStorage 运行实例只可选择一个 active provider，staging 与 final 必须属于同一 provider family。当前仓库尚未实现该接口、selector 或 `tusdotnet` 目标上传面，因此不得把 MinIO 或客户对象存储写成已经可用于通用文件的 provider。
+2. `LocalFileSystem` 的目标生产语义包括显式持久 root、稳定 storage identity、同一 filesystem/mount 内的 staging/final、实际操作时的路径 confinement，以及 atomic no-overwrite promote 和 final 回读复验。它们均尚未实现；本文不为其创建配置键、环境变量、初始化命令、安装参数、系统服务单元或支持矩阵结论。
+3. Local 健康目标还要求区分 `startup blocked`、`runtime critical / unready` 与 `capacity restricted / degraded`：前两者阻断或停止不可信的字节操作，容量受限时只允许 ADR 0024 定义的受限恢复动作。当前没有据此交付的健康实现或部署支持矩阵，不能把这些目标状态当作现有 readiness 或容量门禁。
+4. `VersionedArchive` 保持独立的 MinIO-only 合规归档边界，继续使用 versioning、object lock、retention 和 legal hold；它不经过通用 provider selector，通用文件面将来选择 `LocalFileSystem` 不改变该归档边界。
+5. ADR 0027 与 [FileStorage 离线迁移运行手册](file-storage-offline-migration-runbook.md) 中的停服、双 manifest、全量 exact verify、operator pre-open 决策、pre-open rollback、post-open reverse migration 和延迟、独立授权的清源，均只是目标 operator 契约。当前仓库没有由这些目标接口导出的迁移命令或演练结果；现有 `scripts/install/migrate-file-storage.ps1` 仍只执行 FileStorage EF schema migration，不能替代备份 preflight、数据迁移、切换、回退或清源。
 
 ## 非目标
 
