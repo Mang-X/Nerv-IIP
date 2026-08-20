@@ -54,6 +54,13 @@ public sealed class WorldHistorySeedPostgresTests(ITestOutputHelper output)
             output.WriteLine($"erp-world-history-sample: {line}");
         }
 
+        // #1826：跨域抽样 20 单不再靠 reviewer 逐个 grep，改为各侧真查自己的库，
+        // 由 scripts/verify-world-history.ps1 把六份输出按 (序号, link) 对账。
+        foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+        {
+            output.WriteLine(line);
+        }
+
         // 设定集 §7：约 3200 单。
         Assert.InRange(first.SalesOrdersWritten, 2900, 3500);
         Assert.Equal(0, second.SalesOrdersWritten);

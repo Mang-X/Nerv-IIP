@@ -64,6 +64,12 @@ public sealed class WorldHistoryQualitySeedPostgresTests(ITestOutputHelper outpu
                 output.WriteLine($"quality-world-history-sample: {line}");
             }
 
+            // #1826：跨域抽样 20 单真查库，由 scripts/verify-world-history.ps1 按 (序号, link) 对账。
+            foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+            {
+                output.WriteLine(line);
+            }
+
             // 设定集 §7：三条检验来源合计约 7000 条检验任务。
             Assert.InRange(first.InspectionTasksWritten, 6000, 8000);
             Assert.Equal(3, first.InspectionPlansWritten);

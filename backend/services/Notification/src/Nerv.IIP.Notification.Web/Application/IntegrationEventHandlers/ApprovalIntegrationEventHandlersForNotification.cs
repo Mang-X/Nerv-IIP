@@ -214,7 +214,7 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
             return;
         }
 
-        var isTask = action is not "withdraw";
+        var isTask = action is not ApprovalDecisions.Withdraw;
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,
             SourceEventType: eventType,

@@ -57,6 +57,12 @@ public sealed class WorldHistoryWmsSeedPostgresTests(ITestOutputHelper output)
             output.WriteLine($"wms-world-history-sample: {line}");
         }
 
+        // #1826：跨域抽样 20 单真查库，由 scripts/verify-world-history.ps1 按 (序号, link) 对账。
+        foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+        {
+            output.WriteLine(line);
+        }
+
         Assert.Equal(0, second.InboundOrdersWritten);
         Assert.Equal(0, second.OutboundOrdersWritten);
         Assert.Equal(0, second.WarehouseTasksWritten);

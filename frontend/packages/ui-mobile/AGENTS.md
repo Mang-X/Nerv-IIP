@@ -2,7 +2,7 @@
 
 > 先读 `frontend/AGENTS.md` 与
 > `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`；本文件只记移动层
-> 差异。冻结命名表 = 附录 A。
+> 差异。冻结命名表 = `frontend/DESIGN/nvui-naming-map.md` 附录 A6。
 
 - 命名：与原版 / PC 层素名冲突 → `NvMobile*`（`NvMobileBadge`
   `NvMobileDialog`）；移动原生专名 → 直接 `Nv*`（`NvScanBar` `NvCell`

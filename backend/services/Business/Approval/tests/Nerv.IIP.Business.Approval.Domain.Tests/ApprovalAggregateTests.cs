@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Approval.Domain.Tests;
 

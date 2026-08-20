@@ -35,8 +35,9 @@ token 之上。
 
 ## NvUI 命名与场景命名空间（ADR 0020）
 
-组件库品牌名 **NvUI**，品牌前缀 `Nv`。完整规则、判定流程与全量旧名→新名映射表冻结在
+组件库品牌名 **NvUI**，品牌前缀 `Nv`。完整规则与判定流程冻结在
 [ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)，
+全量旧名→新名映射表（原附录 A/B/C）在 [`nvui-naming-map.md`](./nvui-naming-map.md)，
 执行批次为 MAN-433（库侧）/ MAN-435（分 app codemod）/ MAN-436（守护收口）。要点：
 
 - `Nv` 前缀 = 品牌定制层唯一标识；无前缀 = shadcn 原版底座。

@@ -5,7 +5,8 @@
 
 > NvUI 状态：`FileUpload` 保持无前缀名称；它是 Nerv-IIP 自定义 primitive
 > （不是 shadcn 原版透传），也是当前从 `@nerv-iip/ui` 导出的规范
-> 应用侧名称；ADR 0020 Appendix A 未为其分配 `Nv*` 重命名。文件预览辅助项位于
+> 应用侧名称；[NvUI 命名映射表](../nvui-naming-map.md) 附录 A（原 ADR 0020 附录 A）
+> 未为其分配 `Nv*` 重命名。文件预览辅助项位于
 > `@nerv-iip/ui/file-preview` 子入口（唯一允许的子入口）。
 
 ## 导出

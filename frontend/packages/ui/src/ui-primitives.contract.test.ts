@@ -61,7 +61,7 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
     )
     const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8')
 
-    // ADR 0020 §3 Appendix C — overlay classes use the canonical `.nv-*` namespace.
+    // ADR 0020 §3 + Appendix C (frontend/DESIGN/nvui-naming-map.md) — overlay classes use the canonical `.nv-*` namespace.
     expect(selectContent).toContain('nv-overlay-content nv-select-content')
     expect(selectContent).toContain('nv-select-content')
     expect(selectContent).toContain(':data-align-trigger="position === \'item-aligned\'"')
@@ -76,7 +76,7 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
   it('keeps Motion for Vue curves paired with CSS motion tokens', () => {
     const themeCss = readFileSync(resolve(process.cwd(), 'src/styles/theme.css'), 'utf8')
 
-    // ADR 0020 §3 Appendix C — motion tokens namespaced `--nv-*` (values unchanged).
+    // ADR 0020 §3 + Appendix C (frontend/DESIGN/nvui-naming-map.md) — motion tokens namespaced `--nv-*` (values unchanged).
     expect(themeCss).toContain('--nv-ease-fast-invoke: cubic-bezier(0, 0, 0, 1)')
     expect(themeCss).toContain('--nv-ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1)')
     expect(themeCss).toContain('--nv-duration-fast-invoke: 187ms')
