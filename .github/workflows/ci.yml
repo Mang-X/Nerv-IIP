@@ -1829,6 +1829,14 @@ jobs:
         shell: pwsh
         run: ./scripts/tests/ordinal-string.Tests.ps1
 
+      # #1664：man-440 的 137 被归因为 OOM，但诊断包里从来没有内存维度证据，结论一直是推断。这一步
+      # 守的是那条证据本身——精确解析 + best-effort 降级（采证绝不把被测 lane 弄红），并用 AST 断言
+      # 快照落在 entrypoint 前后而不是 lane 首尾。测试自带变异对照。
+      - name: Test FullChain memory evidence contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/full-chain-memory-evidence.Tests.ps1
+
       # The checker above only reports on the files it decides to scan; this step is what holds that
       # decision still. #1509 narrowed the exclusion list to three entries and put scripts/lib under
       # a declared library scope, and a boundary nobody re-checks drifts back — so the exclusion list
