@@ -74,6 +74,12 @@ Buffers:           65536 kB
 SwapTotal:       4194304 kB
 SwapFree:        4194304 kB
 '@
+    New-FixtureFile -Path (Join-Path $procRoot 'vmstat') -Content @'
+nr_free_pages 1558134
+pgmajfault 4211
+oom_kill 7
+pgpgin 992
+'@
     New-FixtureFile -Path (Join-Path $procRoot 'self/cgroup') -Content "0::/actions_job`n"
     $jobCgroup = Join-Path $cgroupRoot 'actions_job'
     New-FixtureFile -Path (Join-Path $jobCgroup 'memory.current') -Content "6900000000`n"
@@ -99,6 +105,13 @@ oom_kill 1
     $undeclaredMeminfoKey = 'BuffersKb'
     Assert-Contract (-not $snapshot.meminfo.Contains($undeclaredMeminfoKey)) 'Only the declared meminfo keys may be retained; an open-ended dump makes the summary unreviewable.'
 
+    # hosted runner 的 slice 上 memory.max 是 max，cgroup 的 oom_kill 因此恒为 0；全局击杀只有
+    # /proc/vmstat 见证得到，而它不需要 dmesg 权限。缺了这一项，真发生 OOM 时会拿不到直接证据。
+    Assert-Contract ([string]::Equals([string]$snapshot.vmstat.status, 'read', [StringComparison]::Ordinal)) 'The vmstat fixture must be read.'
+    Assert-Contract ($snapshot.vmstat.oom_kill -eq 7) 'The global oom_kill counter must be parsed; it is the only permission-free witness of an unlimited-cgroup OOM.'
+    $undeclaredVmstatKey = 'pgmajfault'
+    Assert-Contract (-not $snapshot.vmstat.Contains($undeclaredVmstatKey)) 'Only the declared vmstat key may be retained.'
+
     Assert-Contract ([string]::Equals([string]$snapshot.cgroup.status, 'read', [StringComparison]::Ordinal)) 'The cgroup fixture must be read.'
     Assert-Contract ($snapshot.cgroup.currentBytes -eq 6900000000) 'memory.current must be parsed as a number.'
     Assert-Contract ($snapshot.cgroup.peak -eq 7100000000) 'memory.peak must be parsed as a number.'
@@ -118,6 +131,7 @@ oom_kill 1
 
     $absent = Get-NervRuntimeMemorySnapshot -Phase 'absent' -ProcRoot (Join-Path $temporaryRoot 'no-such-proc') -CgroupRoot (Join-Path $temporaryRoot 'no-such-cgroup')
     Assert-Contract ([string]::Equals([string]$absent.meminfo.status, 'unavailable', [StringComparison]::Ordinal)) 'A missing /proc must yield unavailable meminfo.'
+    Assert-Contract ([string]::Equals([string]$absent.vmstat.status, 'unavailable', [StringComparison]::Ordinal)) 'A missing /proc must yield unavailable vmstat.'
     Assert-Contract ([string]::Equals([string]$absent.cgroup.status, 'unavailable', [StringComparison]::Ordinal)) 'A missing cgroup root must yield unavailable cgroup evidence.'
     Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$absent.meminfo.reason)) 'An unavailable reading must say why.'
 
@@ -256,6 +270,19 @@ try {
 catch { Write-Host 'MUTATION-KILLED' }
 "@
     Assert-Contract ($mutatedBestEffort.IndexOf('MUTATION-KILLED', [StringComparison]::Ordinal) -ge 0) 'Removing the unavailable path must change the observed behaviour; otherwise the best-effort assertions measure nothing.'
+
+    # 变异 3：不解析全局 oom_kill——这正是我在 hosted runner 真实读数里发现的那个盲区，
+    # 拿掉它整套证据就退回"只能看余量、看不见击杀"。
+    $mutatedVmstat = Invoke-MutationControl `
+        -Label 'vmstat' `
+        -Anchors @("[string[]]@('oom_kill')") `
+        -Replacements @("[string[]]@()") `
+        -Probe @"
+`$snapshot = Get-NervRuntimeMemorySnapshot -Phase 'mutation' -ProcRoot '$procRoot' -CgroupRoot '$cgroupRoot'
+`$key = 'oom_kill'
+if (`$snapshot.vmstat.Contains(`$key)) { Write-Host 'MUTATION-SURVIVED' } else { Write-Host 'MUTATION-KILLED' }
+"@
+    Assert-Contract ($mutatedVmstat.IndexOf('MUTATION-KILLED', [StringComparison]::Ordinal) -ge 0) 'Dropping the global oom_kill counter must change the parsed result.'
 
     Write-Host 'FullChain memory evidence contract passed.'
 }

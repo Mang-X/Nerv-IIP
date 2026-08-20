@@ -17,6 +17,10 @@
 
     两条不可协商的性质：
 
+    0. **见证者要选对**：cgroup 的 `memory.events.oom_kill` 只统计因本 cgroup 上限触发的击杀；
+       hosted runner 的 slice 上 `memory.max` 是 `max`，真发生的是全局 OOM，那个计数会一直是 0。
+       因此 `/proc/vmstat` 的 `oom_kill`（全局、world-readable、不依赖 `dmesg` 权限）才是关键的
+       那一项，判读看前后差值。
     1. **best-effort**：任何一项读不到（非 Linux、无 cgroup、dmesg 无权限）都只记 `unavailable`
        和原因，绝不抛错。采证脚本把被测 lane 弄红，等于用一个新的假红换一个旧的真红。
     2. **可被合成事实驱动**：`ProcRoot`/`CgroupRoot`/`CommandRunner` 都是注入 seam，因此契约测试
@@ -95,6 +99,39 @@ function Get-NervRuntimeMeminfo {
     return $values
 }
 
+function Get-NervRuntimeVmstat {
+    <#
+        全局 OOM 击杀计数。
+
+        这不是 cgroup 计数的重复项，而是补它的盲区：hosted runner 的 slice 上 `memory.max` 是
+        `max`（无上限），所以真发生的是全局 OOM，而 `memory.events.oom_kill` 只统计「因本 cgroup
+        上限而触发」的击杀——那种情况下它会一直是 0。`/proc/vmstat` 的 `oom_kill` 是内核全局计数，
+        world-readable，不需要 `dmesg` 的权限（hosted runner 通常 `kernel.dmesg_restrict=1`，
+        `dmesg` 会被直接拒绝）。因此它才是「那一次击杀确实发生过」的可得见证者。
+
+        判读方式是**前后快照的差值**，不是绝对值：这个计数自开机起累加，只看某一次读数说明不了
+        任何事。
+    #>
+    param([Parameter(Mandatory)] [string] $ProcRoot)
+
+    $read = Get-NervRuntimeMemoryFileText -Path (Join-Path $ProcRoot 'vmstat')
+    if (-not [string]::Equals([string]$read.status, 'read', [StringComparison]::Ordinal)) {
+        return [ordered]@{ status = 'unavailable'; reason = [string]$read.reason }
+    }
+
+    $wanted = [Collections.Generic.HashSet[string]]::new([string[]]@('oom_kill'), [StringComparer]::Ordinal)
+    $values = [ordered]@{ status = 'read'; reason = '' }
+    foreach ($line in ([string]$read.text -split "`r?`n")) {
+        $parts = @($line.Trim() -split '\s+' | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        if ($parts.Count -ne 2) { continue }
+        $key = [string]$parts[0]
+        if (-not $wanted.Contains($key)) { continue }
+        $values[$key] = ConvertTo-NervRuntimeMemoryValue -Text ([string]$parts[1])
+    }
+
+    return $values
+}
+
 function Get-NervRuntimeCgroupPath {
     param([Parameter(Mandatory)] [string] $ProcRoot)
 
@@ -141,7 +178,9 @@ function Get-NervRuntimeCgroupMemory {
             else { 'unavailable' }
         }
 
-        # memory.events 的 oom / oom_kill 计数是本库存在的理由：它把"疑似 OOM"变成可判定的事实。
+        # memory.events 的 oom / oom_kill 计数只在本 cgroup 设了上限时才会动；无上限的 slice 上
+        # 它恒为 0，真正的见证者是 Get-NervRuntimeVmstat。两者都留：有上限的环境里前者更精确地
+        # 指认「是这个 cgroup 被限死」，后者只说明「机器上发生过全局击杀」。
         $eventsRead = Get-NervRuntimeMemoryFileText -Path (Join-Path $directory 'memory.events')
         $events = [ordered]@{ status = 'unavailable'; reason = [string]$eventsRead.reason }
         if ([string]::Equals([string]$eventsRead.status, 'read', [StringComparison]::Ordinal)) {
@@ -179,15 +218,18 @@ function Get-NervRuntimeMemorySnapshot {
     try {
         if (-not (Test-Path -LiteralPath $ProcRoot -PathType Container)) {
             $snapshot['meminfo'] = [ordered]@{ status = 'unavailable'; reason = "not present: $ProcRoot" }
+            $snapshot['vmstat'] = [ordered]@{ status = 'unavailable'; reason = "not present: $ProcRoot" }
             $snapshot['cgroup'] = [ordered]@{ status = 'unavailable'; reason = "not present: $ProcRoot" }
             return $snapshot
         }
         $snapshot['meminfo'] = Get-NervRuntimeMeminfo -ProcRoot $ProcRoot
+        $snapshot['vmstat'] = Get-NervRuntimeVmstat -ProcRoot $ProcRoot
         $snapshot['cgroup'] = Get-NervRuntimeCgroupMemory -ProcRoot $ProcRoot -CgroupRoot $CgroupRoot
     }
     catch {
         # 取证失败只是少一条证据，不是被测对象的失败。
         $snapshot['meminfo'] = [ordered]@{ status = 'unavailable'; reason = "snapshot failed: $($_.Exception.Message)" }
+        $snapshot['vmstat'] = [ordered]@{ status = 'unavailable'; reason = "snapshot failed: $($_.Exception.Message)" }
         $snapshot['cgroup'] = [ordered]@{ status = 'unavailable'; reason = "snapshot failed: $($_.Exception.Message)" }
     }
 
