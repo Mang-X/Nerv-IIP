@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 

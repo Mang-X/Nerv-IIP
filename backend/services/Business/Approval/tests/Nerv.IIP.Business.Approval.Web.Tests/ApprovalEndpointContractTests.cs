@@ -17,6 +17,7 @@ using Nerv.IIP.Business.Approval.Web.Application.Commands.Templates;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Chains;
 using Nerv.IIP.Business.Approval.Web.Application.Queries.Delegations;
 using Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 

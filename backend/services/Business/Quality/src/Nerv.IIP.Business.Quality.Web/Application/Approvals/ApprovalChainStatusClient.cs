@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 
@@ -29,13 +28,16 @@ public sealed class HttpApprovalChainStatusClient(
     IInternalServiceTokenProvider tokenProvider) : IApprovalChainStatusClient
 {
     /// <summary>
-    /// 受理的审批链来源服务：Quality 域内标识 + 历史别名。
-    /// <c>business-quality</c> 已收敛到审批契约的唯一事实来源
-    /// （<see cref="ApprovalSourceServices.QualityLegacyAlias"/>，#1370 ③ 销账，取值不变）；
-    /// 权威码值 <c>quality</c> 的字面量待同批次「quality」值族一并销账。
+    /// 受理的审批链来源服务：权威码值 + 全部历史别名，取值来自审批契约的唯一事实来源
+    /// （<see cref="ApprovalSourceServices.QualityAliases"/>，#1857 收敛，取值不变）。
+    ///
+    /// 收敛前这里是本地拼的三元素数组：领域常量 <c>QualityFacts.ServiceName</c>
+    /// （跨服务不可见）+ 契约别名 + 裸字面量 <c>"quality"</c>——同一个「审批来源服务」概念
+    /// 的取值面散在三处、权威不止一份。<c>QualityFacts.ServiceName</c> 与契约里的
+    /// <see cref="ApprovalSourceServices.QualityServiceNameAlias"/> 的逐字相等
+    /// 由 <c>ApprovalSourceServiceVocabularyContractTests</c> 对拍钉死。
     /// </summary>
-    private static readonly string[] QualitySourceServices =
-        [QualityFacts.ServiceName, ApprovalSourceServices.QualityLegacyAlias, "quality"];
+    private static readonly IReadOnlySet<string> QualitySourceServices = ApprovalSourceServices.QualityAliases;
 
     /// <summary>
     /// 受理的 NCR 处置审批单据类型：权威码值 <c>ncr-disposition</c> + 历史别名，
@@ -54,10 +56,11 @@ public sealed class HttpApprovalChainStatusClient(
     {
         var chain = await GetChainAsync(chainId, cancellationToken);
         return chain is not null
-            && string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
-            && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
+            && chain.SourceService is not null
+            && QualitySourceServices.Contains(chain.SourceService)
             // DocumentType 来自反序列化，缺字段时会是 null；HashSet.Contains(null) 会抛，
             // 而这里的语义是「判不通过」，所以先兜底。
             && chain.DocumentType is not null
@@ -74,10 +77,11 @@ public sealed class HttpApprovalChainStatusClient(
     {
         var chain = await GetChainAsync(chainId, cancellationToken);
         return chain is not null
-            && string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
-            && QualitySourceServices.Contains(chain.SourceService, StringComparer.OrdinalIgnoreCase)
+            && chain.SourceService is not null
+            && QualitySourceServices.Contains(chain.SourceService)
             && chain.DocumentType is not null
             && CapaClosureDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, capaCode, StringComparison.Ordinal);
