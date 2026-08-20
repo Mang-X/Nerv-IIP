@@ -22,6 +22,11 @@ $acceptanceScenarioMatrixOwningPaths = @(
     'scripts/plan-acceptance-scenario-matrix.ps1'
     'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
 )
+$acceptanceScenarioMatrixRuntimeOwningPaths = @(
+    'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
+    'scripts/run-acceptance-scenario-matrix.ps1'
+    'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
+)
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 
@@ -131,6 +136,12 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $scriptGovernanceProperty = $parsedWorkflow.jobs.PSObject.Properties['script-governance']
     Assert-Contract ($null -ne $scriptGovernanceProperty) 'CI must retain the script-governance job.'
     $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
+    $scriptGovernanceStepTimeouts = @($scriptGovernanceSteps | ForEach-Object { [int]$_.'timeout-minutes' })
+    $scriptGovernanceStepBudgetMinutes = ($scriptGovernanceStepTimeouts | Measure-Object -Sum).Sum
+    $fiveMinuteStepCount = @($scriptGovernanceStepTimeouts | Where-Object { $_ -eq 5 }).Count
+    $workflowSource = [IO.File]::ReadAllText($Path)
+    $expectedBudgetHeadline = "step 预算合计 $($scriptGovernanceStepBudgetMinutes)m（$($scriptGovernanceSteps.Count) 个 step：3m checkout"
+    $expectedBudgetContinuation = "+ $fiveMinuteStepCount × 5m；"
     $contractSteps = @($scriptGovernanceSteps | Where-Object {
             [string]::Equals([string]$_.name, 'Test acceptance scenario matrix contract', [StringComparison]::Ordinal)
         })
@@ -140,6 +151,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ([string]::Equals([string]$contractStep.run, './scripts/tests/acceptance-scenario-matrix.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance scenario matrix contract step must run only the pure fixture contract.'
     Assert-Contract ([int]$contractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix contract step must have a 5-minute budget.'
     Assert-Contract ($null -eq $contractStep.PSObject.Properties['if']) 'The acceptance scenario matrix contract step must not have its own condition.'
+
+    $runtimeContractSteps = @($scriptGovernanceSteps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test acceptance scenario matrix runtime contract', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($runtimeContractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance scenario matrix runtime contract step.'
+    $runtimeContractStep = $runtimeContractSteps[0]
+    Assert-Contract ([string]::Equals([string]$runtimeContractStep.shell, 'pwsh', [StringComparison]::Ordinal)) 'The acceptance scenario matrix runtime contract step must use the pwsh shell.'
+    Assert-Contract ([string]::Equals([string]$runtimeContractStep.run, './scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1', [StringComparison]::Ordinal)) 'The acceptance scenario matrix runtime contract step must run only the pure runtime fixture contract.'
+    Assert-Contract ([int]$runtimeContractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix runtime contract step must have a 5-minute budget.'
+    Assert-Contract ($null -eq $runtimeContractStep.PSObject.Properties['if']) 'The acceptance scenario matrix runtime contract step must not have its own condition.'
+
+    Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
+    Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
+    Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
 
     $matrixRuntimeJobs = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
             $_.Name.Contains('acceptance-scenario-matrix', [StringComparison]::OrdinalIgnoreCase)
@@ -157,6 +182,18 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         }
     )
     Assert-Contract ($plannerInvocations.Count -eq 0) 'CI must not execute the acceptance scenario matrix planner.'
+
+    $runtimeInvocations = @(
+        foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
+            foreach ($step in @($jobProperty.Value.steps)) {
+                $runProperty = $step.PSObject.Properties['run']
+                if ($null -ne $runProperty -and ([string]$runProperty.Value).Contains('scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) {
+                    [pscustomobject]@{ Job = $jobProperty.Name; Step = [string]$step.name }
+                }
+            }
+        }
+    )
+    Assert-Contract ($runtimeInvocations.Count -eq 0) 'CI must not execute the shadow acceptance scenario matrix runtime runner.'
 }
 
 function Assert-ImpactCase {
@@ -258,6 +295,40 @@ function Assert-AcceptanceScenarioMatrixOwningPathsRoute {
             Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $expectedSelectedFlags.Contains([string]$flag.Name)
         }
         Assert-Contract (@($plan.business_services).Count -eq 0) "Acceptance scenario matrix owner '$owningPath' must not select business services."
+    }
+}
+
+function Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute {
+    $expectedSelectedFlags = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@('scripts', 'backend', 'full_chain', 'erp_sales_order_demand'),
+        [StringComparer]::Ordinal)
+
+    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+        $plan = Get-NervCiImpactPlan -ChangedPaths @($owningPath)
+        foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+            Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected $expectedSelectedFlags.Contains([string]$flag.Name)
+        }
+        Assert-Contract (@($plan.business_services).Count -eq 0) "Acceptance scenario matrix runtime owner '$owningPath' must not select business services."
+    }
+}
+
+function Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners {
+    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+        $leafIndex = $owningPath.LastIndexOf('/', [StringComparison]::Ordinal) + 1
+        $firstLeafCharacter = [string]$owningPath[$leafIndex]
+        $wrongCaseCharacter = if ([char]::IsUpper($firstLeafCharacter[0])) { $firstLeafCharacter.ToLowerInvariant() } else { $firstLeafCharacter.ToUpperInvariant() }
+        $wrongCasePath = $owningPath.Substring(0, $leafIndex) + $wrongCaseCharacter + $owningPath.Substring($leafIndex + 1)
+        foreach ($mutatedPath in @(
+                $wrongCasePath,
+                $owningPath.Replace('scripts/', 'scripts/./'),
+                $owningPath.Replace('.ps1', '.legacy.ps1')
+            )) {
+            $plan = Get-NervCiImpactPlan -ChangedPaths @($mutatedPath)
+            foreach ($flag in @($plan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+                Assert-ImpactFlag -Plan $plan -Name ([string]$flag.Name) -Expected ([string]::Equals([string]$flag.Name, 'scripts', [StringComparison]::Ordinal))
+            }
+            Assert-Contract (@($plan.business_services).Count -eq 0) "Acceptance scenario matrix runtime path mutation '$mutatedPath' must not select business services."
+        }
     }
 }
 
@@ -475,6 +546,8 @@ Assert-PostgresLaneOwningPathsRoute
 Assert-RedisCapLaneOwningPathsRoute
 Assert-FullChainLaneOwningPathsRoute
 Assert-AcceptanceScenarioMatrixOwningPathsRoute
+Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute
+Assert-AcceptanceScenarioMatrixRuntimePathMutationsDoNotAliasOwners
 
 Assert-ImpactCase -Name 'platform-gateway-openapi' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Application/OpenApi/GatewayOperationIdConvention.cs') -Flags @{
     backend = $true; openapi_codegen = $true; frontend = $true; frontend_packages = $true
@@ -647,6 +720,39 @@ finally {
     if (Test-Path -LiteralPath $acceptanceScenarioMutationRoot) { Remove-Item -LiteralPath $acceptanceScenarioMutationRoot -Recurse -Force }
 }
 
+$acceptanceRuntimeMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-runtime-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($acceptanceRuntimeMutationRoot) | Out-Null
+    $runtimeMutationIndex = 0
+    foreach ($owningPath in $acceptanceScenarioMatrixRuntimeOwningPaths) {
+        $leafIndex = $owningPath.LastIndexOf('/', [StringComparison]::Ordinal) + 1
+        $firstLeafCharacter = [string]$owningPath[$leafIndex]
+        $wrongCaseCharacter = if ([char]::IsUpper($firstLeafCharacter[0])) { $firstLeafCharacter.ToLowerInvariant() } else { $firstLeafCharacter.ToUpperInvariant() }
+        $wrongCasePath = $owningPath.Substring(0, $leafIndex) + $wrongCaseCharacter + $owningPath.Substring($leafIndex + 1)
+        foreach ($mutation in @(
+                @{ Name = 'deleted'; Replacement = '' },
+                @{ Name = 'wrong-case'; Replacement = "            '$wrongCasePath'`n" },
+                @{ Name = 'alias'; Replacement = "            '$($owningPath.Replace('scripts/', 'scripts/./'))'`n" },
+                @{ Name = 'path-drift'; Replacement = "            '$($owningPath.Replace('.ps1', '.legacy.ps1'))'`n" }
+            )) {
+            $routingEntry = "            '$owningPath'`n"
+            $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($routingEntry, [string]$mutation.Replacement)
+            Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance runtime $($mutation.Name) mutation must change owning path '$owningPath'."
+            $runtimeMutationIndex++
+            $mutationPath = Join-Path $acceptanceRuntimeMutationRoot "$runtimeMutationIndex.CiImpactPlan.ps1"
+            [IO.File]::WriteAllText($mutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
+            . $mutationPath
+            $mutationFailure = $null
+            try { Assert-AcceptanceScenarioMatrixRuntimeOwningPathsRoute } catch { $mutationFailure = $_ }
+            Assert-Contract ($null -ne $mutationFailure) "Acceptance runtime $($mutation.Name) mutation for owning path '$owningPath' must fail the behavioral contract."
+        }
+    }
+}
+finally {
+    . $libraryPath
+    if (Test-Path -LiteralPath $acceptanceRuntimeMutationRoot) { Remove-Item -LiteralPath $acceptanceRuntimeMutationRoot -Recurse -Force }
+}
+
 Assert-Contract (Test-Path -LiteralPath $entrypointPath -PathType Leaf) 'The governed CI impact-plan entrypoint is missing.'
 $entrypointSource = [IO.File]::ReadAllText($entrypointPath)
 Assert-Contract ($entrypointSource.Contains("@('diff', '--name-only', '--no-renames', '--diff-filter=ACMRD'", [StringComparison]::Ordinal)) 'Git diff must disable rename collapsing so both the deleted source path and added destination path are observed.'
@@ -702,6 +808,42 @@ try {
     $workflowContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceScenarioContractPath } catch { $workflowContractFailure = $_ }
     Assert-Contract ($null -ne $workflowContractFailure) 'Removing the acceptance scenario matrix Script Governance step must fail the workflow contract.'
+
+    $acceptanceRuntimeContractStep = @'
+      - name: Test acceptance scenario matrix runtime contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1
+
+'@
+    $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
+        'step 预算合计 138m（28 个 step：3m checkout',
+        'step 预算合计 133m（27 个 step：3m checkout').Replace(
+        '+ 27 × 5m；',
+        '+ 26 × 5m；')
+    Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 133m（27 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 26 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 27 steps and 133m.'
+    $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
+    [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
+    $runtimeWorkflowContractFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceRuntimeContractPath } catch { $runtimeWorkflowContractFailure = $_ }
+    $expectedRuntimeStepDiagnostic = 'Script Governance must contain exactly one independent acceptance scenario matrix runtime contract step.'
+    $observedRuntimeStepDiagnostic = if ($null -eq $runtimeWorkflowContractFailure) { '<none>' } else { [string]$runtimeWorkflowContractFailure.Exception.Message }
+    Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the acceptance runtime Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
+
+    $workflowWithIncorrectBudgetComment = $workflow.Replace(
+        'step 预算合计 138m（28 个 step：3m checkout',
+        'step 预算合计 133m（27 个 step：3m checkout').Replace(
+        '+ 27 × 5m；',
+        '+ 26 × 5m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 28-step/138m comment.'
+    $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
+    [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
+    $budgetCommentContractFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 28-step/138m structure.'
+    $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
+    Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 
     foreach ($mutation in @(
             @{

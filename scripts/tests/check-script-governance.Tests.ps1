@@ -727,3 +727,4 @@ finally {
 }
 
 Write-Host 'Script governance fixture tests passed.'
+& (Join-Path $repoRoot 'scripts/tests/script-compatibility-arguments.Tests.ps1')
