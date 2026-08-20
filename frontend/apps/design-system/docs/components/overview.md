@@ -28,8 +28,9 @@ import { NvButton, NvBadge } from '@nerv-iip/ui'
 品牌组件一律带 `Nv` 前缀（`NvButton`、`NvDataTable`、`NvMobileBadge`、`NvOeeHero`……）——看到
 `Nv*` 即「可直接使用的 Nerv-IIP 品牌件」。**没有** `Nv` 前缀的名字要么是 shadcn 原版底座（仅组件库内部
 使用），要么是过渡期保留的旧名。旧名（`*Pro` / `Screen*` / `Mobile*` / 裸名）已标 `@deprecated`，仍可
-编译但请改用对应 `Nv*`；组件迁移到位后（#789）移除。命名规则与逐件映射见 ADR 0020 附录 A
-（`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`）。
+编译但请改用对应 `Nv*`；组件迁移到位后（#789）移除。命名规则见 ADR 0020
+（`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`），逐件映射见
+`frontend/DESIGN/nvui-naming-map.md` 附录 A。
 
 ::: tip 完整画廊
 四个表面各有一套完整示例，以全宽页面实时演示真实组件（含图表、表格、手势、覆盖层等）：[桌面 PC](/components/desktop/gallery)、[移动 PDA](/components/mobile/gallery)、[一体机看板](/components/board)、[大屏](/components/screen/gallery)。

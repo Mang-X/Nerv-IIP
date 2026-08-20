@@ -89,7 +89,8 @@ badge、表格摘要、表单帮助、toast 或菜单中放置开发、验证或
 | `NvTooltip` + 各部分                                          | 纯图标按钮标签、状态说明                                                      | 长篇帮助文本（使用 `Popover`）                                |
 | `NvNavigationMenu` / `NvAppHeader` / `NvPage*`                | 应用外壳与页面骨架                                                            | —                                                             |
 
-**无 `Nv` 版的现役原版件**（Appendix A 未列品牌版，直接从 `@nerv-iip/ui` 用原名，
+**无 `Nv` 版的现役原版件**（[映射表](./nvui-naming-map.md) 附录 A 未列品牌版，
+直接从 `@nerv-iip/ui` 用原名，
 合法且过门禁）：`Alert` `Avatar` `Empty` `Skeleton` `Spinner` `Progress` `ScrollArea`
 `Separator` `Toaster`/`toast` `Breadcrumb` `Popover` `FileUpload` 等。深路径、
 `reka-ui`、`shadcn-vue` 直引仍然全部禁止。
