@@ -59,6 +59,12 @@ public sealed class WorldHistoryInventorySeedPostgresTests(ITestOutputHelper out
             output.WriteLine($"inventory-world-history-sample: {line}");
         }
 
+        // #1826：跨域抽样 20 单真查库，由 scripts/verify-world-history.ps1 按 (序号, link) 对账。
+        foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+        {
+            output.WriteLine(line);
+        }
+
         Assert.Equal(WorldHistoryPhase2Spec.StockLocations.Count, first.StockLocationsWritten);
         Assert.Equal(0, second.StockLocationsWritten);
         Assert.Equal(0, second.StockMovementsWritten);

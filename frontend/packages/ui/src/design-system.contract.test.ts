@@ -108,7 +108,7 @@ describe('design system v2 token contract', () => {
 
 // ─── ADR 0020 §3 — scene token namespaces + one-cycle aliases ───────────────
 describe('ADR 0020 §3 — token scene namespaces', () => {
-  // Appendix B — the full canonical --nv-scr-* screen table (30 tokens).
+  // Appendix B (frontend/DESIGN/nvui-naming-map.md) — the full canonical --nv-scr-* screen table (30 tokens).
   const SCREEN = [
     'bg',
     'bg-accent',

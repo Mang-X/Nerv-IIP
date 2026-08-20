@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest'
  *
  * Prescriptive design docs (the ones agents and humans follow when writing NEW
  * code) must teach current identifiers. Historical/registry docs are exempt:
- * `tokens.md` and `governance.md` legitimately name old identifiers as
- * migration history / ban lists, and `roadmaps/` are point-in-time snapshots.
+ * `tokens.md`, `governance.md` and `nvui-naming-map.md` legitimately name old
+ * identifiers as migration history / ban lists / the frozen old→new map, and
+ * `roadmaps/` are point-in-time snapshots.
  *
  * Rationale: stale prescriptive docs actively caused regressions — e.g.
  * `foundation.md` taught `Badge variant="destructive"` while the shipped

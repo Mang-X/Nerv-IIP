@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 
 import * as m from './index'
 
-// ADR 0020 (NvUI) Appendix A6 — the FULL mobile old→new mapping, frozen. R2/R3
+// NvUI Appendix A6 (frontend/DESIGN/nvui-naming-map.md, moved out of ADR 0020) — the FULL
+// mobile old→new mapping, frozen. R2/R3
 // clashes with the shadcn 原版 / PC素名 carry a `Mobile` root (Badge→NvMobileBadge,
 // Tag→NvMobileTag, DropdownMenu→NvMobileDropdownMenu); mobile-native专名 go straight
 // to `Nv*` (NvScanBar, NvCell, NvBottomSheet). The arrays below ARE the contract —
