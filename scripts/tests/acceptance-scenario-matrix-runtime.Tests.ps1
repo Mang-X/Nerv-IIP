@@ -461,19 +461,20 @@ try {
     $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
 
     $actionContracts = [Collections.Generic.List[object]]::new()
+    $assertContract = ${function:Assert-Contract}
     $runtimeAction = {
         param([object] $Contract)
         $actionContracts.Add($Contract)
-        Assert-Contract (Test-Path -LiteralPath $summaryPath -PathType Leaf) 'Runtime summary must exist before the injected action runs.'
+        & $assertContract (Test-Path -LiteralPath $summaryPath -PathType Leaf) 'Runtime summary must exist before the injected action runs.'
         $summaryBeforeAction = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json -Depth 50
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.status, 'running', [StringComparison]::Ordinal)) 'Runtime summary must be running before the injected action runs.'
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.transitions[-1].state, 'action-started', [StringComparison]::Ordinal)) 'The action-started transition must be atomically persisted before invocation.'
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.repository, 'Mang-X/Nerv-IIP', [StringComparison]::Ordinal)) 'The validated repository must be published before the action runs.'
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.testedSha, '0123456789abcdef0123456789abcdef01234567', [StringComparison]::Ordinal)) 'The validated tested SHA must be published before the action runs.'
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.runId, '123456789', [StringComparison]::Ordinal)) 'The validated run id must be published before the action runs.'
-        Assert-Contract ($summaryBeforeAction.runAttempt -eq 2) 'The validated run attempt must be published before the action runs.'
-        Assert-Contract ([string]::Equals([string]$summaryBeforeAction.event, 'workflow_dispatch', [StringComparison]::Ordinal)) 'The validated event must be published before the action runs.'
-        Assert-Contract ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) 'The injected action must receive the exact validated scenario contract.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.status, 'running', [StringComparison]::Ordinal)) 'Runtime summary must be running before the injected action runs.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.transitions[-1].state, 'action-started', [StringComparison]::Ordinal)) 'The action-started transition must be atomically persisted before invocation.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.repository, 'Mang-X/Nerv-IIP', [StringComparison]::Ordinal)) 'The validated repository must be published before the action runs.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.testedSha, '0123456789abcdef0123456789abcdef01234567', [StringComparison]::Ordinal)) 'The validated tested SHA must be published before the action runs.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.runId, '123456789', [StringComparison]::Ordinal)) 'The validated run id must be published before the action runs.'
+        & $assertContract ($summaryBeforeAction.runAttempt -eq 2) 'The validated run attempt must be published before the action runs.'
+        & $assertContract ([string]::Equals([string]$summaryBeforeAction.event, 'workflow_dispatch', [StringComparison]::Ordinal)) 'The validated event must be published before the action runs.'
+        & $assertContract ([string]::Equals([string]$Contract.scenario.id, 'sales-order-demand', [StringComparison]::Ordinal)) 'The injected action must receive the exact validated scenario contract.'
         return $firstEquivalenceInput
     }.GetNewClosure()
     $runnerArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $summaryPath -Action $runtimeAction

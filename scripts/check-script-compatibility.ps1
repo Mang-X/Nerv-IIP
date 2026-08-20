@@ -108,7 +108,14 @@ function Invoke-RecordedPwshScript {
     [int]$TimeoutSeconds = 300
   )
 
-  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $Arguments) -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
+  $escapedScriptPath = $ScriptPath.Replace("'", "''")
+  $commandText = "& '$escapedScriptPath'"
+  foreach ($argument in $Arguments) {
+    $escapedArgument = $argument.Replace("'", "''")
+    $commandText += " '$escapedArgument'"
+  }
+
+  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $commandText) -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
 }
 
 try {
