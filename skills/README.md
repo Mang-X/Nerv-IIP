@@ -10,15 +10,15 @@ harness 不可见、或永远不会更新。
 
 | 层 | 位置 | 装法 | 放什么 |
 |---|---|---|---|
-| **项目专属** | `skills/`（**受 git 跟踪**） | 手工 `npx skills add ./skills/<name> --copy` | 只有本仓库才成立的流程 |
+| **项目专属** | `skills/`（**受 git 跟踪**） | `npx skills add ./skills/<name>` 登记进 [`skills-lock.json`](../skills-lock.json)，与第三方技能同一通道 | 只有本仓库才成立的流程 |
 | 第三方技能 | `.agents/skills/`（gitignored） | [`skills-lock.json`](../skills-lock.json) → `npx skills experimental_install` | 外部来源技能，带 hash 锁 |
 | 跨 harness 通用 | `~/.agents/skills/` + `~/.agents/.skill-lock.json` | `npx skills add -g` | 与本仓库无关的通用技能 |
 
 判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
 放这里会把项目仓库变成通用技能的仓库。
 
-`skills update` 对 `--copy` 安装不可用：项目专属技能改动后，更新一律重跑
-`npx skills add ./skills/<name> --copy` 覆盖。
+`skills update` 对本地来源不可用：项目专属技能改动后，重跑
+`npx skills add ./skills/<name>` 刷新 `skills-lock.json` 里的 `computedHash`。
 
 `~/.claude/skills/` 不是可选层：它只有 Claude Code 能读，`skills` CLI 也管不了它，
 不要往那里安装。
@@ -56,8 +56,12 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 4. **与其它技能重叠时写明所有权边界。** 例：「本技能拥有组件定名与实现约束；
    门禁命令归 `frontend-gate`；设计取向归 `frontend-design`。」
 
-5. **昂贵或只应人工触发的流程加 `disable-model-invocation: true`。** 真机走查、
-   起栈彩排、PDA 实机这类动辄几十分钟的流程，不加就会被自动触发烧掉时间。
+5. **判据是「这个流程不该被自动纳入」，不是「它贵」。** 只有当一个流程即使在相关任务
+   中途也不该顺手启动时，才加 `disable-model-invocation: true`——例如需要用户在场
+   拍板、或会产生对外副作用的流程。**耗时本身不是理由**：deepseek-harness 的 11 个技能里
+   只有双语翻译一个设了该字段（理由是它「不纳入自动评审、只由用户点名调用」），而真机
+   录屏并发布分支这种更贵的流程照样是模型可触发的。审 PR、跑门禁这类「用户一说就该起来」
+   的流程不要加。
    需要用户点名调用时配合 `argument-hint`。该字段在已安装的技能里广泛使用，
    可用 `grep -rl 'disable-model-invocation' .agents/skills/` 查当前实例。
 
@@ -66,7 +70,10 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
    CLI 决定、且已知存在包一层 `interface:` 的变体**——落地前照抄一个已安装实例，
    不要凭记忆写：`cat .agents/skills/documentation/agents/openai.yaml`。
 
-7. **引用仓库文件用相对路径**（`frontend/DESIGN/...`）；技能在仓库根目录上下文执行。
+7. **引用仓库文件用仓库根相对路径**（`frontend/DESIGN/...`），且**不要写成 markdown 链接**。
+   技能的源目录 `skills/<name>/` 与安装目录 `.agents/skills/<name>/` 到仓库根的深度**差一层**，
+   任何文件相对写法（`../..` 或 `../../..`）必在一端解析错，而两端都存在的目录会让错误
+   静默——用行内代码写路径，靠「技能在仓库根上下文执行」这一条兜底。
 
 8. **不要用 `@file` 语法引用其它技能**——它会立即强制加载并烧掉上下文。
    用技能名加显式标记（`REQUIRED BACKGROUND:` / `REQUIRED SUB-SKILL:`）。
@@ -80,11 +87,15 @@ PR 评审、走查取证、发布收尾这类没有固定目录可挂靠的工�
 - [ ] 与相邻技能的所有权边界已写明
 - [ ] 昂贵流程已加 `disable-model-invocation: true`
 - [ ] 按 `writing-skills` 的要求做过基线验证（无技能时代理怎么做，有技能后是否照做）
-- [ ] 安装后在本会话实际触发过一次，确认它真的可被发现和加载
+- [ ] 安装后**新开一个会话**确认它可被发现和加载（技能列表在会话启动时固定，
+      当前会话装的技能本会话内看不到；用系统技能列表里的 description 原文
+      `grep -rlF` 反查命中的是哪一份，确认加载源是预期那个）
 
 ## 现有技能
 
-当前无项目专属技能。
+| 技能 | 做什么 |
+|---|---|
+| [`nerv-pr-review`](nerv-pr-review/SKILL.md) | 审本仓库的 PR：钉住 PR 事实源，按标准 / 规格 / 证据三轴各派一个隔离席位，结论分列不合并 |
 
 `new-component` 于 2026-08-18 删除，理由记在此处以免重演：内容约七成复述
 `frontend/packages/ui/AGENTS.md`（该文件按路径自动加载，投递机制严格更好）、
@@ -92,13 +103,27 @@ ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-cover
 强制（baseline shrink-only），属于上文「能校验就自动化」的范围；而且它从未接入任何安装
 通道，对 agent 从未可见，因此也没有「删掉会损失什么」的证据。
 
-## 已知欠账
+## 安装通道
 
-**`skills/*` 未接入 worktree 自动安装通道。** `scripts/setup-worktree.ps1` 会按
-`skills-lock.json` 为新 worktree 装齐第三方技能，但不处理本目录——在这里新增技能后，
-除非有人手工跑 `npx skills add`，它对任何 agent 都不可见。前身 `new-component` 就是这样
-从未生效过。两条候选解法均未验证可行性：把 `skills/*` 登记进 `skills-lock.json`
-（当前所有条目都是 `sourceType: github`，本地路径是否受支持待验），或让
-`setup-worktree.ps1` 遍历 `skills/*` 逐个 `add --copy`。
+项目专属技能与第三方技能走**同一条通道**：`skills-lock.json` 记录，
+`npx skills experimental_install` 还原。本地目录以 `sourceType: local` 登记，同样带
+`computedHash`。
 
-**新增第一个技能前必须先解决这条**，否则会重演一次"写了但从未生效"。
+新增或修改技能后：
+
+```bash
+npx skills add ./skills/<name>     # 写入/刷新 skills-lock.json 的条目与哈希
+npx skills experimental_install    # 把 payload 落到 .agents/skills/
+```
+
+第一条命令的副作用是往 `.claude/skills/<name>` 直接拷一份实体目录；它与
+`experimental_install` 落到 `.agents/skills/` 的 payload 重复，可以删掉，
+链接层由下面这步统一重建。
+
+`.claude/skills/` 的链接层由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)
+（SessionStart hook）按 `.agents/skills/` 的 payload 重建——`experimental_install`
+本身不产出任何 agent 链接。契约由
+[`scripts/tests/worktree-skill-links.Tests.ps1`](../scripts/tests/worktree-skill-links.Tests.ps1)
+守护：链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
+
+两层都在 `.gitignore` 里，`skills-lock.json` 才是事实源。

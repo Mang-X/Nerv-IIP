@@ -187,7 +187,9 @@ function Get-NervCiImpactPlan {
 
         # Agent-harness configuration only reaches local agent runtimes: the skill payload
         # directories these install into are gitignored, and no CI job reads them. They
-        # route to 'docs' like the AGENTS.md guidance they sit beside. 't3.json' is the
+        # route to 'docs' like the AGENTS.md guidance they sit beside. 'skills/' is the
+        # project-owned skill source those lockfile entries point at, so it belongs to
+        # the same class. 't3.json' is the
         # T3 Code project file and belongs to the same class: it only declares that
         # harness's worktree-create action, which shells out to
         # 'scripts/setup-worktree.ps1' exactly like the '.claude' SessionStart hook and
@@ -197,6 +199,7 @@ function Get-NervCiImpactPlan {
         # 'nerv.ps1') are deliberately absent here so they keep failing open.
         if ([string]::Equals($path, 'skills-lock.json', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 't3.json', [StringComparison]::Ordinal) -or
+            $path.StartsWith('skills/', [StringComparison]::Ordinal) -or
             $path.StartsWith('.claude/', [StringComparison]::Ordinal) -or
             $path.StartsWith('.codex/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'docs' -Reason $reason
