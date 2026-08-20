@@ -151,6 +151,42 @@ try {
         throw 'Test-NervSkillsPayloadPresent must report false when .agents/skills is absent.'
     }
 
+    # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库，
+    # 而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。
+    $setupPath = Join-Path $repoRoot 'scripts/setup-worktree.ps1'
+    $parseErrors = $null
+    $setupAst = [System.Management.Automation.Language.Parser]::ParseFile($setupPath, [ref] $null, [ref] $parseErrors)
+    if ($null -ne $parseErrors -and @($parseErrors).Count -gt 0) {
+        throw "scripts/setup-worktree.ps1 must parse cleanly; got: $(@($parseErrors)[0].Message)"
+    }
+
+    $invokedNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    # 不要在 FindAll 前加 [void]：那会在结果进管道之前就丢掉它们，集合恒为空、断言恒红。
+    $commandNodes = @($setupAst.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst]
+            }, $true))
+    foreach ($node in $commandNodes) {
+        $commandName = $node.GetCommandName()
+        if ($null -ne $commandName) { [void]$invokedNames.Add($commandName) }
+    }
+    foreach ($required in @('New-NervSkillLinkLayer', 'Test-NervSkillsPayloadPresent')) {
+        if (-not $invokedNames.Contains($required)) {
+            throw "scripts/setup-worktree.ps1 must invoke '$required'; the link layer is otherwise never built for a real worktree."
+        }
+    }
+
+    # dot-source 必须存在，否则上面的调用在运行时是未定义命令。
+    $dotSourced = @($setupAst.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                $node.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Dot
+            }, $true) | ForEach-Object { $_.Extent.Text })
+    $sourcesLibrary = @($dotSourced | Where-Object { $_.Contains('WorktreeSkills.ps1', [StringComparison]::Ordinal) }).Count -gt 0
+    if (-not $sourcesLibrary) {
+        throw 'scripts/setup-worktree.ps1 must dot-source scripts/lib/WorktreeSkills.ps1.'
+    }
+
     Write-Host 'Worktree skill link layer contract passed.'
 }
 finally {

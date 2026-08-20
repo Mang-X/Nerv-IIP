@@ -24,9 +24,11 @@ description: 审 Nerv-IIP 的 PR、复审改动后的 head，或要派并行评�
 ```bash
 gh pr view <N> --json headRefOid,baseRefName,mergeable,files
 git fetch origin "pull/<N>/head:pr-<N>"
-git rev-parse "origin/<base>"                     # base 要 40 位全长 SHA
-./scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <head>   # 默认即 MergeBase
+git rev-parse "origin/<baseRefName>"    # baseRefName 是分支名；-BaseSha 只收 40 位全长 SHA
+pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <head>
 ```
+
+仓库里的 `.ps1` 没有执行位，`./scripts/...` 在 bash 下会 `permission denied`；CI 用 `shell: pwsh` 才不需要这层包装。
 
 - 核「某处是否存在」一律用 **PR head 树**。本地工作树不作数：150+ 工作树共享一个 `.git`，并行会话会把 HEAD 切走。
 - head SHA 双源交叉：`gh pr view` 与 `git ls-remote` 各取一次，对上再往下走。
@@ -34,13 +36,21 @@ git rev-parse "origin/<base>"                     # base 要 40 位全长 SHA
 
 完成判据：head SHA、base SHA、改动路径清单三样都拿到且非空。
 
+**这一步的产出本身就是发现来源。** 改动面里出现 `unclassified-path`、`rule-self-check` 之类的信号，是还没派席位就已经到手的阻断项——比席位早，也便宜得多。
+
 ## 2. 派三个席位
 
 每席位一份**隔离副本**——`git archive` 出 head 树到独立目录。席位会跑变异测试和构建，共享一棵树会互相清掉产物。
 
 ```bash
-git archive pr-<N> | (mkdir -p /tmp/rv-<N>-<轴> && tar -x -C /tmp/rv-<N>-<轴>)
+for axis in standards spec evidence; do
+  D=/tmp/rv-<N>-$axis
+  mkdir -p $D && git archive pr-<N> | tar -x -C $D
+  git diff $(git merge-base origin/<base> pr-<N>) pr-<N> > $D/REVIEW-<N>.patch
+done
 ```
+
+`git archive` 的产出**不含 `.git`**，席位在副本里跑不了任何 git 命令。diff 必须一并投进去，并在提示词里写明这一点，否则席位会去共享工作树上找。
 
 派单时：
 
@@ -63,7 +73,11 @@ git archive pr-<N> | (mkdir -p /tmp/rv-<N>-<轴> && tar -x -C /tmp/rv-<N>-<轴>)
 
 报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引 spec 原文。
 
-找不到 spec 就明说「无规格可依」——实现本身不能当需求用。
+PR 没有关联票时按序找，找完仍无就明说「无规格可依」——实现本身不能当需求用：
+
+1. PR body 自己声明的交付范围
+2. base 树里被本 PR 声称关闭的欠账段或 TODO（`gh api repos/<owner>/<repo>/contents/<path>?ref=<base>`）
+3. `docs/superpowers/specs/` 下同主题规格
 
 ### 证据轴
 
@@ -98,11 +112,13 @@ git archive pr-<N> | (mkdir -p /tmp/rv-<N>-<轴> && tar -x -C /tmp/rv-<N>-<轴>)
 
 ## 权威来源（读，不要复述）
 
-- [`AGENTS.md`](../../AGENTS.md) 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
-- [`test-validity-governance.md`](../../docs/architecture/test-validity-governance.md) —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式
-- [`test-evidence-governance.md`](../../docs/architecture/test-evidence-governance.md) —— 执行数量、CI 状态、产物链接的报告口径
-- [`document-language-governance.md`](../../docs/architecture/document-language-governance.md) —— 协作文本发布门禁
-- [`decision-record-governance.md`](../../docs/architecture/decision-record-governance.md) —— PR 触及 ADR 时的分层判据与取代规则
+路径均相对仓库根。技能的源目录（`skills/<name>/`）与安装目录（`.agents/skills/<name>/`）到根的深度差一层，文件相对写法必在一端解析错，所以这里不用 markdown 链接。
+
+- `AGENTS.md` 与目标路径上的各级 `AGENTS.md` —— 开工与交付纪律
+- `docs/architecture/test-validity-governance.md` —— 六类合同来源、红绿验证、删弱化负向测试的四条件、PR 结论格式
+- `docs/architecture/test-evidence-governance.md` —— 执行数量、CI 状态、产物链接的报告口径
+- `docs/architecture/document-language-governance.md` —— 协作文本发布门禁
+- `docs/architecture/decision-record-governance.md` —— PR 触及 ADR 时的分层判据与取代规则
 
 ## 与其它技能的边界
 
