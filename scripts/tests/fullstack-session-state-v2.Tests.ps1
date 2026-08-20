@@ -238,6 +238,414 @@ Assert-Throws {
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
 
+# F1a frozen member: verified-session-cas-and-leases (A3 portion).
+$member = 'verified-session-cas-and-leases'
+Write-Host "Running $member (A3 portion)"
+$a2Library = Join-Path $repoRoot 'scripts/lib/FullStackControlFileSystem.ps1'
+. $a2Library
+$a3Library = Join-Path $repoRoot 'scripts/lib/FullStackVerifiedRecordStore.ps1'
+if (Test-Path -LiteralPath $a3Library -PathType Leaf) {
+    . $a3Library
+}
+
+$expectedA3Commands = @(
+    'New-NervFullStackVerifiedRecord',
+    'Read-NervFullStackVerifiedRecord',
+    'Update-NervFullStackVerifiedRecordCas',
+    'Test-NervFullStackRecordSnapshotEqual'
+)
+foreach ($commandName in $expectedA3Commands) {
+    Assert-True ($null -ne (Get-Command -Name $commandName -CommandType Function -ErrorAction SilentlyContinue)) "A3 interface '$commandName' is missing."
+}
+
+function Get-A3SnapshotText([object] $Snapshot) {
+    return [System.Text.Encoding]::UTF8.GetString([byte[]] $Snapshot.RawBytes)
+}
+
+function Copy-A3Snapshot {
+    param(
+        [Parameter(Mandatory)]
+        [object] $Snapshot,
+
+        [byte[]] $RawBytes = $Snapshot.RawBytes,
+
+        [object] $Record = $Snapshot.Record,
+
+        [object] $Identity = $Snapshot.Identity
+    )
+
+    return [pscustomobject][ordered]@{
+        Verified = $Snapshot.Verified
+        StateRoot = $Snapshot.StateRoot
+        CandidatePath = $Snapshot.CandidatePath
+        CanonicalPath = $Snapshot.CanonicalPath
+        RecordKind = $Snapshot.RecordKind
+        RawBytes = [byte[]] $RawBytes.Clone()
+        Record = $Record
+        Identity = $Identity
+    }
+}
+
+function Start-A3FixtureProcess([string] $Command, [string[]] $Arguments, [string] $FixtureRoot) {
+    $argumentExpressions = [System.Collections.Generic.List[string]]::new()
+    foreach ($argument in $Arguments) {
+        $encodedArgument = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($argument))
+        $argumentExpressions.Add("([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedArgument')))")
+    }
+    $wrappedCommand = "& {`n$Command`n} $($argumentExpressions -join ' ')"
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($wrappedCommand))
+    $name = "fullstack-a3-fixture-$([Guid]::NewGuid().ToString('N'))"
+
+    return Start-ManagedBackgroundProcess `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedCommand) `
+        -WorkingDirectory $repoRoot `
+        -Name $name `
+        -LogDirectory (Join-Path $FixtureRoot "$name-logs")
+}
+
+$a3Root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a3-$([Guid]::NewGuid().ToString('N'))"
+$a3StateRoot = Join-Path $a3Root 'state'
+$a3SessionId = 'nerv-cafe-123456'
+$a3CreationNonce = 'fedcba9876543210fedcba9876543210'
+[void] [System.IO.Directory]::CreateDirectory($a3Root)
+
+try {
+    [void] (Initialize-NervFullStackTrustedStateRoot -StateRoot $a3StateRoot)
+    $a3Paths = Get-NervFullStackControlPathSet `
+        -StateRoot $a3StateRoot `
+        -SessionId $a3SessionId `
+        -CreationNonce $a3CreationNonce
+    [void] [System.IO.Directory]::CreateDirectory($a3Paths.SessionDirectory)
+    [void] [System.IO.Directory]::CreateDirectory($a3Paths.GuardianDirectory)
+
+    $authorityTarget = Test-NervFullStackTrustedPathGraph `
+        -StateRoot $a3StateRoot `
+        -CandidatePath $a3Paths.AuthorityPath `
+        -ExpectedKind File `
+        -AllowMissingLeaf
+    $authorityRecord = [pscustomobject][ordered]@{
+        schemaVersion = 2
+        kind = 'fullstack-session-authority'
+        sessionId = $a3SessionId
+        creationNonce = $a3CreationNonce
+        displayName = '仓储会话-α'
+    }
+    $authoritySnapshot = New-NervFullStackVerifiedRecord `
+        -VerifiedTarget $authorityTarget `
+        -RecordKind 'fullstack-session-authority' `
+        -Record $authorityRecord
+    $expectedAuthorityJson = "{`"schemaVersion`":2,`"kind`":`"fullstack-session-authority`",`"sessionId`":`"$a3SessionId`",`"creationNonce`":`"$a3CreationNonce`",`"displayName`":`"仓储会话-α`"}"
+    Assert-True ([string]::Equals((Get-A3SnapshotText $authoritySnapshot), $expectedAuthorityJson, [StringComparison]::Ordinal)) 'CreateNew must persist the exact UTF-8 bytes without a BOM.'
+    Assert-True ([string]::Equals($authoritySnapshot.Record.displayName, '仓储会话-α', [StringComparison]::Ordinal)) 'UTF-8 fields must survive deserialization readback.'
+
+    $authorityBytesBeforeDuplicate = [System.IO.File]::ReadAllBytes($a3Paths.AuthorityPath)
+    Assert-ThrowsLike {
+        New-NervFullStackVerifiedRecord `
+            -VerifiedTarget $authorityTarget `
+            -RecordKind 'fullstack-session-authority' `
+            -Record ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'fullstack-session-authority'; sessionId = 'replacement' })
+    } 'record:target-exists' 'A duplicate CreateNew must fail instead of overwriting authority.'
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $authorityBytesBeforeDuplicate, [byte[]] [System.IO.File]::ReadAllBytes($a3Paths.AuthorityPath))) 'A rejected duplicate create must preserve authority bytes.'
+
+    $authorityExistingTarget = Test-NervFullStackTrustedPathGraph `
+        -StateRoot $a3StateRoot `
+        -CandidatePath $a3Paths.AuthorityPath `
+        -ExpectedKind File
+    $authorityReadback = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget $authorityExistingTarget `
+        -RecordKind 'fullstack-session-authority'
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $authoritySnapshot -Right $authorityReadback) 'CreateNew and independent readback snapshots must bind the same bytes, fields, and opened identity.'
+
+    $fieldMismatchRecord = [pscustomobject][ordered]@{
+        schemaVersion = 2
+        kind = 'fullstack-session-authority'
+        sessionId = 'nerv-dead-000000'
+        creationNonce = $a3CreationNonce
+        displayName = '仓储会话-α'
+    }
+    $fieldMismatch = Copy-A3Snapshot -Snapshot $authorityReadback -Record $fieldMismatchRecord
+    Assert-True (-not (Test-NervFullStackRecordSnapshotEqual -Left $authorityReadback -Right $fieldMismatch)) 'Snapshot equality must reject changed deserialized fields even when raw bytes and identity match.'
+
+    $byteMismatch = Copy-A3Snapshot -Snapshot $authorityReadback -RawBytes ([System.Text.Encoding]::UTF8.GetBytes(" $expectedAuthorityJson"))
+    Assert-True (-not (Test-NervFullStackRecordSnapshotEqual -Left $authorityReadback -Right $byteMismatch)) 'Snapshot equality must reject changed raw bytes even when deserialized fields and identity match.'
+
+    $identityMismatchValue = [pscustomobject][ordered]@{
+        Provider = $authorityReadback.Identity.Provider
+        Key = "$($authorityReadback.Identity.Key)-replacement"
+        Device = $authorityReadback.Identity.Device
+        Inode = $authorityReadback.Identity.Inode
+        Kind = $authorityReadback.Identity.Kind
+    }
+    $identityMismatch = Copy-A3Snapshot -Snapshot $authorityReadback -Identity $identityMismatchValue
+    Assert-True (-not (Test-NervFullStackRecordSnapshotEqual -Left $authorityReadback -Right $identityMismatch)) 'Snapshot equality must reject a different opened-object identity even when bytes and fields match.'
+
+    $missingRequiredFields = [pscustomobject][ordered]@{ schemaVersion = 2 }
+    $invalidLeft = Copy-A3Snapshot -Snapshot $authorityReadback -Record $missingRequiredFields
+    $invalidRight = Copy-A3Snapshot -Snapshot $authorityReadback -Record $missingRequiredFields
+    Assert-True (-not (Test-NervFullStackRecordSnapshotEqual -Left $invalidLeft -Right $invalidRight)) 'Snapshot equality must fail closed when both snapshots omit required fields.'
+
+    $corruptPath = Join-Path $a3Paths.GuardianDirectory 'corrupt.json'
+    Write-Utf8TestFile -Path $corruptPath -Content '{"kind":"request"'
+    $corruptTarget = Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $corruptPath -ExpectedKind File
+    Assert-ThrowsLike {
+        Read-NervFullStackVerifiedRecord -VerifiedTarget $corruptTarget -RecordKind 'request'
+    } 'record:invalid-json' 'Damaged JSON must fail closed after raw-byte readback.'
+
+    $wrongKindPath = Join-Path $a3Paths.GuardianDirectory 'wrong-kind.json'
+    Write-Utf8TestFile -Path $wrongKindPath -Content '{"schemaVersion":2,"kind":"ack"}'
+    $wrongKindTarget = Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $wrongKindPath -ExpectedKind File
+    Assert-ThrowsLike {
+        Read-NervFullStackVerifiedRecord -VerifiedTarget $wrongKindTarget -RecordKind 'request'
+    } 'record:field-mismatch' 'A deserialized kind that differs from RecordKind must fail closed.'
+
+    $readbackTamperPath = Join-Path $a3Paths.GuardianDirectory 'create-readback.json'
+    $readbackTamperTarget = Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $readbackTamperPath -ExpectedKind File -AllowMissingLeaf
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-create-flush-before-readback', [StringComparison]::Ordinal)) {
+            Write-Utf8TestFile -Path $Context.Path -Content '{"schemaVersion":2,"kind":"request","tampered":true}'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            New-NervFullStackVerifiedRecord `
+                -VerifiedTarget $readbackTamperTarget `
+                -RecordKind 'request' `
+                -Record ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; value = 'expected' })
+        } 'record:readback-mismatch' 'CreateNew must compare durable readback bytes and fields instead of trusting the write call.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+
+    $authorityProof = Open-NervFullStackVerifiedPathHandle -TrustedPath $authorityExistingTarget -Access Read
+    try {
+        $a3VerifiedSession = New-NervFullStackVerifiedSessionCapability -PathSet $a3Paths -AuthorityProof $authorityProof
+    }
+    finally {
+        if ($null -ne $authorityProof.Handle) { $authorityProof.Handle.Dispose() }
+    }
+
+    Assert-ThrowsLike {
+        Update-NervFullStackVerifiedRecordCas `
+            -VerifiedSession $a3VerifiedSession `
+            -ExpectedSnapshot $authorityReadback `
+            -NextRecord $authorityRecord
+    } 'record:authority-immutable' 'CAS must never replace authority.json.'
+
+    $requestTarget = Test-NervFullStackTrustedPathGraph `
+        -StateRoot $a3StateRoot `
+        -CandidatePath $a3Paths.GuardianRequestPath `
+        -ExpectedKind File `
+        -AllowMissingLeaf
+    $requestRecordV1 = [pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 1; writer = 'initial' }
+    $requestSnapshotV1 = New-NervFullStackVerifiedRecord -VerifiedTarget $requestTarget -RecordKind 'request' -Record $requestRecordV1
+    $requestRecordV2 = [pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 2; writer = 'winner' }
+    $requestSnapshotV2 = Update-NervFullStackVerifiedRecordCas `
+        -VerifiedSession $a3VerifiedSession `
+        -ExpectedSnapshot $requestSnapshotV1 `
+        -NextRecord $requestRecordV2
+    Assert-True ([string]::Equals($requestSnapshotV2.Record.writer, 'winner', [StringComparison]::Ordinal)) 'A successful CAS must return the final readback snapshot.'
+
+    $bytesAfterWinningCas = [System.IO.File]::ReadAllBytes($a3Paths.GuardianRequestPath)
+    Assert-ThrowsLike {
+        Update-NervFullStackVerifiedRecordCas `
+            -VerifiedSession $a3VerifiedSession `
+            -ExpectedSnapshot $requestSnapshotV1 `
+            -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 3; writer = 'stale' })
+    } 'record:cas-conflict' 'A stale CAS must fail before replace.'
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $bytesAfterWinningCas, [byte[]] [System.IO.File]::ReadAllBytes($a3Paths.GuardianRequestPath))) 'A stale CAS loser must not change final bytes.'
+
+    $sameFieldsSnapshot = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    $sameFieldsDifferentBytes = "{ `"schemaVersion`": 2, `"kind`": `"request`", `"sessionId`": `"$a3SessionId`", `"attempt`": 2, `"writer`": `"winner`" }"
+    Write-Utf8TestFile -Path $a3Paths.GuardianRequestPath -Content $sameFieldsDifferentBytes
+    Assert-ThrowsLike {
+        Update-NervFullStackVerifiedRecordCas `
+            -VerifiedSession $a3VerifiedSession `
+            -ExpectedSnapshot $sameFieldsSnapshot `
+            -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 3; writer = 'must-not-replace' })
+    } 'record:cas-conflict' 'CAS must compare original bytes, not only deserialized fields.'
+    Assert-True ([string]::Equals([System.IO.File]::ReadAllText($a3Paths.GuardianRequestPath), $sameFieldsDifferentBytes, [StringComparison]::Ordinal)) 'A raw-byte CAS conflict must preserve the conflicting bytes.'
+
+    $identitySnapshot = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    $identityReplacement = Join-Path $a3Paths.GuardianDirectory 'identity-replacement.json'
+    [System.IO.File]::WriteAllBytes($identityReplacement, [byte[]] $identitySnapshot.RawBytes)
+    [System.IO.File]::Move($identityReplacement, $a3Paths.GuardianRequestPath, $true)
+    Assert-ThrowsLike {
+        Update-NervFullStackVerifiedRecordCas `
+            -VerifiedSession $a3VerifiedSession `
+            -ExpectedSnapshot $identitySnapshot `
+            -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 3; writer = 'must-not-replace' })
+    } 'record:cas-conflict' 'CAS must compare opened-object identity even when bytes and fields are unchanged.'
+
+    $crashSnapshot = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    $bytesBeforePreReplaceCrash = [System.IO.File]::ReadAllBytes($a3Paths.GuardianRequestPath)
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-temp-readback-before-replace', [StringComparison]::Ordinal)) {
+            throw 'test-only:before-replace-crash'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Update-NervFullStackVerifiedRecordCas `
+                -VerifiedSession $a3VerifiedSession `
+                -ExpectedSnapshot $crashSnapshot `
+                -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 4; writer = 'pre-replace-crash' })
+        } 'test-only:before-replace-crash' 'A crash before atomic replace must surface without reporting success.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $bytesBeforePreReplaceCrash, [byte[]] [System.IO.File]::ReadAllBytes($a3Paths.GuardianRequestPath))) 'A pre-replace crash must preserve the old complete bytes.'
+
+    $postReplaceSnapshot = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    $postReplaceRecord = [pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 5; writer = 'post-replace-crash' }
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-replace-before-final-readback', [StringComparison]::Ordinal)) {
+            throw 'test-only:after-replace-crash'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Update-NervFullStackVerifiedRecordCas `
+                -VerifiedSession $a3VerifiedSession `
+                -ExpectedSnapshot $postReplaceSnapshot `
+                -NextRecord $postReplaceRecord
+        } 'test-only:after-replace-crash' 'A crash after atomic replace must surface without fabricating a half-committed snapshot.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    $postCrashReadback = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    Assert-True ([string]::Equals($postCrashReadback.Record.writer, 'post-replace-crash', [StringComparison]::Ordinal)) 'A post-replace crash must expose the complete new record on the next read.'
+
+    $finalReadbackSnapshot = $postCrashReadback
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-replace-before-final-readback', [StringComparison]::Ordinal)) {
+            Write-Utf8TestFile -Path $Context.Path -Content '{"schemaVersion":2,"kind":"request","tampered":true}'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Update-NervFullStackVerifiedRecordCas `
+                -VerifiedSession $a3VerifiedSession `
+                -ExpectedSnapshot $finalReadbackSnapshot `
+                -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 6; writer = 'must-read-final' })
+        } 'record:readback-mismatch' 'CAS must verify final readback instead of trusting atomic replace.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+
+    $concurrentStartRecord = [pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $a3SessionId; attempt = 10; writer = 'concurrent-start' }
+    $currentConcurrentTarget = Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File
+    $currentConcurrentSnapshot = Read-NervFullStackVerifiedRecord -VerifiedTarget $currentConcurrentTarget -RecordKind 'request'
+    $currentConcurrentSnapshot = Update-NervFullStackVerifiedRecordCas `
+        -VerifiedSession $a3VerifiedSession `
+        -ExpectedSnapshot $currentConcurrentSnapshot `
+        -NextRecord $concurrentStartRecord
+
+    $concurrentCommand = @'
+param($FileSystemLibrary, $RecordLibrary, $Root, $SessionId, $CreationNonce, $Writer, $Ready, $Go, $BarrierRoot, $Result)
+$ErrorActionPreference = 'Stop'
+. $FileSystemLibrary
+. $RecordLibrary
+$paths = Get-NervFullStackControlPathSet -StateRoot $Root -SessionId $SessionId -CreationNonce $CreationNonce
+$authorityTarget = Test-NervFullStackTrustedPathGraph -StateRoot $Root -CandidatePath $paths.AuthorityPath -ExpectedKind File
+$authorityProof = Open-NervFullStackVerifiedPathHandle -TrustedPath $authorityTarget -Access Read
+try {
+    $session = New-NervFullStackVerifiedSessionCapability -PathSet $paths -AuthorityProof $authorityProof
+}
+finally {
+    if ($null -ne $authorityProof.Handle) { $authorityProof.Handle.Dispose() }
+}
+$target = Test-NervFullStackTrustedPathGraph -StateRoot $Root -CandidatePath $paths.GuardianRequestPath -ExpectedKind File
+$snapshot = Read-NervFullStackVerifiedRecord -VerifiedTarget $target -RecordKind 'request'
+[System.IO.File]::WriteAllText($Ready, 'ready')
+$deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+while (-not [System.IO.File]::Exists($Go) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+    [System.Threading.Thread]::Sleep(10)
+}
+$outcome = [ordered]@{ writer = $Writer; succeeded = $false; error = $null }
+try {
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-cas-recheck-before-replace', [StringComparison]::Ordinal)) {
+            [System.IO.File]::WriteAllText("$BarrierRoot-$Writer.ready", 'ready')
+            $barrierDeadline = [DateTimeOffset]::UtcNow.AddSeconds(2)
+            while ([System.IO.Directory]::GetFiles((Split-Path -Parent $BarrierRoot), "$(Split-Path -Leaf $BarrierRoot)-*.ready").Count -lt 2 -and [DateTimeOffset]::UtcNow -lt $barrierDeadline) {
+                [System.Threading.Thread]::Sleep(10)
+            }
+        }
+    }
+    [void] (Update-NervFullStackVerifiedRecordCas `
+        -VerifiedSession $session `
+        -ExpectedSnapshot $snapshot `
+        -NextRecord ([pscustomobject][ordered]@{ schemaVersion = 2; kind = 'request'; sessionId = $SessionId; attempt = 11; writer = $Writer }))
+    $outcome.succeeded = $true
+}
+catch {
+    $outcome.error = $_.Exception.Message
+}
+[System.IO.File]::WriteAllText($Result, ($outcome | ConvertTo-Json -Compress))
+'@
+    $concurrentGo = Join-Path $a3Root 'concurrent.go'
+    $concurrentReadyA = Join-Path $a3Root 'concurrent-a.ready'
+    $concurrentReadyB = Join-Path $a3Root 'concurrent-b.ready'
+    $concurrentBarrier = Join-Path $a3Root 'concurrent-cas-barrier'
+    $concurrentResultA = Join-Path $a3Root 'concurrent-a.json'
+    $concurrentResultB = Join-Path $a3Root 'concurrent-b.json'
+    $concurrentA = Start-A3FixtureProcess -Command $concurrentCommand -Arguments @($a2Library, $a3Library, $a3StateRoot, $a3SessionId, $a3CreationNonce, 'writer-a', $concurrentReadyA, $concurrentGo, $concurrentBarrier, $concurrentResultA) -FixtureRoot $a3Root
+    $concurrentB = Start-A3FixtureProcess -Command $concurrentCommand -Arguments @($a2Library, $a3Library, $a3StateRoot, $a3SessionId, $a3CreationNonce, 'writer-b', $concurrentReadyB, $concurrentGo, $concurrentBarrier, $concurrentResultB) -FixtureRoot $a3Root
+    try {
+        Wait-A2FixtureReady -Path $concurrentReadyA -ManagedProcess $concurrentA -Name 'A3 concurrent writer A'
+        Wait-A2FixtureReady -Path $concurrentReadyB -ManagedProcess $concurrentB -Name 'A3 concurrent writer B'
+        Write-Utf8TestFile -Path $concurrentGo -Content 'go'
+        Assert-True $concurrentA.Process.WaitForExit(15000) 'Concurrent writer A must finish in bounded time.'
+        Assert-True $concurrentB.Process.WaitForExit(15000) 'Concurrent writer B must finish in bounded time.'
+        Assert-True ($concurrentA.Process.ExitCode -eq 0 -and $concurrentB.Process.ExitCode -eq 0) 'Concurrent writer fixtures must report their outcomes successfully.'
+    }
+    finally {
+        $concurrentA.Stop.Invoke('A3 concurrent writer A cleanup')
+        $concurrentB.Stop.Invoke('A3 concurrent writer B cleanup')
+    }
+
+    $concurrentOutcomes = @(
+        ([System.IO.File]::ReadAllText($concurrentResultA) | ConvertFrom-Json)
+        ([System.IO.File]::ReadAllText($concurrentResultB) | ConvertFrom-Json)
+    )
+    $successfulOutcomes = @($concurrentOutcomes | Where-Object { $_.succeeded })
+    $failedOutcomes = @($concurrentOutcomes | Where-Object { -not $_.succeeded })
+    Assert-True ($successfulOutcomes.Count -eq 1 -and $failedOutcomes.Count -eq 1) 'Two real concurrent CAS writers must produce exactly one success and one failure.'
+    Assert-True ($failedOutcomes[0].error.Contains('record:cas-conflict', [StringComparison]::Ordinal) -or $failedOutcomes[0].error.Contains('lease:unavailable', [StringComparison]::Ordinal)) 'The concurrent loser must fail at the lease or CAS boundary.'
+    $concurrentFinal = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
+        -RecordKind 'request'
+    Assert-True ([string]::Equals($concurrentFinal.Record.writer, $successfulOutcomes[0].writer, [StringComparison]::Ordinal)) 'The final bytes must belong to the sole successful concurrent writer.'
+}
+finally {
+    Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    if ([System.IO.Directory]::Exists($a3Root)) {
+        [System.IO.Directory]::Delete($a3Root, $true)
+    }
+}
+
+Write-Host "Full-stack v2 protocol tests passed: $member"
+
 # F1a frozen member: verified-session-cas-and-leases (A2 portion).
 $member = 'verified-session-cas-and-leases'
 Write-Host "Running $member"
