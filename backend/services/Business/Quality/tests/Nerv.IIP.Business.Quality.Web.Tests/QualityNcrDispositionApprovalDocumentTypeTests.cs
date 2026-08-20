@@ -56,8 +56,10 @@ public sealed class QualityNcrDispositionApprovalDocumentTypeTests
     }
 
     /// <summary>
-    /// 审批链响应缺 <c>documentType</c> 字段时反序列化出 null：判定必须是「不通过」，
-    /// 而不是让 <c>HashSet.Contains(null)</c> 抛 ArgumentNullException 冒成 500。
+    /// 审批链响应缺 <c>documentType</c> 字段时反序列化出 null：判定必须是「不通过」。
+    ///
+    /// 守的是**语义**不是异常：实测 <c>HashSet.Contains(null)</c> 返回 false、并不抛
+    /// （#1857 走查订正了此处原有的「会抛 ArgumentNullException 冒成 500」说法）。
     /// </summary>
     [Fact]
     public async Task Missing_document_type_is_rejected_instead_of_throwing()

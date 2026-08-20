@@ -59,10 +59,14 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
             && string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
+            // SourceService / DocumentType 都来自反序列化，响应缺字段时是 null。
+            // 这两行**不是**防异常兜底：实测 HashSet.Contains(null) 返回 false、并不抛
+            // （旧注释「会抛」是错的，#1857 走查订正——真正抛的是 comparer.GetHashCode(null)，
+            // 而 HashSet.Contains 有 null 短路，够不到 comparer）。
+            // 它们承载的是「来源 / 单据类型缺失即判不通过」这条语义，且已写进类型：
+            // 两个字段都声明成 string?，删掉任一行即 CS8604 编译失败——靠编译器兑现，不靠注释自觉。
             && chain.SourceService is not null
             && QualitySourceServices.Contains(chain.SourceService)
-            // DocumentType 来自反序列化，缺字段时会是 null；HashSet.Contains(null) 会抛，
-            // 而这里的语义是「判不通过」，所以先兜底。
             && chain.DocumentType is not null
             && NcrDispositionDocumentTypes.Contains(chain.DocumentType)
             && string.Equals(chain.DocumentId, ncrCode, StringComparison.Ordinal);
@@ -111,7 +115,8 @@ public sealed class HttpApprovalChainStatusClient(
         string OrganizationId,
         string EnvironmentId,
         string Status,
-        string SourceService,
+        // 缺字段时反序列化出 null，因此如实声明为可空——见上方两处判定里的裁决注释。
+        string? SourceService,
         string? DocumentType,
         string DocumentId);
 
