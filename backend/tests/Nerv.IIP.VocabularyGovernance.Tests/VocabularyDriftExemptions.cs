@@ -7,8 +7,8 @@ namespace Nerv.IIP.VocabularyGovernance.Tests;
 /// 每组豁免必须附中文裁决注释，且只允许两类：
 /// <list type="bullet">
 /// <item>「同值不同义」——字面量与词表常量恰好同值但语义不同，不可互相引用（永久豁免，票面 (a) 类）；</item>
-/// <item>「待 #1370 ③ 销账」——与词表常量同族的真实违例，本票（#1703）只落地门禁不修存量，
-/// 修复由 #1370 ③ 分批销账；每销一处必须同步删除对应豁免。</item>
+/// <item>「待已登记跟踪票销账」——与词表常量同族的真实违例，当前票只落地门禁不修存量，
+/// 修复由条目裁决中注明的跟踪票分批完成；每销一处必须同步删除对应豁免。</item>
 /// </list>
 /// </summary>
 internal static class VocabularyDriftExemptions
@@ -103,11 +103,32 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/IndustrialTelemetryCommands.cs"),
         ..Group("pending", "同值不同义：成本候选清单的列表状态（该聚合尚无持久化生命周期，pending 是唯一列表态），非审批链状态。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs"),
-        ..Group("transfer", "同值不同义：库存移动类型（调拨），非审批动作。",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistoryInventorySpec.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Commands/StockMovements/PostStockMovementCommand.cs"),
         ..Group("transfer", "同值不同义：检验任务转派动作（质量域内动作面），非审批链裁决动作。",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/InspectionTasks/InspectionTaskAssignmentCommands.cs"),
+
+        // ── 库存移动类型族（#1891 建立词表后待子票销账） ───────────────────────────
+        // 下列均与 InventoryMovementTypes 同义；#1891 只收敛 Inventory，跨域消费者按 Scope Gate
+        // 分票改引。白名单键为值 × 精确文件，同文件同值的多处出现由同一条目覆盖。
+        ..Group("inbound", "待已登记跟踪票销账：#1902 将 ERP 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
+            $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs"),
+        ..Group("outbound", "待已登记跟踪票销账：#1903 将 Maintenance 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",
+            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventConverters/MaintenanceIntegrationEventConverters.cs"),
+        ..Group("inbound", "待已登记跟踪票销账：#1904 将 MES 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesIntegrationEventConverters.cs",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted.cs"),
+        ..Group("outbound", "待已登记跟踪票销账：#1904 将 MES 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",
+            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesIntegrationEventConverters.cs"),
+        ..Group("inbound", "待已登记跟踪票销账：#1905 将 WMS 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs"),
+        ..Group("outbound", "待已登记跟踪票销账：#1905 将 WMS 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WarehouseAssignmentCommands.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/IntegrationEventConverters/WmsIntegrationEventConverters.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
+        ..Group("count-adjustment", "待已登记跟踪票销账：#1905 将 WMS 的盘点调整移动类型改引 InventoryMovementTypes.CountAdjustment 后删除。",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Commands/WmsCommands.cs",
+            $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
 
         // ── "quality"（票面 (a) 类点名的多义值） ────────────────────────────────────
         // 库存质量状态族（quality/unrestricted/blocked/restricted/qualified）已于 #1370 ③ 批次 A 销账；
