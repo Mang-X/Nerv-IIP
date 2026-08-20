@@ -109,10 +109,6 @@ internal static class VocabularyDriftExemptions
         // ── 库存移动类型族（#1891 建立词表后待子票销账） ───────────────────────────
         // 下列均与 InventoryMovementTypes 同义；#1891 只收敛 Inventory，跨域消费者按 Scope Gate
         // 分票改引。白名单键为值 × 精确文件，同文件同值的多处出现由同一条目覆盖。
-        ..Group("inbound", "待已登记跟踪票销账：#1901 将 BarcodeLabel 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/IntegrationEventConverters/BarcodeLabelIntegrationEventConverters.cs"),
-        ..Group("outbound", "待已登记跟踪票销账：#1901 将 BarcodeLabel 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/IntegrationEventConverters/BarcodeLabelIntegrationEventConverters.cs"),
         ..Group("inbound", "待已登记跟踪票销账：#1902 将 ERP 的库存入库移动类型改引 InventoryMovementTypes.Inbound 后删除。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventConverters/ErpProcurementIntegrationEventConverters.cs"),
         ..Group("outbound", "待已登记跟踪票销账：#1903 将 Maintenance 的库存出库移动类型改引 InventoryMovementTypes.Outbound 后删除。",

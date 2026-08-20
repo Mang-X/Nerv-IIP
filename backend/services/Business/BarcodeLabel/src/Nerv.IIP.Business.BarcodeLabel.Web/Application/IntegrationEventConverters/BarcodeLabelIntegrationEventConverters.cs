@@ -153,8 +153,8 @@ public sealed class InventoryMovementRequestedFromBarcodeScanIntegrationEventCon
     {
         return sourceWorkflow switch
         {
-            "inventory.receipt" => "inbound",
-            "inventory.issue" => "outbound",
+            "inventory.receipt" => InventoryMovementTypes.Inbound,
+            "inventory.issue" => InventoryMovementTypes.Outbound,
             "inventory.adjustment" => InventoryMovementTypes.Adjustment,
             _ => throw new InvalidOperationException($"Unsupported inventory scan workflow '{sourceWorkflow}'."),
         };
