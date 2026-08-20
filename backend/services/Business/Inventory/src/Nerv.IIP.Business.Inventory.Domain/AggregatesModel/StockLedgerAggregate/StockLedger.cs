@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 
@@ -180,7 +181,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
                 "Stock movement would breach committed stock protection.");
         }
 
-        if (IsFrozenForCount && movement.MovementType != "count-adjustment")
+        if (IsFrozenForCount && movement.MovementType != InventoryMovementTypes.CountAdjustment)
         {
             throw new InventoryDomainException(
                 InventoryDomainFailureReason.LedgerFrozen,
@@ -189,7 +190,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
 
         ApplyValuation(movement, nextOnHand);
         OnHandQuantity = nextOnHand;
-        if (movement.MovementType == "count-adjustment")
+        if (movement.MovementType == InventoryMovementTypes.CountAdjustment)
         {
             ReleaseCountFreeze();
         }

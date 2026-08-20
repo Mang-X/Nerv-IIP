@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 
@@ -262,7 +263,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         var adjustment = StockMovement.Post(
             ledger.OrganizationId,
             ledger.EnvironmentId,
-            "count-adjustment",
+            InventoryMovementTypes.CountAdjustment,
             "inventory",
             CountTaskCode,
             null,

@@ -79,7 +79,7 @@ public sealed class PostStockMovementCommandHandler(
     IInventorySkuExpiryPolicyProvider? skuExpiryPolicyProvider = null)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
-    private const string TransferMovementType = "transfer";
+    private const string TransferMovementType = InventoryMovementTypes.Transfer;
     private const string TransferOutLegSuffix = ":out";
     private const string TransferInLegSuffix = ":in";
 
@@ -89,9 +89,9 @@ public sealed class PostStockMovementCommandHandler(
 
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "inbound",
-        "outbound",
-        "transfer",
+        InventoryMovementTypes.Inbound,
+        InventoryMovementTypes.Outbound,
+        InventoryMovementTypes.Transfer,
         InventoryMovementTypes.Adjustment,
     };
 

@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 
@@ -9,13 +10,13 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
 {
     private static readonly HashSet<string> SupportedMovementTypes =
     [
-        "inbound",
-        "outbound",
-        "transfer",
-        "adjustment",
-        "count-adjustment",
-        "status-transfer-out",
-        "status-transfer-in",
+        InventoryMovementTypes.Inbound,
+        InventoryMovementTypes.Outbound,
+        InventoryMovementTypes.Transfer,
+        InventoryMovementTypes.Adjustment,
+        InventoryMovementTypes.CountAdjustment,
+        InventoryMovementTypes.StatusTransferOut,
+        InventoryMovementTypes.StatusTransferIn,
     ];
 
     private StockMovement()
