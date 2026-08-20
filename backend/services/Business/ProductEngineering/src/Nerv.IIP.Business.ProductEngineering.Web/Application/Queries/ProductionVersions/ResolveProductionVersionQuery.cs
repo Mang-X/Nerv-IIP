@@ -52,7 +52,7 @@ public sealed class ResolveProductionVersionQueryHandler(ApplicationDbContext db
                 x.Status
             })
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"No active production version can resolve SKU '{request.SkuCode}' for {request.EffectiveDate:yyyy-MM-dd} and lot size {request.LotSize}.");
+            ?? throw new KnownException($"SKU '{request.SkuCode}' 在 {request.EffectiveDate:yyyy-MM-dd} 无可用生产版本，批量 {request.LotSize}。");
 
         return new ResolveProductionVersionResponse(
             selected.ProductionVersionId,

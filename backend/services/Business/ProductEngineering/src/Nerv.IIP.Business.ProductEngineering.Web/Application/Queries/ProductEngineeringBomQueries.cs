@@ -91,7 +91,7 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
         var boms = await LoadEngineeringBomsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         var diagnostics = new List<BomExplosionDiagnostic>();
         var rootBom = SelectEngineeringBom(boms, request.ItemCode, request.EffectiveDate, request.BomCode, request.Revision)
-            ?? throw new KnownException($"No published engineering BOM can resolve item '{request.ItemCode}' for {request.EffectiveDate:yyyy-MM-dd}.");
+            ?? throw new KnownException($"物料 '{request.ItemCode}' 在 {request.EffectiveDate:yyyy-MM-dd} 无可用工程 BOM。");
         var root = BuildEngineeringNode(
             boms,
             rootBom,
@@ -271,7 +271,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
         var boms = await LoadManufacturingBomsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         var diagnostics = new List<BomExplosionDiagnostic>();
         var selection = await SelectManufacturingBomAsync(boms, request, diagnostics, cancellationToken)
-            ?? throw new KnownException($"No published manufacturing BOM can resolve SKU '{request.SkuCode}' for {request.EffectiveDate:yyyy-MM-dd} and lot size {request.LotSize}.");
+            ?? throw new KnownException($"SKU '{request.SkuCode}' 在 {request.EffectiveDate:yyyy-MM-dd} 无可用制造 BOM，批量 {request.LotSize}。");
         var root = BuildManufacturingNode(
             boms,
             selection.Bom,
