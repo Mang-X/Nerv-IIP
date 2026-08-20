@@ -426,6 +426,10 @@ foreach ($sharedControlInput in @('NuGet.config', 'scripts/lib/ScriptAutomation.
             [StringComparison]::Ordinal)) "Shared control input '$sharedControlInput' must conservatively select every known business service."
 }
 
+Assert-ImpactCase -Name 'project-skill-source' -Paths @('skills/nerv-pr-review/agents/openai.yaml') -Flags @{
+    docs = $true; backend = $false; frontend = $false; scripts = $false; workflows = $false
+}
+
 Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
     'skills-lock.json',
     't3.json',
