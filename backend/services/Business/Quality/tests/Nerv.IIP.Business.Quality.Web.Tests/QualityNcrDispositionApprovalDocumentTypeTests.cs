@@ -60,9 +60,13 @@ public sealed class QualityNcrDispositionApprovalDocumentTypeTests
     ///
     /// 守的是**语义**不是异常：实测 <c>HashSet.Contains(null)</c> 返回 false、并不抛
     /// （#1857 走查订正了此处原有的「会抛 ArgumentNullException 冒成 500」说法）。
+    ///
+    /// 真不变量与 <c>sourceService</c> 那侧对称：「**缺失的单据类型不得被折叠成任何具体取值**」。
+    /// 实测把 <c>is not null</c> 换成
+    /// <c>Contains(chain.DocumentType ?? ApprovalDocumentTypes.NcrDisposition)</c> → 本用例**红**。
     /// </summary>
     [Fact]
-    public async Task Missing_document_type_is_rejected_instead_of_throwing()
+    public async Task Missing_document_type_is_rejected_and_never_defaulted()
     {
         var client = CreateClient(documentType: null);
 

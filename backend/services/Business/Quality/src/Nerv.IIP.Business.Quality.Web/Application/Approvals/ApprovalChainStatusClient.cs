@@ -63,8 +63,12 @@ public sealed class HttpApprovalChainStatusClient(
             // 这两行**不是**防异常兜底：实测 HashSet.Contains(null) 返回 false、并不抛
             // （旧注释「会抛」是错的，#1857 走查订正——真正抛的是 comparer.GetHashCode(null)，
             // 而 HashSet.Contains 有 null 短路，够不到 comparer）。
-            // 它们承载的是「来源 / 单据类型缺失即判不通过」这条语义，且已写进类型：
-            // 两个字段都声明成 string?，删掉任一行即 CS8604 编译失败——靠编译器兑现，不靠注释自觉。
+            // 它们承载的语义是「来源 / 单据类型缺失即判不通过，且**不得折叠成任何默认取值**」。
+            // 这条语义由两道强度不同的护栏合守，别把任一道当成全部（#1857 二轮走查纠正）：
+            //   · 两个字段声明成 string? → 删掉任一行即 CS8604 编译失败。编译器只强制「必须处理 null」，
+            //     写成 `?? 某默认值` 一样能过——所以它守不住「必须拒绝」这一半；
+            //   · 「必须拒绝」那一半由用例守：Missing_source_service_is_rejected_and_never_defaulted
+            //     与 Missing_document_type_is_rejected_and_never_defaulted，对 `?? 默认值` 式重构变红。
             && chain.SourceService is not null
             && QualitySourceServices.Contains(chain.SourceService)
             && chain.DocumentType is not null

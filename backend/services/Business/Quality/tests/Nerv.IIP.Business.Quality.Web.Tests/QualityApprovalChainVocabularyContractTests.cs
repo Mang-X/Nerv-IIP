@@ -100,13 +100,20 @@ public sealed class QualityApprovalChainVocabularyContractTests
     /// 审批链响应缺 <c>sourceService</c> 字段时反序列化出 null：判定必须是「不通过」。
     ///
     /// 守的是**语义**不是异常：实测 <c>HashSet.Contains(null)</c> 返回 false、并不抛
-    /// （#1857 走查订正了本仓库沿用已久的「会抛」说法）。因此本用例的鉴别力不来自
-    /// 生产代码里那行 <c>is not null</c>——那行由 <c>string?</c> 声明 + CS8604 兑现——
-    /// 而来自「受理集合里没有能匹配缺失来源的成员」：若有人往
-    /// <see cref="ApprovalSourceServices.QualityAliases"/> 塞进空串之类的兜底成员，本用例即红。
+    /// （#1857 走查订正了本仓库沿用已久的「会抛」说法）。
+    ///
+    /// 本用例的真不变量是「**缺失的来源不得被折叠成任何具体取值**」：判定必须走
+    /// 「缺失即拒」这一支，不得改写成「缺失即当作某个默认来源」。鉴别力实测如下——
+    /// <list type="bullet">
+    /// <item>把 <c>is not null</c> 换成 <c>Contains(chain.SourceService ?? ApprovalSourceServices.Quality)</c>
+    /// （CS8604 随之消失、编译得过）→ 本用例**红**；</item>
+    /// <item>反例（#1857 二轮走查纠正）：往 <see cref="ApprovalSourceServices.QualityAliases"/>
+    /// 塞进空串成员 → 本用例**仍绿**。因为 <c>Contains</c> 在 comparer 之前就对 null 短路了，
+    /// 集合里塞什么都匹配不上 null——所以鉴别力**不**来自受理集合的成员构成。</item>
+    /// </list>
     /// </summary>
     [Fact]
-    public async Task Missing_source_service_is_rejected_instead_of_throwing()
+    public async Task Missing_source_service_is_rejected_and_never_defaulted()
     {
         Assert.False(await CreateClient("approved", sourceService: null)
             .IsApprovedForNcrDispositionAsync("chain-001", "org-001", "env-dev", "NCR-2026-0001", CancellationToken.None));
