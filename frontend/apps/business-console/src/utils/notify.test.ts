@@ -26,6 +26,29 @@ beforeEach(() => {
 })
 
 describe('friendlyErrorMessage', () => {
+  it.each([
+    [
+      'stored-maintenance-work-order-receipt-is-invalid',
+      '工单创建回执异常，请刷新后重试；仍失败请联系管理员。',
+    ],
+    [
+      'source-alarm-already-bound-to-a-different-create-intent',
+      '该报警已关联其他维护工单，请刷新后核对。',
+    ],
+    [
+      'stored-maintenance-completion-receipt-is-invalid',
+      '工单完工回执异常，请刷新后重试；仍失败请联系管理员。',
+    ],
+    ['idempotency-conflict', '该操作标识已用于其他内容，请刷新后重新发起。'],
+    ['lifecycle-conflict', '状态已被其他操作更新'],
+  ])('把稳定错误值 %s 映射为精确中文文案', (wireValue, message) => {
+    expect(friendlyErrorMessage({ message: wireValue }, '原有兜底')).toBe(message)
+  })
+
+  it('未登记的稳定值继续使用原有兜底，不猜测文案', () => {
+    expect(friendlyErrorMessage({ message: 'future-stable-error' }, '原有兜底')).toBe('原有兜底')
+  })
+
   it('把网关 502 / downstream-invalid-response 映射成人话', () => {
     expect(friendlyErrorMessage(new Error('downstream-invalid-response'))).toContain('刷新列表核实')
     expect(friendlyErrorMessage({ message: '502 Bad Gateway' })).toContain('结果可能尚未确认')
@@ -144,6 +167,18 @@ describe('serverErrorMessage', () => {
 })
 
 describe('notifyOperationFailure', () => {
+  it('稳定错误值经过共享分层链显示中文，并保留动作前缀', () => {
+    notifyOperationFailure(
+      '创建工单失败',
+      { message: 'stored-maintenance-work-order-receipt-is-invalid' },
+      '创建工单失败，请稍后重试',
+    )
+
+    expect(toastError).toHaveBeenCalledWith(
+      '创建工单失败：工单创建回执异常，请刷新后重试；仍失败请联系管理员。',
+    )
+  })
+
   it('服务端领域消息（中文、可行动）带动作前缀原样透传', () => {
     notifyOperationFailure(
       '生成失败',
@@ -193,6 +228,11 @@ describe('notifyOperationFailure', () => {
 })
 
 describe('notifyError / notifySuccess', () => {
+  it('notifyError 通过共享分层链显示稳定错误中文', () => {
+    notifyError({ message: 'idempotency-conflict' }, '操作失败，请稍后重试。')
+    expect(toastError).toHaveBeenCalledWith('该操作标识已用于其他内容，请刷新后重新发起。')
+  })
+
   it('notifyError 用映射后的人话调用 toast.error，不暴露原始技术串', () => {
     notifyError(new Error('downstream-invalid-response'))
     expect(toastError).toHaveBeenCalledWith(
@@ -225,6 +265,10 @@ describe('notifyError / notifySuccess', () => {
 })
 
 describe('inlineErrorMessage', () => {
+  it('行内入口通过共享分层链显示稳定错误中文', () => {
+    expect(inlineErrorMessage({ message: 'lifecycle-conflict' })).toBe('状态已被其他操作更新')
+  })
+
   it('无错误时返回空串，模板可直接判空', () => {
     expect(inlineErrorMessage(undefined)).toBe('')
     expect(inlineErrorMessage(null)).toBe('')
