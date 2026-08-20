@@ -239,7 +239,12 @@ function Test-NervFullStackPathContained {
         [string] $Candidate
     )
 
-    $comparison = Get-NervFullStackPathComparison
+    $comparison = if ($IsWindows) {
+        [StringComparison]::OrdinalIgnoreCase
+    }
+    else {
+        [StringComparison]::Ordinal
+    }
     if ([string]::Equals($Root, $Candidate, $comparison)) {
         return $true
     }
