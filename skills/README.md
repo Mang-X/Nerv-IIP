@@ -10,15 +10,15 @@ harness 不可见、或永远不会更新。
 
 | 层 | 位置 | 装法 | 放什么 |
 |---|---|---|---|
-| **项目专属** | `skills/`（**受 git 跟踪**） | 手工 `npx skills add ./skills/<name> --copy` | 只有本仓库才成立的流程 |
+| **项目专属** | `skills/`（**受 git 跟踪**） | `npx skills add ./skills/<name>` 登记进 [`skills-lock.json`](../skills-lock.json)，与第三方技能同一通道 | 只有本仓库才成立的流程 |
 | 第三方技能 | `.agents/skills/`（gitignored） | [`skills-lock.json`](../skills-lock.json) → `npx skills experimental_install` | 外部来源技能，带 hash 锁 |
 | 跨 harness 通用 | `~/.agents/skills/` + `~/.agents/.skill-lock.json` | `npx skills add -g` | 与本仓库无关的通用技能 |
 
 判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
 放这里会把项目仓库变成通用技能的仓库。
 
-`skills update` 对 `--copy` 安装不可用：项目专属技能改动后，更新一律重跑
-`npx skills add ./skills/<name> --copy` 覆盖。
+`skills update` 对本地来源不可用：项目专属技能改动后，重跑
+`npx skills add ./skills/<name>` 刷新 `skills-lock.json` 里的 `computedHash`。
 
 `~/.claude/skills/` 不是可选层：它只有 Claude Code 能读，`skills` CLI 也管不了它，
 不要往那里安装。
@@ -92,13 +92,27 @@ ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-cover
 强制（baseline shrink-only），属于上文「能校验就自动化」的范围；而且它从未接入任何安装
 通道，对 agent 从未可见，因此也没有「删掉会损失什么」的证据。
 
-## 已知欠账
+## 安装通道
 
-**`skills/*` 未接入 worktree 自动安装通道。** `scripts/setup-worktree.ps1` 会按
-`skills-lock.json` 为新 worktree 装齐第三方技能，但不处理本目录——在这里新增技能后，
-除非有人手工跑 `npx skills add`，它对任何 agent 都不可见。前身 `new-component` 就是这样
-从未生效过。两条候选解法均未验证可行性：把 `skills/*` 登记进 `skills-lock.json`
-（当前所有条目都是 `sourceType: github`，本地路径是否受支持待验），或让
-`setup-worktree.ps1` 遍历 `skills/*` 逐个 `add --copy`。
+项目专属技能与第三方技能走**同一条通道**：`skills-lock.json` 记录，
+`npx skills experimental_install` 还原。本地目录以 `sourceType: local` 登记，同样带
+`computedHash`。
 
-**新增第一个技能前必须先解决这条**，否则会重演一次"写了但从未生效"。
+新增或修改技能后：
+
+```bash
+npx skills add ./skills/<name>     # 写入/刷新 skills-lock.json 的条目与哈希
+npx skills experimental_install    # 把 payload 落到 .agents/skills/
+```
+
+第一条命令的副作用是往 `.claude/skills/<name>` 直接拷一份实体目录；它与
+`experimental_install` 落到 `.agents/skills/` 的 payload 重复，可以删掉，
+链接层由下面这步统一重建。
+
+`.claude/skills/` 的链接层由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)
+（SessionStart hook）按 `.agents/skills/` 的 payload 重建——`experimental_install`
+本身不产出任何 agent 链接。契约由
+[`scripts/tests/worktree-skill-links.Tests.ps1`](../scripts/tests/worktree-skill-links.Tests.ps1)
+守护：链接集合必须等于 payload 目录集合，链接目标必须是相对路径，重建必须幂等。
+
+两层都在 `.gitignore` 里，`skills-lock.json` 才是事实源。

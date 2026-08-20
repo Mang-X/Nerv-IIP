@@ -79,6 +79,11 @@
       "skillPath": "skills/hostc-public-preview/SKILL.md",
       "computedHash": "60b374875e2ca002dec2d5915e27cdbcc7968b0d6c7d62fe63bdb5ad6456303f"
     },
+    "nerv-pr-review": {
+      "source": "./skills/nerv-pr-review",
+      "sourceType": "local",
+      "computedHash": "f8176d36732c6c7809b56ac97bf6d8ce9b22d7c667fbad52067c01e77127e132"
+    },
     "obscura-browser": {
       "source": "MangMax/obscura-browser-skill",
       "sourceType": "github",
