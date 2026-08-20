@@ -275,6 +275,11 @@ function extractServerMessage(error: unknown): string | undefined {
   return undefined
 }
 
+function displayServerMessage(error: unknown): string | undefined {
+  const serverMessage = extractServerMessage(error)
+  return stableErrorMessage(serverMessage) || serverMessage
+}
+
 /**
  * 分层透传（#1298）判据：只有「人话」才值得替换本地指引——中文业务原因（如
  * 「物料齐套未满足：MAT-OIL 缺口 5」）能指导操作工，而 `downstream-request-failed`
@@ -312,7 +317,7 @@ function actionableHttpMessage(status: number): string | undefined {
 }
 
 function businessFailureMessage(error: unknown, fallback: string): string {
-  const serverMessage = extractServerMessage(error)
+  const serverMessage = displayServerMessage(error)
   if (isOperatorFacingMessage(serverMessage)) return serverMessage
   return fallback
 }
@@ -383,7 +388,7 @@ export function describeRequestError(
   const status = extractHttpStatus(error)
   const actionableMessage = status === undefined ? undefined : actionableHttpMessage(status)
   if (status !== undefined) {
-    const serverMessage = extractServerMessage(error)
+    const serverMessage = displayServerMessage(error)
     // 分层透传（#1298）：业务拒绝（400/409/422…）的服务端原因永远比通用 HTTP 文案有用——
     // 「物料齐套未满足：MAT-OIL 缺口 5」必须原样上屏，而不是「状态已变化，请刷新后按最新状态操作」。
     // 401/403（登录/权限）与 5xx 仍用本地指引：那里的服务端文案对操作工没有可执行价值。
@@ -404,14 +409,18 @@ export function describeRequestError(
   // Any other Error: unknown shape, but it carries a stack → the request reached code,
   // not a transport hang; treat as a determinate failure.
   if (error instanceof Error) {
-    return { kind: 'unknown', message: error.message || fallback, indeterminate: false }
+    return {
+      kind: 'unknown',
+      message: displayServerMessage(error) ?? fallback,
+      indeterminate: false,
+    }
   }
   // A non-Error without an extractable HTTP status is an explicit gateway business
   // envelope/string, not a transport/proxy 5xx; treat that business rejection as
   // determinate. Status-bearing 5xx values were handled above as indeterminate.
   return {
     kind: 'business',
-    message: extractServerMessage(error) ?? fallback,
+    message: displayServerMessage(error) ?? fallback,
     indeterminate: false,
   }
 }
@@ -424,3 +433,4 @@ import {
   BusinessOperationFailedError,
   BusinessOperationUnconfirmedError,
 } from '@nerv-iip/api-client'
+import { stableErrorMessage } from '@nerv-iip/business-core'
