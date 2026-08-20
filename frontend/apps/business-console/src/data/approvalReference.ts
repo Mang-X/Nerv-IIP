@@ -28,9 +28,12 @@ export const APPROVAL_DOCUMENT_TYPE_OPTIONS: RefOption[] = [
 ]
 
 /**
- * 裁决动作的**唯一权威取值**（小写），与后端
- * `Approval.Domain/AggregatesModel/ApprovalChainAggregate/ApprovalChain.cs` 的
- * `ApprovalDecisions`（approve / reject / return）逐字对齐。
+ * 裁决动作的**唯一权威取值**（小写），与后端契约
+ * `Nerv.IIP.Contracts.Approval/ApprovalDecisions.cs` 的
+ * `ApprovalDecisions.StepResolutions`（approve / reject / return）逐字对齐。
+ *
+ * 该词表原先只在 `Approval.Domain` 里、跨服务够不着，已随 #1857 下沉进契约层——
+ * 后端各服务改引契约常量后，这里手抄的这一份才真正只剩「前端侧副本」一个身份。
  *
  * 为什么要集中成常量而不是各处写字面量：Gateway 契约里 `decision` 是自由 `string`
  * （`types.gen.ts` → `...ResolveApprovalStepRequest.decision?: string`），**类型层拦不住**

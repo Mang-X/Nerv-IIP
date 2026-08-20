@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 审批词表（ApprovalChainStatuses / ApprovalDecisions）的唯一事实来源在契约层（#1857）：
+         领域引契约、契约不引领域，方向单一无环；Contracts.Approval 只依赖 Contracts.IntegrationEvents，
+         不含查询/读模型/算法契约，故不触碰 ContractBoundaryTests 的领域层禁引面。 -->
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
     <PackageReference Include="NetCorePal.Extensions.Domain.Abstractions" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
