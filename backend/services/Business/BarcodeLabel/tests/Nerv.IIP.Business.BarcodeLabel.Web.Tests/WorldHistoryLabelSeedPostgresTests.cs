@@ -63,6 +63,12 @@ public sealed class WorldHistoryLabelSeedPostgresTests(ITestOutputHelper output)
                 output.WriteLine($"label-world-history-sample: {line}");
             }
 
+            // #1826：跨域抽样 20 单真查库，由 scripts/verify-world-history.ps1 按 (序号, link) 对账。
+            foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+            {
+                output.WriteLine(line);
+            }
+
             // 设定集 §7：标签模板 4 套、打印批次约 900。
             Assert.Equal(4, first.LabelTemplatesWritten);
             Assert.Equal(4, first.BarcodeRulesWritten);

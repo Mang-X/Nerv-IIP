@@ -33,11 +33,17 @@ NERV_IIP_TEST_POSTGRES 门控的真机测试跑一遍全量生成 + 校验，并
 - 全链时间戳落在 [2026-01-05, 今天] 且单调、不落周日；
 - 状态分布落在设定集比例的抽样容差内。
 
-脚本另外输出**跨域抽样 20 单全链引用表**：按号段代数从订单序号推导出该单在六个服务里的
-单据号，reviewer 可以逐个 grep 各库核对——这是「抽样 20 单跨域全链人工可追」的落地形式。
+脚本另外做**跨域抽样 20 单全链对账**（#1826）：六个服务在各自的真库里查同一批抽样序号下
+自己拥有的单据，脚本把六份输出按 (序号, link) 拼起来核对「该有的有没有、不该有的有没有多、
+数量金额时间戳对不对得上」。这是「抽样 20 单跨域全链可追」的机器化落地形式；
+对账口径、容差取值与合法缺失的判据见 `scripts/lib/WorldHistoryCrossDomain.ps1`。
+
+本轮之前这一段是**纯字符串代数**：脚本按号段推出单据号打进证据表，存在与否留给 reviewer
+逐个 grep，因此设定集 §7 承诺的那条从未被机器验证过。
 
 .PARAMETER Scale
-生成缩放比例。1.0 = 全量（约 3200 单 / 3600 工单），0.1 = 约十分之一的快速验证。
+生成缩放比例，只作证据标注。缩放比例由被调用的 Postgres 测试自己固定（全量用例 1.0、
+缩放用例 0.1），本参数不下传，因此跨域抽样对账始终针对全量那一跑。
 
 .PARAMETER PostgresConnectionString
 PostgreSQL 连接串。缺省读环境变量 NERV_IIP_TEST_POSTGRES，再缺省用本地 dev compose 实例。
@@ -65,6 +71,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $repoRoot 'scripts/lib/WorldHistoryCrossDomain.ps1')
 
 if (-not $RunId) {
     $RunId = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
@@ -126,13 +133,14 @@ $targets = @(
 $summary = [ordered]@{
     runId                 = $RunId
     startedAtUtc          = (Get-Date).ToUniversalTime().ToString('o')
-    scale                 = $Scale
+    requestedScale        = $Scale
     goLiveDate            = '2026-01-05'
     services              = [ordered]@{}
     consistencyValidator  = 'fail-closed: seed throws WorldHistoryConsistencyException on any unbalanced chain'
 }
 
 $failed = $false
+$probes = @()
 
 foreach ($target in $targets) {
     Write-Host "Running $($target.Name) world-history consistency proof..." -ForegroundColor Cyan
@@ -166,9 +174,15 @@ foreach ($target in $targets) {
 
     $stdout | Set-Content -Path $logPath -Encoding utf8
 
+    $outputLines = $stdout -split "`r?`n"
+    $probes += ConvertFrom-NervWorldHistoryProbeOutput `
+        -Service $target.Name `
+        -Prefix $target.Prefix `
+        -Lines $outputLines
+
     $metrics = [ordered]@{}
     $samples = @()
-    foreach ($line in ($stdout -split "`r?`n")) {
+    foreach ($line in $outputLines) {
         $trimmed = "$line".Trim()
         if ($trimmed -match "^$($target.Prefix)-sample:\s*(.+)$") {
             $samples += $Matches[1]
@@ -197,49 +211,37 @@ foreach ($target in $targets) {
     }
 }
 
-# 跨域抽样 20 单全链引用：号段是纯代数（设定集 §9），从订单序号即可推出该单在六个服务里的单据号。
-# 抽样只挑「一定有工单」的序号做不到——废弃单占 2%，序号本身看不出来——所以这里如实输出推导出的
-# 单据号，并注明「废弃单没有工单/发货侧单据」，由 reviewer 按各库实际存在与否核对。
-$crossDomainSample = @()
-$totalOrders = 0
-$erpServiceName = 'erp'
-$ordersMetricName = 'orders'
-$serviceNames = Get-NervStringSet -Values @($summary.services.Keys) -Comparer ([StringComparer]::Ordinal)
-$erpMetricNames = if ($serviceNames.Contains($erpServiceName)) { Get-NervStringSet -Values @($summary.services[$erpServiceName].metrics.Keys) -Comparer ([StringComparer]::Ordinal) } else { $null }
-if ($null -ne $erpMetricNames -and $erpMetricNames.Contains($ordersMetricName)) {
-    [void][int]::TryParse($summary.services['erp'].metrics['orders'], [ref] $totalOrders)
-}
+# 跨域抽样 20 单全链对账（#1826）。
+#
+# 六个服务已经在各自的真库里查过这 20 个订单序号下自己拥有的单据，并按
+# Nerv.IIP.Testing.CrossServiceSampleProbe 的格式把「该不该有 / 实际有没有 / 数量 / 金额 /
+# 时间戳」输出成证据行。这里把六份输出拼起来核对——「对方那一行是否真的存在」是任何单侧
+# 校验器都看不见的那一面，只有在这里才成立。
+#
+# 合法缺失（废弃单没有工单与下游单据、打印批次按 900 张预算抽样）由各侧自己的 spec 判定
+# 并写在 expected 列上，不会被当成红；判错了则会在 expectation-drift 这一类里暴露出来。
+$crossDomain = Get-NervWorldHistoryCrossDomainReport -Probes @($probes)
+$summary.crossDomain = $crossDomain
 
-if ($totalOrders -gt 0) {
-    $sampleSize = [Math]::Min(20, $totalOrders)
-    for ($slot = 0; $slot -lt $sampleSize; $slot++) {
-        $index = 1 + [int](($slot * $totalOrders) / $sampleSize)
-        $salesOrderNo = 'SO-2026-{0:D5}' -f $index
-        $workOrderNo = 'WO-2026-{0:D5}' -f $index
-        $deliveryOrderNo = 'DO-2026-{0:D5}' -f $index
-        $crossDomainSample += [ordered]@{
-            index        = $index
-            erpSalesOrder = $salesOrderNo
-            erpQuotation  = 'QUO-2026-{0:D5}' -f $index
-            erpDelivery   = $deliveryOrderNo
-            erpReceivable = 'AR-2026-{0:D5}' -f $index
-            mesWorkOrder  = $workOrderNo
-            mesFinalOperationTask = "$workOrderNo-OP-70"
-            mesFinishedGoodsReceipt = "FGR-$workOrderNo"
-            producedLot   = "LOT-$workOrderNo"
-            qualityOperationInspection = "$workOrderNo/70"
-            qualityFinalInspection = $deliveryOrderNo
-            inventoryFinishedGoodsMovement = "INV-$workOrderNo"
-            wmsInbound    = "IB-FGR-$workOrderNo"
-            wmsOutbound   = "OB-$deliveryOrderNo"
-            labelLotPrintBatch = "PB-FGR-$workOrderNo-TPL-WB-LOT-001"
-            labelCartonPrintBatch = "PB-$deliveryOrderNo-TPL-WB-CTN-001"
-        }
+# -Scale 不下传给被调用的测试（缩放比例由测试自己固定），因此 summary 里把「请求的」
+# 和「实际生成的」分开写：顶层只留 requestedScale，实际值取各侧探针上报的基准。
+# 原先顶层那个 `scale` 与 crossDomain.scale 同名不同义，-Scale 0.1 跑出来两个数字会打架。
+$summary.effectiveScale = $crossDomain.scale
+$summary.scaleNote = '-Scale 只作证据标注，不下传给被调用的 Postgres 测试；effectiveScale 取各服务探针上报的基准值。'
+
+if (-not $crossDomain.succeeded) {
+    $failed = $true
+    Write-Host ''
+    Write-Host "Cross-domain sample reconciliation FAILED with $($crossDomain.findings.Count) finding(s):" -ForegroundColor Red
+    foreach ($finding in $crossDomain.findings) {
+        Write-Host "  [$($finding.category)] #$($finding.index) $($finding.link): $($finding.detail)" -ForegroundColor Red
     }
 }
-
-$summary.crossDomainSample = $crossDomainSample
-$summary.crossDomainSampleNote = '废弃单（约 2%）没有工单及其下游单据；打印批次按 900 张预算抽样，未被抽中的单据没有打印批次。'
+else {
+    Write-Host ''
+    Write-Host ("Cross-domain sample reconciliation passed: {0} 张单实查，{1} 张确认存在，{2} 张按规则本就不该存在。" -f `
+        $crossDomain.documentsChecked, $crossDomain.confirmed, $crossDomain.legitimatelyAbsent) -ForegroundColor Green
+}
 
 $summary.completedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
 $summary.succeeded = -not $failed
@@ -251,7 +253,8 @@ $markdown = New-Object System.Text.StringBuilder
 [void]$markdown.AppendLine('# L1 背景历史一致性校验证据')
 [void]$markdown.AppendLine()
 [void]$markdown.AppendLine("- Run: ``$RunId``")
-[void]$markdown.AppendLine("- Scale: ``$Scale``")
+[void]$markdown.AppendLine("- Scale（``-Scale`` 参数，仅标注、不下传）: ``$Scale``")
+[void]$markdown.AppendLine("- 实际生成缩放（各侧探针上报）: ``$($crossDomain.scale)``")
 [void]$markdown.AppendLine("- 结论: " + $(if ($failed) { '**失败**' } else { '**通过**' }))
 [void]$markdown.AppendLine()
 
@@ -277,19 +280,38 @@ foreach ($name in $summary.services.Keys) {
     }
 }
 
-if ($crossDomainSample.Count -gt 0) {
-    [void]$markdown.AppendLine('## 跨域抽样 20 单全链引用（人工可追）')
-    [void]$markdown.AppendLine()
-    [void]$markdown.AppendLine($summary.crossDomainSampleNote)
-    [void]$markdown.AppendLine()
-    [void]$markdown.AppendLine('| # | 销售订单 | 工单 | 终检工序 | 完工入库 | 成品批次 | 库存移动 | 仓储入库单 | 发货单 | 仓储出库单 | 批次标签打印 |')
-    [void]$markdown.AppendLine('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
-    foreach ($row in $crossDomainSample) {
-        [void]$markdown.AppendLine(
-            "| $($row.index) | $($row.erpSalesOrder) | $($row.mesWorkOrder) | $($row.mesFinalOperationTask) | " +
-            "$($row.mesFinishedGoodsReceipt) | $($row.producedLot) | $($row.inventoryFinishedGoodsMovement) | " +
-            "$($row.wmsInbound) | $($row.erpDelivery) | $($row.wmsOutbound) | $($row.labelLotPrintBatch) |")
+[void]$markdown.AppendLine('## 跨域抽样 20 单全链对账')
+[void]$markdown.AppendLine()
+[void]$markdown.AppendLine("- 抽样序号: ``$([string]::Join(', ', @($crossDomain.indexes)))``")
+[void]$markdown.AppendLine("- 实查单据: **$($crossDomain.documentsChecked)** 张（确认存在 **$($crossDomain.confirmed)** 张，按规则本就不该存在 **$($crossDomain.legitimatelyAbsent)** 张）")
+[void]$markdown.AppendLine("- 容差: 数量 ``$($crossDomain.tolerance.Quantity)``、金额 ``$($crossDomain.tolerance.Amount)``、时间戳 ``$($crossDomain.tolerance.TimestampTicks)`` tick（1 微秒，PostgreSQL timestamptz 的精度）")
+[void]$markdown.AppendLine("- 结论: " + $(if ($crossDomain.succeeded) { '**通过**' } else { "**失败（$($crossDomain.findings.Count) 项）**" }))
+[void]$markdown.AppendLine()
+
+if (-not $crossDomain.succeeded) {
+    [void]$markdown.AppendLine('| 序号 | link | 类别 | 说明 |')
+    [void]$markdown.AppendLine('| --- | --- | --- | --- |')
+    foreach ($finding in $crossDomain.findings) {
+        [void]$markdown.AppendLine("| $($finding.index) | $($finding.link) | $($finding.category) | $($finding.detail) |")
     }
+    [void]$markdown.AppendLine()
+}
+
+if ($crossDomain.rows.Count -gt 0) {
+    [void]$markdown.AppendLine('<details><summary>逐单据明细（应存在 / 实存在 / 数量 / 金额 / 时间戳）</summary>')
+    [void]$markdown.AppendLine()
+    [void]$markdown.AppendLine('| 序号 | link | 服务 | 类别 | 单据号 | 应存在 | 实存在 | 数量 | 金额 | 时间戳 |')
+    [void]$markdown.AppendLine('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+    foreach ($row in $crossDomain.rows) {
+        $existsText = if ($null -eq $row.exists) { '见证' } else { [string] $row.exists }
+        $quantityText = if ($null -eq $row.quantity) { '-' } else { [string] $row.quantity }
+        $amountText = if ($null -eq $row.amount) { '-' } else { [string] $row.amount }
+        $timestampText = if ($null -eq $row.timestamp) { '-' } else { $row.timestamp.UtcDateTime.ToString('yyyy-MM-dd HH:mm:ss') }
+        [void]$markdown.AppendLine(
+            "| $($row.index) | $($row.link) | $($row.service) | $($row.kind) | $($row.no) | $($row.expected) | $existsText | $quantityText | $amountText | $timestampText |")
+    }
+    [void]$markdown.AppendLine()
+    [void]$markdown.AppendLine('</details>')
     [void]$markdown.AppendLine()
 }
 
@@ -300,7 +322,7 @@ Write-Host ''
 Write-Host "Evidence written to $artifactRoot" -ForegroundColor Cyan
 
 if ($failed) {
-    throw 'World-history consistency verification failed. Inspect the per-service logs under the artifact directory.'
+    throw 'World-history consistency verification failed. Inspect the per-service logs and the cross-domain findings under the artifact directory.'
 }
 
 Write-Host 'World-history consistency verification passed.' -ForegroundColor Green

@@ -63,6 +63,12 @@ public sealed class WorldHistorySeedPostgresTests(ITestOutputHelper output)
                 output.WriteLine($"mes-world-history-sample: {line}");
             }
 
+            // #1826：跨域抽样 20 单真查库，由 scripts/verify-world-history.ps1 按 (序号, link) 对账。
+            foreach (var line in await WorldHistoryCrossDomainProbe.BuildAsync(db, "org-001", "env-dev", AsOfDate, 1.0d))
+            {
+                output.WriteLine(line);
+            }
+
             // 设定集 §7：约 3600 张工单（含内部补产）。
             Assert.InRange(totalWorkOrders, 3200, 4000);
             Assert.Equal(0, second.OrderWorkOrdersWritten);
