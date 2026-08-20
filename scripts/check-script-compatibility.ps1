@@ -26,6 +26,7 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
+. (Join-Path $root "scripts/lib/ScriptCompatibility.ps1")
 
 if ($IsWindows -and -not $AllowWindows) {
   throw "Script compatibility gate must run on macOS or Linux. Use -AllowWindows only for a local smoke run."
@@ -100,7 +101,9 @@ function Invoke-RecordedPwshScript {
     [Parameter(Mandatory)]
     [string]$ScriptPath,
 
-    [string[]]$Arguments = @(),
+    [System.Collections.IDictionary]$NamedArguments = @{},
+
+    [object[]]$PositionalArguments = @(),
 
     [Parameter(Mandatory)]
     [string]$Name,
@@ -108,14 +111,8 @@ function Invoke-RecordedPwshScript {
     [int]$TimeoutSeconds = 300
   )
 
-  $escapedScriptPath = $ScriptPath.Replace("'", "''")
-  $commandText = "& '$escapedScriptPath'"
-  foreach ($argument in $Arguments) {
-    $escapedArgument = $argument.Replace("'", "''")
-    $commandText += " '$escapedArgument'"
-  }
-
-  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $commandText) -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
+  $pwshArguments = New-NervScriptCompatibilityPwshArguments -ScriptPath $ScriptPath -NamedArguments $NamedArguments -PositionalArguments $PositionalArguments
+  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments $pwshArguments -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
 }
 
 try {
