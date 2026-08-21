@@ -1,10 +1,14 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
+[Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ErpDemoSeedStartupGovernanceTests
 {
     private const string ProgramRelativePath =
@@ -27,7 +31,7 @@ public sealed class ErpDemoSeedStartupGovernanceTests
                 new TestHostEnvironment(environmentName)));
 
         Assert.Equal(
-            "'Erp:Seed:SalesOrderDemandDemo:Enabled'=true is only allowed for BusinessERP in Development.",
+            "Erp:Seed:SalesOrderDemandDemo:Enabled=true is only allowed for BusinessERP in Development.",
             exception.Message);
     }
 
@@ -47,7 +51,7 @@ public sealed class ErpDemoSeedStartupGovernanceTests
                 new TestHostEnvironment(environmentName)));
 
         Assert.Equal(
-            "'LeaderDemo:History:Enabled'=true is only allowed for BusinessERP in Development.",
+            "LeaderDemo:History:Enabled=true is only allowed for BusinessERP in Development.",
             exception.Message);
     }
 
@@ -91,6 +95,44 @@ public sealed class ErpDemoSeedStartupGovernanceTests
             new Dictionary<string, string?> { ["Erp:Seed:SalesOrderDemandDemo:Enabled"] = "true" })));
         Assert.False(ErpDemoSeedStartupGovernance.IsSalesOrderDemandDemoEnabled(BuildConfiguration(
             new Dictionary<string, string?>())));
+    }
+
+    /// <summary>
+    /// 真正的不变量：非 Development 的 host 在开始服务请求之前就拒绝启动。
+    /// 源码文本断言证明不了这一条（注释掉调用、或把调用挪进 <c>if (autoMigrate)</c> 都能骗过它）。
+    /// </summary>
+    [Theory]
+    [InlineData("Erp:Seed:SalesOrderDemandDemo:Enabled", "Erp:Seed:SalesOrderDemandDemo:Enabled=true")]
+    [InlineData("LeaderDemo:History:Enabled", "LeaderDemo:History:Enabled=true")]
+    public async Task Host_refuses_to_start_outside_development_when_a_demo_seed_switch_is_on(
+        string switchKey,
+        string expectedMessageFragment)
+    {
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["ConnectionStrings:PostgreSQL"] =
+                            "Host=unused;Database=nerv_iip_erp_demo_seed_governance;Username=nerv;Password=nerv",
+                        ["InternalService:BearerToken"] = "test-internal-service-token",
+                        ["Persistence:AutoMigrate"] = "false",
+                        [switchKey] = "true"
+                    }));
+            });
+
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            using var client = factory.CreateClient();
+            await client.GetAsync("/health");
+        });
+
+        Assert.Contains(exception.Flatten(), candidate =>
+            candidate is InvalidOperationException
+            && candidate.Message.Contains(expectedMessageFragment, StringComparison.Ordinal)
+            && candidate.Message.Contains("only allowed for BusinessERP in Development", StringComparison.Ordinal));
     }
 
     [Fact]
