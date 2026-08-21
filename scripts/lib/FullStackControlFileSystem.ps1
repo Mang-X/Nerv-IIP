@@ -445,10 +445,7 @@ function Test-NervFullStackTrustedPathGraph {
 function Get-NervFullStackOpenedPathIdentity {
     param(
         [Parameter(Mandatory)]
-        [object] $Handle,
-
-        [Parameter(Mandatory)]
-        [string] $CanonicalPath
+        [object] $Handle
     )
 
     $nativeIdentity = $Handle.ReadIdentity()
@@ -496,7 +493,7 @@ function Open-NervFullStackVerifiedPathHandle {
             $revalidated.CanonicalPath,
             [string]::Equals($Access, 'ReadWrite', [StringComparison]::Ordinal)
         )
-        $identity = Get-NervFullStackOpenedPathIdentity -Handle $handle -CanonicalPath $revalidated.CanonicalPath
+        $identity = Get-NervFullStackOpenedPathIdentity -Handle $handle
         if (-not [string]::Equals($identity.Kind, $revalidated.ExpectedKind, [StringComparison]::Ordinal)) {
             throw "path:opened-kind-mismatch '$($revalidated.CanonicalPath)'"
         }
@@ -608,7 +605,7 @@ function Open-NervFullStackLeaseHandle {
     $handle = $null
     try {
         $handle = [Nerv.IIP.FullStack.DarwinPathHandle]::OpenLease($TrustedLockPath.CanonicalPath)
-        $identity = Get-NervFullStackOpenedPathIdentity -Handle $handle -CanonicalPath $TrustedLockPath.CanonicalPath
+        $identity = Get-NervFullStackOpenedPathIdentity -Handle $handle
         if (-not [string]::Equals($identity.Kind, 'File', [StringComparison]::Ordinal)) {
             throw "path:opened-kind-mismatch '$($TrustedLockPath.CanonicalPath)'"
         }
