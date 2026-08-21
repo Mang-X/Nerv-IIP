@@ -19,6 +19,8 @@ ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`Sales
 
 AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），并通过正常 Unit of Work/CAP outbox 发布 released 事实；不会覆盖同编号的租户事实，若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。
 
+该开关与 L1 背景历史开关 `LeaderDemo:History:Enabled` 都只允许在 Development 使用：非 Development 环境下任一开关为 `true`，ERP 会在建立 host 后、执行迁移与开始监听之前抛出 `InvalidOperationException` 拒绝启动（fail-closed），与其余业务服务一致，避免演示数据写进非开发环境的真实账套。
+
 默认 AppHost 演示应直接复用 seed 订单，不要再通过创建 API 手工创建同号订单。若要演示完整手工录入流程，先关闭 `Erp:Seed:SalesOrderDemandDemo:Enabled`，再执行下列前置步骤。`scripts/verify-erp-sales-order-demand-planning.ps1` 始终创建一次性数据库和独立服务进程，不连接 AppHost dev 数据库，因此不与默认 seed 冲突。
 
 1. 在同一 organization/environment 准备 active 客户 `CUST-001`，配置足够信用额度，或先走信用冻结后审批释放路径。
