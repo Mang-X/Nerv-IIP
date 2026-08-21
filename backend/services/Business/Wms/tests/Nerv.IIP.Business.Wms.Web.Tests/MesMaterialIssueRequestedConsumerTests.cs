@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
@@ -120,16 +121,23 @@ public sealed class MesMaterialIssueRequestedConsumerTests
     {
         var databaseName = $"wms-mes-material-issue-{Guid.CreateVersion7():N}";
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var logger = new RecordingLogger<MesMaterialIssueRequestedIntegrationEventHandler>();
         var handler = new MesMaterialIssueRequestedIntegrationEventHandler(
             CreateContext(databaseName),
             new CommandExecutingSender(databaseName),
-            deadLetters);
+            deadLetters,
+            locationOptions: null,
+            logger);
 
         // 事件不带库位、部署也没配默认库位：仓库不再兜底到演示库位（#1754），消息进死信。
         var exception = await Record.ExceptionAsync(
             () => handler.HandleAsync(CreateRequestedEvent(), CancellationToken.None));
 
         Assert.Null(exception);
+        // 死信本身在 WMS 没有查询端点，只有日志能让运维看见「领料消息全部消失」的成因是漏配置。
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning);
+        Assert.Contains("MaterialIssue:SourceLocationCode", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("MIR-001", warning.Message, StringComparison.Ordinal);
         var deadLetter = Assert.Single(await deadLetters.ListAsync(
             MesMaterialIssueRequestedIntegrationEventHandler.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
@@ -247,6 +255,24 @@ public sealed class MesMaterialIssueRequestedConsumerTests
             .UseInMemoryDatabase(databaseName)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, formatter(state, exception)));
     }
 
     private sealed class CommandExecutingSender(string databaseName) : ISender

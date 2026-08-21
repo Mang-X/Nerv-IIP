@@ -94,6 +94,16 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
         var lineSideLocationCode = ResolveLocationCode(payload.LineSideLocationCode, locations.LineSideLocationCode);
         if (sourceLocationCode is null || lineSideLocationCode is null)
         {
+            // 这条死信的成因是部署配置缺失，不是数据问题：不打日志的话，运维只能翻死信表才知道
+            // 「领料消息全部静默消失」。另外两条死信按事件内容判定，保持原状。
+            logger?.LogWarning(
+                "Material issue request {EventId} ({RequestNo}) has no usable warehouse location: " +
+                "the event named source={PayloadSourceLocationCode} / line-side={PayloadLineSideLocationCode} and " +
+                "MaterialIssue:SourceLocationCode / MaterialIssue:LineSideLocationCode are not configured.",
+                integrationEvent.EventId,
+                payload.RequestNo,
+                payload.SourceLocationCode,
+                payload.LineSideLocationCode);
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
                     ConsumerName,
