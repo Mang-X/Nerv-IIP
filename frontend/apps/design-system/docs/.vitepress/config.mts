@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, postcssIsolateStyles } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
+import llmstxt from 'vitepress-plugin-llms'
 
 const dhxInstalled = existsSync(
   fileURLToPath(new URL('../../../../node_modules/@dhx/trial-gantt/package.json', import.meta.url)),
@@ -395,7 +396,11 @@ export default defineConfig({
   },
 
   vite: {
-    plugins: [wasm(), tailwindcss()],
+    // llmstxt：机读通道，产出 llms.txt 与每页 markdown。默认 stripHTML 会剥掉
+    // <script setup> 与 <Demo> 脚手架，属性表与代码围栏保留——变体事实由属性表承载。
+    // 站点转多语言后须加 ignoreFiles 排除非默认 locale：插件只产一份根 llms.txt，
+    // 会把所有 locale 混排进同一张目录（见 #1889 实测）。
+    plugins: [wasm(), tailwindcss(), llmstxt()],
     css: {
       // ADR 0020 §4.2 — official style isolation. `postcssIsolateStyles` appends
       // `:not(:where(.vp-raw, .vp-raw *))` to VitePress's own reset selectors so
