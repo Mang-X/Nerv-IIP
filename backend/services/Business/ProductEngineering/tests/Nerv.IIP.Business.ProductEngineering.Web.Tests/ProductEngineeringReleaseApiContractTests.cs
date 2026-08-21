@@ -1197,7 +1197,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None));
 
         Assert.Contains("SKU-RM-2000", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("missing", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("缺少 EBOM 子 SKU 的物料行", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
     }
 
     [Fact]
@@ -1267,6 +1268,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Contains("SKU-FG-OTHER", exception.Message, StringComparison.Ordinal);
         Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("MBOM SKU", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("EBOM 父 SKU", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("一致", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
     }
 
     [Fact]

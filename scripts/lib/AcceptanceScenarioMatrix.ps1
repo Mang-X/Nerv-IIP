@@ -794,7 +794,7 @@ function Test-NervAcceptancePlanningRunCommand {
     if ($Run -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Run)) { return $false }
     foreach ($line in @(([string]$Run) -split "`r?`n")) {
         $command = ([string]$line).Trim()
-        if ($command -cmatch '^pwsh(?:\.exe)?(?:\s+-(?:NoLogo|NoProfile|NonInteractive))*\s+(?:-File\s+)?["'']?(?:\./)?scripts/plan-acceptance-scenario-matrix\.ps1["'']?(?:\s|$)') {
+        if ($command -cmatch '^(?:pwsh(?:\.exe)?(?:\s+-(?:NoLogo|NoProfile|NonInteractive))*\s+(?:-File\s+)?)?["'']?(?:\./)?scripts/plan-acceptance-scenario-matrix\.ps1["'']?(?:\s|$)') {
             return $true
         }
     }
