@@ -130,7 +130,7 @@ public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
             workOrder.OpenedBy,
             idempotencyKey,
             new InventoryMovementRequestedPayload(
-                "outbound",
+                InventoryMovementTypes.Outbound,
                 // 载荷来源服务面（#1370 ③ 批次 D 销账）；下方第 9 位 SiteCode 与第 13 位 OwnerType
                 // 的 "maintenance" 是同值不同义的站点码/归属方类型，各自域内取值，不改。
                 InventoryMovementSourceServices.Maintenance,
