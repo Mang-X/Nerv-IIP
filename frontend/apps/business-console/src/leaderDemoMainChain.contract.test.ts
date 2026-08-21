@@ -92,7 +92,7 @@ describe('leader demo main-chain public prerequisites', () => {
     )
 
     expect(supplyFlow).not.toContain('/api/business-console/v1/inventory/movements')
-    // #1344：主链只消费种子模板 APT-WB-PO-001，绝不 POST /approval/templates
+    // 主链只消费产品基线种子模板 purchase-order-release，绝不 POST /approval/templates
     // （CreateOrUpdate 会覆写种子模板定义，且种子「已存在一律不动」不会修复）。
     expect(scenarioSource).not.toContain('/api/business-console/v1/approval/templates')
     expect(supplyFlow).toContain('/api/business-console/v1/erp/procurement/purchase-orders')

@@ -60,7 +60,7 @@ public sealed class StockCountApprovalTests
         // #1344 三方漂移契约（Inventory 发起侧）：默认模板码 / 单据类型必须逐字等于审批契约常量，
         // 且该模板由审批种子补齐落库；此前默认 COUNT-VARIANCE 在种子里根本不存在 → 盘点确认必 400。
         Assert.Equal(ApprovalTemplateCodes.StockCountVariance, approvalClient.Request!.TemplateCode);
-        Assert.Equal("APT-WB-CNT-001", approvalClient.Request.TemplateCode);
+        Assert.Equal("stock-count-variance", approvalClient.Request.TemplateCode);
         // #1702 三方漂移契约（Inventory 发起侧）：来源服务同样必须逐字等于审批契约常量——
         // 它是回写消费侧的分流依据之一，漂了就静默丢事件。
         Assert.Equal(ApprovalSourceServices.Inventory, approvalClient.Request.SourceService);

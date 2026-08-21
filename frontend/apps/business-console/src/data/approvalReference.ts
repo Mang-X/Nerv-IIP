@@ -19,7 +19,8 @@ import type { RefOption } from './masterDataReference'
  */
 export const NCR_DISPOSITION_DOCUMENT_TYPE = 'ncr-disposition'
 export const ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE = 'engineering-change-order'
-export const ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE = 'APT-WB-ECO-001'
+/** ECO 审批模板与其单据类型共用同一受控码值，避免发起侧与模板侧漂移。 */
+export const ENGINEERING_CHANGE_ORDER_TEMPLATE_CODE = 'engineering-change-order'
 
 export const APPROVAL_DOCUMENT_TYPE_OPTIONS: RefOption[] = [
   { value: ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE, label: '工程变更单' },
