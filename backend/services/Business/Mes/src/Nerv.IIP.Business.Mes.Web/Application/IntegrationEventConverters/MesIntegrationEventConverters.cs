@@ -107,7 +107,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         DateOnly? productionDate = null,
         DateOnly? expiryDate = null)
     {
-        var movementType = quantity < 0 ? "outbound" : "inbound";
+        var movementType = quantity < 0 ? InventoryMovementTypes.Outbound : InventoryMovementTypes.Inbound;
         return new InventoryMovementRequestedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             InventoryIntegrationEventTypes.InventoryMovementRequested,
