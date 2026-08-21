@@ -106,6 +106,6 @@ public sealed class GetStandardOperationQueryHandler(ApplicationDbContext dbCont
                 x.CreatedAtUtc,
                 x.UpdatedAtUtc))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Standard operation '{request.OperationCode}' was not found.");
+            ?? throw new KnownException($"标准工序 '{request.OperationCode}' 不存在。");
     }
 }

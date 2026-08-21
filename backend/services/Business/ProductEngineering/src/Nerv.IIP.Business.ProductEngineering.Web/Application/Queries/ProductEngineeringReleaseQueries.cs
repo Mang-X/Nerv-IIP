@@ -23,7 +23,7 @@ internal static class EngineeringQueryParameters
 
         return Enum.TryParse<EngineeringVersionStatus>(status, true, out var parsed)
             ? parsed
-            : throw new KnownException($"Engineering version status '{status}' is invalid. Allowed values: Draft, Published, Archived.");
+            : throw new KnownException($"工程版本状态 '{status}' 无效，仅支持 Draft、Published、Archived。");
     }
 }
 
@@ -145,7 +145,7 @@ public sealed class GetEngineeringBomQueryHandler(ApplicationDbContext dbContext
                         line.Backflush))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Engineering BOM '{request.BomCode}' revision '{request.Revision}' was not found.");
+            ?? throw new KnownException($"工程 BOM '{request.BomCode}' 修订 '{request.Revision}' 不存在。");
     }
 }
 
@@ -288,7 +288,7 @@ public sealed class GetManufacturingBomQueryHandler(ApplicationDbContext dbConte
                     .Select(line => new ManufacturingBomRecipeLineItem(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Manufacturing BOM '{request.BomCode}' revision '{request.Revision}' was not found.");
+            ?? throw new KnownException($"制造 BOM '{request.BomCode}' 修订 '{request.Revision}' 不存在。");
     }
 }
 
@@ -416,7 +416,7 @@ public sealed class GetRoutingQueryHandler(ApplicationDbContext dbContext)
                         operation.IsOutsourced))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Routing '{request.RoutingCode}' revision '{request.Revision}' was not found.");
+            ?? throw new KnownException($"工艺路线 '{request.RoutingCode}' 修订 '{request.Revision}' 不存在。");
     }
 }
 
@@ -566,7 +566,7 @@ public sealed class GetEngineeringDocumentQueryHandler(ApplicationDbContext dbCo
                 x.EffectiveDate,
                 x.RegisteredAtUtc))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Engineering document '{request.DocumentNumber}' revision '{request.Revision}' was not found.");
+            ?? throw new KnownException($"工程文档 '{request.DocumentNumber}' 修订 '{request.Revision}' 不存在。");
     }
 }
 
@@ -600,7 +600,7 @@ public sealed class GetCurrentSopDocumentsQueryHandler(ApplicationDbContext dbCo
     public async Task<CurrentSopDocumentsResponse> Handle(GetCurrentSopDocumentsQuery request, CancellationToken cancellationToken)
     {
         var operationCode = EngineeringQueryParameters.NormalizeOptionalText(request.OperationCode)
-            ?? throw new KnownException("Operation code is required.");
+            ?? throw new KnownException("工序编码不能为空。");
         var workCenterCode = EngineeringQueryParameters.NormalizeOptionalText(request.WorkCenterCode);
         var routingCode = EngineeringQueryParameters.NormalizeOptionalText(request.RoutingCode);
         var routingRevision = EngineeringQueryParameters.NormalizeOptionalText(request.RoutingRevision);
@@ -773,7 +773,7 @@ public sealed class GetEngineeringItemQueryHandler(ApplicationDbContext dbContex
                 && x.Revision == request.Revision)
             .Select(x => new EngineeringItemRevisionItem(x.ItemCode, x.Revision, x.Name, x.Status.ToString(), x.CreatedAtUtc, x.UpdatedAtUtc))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Engineering item '{request.ItemCode}' revision '{request.Revision}' was not found.");
+            ?? throw new KnownException($"工程物料 '{request.ItemCode}' 修订 '{request.Revision}' 不存在。");
     }
 }
 

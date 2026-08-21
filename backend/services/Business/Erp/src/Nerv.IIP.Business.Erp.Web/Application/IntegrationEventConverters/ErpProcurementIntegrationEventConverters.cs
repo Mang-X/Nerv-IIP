@@ -110,7 +110,7 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
             "system:erp",
             idempotencyKey,
             new InventoryMovementRequestedPayload(
-                "inbound",
+                InventoryMovementTypes.Inbound,
                 InventoryIntegrationEventSources.BusinessErp,
                 receipt.PurchaseReceiptNo,
                 line.PurchaseOrderLineNo,
