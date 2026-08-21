@@ -175,7 +175,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             .ToArray();
         if (requisitionNos.Length == 0)
         {
-            throw new KnownException("At least one purchase requisition is required.");
+            throw new KnownException("至少选择一条采购申请。");
         }
 
         var requisitions = await dbContext.PurchaseRequisitions
@@ -188,7 +188,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
         {
             var found = requisitions.Select(x => x.RequisitionNo).ToHashSet(StringComparer.Ordinal);
             var missing = requisitionNos.Where(x => !found.Contains(x));
-            throw new KnownException($"Purchase requisitions were not found: {string.Join(", ", missing)}.");
+            throw new KnownException($"采购申请未找到：{string.Join(", ", missing)}。");
         }
 
         var convertedPurchaseOrderNos = requisitions
@@ -214,7 +214,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                     SupplierCode: convertedOrder?.SupplierCode);
             }
 
-            throw new KnownException("Purchase requisitions have already been converted and cannot be mixed into another conversion.");
+            throw new KnownException("采购申请已转单，不能与其他申请混合转换。");
         }
 
         var priceSources = await ResolvePriceSourcesAsync(request, requisitions, cancellationToken);
@@ -239,7 +239,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             .ToArray();
         if (supplierCodes.Length != 1)
         {
-            throw new KnownException("Purchase requisitions resolve to multiple suppliers and must be converted separately.");
+            throw new KnownException("采购申请涉及多个供应商，请分开转换。");
         }
 
         var supplierCode = supplierCodes[0];
@@ -249,7 +249,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             .ToArray();
         if (siteCodes.Length != 1)
         {
-            throw new KnownException("Purchase requisitions must belong to the same site before converting to one purchase order.");
+            throw new KnownException("采购申请必须属于同一站点才能合并采购订单。");
         }
 
         var lineDrafts = BuildPurchaseOrderLines(requisitions, priceSources);
@@ -857,7 +857,7 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 && x.EnvironmentId == request.EnvironmentId
                 && x.PurchaseOrderNo == request.PurchaseOrderNo,
                 cancellationToken)
-            ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+            ?? throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
 
         PurchaseReceipt receipt;
         try
@@ -870,7 +870,7 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("采购收货数据无效，请检查收货数量、质量状态和批次。", exception);
         }
 
         dbContext.PurchaseReceipts.Add(receipt);

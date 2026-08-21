@@ -651,7 +651,7 @@ public sealed class ErpProcurementEndpointContractTests
                 new ConvertPurchaseRequisitionsToPurchaseOrderCommand("org-001", "env-dev", ["PR-001"], PurchaseOrderNo: "PO-REQ-001"),
                 CancellationToken.None));
 
-        Assert.Contains("disabled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("业务伙伴『SUP-001』已停用", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.PurchaseOrders);
         Assert.Equal(PurchaseRequisitionStatus.Open, Assert.Single(dbContext.PurchaseRequisitions).Status);
     }
