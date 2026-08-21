@@ -167,12 +167,12 @@ public sealed class ProductEngineeringKnownExceptionMessageArchitectureTests
         };
         var documents = relativePaths
             .Select(relativePath => Path.Combine(sourceRoot, relativePath))
-            .Where(File.Exists)
             .Select(file => new ProductEngineeringSourceDocument(
                 Path.GetRelativePath(repositoryRoot, file),
                 File.ReadAllText(file)))
             .ToArray();
 
+        Assert.Equal(relativePaths.Length, documents.Length);
         var violations = ProductEngineeringUserMessageSourceAnalyzer.Analyze(documents, ExcludedQuerySites);
 
         Assert.NotEmpty(documents);
