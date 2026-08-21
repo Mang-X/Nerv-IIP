@@ -34,6 +34,42 @@ public sealed class BarcodeLabelRecordScanCommandTests
     }
 
     [Fact]
+    public async Task Record_scan_idempotency_conflict_returns_safe_message_and_preserves_cause()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new RecordScanCommandHandler(dbContext);
+
+        await handler.Handle(NewInventoryScanCommand("idem-scan-conflict-001"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                NewInventoryScanCommand(
+                    "idem-scan-conflict-001",
+                    scannedValue: "(01)09506000134352(10)LOT-B(21)SN-0002(30)2"),
+                CancellationToken.None));
+
+        Assert.Equal("扫描幂等键与已有记录不一致，请检查提交内容。", exception.Message);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
+    [Fact]
+    public async Task Record_scan_invalid_workflow_returns_safe_message_and_preserves_cause()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new RecordScanCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                NewInventoryScanCommand("idem-scan-invalid-workflow-001", sourceWorkflow: "unsupported.workflow"),
+                CancellationToken.None));
+
+        Assert.Equal("扫描数据无效，请检查必填字段。", exception.Message);
+        Assert.IsType<ArgumentException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task Record_scan_natural_key_replay_with_new_idempotency_key_returns_existing_scan_without_duplicate_fact()
     {
         await using var dbContext = CreateDbContext();
@@ -83,7 +119,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(NewInventoryScanCommand("idem-scan-gs1-002", sourceDocumentId: "ASN-002"), CancellationToken.None));
 
-        Assert.Contains("serialized barcode", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("序列化条码已被扫描，请勿重复提交。", exception.Message);
     }
 
     [Fact]
@@ -101,7 +137,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         {
             dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002"));
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
-            Assert.Contains("Duplicate serialized barcode scan", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码扫描记录已存在，请检查幂等键、条码或来源单据。", exception.Message);
         }
     }
 
@@ -188,7 +224,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
 
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
 
-            Assert.Contains("accepted barcode scan natural key", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码扫描记录已存在，请检查幂等键、条码或来源单据。", exception.Message);
         }
     }
 
@@ -239,7 +275,7 @@ public sealed class BarcodeLabelRecordScanCommandTests
         {
             dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002", "010950600013435221SN-0001"));
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
-            Assert.Contains("Duplicate serialized barcode scan", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码扫描记录已存在，请检查幂等键、条码或来源单据。", exception.Message);
         }
     }
 
@@ -278,18 +314,22 @@ public sealed class BarcodeLabelRecordScanCommandTests
 
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
 
-            Assert.Contains("Duplicate BarcodeLabel EPCIS event", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码追溯事件已存在，请检查事件类型和唯一标识。", exception.Message);
         }
     }
 
-    private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey, string sourceDocumentId = "ASN-001", string scannedValue = "(01)09506000134352(10)LOT-A(21)SN-0001(30)2")
+    private static RecordScanCommand NewInventoryScanCommand(
+        string idempotencyKey,
+        string sourceDocumentId = "ASN-001",
+        string scannedValue = "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
+        string sourceWorkflow = "inventory.receipt")
     {
         return new RecordScanCommand(
             "org-001",
             "env-dev",
             "PDA-01",
             scannedValue,
-            "inventory.receipt",
+            sourceWorkflow,
             sourceDocumentId,
             idempotencyKey,
             "accepted",
