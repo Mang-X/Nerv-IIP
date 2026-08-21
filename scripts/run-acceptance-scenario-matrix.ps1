@@ -14,7 +14,7 @@
 
 [CmdletBinding()]
 param(
-    [string] $ArtifactPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/planning.json'),
+    [string] $ArtifactPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/planning.json')),
     [string] $ExpectedArtifactDigest = $env:NERV_IIP_ACCEPTANCE_SCENARIO_ARTIFACT_SHA256,
     [string] $ManifestFilePath = (Join-Path $PSScriptRoot 'acceptance-scenario-matrix.json'),
     [string] $ExpectedManifestDigest = $env:NERV_IIP_ACCEPTANCE_SCENARIO_MANIFEST_SHA256,
@@ -26,7 +26,7 @@ param(
     [string] $RunAttempt = $env:GITHUB_RUN_ATTEMPT,
     [string] $ManifestPath = 'scripts/acceptance-scenario-matrix.json',
     [string] $Event = $env:GITHUB_EVENT_NAME,
-    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
+    [string] $WorkflowPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../.github/workflows/ci.yml')),
     [string] $WorkflowJobName = 'acceptance-scenario-matrix-runtime',
     [string] $WorkflowStepName = 'Run acceptance scenario matrix',
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/runtime-summary.json'),

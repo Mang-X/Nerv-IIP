@@ -1123,7 +1123,7 @@ jobs:
         id: acceptance-scenario-runtime
         shell: pwsh
         run: |
-          $artifactPath = 'artifacts/acceptance-scenario-matrix/planning.json'
+          $artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')
           $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
           $sha256 = [Security.Cryptography.SHA256]::Create()
           try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($artifactBytes))).ToLowerInvariant() }

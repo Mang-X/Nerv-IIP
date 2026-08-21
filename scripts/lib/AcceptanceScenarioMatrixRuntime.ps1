@@ -285,27 +285,14 @@ function Assert-NervAcceptanceRuntimeManifestObject {
     return $Manifest
 }
 
-function Test-NervAcceptanceRuntimeRunCommand {
-    param([AllowNull()] [object] $Run)
+function Test-NervAcceptanceRuntimePwshRunnerCommand {
+    param([Parameter(Mandatory)] [Management.Automation.Language.CommandAst] $Command)
 
-    if ($Run -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Run)) { return $false }
-    $tokens = $null
-    $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseInput([string]$Run, [ref]$tokens, [ref]$parseErrors)
-    if (@($parseErrors).Count -ne 0 -or @($ast.EndBlock.Statements).Count -ne 1) { return $false }
-    $statement = $ast.EndBlock.Statements[0]
-    if ($statement -isnot [Management.Automation.Language.PipelineAst] -or @($statement.PipelineElements).Count -ne 1) { return $false }
-    $command = $statement.PipelineElements[0]
-    if ($command -isnot [Management.Automation.Language.CommandAst] -or
-        $command.InvocationOperator -ne [Management.Automation.Language.TokenKind]::Unknown -or
-        @($command.Redirections).Count -ne 0) {
+    if ($Command.InvocationOperator -ne [Management.Automation.Language.TokenKind]::Unknown -or
+        @($Command.Redirections).Count -ne 0 -or
+        -not [string]::Equals($Command.GetCommandName(), 'pwsh', [StringComparison]::Ordinal)) {
         return $false
     }
-    $commandName = $command.GetCommandName()
-    if (-not [string]::Equals($commandName, 'pwsh', [StringComparison]::Ordinal)) {
-        return $false
-    }
-
     $elements = @($command.CommandElements)
     $index = 1
     while ($index -lt $elements.Count -and $elements[$index] -is [Management.Automation.Language.CommandParameterAst]) {
@@ -324,6 +311,85 @@ function Test-NervAcceptanceRuntimeRunCommand {
     $pathAllowed = [string]::Equals($scriptPath, 'scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal) -or
         [string]::Equals($scriptPath, './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)
     return $pathAllowed -and $index -eq $elements.Count - 1
+}
+
+function Test-NervAcceptanceRuntimeDirectRunnerCommand {
+    param([Parameter(Mandatory)] [Management.Automation.Language.CommandAst] $Command)
+
+    if ($Command.InvocationOperator -ne [Management.Automation.Language.TokenKind]::Unknown -or
+        @($Command.Redirections).Count -ne 0 -or
+        -not [string]::Equals($Command.GetCommandName(), './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) {
+        return $false
+    }
+    $expectedParameters = @(
+        'ArtifactPath',
+        'ExpectedArtifactDigest',
+        'ExpectedManifestDigest',
+        'Repository',
+        'TestedSha',
+        'RunId',
+        'RunAttempt',
+        'Event',
+        'SummaryPath',
+        'CanonicalResultPath',
+        'TrackIdentifier'
+    )
+    $elements = @($Command.CommandElements)
+    if ($elements.Count -ne 1 + (2 * $expectedParameters.Count)) { return $false }
+    for ($parameterIndex = 0; $parameterIndex -lt $expectedParameters.Count; $parameterIndex++) {
+        $commandParameter = $elements[1 + (2 * $parameterIndex)]
+        $argument = $elements[2 + (2 * $parameterIndex)]
+        if ($commandParameter -isnot [Management.Automation.Language.CommandParameterAst] -or
+            $null -ne $commandParameter.Argument -or
+            -not [string]::Equals([string]$commandParameter.ParameterName, $expectedParameters[$parameterIndex], [StringComparison]::Ordinal) -or
+            ($argument -isnot [Management.Automation.Language.StringConstantExpressionAst] -and
+                $argument -isnot [Management.Automation.Language.VariableExpressionAst])) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-NervAcceptanceRuntimeRunnerCommandCandidate {
+    param([Parameter(Mandatory)] [Management.Automation.Language.CommandAst] $Command)
+
+    $commandName = $Command.GetCommandName()
+    if ([string]::Equals($commandName, './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal)) { return $true }
+    if (-not [string]::Equals($commandName, 'pwsh', [StringComparison]::Ordinal)) { return $false }
+    foreach ($element in @($Command.CommandElements | Select-Object -Skip 1)) {
+        if ($element -is [Management.Automation.Language.StringConstantExpressionAst] -and
+            ([string]::Equals([string]$element.Value, 'scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals([string]$element.Value, './scripts/run-acceptance-scenario-matrix.ps1', [StringComparison]::Ordinal))) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-NervAcceptanceRuntimeRunCommand {
+    param([AllowNull()] [object] $Run)
+
+    if ($Run -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$Run)) { return $false }
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseInput([string]$Run, [ref]$tokens, [ref]$parseErrors)
+    if (@($parseErrors).Count -ne 0) { return $false }
+
+    $runnerCommands = [Collections.Generic.List[Management.Automation.Language.CommandAst]]::new()
+    foreach ($statement in @($ast.EndBlock.Statements)) {
+        if ($statement -isnot [Management.Automation.Language.PipelineAst] -or @($statement.PipelineElements).Count -ne 1) { continue }
+        $command = $statement.PipelineElements[0]
+        if ($command -is [Management.Automation.Language.CommandAst] -and
+            (Test-NervAcceptanceRuntimeRunnerCommandCandidate -Command $command)) {
+            $runnerCommands.Add($command)
+        }
+    }
+    if ($runnerCommands.Count -ne 1) { return $false }
+    $runnerCommand = $runnerCommands[0]
+    if ([string]::Equals($runnerCommand.GetCommandName(), 'pwsh', [StringComparison]::Ordinal)) {
+        return Test-NervAcceptanceRuntimePwshRunnerCommand -Command $runnerCommand
+    }
+    return Test-NervAcceptanceRuntimeDirectRunnerCommand -Command $runnerCommand
 }
 
 function Get-NervAcceptanceRuntimeWorkflowBudget {

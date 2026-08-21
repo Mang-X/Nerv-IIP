@@ -508,6 +508,42 @@ try {
     $firstEquivalenceInput = New-EquivalenceFixture -Track 'shadow' -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
     $secondEquivalenceInput = New-EquivalenceFixture -Track 'v1' -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
 
+    $defaultRunnerRoot = Join-Path $fixtureRoot 'default-path-runner'
+    $defaultRunnerScriptsRoot = Join-Path $defaultRunnerRoot 'scripts'
+    $defaultRunnerLibraryRoot = Join-Path $defaultRunnerScriptsRoot 'lib'
+    $defaultRunnerWorkflowRoot = Join-Path $defaultRunnerRoot '.github/workflows'
+    [IO.Directory]::CreateDirectory($defaultRunnerLibraryRoot) | Out-Null
+    [IO.Directory]::CreateDirectory($defaultRunnerWorkflowRoot) | Out-Null
+    Copy-Item -LiteralPath $runnerPath -Destination (Join-Path $defaultRunnerScriptsRoot 'run-acceptance-scenario-matrix.ps1')
+    foreach ($libraryName in @('ScriptAutomation.ps1', 'AcceptanceScenarioMatrixRuntime.ps1', 'AcceptanceScenarioMatrix.ps1', 'CiWorkflowBudgets.ps1', 'OrdinalString.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $defaultRunnerLibraryRoot $libraryName)
+    }
+    Copy-Item -LiteralPath $workflowPath -Destination (Join-Path $defaultRunnerWorkflowRoot 'ci.yml')
+    $defaultRunnerPath = Join-Path $defaultRunnerScriptsRoot 'run-acceptance-scenario-matrix.ps1'
+    $defaultArtifactPath = Join-Path $defaultRunnerRoot 'artifacts/acceptance-scenario-matrix/planning.json'
+    Write-JsonFixture -Path $defaultArtifactPath -Value $artifact
+    $defaultArtifactDigest = Get-FixtureFileDigest -Path $defaultArtifactPath
+    $defaultPathAction = { return $firstEquivalenceInput }.GetNewClosure()
+
+    $defaultArtifactSummaryPath = Join-Path $fixtureRoot 'default-artifact/runtime-summary.json'
+    $defaultArtifactArguments = Get-RunnerArguments -ArtifactPath $defaultArtifactPath -ExpectedArtifactDigest $defaultArtifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $defaultArtifactSummaryPath -Action $defaultPathAction
+    [void]$defaultArtifactArguments.Remove('ArtifactPath')
+    $defaultArtifactResult = & $defaultRunnerPath @defaultArtifactArguments
+    Assert-Contract ([string]::Equals([string]$defaultArtifactResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The production runner default ArtifactPath must cross the strict raw runtime boundary as a canonical absolute existing file.'
+
+    $defaultWorkflowSummaryPath = Join-Path $fixtureRoot 'default-workflow/runtime-summary.json'
+    $defaultWorkflowArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath (Join-Path $defaultRunnerWorkflowRoot 'ci.yml') -SummaryPath $defaultWorkflowSummaryPath -Action $defaultPathAction
+    [void]$defaultWorkflowArguments.Remove('WorkflowPath')
+    $defaultWorkflowResult = & $defaultRunnerPath @defaultWorkflowArguments
+    Assert-Contract ([string]::Equals([string]$defaultWorkflowResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The production runner default WorkflowPath must cross the strict raw runtime boundary as a canonical absolute existing file.'
+
+    $productionWorkflowSummaryPath = Join-Path $fixtureRoot 'production-workflow/runtime-summary.json'
+    $productionWorkflowActionContracts = [Collections.Generic.List[object]]::new()
+    $productionWorkflowAction = { param([object] $Contract) $productionWorkflowActionContracts.Add($Contract); return $firstEquivalenceInput }.GetNewClosure()
+    $productionWorkflowArguments = Get-RuntimeArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath (Join-Path $repoRoot '.github/workflows/ci.yml') -SummaryPath $productionWorkflowSummaryPath -Action $productionWorkflowAction
+    $productionWorkflowResult = Invoke-NervAcceptanceScenarioRuntime @productionWorkflowArguments
+    Assert-Contract ($productionWorkflowActionContracts.Count -eq 1 -and [string]::Equals([string]$productionWorkflowResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The runtime preflight must accept the one top-level governed runner invocation in the production PowerShell workflow block.'
+
     $actionContracts = [Collections.Generic.List[object]]::new()
     $assertContract = ${function:Assert-Contract}
     $runtimeAction = {
@@ -849,11 +885,16 @@ try {
         @{ Name = 'comment'; Run = '# pwsh scripts/run-acceptance-scenario-matrix.ps1' },
         @{ Name = 'assignment'; Run = "`$commandText = 'pwsh scripts/run-acceptance-scenario-matrix.ps1'" },
         @{ Name = 'echo'; Run = "Write-Output 'pwsh scripts/run-acceptance-scenario-matrix.ps1'" },
-        @{ Name = 'string-data'; Run = "'pwsh scripts/run-acceptance-scenario-matrix.ps1'" }
+        @{ Name = 'string-data'; Run = "'pwsh scripts/run-acceptance-scenario-matrix.ps1'" },
+        @{ Name = 'direct-call-in-data'; Run = "Write-Output './scripts/run-acceptance-scenario-matrix.ps1 -ArtifactPath `$artifactPath'" },
+        @{ Name = 'nested-non-top-level'; Run = "|`n          if (`$true) {`n            ./scripts/run-acceptance-scenario-matrix.ps1 -ArtifactPath `$artifactPath`n          }" }
     )) {
         $nonExecutingWorkflowPath = Write-RuntimeWorkflowFixture -Name "runtime-workflow-$($nonExecutingCommand.Name)" -Run $nonExecutingCommand.Run
         Assert-PreflightRejected -Name "workflow-$($nonExecutingCommand.Name)-data" -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $nonExecutingWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
     }
+
+    $duplicateRunnerWorkflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow-duplicate-runner' -Run "|`n          pwsh scripts/run-acceptance-scenario-matrix.ps1`n          pwsh scripts/run-acceptance-scenario-matrix.ps1"
+    Assert-PreflightRejected -Name 'workflow-duplicate-runner' -Artifact (Copy-JsonObject $artifact) -Manifest (Copy-JsonObject $manifest) -WorkflowPath $duplicateRunnerWorkflowPath -ExpectedMessage 'must invoke scripts/run-acceptance-scenario-matrix.ps1'
 
     foreach ($trailingCommand in @(
         @{ Name = 'literal'; Run = 'pwsh scripts/run-acceptance-scenario-matrix.ps1 unexpected' },

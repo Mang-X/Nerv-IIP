@@ -292,8 +292,23 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $runtimeRunStep = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Run acceptance scenario matrix', [StringComparison]::Ordinal) })
     Assert-Contract ($runtimeRunStep.Count -eq 1 -and ([int]$runtimeRunStep[0].'timeout-minutes' * 60) -gt 2220) 'The hosted runtime step timeout must strictly exceed the governed 2220-second scenario budget.'
     Assert-Contract ([Array]::IndexOf($runtimeSteps, $runtimeImageStep) -lt [Array]::IndexOf($runtimeSteps, $runtimeRunStep[0])) 'The hosted shadow dependency images must be prepared before the governed runtime starts.'
-    foreach ($requiredRuntimeArgument in @('-ExpectedArtifactDigest $artifactDigest', '-ExpectedManifestDigest $manifestDigest', "-TrackIdentifier 'shadow'")) {
-        Assert-Contract (([string]$runtimeRunStep[0].run).Contains($requiredRuntimeArgument, [StringComparison]::Ordinal)) "Hosted runtime invocation is missing '$requiredRuntimeArgument'."
+    $runtimeRun = [string]$runtimeRunStep[0].run
+    Assert-Contract ($runtimeRun.Contains("`$artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')", [StringComparison]::Ordinal) -and
+        $runtimeRun.Contains('-ArtifactPath $artifactPath', [StringComparison]::Ordinal)) 'The hosted shadow adapter must pass one canonical absolute planning artifact path to the raw runtime boundary.'
+    foreach ($requiredRuntimeArgument in @(
+            '-ArtifactPath $artifactPath',
+            '-ExpectedArtifactDigest $artifactDigest',
+            '-ExpectedManifestDigest $manifestDigest',
+            "-Repository '`${{ github.repository }}'",
+            "-TestedSha '`${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}'",
+            "-RunId '`${{ github.run_id }}'",
+            "-RunAttempt '`${{ github.run_attempt }}'",
+            "-Event '`${{ github.event_name }}'",
+            '-SummaryPath artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json',
+            '-CanonicalResultPath artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json',
+            "-TrackIdentifier 'shadow'"
+        )) {
+        Assert-Contract ($runtimeRun.Contains($requiredRuntimeArgument, [StringComparison]::Ordinal)) "Hosted runtime invocation is missing '$requiredRuntimeArgument'."
     }
     $runtimeUploads = @($runtimeSteps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
@@ -983,6 +998,17 @@ try {
     $shadowImagesDeletionFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutShadowImagesPath } catch { $shadowImagesDeletionFailure = $_ }
     Assert-Contract ($null -ne $shadowImagesDeletionFailure) 'Deleting the hosted shadow dependency image step must fail the workflow contract.'
+
+    $workflowWithRelativeRuntimeArtifact = $workflow.Replace(
+        "`$artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')",
+        "`$artifactPath = 'artifacts/acceptance-scenario-matrix/planning.json'",
+        [StringComparison]::Ordinal)
+    Assert-Contract (-not [string]::Equals($workflowWithRelativeRuntimeArtifact, $workflow, [StringComparison]::Ordinal)) 'Shadow runtime relative artifact mutation must alter the canonical workflow adapter.'
+    $workflowWithRelativeRuntimeArtifactPath = Join-Path $workflowMutationRoot 'shadow-runtime-relative-planning-artifact.yml'
+    [IO.File]::WriteAllText($workflowWithRelativeRuntimeArtifactPath, $workflowWithRelativeRuntimeArtifact, [Text.UTF8Encoding]::new($false))
+    $relativeRuntimeArtifactFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithRelativeRuntimeArtifactPath } catch { $relativeRuntimeArtifactFailure = $_ }
+    Assert-Contract ($null -ne $relativeRuntimeArtifactFailure) 'Passing a relative planning artifact path from the hosted shadow adapter must fail the workflow contract.'
 
     foreach ($imageMutation in @(
             @{ Name = 'wrong-postgres-image'; Original = 'postgres:18'; Replacement = 'postgres:17' },
