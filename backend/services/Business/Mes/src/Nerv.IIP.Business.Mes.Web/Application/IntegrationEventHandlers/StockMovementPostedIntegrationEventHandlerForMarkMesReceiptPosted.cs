@@ -51,7 +51,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             out var allocationIndex);
 
         if (!isMaterialTransferLeg &&
-            !string.Equals(integrationEvent.Payload.MovementType, "inbound", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(integrationEvent.Payload.MovementType, InventoryMovementTypes.Inbound, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
