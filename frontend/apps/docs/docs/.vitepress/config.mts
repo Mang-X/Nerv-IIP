@@ -1,4 +1,6 @@
+import type { UserConfig } from 'vitepress'
 import { defineConfig } from 'vitepress'
+import llmstxt from 'vitepress-plugin-llms'
 
 // 导航信息架构口径见 docs/adr/0021-product-docs-information-architecture.md：
 // 四象限（教程/操作指南/概念解释/参考）+ 角色入口；processes/ 归概念解释象限且 URL 不迁移。
@@ -8,6 +10,19 @@ export default defineConfig({
   lang: 'zh-CN',
   cleanUrls: true,
   lastUpdated: true,
+
+  // llmstxt：机读通道，产出 llms.txt 与每页 markdown，供代理把站点当文档入口消费。
+  // 产出写入 .vitepress/dist，已被 vite.config.ts 的 fmt/lint 范围排除且 gitignore。
+  // 站点转多语言后须加 ignoreFiles 排除非默认 locale（见 #1889 实测）。
+  //
+  // 类型桥接：根 package.json 把 `vite` 别名到 @voidzero-dev/vite-plus-core，插件的
+  // Plugin 类型随之解析到 vite-plus，而 VitePress 的 `vite` 键对着上游 vite@5.4.21。
+  // 两套 Plugin 结构等价、标称不同，直接赋值会在 apply/UserConfig 上报不兼容。断言到
+  // VitePress 自己声明的那个类型，把桥接收在这一处。
+  // （design-system 那份的 plugins 数组含多个来源不同的插件，类型被放宽，不需要此断言。）
+  vite: {
+    plugins: llmstxt() as unknown as NonNullable<NonNullable<UserConfig['vite']>['plugins']>,
+  },
 
   themeConfig: {
     nav: [
