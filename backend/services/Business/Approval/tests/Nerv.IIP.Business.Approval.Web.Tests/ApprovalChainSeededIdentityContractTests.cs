@@ -110,7 +110,7 @@ public sealed class ApprovalChainSeededIdentityContractTests
         ApprovalTemplate.Create(
             "org-001",
             "env-dev",
-            ApprovalTemplateCodes.NcrDisposition,
+            WorldHistoryNcrDispositionApprovals.LegacyNcrDispositionTemplateCode,
             ApprovalDocumentTypes.NcrDisposition,
             version: 1,
             isActive: true,

@@ -86,7 +86,10 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
 
     #region 审批模板
 
-    /// <summary>按 <c>TemplateCode</c> 幂等补齐六张世界观审批模板；已存在的一律不动（保留租户事实）。</summary>
+    /// <summary>
+    /// 按 <c>TemplateCode</c> 幂等补齐 WorldHistory 所需模板；<c>APT-WB-*</c> 码只属于 legacy 历史边界。
+    /// 已存在的一律不动，产品基线模板由 <see cref="ApprovalSeedService"/> 独立补齐。
+    /// </summary>
     private async Task<int> SeedTemplatesAsync(
         string organizationId,
         string environmentId,
@@ -137,9 +140,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             written++;
         }
 
-        // #1685：采购订单**变更**再审批模板。与下达模板同单据类型（purchase-order）、同审批人（厂长），
-        // 只有模板码与步骤名不同——审批人收件箱据此区分「采购订单下达」与「采购订单变更」两类待办。
-        // 少这张模板，种子态下 ERP 发起变更审批必 400「审批模板不存在」。已存在时一律不动。
+        // WorldHistory 冻结的采购变更模板；产品运行时的中性码由 ApprovalSeedService 补齐。
         if (!existing.Contains(WorldHistoryApprovalSpec.PurchaseChangeTemplateCode))
         {
             var template = ApprovalTemplate.Create(
@@ -214,8 +215,7 @@ public sealed class WorldHistoryApprovalSeedService(ApplicationDbContext dbConte
             written++;
         }
 
-        // #1344 扩修：盘点差异模板。同样不挂历史链，只保证 Inventory 差异超阈值分支引用的模板
-        // 开箱存在（此前发起侧默认 COUNT-VARIANCE 而种子无此模板，盘点确认必 400）。已存在时一律不动。
+        // WorldHistory 冻结的盘点差异模板；Inventory 产品路径使用独立 seed 的中性码。
         if (!existing.Contains(WorldHistoryApprovalSpec.StockCountVarianceTemplateCode))
         {
             var template = ApprovalTemplate.Create(

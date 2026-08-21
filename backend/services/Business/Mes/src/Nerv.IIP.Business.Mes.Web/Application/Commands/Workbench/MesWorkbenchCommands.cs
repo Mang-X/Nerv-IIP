@@ -188,7 +188,7 @@ public sealed class ForceReleaseQualityHoldCommandHandler(ApplicationDbContext d
                 replayed.OccurredAtUtc != request.ReleasedAtUtc ||
                 replayed.Reason != request.Reason)
             {
-                throw new KnownException("Quality hold transition idempotency key was reused with a different payload.");
+                throw new KnownException("质量保留幂等键已被不同载荷复用。");
             }
             return new MesAcceptedResponse("Accepted", request.SourceDocumentId, request.ReleasedAtUtc);
         }
@@ -1393,7 +1393,7 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                 out var changedAtUtc))
         {
             throw new KnownException(
-                $"Stored idempotency receipt for MES operation-task action '{idempotencyKey}' is invalid.");
+                $"MES 工序动作幂等回执无效：{idempotencyKey}。");
         }
 
         return new MesOperationActionResponse(

@@ -349,7 +349,7 @@ public sealed class ReleaseEngineeringBomCommandHandler(
 
             draft.Release(request.EffectiveDate);
             return draft;
-        });
+        }, "EBOM 发布失败，请检查物料行和生效日期。");
         await repository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -480,7 +480,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
 
             draft.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
             return draft;
-        });
+        }, "MBOM 发布失败，请检查物料行、配方和来源 EBOM。");
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
         return ReleasedEngineeringVersionResult.Create(bom.BomCode, bom.Revision);
     }
@@ -612,7 +612,7 @@ public sealed class ReleaseRoutingCommandHandler(
 
             draft.Release(request.EffectiveDate);
             return draft;
-        });
+        }, "工艺路线发布失败，请检查工序和生效日期。");
         await repository.AddAsync(routing, cancellationToken);
         return ReleasedEngineeringVersionResult.Create(routing.RoutingCode, routing.Revision);
     }
@@ -650,7 +650,7 @@ internal static class ProductEngineeringReleaseValidation
         }
     }
 
-    public static T AsKnownException<T>(Func<T> action)
+    public static T AsKnownException<T>(Func<T> action, string? message = null)
     {
         try
         {
@@ -659,15 +659,17 @@ internal static class ProductEngineeringReleaseValidation
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            var resolvedMessage = message ?? exception.Message;
+            throw new KnownException(resolvedMessage, exception);
         }
         catch (ArgumentException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            var resolvedMessage = message ?? exception.Message;
+            throw new KnownException(resolvedMessage, exception);
         }
     }
 
-    public static void AsKnownException(Action action)
+    public static void AsKnownException(Action action, string? message = null)
     {
         try
         {
@@ -676,11 +678,13 @@ internal static class ProductEngineeringReleaseValidation
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            var resolvedMessage = message ?? exception.Message;
+            throw new KnownException(resolvedMessage, exception);
         }
         catch (ArgumentException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            var resolvedMessage = message ?? exception.Message;
+            throw new KnownException(resolvedMessage, exception);
         }
     }
 }
@@ -769,22 +773,17 @@ public sealed class HttpProductEngineeringMasterDataReferenceValidator(HttpClien
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new KnownException($"MasterData reference validation failed with status {(int)response.StatusCode}.");
+            throw new KnownException("主数据引用校验服务暂不可用，请稍后重试。");
         }
 
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ValidateMasterDataReferencesResponse>>(cancellationToken);
-        var validation = envelope?.Data ?? throw new KnownException("MasterData reference validation returned an empty response.");
+        var validation = envelope?.Data ?? throw new KnownException("主数据引用校验返回无效结果，请稍后重试。");
         if (validation.Valid)
         {
             return;
         }
 
-        var invalidReferences = validation.References
-            .Where(reference => !reference.Exists || !reference.Active)
-            .Select(reference => $"{reference.ResourceType}:{reference.Code}")
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        throw new KnownException($"MasterData reference(s) are missing or inactive: {string.Join(", ", invalidReferences)}.");
+        throw new KnownException("存在缺失或未启用的主数据引用，请检查后重试。");
     }
 
     private sealed record ValidateMasterDataReferencesRequest(
