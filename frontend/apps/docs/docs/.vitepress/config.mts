@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import llmstxt from 'vitepress-plugin-llms'
 
 // 导航信息架构口径见 docs/adr/0021-product-docs-information-architecture.md：
 // 四象限（教程/操作指南/概念解释/参考）+ 角色入口；processes/ 归概念解释象限且 URL 不迁移。
@@ -8,6 +9,13 @@ export default defineConfig({
   lang: 'zh-CN',
   cleanUrls: true,
   lastUpdated: true,
+
+  // llmstxt：机读通道，产出 llms.txt 与每页 markdown，供代理把站点当文档入口消费。
+  // 产出写入 .vitepress/dist，已被 vite.config.ts 的 fmt/lint 范围排除且 gitignore。
+  // 站点转多语言后须加 ignoreFiles 排除非默认 locale（见 #1889 实测）。
+  vite: {
+    plugins: [llmstxt()],
+  },
 
   themeConfig: {
     nav: [
