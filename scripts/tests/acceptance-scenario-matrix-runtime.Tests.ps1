@@ -133,6 +133,42 @@ function New-SalesPlanningArtifact {
     }
 }
 
+function New-PlanningArtifact {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [string[]] $ScenarioIds,
+        [Parameter(Mandatory)] [string] $Event,
+        [Parameter(Mandatory)] [string] $SelectionMode,
+        [Parameter(Mandatory)] [string[]] $SelectionReasons
+    )
+
+    $scenarioIdSet = [Collections.Generic.HashSet[string]]::new($ScenarioIds, [StringComparer]::Ordinal)
+    $scenarios = @($Manifest.scenarios | Where-Object { $scenarioIdSet.Contains([string]$_.id) })
+    $projects = @(Get-NervAcceptancePlanningProjects -Scenarios $scenarios | ForEach-Object {
+        [pscustomobject][ordered]@{
+            path = [string]$_.path
+            scenarioIds = @($_.scenarioIds)
+            expectedTestIdentities = @($_.expectedTestIdentities)
+            discoveredTestIdentities = @($_.expectedTestIdentities)
+        }
+    })
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        repository = 'Mang-X/Nerv-IIP'
+        testedSha = '0123456789abcdef0123456789abcdef01234567'
+        runId = '123456789'
+        runAttempt = 2
+        manifestPath = 'scripts/acceptance-scenario-matrix.json'
+        manifestDigest = $ManifestDigest
+        event = $Event
+        selectionMode = $SelectionMode
+        selectionReasons = @($SelectionReasons)
+        scenarios = @($scenarios | ForEach-Object { [pscustomobject][ordered]@{ id = [string]$_.id; status = [string]$_.status; tier = [string]$_.tier } })
+        projects = @($projects)
+    }
+}
+
 function Get-RuntimeArguments {
     param(
         [Parameter(Mandatory)] [string] $ArtifactPath,
@@ -370,11 +406,19 @@ function Assert-RawJsonPreflightRejected {
 }
 
 function New-EquivalenceFixture {
-    param([string] $DatabaseName, [int[]] $ProcessIds, [string] $CapSuffix, [string] $StartedAtUtc, [string] $CompletedAtUtc)
+    param([string] $Track, [string] $DatabaseName, [int[]] $ProcessIds, [string] $CapSuffix, [string] $StartedAtUtc, [string] $CompletedAtUtc)
 
     return [pscustomobject][ordered]@{
         schemaVersion = 1
-        scenarioId = 'sales-order-demand'
+        provenance = [pscustomobject][ordered]@{
+            repository = 'Mang-X/Nerv-IIP'
+            runId = '123456789'
+            runAttempt = 2
+            testedSha = '0123456789abcdef0123456789abcdef01234567'
+            manifestDigest = $manifestDigest
+            scenarioId = 'sales-order-demand'
+        }
+        track = $Track
         conclusion = 'passed'
         test = [pscustomobject][ordered]@{
             identity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events'
@@ -384,16 +428,18 @@ function New-EquivalenceFixture {
             failed = 0
             skipped = 0
         }
-        checkpoints = [pscustomobject][ordered]@{
+        businessFacts = [pscustomobject][ordered]@{
             sourceStateCommittedBeforeMutation = $true
-            http200BusinessErrorRejected = $true
+            changeV2Converged = $true
+            changeV3Converged = $true
             duplicateConverged = $true
             outOfOrderConverged = $true
-            firstConsumeFailureRecovered = $true
+            cancellationConverged = $true
         }
         diagnostics = [pscustomobject][ordered]@{
             schemas = @('demand_planning', 'erp', 'master_data')
-            capturedBeforeCleanup = $true
+            failureCaptureSupported = $true
+            failureDiagnosticsCaptured = $false
             secretsRedacted = $true
         }
         cleanup = [pscustomobject][ordered]@{
@@ -409,6 +455,8 @@ function New-EquivalenceFixture {
             startedAtUtc = $StartedAtUtc
             completedAtUtc = $CompletedAtUtc
             cleanupErrors = @()
+            ports = [pscustomobject][ordered]@{ masterData = 5101; erp = 5102; demandPlanning = 5103 }
+            paths = [pscustomobject][ordered]@{ businessEvidence = '/tmp/evidence.json'; probeTrx = '/tmp/probe.trx'; cleanupEvidence = '/tmp/cleanup.json'; canonicalResult = '/tmp/result.json' }
         }
     }
 }
@@ -457,8 +505,8 @@ try {
     $workflowPath = Write-RuntimeWorkflowFixture -Name 'runtime-workflow'
     $summaryPath = Join-Path $fixtureRoot 'success/runtime-summary.json'
 
-    $firstEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
-    $secondEquivalenceInput = New-EquivalenceFixture -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
+    $firstEquivalenceInput = New-EquivalenceFixture -Track 'shadow' -DatabaseName 'nerv_shadow_run_1' -ProcessIds @(101, 102) -CapSuffix 'attempt-1-aabbcc' -StartedAtUtc '2026-08-19T01:00:00Z' -CompletedAtUtc '2026-08-19T01:01:00Z'
+    $secondEquivalenceInput = New-EquivalenceFixture -Track 'v1' -DatabaseName 'nerv_shadow_run_2' -ProcessIds @(991, 992) -CapSuffix 'attempt-2-ddeeff' -StartedAtUtc '2026-08-19T02:00:00Z' -CompletedAtUtc '2026-08-19T02:01:00Z'
 
     $actionContracts = [Collections.Generic.List[object]]::new()
     $assertContract = ${function:Assert-Contract}
@@ -487,6 +535,43 @@ try {
     Assert-Contract ([string]::Equals([string]$persistedSummary.result.test.identity, [string]$firstEquivalenceInput.test.identity, [StringComparison]::Ordinal)) 'Final summary must persist the validated frozen test identity.'
     Assert-Contract ($persistedSummary.result.test.expected -eq 1 -and $persistedSummary.result.test.discovered -eq 1 -and $persistedSummary.result.test.passed -eq 1 -and $persistedSummary.result.test.failed -eq 0 -and $persistedSummary.result.test.skipped -eq 0) 'Final summary must persist the exact validated result counts.'
     Assert-Contract (@(Get-ChildItem -LiteralPath (Split-Path -Parent $summaryPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic summary persistence must not leave temporary files.'
+    $canonicalResultJson = $persistedSummary.result | ConvertTo-Json -Depth 50 -Compress
+    foreach ($unsupportedClaim in @('http200BusinessErrorRejected', 'firstConsumeFailureRecovered', 'capturedBeforeCleanup')) {
+        Assert-Contract (-not $canonicalResultJson.Contains($unsupportedClaim, [StringComparison]::Ordinal)) "Canonical result must not claim unsupported fact '$unsupportedClaim'."
+    }
+
+    $activeCoreIds = @($manifest.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) } | ForEach-Object { [string]$_.id })
+    $mainArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $activeCoreIds -Event 'push' -SelectionMode 'main-active-core' -SelectionReasons @('main')
+    $mainArtifactPath = Join-Path $fixtureRoot 'main-five-planning-artifact.json'
+    Write-JsonFixture -Path $mainArtifactPath -Value $mainArtifact
+    $mainSummaryPath = Join-Path $fixtureRoot 'main-five/runtime-summary.json'
+    $mainActionCalls = [Collections.Generic.List[object]]::new()
+    $mainAction = { param([object] $Contract) $mainActionCalls.Add($Contract); return $firstEquivalenceInput }.GetNewClosure()
+    $mainArguments = Get-RunnerArguments -ArtifactPath $mainArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $mainArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $mainSummaryPath -Action $mainAction -Event 'push'
+    $mainResult = & $runnerPath @mainArguments
+    Assert-Contract ($mainActionCalls.Count -eq 1 -and $mainResult.contract.selected) 'A valid main five-scenario planning artifact must extract and execute sales exactly once.'
+
+    $multiPrArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds @('sales-order-demand', 'wms-delivery-erp') -Event 'pull_request' -SelectionMode 'pull-request-impact' -SelectionReasons @('impact:backend/services/Business/Erp/src/example.cs')
+    $multiPrArtifactPath = Join-Path $fixtureRoot 'multi-pr-planning-artifact.json'
+    Write-JsonFixture -Path $multiPrArtifactPath -Value $multiPrArtifact
+    $multiPrSummaryPath = Join-Path $fixtureRoot 'multi-pr/runtime-summary.json'
+    $multiPrActionCalls = [Collections.Generic.List[object]]::new()
+    $multiPrAction = { param([object] $Contract) $multiPrActionCalls.Add($Contract); return $firstEquivalenceInput }.GetNewClosure()
+    $multiPrArguments = Get-RunnerArguments -ArtifactPath $multiPrArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $multiPrArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $multiPrSummaryPath -Action $multiPrAction -Event 'pull_request'
+    $multiPrResult = & $runnerPath @multiPrArguments
+    Assert-Contract ($multiPrActionCalls.Count -eq 1 -and $multiPrResult.contract.selected) 'A valid multi-select PR planning artifact must extract and execute sales exactly once.'
+
+    $noSalesArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds @('wms-delivery-erp') -Event 'pull_request' -SelectionMode 'pull-request-impact' -SelectionReasons @('impact:backend/services/Business/Wms/src/example.cs')
+    $noSalesArtifactPath = Join-Path $fixtureRoot 'no-sales-planning-artifact.json'
+    Write-JsonFixture -Path $noSalesArtifactPath -Value $noSalesArtifact
+    $noSalesSummaryPath = Join-Path $fixtureRoot 'no-sales/runtime-summary.json'
+    $script:noSalesActionCalls = 0
+    $noSalesAction = { $script:noSalesActionCalls++; throw 'sales action must not run' }
+    $noSalesArguments = Get-RunnerArguments -ArtifactPath $noSalesArtifactPath -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $noSalesArtifactPath) -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $noSalesSummaryPath -Action $noSalesAction -Event 'pull_request'
+    $noSalesResult = & $runnerPath @noSalesArguments
+    Assert-Contract ($script:noSalesActionCalls -eq 0) 'A valid planning artifact without sales must invoke zero runtime actions.'
+    Assert-Contract (-not $noSalesResult.contract.selected -and -not $noSalesResult.summary.selected -and [string]::Equals([string]$noSalesResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'A planning artifact without sales must return selected=false as a passing no-execution outcome.'
+    Assert-Contract ([string]::Equals((@($noSalesResult.summary.transitions.state) -join '|'), 'preflight-started|preflight-passed|not-selected', [StringComparison]::Ordinal)) 'A no-sales planning artifact must persist the stable no-execution transition sequence.'
 
     Assert-ResultRejected -Name 'missing' -Results @() -ExpectedMessage 'exactly one result' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
     Assert-ResultRejected -Name 'extra' -Results @($firstEquivalenceInput, $secondEquivalenceInput) -ExpectedMessage 'exactly one result' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath
@@ -494,6 +579,13 @@ try {
     foreach ($mutation in @(
         @{ Name = 'unknown-field'; Apply = { param($value) $value | Add-Member -NotePropertyName unknown -NotePropertyValue $true }; Message = 'unknown field' },
         @{ Name = 'wrong-case-field'; Apply = { param($value) $value.test.PSObject.Properties.Remove('expected'); $value.test | Add-Member -NotePropertyName Expected -NotePropertyValue 1 }; Message = 'unknown field' },
+        @{ Name = 'provenance-repository'; Apply = { param($value) $value.provenance.repository = 'Mang-X/Drifted' }; Message = 'provenance repository must match' },
+        @{ Name = 'provenance-run-id'; Apply = { param($value) $value.provenance.runId = '987654321' }; Message = 'provenance runId must match' },
+        @{ Name = 'provenance-run-attempt'; Apply = { param($value) $value.provenance.runAttempt = 3 }; Message = 'provenance runAttempt must match' },
+        @{ Name = 'provenance-tested-sha'; Apply = { param($value) $value.provenance.testedSha = '1123456789abcdef0123456789abcdef01234567' }; Message = 'provenance testedSha must match' },
+        @{ Name = 'provenance-manifest-digest'; Apply = { param($value) $value.provenance.manifestDigest = ('f' * 64) }; Message = 'provenance manifestDigest must match' },
+        @{ Name = 'provenance-scenario'; Apply = { param($value) $value.provenance.scenarioId = 'wms-delivery-erp' }; Message = 'provenance scenarioId must match' },
+        @{ Name = 'track-empty'; Apply = { param($value) $value.track = '' }; Message = 'track must be a canonical identifier' },
         @{ Name = 'expected-type'; Apply = { param($value) $value.test.expected = '1' }; Message = 'must be a non-negative JSON integer' },
         @{ Name = 'expected-count'; Apply = { param($value) $value.test.expected = 0 }; Message = 'expected must be 1' },
         @{ Name = 'discovered-count'; Apply = { param($value) $value.test.discovered = 0 }; Message = 'discovered must be 1' },
@@ -501,15 +593,17 @@ try {
         @{ Name = 'failed-count'; Apply = { param($value) $value.test.failed = 1 }; Message = 'failed must be 0' },
         @{ Name = 'skipped-count'; Apply = { param($value) $value.test.skipped = 1 }; Message = 'skipped must be 0' },
         @{ Name = 'conclusion-failed'; Apply = { param($value) $value.conclusion = 'failed' }; Message = "conclusion must be 'passed'" },
-        @{ Name = 'committed-source'; Apply = { param($value) $value.checkpoints.sourceStateCommittedBeforeMutation = $false }; Message = "checkpoint 'sourceStateCommittedBeforeMutation' must be true" },
-        @{ Name = 'http200-business-error'; Apply = { param($value) $value.checkpoints.http200BusinessErrorRejected = $false }; Message = "checkpoint 'http200BusinessErrorRejected' must be true" },
-        @{ Name = 'duplicate'; Apply = { param($value) $value.checkpoints.duplicateConverged = $false }; Message = "checkpoint 'duplicateConverged' must be true" },
-        @{ Name = 'out-of-order'; Apply = { param($value) $value.checkpoints.outOfOrderConverged = $false }; Message = "checkpoint 'outOfOrderConverged' must be true" },
-        @{ Name = 'first-consume-failure'; Apply = { param($value) $value.checkpoints.firstConsumeFailureRecovered = $false }; Message = "checkpoint 'firstConsumeFailureRecovered' must be true" },
-        @{ Name = 'checkpoint-type'; Apply = { param($value) $value.checkpoints.duplicateConverged = 'true' }; Message = 'must be a boolean' },
+        @{ Name = 'committed-source'; Apply = { param($value) $value.businessFacts.sourceStateCommittedBeforeMutation = $false }; Message = "business fact 'sourceStateCommittedBeforeMutation' must be true" },
+        @{ Name = 'changed-v2'; Apply = { param($value) $value.businessFacts.changeV2Converged = $false }; Message = "business fact 'changeV2Converged' must be true" },
+        @{ Name = 'changed-v3'; Apply = { param($value) $value.businessFacts.changeV3Converged = $false }; Message = "business fact 'changeV3Converged' must be true" },
+        @{ Name = 'duplicate'; Apply = { param($value) $value.businessFacts.duplicateConverged = $false }; Message = "business fact 'duplicateConverged' must be true" },
+        @{ Name = 'out-of-order'; Apply = { param($value) $value.businessFacts.outOfOrderConverged = $false }; Message = "business fact 'outOfOrderConverged' must be true" },
+        @{ Name = 'cancellation'; Apply = { param($value) $value.businessFacts.cancellationConverged = $false }; Message = "business fact 'cancellationConverged' must be true" },
+        @{ Name = 'business-fact-type'; Apply = { param($value) $value.businessFacts.duplicateConverged = 'true' }; Message = 'must be a boolean' },
         @{ Name = 'diagnostic-schema-missing'; Apply = { param($value) $value.diagnostics.schemas = @('demand_planning', 'erp') }; Message = 'schemas must exactly equal' },
         @{ Name = 'diagnostic-schema-extra'; Apply = { param($value) $value.diagnostics.schemas = @('demand_planning', 'erp', 'master_data', 'public') }; Message = 'schemas must exactly equal' },
-        @{ Name = 'diagnostic-capture'; Apply = { param($value) $value.diagnostics.capturedBeforeCleanup = $false }; Message = "diagnostic 'capturedBeforeCleanup' must be true" },
+        @{ Name = 'diagnostic-capability'; Apply = { param($value) $value.diagnostics.failureCaptureSupported = $false }; Message = "diagnostic 'failureCaptureSupported' must be true" },
+        @{ Name = 'diagnostic-success-capture'; Apply = { param($value) $value.diagnostics.failureDiagnosticsCaptured = $true }; Message = "diagnostic 'failureDiagnosticsCaptured' must be false on success" },
         @{ Name = 'diagnostic-redaction'; Apply = { param($value) $value.diagnostics.secretsRedacted = $false }; Message = "diagnostic 'secretsRedacted' must be true" },
         @{ Name = 'process-cleanup'; Apply = { param($value) $value.cleanup.managedProcessesRemaining = 1 }; Message = 'managedProcessesRemaining must be 0' },
         @{ Name = 'database-cleanup'; Apply = { param($value) $value.cleanup.disposableDatabasesRemaining = 1 }; Message = 'disposableDatabasesRemaining must be 0' },
@@ -528,7 +622,7 @@ try {
     $compoundCleanupFailure.conclusion = 'failed'
     $compoundCleanupFailure.test.passed = 0
     $compoundCleanupFailure.test.failed = 1
-    $compoundCleanupFailure.checkpoints.firstConsumeFailureRecovered = $false
+    $compoundCleanupFailure.businessFacts.cancellationConverged = $false
     $compoundCleanupFailure.cleanup.ownedResourcesRemaining = 1
     $compoundCleanupFailure.cleanup.errorCodes = @('owned-resource-cleanup-failed')
     $compoundSummaryPath = Join-Path $fixtureRoot 'result-compound-cleanup-summary.json'
@@ -698,16 +792,16 @@ try {
         @{ Name = 'run-id'; Artifact = { param($value) $value.runId = '987654321' }; Message = 'runId does not match' },
         @{ Name = 'run-attempt'; Artifact = { param($value) $value.runAttempt = 3 }; Message = 'runAttempt does not match' },
         @{ Name = 'event-wrong-case'; Artifact = { param($value) $value.event = 'WORKFLOW_DISPATCH' }; Message = 'Planning event' },
-        @{ Name = 'selection-mode-self-derived'; Artifact = { param($value) $value.selectionMode = 'workflow-dispatch-all-active' }; Message = 'selectionMode does not match expected provenance' },
-        @{ Name = 'selection-reasons-self-derived'; Artifact = { param($value) $value.selectionReasons = @('tampered-but-self-derived') }; Message = 'selectionReasons do not exactly equal' },
+        @{ Name = 'selection-mode-self-derived'; Artifact = { param($value) $value.selectionMode = 'workflow-dispatch-all-active' }; Message = 'all-active selection provenance is inconsistent' },
+        @{ Name = 'selection-reasons-self-derived'; Artifact = { param($value) $value.selectionReasons = @('tampered-but-self-derived') }; Message = 'scenario selection provenance is inconsistent' },
         @{ Name = 'manifest-path'; Artifact = { param($value) $value.manifestPath = 'scripts/Acceptance-scenario-matrix.json' }; Message = 'manifestPath does not match' },
         @{ Name = 'manifest-digest'; Artifact = { param($value) $value.manifestDigest = ('f' * 64) }; Message = 'manifestDigest does not match'; PreserveManifestDigest = $true },
-        @{ Name = 'scenario-missing'; Artifact = { param($value) $value.scenarios = @() }; Message = 'exactly one selected scenario' },
+        @{ Name = 'scenario-missing'; Artifact = { param($value) $value.scenarios = @() }; Message = 'scenario selection provenance is inconsistent' },
         @{ Name = 'artifact-scenarios-scalar'; Artifact = { param($value) $value.scenarios = $value.scenarios[0] }; Message = 'scenarios must be an array' },
-        @{ Name = 'scenario-extra'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], [pscustomobject]@{ id = 'wms-delivery-erp'; status = 'active'; tier = 'core' }) }; Message = 'exactly one selected scenario' },
-        @{ Name = 'scenario-duplicate'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], (Copy-JsonObject $value.scenarios[0])) }; Message = 'exactly one selected scenario' },
-        @{ Name = 'scenario-wrong-case'; Artifact = { param($value) $value.scenarios[0].id = 'Sales-order-demand' }; Message = "must select only 'sales-order-demand'" },
-        @{ Name = 'scenario-blocked'; Artifact = { param($value) $value.scenarios[0].id = 'equipment-unavailable-scheduling-mes'; $value.scenarios[0].status = 'blocked'; $value.scenarios[0].tier = 'extended' }; Message = "must select only 'sales-order-demand'" },
+        @{ Name = 'scenario-extra-with-stale-projects'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], [pscustomobject]@{ id = 'wms-delivery-erp'; status = 'active'; tier = 'core' }) }; Message = 'scenario selection provenance is inconsistent' },
+        @{ Name = 'scenario-duplicate'; Artifact = { param($value) $value.scenarios = @($value.scenarios[0], (Copy-JsonObject $value.scenarios[0])) }; Message = 'duplicate selected scenario' },
+        @{ Name = 'scenario-wrong-case'; Artifact = { param($value) $value.scenarios[0].id = 'Sales-order-demand' }; Message = 'must identify one selected active/core' },
+        @{ Name = 'scenario-blocked'; Artifact = { param($value) $value.scenarios[0].id = 'equipment-unavailable-scheduling-mes'; $value.scenarios[0].status = 'blocked'; $value.scenarios[0].tier = 'extended' }; Message = 'must identify one selected active/core' },
         @{ Name = 'selected-status-blocked'; Artifact = { param($value) $value.scenarios[0].status = 'blocked' }; Message = 'must record only active scenarios' },
         @{ Name = 'selected-status-deferred'; Artifact = { param($value) $value.scenarios[0].status = 'deferred' }; Message = 'must record only active scenarios' },
         @{ Name = 'scenario-deferred'; Manifest = { param($value) $value.scenarios[0].status = 'deferred' }; Message = 'deferredReason' },
@@ -811,12 +905,13 @@ try {
 
     $firstEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_1 pid 101 cap attempt-1-aabbcc at 2026-08-19T01:01:00Z')
     $secondEquivalenceInput.volatile.cleanupErrors = @('cleanup failed for database nerv_shadow_run_2 pid 991 cap attempt-2-ddeeff at 2026-08-19T02:01:00Z')
-    $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario
-    $secondVector = New-NervAcceptanceScenarioEquivalenceVector -Result $secondEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario
+    $firstVector = New-NervAcceptanceScenarioEquivalenceVector -Result $firstEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance
+    $secondVector = New-NervAcceptanceScenarioEquivalenceVector -Result $secondEquivalenceInput -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance
     $firstVectorJson = $firstVector | ConvertTo-Json -Depth 50 -Compress
     $secondVectorJson = $secondVector | ConvertTo-Json -Depth 50 -Compress
     Assert-Contract ([string]::Equals($firstVectorJson, $secondVectorJson, [StringComparison]::Ordinal)) 'Database names, PIDs, CAP suffixes, and timestamps must not participate in equivalence.'
-    foreach ($volatileName in @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors')) {
+    Assert-Contract (-not $firstVectorJson.Contains('track', [StringComparison]::Ordinal)) 'The caller-supplied track identifier must not participate in equivalence.'
+    foreach ($volatileName in @('databaseName', 'processIds', 'capSuffix', 'startedAtUtc', 'completedAtUtc', 'cleanupErrors', 'ports', 'paths')) {
         Assert-Contract (-not $firstVectorJson.Contains($volatileName, [StringComparison]::Ordinal)) "Equivalence vector must exclude volatile field '$volatileName'."
     }
     foreach ($volatileValue in @('nerv_shadow_run_1', '101', 'attempt-1-aabbcc', '2026-08-19T01:01:00Z', 'cleanup failed for database')) {
@@ -832,32 +927,32 @@ try {
         $mutatedStableResult = Copy-JsonObject $firstEquivalenceInput
         & $stableStringMutation.Apply $mutatedStableResult
         $stableStringMessage = '<no exception>'
-        try { New-NervAcceptanceScenarioEquivalenceVector -Result $mutatedStableResult -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
+        try { New-NervAcceptanceScenarioEquivalenceVector -Result $mutatedStableResult -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance | Out-Null }
         catch { $stableStringMessage = $_.Exception.Message }
         Assert-Contract ($stableStringMessage.Contains($stableStringMutation.Message, [StringComparison]::Ordinal)) "Stable string mutation '$($stableStringMutation.Name)' must fail with '$($stableStringMutation.Message)'; observed '$stableStringMessage'."
     }
     $stableDrift = Copy-JsonObject $secondEquivalenceInput
-    $stableDrift.checkpoints.duplicateConverged = $false
-    $stableDriftJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableDrift -ValidatedScenario $runtimeResult.contract.scenario | ConvertTo-Json -Depth 50 -Compress)
+    $stableDrift.businessFacts.duplicateConverged = $false
+    $stableDriftJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableDrift -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance | ConvertTo-Json -Depth 50 -Compress)
     Assert-Contract (-not [string]::Equals($firstVectorJson, $stableDriftJson, [StringComparison]::Ordinal)) 'A stable business checkpoint drift must change the equivalence vector.'
 
     $stableCleanupCodeDrift = Copy-JsonObject $secondEquivalenceInput
     $stableCleanupCodeDrift.cleanup.errorCodes = @('owned-resource-cleanup-failed')
-    $stableCleanupCodeJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableCleanupCodeDrift -ValidatedScenario $runtimeResult.contract.scenario | ConvertTo-Json -Depth 50 -Compress)
+    $stableCleanupCodeJson = (New-NervAcceptanceScenarioEquivalenceVector -Result $stableCleanupCodeDrift -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance | ConvertTo-Json -Depth 50 -Compress)
     Assert-Contract (-not [string]::Equals($firstVectorJson, $stableCleanupCodeJson, [StringComparison]::Ordinal)) 'A stable cleanup error code drift must change the equivalence vector.'
     Assert-Contract ($stableCleanupCodeJson.Contains('owned-resource-cleanup-failed', [StringComparison]::Ordinal)) 'The equivalence vector must retain canonical cleanup error codes.'
 
     $invalidCleanupCode = Copy-JsonObject $firstEquivalenceInput
     $invalidCleanupCode.cleanup.errorCodes = @('cleanup failed for database nerv_shadow_run_1')
     $invalidCleanupCodeRejected = $false
-    try { New-NervAcceptanceScenarioEquivalenceVector -Result $invalidCleanupCode -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
+    try { New-NervAcceptanceScenarioEquivalenceVector -Result $invalidCleanupCode -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance | Out-Null }
     catch { $invalidCleanupCodeRejected = $_.Exception.Message.Contains('must be canonical', [StringComparison]::Ordinal) }
     Assert-Contract $invalidCleanupCodeRejected 'A free-text cleanup error must not enter the stable error code set.'
 
     $extraEquivalenceField = Copy-JsonObject $firstEquivalenceInput
     $extraEquivalenceField | Add-Member -NotePropertyName ungoverned -NotePropertyValue $true
     $extraRejected = $false
-    try { New-NervAcceptanceScenarioEquivalenceVector -Result $extraEquivalenceField -ValidatedScenario $runtimeResult.contract.scenario | Out-Null }
+    try { New-NervAcceptanceScenarioEquivalenceVector -Result $extraEquivalenceField -ValidatedScenario $runtimeResult.contract.scenario -ExpectedProvenance $runtimeResult.contract.provenance | Out-Null }
     catch { $extraRejected = $_.Exception.Message.Contains('unknown field', [StringComparison]::Ordinal) }
     Assert-Contract $extraRejected 'An extra equivalence result field must fail closed.'
 }

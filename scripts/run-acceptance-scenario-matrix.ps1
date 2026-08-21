@@ -1,9 +1,12 @@
 # Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Invokes only a caller-supplied in-process acceptance scenario action after runtime preflight succeeds
+#     - Invokes the governed ERP sales-order demand verifier once after runtime preflight succeeds
+#     - Preserves a caller-supplied in-process acceptance scenario action for pure contract tests
 #   Writes:
 #     - A caller-declared runtime summary through atomic file replacement
+#     - A caller-selected canonical sales-order-demand result through the governed verifier
+#     - Existing verifier evidence, cleanup evidence, diagnostics, and script logs
 #   Cleanup:
 #     - Delegates exact owned-resource cleanup evidence to the injected action and validates zero remaining resources
 #   Requires:
@@ -27,6 +30,8 @@ param(
     [string] $WorkflowJobName = 'acceptance-scenario-matrix-runtime',
     [string] $WorkflowStepName = 'Run acceptance scenario matrix',
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/runtime-summary.json'),
+    [string] $CanonicalResultPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/sales-order-demand-result.json'),
+    [string] $TrackIdentifier = 'shadow',
     [scriptblock] $RuntimeAction
 )
 
@@ -34,18 +39,39 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
 . (Join-Path $PSScriptRoot 'lib/AcceptanceScenarioMatrixRuntime.ps1')
 
-function Invoke-NervAcceptanceScenarioMatrixFutureAction {
-    param([Parameter(Mandatory)] [object] $Contract)
+function Invoke-NervAcceptanceScenarioMatrixSalesOrderAction {
+    param(
+        [Parameter(Mandatory)] [object] $Contract,
+        [Parameter(Mandatory)] [string] $ResultPath,
+        [Parameter(Mandatory)] [string] $Track
+    )
 
-    throw [InvalidOperationException]::new("Acceptance scenario '$($Contract.scenario.id)' real runtime action is not wired in this shadow contract.")
+    $canonicalResultPath = [IO.Path]::GetFullPath($ResultPath)
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $canonicalResultPath)) | Out-Null
+    Invoke-PwshScript `
+        -ScriptPath (Join-Path $PSScriptRoot 'verify-erp-sales-order-demand-planning.ps1') `
+        -Arguments @(
+            '-CanonicalResultPath', $canonicalResultPath,
+            '-TrackIdentifier', $Track,
+            '-Repository', [string]$Contract.provenance.repository,
+            '-RunId', [string]$Contract.provenance.runId,
+            '-RunAttempt', [string]$Contract.provenance.runAttempt,
+            '-TestedSha', [string]$Contract.provenance.testedSha,
+            '-ManifestDigest', [string]$Contract.provenance.manifestDigest,
+            '-ScenarioId', [string]$Contract.provenance.scenarioId
+        ) `
+        -WorkingDirectory $RepositoryRoot `
+        -TimeoutSeconds ([int]$Contract.requiredSeconds) `
+        -Name 'acceptance-scenario-matrix-sales-order-demand' | Out-Null
+    return (Read-NervAcceptanceRuntimeJsonSnapshot -Path $canonicalResultPath -Context 'sales-order-demand canonical runtime result').value
 }
 
 $effectiveRuntimeAction = $RuntimeAction
 if ($null -eq $effectiveRuntimeAction) {
     $effectiveRuntimeAction = {
         param([object] $Contract)
-        Invoke-NervAcceptanceScenarioMatrixFutureAction -Contract $Contract
-    }
+        Invoke-NervAcceptanceScenarioMatrixSalesOrderAction -Contract $Contract -ResultPath $CanonicalResultPath -Track $TrackIdentifier
+    }.GetNewClosure()
 }
 
 Invoke-NervAcceptanceScenarioRuntime `
