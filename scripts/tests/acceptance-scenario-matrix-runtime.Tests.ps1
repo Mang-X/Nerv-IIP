@@ -181,6 +181,8 @@ function Get-RuntimeArguments {
         [string] $Event = 'workflow_dispatch',
         [string] $RepositoryRoot = $repoRoot,
         [string] $V1ManifestPath = $v1ManifestPath,
+        [string] $RunAttempt = '2',
+        [string] $PlanningRunAttempt = $RunAttempt,
         [scriptblock] $ReadFileBytesAction
     )
 
@@ -194,7 +196,8 @@ function Get-RuntimeArguments {
         Repository = 'Mang-X/Nerv-IIP'
         TestedSha = '0123456789abcdef0123456789abcdef01234567'
         RunId = '123456789'
-        RunAttempt = 2
+        RunAttempt = $RunAttempt
+        PlanningRunAttempt = $PlanningRunAttempt
         ManifestPath = 'scripts/acceptance-scenario-matrix.json'
         Event = $Event
         WorkflowPath = $WorkflowPath
@@ -217,7 +220,8 @@ function Get-RunnerArguments {
         [Parameter(Mandatory)] [string] $SummaryPath,
         [Parameter(Mandatory)] [scriptblock] $Action,
         [string] $Event = 'workflow_dispatch',
-        [string] $RunAttempt = '2'
+        [string] $RunAttempt = '2',
+        [string] $PlanningRunAttempt = $RunAttempt
     )
 
     return @{
@@ -231,6 +235,7 @@ function Get-RunnerArguments {
         TestedSha = '0123456789abcdef0123456789abcdef01234567'
         RunId = '123456789'
         RunAttempt = $RunAttempt
+        PlanningRunAttempt = $PlanningRunAttempt
         ManifestPath = 'scripts/acceptance-scenario-matrix.json'
         Event = $Event
         WorkflowPath = $WorkflowPath
@@ -638,6 +643,45 @@ function Invoke-PwshScript {
     foreach ($unsupportedClaim in @('http200BusinessErrorRejected', 'firstConsumeFailureRecovered', 'capturedBeforeCleanup')) {
         Assert-Contract (-not $canonicalResultJson.Contains($unsupportedClaim, [StringComparison]::Ordinal)) "Canonical result must not claim unsupported fact '$unsupportedClaim'."
     }
+
+    $mixedAttemptArtifact = Copy-JsonObject $artifact
+    $mixedAttemptArtifact.runAttempt = 1
+    $mixedAttemptArtifactPath = Join-Path $fixtureRoot 'mixed-attempt/planning-artifact.json'
+    Write-JsonFixture -Path $mixedAttemptArtifactPath -Value $mixedAttemptArtifact
+    $mixedAttemptSummaryPath = Join-Path $fixtureRoot 'mixed-attempt/runtime-summary.json'
+    $mixedAttemptCalls = [Collections.Generic.List[object]]::new()
+    $mixedAttemptAction = { param([object] $Contract) $mixedAttemptCalls.Add($Contract); return $firstEquivalenceInput }.GetNewClosure()
+    $mixedAttemptArguments = Get-RuntimeArguments `
+        -ArtifactPath $mixedAttemptArtifactPath `
+        -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $mixedAttemptArtifactPath) `
+        -ManifestFilePath $manifestPath `
+        -ExpectedManifestDigest $manifestDigest `
+        -WorkflowPath $workflowPath `
+        -SummaryPath $mixedAttemptSummaryPath `
+        -Action $mixedAttemptAction `
+        -PlanningRunAttempt '1' `
+        -RunAttempt '2'
+    $mixedAttemptResult = Invoke-NervAcceptanceScenarioRuntime @mixedAttemptArguments
+    Assert-Contract ($mixedAttemptCalls.Count -eq 1 -and [string]::Equals([string]$mixedAttemptResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'A reused attempt-1 planning artifact must drive an attempt-2 runtime action exactly once.'
+    Assert-Contract ($mixedAttemptResult.contract.artifact.runAttempt -eq 1 -and $mixedAttemptResult.contract.provenance.runAttempt -eq 2 -and $mixedAttemptResult.summary.runAttempt -eq 2) 'Planning validation must retain producer attempt 1 while runtime result provenance retains physical attempt 2.'
+
+    $wrongPlanningAttemptSummaryPath = Join-Path $fixtureRoot 'mixed-attempt/wrong-planning-attempt-summary.json'
+    $wrongPlanningAttemptArguments = Get-RuntimeArguments `
+        -ArtifactPath $mixedAttemptArtifactPath `
+        -ExpectedArtifactDigest (Get-FixtureFileDigest -Path $mixedAttemptArtifactPath) `
+        -ManifestFilePath $manifestPath `
+        -ExpectedManifestDigest $manifestDigest `
+        -WorkflowPath $workflowPath `
+        -SummaryPath $wrongPlanningAttemptSummaryPath `
+        -Action { throw 'A mismatched planning attempt must fail before the action.' } `
+        -PlanningRunAttempt '2' `
+        -RunAttempt '2'
+    $wrongPlanningAttemptMessage = '<no exception>'
+    try { Invoke-NervAcceptanceScenarioRuntime @wrongPlanningAttemptArguments | Out-Null }
+    catch { $wrongPlanningAttemptMessage = $_.Exception.Message }
+    Assert-Contract ($wrongPlanningAttemptMessage.Contains('Planning artifact runAttempt does not match expected provenance.', [StringComparison]::Ordinal)) 'Runtime must reject a planning artifact whose producer attempt does not match PlanningRunAttempt.'
+
+    Assert-RunnerBoundaryRejected -Name 'planning-run-attempt-leading-zero' -ExpectedMessage 'planning run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -Overrides @{ PlanningRunAttempt = '01' }
 
     $activeCoreIds = @($manifest.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) } | ForEach-Object { [string]$_.id })
     $mainArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $activeCoreIds -Event 'push' -SelectionMode 'main-active-core' -SelectionReasons @('main')

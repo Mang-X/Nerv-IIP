@@ -137,6 +137,26 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $impactJob = $parsedWorkflow.jobs.'impact-plan'
+    foreach ($outputContract in @(
+            @{ Name = 'artifact-name'; Value = '${{ steps.impact-artifact-identity.outputs.artifact-name }}' },
+            @{ Name = 'producer-run-attempt'; Value = '${{ steps.impact-artifact-identity.outputs.producer-run-attempt }}' }
+        )) {
+        $outputProperty = $impactJob.outputs.PSObject.Properties[$outputContract.Name]
+        Assert-Contract ($null -ne $outputProperty -and [string]::Equals([string]$outputProperty.Value, [string]$outputContract.Value, [StringComparison]::Ordinal)) "Impact-plan producer output '$($outputContract.Name)' must come from its artifact identity step."
+    }
+    $impactIdentitySteps = @($impactJob.steps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'impact-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($impactIdentitySteps.Count -eq 1 -and
+        ([string]$impactIdentitySteps[0].run).Contains('artifact-name=ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$impactIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Impact-plan must single-source its physical artifact name and producer attempt.'
+    $impactUploads = @($impactJob.steps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($impactUploads.Count -eq 1 -and [string]::Equals([string]$impactUploads[0].with.name, '${{ steps.impact-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $impactUploads[0].with.PSObject.Properties['overwrite']) 'Impact-plan upload must use its immutable producer identity without overwrite.'
     $scriptGovernanceProperty = $parsedWorkflow.jobs.PSObject.Properties['script-governance']
     Assert-Contract ($null -ne $scriptGovernanceProperty) 'CI must retain the script-governance job.'
     $scriptGovernanceSteps = @($scriptGovernanceProperty.Value.steps)
@@ -196,6 +216,8 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         'tested-sha' = '${{ steps.plan.outputs.tested-sha }}'
         'manifest-digest' = '${{ steps.plan.outputs.manifest-digest }}'
         'artifact-digest' = '${{ steps.plan.outputs.artifact-digest }}'
+        'artifact-name' = '${{ steps.planning-artifact-identity.outputs.artifact-name }}'
+        'producer-run-attempt' = '${{ steps.planning-artifact-identity.outputs.producer-run-attempt }}'
     }
     foreach ($outputName in $expectedPlanningOutputs.Keys) {
         $outputProperty = $planningJob.outputs.PSObject.Properties[$outputName]
@@ -203,7 +225,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     }
 
     $planningSteps = @($planningJob.steps)
-    Assert-Contract ($planningSteps.Count -eq 5) 'The planning job must contain only checkout, .NET setup, conditional impact-plan download, planning, and planning-artifact upload.'
+    Assert-Contract ($planningSteps.Count -eq 7) 'The planning job must contain only checkout, .NET setup, impact identity validation/download, planning, producer identity, and planning-artifact upload.'
     Assert-Contract (@($planningSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every planning job step must have a positive explicit timeout.'
     $planningStepBudget = (@($planningSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
     Assert-Contract ([int]$planningJob.'timeout-minutes' -gt $planningStepBudget) 'The planning job timeout must strictly exceed the sum of explicit step budgets so action post steps retain margin.'
@@ -225,8 +247,15 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ($impactDownloadSteps.Count -eq 1) 'The planning job must conditionally download the CI impact-plan artifact exactly once.'
     $impactDownloadStep = $impactDownloadSteps[0]
     Assert-Contract ([string]::Equals([string]$impactDownloadStep.if, "`${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}", [StringComparison]::Ordinal)) 'The planning job must download impact-plan only for a PR whose impact plan succeeded.'
-    Assert-Contract ([string]::Equals([string]$impactDownloadStep.with.name, 'ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'The planning job must download the current run/attempt impact-plan artifact.'
+    Assert-Contract ([string]::Equals([string]$impactDownloadStep.with.name, '${{ needs.impact-plan.outputs.artifact-name }}', [StringComparison]::Ordinal)) 'The planning job must download the exact artifact identity published by the impact-plan producer.'
     Assert-Contract ([string]::Equals([string]$impactDownloadStep.with.path, 'artifacts/ci-impact-plan', [StringComparison]::Ordinal)) 'The planning job must download impact-plan into its governed repository artifact path.'
+    $impactIdentityValidationSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.name, 'Validate CI impact-plan artifact identity', [StringComparison]::Ordinal) })
+    Assert-Contract ($impactIdentityValidationSteps.Count -eq 1 -and [string]::Equals([string]$impactIdentityValidationSteps[0].if, [string]$impactDownloadStep.if, [StringComparison]::Ordinal) -and [Array]::IndexOf($planningSteps, $impactIdentityValidationSteps[0]) -lt [Array]::IndexOf($planningSteps, $impactDownloadStep)) 'Planning must fail closed on the upstream impact artifact identity before download.'
+    $impactIdentityValidationRun = [string]$impactIdentityValidationSteps[0].run
+    Assert-Contract ($impactIdentityValidationRun.Contains('ci-impact-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}', [StringComparison]::Ordinal) -and
+        $impactIdentityValidationRun.Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$impactIdentityValidationSteps[0].env.ARTIFACT_NAME, '${{ needs.impact-plan.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$impactIdentityValidationSteps[0].env.PRODUCER_RUN_ATTEMPT, '${{ needs.impact-plan.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Planning must reject empty or noncanonical reused impact artifact outputs.'
 
     $planningRunSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.name, 'Plan acceptance scenario matrix', [StringComparison]::Ordinal) })
     Assert-Contract ($planningRunSteps.Count -eq 1) 'The planning job must contain exactly one Plan acceptance scenario matrix step.'
@@ -252,14 +281,21 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         -UniqueProjectCount $planningProjects.Count `
         -StepTimeoutSeconds $planningWorkflowBudget.stepTimeoutSeconds)
 
+    $planningIdentitySteps = @($planningSteps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'planning-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($planningIdentitySteps.Count -eq 1 -and
+        ([string]$planningIdentitySteps[0].run).Contains('artifact-name=acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$planningIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Planning must single-source its physical artifact name and producer attempt.'
     $planningUploads = @($planningSteps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and
             [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) -and
-            [string]::Equals([string]$_.with.name, 'acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)
+            [string]::Equals([string]$_.with.name, '${{ steps.planning-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal)
         })
-    Assert-Contract ($planningUploads.Count -eq 1) 'The planning job must upload exactly one current run/attempt planning artifact.'
-    Assert-Contract ([string]::Equals([string]$planningUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and [int]$planningUploads[0].with.'retention-days' -eq 14) 'The planning artifact must fail closed when absent and retain for 14 days.'
+    Assert-Contract ($planningUploads.Count -eq 1) 'The planning job must upload exactly one producer-identified planning artifact.'
+    Assert-Contract ([string]::Equals([string]$planningUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and [int]$planningUploads[0].with.'retention-days' -eq 14 -and $null -eq $planningUploads[0].with.PSObject.Properties['overwrite']) 'The planning artifact must fail closed, retain for 14 days, and preserve immutable attempt evidence.'
 
     $planningRunSurface = (@($planningSteps | ForEach-Object {
                 $runProperty = $_.PSObject.Properties['run']
@@ -275,6 +311,8 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ([string]::Equals([string]$runtimeJob.name, 'Business FullChain Acceptance / sales-order-demand', [StringComparison]::Ordinal)) 'The hosted runtime must expose the exact sales-order-demand Actions name.'
     Assert-Contract ([string]::Equals([string]$runtimeJob.needs, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)) 'The hosted runtime must need planning.'
     Assert-Contract ([string]::Equals([string]$runtimeJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'The hosted runtime must run only for a successful plan that selected sales-order-demand.'
+    Assert-Contract ([string]::Equals([string]$runtimeJob.outputs.'artifact-name', '${{ steps.shadow-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$runtimeJob.outputs.'producer-run-attempt', '${{ steps.shadow-artifact-identity.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'The hosted runtime must publish its canonical artifact identity and physical producer attempt.'
     $runtimeSteps = @($runtimeJob.steps)
     Assert-Contract (@($runtimeSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every hosted runtime step must have a positive explicit timeout.'
     $runtimeImageSteps = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Prepare shadow dependency images', [StringComparison]::Ordinal) })
@@ -288,7 +326,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         Assert-Contract (([string]$runtimeImageStep.run).Contains($boundedRetryFragment, [StringComparison]::Ordinal)) "The hosted shadow image preparation is missing bounded retry fragment '$boundedRetryFragment'."
     }
     $runtimeStepBudget = (@($runtimeSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ($runtimeStepBudget -eq 99 -and [int]$runtimeJob.'timeout-minutes' -eq 110 -and ([int]$runtimeJob.'timeout-minutes' - $runtimeStepBudget) -eq 11) 'The hosted runtime must retain the complete 99-minute explicit budget inside a 110-minute job with 11 minutes for action setup/post overhead.'
+    Assert-Contract ($runtimeStepBudget -eq 101 -and [int]$runtimeJob.'timeout-minutes' -eq 110 -and ([int]$runtimeJob.'timeout-minutes' - $runtimeStepBudget) -eq 9) 'The hosted runtime must retain the complete 101-minute explicit budget inside a 110-minute job with 9 minutes for action setup/post overhead.'
     $runtimeRunStep = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Run acceptance scenario matrix', [StringComparison]::Ordinal) })
     Assert-Contract ($runtimeRunStep.Count -eq 1 -and ([int]$runtimeRunStep[0].'timeout-minutes' * 60) -gt 2220) 'The hosted runtime step timeout must strictly exceed the governed 2220-second scenario budget.'
     Assert-Contract ([Array]::IndexOf($runtimeSteps, $runtimeImageStep) -lt [Array]::IndexOf($runtimeSteps, $runtimeRunStep[0])) 'The hosted shadow dependency images must be prepared before the governed runtime starts.'
@@ -303,6 +341,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             "-TestedSha '`${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}'",
             "-RunId '`${{ github.run_id }}'",
             "-RunAttempt '`${{ github.run_attempt }}'",
+            "-PlanningRunAttempt '`${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}'",
             "-Event '`${{ github.event_name }}'",
             '-SummaryPath artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json',
             '-CanonicalResultPath artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json',
@@ -315,6 +354,23 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
     Assert-Contract ($runtimeUploads.Count -ge 4 -and @($runtimeUploads | Where-Object { -not [string]::Equals([string]$_.with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -or [int]$_.with.'retention-days' -ne 14 }).Count -eq 0) 'Hosted runtime summary, canonical, business/cleanup, and failure diagnostics uploads must fail closed and retain 14 days.'
+    $runtimePlanningDownloads = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Download acceptance scenario matrix plan', [StringComparison]::Ordinal) })
+    Assert-Contract ($runtimePlanningDownloads.Count -eq 1 -and [string]::Equals([string]$runtimePlanningDownloads[0].with.name, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal)) 'Shadow runtime must download the exact planning artifact identity from needs outputs.'
+    $runtimePlanningIdentityValidation = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Validate planning artifact identity', [StringComparison]::Ordinal) })
+    Assert-Contract ($runtimePlanningIdentityValidation.Count -eq 1 -and [Array]::IndexOf($runtimeSteps, $runtimePlanningIdentityValidation[0]) -lt [Array]::IndexOf($runtimeSteps, $runtimePlanningDownloads[0]) -and
+        ([string]$runtimePlanningIdentityValidation[0].run).Contains('acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}', [StringComparison]::Ordinal) -and
+        ([string]$runtimePlanningIdentityValidation[0].run).Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$runtimePlanningIdentityValidation[0].env.ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$runtimePlanningIdentityValidation[0].env.PRODUCER_RUN_ATTEMPT, '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Shadow runtime must reject an empty or noncanonical planning artifact identity before download.'
+    $shadowIdentitySteps = @($runtimeSteps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'shadow-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($shadowIdentitySteps.Count -eq 1 -and [string]::Equals([string]$shadowIdentitySteps[0].if, 'always()', [StringComparison]::Ordinal) -and
+        ([string]$shadowIdentitySteps[0].run).Contains('artifact-name=acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$shadowIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Shadow runtime must single-source its canonical artifact identity even when its always-upload evidence path follows a failed runtime.'
+    $shadowCanonicalUploads = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Upload shadow canonical result', [StringComparison]::Ordinal) })
+    Assert-Contract ($shadowCanonicalUploads.Count -eq 1 -and [string]::Equals([string]$shadowCanonicalUploads[0].with.name, '${{ steps.shadow-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $shadowCanonicalUploads[0].with.PSObject.Properties['overwrite']) 'Shadow canonical upload must use immutable per-producer identity.'
 
     $equivalenceJobProperty = $parsedWorkflow.jobs.PSObject.Properties['acceptance-scenario-matrix-equivalence']
     Assert-Contract ($null -ne $equivalenceJobProperty) 'CI must define the internal three-track equivalence job.'
@@ -331,9 +387,24 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
                     }
                 }
             }) -join "`n")
-    foreach ($requiredEquivalenceFragment in @('verify-acceptance-scenario-matrix-equivalence.ps1', 'acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}', 'acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}', 'erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}')) {
+    foreach ($requiredEquivalenceFragment in @('verify-acceptance-scenario-matrix-equivalence.ps1', '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', '${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}', '${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}', '${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}', "-PlanningRunAttempt '`${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}'", "-V1RunAttempt '`${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}'", "-ShadowRunAttempt '`${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}'", "-LegacyErpRunAttempt '`${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}'")) {
         Assert-Contract ($equivalenceSurface.Contains($requiredEquivalenceFragment, [StringComparison]::Ordinal)) "Three-track equivalence workflow is missing '$requiredEquivalenceFragment'."
     }
+    $equivalencePrerequisite = @($equivalenceJob.steps | Where-Object { [string]::Equals([string]$_.name, 'Require successful three-track prerequisites', [StringComparison]::Ordinal) })
+    Assert-Contract ($equivalencePrerequisite.Count -eq 1 -and
+        ([string]$equivalencePrerequisite[0].run).Contains('*[!0-9]*|0|0*', [StringComparison]::Ordinal) -and
+        ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PLANNING_ATTEMPT}', [StringComparison]::Ordinal) -and
+        ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-result-v1-${GITHUB_RUN_ID}-${V1_ATTEMPT}', [StringComparison]::Ordinal) -and
+        ([string]$equivalencePrerequisite[0].run).Contains('acceptance-scenario-matrix-result-shadow-${GITHUB_RUN_ID}-${SHADOW_ATTEMPT}', [StringComparison]::Ordinal) -and
+        ([string]$equivalencePrerequisite[0].run).Contains('erp-sales-order-demand-${GITHUB_RUN_ID}-${LEGACY_ERP_ATTEMPT}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.PLANNING_ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.PLANNING_ATTEMPT, '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.V1_ARTIFACT_NAME, '${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.V1_ATTEMPT, '${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.SHADOW_ARTIFACT_NAME, '${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.SHADOW_ATTEMPT, '${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.LEGACY_ERP_ARTIFACT_NAME, '${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalencePrerequisite[0].env.LEGACY_ERP_ATTEMPT, '${{ needs.erp-sales-order-demand-acceptance.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'Equivalence must fail closed on every reused producer artifact identity before downloads.'
 
     $plannerInvocations = @(
         foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
@@ -988,6 +1059,42 @@ try {
         Assert-Contract ($null -ne $planningMutationFailure) "Planning workflow mutation '$($planningMutation.Name)' must be rejected."
     }
 
+    foreach ($artifactDownloadMutation in @(
+            @{
+                Name = 'impact-download-uses-consumer-attempt'
+                Original = 'name: ${{ needs.impact-plan.outputs.artifact-name }}'
+                Replacement = 'name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}'
+            },
+            @{
+                Name = 'planning-download-uses-consumer-attempt'
+                Original = 'name: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}'
+                Replacement = 'name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}'
+            },
+            @{
+                Name = 'v1-download-uses-consumer-attempt'
+                Original = 'name: ${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}'
+                Replacement = 'name: acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}'
+            },
+            @{
+                Name = 'shadow-download-uses-consumer-attempt'
+                Original = 'name: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}'
+                Replacement = 'name: acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}'
+            },
+            @{
+                Name = 'legacy-download-uses-consumer-attempt'
+                Original = 'name: ${{ needs.erp-sales-order-demand-acceptance.outputs.artifact-name }}'
+                Replacement = 'name: erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}'
+            }
+        )) {
+        $mutatedArtifactDownloadWorkflow = $workflow.Replace([string]$artifactDownloadMutation.Original, [string]$artifactDownloadMutation.Replacement)
+        Assert-Contract (-not [string]::Equals($mutatedArtifactDownloadWorkflow, $workflow, [StringComparison]::Ordinal)) "Artifact download mutation '$($artifactDownloadMutation.Name)' must match the canonical workflow."
+        $mutatedArtifactDownloadPath = Join-Path $workflowMutationRoot "$($artifactDownloadMutation.Name).yml"
+        [IO.File]::WriteAllText($mutatedArtifactDownloadPath, $mutatedArtifactDownloadWorkflow, [Text.UTF8Encoding]::new($false))
+        $mutatedArtifactDownloadFailure = $null
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $mutatedArtifactDownloadPath } catch { $mutatedArtifactDownloadFailure = $_ }
+        Assert-Contract ($null -ne $mutatedArtifactDownloadFailure) "Artifact download mutation '$($artifactDownloadMutation.Name)' must be rejected."
+    }
+
     $workflowWithoutShadowImages = [regex]::Replace(
         $workflow,
         '(?ms)^      - name: Prepare shadow dependency images\n.*?(?=^      - name: Run acceptance scenario matrix\n)',
@@ -1120,8 +1227,8 @@ try {
             },
             @{
                 Name = 'erp-drops-impact-dependency'
-                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
-                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
+                Original = "    needs: impact-plan`n    outputs:`n      artifact-name: `${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}`n      producer-run-attempt: `${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
+                Replacement = "    outputs:`n      artifact-name: `${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}`n      producer-run-attempt: `${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
             },
             @{
                 Name = 'erp-drops-plan-failure-fail-open'

@@ -20,6 +20,14 @@ function Get-NervAcceptanceEquivalenceValueDigest {
     finally { $sha256.Dispose() }
 }
 
+function Get-NervAcceptanceEquivalenceStableVectorDigest {
+    param([Parameter(Mandatory)] [object] $Vector)
+
+    $stableVector = $Vector | ConvertTo-Json -Depth 50 | ConvertFrom-Json -Depth 50 -DateKind String
+    [void]$stableVector.provenance.PSObject.Properties.Remove('runAttempt')
+    return Get-NervAcceptanceEquivalenceValueDigest -Value $stableVector
+}
+
 function New-NervAcceptanceEquivalenceReport {
     param(
         [Parameter(Mandatory)] [string] $Status,
@@ -27,6 +35,7 @@ function New-NervAcceptanceEquivalenceReport {
         [AllowNull()] [object] $Provenance,
         [AllowNull()] [string] $ArtifactDigest,
         [AllowNull()] [string] $ManifestDigest,
+        [Parameter(Mandatory)] [int] $PlanningRunAttempt,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Tracks
     )
 
@@ -39,6 +48,7 @@ function New-NervAcceptanceEquivalenceReport {
             artifactDigest = $ArtifactDigest
             manifestDigest = $ManifestDigest
             scenarioId = 'sales-order-demand'
+            sourceRunAttempt = $PlanningRunAttempt
         }
         tracks = @($Tracks)
     }
@@ -56,9 +66,15 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $TestedSha,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunId,
         [Parameter(Mandatory)] [int] $RunAttempt,
+        [int] $PlanningRunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ManifestRepositoryPath,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event,
-        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $ResultPaths,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $V1ResultPath,
+        [int] $V1RunAttempt = $RunAttempt,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ShadowResultPath,
+        [int] $ShadowRunAttempt = $RunAttempt,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $LegacyErpResultPath,
+        [int] $LegacyErpRunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [string] $ReportPath
     )
 
@@ -74,6 +90,16 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         if ($TestedSha -cnotmatch '^[0-9a-f]{40}$') { throw 'Acceptance equivalence tested SHA must be a lowercase 40-character Git SHA.' }
         if ($RunId -cnotmatch '^[1-9][0-9]*$') { throw 'Acceptance equivalence run id must be a canonical positive decimal identifier.' }
         if ($RunAttempt -le 0) { throw 'Acceptance equivalence run attempt must be positive.' }
+        foreach ($sourceAttempt in @(
+                @{ Name = 'planning'; Value = $PlanningRunAttempt },
+                @{ Name = 'v1'; Value = $V1RunAttempt },
+                @{ Name = 'shadow'; Value = $ShadowRunAttempt },
+                @{ Name = 'legacy ERP'; Value = $LegacyErpRunAttempt }
+            )) {
+            if ([int]$sourceAttempt.Value -le 0) {
+                throw "Acceptance equivalence $($sourceAttempt.Name) source run attempt must be positive."
+            }
+        }
         if (-not (Test-NervAcceptanceChangedPath -Path $ManifestRepositoryPath)) { throw 'Acceptance equivalence manifest repository path must be canonical.' }
         [void](Assert-NervAcceptanceScenarioRuntimeInvocation -RunAttempt ([string]$RunAttempt) -Event $Event)
 
@@ -96,7 +122,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -Repository $Repository `
             -TestedSha $TestedSha `
             -RunId $RunId `
-            -RunAttempt $RunAttempt `
+            -RunAttempt $PlanningRunAttempt `
             -ManifestPath $ManifestRepositoryPath `
             -ManifestDigest $ExpectedManifestDigest `
             -Event $Event)
@@ -116,15 +142,28 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             scenarioId = 'sales-order-demand'
         }
 
-        $failureClassification = 'track-set-invalid'
-        if (@($ResultPaths).Count -ne 3) { throw "Acceptance equivalence requires exactly three canonical results; observed $(@($ResultPaths).Count)." }
-
         $vectorsByTrack = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
-        foreach ($resultPath in @($ResultPaths)) {
+        $resultDescriptors = @(
+            [pscustomobject]@{ track = 'v1'; path = $V1ResultPath; sourceRunAttempt = $V1RunAttempt },
+            [pscustomobject]@{ track = 'shadow'; path = $ShadowResultPath; sourceRunAttempt = $ShadowRunAttempt },
+            [pscustomobject]@{ track = 'legacy-erp'; path = $LegacyErpResultPath; sourceRunAttempt = $LegacyErpRunAttempt }
+        )
+        foreach ($descriptor in $resultDescriptors) {
             $failureClassification = 'track-result-invalid'
-            $resultSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $resultPath -Context 'equivalence canonical result'
-            $vector = New-NervAcceptanceScenarioEquivalenceVector -Result $resultSnapshot.value -ValidatedScenario $scenario -ExpectedProvenance $provenance
-            $track = [string]$resultSnapshot.value.track
+            $resultSnapshot = Read-NervAcceptanceRuntimeJsonSnapshot -Path $descriptor.path -Context "equivalence $($descriptor.track) canonical result"
+            if (-not [string]::Equals([string]$resultSnapshot.value.track, [string]$descriptor.track, [StringComparison]::Ordinal)) {
+                throw "Acceptance equivalence input must identify track '$($descriptor.track)'."
+            }
+            $expectedTrackProvenance = [pscustomobject][ordered]@{
+                repository = $Repository
+                runId = $RunId
+                runAttempt = [int]$descriptor.sourceRunAttempt
+                testedSha = $TestedSha
+                manifestDigest = $ExpectedManifestDigest
+                scenarioId = 'sales-order-demand'
+            }
+            $vector = New-NervAcceptanceScenarioEquivalenceVector -Result $resultSnapshot.value -ValidatedScenario $scenario -ExpectedProvenance $expectedTrackProvenance
+            $track = [string]$descriptor.track
             if ($vectorsByTrack.ContainsKey($track)) {
                 $failureClassification = 'track-set-invalid'
                 throw "Acceptance equivalence track set contains duplicate track '$track'."
@@ -132,8 +171,9 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             $vectorsByTrack.Add($track, $vector)
             $reportTracks.Add([pscustomobject][ordered]@{
                     track = $track
+                    sourceRunAttempt = [int]$descriptor.sourceRunAttempt
                     canonicalResultDigest = [string]$resultSnapshot.digest
-                    stableVectorDigest = Get-NervAcceptanceEquivalenceValueDigest -Value $vector
+                    stableVectorDigest = Get-NervAcceptanceEquivalenceStableVectorDigest -Vector $vector
                 })
         }
 
@@ -169,6 +209,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -Provenance $provenance `
             -ArtifactDigest $artifactDigest `
             -ManifestDigest $manifestDigest `
+            -PlanningRunAttempt $PlanningRunAttempt `
             -Tracks $reportTracks.ToArray()
         Write-NervAcceptanceScenarioRuntimeSummary -Summary $report -Path $ReportPath
         return $report
@@ -181,6 +222,7 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
             -Provenance $provenance `
             -ArtifactDigest $artifactDigest `
             -ManifestDigest $manifestDigest `
+            -PlanningRunAttempt $PlanningRunAttempt `
             -Tracks $reportTracks.ToArray()
         Write-NervAcceptanceScenarioRuntimeSummary -Summary $report -Path $ReportPath
         throw $failure

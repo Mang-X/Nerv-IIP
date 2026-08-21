@@ -141,7 +141,12 @@ esac
     Assert-Contract ($legacyErpProperties.Count -eq 1) 'The legacy ERP Sales Order Demand Acceptance job must not be deleted or renamed.'
     $legacyErp = $legacyErpProperties[0].Value
     Assert-Contract ([string]::Equals([string]$legacyErp.name, 'ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal) -and [int]$legacyErp.'timeout-minutes' -eq 55) 'The legacy ERP job name and budget must remain unchanged in this layer.'
+    Assert-Contract ([string]::Equals([string]$legacyErp.needs, 'impact-plan', [StringComparison]::Ordinal)) 'The legacy ERP job must remain independent of planning so ERP-only selection still runs when FullChain planning is skipped.'
     Assert-Contract ([string]::Equals([string]$legacyErp.if, "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}", [StringComparison]::Ordinal)) 'The legacy ERP job must retain its independent ERP route while participating in FullChain equivalence.'
+    $legacyErpOutputsProperty = $legacyErp.PSObject.Properties['outputs']
+    Assert-Contract ($null -ne $legacyErpOutputsProperty -and
+        [string]::Equals([string]$legacyErpOutputsProperty.Value.'artifact-name', '${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$legacyErpOutputsProperty.Value.'producer-run-attempt', '${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'The legacy ERP job must publish its artifact identity and physical producer attempt without depending on planning.'
     $legacyErpVerifierSteps = @($legacyErp.steps | Where-Object {
             [string]::Equals([string]$_.name, 'Verify ERP sales-order demand bridge', [StringComparison]::Ordinal)
         })
@@ -154,9 +159,19 @@ esac
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
+    $legacyErpIdentitySteps = @($legacyErp.steps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'legacy-erp-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($legacyErpIdentitySteps.Count -eq 1 -and
+        [string]::Equals([string]$legacyErpIdentitySteps[0].if, 'always()', [StringComparison]::Ordinal) -and
+        ([string]$legacyErpIdentitySteps[0].run).Contains('artifact-name=erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$legacyErpIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'The legacy ERP job must single-source its physical artifact identity even when the always-upload evidence path follows verifier failure.'
     Assert-Contract ($legacyErpUploads.Count -eq 1 -and
+        [string]::Equals([string]$legacyErpUploads[0].with.name, '${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$legacyErpUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and
-        [int]$legacyErpUploads[0].with.'retention-days' -eq 14) 'The legacy ERP artifact must fail on missing files and retain evidence for 14 days.'
+        [int]$legacyErpUploads[0].with.'retention-days' -eq 14 -and
+        $null -eq $legacyErpUploads[0].with.PSObject.Properties['overwrite']) 'The legacy ERP artifact must fail on missing files, retain evidence for 14 days, and never overwrite an earlier attempt.'
 
     $summary = $parsedWorkflow.jobs.'ci-summary'
     [string[]]$summaryNeeds = @($summary.needs | ForEach-Object { [string]$_ })

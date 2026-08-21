@@ -329,6 +329,7 @@ function Test-NervAcceptanceRuntimeDirectRunnerCommand {
         'TestedSha',
         'RunId',
         'RunAttempt',
+        'PlanningRunAttempt',
         'Event',
         'SummaryPath',
         'CanonicalResultPath',
@@ -578,6 +579,7 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         [Parameter(Mandatory)] [string] $TestedSha,
         [Parameter(Mandatory)] [string] $RunId,
         [Parameter(Mandatory)] [int] $RunAttempt,
+        [Parameter(Mandatory)] [int] $PlanningRunAttempt,
         [Parameter(Mandatory)] [string] $ManifestPath,
         [Parameter(Mandatory)] [string] $Event,
         [Parameter(Mandatory)] [string] $WorkflowPath,
@@ -601,7 +603,7 @@ function Assert-NervAcceptanceScenarioRuntimePreflight {
         -Repository $Repository `
         -TestedSha $TestedSha `
         -RunId $RunId `
-        -RunAttempt $RunAttempt `
+        -RunAttempt $PlanningRunAttempt `
         -ManifestPath $ManifestPath `
         -ManifestDigest $ExpectedManifestDigest `
         -Event $Event | Out-Null
@@ -695,21 +697,33 @@ function Assert-NervAcceptanceScenarioRuntimeInvocation {
     if (-not $allowedEvents.Contains($Event)) {
         throw "Acceptance scenario runtime event must be one of 'pull_request', 'push', 'schedule', or 'workflow_dispatch'."
     }
-    if ($RunAttempt -cnotmatch '^[1-9][0-9]*$') {
-        throw 'Acceptance scenario runtime run attempt must be a canonical positive integer.'
-    }
-    $parsedRunAttempt = [Numerics.BigInteger]::Parse(
-        $RunAttempt,
-        [Globalization.NumberStyles]::None,
-        [Globalization.CultureInfo]::InvariantCulture)
-    if ($parsedRunAttempt -gt [int]::MaxValue) {
-        throw 'Acceptance scenario runtime run attempt must fit Int32.'
-    }
+    $parsedRunAttempt = ConvertTo-NervAcceptanceScenarioRuntimeRunAttempt `
+        -Value $RunAttempt `
+        -Context 'Acceptance scenario runtime run attempt'
 
     return [pscustomobject][ordered]@{
         runAttempt = [int]$parsedRunAttempt
         event = $Event
     }
+}
+
+function ConvertTo-NervAcceptanceScenarioRuntimeRunAttempt {
+    param(
+        [AllowNull()] [AllowEmptyString()] [string] $Value,
+        [Parameter(Mandatory)] [string] $Context
+    )
+
+    if ($Value -cnotmatch '^[1-9][0-9]*$') {
+        throw "$Context must be a canonical positive integer."
+    }
+    $parsedRunAttempt = [Numerics.BigInteger]::Parse(
+        $Value,
+        [Globalization.NumberStyles]::None,
+        [Globalization.CultureInfo]::InvariantCulture)
+    if ($parsedRunAttempt -gt [int]::MaxValue) {
+        throw "$Context must fit Int32."
+    }
+    return [int]$parsedRunAttempt
 }
 
 function Assert-NervAcceptanceScenarioRuntimeRawInputs {
@@ -724,6 +738,7 @@ function Assert-NervAcceptanceScenarioRuntimeRawInputs {
         [AllowNull()] [AllowEmptyString()] [string] $TestedSha,
         [AllowNull()] [AllowEmptyString()] [string] $RunId,
         [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
+        [AllowNull()] [AllowEmptyString()] [string] $PlanningRunAttempt,
         [AllowNull()] [AllowEmptyString()] [string] $ManifestPath,
         [AllowNull()] [AllowEmptyString()] [string] $Event,
         [AllowNull()] [AllowEmptyString()] [string] $WorkflowPath,
@@ -751,6 +766,9 @@ function Assert-NervAcceptanceScenarioRuntimeRawInputs {
         throw 'Acceptance scenario runtime run id must be a canonical positive decimal identifier.'
     }
     $runtimeInvocation = Assert-NervAcceptanceScenarioRuntimeInvocation -RunAttempt $RunAttempt -Event $Event
+    $validatedPlanningRunAttempt = ConvertTo-NervAcceptanceScenarioRuntimeRunAttempt `
+        -Value $PlanningRunAttempt `
+        -Context 'Acceptance scenario runtime planning run attempt'
     if (-not (Test-NervAcceptanceChangedPath -Path $ManifestPath)) {
         throw 'Acceptance scenario runtime manifest repository-relative path must be canonical.'
     }
@@ -769,6 +787,7 @@ function Assert-NervAcceptanceScenarioRuntimeRawInputs {
         testedSha = $TestedSha
         runId = $RunId
         runAttempt = $runtimeInvocation.runAttempt
+        planningRunAttempt = $validatedPlanningRunAttempt
         manifestPath = $ManifestPath
         event = $runtimeInvocation.event
         workflowPath = $validatedWorkflowPath
@@ -824,6 +843,7 @@ function Invoke-NervAcceptanceScenarioRuntime {
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $TestedSha,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunId,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $RunAttempt,
+        [AllowNull()] [AllowEmptyString()] [string] $PlanningRunAttempt = $RunAttempt,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $ManifestPath,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $Event,
         [Parameter(Mandatory)] [AllowNull()] [AllowEmptyString()] [string] $WorkflowPath,
@@ -848,6 +868,7 @@ function Invoke-NervAcceptanceScenarioRuntime {
             -TestedSha $TestedSha `
             -RunId $RunId `
             -RunAttempt $RunAttempt `
+            -PlanningRunAttempt $PlanningRunAttempt `
             -ManifestPath $ManifestPath `
             -Event $Event `
             -WorkflowPath $WorkflowPath `
@@ -864,6 +885,7 @@ function Invoke-NervAcceptanceScenarioRuntime {
             -TestedSha $validatedInputs.testedSha `
             -RunId $validatedInputs.runId `
             -RunAttempt $validatedInputs.runAttempt `
+            -PlanningRunAttempt $validatedInputs.planningRunAttempt `
             -ManifestPath $validatedInputs.manifestPath `
             -Event $validatedInputs.event `
             -WorkflowPath $validatedInputs.workflowPath `

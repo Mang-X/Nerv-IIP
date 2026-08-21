@@ -24,6 +24,7 @@ param(
     [string] $TestedSha = $env:GITHUB_SHA,
     [string] $RunId = $env:GITHUB_RUN_ID,
     [string] $RunAttempt = $env:GITHUB_RUN_ATTEMPT,
+    [string] $PlanningRunAttempt = $RunAttempt,
     [string] $ManifestPath = 'scripts/acceptance-scenario-matrix.json',
     [string] $Event = $env:GITHUB_EVENT_NAME,
     [string] $WorkflowPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../.github/workflows/ci.yml')),
@@ -86,6 +87,7 @@ Invoke-NervAcceptanceScenarioRuntime `
     -TestedSha $TestedSha `
     -RunId $RunId `
     -RunAttempt $RunAttempt `
+    -PlanningRunAttempt $PlanningRunAttempt `
     -ManifestPath $ManifestPath `
     -Event $Event `
     -WorkflowPath $WorkflowPath `

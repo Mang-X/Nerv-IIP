@@ -21,11 +21,15 @@ param(
     [string] $TestedSha = $env:GITHUB_SHA,
     [string] $RunId = $env:GITHUB_RUN_ID,
     [int] $RunAttempt = $(if ([string]::IsNullOrWhiteSpace($env:GITHUB_RUN_ATTEMPT)) { 0 } else { [int]$env:GITHUB_RUN_ATTEMPT }),
+    [int] $PlanningRunAttempt = $RunAttempt,
     [string] $ManifestRepositoryPath = 'scripts/acceptance-scenario-matrix.json',
     [ValidateSet('pull_request', 'push', 'schedule', 'workflow_dispatch')] [string] $Event = $env:GITHUB_EVENT_NAME,
     [Parameter(Mandatory)] [string] $V1ResultPath,
+    [int] $V1RunAttempt = $RunAttempt,
     [Parameter(Mandatory)] [string] $ShadowResultPath,
+    [int] $ShadowRunAttempt = $RunAttempt,
     [Parameter(Mandatory)] [string] $LegacyErpResultPath,
+    [int] $LegacyErpRunAttempt = $RunAttempt,
     [string] $ReportPath = (Join-Path $PSScriptRoot '../artifacts/acceptance-scenario-matrix/equivalence-report.json')
 )
 
@@ -44,7 +48,13 @@ Invoke-NervAcceptanceScenarioMatrixEquivalence `
     -TestedSha $TestedSha `
     -RunId $RunId `
     -RunAttempt $RunAttempt `
+    -PlanningRunAttempt $PlanningRunAttempt `
     -ManifestRepositoryPath $ManifestRepositoryPath `
     -Event $Event `
-    -ResultPaths @($V1ResultPath, $ShadowResultPath, $LegacyErpResultPath) `
+    -V1ResultPath $V1ResultPath `
+    -V1RunAttempt $V1RunAttempt `
+    -ShadowResultPath $ShadowResultPath `
+    -ShadowRunAttempt $ShadowRunAttempt `
+    -LegacyErpResultPath $LegacyErpResultPath `
+    -LegacyErpRunAttempt $LegacyErpRunAttempt `
     -ReportPath $ReportPath

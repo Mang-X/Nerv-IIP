@@ -42,6 +42,10 @@ function Assert-FullChainV1WorkflowContract {
             "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' }}"
         ), [StringComparer]::Ordinal)
     Assert-Contract ($allowedV1Conditions.Contains([string]$v1Job.if)) 'The physical v1 worker must start only after planning succeeds.'
+    $v1OutputsProperty = $v1Job.PSObject.Properties['outputs']
+    Assert-Contract ($null -ne $v1OutputsProperty -and
+        [string]::Equals([string]$v1OutputsProperty.Value.'artifact-name', '${{ steps.v1-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$v1OutputsProperty.Value.'producer-run-attempt', '${{ steps.v1-artifact-identity.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'The physical v1 worker must publish its canonical artifact identity and physical producer attempt.'
 
     $v1Steps = @($v1Job.steps)
     $expectedStepNames = @(
@@ -56,6 +60,7 @@ function Assert-FullChainV1WorkflowContract {
         'Prepare FullChain dependency images',
         'Resolve FullChain evidence environment',
         'Run governed FullChain scenarios',
+        'Resolve v1 canonical artifact identity',
         'Upload v1 sales-order-demand canonical result',
         'Collect FullChain evidence',
         'Upload FullChain normalized evidence',
@@ -65,7 +70,7 @@ function Assert-FullChainV1WorkflowContract {
     Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed five-scenario workflow step sequence.'
     Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
     $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ($v1StepBudget -eq 219 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 219-minute explicit budget inside its 225-minute job budget.'
+    Assert-Contract ($v1StepBudget -eq 220 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 220-minute explicit budget inside its 225-minute job budget.'
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
     $v1Run = [string]$runSteps[0].run
@@ -79,10 +84,18 @@ function Assert-FullChainV1WorkflowContract {
             [string]::Equals([string]$_.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
     Assert-Contract ($canonicalUploads.Count -eq 1) 'The v1 worker must upload exactly one sales-order-demand canonical artifact.'
-    Assert-Contract ([string]::Equals([string]$canonicalUploads[0].with.name, 'acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+    $v1IdentitySteps = @($v1Steps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'v1-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($v1IdentitySteps.Count -eq 1 -and
+        ([string]$v1IdentitySteps[0].run).Contains('artifact-name=acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$v1IdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'The v1 worker must single-source its canonical artifact name and physical producer attempt.'
+    Assert-Contract ([string]::Equals([string]$canonicalUploads[0].with.name, '${{ steps.v1-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$canonicalUploads[0].with.path, 'artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json', [StringComparison]::Ordinal) -and
         [string]::Equals([string]$canonicalUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and
-        [int]$canonicalUploads[0].with.'retention-days' -eq 14) 'The v1 canonical artifact must be one exact file, fail closed when absent, and retain 14 days.'
+        [int]$canonicalUploads[0].with.'retention-days' -eq 14 -and
+        $null -eq $canonicalUploads[0].with.PSObject.Properties['overwrite']) 'The v1 canonical artifact must be one exact immutable attempt file, fail closed when absent, and retain 14 days.'
 
     $collectorSteps = @($v1Steps | Where-Object {
             $runProperty = $_.PSObject.Properties['run']
