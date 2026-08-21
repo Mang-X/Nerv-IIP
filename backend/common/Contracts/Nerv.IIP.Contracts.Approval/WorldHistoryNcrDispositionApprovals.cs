@@ -31,9 +31,18 @@ namespace Nerv.IIP.Contracts.Approval;
 /// </summary>
 public static class WorldHistoryNcrDispositionApprovals
 {
+    // NERV-1123 legacy 边界：这些值标识已持久化的 WorldHistory 模板/链。
+    // 在 NERV-1135 删除整个旧边界之前，它们必须与 NCR 确定性公式共同冻结在此。
+    public const string LegacyPurchaseOrderReleaseTemplateCode = "APT-WB-PO-001";
+    public const string LegacyPurchaseOrderChangeTemplateCode = "APT-WB-PO-002";
+    public const string LegacyNcrDispositionTemplateCode = "APT-WB-NCR-001";
+    public const string LegacyStockCountVarianceTemplateCode = "APT-WB-CNT-001";
+    public const string LegacyEngineeringChangeOrderTemplateCode = "APT-WB-ECO-001";
+
     /// <summary>
     /// 历史 NCR 处置审批链的确定性 id。盐串维度：固定域前缀 + 处置审批模板码
-    /// （<see cref="ApprovalTemplateCodes.NcrDisposition"/>）+ NCR 单号（<c>NCR-2026-####</c>）。
+    /// （<see cref="LegacyNcrDispositionTemplateCode"/>）+ NCR 单号（<c>NCR-2026-####</c>）。
+    /// 该旧码是已持久化世界观链的盐；产品模板码迁移不得改变本公式。
     /// 哈希派生手法照抄 DemandPlanning 侧先例 <c>StablePlanningSuggestionId</c>
     /// （SHA-256、<c>bytes[6]</c> 版本位打 5、<c>bytes[8]</c> 变体位）。
     /// </summary>
@@ -41,7 +50,7 @@ public static class WorldHistoryNcrDispositionApprovals
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ncrCode);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"nerv-iip:world-history:ncr-disposition-approval-chain:{ApprovalTemplateCodes.NcrDisposition}:{ncrCode}"));
+            $"nerv-iip:world-history:ncr-disposition-approval-chain:{LegacyNcrDispositionTemplateCode}:{ncrCode}"));
         bytes[6] = (byte)((bytes[6] & 0x0F) | 0x50);
         bytes[8] = (byte)((bytes[8] & 0x3F) | 0x80);
         return new Guid(bytes.AsSpan(0, 16));
