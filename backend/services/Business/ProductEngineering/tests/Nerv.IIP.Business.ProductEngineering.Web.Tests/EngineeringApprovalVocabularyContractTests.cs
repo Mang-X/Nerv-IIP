@@ -54,7 +54,7 @@ public sealed class EngineeringApprovalVocabularyContractTests
     [Fact]
     public async Task Release_consumer_rejects_a_chain_with_a_different_template_code()
     {
-        var verifier = CreateVerifier("APT-WB-PO-001", "approved");
+        var verifier = CreateVerifier(ApprovalTemplateCodes.PurchaseOrderRelease, "approved");
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => verifier.EnsureApprovedAsync(
             "org-001",
