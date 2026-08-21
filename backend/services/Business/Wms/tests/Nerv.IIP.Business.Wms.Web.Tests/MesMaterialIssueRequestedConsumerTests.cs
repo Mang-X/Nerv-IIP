@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
@@ -15,6 +16,17 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 public sealed class MesMaterialIssueRequestedConsumerTests
 {
+    // 部署侧配置的默认库位（Aspire 里取库存种子事实）；生产代码本身不带任何库位默认值。
+    private const string ConfiguredSourceLocationCode = "WH-RM-01";
+    private const string ConfiguredLineSideLocationCode = "WH-LINE-01";
+
+    private static IOptions<WmsMaterialIssueLocationOptions> ConfiguredLocations =>
+        Options.Create(new WmsMaterialIssueLocationOptions
+        {
+            SourceLocationCode = ConfiguredSourceLocationCode,
+            LineSideLocationCode = ConfiguredLineSideLocationCode,
+        });
+
     [Fact]
     public async Task Material_issue_requested_consumer_creates_outbound_order_and_picking_task_idempotently()
     {
@@ -43,7 +55,8 @@ public sealed class MesMaterialIssueRequestedConsumerTests
         Assert.Equal("MI-MIR-001-P1", task.TaskNo);
         Assert.Equal("MI-MIR-001", task.SourceOrderNo);
         Assert.Equal(7m, task.PlannedQuantity);
-        Assert.Equal(MesMaterialIssueRequestedIntegrationEventHandler.DefaultLineSideLocationCode, task.ToLocationCode);
+        Assert.Equal(ConfiguredLineSideLocationCode, task.ToLocationCode);
+        Assert.Equal(ConfiguredSourceLocationCode, line.PickLocationCode);
     }
 
     [Fact]
@@ -86,7 +99,8 @@ public sealed class MesMaterialIssueRequestedConsumerTests
         var handler = new MesMaterialIssueRequestedIntegrationEventHandler(
             context,
             new CommandExecutingSender(databaseName),
-            deadLetters);
+            deadLetters,
+            ConfiguredLocations);
 
         // No payload site code and no warehouse facts to derive one from: guessing a site would put the
         // picking work in the wrong warehouse, so the message is parked instead.
@@ -99,6 +113,47 @@ public sealed class MesMaterialIssueRequestedConsumerTests
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
         Assert.Equal("unresolved-site", deadLetter.FailureCode);
+    }
+
+    [Fact]
+    public async Task Material_issue_requested_consumer_dead_letters_when_no_location_is_named_or_configured()
+    {
+        var databaseName = $"wms-mes-material-issue-{Guid.CreateVersion7():N}";
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new MesMaterialIssueRequestedIntegrationEventHandler(
+            CreateContext(databaseName),
+            new CommandExecutingSender(databaseName),
+            deadLetters);
+
+        // 事件不带库位、部署也没配默认库位：仓库不再兜底到演示库位（#1754），消息进死信。
+        var exception = await Record.ExceptionAsync(
+            () => handler.HandleAsync(CreateRequestedEvent(), CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            MesMaterialIssueRequestedIntegrationEventHandler.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("unresolved-location", deadLetter.FailureCode);
+        await using var assertionContext = CreateContext(databaseName);
+        Assert.False(await assertionContext.OutboundOrders.AnyAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Material_issue_requested_consumer_prefers_the_locations_named_by_mes()
+    {
+        var databaseName = $"wms-mes-material-issue-{Guid.CreateVersion7():N}";
+        var handler = CreateHandler(databaseName, out _);
+
+        await handler.HandleAsync(
+            CreateRequestedEvent(sourceLocationCode: " WH-RM-09 ", lineSideLocationCode: " WH-LINE-09 "),
+            CancellationToken.None);
+
+        await using var assertionContext = CreateContext(databaseName);
+        var order = await assertionContext.OutboundOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        Assert.Equal("WH-RM-09", Assert.Single(order.Lines).PickLocationCode);
+        var task = await assertionContext.WarehouseTasks.SingleAsync(CancellationToken.None);
+        Assert.Equal("WH-LINE-09", task.ToLocationCode);
     }
 
     [Fact]
@@ -152,13 +207,16 @@ public sealed class MesMaterialIssueRequestedConsumerTests
         return new MesMaterialIssueRequestedIntegrationEventHandler(
             CreateContext(databaseName),
             new CommandExecutingSender(databaseName),
-            deadLetters);
+            deadLetters,
+            ConfiguredLocations);
     }
 
     private static MesMaterialIssueRequestedIntegrationEvent CreateRequestedEvent(
         string sourceService = MesIntegrationEventSources.BusinessMes,
         decimal quantity = 7m,
-        string? siteCode = "SITE-001") =>
+        string? siteCode = "SITE-001",
+        string? sourceLocationCode = null,
+        string? lineSideLocationCode = null) =>
         new(
             "evt-material-issue-requested-001",
             MesIntegrationEventTypes.MaterialIssueRequested,
@@ -179,7 +237,9 @@ public sealed class MesMaterialIssueRequestedConsumerTests
                 "L",
                 quantity,
                 DateTimeOffset.Parse("2026-06-15T07:45:00Z"),
-                siteCode));
+                siteCode,
+                sourceLocationCode,
+                lineSideLocationCode));
 
     private static ApplicationDbContext CreateContext(string databaseName)
     {
