@@ -558,6 +558,10 @@ var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    // MES 领料事件不带库位时的默认库位：与库存种子事实（SITE-001 + WH-WB-*）同码。
+    // 仓库代码里不再内置演示库位兜底，未配置就进死信（#1754）。
+    .WithEnvironment("MaterialIssue__SourceLocationCode", "WH-WB-RM-01")
+    .WithEnvironment("MaterialIssue__LineSideLocationCode", "WH-WB-LINE-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessWmsDatabase, "PostgreSQL")
     .WithReference(businessInventory)
