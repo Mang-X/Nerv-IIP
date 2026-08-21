@@ -147,6 +147,9 @@ esac
         })
     Assert-Contract ($legacyErpVerifierSteps.Count -eq 1 -and
         ([string]$legacyErpVerifierSteps[0].run).Contains('./scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) 'The legacy ERP job must retain the governed business verifier entrypoint.'
+    $legacyErpVerifierRun = [string]$legacyErpVerifierSteps[0].run
+    Assert-Contract ($legacyErpVerifierRun.Contains("`$legacyErpCanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance/man517/legacy-erp-canonical-result.json')", [StringComparison]::Ordinal) -and
+        $legacyErpVerifierRun.Contains('-CanonicalResultPath $legacyErpCanonicalResultPath', [StringComparison]::Ordinal)) 'The legacy ERP verifier must receive a canonical absolute repository path.'
     $legacyErpUploads = @($legacyErp.steps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
@@ -230,6 +233,11 @@ try {
                 Name = 'full-chain-aggregate-treats-missing-signal-as-unselected'
                 Original = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
                 Replacement = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain == 'true') }}"
+            },
+            @{
+                Name = 'legacy-erp-relative-canonical-result-path'
+                Original = '-CanonicalResultPath $legacyErpCanonicalResultPath'
+                Replacement = '-CanonicalResultPath artifacts/acceptance/man517/legacy-erp-canonical-result.json'
             }
         )) {
         $mutatedAggregateWorkflow = $workflow.Replace([string]$aggregateMutation.Original, [string]$aggregateMutation.Replacement)

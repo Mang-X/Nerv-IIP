@@ -68,8 +68,11 @@ function Assert-FullChainV1WorkflowContract {
     Assert-Contract ($v1StepBudget -eq 219 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 219-minute explicit budget inside its 225-minute job budget.'
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
+    $v1Run = [string]$runSteps[0].run
+    Assert-Contract ($v1Run.Contains("`$v1CanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json')", [StringComparison]::Ordinal) -and
+        $v1Run.Contains('-CanonicalResultPath $v1CanonicalResultPath', [StringComparison]::Ordinal)) 'The physical v1 worker must pass a canonical absolute repository path to the governed FullChain runner.'
     foreach ($canonicalArgument in @("-TrackIdentifier 'v1'", "-Repository '`${{ github.repository }}'", "-RunId '`${{ github.run_id }}'", "-RunAttempt '`${{ github.run_attempt }}'", "-TestedSha '`${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}'", "-ManifestDigest '`${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}'", "-ScenarioId 'sales-order-demand'")) {
-        Assert-Contract (([string]$runSteps[0].run).Contains($canonicalArgument, [StringComparison]::Ordinal)) "The v1 sales member canonical invocation is missing '$canonicalArgument'."
+        Assert-Contract ($v1Run.Contains($canonicalArgument, [StringComparison]::Ordinal)) "The v1 sales member canonical invocation is missing '$canonicalArgument'."
     }
     $canonicalUploads = @($v1Steps | Where-Object {
             [string]::Equals([string]$_.name, 'Upload v1 sales-order-demand canonical result', [StringComparison]::Ordinal) -and
@@ -221,6 +224,11 @@ try {
                 Name = 'v1-evidence-owner-drift'
                 Original = '-JobName "Business FullChain Acceptance / v1 Authority"'
                 Replacement = '-JobName "Business FullChain Acceptance"'
+            },
+            @{
+                Name = 'v1-relative-canonical-result-path'
+                Original = '-CanonicalResultPath $v1CanonicalResultPath'
+                Replacement = '-CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json'
             }
         )) {
         $mutatedV1Workflow = $workflowContent.Replace([string]$v1Mutation.Original, [string]$v1Mutation.Replacement)

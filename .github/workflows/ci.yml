@@ -1396,10 +1396,11 @@ jobs:
         id: full-chain-tests
         shell: pwsh
         run: |
+          $v1CanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json')
           ./scripts/run-full-chain-test-lane.ps1 `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
             -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json `
-            -CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json `
+            -CanonicalResultPath $v1CanonicalResultPath `
             -TrackIdentifier 'v1' `
             -Repository '${{ github.repository }}' `
             -RunId '${{ github.run_id }}' `
@@ -1595,8 +1596,9 @@ jobs:
           $sha256 = [Security.Cryptography.SHA256]::Create()
           try { $manifestDigest = ([Convert]::ToHexString($sha256.ComputeHash($manifestBytes))).ToLowerInvariant() }
           finally { $sha256.Dispose() }
+          $legacyErpCanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance/man517/legacy-erp-canonical-result.json')
           ./scripts/verify-erp-sales-order-demand-planning.ps1 `
-            -CanonicalResultPath artifacts/acceptance/man517/legacy-erp-canonical-result.json `
+            -CanonicalResultPath $legacyErpCanonicalResultPath `
             -TrackIdentifier 'legacy-erp' `
             -Repository '${{ github.repository }}' `
             -RunId '${{ github.run_id }}' `
