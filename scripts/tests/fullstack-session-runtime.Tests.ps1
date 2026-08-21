@@ -1489,7 +1489,7 @@ $guardianLogText = @($guardianOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
-Assert-True (($script:guardianLifecycle -join ',') -eq 'diagnostics,stop,stop') 'Guardian must collect diagnostics exactly once before its first stop attempt.'
+Assert-True ([string]::Equals(($script:guardianLifecycle -join ','), 'diagnostics,stop,stop', [StringComparison]::Ordinal)) 'Guardian must collect diagnostics exactly once before its first stop attempt.'
 Assert-True ($guardianLogText.Contains("Guardian started for '$sessionId' in Automated mode.", [StringComparison]::Ordinal)) 'Guardian stdout must identify every managed session even when no warning is emitted.'
 Assert-True ($guardianLogText.Contains("Guardian cleanup triggered for '$sessionId'", [StringComparison]::Ordinal)) 'Guardian stdout must explain whether lease expiry or coordinator loss triggered cleanup.'
 
