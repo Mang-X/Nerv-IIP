@@ -1380,6 +1380,33 @@ Assert-True ([string]::Equals([string]$managedScenarioFailure, 'original scenari
 Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
 Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
 
+$script:preparedDiagnosticState = $null
+$script:collectedDiagnosticState = $null
+$failedDiagnosticResult = Invoke-NervFullStackDiagnosticCollection `
+    -Manifest ([pscustomobject]@{ sessionId = 'nerv-dead-000004'; state = 'Failed' }) `
+    -SensitiveValues @('process-only-password') `
+    -PrepareManifestAction {
+        param($Manifest)
+        $script:preparedDiagnosticState = "$($Manifest.state)"
+        return $Manifest
+    } `
+    -CollectAction {
+        param($Manifest, $SensitiveValues)
+        $script:collectedDiagnosticState = "$($Manifest.state)"
+        Assert-True ($SensitiveValues.Count -eq 1) 'Diagnostic collection must retain its redaction values after a scenario failure.'
+        return [pscustomobject]@{ Complete = $true }
+    }
+Assert-True $failedDiagnosticResult.Complete 'A failed-state diagnostic sweep must return its collection result.'
+Assert-True ([string]::Equals([string]$script:preparedDiagnosticState, 'Failed', [StringComparison]::Ordinal)) 'Failed-state diagnostic preparation must observe the failure state.'
+Assert-True ([string]::Equals([string]$script:collectedDiagnosticState, 'Failed', [StringComparison]::Ordinal)) 'A failed session state must not skip the pre-stop diagnostic sweep.'
+
+$terminalDiagnosticCollected = $false
+Invoke-NervFullStackDiagnosticCollection `
+    -Manifest ([pscustomobject]@{ sessionId = 'nerv-dead-000005'; state = 'Stopping' }) `
+    -PrepareManifestAction { param($Manifest) return $Manifest } `
+    -CollectAction { param($Manifest, $SensitiveValues) $script:terminalDiagnosticCollected = $true } | Out-Null
+Assert-True $script:terminalDiagnosticCollected 'A concurrently stopping session must still attempt diagnostics instead of producing an empty failure artifact.'
+
 $managedCleanupFailure = $null
 try {
     Invoke-NervManagedFullStackRun `
@@ -1431,7 +1458,7 @@ finally {
 
 $script:guardianReads = 0
 $script:guardianStops = 0
-$guardianResult = Invoke-NervFullStackGuardian `
+$guardianOutput = @(Invoke-NervFullStackGuardian `
     -SessionId $sessionId `
     -Mode Automated `
     -CoordinatorPid 1 `
@@ -1450,10 +1477,14 @@ $guardianResult = Invoke-NervFullStackGuardian `
         $script:guardianStops++
         if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
     } `
-    -DelayAction { param($Seconds) }
+    -DelayAction { param($Seconds) } 6>&1)
+$guardianResult = @($guardianOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+$guardianLogText = @($guardianOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
+Assert-True ($guardianLogText.Contains("Guardian started for '$sessionId' in Automated mode.", [StringComparison]::Ordinal)) 'Guardian stdout must identify every managed session even when no warning is emitted.'
+Assert-True ($guardianLogText.Contains("Guardian cleanup triggered for '$sessionId'", [StringComparison]::Ordinal)) 'Guardian stdout must explain whether lease expiry or coordinator loss triggered cleanup.'
 
 $script:relationProbeAttempts = 0
 $relationReadiness = Wait-NervFullStackPostgresRelations `

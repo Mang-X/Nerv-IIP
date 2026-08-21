@@ -1044,6 +1044,7 @@ function Invoke-NervFullStackGuardian {
     }
     if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
 
+    Write-Host "Guardian started for '$SessionId' in $Mode mode."
     $observationFailures = 0
     while ($true) {
         try {
@@ -1067,6 +1068,7 @@ function Invoke-NervFullStackGuardian {
             continue
         }
 
+        Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing."
         $lastStopError = 'cleanup did not reach Stopped'
         for ($attempt = 1; $attempt -le $MaximumStopAttempts; $attempt++) {
             try {
@@ -1081,6 +1083,45 @@ function Invoke-NervFullStackGuardian {
         }
         throw "Guardian could not stop session '$SessionId' after $MaximumStopAttempts attempts: $lastStopError"
     }
+}
+
+function Invoke-NervFullStackDiagnosticCollection {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [string[]] $SensitiveValues = @(),
+        [scriptblock] $PrepareManifestAction,
+        [scriptblock] $CollectAction
+    )
+
+    if ($null -eq $PrepareManifestAction) {
+        $PrepareManifestAction = {
+            param($InputManifest)
+            Update-NervFullStackManifest `
+                -SessionId "$($InputManifest.sessionId)" `
+                -AllowedStates @('Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed') `
+                -ReturnUnchangedOnStateMismatch `
+                -UpdateAction {
+                    param($current)
+                    if ([string]::Equals([string]$current.state, 'Running', [StringComparison]::OrdinalIgnoreCase)) {
+                        return (Move-NervFullStackSessionState -Manifest $current -State Collecting)
+                    }
+                    return $current
+                }
+        }
+    }
+    if ($null -eq $CollectAction) {
+        $CollectAction = {
+            param($InputManifest, $InputSensitiveValues)
+            Collect-NervFullStackDiagnostics -Manifest $InputManifest -SensitiveValues $InputSensitiveValues
+        }
+    }
+
+    $latest = & $PrepareManifestAction $Manifest
+    if ($null -eq $latest) { $latest = $Manifest }
+    # Collection is deliberately unconditional after manifest preparation. A guardian or a
+    # concurrent failure may already have advanced the session beyond Running; that state is
+    # diagnostic evidence, not a reason to skip the only pre-stop log sweep.
+    return (& $CollectAction $latest $SensitiveValues)
 }
 
 function Get-NervFullStackCollectTimeoutSeconds {
