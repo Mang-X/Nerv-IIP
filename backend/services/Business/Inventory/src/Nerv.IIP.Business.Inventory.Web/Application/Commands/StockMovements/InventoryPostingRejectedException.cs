@@ -39,7 +39,10 @@ public sealed class InventoryPostingRejectedException : KnownException
 
     public static InventoryPostingRejectedException FromDomain(InventoryDomainException exception)
     {
-        return new InventoryPostingRejectedException(ResolveDomainFailureCode(exception.Reason), exception.Message, exception);
+        return new InventoryPostingRejectedException(
+            ResolveDomainFailureCode(exception.Reason),
+            ResolveDomainFailureMessage(exception.Reason),
+            exception);
     }
 
     private static string NormalizeFailureCode(string failureCode)
@@ -60,6 +63,20 @@ public sealed class InventoryPostingRejectedException : KnownException
             InventoryDomainFailureReason.ReservationAllocationRejected => InventoryPostingFailureCodes.ReservationAllocationRejected,
             InventoryDomainFailureReason.CommittedStockProtection => InventoryPostingFailureCodes.ReservationAllocationRejected,
             _ => InventoryPostingFailureCodes.PostingRejected,
+        };
+    }
+
+    private static string ResolveDomainFailureMessage(InventoryDomainFailureReason reason)
+    {
+        return reason switch
+        {
+            InventoryDomainFailureReason.NegativeOnHand => "库存数量不足，不能完成过账。",
+            InventoryDomainFailureReason.IdempotencyConflict => "库存移动幂等键与已有流水冲突，请更换幂等键。",
+            InventoryDomainFailureReason.DimensionMismatch => "库存移动维度与现有台账不一致，请核对物料、库位和批次。",
+            InventoryDomainFailureReason.LedgerFrozen => "库存台账已冻结，当前操作无法过账。",
+            InventoryDomainFailureReason.ReservationAllocationRejected => "库存预留分配被拒绝，请刷新库存后重试。",
+            InventoryDomainFailureReason.CommittedStockProtection => "已过账库存不允许再次分配预留，请刷新库存后重试。",
+            _ => "库存过账被拒绝，请核对库存状态后重试。",
         };
     }
 }

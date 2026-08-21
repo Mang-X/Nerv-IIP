@@ -144,7 +144,7 @@ public sealed class StockCountApprovalTests
             new CancelStockCountTaskCommandHandler(dbContext).Handle(
                 new CancelStockCountTaskCommand(task.Id, "盘点范围调整"),
                 CancellationToken.None));
-        Assert.Contains("pending-approval", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("状态不支持取消", exception.Message, StringComparison.Ordinal);
         Assert.Equal(StockCountTaskStatuses.PendingApproval, dbContext.StockCountTasks.Single().Status);
         Assert.True(dbContext.StockLedgers.Single().IsFrozenForCount);
 
