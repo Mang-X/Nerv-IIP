@@ -1489,16 +1489,39 @@ jobs:
       - impact-plan
       - acceptance-scenario-matrix-planning
       - business-full-chain-acceptance-v1
+      - acceptance-scenario-matrix-runtime
+      - erp-sales-order-demand-acceptance
+      - acceptance-scenario-matrix-equivalence
     if: ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
     steps:
-      - name: Require FullChain planning and v1 authority
+      - name: Require FullChain planning, v1 authority, and selected shadow equivalence
         timeout-minutes: 3
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
           planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
           v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
+          sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
+          shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
+          legacy_erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
+          equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
+
           test "$planning_result" = "success"
           test "$v1_result" = "success"
+          case "$sales_order_demand_selected" in
+            true)
+              test "$shadow_result" = "success"
+              test "$legacy_erp_result" = "success"
+              test "$equivalence_result" = "success"
+              ;;
+            false)
+              test "$shadow_result" = "skipped"
+              test "$equivalence_result" = "skipped"
+              ;;
+            *)
+              echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
+              exit 1
+              ;;
+          esac
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance
@@ -1591,8 +1614,8 @@ jobs:
           path: |
             artifacts/acceptance/man517
             artifacts/script-logs/man517-*
-          if-no-files-found: warn
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 14
 
   acceptance-scenario-matrix-equivalence:
     name: Business FullChain Acceptance / sales-order-demand equivalence (internal)
@@ -2297,7 +2320,7 @@ jobs:
           redis_cap_result="${{ needs.redis-cap-transport-tests.result }}"
           full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
           backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
-          erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
+          erp_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
           script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"

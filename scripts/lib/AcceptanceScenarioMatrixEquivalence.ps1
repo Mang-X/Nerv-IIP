@@ -154,7 +154,10 @@ function Invoke-NervAcceptanceScenarioMatrixEquivalence {
         $reportTracks = $orderedReportTracks
 
         $failureClassification = 'stable-vector-drift'
-        $stableDigests = @($reportTracks | ForEach-Object { [string]$_.stableVectorDigest } | Select-Object -Unique)
+        $stableDigests = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($reportTrack in $reportTracks) {
+            [void]$stableDigests.Add([string]$reportTrack.stableVectorDigest)
+        }
         if ($stableDigests.Count -ne 1) { throw 'Acceptance equivalence stable equivalence vectors drifted across tracks.' }
 
         $failureClassification = 'track-result-invalid'

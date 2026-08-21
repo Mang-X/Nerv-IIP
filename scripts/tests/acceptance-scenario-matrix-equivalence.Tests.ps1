@@ -198,7 +198,11 @@ try {
     Assert-Contract ([string]::Equals([string]$success.status, 'passed', [StringComparison]::Ordinal)) 'Three valid tracks with only volatile differences must pass.'
     Assert-Contract ([string]::Equals((@($success.tracks.track) -join '|'), 'v1|shadow|legacy-erp', [StringComparison]::Ordinal)) 'The report must retain the exact governed track order.'
     Assert-Contract (@($success.tracks | Where-Object { [string]$_.canonicalResultDigest -cnotmatch '^[0-9a-f]{64}$' -or [string]$_.stableVectorDigest -cnotmatch '^[0-9a-f]{64}$' }).Count -eq 0) 'Every track must publish canonical-result and stable-vector digests.'
-    Assert-Contract (@($success.tracks.stableVectorDigest | Select-Object -Unique).Count -eq 1) 'Allowed volatile drift must leave one common stable-vector digest.'
+    $stableVectorDigests = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($stableVectorDigest in @($success.tracks.stableVectorDigest)) {
+        [void]$stableVectorDigests.Add([string]$stableVectorDigest)
+    }
+    Assert-Contract ($stableVectorDigests.Count -eq 1) 'Allowed volatile drift must leave one common stable-vector digest.'
     $successReportText = [IO.File]::ReadAllText($successReportPath)
     Assert-Contract (-not $successReportText.Contains('business-secret-value', [StringComparison]::Ordinal)) 'The report must not retain volatile path values.'
     Assert-Contract (-not $successReportText.Contains('databaseName', [StringComparison]::Ordinal)) 'The report must not serialize the volatile object.'
