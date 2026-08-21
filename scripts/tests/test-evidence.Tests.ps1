@@ -108,6 +108,46 @@ function Assert-Equal($Expected, $Actual, [string] $Message) {
     if ($Expected -ne $Actual) { throw "$Message Expected=[$Expected] Actual=[$Actual]" }
 }
 
+# #1941 / #1865 Task 2：正式 full-chain evidence 的 rerun authority 必须跟随实际执行者，
+# 稳定 aggregate 没有执行测试，不能拿它为上一 attempt 的 lane 结果背书。
+$fullChainPhysicalJobName = 'Business FullChain Acceptance / v1 Authority'
+$earlyLaneJobAllowlist = Get-NervTestEvidenceLaneJobs
+Assert-Equal $fullChainPhysicalJobName $earlyLaneJobAllowlist['full-chain'] 'The full-chain evidence lane must bind to the physical v1 worker rather than the stable aggregate.'
+$fullChainAuthorityRun = [pscustomobject]@{
+    id = 'fixture-full-chain-rerun'
+    head_sha = '0123456789abcdef0123456789abcdef01234567'
+    run_attempt = 2
+}
+$fullChainAuthorityJobs = @([pscustomobject]@{ name = $fullChainPhysicalJobName; run_attempt = 1; conclusion = 'failure' })
+$physicalFullChainAuthority = Resolve-NervPriorAttemptAuthority `
+    -Run $fullChainAuthorityRun `
+    -Jobs $fullChainAuthorityJobs `
+    -WorkflowRunId 'fixture-full-chain-rerun' `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' `
+    -RunAttempt 2 `
+    -Lane 'full-chain' `
+    -JobName $fullChainPhysicalJobName
+Assert-True ($physicalFullChainAuthority.verified -and [string]::Equals([string]$physicalFullChainAuthority.outcome, 'failure', [StringComparison]::Ordinal)) 'The physical v1 worker must authenticate the prior FullChain attempt.'
+$aggregateFullChainAuthority = Resolve-NervPriorAttemptAuthority `
+    -Run $fullChainAuthorityRun `
+    -Jobs @([pscustomobject]@{ name = 'Business FullChain Acceptance'; run_attempt = 1; conclusion = 'failure' }) `
+    -WorkflowRunId 'fixture-full-chain-rerun' `
+    -HeadSha '0123456789abcdef0123456789abcdef01234567' `
+    -RunAttempt 2 `
+    -Lane 'full-chain' `
+    -JobName 'Business FullChain Acceptance'
+Assert-True (-not $aggregateFullChainAuthority.verified) 'A drift back to the test-free stable aggregate must not authenticate FullChain rerun evidence.'
+
+$earlyWorkflowJobs = Get-NervCiWorkflowBudgets -Path (Join-Path $repoRoot '.github/workflows/ci.yml')
+$fullChainPhysicalJobs = @($earlyWorkflowJobs | Where-Object { [string]::Equals([string]$_.Name, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) })
+Assert-Equal 1 $fullChainPhysicalJobs.Count 'CI must define exactly one physical v1 worker for FullChain evidence ownership.'
+$fullChainCollectorSteps = @($fullChainPhysicalJobs[0].Steps | Where-Object {
+        ([string]$_.Run).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+        ([string]$_.Run).Contains('-Lane full-chain', [StringComparison]::Ordinal)
+    })
+Assert-Equal 1 $fullChainCollectorSteps.Count 'Only the physical v1 worker may run the FullChain MAN-661 collector.'
+Assert-True (([string]$fullChainCollectorSteps[0].Run).Contains('-JobName "Business FullChain Acceptance / v1 Authority"', [StringComparison]::Ordinal)) 'The hosted FullChain collector must report the physical v1 Actions name.'
+
 function Get-NervDotSourceCommands {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -2626,7 +2666,7 @@ foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3'
 Assert-True (-not $workflow.Contains('-Lane backend ', [StringComparison]::Ordinal)) 'The unsharded backend lane must no longer be collected once shards own it.'
 $laneJobAllowlist = Get-NervTestEvidenceLaneJobs
 Assert-Equal 8 $laneJobAllowlist.Count 'The lane-to-job allowlist must cover the four backend shards, connector-host, PostgreSQL, Redis/CAP, and FullChain lanes.'
-Assert-Equal 'Business FullChain Acceptance' $laneJobAllowlist['full-chain'] 'The stable full-chain evidence lane must bind to its only hosted job for rerun authority.'
+Assert-Equal 'Business FullChain Acceptance / v1 Authority' $laneJobAllowlist['full-chain'] 'The full-chain evidence lane must remain bound to the physical v1 worker for rerun authority.'
 $laneJobKeys = @($laneJobAllowlist.Keys | ForEach-Object { [string] $_ })
 $actualBackendKeyMatches = @($laneJobKeys | Where-Object { [string]::Equals([string] $_, [string]('backend'), [StringComparison]::Ordinal) })
 Assert-Equal 0 $actualBackendKeyMatches.Count 'No job may certify the unsharded backend lane once the shards own it.'

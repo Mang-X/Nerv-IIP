@@ -182,7 +182,7 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
     }
 
     [Fact]
-    public async Task Seed_includes_the_engineering_change_template_consumed_by_product_engineering()
+    public async Task Seed_keeps_the_legacy_engineering_change_template_for_world_history()
     {
         await using var db = CreateDbContext();
 
@@ -190,7 +190,7 @@ public sealed class WorldHistoryApprovalSeedServiceTests(ITestOutputHelper outpu
 
         var template = await db.ApprovalTemplates
             .Include(x => x.Steps)
-            .SingleOrDefaultAsync(x => x.TemplateCode == "APT-WB-ECO-001");
+            .SingleOrDefaultAsync(x => x.TemplateCode == WorldHistoryNcrDispositionApprovals.LegacyEngineeringChangeOrderTemplateCode);
 
         Assert.NotNull(template);
         Assert.Equal("engineering-change-order", template.DocumentType);
