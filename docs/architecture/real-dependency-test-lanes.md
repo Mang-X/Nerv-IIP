@@ -2,7 +2,7 @@
 
 本页冻结 [NERV-688 / #1256](https://github.com/Mang-X/Nerv-IIP/issues/1256) 第一层的架构裁决。它只定义真实依赖测试的边界、触发层级、运行环境和证据语义；合并后才允许实施 PostgreSQL 试点、逐服务铺开及 Redis/CAP 接入。
 
-票面的四层在本文中映射如下：`Fast Tests` 保持为不启动真实依赖的现有快速层，不属于下列三条 lane；`PostgreSQL Provider Tests` 对应 `postgres`；票面的 `Business Integration Acceptance` 对应稳定证据 ID `full-chain`，Actions 展示名细化为 `Business FullChain Acceptance / <scenario>`；`Nightly` 是横跨已登记 lane 的触发与覆盖维度，不是第四条 lane。
+票面的四层在本文中映射如下：`Fast Tests` 保持为不启动真实依赖的现有快速层，不属于下列三条 lane；`PostgreSQL Provider Tests` 对应 `postgres`；票面的 `Business Integration Acceptance` 对应稳定证据 ID `full-chain`，实际 v1 执行展示名为 `Business FullChain Acceptance / v1 Authority`，稳定 `Business FullChain Acceptance` 仅作 required aggregate；`Nightly` 是横跨已登记 lane 的触发与覆盖维度，不是第四条 lane。
 
 ## Lane 与唯一归属
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `postgres` | `PostgreSQL Provider Tests` | 单服务或单测试宿主，证明 PostgreSQL 查询翻译、migration、约束、事务、并发及持久 inbox/outbox 等生产数据库语义。只有当测试不声称验证真实消息 transport 时，才可使用 CAP InMemory。当前 `scripts/backend-test-shards.json` 的 `real-postgres` 是过渡执行别名，第二层接线时必须收敛到既有证据 ID `postgres`，不得形成第四条 lane。 |
 | `redis-cap` | `Redis/CAP Transport Tests` | 使用真实 Redis Streams，证明发布、消费、重复、乱序、重试、幂等及消费恢复；允许 PostgreSQL 作为持久化依赖，但断言终点是 transport 或单个消费者的持久结果，不冒充跨服务业务闭环。拆解④的 [#920](https://github.com/Mang-X/Nerv-IIP/issues/920) 前置已完成：生产修复由 PR #1308 合并，真 PostgreSQL 回归与调查结论由 PR #1530 收口；第四层不再受“调查未解”阻塞，但接入 MES 用例时必须以该实现和回归为基线。 |
-| `full-chain` | `Business FullChain Acceptance / <scenario>` | 断言跨服务业务终局，使用多个真实服务进程及场景声明所需的 PostgreSQL、Redis/CAP 等依赖。NERV-767 负责接入现有 FullChain 用例，NERV-673 后续以 scenario matrix 管理扩展场景。 |
+| `full-chain` | `Business FullChain Acceptance / v1 Authority` | 断言跨服务业务终局，使用多个真实服务进程及场景声明所需的 PostgreSQL、Redis/CAP 等依赖。稳定 `Business FullChain Acceptance` 只汇总 planning 与 v1 authority 的结果，不执行测试或发布第二份 evidence。NERV-767 负责接入现有 FullChain 用例，NERV-673 后续以 scenario matrix 管理扩展场景。 |
 
 每个测试按“它证明什么”唯一归属一条 `requiredLane`，不按类名或设置了哪个环境变量归类；一个测试同时承担两类结论时必须拆分。`SeedScale` 与 `performance` 可以复用本页的容器生命周期，但仍分别由 NERV-677、NERV-183 管理，不并入 `postgres`。
 
@@ -18,7 +18,7 @@
 
 `scripts/acceptance-scenario-matrix.json` 已登记六个 `full-chain` 场景：五个既有 v1 场景映射为 `active/core`，`equipment-unavailable-scheduling-mes` 登记为 `blocked/extended` 并保留明确阻塞原因、owner 和未来冻结身份。导入器要求五个 active/core 场景与 `scripts/full-chain-test-lane.json` 在 alias、project、entrypoint、identity、dependencies 和 diagnostic schemas 上双向闭合；blocked 场景只冻结规划合同，不要求未来 project/entrypoint 已存在或可 discovery。选择器已覆盖 PR ordinal impact、`main`、nightly 和 `workflow_dispatch`，并以保守选择处理影响规则失败或 changed paths 缺失；规划预算绑定具名 workflow job/step 的实际 timeout，按项目聚合后每个项目只允许一次 restore 和一次 Release `--no-restore --list-tests` discovery，成功 artifact 还必须闭合 SHA、run/attempt、manifest digest、选择原因、项目与身份。
 
-这仍是**纯规划合同**。当前 `.github/workflows/ci.yml` 只有 Script Governance 的 fixture 合同入口，不含 planning/matrix runtime、执行或聚合 job；planner 读取真实 workflow 时会在零外部命令下失败关闭。v1 五场景 manifest/runner 继续是唯一实际执行权威，本轮没有新 runtime、ERP 等价或旧 job/manifest/runner 退出证据。`MAN-669 PR-C` 关于 scenario runner 精确构建所需服务的裁决明确不由 MAN-669 实现；该项保留给 NERV-673 在未来接入真实 runtime 后独立复评，不在本轮改变构建命令。
+这仍是**纯规划合同**，但 `.github/workflows/ci.yml` 现已接入 `acceptance-scenario-matrix-planning`：它无 Docker、数据库、Redis、Aspire 或业务进程副作用，先完成选择、预算、每个项目一次 restore/discovery 与身份闭合，再上传同一 run/attempt、SHA、digest 的 artifact。v2 hosted shadow runtime/scenario job 仍不存在，`scripts/run-acceptance-scenario-matrix.ps1` 仍只由纯 fixture 合同使用；因此本层不构成 shadow 等价或 ERP 退出证据。五个 v1 场景已迁至物理 `Business FullChain Acceptance / v1 Authority`，它继续是唯一实际 v1 authority 与正式 `full-chain` MAN-661 evidence owner；稳定 `Business FullChain Acceptance` 只是 fail-closed aggregate，`CI Summary` 仍依赖该稳定身份且保留 selected/`skipped by policy` 语义。既有 `ERP Sales Order Demand Acceptance` 未改名、未删除，artifact 仍为 warn/7-day。真实 shadow、三轨等价和旧 ERP 加固留待后续 #1865 Task 3；代码接线与本地纯合同本身不构成 hosted evidence，实际运行须分别以 PR exact-head 与 merge-SHA main 的 Actions 证明。`MAN-669 PR-C` 关于 scenario runner 精确构建所需服务的裁决明确不由 MAN-669 实现；该项保留给 NERV-673 在未来接入真实 runtime 后独立复评，不在本轮改变构建命令。
 
 ## 触发层级与 branch protection
 
@@ -73,4 +73,4 @@ Redis 上同时持有相同逻辑锁并各自消费相同逻辑 topic，证明�
 
 ## 非目标与后续边界
 
-本页的架构冻结不设计各业务 scenario 的步骤；Nightly 故障工单自动化、去重和优先级升级策略须另行治理，不由本页裁决。第二层由 `scripts/postgres-test-lane.json`、受治理 runner 与 CI job 实现 PostgreSQL 模板及 Inventory 单服务试点；第三层才逐服务接入并收编 NERV-423，第四层接入 Redis/CAP，第五层由 NERV-767 接入 FullChain。NERV-673 已交付上述 manifest v2 纯规划合同，后续 runtime 接线仍须独立验收；NERV-677 保留种子分层职责。
+本页的架构冻结不设计各业务 scenario 的步骤；Nightly 故障工单自动化、去重和优先级升级策略须另行治理，不由本页裁决。第二层由 `scripts/postgres-test-lane.json`、受治理 runner 与 CI job 实现 PostgreSQL 模板及 Inventory 单服务试点；第三层才逐服务接入并收编 NERV-423，第四层接入 Redis/CAP，第五层由 NERV-767 接入 FullChain。NERV-673 已交付上述 manifest v2 与 hosted planning，后续 shadow runtime 接线仍须独立验收；NERV-677 保留种子分层职责。

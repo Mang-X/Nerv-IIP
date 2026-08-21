@@ -8,9 +8,12 @@
 #     - Removes owned temporary fixtures in finally
 #   Requires:
 #     - PowerShell 7
+#     - Ruby 3.4 with yaml/json standard libraries
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 . (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1')
 
 $manifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
@@ -18,6 +21,63 @@ $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-full-chain-lane-$([Gui
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
+}
+
+function Assert-FullChainV1WorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $v1JobProperties = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
+            [string]::Equals([string]$_.Name, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($v1JobProperties.Count -eq 1) 'CI must define exactly one business-full-chain-acceptance-v1 physical worker.'
+    $v1Job = $v1JobProperties[0].Value
+    Assert-Contract ([string]::Equals([string]$v1Job.name, 'Business FullChain Acceptance / v1 Authority', [StringComparison]::Ordinal)) 'The physical FullChain worker must retain the v1 Authority Actions name.'
+    Assert-Contract ([int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the governed 225-minute job budget.'
+    Assert-Contract ([string]::Equals([string]$v1Job.'runs-on', 'ubuntu-latest', [StringComparison]::Ordinal)) 'The physical v1 worker must run on ubuntu-latest.'
+    $v1Needs = @($v1Job.needs | ForEach-Object { [string]$_ })
+    Assert-Contract ($v1Needs.Count -eq 1 -and [string]::Equals($v1Needs[0], 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)) 'The physical v1 worker must need only acceptance-scenario-matrix-planning.'
+    $allowedV1Conditions = [Collections.Generic.HashSet[string]]::new([string[]]@(
+            "`${{ needs.acceptance-scenario-matrix-planning.result == 'success' }}",
+            "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' }}"
+        ), [StringComparer]::Ordinal)
+    Assert-Contract ($allowedV1Conditions.Contains([string]$v1Job.if)) 'The physical v1 worker must start only after planning succeeds.'
+
+    $v1Steps = @($v1Job.steps)
+    $expectedStepNames = @(
+        'Checkout',
+        'Setup .NET',
+        'Cache NuGet packages',
+        'Setup Aspire CLI',
+        'Setup pnpm',
+        'Setup Node.js',
+        'Install frontend dependencies',
+        'Install Playwright Chromium',
+        'Prepare FullChain dependency images',
+        'Resolve FullChain evidence environment',
+        'Run governed FullChain scenarios',
+        'Collect FullChain evidence',
+        'Upload FullChain normalized evidence',
+        'Upload FullChain dependency summary',
+        'Upload FullChain failure diagnostics'
+    )
+    Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed five-scenario workflow step sequence.'
+    Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
+    $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
+    Assert-Contract ($v1StepBudget -eq 214 -and [int]$v1Job.'timeout-minutes' -eq 225) 'The physical v1 worker must retain the complete 214-minute explicit budget inside its 225-minute job budget.'
+    $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
+    Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
+
+    $collectorSteps = @($v1Steps | Where-Object {
+            $runProperty = $_.PSObject.Properties['run']
+            $null -ne $runProperty -and
+            ([string]$runProperty.Value).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+            ([string]$runProperty.Value).Contains('-Lane full-chain', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($collectorSteps.Count -eq 1) 'The physical v1 worker must remain the sole FullChain MAN-661 collector owner.'
+    Assert-Contract (([string]$collectorSteps[0].run).Contains('-JobName "Business FullChain Acceptance / v1 Authority"', [StringComparison]::Ordinal)) 'The FullChain collector must bind rerun authority to the physical v1 Actions job.'
+
+    return $parsedWorkflow
 }
 
 function New-FullChainTrx {
@@ -92,7 +152,7 @@ try {
     $memberLoopIndex = $runnerContent.IndexOf('$memberResultsDirectory =', [StringComparison]::Ordinal)
     Assert-Contract ($discoveryIndex -ge 0 -and $memberLoopIndex -ge 0 -and $discoveryIndex -lt $memberLoopIndex) 'FullChain discovery must finish before any side-effecting member entrypoint runs.'
     Assert-Contract ($runnerContent.IndexOf('discovery expected 1 frozen test', [StringComparison]::Ordinal) -lt $memberLoopIndex) 'Every frozen identity must be validated from the shared discovery result before member entrypoints run.'
-    Assert-Contract ($runnerContent.Contains("'restore', $fullChainProject", [StringComparison]::Ordinal)) 'FullChain runner must restore the shared project exactly once before discovery.'
+    Assert-Contract ($runnerContent.Contains("'restore', `$fullChainProject", [StringComparison]::Ordinal)) 'FullChain runner must restore the shared project exactly once before discovery.'
     Assert-Contract ($runnerContent.Contains("'--no-restore', '--list-tests'", [StringComparison]::Ordinal)) 'FullChain discovery must not restore again after the explicit restore phase.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('MSBUILDDISABLENODEREUSE', '1')", [StringComparison]::Ordinal)) 'FullChain runner must disable MSBuild node reuse on hosted runners.'
     Assert-Contract ($runnerContent.Contains("SetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER', '0')", [StringComparison]::Ordinal)) 'FullChain runner must disable the persistent dotnet build server.'
@@ -105,10 +165,11 @@ try {
     Assert-Contract (-not $fullstackSessionContent.Contains("'--configuration', 'Release',`n                    '--no-restore'", [StringComparison]::Ordinal)) 'Standalone fullstack probes must retain their existing default configuration.'
 
     $workflowContent = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
+    [void](Assert-FullChainV1WorkflowContract -Path (Join-Path $repoRoot '.github/workflows/ci.yml'))
     foreach ($requiredWorkflowFragment in @(
-        'business-full-chain-acceptance:',
-        'name: Business FullChain Acceptance',
-        "needs.impact-plan.outputs.full_chain != 'false'",
+        'business-full-chain-acceptance-v1:',
+        'name: Business FullChain Acceptance / v1 Authority',
+        "needs.acceptance-scenario-matrix-planning.result == 'success'",
         'bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6',
         'pnpm -C frontend install --frozen-lockfile',
         'pnpm -C frontend --filter @nerv-iip/business-console exec playwright install chromium',
@@ -121,6 +182,27 @@ try {
         Assert-Contract ($workflowContent.Contains($requiredWorkflowFragment, [StringComparison]::Ordinal)) "FullChain workflow is missing required contract fragment '$requiredWorkflowFragment'."
     }
     Assert-Contract ($workflowContent.Contains('if-no-files-found: error', [StringComparison]::Ordinal)) 'FullChain evidence uploads must fail when required artifacts are missing.'
+
+    foreach ($v1Mutation in @(
+            @{
+                Name = 'v1-job-id-drift'
+                Original = "  business-full-chain-acceptance-v1:`n"
+                Replacement = "  business-full-chain-acceptance-v1-drift:`n"
+            },
+            @{
+                Name = 'v1-evidence-owner-drift'
+                Original = '-JobName "Business FullChain Acceptance / v1 Authority"'
+                Replacement = '-JobName "Business FullChain Acceptance"'
+            }
+        )) {
+        $mutatedV1Workflow = $workflowContent.Replace([string]$v1Mutation.Original, [string]$v1Mutation.Replacement)
+        Assert-Contract (-not [string]::Equals($mutatedV1Workflow, $workflowContent, [StringComparison]::Ordinal)) "FullChain v1 mutation '$($v1Mutation.Name)' must match the canonical workflow."
+        $v1MutationPath = Join-Path $fixtureRoot "$($v1Mutation.Name).yml"
+        [IO.File]::WriteAllText($v1MutationPath, $mutatedV1Workflow, [Text.UTF8Encoding]::new($false))
+        $v1MutationFailure = $null
+        try { Assert-FullChainV1WorkflowContract -Path $v1MutationPath | Out-Null } catch { $v1MutationFailure = $_ }
+        Assert-Contract ($null -ne $v1MutationFailure) "FullChain v1 mutation '$($v1Mutation.Name)' must be rejected."
+    }
 
     $workflowTimeoutNeedle = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 120"
     $shortenedWorkflowTimeout = "      - name: Run governed FullChain scenarios`n        timeout-minutes: 90"
