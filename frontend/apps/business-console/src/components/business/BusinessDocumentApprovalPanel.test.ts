@@ -292,14 +292,14 @@ describe('business document approval panel', () => {
     expect(approvalState.toastSuccess).toHaveBeenCalledWith('审批链已发起')
   })
 
-  it('prefers the canonical engineering change template when starting a new chain', async () => {
+  it('prefers the engineering-change-order template when starting a new chain', async () => {
     approvalState.templates = [
       {
         templateCode: 'fallback-template',
         documentType: 'engineering-change-order',
         isActive: true,
       },
-      { templateCode: 'APT-WB-ECO-001', documentType: 'engineering-change-order', isActive: true },
+      { templateCode: 'engineering-change-order', documentType: 'engineering-change-order', isActive: true },
     ]
     const wrapper = mount(BusinessDocumentApprovalPanel, {
       props: {
@@ -307,7 +307,7 @@ describe('business document approval panel', () => {
         sourceService: 'product-engineering',
         documentType: 'engineering-change-order',
         documentId: 'ECO-20260801-000001',
-        preferredTemplateCode: 'APT-WB-ECO-001',
+        preferredTemplateCode: 'engineering-change-order',
       },
       global: { stubs: uiStubs },
     })
@@ -316,7 +316,7 @@ describe('business document approval panel', () => {
     await flushPromises()
 
     expect(approvalState.startChain).toHaveBeenCalledWith({
-      templateCode: 'APT-WB-ECO-001',
+      templateCode: 'engineering-change-order',
       sourceService: 'product-engineering',
       documentType: 'engineering-change-order',
       documentId: 'ECO-20260801-000001',
