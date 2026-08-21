@@ -89,7 +89,7 @@ public sealed class MesQualityHoldTransitionPersistenceTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => competingContext.SaveChangesAsync());
 
-        Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("质量保留幂等键已被不同载荷复用。", exception.Message);
     }
 
     [Fact]

@@ -138,7 +138,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
         if (!QualityHoldTransitionPayloadEquals(existing, pending))
         {
-            throw new KnownException("Quality hold transition idempotency key was reused with a different payload.");
+            throw new KnownException("质量保留幂等键已被不同载荷复用。");
         }
 
         Entry(pending).State = EntityState.Detached;
