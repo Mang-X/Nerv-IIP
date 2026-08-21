@@ -983,16 +983,71 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  business-full-chain-acceptance:
-    name: Business FullChain Acceptance
+  acceptance-scenario-matrix-planning:
+    name: Business FullChain Acceptance / Planning
+    timeout-minutes: 55
+    runs-on: ubuntu-latest
+    needs: impact-plan
+    if: >-
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download CI impact plan
+        timeout-minutes: 3
+        if: ${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-impact-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-impact-plan
+
+      - name: Plan acceptance scenario matrix
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          $eventName = '${{ github.event_name }}'
+          $impactRulesSucceeded = $eventName -ne 'pull_request' -or '${{ needs.impact-plan.result }}' -eq 'success'
+          $changedPaths = @()
+          if ($eventName -eq 'pull_request' -and $impactRulesSucceeded) {
+            $impactPlan = Get-Content -LiteralPath artifacts/ci-impact-plan/impact-plan.json -Raw | ConvertFrom-Json
+            $changedPaths = @($impactPlan.changed_paths | ForEach-Object { [string]$_ })
+          }
+          $testedSha = (git rev-parse HEAD).Trim()
+          ./scripts/plan-acceptance-scenario-matrix.ps1 `
+            -Event $eventName `
+            -ChangedPaths $changedPaths `
+            -ImpactRulesSucceeded $impactRulesSucceeded `
+            -Repository '${{ github.repository }}' `
+            -TestedSha $testedSha `
+            -RunId '${{ github.run_id }}' `
+            -RunAttempt ${{ github.run_attempt }}
+
+      - name: Upload acceptance scenario matrix plan
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix/planning.json
+          if-no-files-found: error
+          retention-days: 14
+
+  business-full-chain-acceptance-v1:
+    name: Business FullChain Acceptance / v1 Authority
     # NERV-767：五条 active/core 跨服务真实依赖场景。层级 A；显式 step
     # 预算合计 214m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
     # steps 保留 11m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
     timeout-minutes: 225
     runs-on: ubuntu-latest
-    needs: impact-plan
-    if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
+    needs: acceptance-scenario-matrix-planning
+    if: ${{ needs.acceptance-scenario-matrix-planning.result == 'success' }}
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=postgres;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
@@ -1207,7 +1262,7 @@ jobs:
           -TestedSha ${{ steps.full-chain-evidence-environment.outputs.tested-sha }}
           -RunnerOs ${{ runner.os }}
           -Repository ${{ github.repository }}
-          -JobName "Business FullChain Acceptance"
+          -JobName "Business FullChain Acceptance / v1 Authority"
           -CurrentTestOutcome ${{ steps.full-chain-tests.outcome }}
           -Event ${{ github.event_name }}
           -HeadBranch $env:HEAD_BRANCH
@@ -1250,6 +1305,25 @@ jobs:
             artifacts/script-logs/**
           if-no-files-found: error
           retention-days: 14
+
+  business-full-chain-acceptance:
+    name: Business FullChain Acceptance
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    needs:
+      - impact-plan
+      - acceptance-scenario-matrix-planning
+      - business-full-chain-acceptance-v1
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
+    steps:
+      - name: Require FullChain planning and v1 authority
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
+          v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
+          test "$planning_result" = "success"
+          test "$v1_result" = "success"
 
   erp-sales-order-demand-acceptance:
     name: ERP Sales Order Demand Acceptance

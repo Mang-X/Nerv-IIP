@@ -115,7 +115,10 @@ function Assert-FullChainAggregateContract {
     Assert-Contract ($legacyErpProperties.Count -eq 1) 'The legacy ERP Sales Order Demand Acceptance job must not be deleted or renamed.'
     $legacyErp = $legacyErpProperties[0].Value
     Assert-Contract ([string]::Equals([string]$legacyErp.name, 'ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal) -and [int]$legacyErp.'timeout-minutes' -eq 55) 'The legacy ERP job name and budget must remain unchanged in this layer.'
-    $legacyErpUploads = @($legacyErp.steps | Where-Object { [string]::Equals([string]$_.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) })
+    $legacyErpUploads = @($legacyErp.steps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
+        })
     Assert-Contract ($legacyErpUploads.Count -eq 1 -and
         [string]::Equals([string]$legacyErpUploads[0].with.'if-no-files-found', 'warn', [StringComparison]::Ordinal) -and
         [int]$legacyErpUploads[0].with.'retention-days' -eq 7) 'The legacy ERP artifact must retain its existing warn/7-day behavior until the later equivalence layer.'

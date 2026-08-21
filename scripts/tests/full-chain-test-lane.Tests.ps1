@@ -69,8 +69,10 @@ function Assert-FullChainV1WorkflowContract {
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
 
     $collectorSteps = @($v1Steps | Where-Object {
-            ([string]$_.run).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
-            ([string]$_.run).Contains('-Lane full-chain', [StringComparison]::Ordinal)
+            $runProperty = $_.PSObject.Properties['run']
+            $null -ne $runProperty -and
+            ([string]$runProperty.Value).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+            ([string]$runProperty.Value).Contains('-Lane full-chain', [StringComparison]::Ordinal)
         })
     Assert-Contract ($collectorSteps.Count -eq 1) 'The physical v1 worker must remain the sole FullChain MAN-661 collector owner.'
     Assert-Contract (([string]$collectorSteps[0].run).Contains('-JobName "Business FullChain Acceptance / v1 Authority"', [StringComparison]::Ordinal)) 'The FullChain collector must bind rerun authority to the physical v1 Actions job.'

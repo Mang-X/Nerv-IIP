@@ -185,11 +185,20 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     $planningStepBudget = (@($planningSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
     Assert-Contract ([int]$planningJob.'timeout-minutes' -gt $planningStepBudget) 'The planning job timeout must strictly exceed the sum of explicit step budgets so action post steps retain margin.'
 
-    $checkoutSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.uses, 'actions/checkout@v4', [StringComparison]::Ordinal) })
+    $checkoutSteps = @($planningSteps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/checkout@v4', [StringComparison]::Ordinal)
+        })
     Assert-Contract ($checkoutSteps.Count -eq 1) 'The planning job must checkout the tested repository exactly once.'
-    $dotnetSetupSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.uses, 'actions/setup-dotnet@v4', [StringComparison]::Ordinal) })
+    $dotnetSetupSteps = @($planningSteps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/setup-dotnet@v4', [StringComparison]::Ordinal)
+        })
     Assert-Contract ($dotnetSetupSteps.Count -eq 1 -and [string]::Equals([string]$dotnetSetupSteps[0].with.'dotnet-version', '10.0.x', [StringComparison]::Ordinal)) 'The planning job must setup the governed .NET 10 SDK exactly once.'
-    $impactDownloadSteps = @($planningSteps | Where-Object { [string]::Equals([string]$_.uses, 'actions/download-artifact@v4', [StringComparison]::Ordinal) })
+    $impactDownloadSteps = @($planningSteps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/download-artifact@v4', [StringComparison]::Ordinal)
+        })
     Assert-Contract ($impactDownloadSteps.Count -eq 1) 'The planning job must conditionally download the CI impact-plan artifact exactly once.'
     $impactDownloadStep = $impactDownloadSteps[0]
     Assert-Contract ([string]::Equals([string]$impactDownloadStep.if, "`${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}", [StringComparison]::Ordinal)) 'The planning job must download impact-plan only for a PR whose impact plan succeeded.'
@@ -221,13 +230,18 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         -StepTimeoutSeconds $planningWorkflowBudget.stepTimeoutSeconds)
 
     $planningUploads = @($planningSteps | Where-Object {
-            [string]::Equals([string]$_.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) -and
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and
+            [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal) -and
             [string]::Equals([string]$_.with.name, 'acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)
         })
     Assert-Contract ($planningUploads.Count -eq 1) 'The planning job must upload exactly one current run/attempt planning artifact.'
     Assert-Contract ([string]::Equals([string]$planningUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and [int]$planningUploads[0].with.'retention-days' -eq 14) 'The planning artifact must fail closed when absent and retain for 14 days.'
 
-    $planningRunSurface = (@($planningSteps | ForEach-Object { [string]$_.run }) -join "`n")
+    $planningRunSurface = (@($planningSteps | ForEach-Object {
+                $runProperty = $_.PSObject.Properties['run']
+                if ($null -ne $runProperty) { [string]$runProperty.Value }
+            }) -join "`n")
     foreach ($forbiddenPlanningCommand in @('docker', 'psql', 'redis-cli', 'aspire', 'nerv.ps1', 'run-full-chain-test-lane.ps1', 'run-acceptance-scenario-matrix.ps1')) {
         Assert-Contract (-not $planningRunSurface.Contains($forbiddenPlanningCommand, [StringComparison]::OrdinalIgnoreCase)) "The pure planning job must not invoke '$forbiddenPlanningCommand'."
     }

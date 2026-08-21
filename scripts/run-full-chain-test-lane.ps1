@@ -49,10 +49,10 @@ $fullChainProject = @($projectSet)[0]
 
 $workflowJobs = Get-NervCiWorkflowBudgets -Path $WorkflowPath
 $fullChainWorkflowJobs = @($workflowJobs | Where-Object {
-    [string]::Equals([string]$_.Name, 'business-full-chain-acceptance', [StringComparison]::Ordinal)
+    [string]::Equals([string]$_.Name, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal)
 })
 if ($fullChainWorkflowJobs.Count -ne 1) {
-    throw "Workflow '$WorkflowPath' must define exactly one business-full-chain-acceptance job."
+    throw "Workflow '$WorkflowPath' must define exactly one business-full-chain-acceptance-v1 job."
 }
 $fullChainRunSteps = @($fullChainWorkflowJobs[0].Steps | Where-Object {
     [string]::Equals([string]$_.Name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal)
