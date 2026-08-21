@@ -59,6 +59,7 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
         string environmentId,
         CancellationToken cancellationToken)
     {
+        var expectedLines = BuildRfqLines();
         var rfq = await dbContext.RequestForQuotations
             .Include(x => x.Lines)
             .Include(x => x.Suppliers)
@@ -73,11 +74,13 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
                 environmentId,
                 WalkthroughSeedSpec.RfqNo,
                 WalkthroughSeedSpec.PurchasePrices.Select(x => x.SupplierCode),
-                WalkthroughSeedSpec.PurchasePrices.Select((price, index) => new RfqLineDraft(
-                    $"{(index + 1) * 10}", price.SkuCode, price.UomCode, price.Quantity,
-                    WalkthroughSeedSpec.SiteCode, WalkthroughSeedSpec.ValidUntil))));
+                expectedLines));
         }
         else if (rfq.Lines.Count != WalkthroughSeedSpec.PurchasePrices.Count ||
+                 !rfq.Lines.OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                     .Select(x => new RfqLineDraft(
+                         x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.SiteCode, x.RequiredDate))
+                     .SequenceEqual(expectedLines.OrderBy(x => x.LineNo, StringComparer.Ordinal)) ||
                  !rfq.Suppliers.Select(x => x.SupplierCode).Order(StringComparer.Ordinal).SequenceEqual(
                      WalkthroughSeedSpec.PurchasePrices.Select(x => x.SupplierCode).Order(StringComparer.Ordinal),
                      StringComparer.Ordinal))
@@ -111,6 +114,13 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
             }
         }
     }
+
+    private static RfqLineDraft[] BuildRfqLines() =>
+    [
+        .. WalkthroughSeedSpec.PurchasePrices.Select((price, index) => new RfqLineDraft(
+            $"{(index + 1) * 10}", price.SkuCode, price.UomCode, price.Quantity,
+            WalkthroughSeedSpec.SiteCode, WalkthroughSeedSpec.ValidUntil)),
+    ];
 
     private static InvalidOperationException Collision(string key) =>
         new($"Reserved walkthrough ERP fact '{key}' exists with incompatible tenant facts; the seed will not overwrite it.");

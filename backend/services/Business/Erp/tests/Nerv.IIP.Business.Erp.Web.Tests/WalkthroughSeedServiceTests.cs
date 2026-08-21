@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
 
@@ -27,6 +28,30 @@ public sealed class WalkthroughSeedServiceTests
         Assert.Empty(await db.PurchaseReceipts.ToArrayAsync());
         Assert.Empty(await db.DeliveryOrders.ToArrayAsync());
         Assert.True(WalkthroughSeedSpec.SalesUnitPrice > WalkthroughSeedSpec.AuditablePurchaseCost);
+    }
+
+    [Fact]
+    public async Task Seed_existing_rfq_with_drifted_line_rejects_collision()
+    {
+        await using var db = CreateDbContext();
+        db.RequestForQuotations.Add(RequestForQuotation.Create(
+            "org-001",
+            "env-dev",
+            WalkthroughSeedSpec.RfqNo,
+            WalkthroughSeedSpec.PurchasePrices.Select(x => x.SupplierCode),
+            WalkthroughSeedSpec.PurchasePrices.Select((price, index) => new RfqLineDraft(
+                $"{(index + 1) * 10}",
+                index == 0 ? "RM-DRIFT-01" : price.SkuCode,
+                price.UomCode,
+                price.Quantity,
+                WalkthroughSeedSpec.SiteCode,
+                WalkthroughSeedSpec.ValidUntil))));
+        await db.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new WalkthroughSeedService(db).SeedAsync("org-001", "env-dev"));
+
+        Assert.Contains(WalkthroughSeedSpec.RfqNo, exception.Message, StringComparison.Ordinal);
     }
 
     private static ApplicationDbContext CreateDbContext()
