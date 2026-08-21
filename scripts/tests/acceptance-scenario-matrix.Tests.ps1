@@ -529,6 +529,10 @@ try {
     Assert-Contract (@($planningProjects[0].expectedTestIdentities).Count -eq 4 -and @($planningProjects[1].expectedTestIdentities).Count -eq 1) 'Planning must aggregate each selected identity into exactly one project.'
 
     $planningWorkflowPath = Write-WorkflowFixture -Name 'planning-workflow' -StepTimeoutMinutes 60
+    $directPlanningWorkflowPath = Write-WorkflowFixture `
+        -Name 'planning-workflow-direct-pwsh-shell' `
+        -StepTimeoutMinutes 60 `
+        -StepRun './scripts/plan-acceptance-scenario-matrix.ps1 -Event push'
     $shortPlanningWorkflowPath = Write-WorkflowFixture -Name 'planning-workflow-short' -StepTimeoutMinutes 46
     $runDriftWorkflowPath = Write-WorkflowFixture `
         -Name 'planning-workflow-run-drift' `
@@ -555,6 +559,11 @@ try {
         -JobName 'acceptance-scenario-matrix-planning' `
         -StepName 'Plan acceptance scenario matrix'
     Assert-Contract ($workflowBudget.stepTimeoutSeconds -eq 3600) 'Planning must derive the actual step timeout from the supplied workflow.'
+    $directWorkflowBudget = Get-NervAcceptancePlanningWorkflowBudget `
+        -WorkflowPath $directPlanningWorkflowPath `
+        -JobName 'acceptance-scenario-matrix-planning' `
+        -StepName 'Plan acceptance scenario matrix'
+    Assert-Contract ($directWorkflowBudget.stepTimeoutSeconds -eq 3600) 'Planning must accept a direct governed planner invocation inside the workflow pwsh shell.'
     foreach ($workflowRunMutation in @(
         @{ Name = 'run-drift'; Path = $runDriftWorkflowPath },
         @{ Name = 'unrelated-same-name'; Path = $unrelatedSameNameWorkflowPath }
@@ -578,12 +587,11 @@ try {
     Assert-ThrowsContaining -ExpectedMessage 'must be strictly less than' -Context 'Shortened planning workflow budget' -Action {
         Assert-NervAcceptancePlanningBudgetFits -PlanningBudget $planningManifest.planningBudget -UniqueProjectCount 2 -StepTimeoutSeconds $shortWorkflowBudget.stepTimeoutSeconds | Out-Null
     }
-    Assert-ThrowsContaining -ExpectedMessage 'exactly one' -Context 'Current workflow missing planning step' -Action {
-        Get-NervAcceptancePlanningWorkflowBudget `
-            -WorkflowPath $workflowPath `
-            -JobName 'acceptance-scenario-matrix-planning' `
-            -StepName 'Plan acceptance scenario matrix' | Out-Null
-    }
+    $currentWorkflowBudget = Get-NervAcceptancePlanningWorkflowBudget `
+        -WorkflowPath $workflowPath `
+        -JobName 'acceptance-scenario-matrix-planning' `
+        -StepName 'Plan acceptance scenario matrix'
+    Assert-Contract ($currentWorkflowBudget.stepTimeoutSeconds -eq 1800) 'The hosted planning workflow must expose its governed 30-minute production budget.'
 
     $projectExpected = @($planningProjects[0].expectedTestIdentities)
     $closedDiscovery = Assert-NervAcceptanceDiscoveryClosure `
@@ -915,28 +923,23 @@ exit 0
         $entryArtifactPath = Join-Path $fixtureRoot 'entry/planning.json'
         [IO.Directory]::CreateDirectory((Split-Path -Parent $entryArtifactPath)) | Out-Null
         [IO.File]::WriteAllText($entryArtifactPath, "stale-success`n", [Text.UTF8Encoding]::new($false))
-        $entryFailure = $null
-        try {
-            & $plannerPath `
-                -ManifestPath $manifestPath `
-                -V1ManifestPath $v1ManifestPath `
-                -WorkflowJobName 'acceptance-scenario-matrix-planning' `
-                -WorkflowStepName 'Plan acceptance scenario matrix' `
-                -ArtifactPath $entryArtifactPath `
-                -Event 'workflow_dispatch' `
-                -DispatchSelection 'full' `
-                -Repository 'Mang-X/Nerv-IIP' `
-                -TestedSha '0123456789abcdef0123456789abcdef01234567' `
-                -RunId '123456789' `
-                -RunAttempt 2 6>$null | Out-Null
-        }
-        catch { $entryFailure = $_ }
-        Assert-Contract ($null -ne $entryFailure -and $entryFailure.Exception.Message.Contains('exactly one', [StringComparison]::Ordinal)) 'The real workflow must fail closed before restore/discovery while its planning job/step is absent.'
-        Assert-Contract (-not (Test-Path -LiteralPath $entryArtifactPath)) 'Preflight failure against the real workflow must not leave a success artifact.'
-        Assert-Contract ([IO.File]::ReadAllLines($fakeCommandLog).Count -eq 0) 'Real-workflow preflight failure must execute zero external commands.'
-        Assert-Contract ([IO.File]::ReadAllLines($fakeEnvironmentLog).Count -eq 0) 'Real-workflow preflight failure must never expose planning environment values to a child process.'
-        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('MSBUILDDISABLENODEREUSE'), 'failure-sentinel-node-reuse', [StringComparison]::Ordinal)) 'Failed planner preflight must restore the prior MSBuild node-reuse environment value.'
-        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER'), 'failure-sentinel-build-server', [StringComparison]::Ordinal)) 'Failed planner preflight must restore the prior dotnet build-server environment value.'
+        & $plannerPath `
+            -ManifestPath $manifestPath `
+            -V1ManifestPath $v1ManifestPath `
+            -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+            -WorkflowStepName 'Plan acceptance scenario matrix' `
+            -ArtifactPath $entryArtifactPath `
+            -Event 'workflow_dispatch' `
+            -DispatchSelection 'full' `
+            -Repository 'Mang-X/Nerv-IIP' `
+            -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+            -RunId '123456789' `
+            -RunAttempt 2 6>$null | Out-Null
+        Assert-Contract (Test-Path -LiteralPath $entryArtifactPath -PathType Leaf) 'The real workflow planning budget must allow the planner entrypoint to replace a stale artifact after discovery closes.'
+        Assert-Contract ([IO.File]::ReadAllLines($fakeCommandLog).Count -eq 2) 'Planning against the real workflow must execute exactly one restore and one discovery.'
+        Assert-Contract ([IO.File]::ReadAllLines($fakeEnvironmentLog).Count -eq 2) 'Planning against the real workflow must scope the planning environment to both child commands.'
+        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('MSBUILDDISABLENODEREUSE'), 'failure-sentinel-node-reuse', [StringComparison]::Ordinal)) 'The real-workflow planner must restore the prior MSBuild node-reuse environment value.'
+        Assert-Contract ([string]::Equals([Environment]::GetEnvironmentVariable('DOTNET_CLI_USE_MSBUILD_SERVER'), 'failure-sentinel-build-server', [StringComparison]::Ordinal)) 'The real-workflow planner must restore the prior dotnet build-server environment value.'
     }
     finally {
         [Environment]::SetEnvironmentVariable('PATH', $savedPath)

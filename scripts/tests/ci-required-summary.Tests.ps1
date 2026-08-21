@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 
 $verifierPath = Join-Path $repoRoot 'scripts/verify-ci-required-summary.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
@@ -68,6 +69,61 @@ function Invoke-Mutation {
     Assert-Contract ($result.Message.Contains($ExpectedDiagnostic, [StringComparison]::Ordinal)) "Mutation '$Name' returned the wrong diagnostic: $($result.Message)"
 }
 
+function Assert-FullChainAggregateContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $aggregateProperties = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
+            [string]::Equals([string]$_.Name, 'business-full-chain-acceptance', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($aggregateProperties.Count -eq 1) 'CI must retain exactly one stable business-full-chain-acceptance aggregate.'
+    $aggregate = $aggregateProperties[0].Value
+    Assert-Contract ([string]::Equals([string]$aggregate.name, 'Business FullChain Acceptance', [StringComparison]::Ordinal)) 'The stable FullChain aggregate must retain its required Actions name.'
+    Assert-Contract ([int]$aggregate.'timeout-minutes' -eq 5) 'The stable FullChain aggregate must use the governed five-minute job budget.'
+    Assert-Contract ([string]::Equals([string]$aggregate.'runs-on', 'ubuntu-latest', [StringComparison]::Ordinal)) 'The stable FullChain aggregate must run on ubuntu-latest.'
+    Assert-Contract ([string]::Equals([string]$aggregate.if, "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}", [StringComparison]::Ordinal)) 'The stable FullChain aggregate must run always when selected and remain skipped for an explicit successful-PR full_chain=false policy decision.'
+
+    [string[]]$aggregateNeeds = @($aggregate.needs | ForEach-Object { [string]$_ })
+    [string[]]$expectedAggregateNeeds = @('impact-plan', 'acceptance-scenario-matrix-planning', 'business-full-chain-acceptance-v1')
+    [Array]::Sort($aggregateNeeds, [StringComparer]::Ordinal)
+    [Array]::Sort($expectedAggregateNeeds, [StringComparer]::Ordinal)
+    Assert-Contract ([string]::Equals(($aggregateNeeds -join '|'), ($expectedAggregateNeeds -join '|'), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must need exactly impact-plan, planning, and the physical v1 worker.'
+
+    $aggregateSteps = @($aggregate.steps)
+    Assert-Contract ($aggregateSteps.Count -eq 1) 'The stable FullChain aggregate must contain exactly one fail-fast assertion step.'
+    $aggregateStep = $aggregateSteps[0]
+    Assert-Contract ([int]$aggregateStep.'timeout-minutes' -gt 0 -and [int]$aggregateStep.'timeout-minutes' -lt [int]$aggregate.'timeout-minutes') 'The aggregate assertion step must have a positive timeout below the five-minute job budget.'
+    Assert-Contract ([string]::Equals([string]$aggregateStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'The stable FullChain aggregate must use the governed fail-fast Bash shell.'
+    Assert-Contract ($null -eq $aggregateStep.PSObject.Properties['if'] -and $null -eq $aggregateStep.PSObject.Properties['continue-on-error']) 'The aggregate assertion step must run naturally without a skip or continue-on-error escape.'
+    $aggregateRun = [string]$aggregateStep.run
+    foreach ($requiredAggregateAssertion in @(
+            'planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"',
+            'v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"',
+            'test "$planning_result" = "success"',
+            'test "$v1_result" = "success"'
+        )) {
+        Assert-Contract ($aggregateRun.Contains($requiredAggregateAssertion, [StringComparison]::Ordinal)) "The stable FullChain aggregate is missing required assertion '$requiredAggregateAssertion'."
+    }
+    Assert-Contract (-not $aggregateRun.Contains('test "$impact_result" = "success"', [StringComparison]::Ordinal)) 'The stable aggregate must allow the governed conservative path when impact-plan itself failed.'
+    foreach ($forbiddenAggregateWork in @('collect-test-evidence.ps1', 'upload-artifact', 'run-full-chain-test-lane.ps1', 'run-acceptance-scenario-matrix.ps1')) {
+        Assert-Contract (-not $aggregateRun.Contains($forbiddenAggregateWork, [StringComparison]::OrdinalIgnoreCase)) "The stable aggregate must not execute or publish '$forbiddenAggregateWork'."
+    }
+
+    $legacyErpProperties = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
+            [string]::Equals([string]$_.Name, 'erp-sales-order-demand-acceptance', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($legacyErpProperties.Count -eq 1) 'The legacy ERP Sales Order Demand Acceptance job must not be deleted or renamed.'
+    $legacyErp = $legacyErpProperties[0].Value
+    Assert-Contract ([string]::Equals([string]$legacyErp.name, 'ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal) -and [int]$legacyErp.'timeout-minutes' -eq 55) 'The legacy ERP job name and budget must remain unchanged in this layer.'
+    $legacyErpUploads = @($legacyErp.steps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($legacyErpUploads.Count -eq 1 -and
+        [string]::Equals([string]$legacyErpUploads[0].with.'if-no-files-found', 'warn', [StringComparison]::Ordinal) -and
+        [int]$legacyErpUploads[0].with.'retention-days' -eq 7) 'The legacy ERP artifact must retain its existing warn/7-day behavior until the later equivalence layer.'
+}
+
 try {
     [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
     Assert-Contract (Test-Path -LiteralPath $verifierPath -PathType Leaf) 'The CI required-summary verifier is missing.'
@@ -84,6 +140,7 @@ try {
     )) {
         Assert-Contract ($workflow.Contains($fullChainSummaryFragment, [StringComparison]::Ordinal)) "CI Summary is missing FullChain contract fragment '$fullChainSummaryFragment'."
     }
+    Assert-FullChainAggregateContract -Path $workflowPath
     $baseline = Invoke-SummaryVerifier -Name 'ci-required-summary-baseline'
     Assert-Contract $baseline.Passed "The repository workflow must satisfy required-summary governance: $($baseline.Message)"
 
@@ -96,6 +153,31 @@ try {
 
     $needsDiagnostic = 'CI Summary must need the impact plan, five current required jobs, ERP Acceptance, OpenAPI Drift, PostgreSQL Provider Tests, Redis/CAP Transport Tests, and Business FullChain Acceptance exactly.'
     $policyDiagnostic = 'CI Summary must retain the governed fail-closed selected/skipped-by-design/skipped-by-policy contract and audit table.'
+
+    foreach ($aggregateMutation in @(
+            @{
+                Name = 'full-chain-aggregate-drops-v1-need'
+                Original = "      - business-full-chain-acceptance-v1$([Environment]::NewLine)"
+                Replacement = ''
+            },
+            @{
+                Name = 'full-chain-aggregate-allows-v1-skip'
+                Original = 'test "$v1_result" = "success"'
+                Replacement = 'test "$v1_result" = "skipped"'
+            },
+            @{
+                Name = 'full-chain-aggregate-treats-missing-signal-as-unselected'
+                Original = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
+                Replacement = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain == 'true') }}"
+            }
+        )) {
+        $mutatedAggregateWorkflow = $workflow.Replace([string]$aggregateMutation.Original, [string]$aggregateMutation.Replacement)
+        Assert-Contract (-not [string]::Equals($mutatedAggregateWorkflow, $workflow, [StringComparison]::Ordinal)) "FullChain aggregate mutation '$($aggregateMutation.Name)' must match the canonical workflow."
+        [IO.File]::WriteAllText($fixturePath, $mutatedAggregateWorkflow, [Text.UTF8Encoding]::new($false))
+        $aggregateMutationFailure = $null
+        try { Assert-FullChainAggregateContract -Path $fixturePath } catch { $aggregateMutationFailure = $_ }
+        Assert-Contract ($null -ne $aggregateMutationFailure) "FullChain aggregate mutation '$($aggregateMutation.Name)' must be rejected."
+    }
 
     $needLine = '      - impact-plan'
     Invoke-Mutation -Name 'ci-summary-missing-need' -Workflow $workflow `
