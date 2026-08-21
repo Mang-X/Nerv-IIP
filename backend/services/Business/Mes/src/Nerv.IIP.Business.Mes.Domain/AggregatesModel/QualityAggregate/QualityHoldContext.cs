@@ -158,7 +158,7 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
 
         if (HeldAtUtc.HasValue && releasedAtUtc < HeldAtUtc.Value)
         {
-            throw new KnownException("Quality hold release time cannot be earlier than the hold time.");
+            throw new KnownException("质量保留释放时间不能早于保留时间。");
         }
 
         Active = false;
