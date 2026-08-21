@@ -1022,6 +1022,7 @@ function Invoke-NervFullStackGuardian {
         [ValidateRange(1, 10)] [int] $MaximumStopAttempts = 3,
         [scriptblock] $ReadAction,
         [scriptblock] $CoordinatorAliveAction,
+        [scriptblock] $DiagnosticAction,
         [scriptblock] $StopAction,
         [scriptblock] $DelayAction
     )
@@ -1029,6 +1030,12 @@ function Invoke-NervFullStackGuardian {
     if ($null -eq $ReadAction) { $ReadAction = { Read-NervFullStackManifest -SessionId $SessionId } }
     if ($null -eq $CoordinatorAliveAction) {
         $CoordinatorAliveAction = { Test-NervProcessIdentity -ProcessId $CoordinatorPid -ProcessStartTimeUtc $CoordinatorStartTimeUtc }
+    }
+    if ($null -eq $DiagnosticAction) {
+        $DiagnosticAction = {
+            param($InputManifest)
+            Invoke-NervFullStackDiagnosticCollection -Manifest $InputManifest | Out-Null
+        }
     }
     if ($null -eq $StopAction) {
         $StopAction = {
@@ -1069,6 +1076,12 @@ function Invoke-NervFullStackGuardian {
         }
 
         Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing."
+        try {
+            & $DiagnosticAction $manifest
+        }
+        catch {
+            Write-Warning "Guardian diagnostic collection failed for '$SessionId'; cleanup will continue: $($_.Exception.Message)"
+        }
         $lastStopError = 'cleanup did not reach Stopped'
         for ($attempt = 1; $attempt -le $MaximumStopAttempts; $attempt++) {
             try {

@@ -1458,6 +1458,7 @@ finally {
 
 $script:guardianReads = 0
 $script:guardianStops = 0
+$script:guardianLifecycle = [System.Collections.Generic.List[string]]::new()
 $guardianOutput = @(Invoke-NervFullStackGuardian `
     -SessionId $sessionId `
     -Mode Automated `
@@ -1473,7 +1474,12 @@ $guardianOutput = @(Invoke-NervFullStackGuardian `
         return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
     } `
     -CoordinatorAliveAction { $false } `
+    -DiagnosticAction {
+        param($Manifest)
+        $script:guardianLifecycle.Add('diagnostics')
+    } `
     -StopAction {
+        $script:guardianLifecycle.Add('stop')
         $script:guardianStops++
         if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
     } `
@@ -1483,8 +1489,30 @@ $guardianLogText = @($guardianOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
+Assert-True (($script:guardianLifecycle -join ',') -eq 'diagnostics,stop,stop') 'Guardian must collect diagnostics exactly once before its first stop attempt.'
 Assert-True ($guardianLogText.Contains("Guardian started for '$sessionId' in Automated mode.", [StringComparison]::Ordinal)) 'Guardian stdout must identify every managed session even when no warning is emitted.'
 Assert-True ($guardianLogText.Contains("Guardian cleanup triggered for '$sessionId'", [StringComparison]::Ordinal)) 'Guardian stdout must explain whether lease expiry or coordinator loss triggered cleanup.'
+
+$script:guardianDiagnosticFailureStops = 0
+$guardianDiagnosticFailureOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 1 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 1 `
+    -ReadAction {
+        if ($script:guardianDiagnosticFailureStops -eq 0) { return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') } }
+        return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
+    } `
+    -CoordinatorAliveAction { $false } `
+    -DiagnosticAction { param($Manifest) throw 'diagnostic transport unavailable' } `
+    -StopAction { $script:guardianDiagnosticFailureStops++ } `
+    -DelayAction { param($Seconds) } 3>&1 6>&1)
+$guardianDiagnosticFailureResult = @($guardianDiagnosticFailureOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+$guardianDiagnosticFailureLogText = @($guardianDiagnosticFailureOutput | ForEach-Object { "$_" }) -join "`n"
+Assert-True ([string]::Equals([string]$guardianDiagnosticFailureResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian diagnostic failure must not block cleanup completion.'
+Assert-True ($script:guardianDiagnosticFailureStops -eq 1) 'Guardian must attempt stop after best-effort diagnostics fail.'
+Assert-True ($guardianDiagnosticFailureLogText.Contains("Guardian diagnostic collection failed for '$sessionId'; cleanup will continue", [StringComparison]::Ordinal)) 'Guardian must record that diagnostic failure was downgraded before cleanup.'
 
 $script:relationProbeAttempts = 0
 $relationReadiness = Wait-NervFullStackPostgresRelations `
