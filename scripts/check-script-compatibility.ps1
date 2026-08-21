@@ -26,6 +26,7 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
+. (Join-Path $root "scripts/lib/ScriptCompatibility.ps1")
 
 if ($IsWindows -and -not $AllowWindows) {
   throw "Script compatibility gate must run on macOS or Linux. Use -AllowWindows only for a local smoke run."
@@ -100,7 +101,9 @@ function Invoke-RecordedPwshScript {
     [Parameter(Mandatory)]
     [string]$ScriptPath,
 
-    [string[]]$Arguments = @(),
+    [System.Collections.IDictionary]$NamedArguments = @{},
+
+    [object[]]$PositionalArguments = @(),
 
     [Parameter(Mandatory)]
     [string]$Name,
@@ -108,7 +111,8 @@ function Invoke-RecordedPwshScript {
     [int]$TimeoutSeconds = 300
   )
 
-  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments (@("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath) + $Arguments) -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
+  $pwshArguments = New-NervScriptCompatibilityPwshArguments -ScriptPath $ScriptPath -NamedArguments $NamedArguments -PositionalArguments $PositionalArguments
+  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments $pwshArguments -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
 }
 
 try {
@@ -124,6 +128,7 @@ try {
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-comparison-layers.Tests.ps1") -Name "compat-ordinal-comparison-layers" -TimeoutSeconds 180
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/test-evidence.Tests.ps1") -Name "compat-test-evidence-contracts" -TimeoutSeconds 300
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix.Tests.ps1") -Name "compat-acceptance-scenario-matrix-contracts" -TimeoutSeconds 300
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1") -Name "compat-acceptance-scenario-matrix-runtime-contracts" -TimeoutSeconds 300
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 
   if (-not $FastOnly) {
