@@ -27,7 +27,7 @@ public sealed class HttpPlanningSuggestionDownstreamBridge(
             return erpBridge.CreateDownstreamAsync(suggestion, request, cancellationToken);
         }
 
-        throw new KnownException($"Planning suggestion downstream bridge is not supported for {request.DownstreamService}/{request.DownstreamDocumentType}.");
+        throw new KnownException("计划建议下游创建方式不受支持，请检查下游服务和单据类型。");
     }
 }
 
@@ -42,7 +42,7 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
     {
         if (!CanHandle(request, suggestion))
         {
-            throw new KnownException($"Planning suggestion downstream bridge is not supported for {request.DownstreamService}/{request.DownstreamDocumentType}.");
+            throw new KnownException("计划建议下游创建方式不受支持，请检查下游服务和单据类型。");
         }
 
         var productionVersion = suggestion.PeggingLinks
@@ -86,15 +86,13 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var diagnostic = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new KnownException(
-                $"MES rejected planning suggestion downstream creation with HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {TrimDiagnostic(diagnostic)}");
+            throw new KnownException("MES 下游创建工单失败，请稍后重试。");
         }
 
         var accepted = await response.Content.ReadFromJsonAsync<MesAcceptedResponse>(cancellationToken);
         if (accepted is null || string.IsNullOrWhiteSpace(accepted.ReferenceId))
         {
-            throw new KnownException("MES did not return a work order reference for the accepted planning suggestion.");
+            throw new KnownException("MES 未返回工单引用，无法完成计划建议。");
         }
 
         return new PlanningSuggestionDownstreamReference(
@@ -108,12 +106,6 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         return string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedWorkOrder, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string TrimDiagnostic(string diagnostic)
-    {
-        diagnostic = string.IsNullOrWhiteSpace(diagnostic) ? "empty response body" : diagnostic.Trim();
-        return diagnostic.Length <= 500 ? diagnostic : diagnostic[..500];
     }
 }
 
@@ -130,7 +122,7 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
     {
         if (!CanHandle(request, suggestion))
         {
-            throw new KnownException($"Planning suggestion downstream bridge is not supported for {request.DownstreamService}/{request.DownstreamDocumentType}.");
+            throw new KnownException("计划建议下游创建方式不受支持，请检查下游服务和单据类型。");
         }
 
         var body = new ErpCreatePurchaseRequisitionFromSuggestionRequest(
@@ -159,9 +151,7 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var diagnostic = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new KnownException(
-                $"ERP rejected planning suggestion downstream creation with HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {TrimDiagnostic(diagnostic)}");
+            throw new KnownException("ERP 下游创建采购申请失败，请稍后重试。");
         }
 
         var accepted = await ReadResponseDataAsync<ErpPurchaseRequisitionAcceptedResponse>(response, cancellationToken);
@@ -170,7 +160,7 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
             : accepted.PurchaseRequisitionId;
         if (string.IsNullOrWhiteSpace(referenceId))
         {
-            throw new KnownException("ERP did not return a purchase requisition reference for the accepted planning suggestion.");
+            throw new KnownException("ERP 未返回采购申请引用，无法完成计划建议。");
         }
 
         return new PlanningSuggestionDownstreamReference(
@@ -191,20 +181,14 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(json))
         {
-            throw new KnownException("ERP returned an empty response for the accepted planning suggestion.");
+            throw new KnownException("ERP 返回空响应，无法完成计划建议。");
         }
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var payload = root.TryGetProperty("data", out var data) ? data : root;
         return payload.Deserialize<T>(JsonOptions)
-            ?? throw new KnownException("ERP did not return a purchase requisition reference for the accepted planning suggestion.");
-    }
-
-    private static string TrimDiagnostic(string diagnostic)
-    {
-        diagnostic = string.IsNullOrWhiteSpace(diagnostic) ? "empty response body" : diagnostic.Trim();
-        return diagnostic.Length <= 500 ? diagnostic : diagnostic[..500];
+            ?? throw new KnownException("ERP 未返回采购申请引用，无法完成计划建议。");
     }
 }
 

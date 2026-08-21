@@ -26,7 +26,7 @@ public sealed class RejectPlanningSuggestionCommandHandler(ApplicationDbContext 
     {
         var suggestion = await dbContext.PlanningSuggestions
             .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
-            ?? throw new KnownException($"Planning suggestion was not found: {request.SuggestionId}");
+            ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
         if (suggestion.Status == PlanningSuggestionStatus.Rejected)
         {
             // Replayed rejections are tolerated; the original rejection reason is preserved.
@@ -37,9 +37,9 @@ public sealed class RejectPlanningSuggestionCommandHandler(ApplicationDbContext 
         {
             suggestion.Reject(request.RejectedBy, request.Reason);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            throw new KnownException(ex.Message);
+            throw new KnownException("只有开放状态的计划建议才能拒绝。");
         }
     }
 }

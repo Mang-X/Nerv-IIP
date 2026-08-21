@@ -105,7 +105,7 @@ public sealed class CreateMasterProductionScheduleBucketCommandHandler(Applicati
         if (existing is not null)
         {
             throw new KnownException(
-                $"MPS bucket already exists for SKU '{request.SkuCode}' at site '{request.SiteCode}' on {request.BucketDate:yyyy-MM-dd}.");
+                $"SKU '{request.SkuCode}' 在站点 '{request.SiteCode}' 的日期已存在主生产计划桶。");
         }
 
         var bucket = MasterProductionSchedule.Create(
@@ -132,8 +132,14 @@ public sealed class UpdateMasterProductionScheduleBucketCommandHandler(Applicati
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() =>
-            bucket.Update(request.SkuCode, request.UomCode, request.SiteCode, request.BucketDate, request.Quantity));
+        try
+        {
+            bucket.Update(request.SkuCode, request.UomCode, request.SiteCode, request.BucketDate, request.Quantity);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException("已发布的主生产计划桶不能修改。");
+        }
     }
 }
 
@@ -148,7 +154,14 @@ public sealed class ReviewMasterProductionScheduleBucketCommandHandler(Applicati
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() => bucket.MarkReviewed(request.ReviewedBy));
+        try
+        {
+            bucket.MarkReviewed(request.ReviewedBy);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException("已发布的主生产计划桶不能重复审核。");
+        }
     }
 }
 
@@ -163,7 +176,14 @@ public sealed class ReleaseMasterProductionScheduleBucketCommandHandler(Applicat
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() => bucket.Release(request.ReleasedBy));
+        try
+        {
+            bucket.Release(request.ReleasedBy);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new KnownException("只有已审核的主生产计划桶才能发布。");
+        }
     }
 }
 
@@ -181,18 +201,7 @@ file static class MasterProductionScheduleCommandLoader
             && x.OrganizationId == organizationId
             && x.EnvironmentId == environmentId,
             cancellationToken)
-            ?? throw new KnownException($"MPS bucket was not found, MpsId = {mpsId}");
+            ?? throw new KnownException($"主生产计划桶不存在：{mpsId}");
     }
 
-    public static void ApplyLifecycleTransition(Action transition)
-    {
-        try
-        {
-            transition();
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new KnownException(ex.Message);
-        }
-    }
 }

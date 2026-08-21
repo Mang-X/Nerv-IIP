@@ -99,7 +99,7 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
     }
 
     [Fact]
-    public async Task Http_mes_bridge_wraps_non_success_response_as_known_exception_with_diagnostic()
+    public async Task Http_mes_bridge_uses_safe_chinese_message_without_downstream_diagnostic()
     {
         var suggestion = NewWorkOrderSuggestion();
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
@@ -116,8 +116,9 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 new PlanningSuggestionDownstreamRequest("BusinessMes", "WorkOrder", null, "idem-001"),
                 CancellationToken.None));
 
-        Assert.Contains("HTTP 409 Conflict", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("production work order already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("MES 下游创建工单失败，请稍后重试。", exception.Message);
+        Assert.DoesNotContain("HTTP 409", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("production work order already exists", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,7 +166,7 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
     }
 
     [Fact]
-    public async Task Http_erp_bridge_wraps_non_success_response_as_known_exception_with_diagnostic()
+    public async Task Http_erp_bridge_uses_safe_chinese_message_without_downstream_diagnostic()
     {
         var suggestion = NewPurchaseSuggestion();
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
@@ -182,8 +183,9 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 new PlanningSuggestionDownstreamRequest("BusinessErp", "PurchaseRequisition", null, "idem-erp-001"),
                 CancellationToken.None));
 
-        Assert.Contains("HTTP 409 Conflict", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("purchase source is blocked", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("ERP 下游创建采购申请失败，请稍后重试。", exception.Message);
+        Assert.DoesNotContain("HTTP 409", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("purchase source is blocked", exception.Message, StringComparison.Ordinal);
     }
 
     private static PlanningSuggestion NewWorkOrderSuggestion()
