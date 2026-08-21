@@ -62,7 +62,7 @@ public sealed class OperationTaskScheduleStateTests
 
         var exception = Assert.Throws<KnownException>(() =>
             task.Assign("operator-001", "DEV-OIL-01", "shift-a", DateTimeOffset.Parse("2026-06-01T08:00:00Z")));
-        Assert.Contains("rescheduled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("排程已失效的工序任务必须重新排程后才能派工。", exception.Message);
         Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
         Assert.Null(task.AssignedUserId);
     }

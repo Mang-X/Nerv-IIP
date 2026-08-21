@@ -229,6 +229,33 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void OperationTask_rejects_dispatch_until_a_revoked_schedule_is_released()
+    {
+        var task = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-INVALIDATED",
+            "OP-10",
+            OperationTaskLifecycleStatus.ScheduleInvalidated,
+            10,
+            "WC-OLD",
+            [],
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+            TimeSpan.FromMinutes(30),
+            DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+            null);
+
+        var exception = Assert.Throws<KnownException>(() => task.Assign(
+            "operator-001",
+            "DEV-OIL-01",
+            "SHIFT-A",
+            DateTimeOffset.Parse("2026-06-01T08:10:00Z"),
+            "user:operator-001"));
+
+        Assert.Equal("排程已失效的工序任务必须重新排程后才能派工。", exception.Message);
+    }
+
+    [Fact]
     public void WorkOrder_tracks_started_completed_and_closed_progress()
     {
         var workOrder = WorkOrder.Create(
@@ -679,7 +706,7 @@ public sealed class MesAggregateTests
         var exception = Assert.Throws<KnownException>(() =>
             context.ForceRelease("manual override", "user:supervisor", heldAtUtc.AddSeconds(-1)));
 
-        Assert.Contains("earlier", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("质量保留释放时间不能早于保留时间。", exception.Message);
         Assert.True(context.Active);
     }
 
