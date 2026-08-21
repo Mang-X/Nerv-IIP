@@ -301,7 +301,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
         {
-            throw new KnownException("Schedule invalidated operation task cannot be dispatched until it is rescheduled.");
+            throw new KnownException("排程已失效的工序任务必须重新排程后才能派工。");
         }
 
         var previousDeviceAssetId = HasActiveManualDispatch || HasLegacyUnknownManualDispatch

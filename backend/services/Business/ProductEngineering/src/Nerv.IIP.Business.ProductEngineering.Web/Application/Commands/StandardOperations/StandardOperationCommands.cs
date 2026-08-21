@@ -91,7 +91,7 @@ public sealed class CreateStandardOperationCommandHandler(
             request.RequiresReporting,
             request.RequiresQualityInspection,
             request.IsOutsourced,
-            request.Description));
+            request.Description), "标准工序创建失败，请检查工序参数。");
         await repository.AddAsync(operation, cancellationToken);
         return new StandardOperationCommandResult(operation.OperationCode);
     }
@@ -143,7 +143,7 @@ public sealed class UpdateStandardOperationCommandHandler(IStandardOperationRepo
                 request.IsOutsourced,
                 request.Description);
             return operation;
-        });
+        }, "标准工序更新失败，请检查工序参数。");
         return new StandardOperationCommandResult(operation.OperationCode);
     }
 }
@@ -172,7 +172,7 @@ public sealed class ArchiveStandardOperationCommandHandler(IStandardOperationRep
         {
             operation.Archive(request.Reason);
             return operation;
-        });
+        }, "标准工序归档失败，请检查状态和归档原因。");
     }
 }
 
