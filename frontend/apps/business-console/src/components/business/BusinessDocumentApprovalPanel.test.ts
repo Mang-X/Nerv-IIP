@@ -299,7 +299,11 @@ describe('business document approval panel', () => {
         documentType: 'engineering-change-order',
         isActive: true,
       },
-      { templateCode: 'engineering-change-order', documentType: 'engineering-change-order', isActive: true },
+      {
+        templateCode: 'engineering-change-order',
+        documentType: 'engineering-change-order',
+        isActive: true,
+      },
     ]
     const wrapper = mount(BusinessDocumentApprovalPanel, {
       props: {
