@@ -173,6 +173,19 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Known_exception_subclass_mutation_is_rejected()
+    {
+        const string source =
+            "using NetCorePal.Extensions.Primitives; class ProbeException : KnownException { public ProbeException(string message) : base(message) { } } class Probe { void Handle() { throw new ProbeException(\"Unable to save\"); } }";
+
+        var violations = InventoryKnownExceptionUserMessageSourceAnalyzer.AnalyzeKnownExceptionMessages(
+            [new InventoryKnownExceptionSourceDocument("Probe.cs", source)],
+            []);
+
+        Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
+    }
+
+    [Fact]
     public void English_posting_rejection_mutation_is_rejected()
     {
         const string source =
@@ -219,6 +232,48 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         Assert.NotEqual(dynamicDomainMessage, exception.FailureMessage);
         Assert.Contains("库存", exception.FailureMessage, StringComparison.Ordinal);
         Assert.DoesNotContain("provider", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void From_domain_describes_committed_stock_protection_as_available_quantity_guard()
+    {
+        var exception = InventoryPostingRejectedException.FromDomain(
+            new InventoryDomainException(
+                InventoryDomainFailureReason.CommittedStockProtection,
+                "Stock movement would breach committed stock protection."));
+
+        Assert.Equal("出库数量超过未预留的可用库存，不能完成过账。", exception.FailureMessage);
+    }
+
+    [Fact]
+    public void Unknown_domain_failure_reason_fails_closed_instead_of_using_generic_public_mapping()
+    {
+        var exception = new InventoryDomainException(
+            (InventoryDomainFailureReason)999,
+            "unknown domain failure");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => InventoryPostingRejectedException.FromDomain(exception));
+    }
+
+    [Fact]
+    public void Every_defined_domain_failure_reason_has_an_explicit_public_message_mapping()
+    {
+        const string genericMessage = "库存过账被拒绝，请核对库存状态后重试。";
+
+        foreach (var reason in Enum.GetValues<InventoryDomainFailureReason>())
+        {
+            var exception = InventoryPostingRejectedException.FromDomain(
+                new InventoryDomainException(reason, "domain details"));
+
+            if (reason == InventoryDomainFailureReason.PostingRejected)
+            {
+                Assert.Equal(genericMessage, exception.FailureMessage);
+            }
+            else
+            {
+                Assert.NotEqual(genericMessage, exception.FailureMessage);
+            }
+        }
     }
 
     [Fact]

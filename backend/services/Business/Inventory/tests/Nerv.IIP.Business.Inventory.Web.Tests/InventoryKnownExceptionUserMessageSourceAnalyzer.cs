@@ -72,7 +72,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
                     .OfType<BaseObjectCreationExpressionSyntax>()
                     .Count(creation =>
                         creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == method
-                        && IsType(semanticModel, creation, KnownExceptionTypeName));
+                        && IsTransportVisibleKnownExceptionType(semanticModel, creation));
                 if (directKnownExceptionCount == 0)
                 {
                     continue;
@@ -187,7 +187,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
             foreach (var creation in syntaxTree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
             {
-                if (!IsType(semanticModel, creation, KnownExceptionTypeName))
+                if (!IsTransportVisibleKnownExceptionType(semanticModel, creation))
                 {
                     continue;
                 }
@@ -352,6 +352,27 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
         BaseObjectCreationExpressionSyntax creation,
         string typeName) =>
         semanticModel.GetTypeInfo(creation).Type?.ToDisplayString() == typeName;
+
+    private static bool IsTransportVisibleKnownExceptionType(
+        SemanticModel semanticModel,
+        BaseObjectCreationExpressionSyntax creation)
+    {
+        var type = semanticModel.GetTypeInfo(creation).Type as INamedTypeSymbol;
+        if (type is null || type.ToDisplayString() == InventoryPostingRejectedExceptionTypeName)
+        {
+            return false;
+        }
+
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (current.ToDisplayString() == KnownExceptionTypeName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static string? GetContainingTypeName(SyntaxNode node) =>
         node.Ancestors()

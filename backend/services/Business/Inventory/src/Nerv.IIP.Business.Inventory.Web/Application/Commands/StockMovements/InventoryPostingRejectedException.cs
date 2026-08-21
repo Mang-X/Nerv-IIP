@@ -56,13 +56,14 @@ public sealed class InventoryPostingRejectedException : KnownException
     {
         return reason switch
         {
+            InventoryDomainFailureReason.PostingRejected => InventoryPostingFailureCodes.PostingRejected,
             InventoryDomainFailureReason.NegativeOnHand => InventoryPostingFailureCodes.NegativeOnHand,
             InventoryDomainFailureReason.IdempotencyConflict => InventoryPostingFailureCodes.IdempotencyConflict,
             InventoryDomainFailureReason.DimensionMismatch => InventoryPostingFailureCodes.DimensionMismatch,
             InventoryDomainFailureReason.LedgerFrozen => InventoryPostingFailureCodes.LedgerFrozen,
             InventoryDomainFailureReason.ReservationAllocationRejected => InventoryPostingFailureCodes.ReservationAllocationRejected,
             InventoryDomainFailureReason.CommittedStockProtection => InventoryPostingFailureCodes.ReservationAllocationRejected,
-            _ => InventoryPostingFailureCodes.PostingRejected,
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "未处理的库存过账失败原因。"),
         };
     }
 
@@ -70,13 +71,14 @@ public sealed class InventoryPostingRejectedException : KnownException
     {
         return reason switch
         {
+            InventoryDomainFailureReason.PostingRejected => "库存过账被拒绝，请核对库存状态后重试。",
             InventoryDomainFailureReason.NegativeOnHand => "库存数量不足，不能完成过账。",
             InventoryDomainFailureReason.IdempotencyConflict => "库存移动幂等键与已有流水冲突，请更换幂等键。",
             InventoryDomainFailureReason.DimensionMismatch => "库存移动维度与现有台账不一致，请核对物料、库位和批次。",
             InventoryDomainFailureReason.LedgerFrozen => "库存台账已冻结，当前操作无法过账。",
             InventoryDomainFailureReason.ReservationAllocationRejected => "库存预留分配被拒绝，请刷新库存后重试。",
-            InventoryDomainFailureReason.CommittedStockProtection => "已过账库存不允许再次分配预留，请刷新库存后重试。",
-            _ => "库存过账被拒绝，请核对库存状态后重试。",
+            InventoryDomainFailureReason.CommittedStockProtection => "出库数量超过未预留的可用库存，不能完成过账。",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, "未处理的库存过账失败原因。"),
         };
     }
 }
