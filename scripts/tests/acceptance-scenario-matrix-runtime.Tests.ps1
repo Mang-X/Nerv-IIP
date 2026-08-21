@@ -518,6 +518,37 @@ try {
     foreach ($libraryName in @('ScriptAutomation.ps1', 'AcceptanceScenarioMatrixRuntime.ps1', 'AcceptanceScenarioMatrix.ps1', 'CiWorkflowBudgets.ps1', 'OrdinalString.ps1')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $defaultRunnerLibraryRoot $libraryName)
     }
+    $scriptAutomationFixturePath = Join-Path $defaultRunnerLibraryRoot 'ScriptAutomation.ps1'
+    $invokePwshFixture = @'
+
+function Invoke-PwshScript {
+    param(
+        [Parameter(Mandatory)] [string] $ScriptPath,
+        [string[]] $Arguments = @(),
+        [string] $WorkingDirectory = (Get-Location).Path,
+        [int] $TimeoutSeconds = 600,
+        [string] $Name = 'pwsh-script'
+    )
+
+    $canonicalIndex = [Array]::IndexOf([string[]]$Arguments, '-CanonicalResultPath')
+    if ($canonicalIndex -lt 0 -or $canonicalIndex + 1 -ge $Arguments.Count) {
+        throw 'Fixture verifier invocation is missing CanonicalResultPath.'
+    }
+    [IO.File]::Copy($env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE, $Arguments[$canonicalIndex + 1], $true)
+    $capture = [pscustomobject][ordered]@{
+        scriptPath = $ScriptPath
+        arguments = @($Arguments)
+        workingDirectory = $WorkingDirectory
+        timeoutSeconds = $TimeoutSeconds
+        name = $Name
+    }
+    [IO.File]::AppendAllText(
+        $env:NERV_IIP_RUNTIME_ACTION_CAPTURE,
+        (($capture | ConvertTo-Json -Depth 10 -Compress) + "`n"),
+        [Text.UTF8Encoding]::new($false))
+}
+'@
+    [IO.File]::AppendAllText($scriptAutomationFixturePath, $invokePwshFixture, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath $workflowPath -Destination (Join-Path $defaultRunnerWorkflowRoot 'ci.yml')
     $defaultRunnerPath = Join-Path $defaultRunnerScriptsRoot 'run-acceptance-scenario-matrix.ps1'
     $defaultArtifactPath = Join-Path $defaultRunnerRoot 'artifacts/acceptance-scenario-matrix/planning.json'
@@ -536,6 +567,38 @@ try {
     [void]$defaultWorkflowArguments.Remove('WorkflowPath')
     $defaultWorkflowResult = & $defaultRunnerPath @defaultWorkflowArguments
     Assert-Contract ([string]::Equals([string]$defaultWorkflowResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The production runner default WorkflowPath must cross the strict raw runtime boundary as a canonical absolute existing file.'
+
+    $defaultActionResultFixturePath = Join-Path $fixtureRoot 'default-action/canonical-result-fixture.json'
+    Write-JsonFixture -Path $defaultActionResultFixturePath -Value $firstEquivalenceInput
+    $defaultActionCapturePath = Join-Path $fixtureRoot 'default-action/invoke-pwsh-capture.jsonl'
+    $defaultActionSummaryPath = Join-Path $fixtureRoot 'default-action/runtime-summary.json'
+    $defaultActionCanonicalPath = [IO.Path]::GetFullPath((Join-Path $fixtureRoot 'default-action/canonical-result.json'))
+    $defaultActionArguments = Get-RunnerArguments -ArtifactPath $artifactPath -ExpectedArtifactDigest $artifactDigest -ManifestFilePath $manifestPath -ExpectedManifestDigest $manifestDigest -WorkflowPath $workflowPath -SummaryPath $defaultActionSummaryPath -Action { throw 'The injected RuntimeAction seam must be absent from this fixture.' }
+    [void]$defaultActionArguments.Remove('RuntimeAction')
+    $defaultActionArguments.CanonicalResultPath = $defaultActionCanonicalPath
+    $defaultActionArguments.TrackIdentifier = 'shadow'
+    $previousRuntimeActionResultFixture = $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE
+    $previousRuntimeActionCapture = $env:NERV_IIP_RUNTIME_ACTION_CAPTURE
+    try {
+        $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE = $defaultActionResultFixturePath
+        $env:NERV_IIP_RUNTIME_ACTION_CAPTURE = $defaultActionCapturePath
+        $defaultActionResult = & $defaultRunnerPath @defaultActionArguments
+    }
+    finally {
+        $env:NERV_IIP_RUNTIME_ACTION_RESULT_FIXTURE = $previousRuntimeActionResultFixture
+        $env:NERV_IIP_RUNTIME_ACTION_CAPTURE = $previousRuntimeActionCapture
+    }
+    Assert-Contract ([string]::Equals([string]$defaultActionResult.summary.status, 'passed', [StringComparison]::Ordinal)) 'The production runner default action must survive deferred invocation by the dot-sourced runtime library.'
+    $defaultActionCaptureLines = @(Get-Content -LiteralPath $defaultActionCapturePath)
+    Assert-Contract ($defaultActionCaptureLines.Count -eq 1) 'The production runner default action must invoke the governed verifier exactly once.'
+    $defaultActionCapture = $defaultActionCaptureLines[0] | ConvertFrom-Json -Depth 10
+    Assert-Contract ([string]::Equals([IO.Path]::GetFullPath([string]$defaultActionCapture.scriptPath), [IO.Path]::GetFullPath((Join-Path $defaultRunnerScriptsRoot 'verify-erp-sales-order-demand-planning.ps1')), [StringComparison]::Ordinal)) 'The production runner default action must invoke only the governed ERP sales-order verifier.'
+    $defaultActionCapturedArguments = @($defaultActionCapture.arguments)
+    $defaultActionCanonicalIndex = [Array]::IndexOf([object[]]$defaultActionCapturedArguments, '-CanonicalResultPath')
+    $defaultActionTrackIndex = [Array]::IndexOf([object[]]$defaultActionCapturedArguments, '-TrackIdentifier')
+    Assert-Contract ($defaultActionCanonicalIndex -ge 0 -and [string]::Equals([string]$defaultActionCapturedArguments[$defaultActionCanonicalIndex + 1], $defaultActionCanonicalPath, [StringComparison]::Ordinal)) 'The production runner default action must pass the canonical result path to the governed verifier.'
+    Assert-Contract ($defaultActionTrackIndex -ge 0 -and [string]::Equals([string]$defaultActionCapturedArguments[$defaultActionTrackIndex + 1], 'shadow', [StringComparison]::Ordinal)) 'The production runner default action must pass the shadow track identifier to the governed verifier.'
+    Assert-Contract ([string]::Equals([string]$defaultActionCapture.name, 'acceptance-scenario-matrix-sales-order-demand', [StringComparison]::Ordinal)) 'The production runner default action must retain the governed verifier invocation identity.'
 
     $productionWorkflowSummaryPath = Join-Path $fixtureRoot 'production-workflow/runtime-summary.json'
     $productionWorkflowActionContracts = [Collections.Generic.List[object]]::new()

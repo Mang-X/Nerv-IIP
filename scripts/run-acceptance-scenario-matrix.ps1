@@ -68,9 +68,10 @@ function Invoke-NervAcceptanceScenarioMatrixSalesOrderAction {
 
 $effectiveRuntimeAction = $RuntimeAction
 if ($null -eq $effectiveRuntimeAction) {
+    $salesOrderAction = ${function:Invoke-NervAcceptanceScenarioMatrixSalesOrderAction}
     $effectiveRuntimeAction = {
         param([object] $Contract)
-        Invoke-NervAcceptanceScenarioMatrixSalesOrderAction -Contract $Contract -ResultPath $CanonicalResultPath -Track $TrackIdentifier
+        $salesOrderAction.Invoke($Contract, $CanonicalResultPath, $TrackIdentifier)
     }.GetNewClosure()
 }
 
