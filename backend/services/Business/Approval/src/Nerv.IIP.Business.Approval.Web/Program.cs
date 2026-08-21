@@ -61,6 +61,7 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<IApprovalClock, SystemApprovalClock>();
     builder.Services.AddHostedService<ApprovalOverdueScheduler>();
+    builder.Services.AddScoped<ApprovalSeedService>();
     builder.Services.AddScoped<WorldHistoryApprovalSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
@@ -112,6 +113,17 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // Approval 产品基线 seed：与 MasterData/Quality 同口径，显式开关或本地 autoMigrate 时执行。
+    var seedEnabled = builder.Configuration.GetValue<bool>("Approval:Seed:Enabled") || autoMigrate;
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var written = await scope.ServiceProvider.GetRequiredService<ApprovalSeedService>().SeedAsync(
+            builder.Configuration["Approval:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Approval:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation("Approval product seed completed: {Templates} missing templates added.", written);
     }
 
     // 《工厂世界观设定集》L1 背景历史（审批域侧）。校验器 fail-closed：对账不平就让启动失败。

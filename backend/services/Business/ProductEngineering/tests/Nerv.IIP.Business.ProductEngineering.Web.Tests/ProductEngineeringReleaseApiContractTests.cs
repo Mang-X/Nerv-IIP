@@ -307,8 +307,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new BomLineCommand("ENG-MISSING", 1m, "EA")]),
             CancellationToken.None));
 
-        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("ENG-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("存在缺失或未启用的主数据引用，请检查后重试。", exception.Message);
+        Assert.DoesNotContain("ENG-MISSING", exception.Message, StringComparison.Ordinal);
         Assert.Equal(
             [("sku", "ENG-1000"), ("sku", "ENG-MISSING")],
             masterData.Requests);
@@ -346,8 +346,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("SKU-RM-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("存在缺失或未启用的主数据引用，请检查后重试。", exception.Message);
+        Assert.DoesNotContain("SKU-RM-MISSING", exception.Message, StringComparison.Ordinal);
         Assert.Equal(
             [("sku", "SKU-FG-1000"), ("sku", "SKU-RM-MISSING")],
             masterData.Requests);
@@ -379,8 +379,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new RoutingOperationCommand(10, null, "mixing", null)]),
             CancellationToken.None));
 
-        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("WC-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("存在缺失或未启用的主数据引用，请检查后重试。", exception.Message);
+        Assert.DoesNotContain("WC-MISSING", exception.Message, StringComparison.Ordinal);
         Assert.Equal(
             [("sku", "SKU-FG-1000"), ("work-center", "WC-MISSING")],
             masterData.Requests);
@@ -1506,7 +1506,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Contains("already contains child item", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("EBOM 发布失败，请检查物料行和生效日期。", exception.Message);
         Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
@@ -1543,7 +1543,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 []),
             CancellationToken.None));
 
-        Assert.Contains("already contains SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("MBOM 发布失败，请检查物料行、配方和来源 EBOM。", exception.Message);
         Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
@@ -1575,7 +1575,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 ]),
             CancellationToken.None));
 
-        Assert.Contains("already contains operation sequence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("工艺路线发布失败，请检查工序和生效日期。", exception.Message);
         Assert.IsType<InvalidOperationException>(exception.InnerException);
     }
 
@@ -3014,7 +3014,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 .ToArray();
             if (missing.Length > 0)
             {
-                throw new KnownException($"MasterData reference(s) are missing or inactive: {string.Join(", ", missing)}.");
+                throw new KnownException("存在缺失或未启用的主数据引用，请检查后重试。");
             }
 
             return Task.CompletedTask;

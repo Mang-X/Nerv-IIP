@@ -612,7 +612,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal("PO-REQ-001", result.PurchaseOrderNo);
         Assert.Equal("SUP-001", result.SupplierCode);
         Assert.NotNull(approvalClient.LastRequest);
-        // #1344 三方漂移契约：转单发起的审批必须用契约模板码（种子落库的 APT-WB-PO-001），
+        // 三方漂移契约：转单发起的审批必须用 Approval 产品种子落库的中性契约码，
         // 不得再回到从未落库的 erp-purchase-order-release 字面量（种子态必 400）。
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
         Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
@@ -781,7 +781,7 @@ public sealed class ErpProcurementEndpointContractTests
         var secondChainId = await handler.Handle(command, CancellationToken.None);
 
         Assert.NotEqual(firstChainId, secondChainId);
-        // #1685：变更再审批走独立的变更模板 APT-WB-PO-002（由审批种子补齐同码同单据类型的模板），
+        // 变更再审批走独立的中性变更模板（由 Approval 产品种子补齐同码同单据类型的模板），
         // 与下达模板分开，审批人收件箱据此区分两类待办；旧字面量 erp-purchase-order-change 从未落库、已弃用。
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, approvalClient.LastRequest!.TemplateCode);
         Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest.TemplateCode);
