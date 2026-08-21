@@ -40,13 +40,42 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
         await SeedDevicesAsync(organizationId, environmentId, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        await SeedSkusAsync(organizationId, environmentId, cancellationToken);
+        await SeedSkusAsync(organizationId, environmentId, WorldBibleSpec.AllSkus, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        await SeedPartnersAsync(organizationId, environmentId, cancellationToken);
+        await SeedPartnersAsync(
+            organizationId,
+            environmentId,
+            WorldBibleSpec.Customers.Concat(WorldBibleSpec.Suppliers),
+            cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await SeedOrganizationAndPeopleAsync(organizationId, environmentId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 只写入人工走查需要的结构与小目录；不写设备、员工或任何交易结果事实。
+    /// </summary>
+    public async Task SeedWalkthroughAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        await SeedSiteAndShiftsAsync(organizationId, environmentId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await SeedFactoryStructureAsync(organizationId, environmentId, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await SeedSkusAsync(organizationId, environmentId, WalkthroughSeedSpec.Skus, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await SeedPartnersAsync(
+            organizationId,
+            environmentId,
+            WalkthroughSeedSpec.Customers.Concat(WalkthroughSeedSpec.Suppliers),
+            cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -224,9 +253,13 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
 
     #region §4 产品与物料
 
-    private async Task SeedSkusAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    private async Task SeedSkusAsync(
+        string organizationId,
+        string environmentId,
+        IEnumerable<WorldBibleSku> skus,
+        CancellationToken cancellationToken)
     {
-        foreach (var sku in WorldBibleSpec.AllSkus)
+        foreach (var sku in skus)
         {
             var existing = await dbContext.Skus.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == sku.Code,
@@ -248,9 +281,13 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
 
     #region §6 客户与供应商
 
-    private async Task SeedPartnersAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    private async Task SeedPartnersAsync(
+        string organizationId,
+        string environmentId,
+        IEnumerable<WorldBiblePartner> partners,
+        CancellationToken cancellationToken)
     {
-        foreach (var partner in WorldBibleSpec.Customers.Concat(WorldBibleSpec.Suppliers))
+        foreach (var partner in partners)
         {
             var existing = await dbContext.BusinessPartners.SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == partner.Code,

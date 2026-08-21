@@ -39,6 +39,13 @@ var leaderDemoWorldEnabled = leaderDemoEnabled && !string.Equals(
     StringComparison.OrdinalIgnoreCase);
 var leaderDemoWorldEnabledValue = leaderDemoWorldEnabled ? "true" : "false";
 
+// 人工走查最小数据默认随本地 AppHost 启用，并可独立关闭；它不依赖待拆除的世界观/历史开关。
+var walkthroughSeedEnabled = !string.Equals(
+    Environment.GetEnvironmentVariable("NERV_IIP_WALKTHROUGH_SEED"),
+    "false",
+    StringComparison.OrdinalIgnoreCase);
+var walkthroughSeedEnabledValue = walkthroughSeedEnabled ? "true" : "false";
+
 // 《工厂世界观设定集》L1 背景历史引擎（2026-01-05 至今约 29 周的 ERP/MES 单据历史）。
 // 依赖 L0 主数据，因此只在 L0 打开时生效；NERV_IIP_LEADER_DEMO_HISTORY=false 可单独关闭。
 // NERV_IIP_LEADER_DEMO_HISTORY_SCALE=0.1 生成约十分之一的量用于快速验证。
@@ -314,6 +321,7 @@ var businessMasterData = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
@@ -334,6 +342,7 @@ var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnviro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
@@ -625,6 +634,7 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)

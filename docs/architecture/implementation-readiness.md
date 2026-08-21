@@ -397,7 +397,7 @@ review follow-up 真实栈 session `nerv-bad6-17be94` 已将 `mes-task-productio
 
 ### 工厂世界观设定集 L0 主数据全量块（MAN-519 白名单内）
 
-《工厂世界观设定集》（`docs/superpowers/plans/2026-07-26-factory-world-bible.md`）把演示环境的数据分成 L0 主数据 / L1 背景历史 / L2 现场演示 / L3 实时模拟四层。本块交付其中的 **L0 主数据全量（设定集 §1–§6）**：宁沪减振科技有限公司的组织、车间产线、设备台账、产品与物料、客户供应商、人员与技能。
+《工厂设定与人工走查最小数据》（`docs/architecture/factory-world-bible.md`）是当前权威来源；历史 Superpowers 文件只保留形成过程。设定把演示环境的数据分成 L0 主数据 / L1 背景历史 / L2 现场演示 / L3 实时模拟四层。本块交付其中的 **L0 主数据全量（设定集 §1–§6）**：宁沪减振科技有限公司的组织、车间产线、设备台账、产品与物料、客户供应商、人员与技能。
 
 开关：`LeaderDemo:World:Enabled`（AppHost 在 leader-demo profile 下默认 `true`，`NERV_IIP_LEADER_DEMO_WORLD=false` 关闭；非 leader-demo 会话恒为 `false`）。写入服务为 MasterData、ProductEngineering、IndustrialTelemetry、IAM 四个。
 
