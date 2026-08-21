@@ -36,7 +36,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             requested.Any(x => string.IsNullOrWhiteSpace(x.WorkOrderId)) ||
             requested.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).Count() != requested.Length)
         {
-            throw new KnownException($"Scheduling workbench requires between 1 and {SchedulingWorkbenchLimits.MaxOrderCount} distinct work orders.");
+            throw new KnownException($"排程工作台需要 1 至 {SchedulingWorkbenchLimits.MaxOrderCount} 个不重复的工单。");
         }
 
         // 只翻「可排状态」的工单页:终态工单(closed/completed/...)占了 MES 工单表的绝大多数,
@@ -91,7 +91,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         var missing = requested.Where(x => !byId.ContainsKey(x.WorkOrderId)).Select(x => x.WorkOrderId).ToArray();
         if (missing.Length > 0)
         {
-            throw new KnownException($"MES work orders were not found in the requested scope: {string.Join(", ", missing)}");
+            throw new KnownException($"在请求范围内未找到 MES 工单：{string.Join(", ", missing)}");
         }
 
         var productionVersionIds = requested
@@ -119,18 +119,18 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             var order = byId[selection.WorkOrderId];
             if (TerminalStatuses.Contains(order.Status))
             {
-                throw new KnownException($"MES work order '{order.WorkOrderId}' is terminal and cannot be scheduled.");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 已处于终态，不能排程。");
             }
 
             if (string.IsNullOrWhiteSpace(order.ProductionVersionId))
             {
-                throw new KnownException($"MES work order '{order.WorkOrderId}' has no production version.");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 没有生产版本。");
             }
 
             var routing = routingsByVersion[order.ProductionVersionId];
             if (!string.Equals(order.SkuCode ?? order.SkuId, routing.SkuCode, StringComparison.OrdinalIgnoreCase))
             {
-                throw new KnownException($"MES work order '{order.WorkOrderId}' does not match production version '{order.ProductionVersionId}'.");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 与生产版本 '{order.ProductionVersionId}' 不匹配。");
             }
 
             return new SchedulingProblemSourceOrder(
@@ -201,7 +201,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             var json = await content.ReadAsStringAsync(cancellationToken);
             if (string.IsNullOrWhiteSpace(json))
             {
-                throw new KnownException("MES returned an empty work-order response.");
+                throw new KnownException("MES 返回了空的工单响应。");
             }
 
             using var document = JsonDocument.Parse(json);
@@ -211,19 +211,19 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
                 : root;
             if (payload.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             {
-                throw new KnownException("MES returned an empty work-order response payload.");
+                throw new KnownException("MES 返回的工单响应内容为空。");
             }
 
             return payload.Deserialize<MesWorkOrderListResponse>(SchedulingJson.Options)
-                ?? throw new KnownException("MES returned an empty work-order response payload.");
+                ?? throw new KnownException("MES 返回的工单响应内容为空。");
         }
-        catch (JsonException exception)
+        catch (JsonException)
         {
-            throw new KnownException($"MES returned an invalid work-order response: {exception.Message}");
+            throw new KnownException("MES 返回了无效的工单响应，请检查数据后重试。");
         }
-        catch (NotSupportedException exception)
+        catch (NotSupportedException)
         {
-            throw new KnownException($"MES returned an unsupported work-order response: {exception.Message}");
+            throw new KnownException("MES 返回了不支持的工单响应，请检查数据后重试。");
         }
     }
 

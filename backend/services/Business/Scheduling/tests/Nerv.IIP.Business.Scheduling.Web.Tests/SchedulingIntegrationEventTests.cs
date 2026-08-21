@@ -244,7 +244,7 @@ public sealed class SchedulingIntegrationEventTests
 
         var exception = Assert.Throws<KnownException>(() => accessor.GetContext());
 
-        Assert.Equal("A canonical X-Actor is required for forwarded actor requests.", exception.Message);
+        Assert.Equal("转发请求必须提供规范的 X-Actor。", exception.Message);
     }
 
     [Fact]
