@@ -83,6 +83,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
+    builder.Services.AddScoped<WalkthroughSeedService>();
     builder.Services.AddScoped<LeaderDemoScaleSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
@@ -136,6 +137,20 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    var walkthroughSeedEnabled = builder.Configuration.GetValue<bool>("Walkthrough:Seed:Enabled");
+    if (walkthroughSeedEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Walkthrough:Seed:Enabled=true is only allowed for BusinessERP in Development.");
+    }
+
+    if (walkthroughSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<WalkthroughSeedService>().SeedAsync(
+            builder.Configuration["Walkthrough:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Walkthrough:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     app.UseNervIipRequestLocalization();
