@@ -85,7 +85,7 @@ public sealed class GetBomDiffQueryHandler(ApplicationDbContext dbContext)
         {
             "engineering-bom" => await DiffEngineeringBomAsync(request, cancellationToken),
             "manufacturing-bom" => await DiffManufacturingBomAsync(request, cancellationToken),
-            _ => throw new KnownException("BOM kind is invalid. Allowed values: EngineeringBom, ManufacturingBom.")
+            _ => throw new KnownException("BOM 类型无效，仅支持 EngineeringBom 或 ManufacturingBom。")
         };
     }
 
@@ -98,7 +98,7 @@ public sealed class GetBomDiffQueryHandler(ApplicationDbContext dbContext)
                 && x.BomCode == request.FromBomCode
                 && x.Revision == request.FromRevision)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Engineering BOM '{request.FromBomCode}' revision '{request.FromRevision}' was not found.");
+            ?? throw new KnownException($"工程 BOM '{request.FromBomCode}' 修订 '{request.FromRevision}' 不存在。");
         var target = await dbContext.EngineeringBoms
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -106,11 +106,11 @@ public sealed class GetBomDiffQueryHandler(ApplicationDbContext dbContext)
                 && x.BomCode == request.ToBomCode
                 && x.Revision == request.ToRevision)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Engineering BOM '{request.ToBomCode}' revision '{request.ToRevision}' was not found.");
+            ?? throw new KnownException($"工程 BOM '{request.ToBomCode}' 修订 '{request.ToRevision}' 不存在。");
 
         if (!string.Equals(source.ParentItemCode, target.ParentItemCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new KnownException("Engineering BOM versions must share the same parent item before diff.");
+            throw new KnownException("工程 BOM 两个版本必须属于同一父物料才能比较。");
         }
 
         var lines = DiffLines(
@@ -135,7 +135,7 @@ public sealed class GetBomDiffQueryHandler(ApplicationDbContext dbContext)
                 && x.BomCode == request.FromBomCode
                 && x.Revision == request.FromRevision)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Manufacturing BOM '{request.FromBomCode}' revision '{request.FromRevision}' was not found.");
+            ?? throw new KnownException($"制造 BOM '{request.FromBomCode}' 修订 '{request.FromRevision}' 不存在。");
         var target = await dbContext.ManufacturingBoms
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -143,11 +143,11 @@ public sealed class GetBomDiffQueryHandler(ApplicationDbContext dbContext)
                 && x.BomCode == request.ToBomCode
                 && x.Revision == request.ToRevision)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Manufacturing BOM '{request.ToBomCode}' revision '{request.ToRevision}' was not found.");
+            ?? throw new KnownException($"制造 BOM '{request.ToBomCode}' 修订 '{request.ToRevision}' 不存在。");
 
         if (!string.Equals(source.SkuCode, target.SkuCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new KnownException("Manufacturing BOM versions must share the same SKU before diff.");
+            throw new KnownException("制造 BOM 两个版本必须属于同一 SKU 才能比较。");
         }
 
         var lines = DiffLines(
