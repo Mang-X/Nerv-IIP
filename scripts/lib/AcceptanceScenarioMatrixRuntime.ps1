@@ -209,7 +209,7 @@ function Read-NervAcceptanceRuntimeJsonSnapshot {
         try { Assert-NervAcceptanceNoDuplicateJsonProperties -Element $jsonDocument.RootElement -Context $Context }
         finally { $jsonDocument.Dispose() }
         $json = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
-        $value = $json | ConvertFrom-Json -Depth 50
+        $value = $json | ConvertFrom-Json -Depth 50 -DateKind String
     }
     catch { throw "$Context is not valid UTF-8 JSON: $($_.Exception.Message)" }
     return [pscustomobject][ordered]@{ digest = $actualDigest; value = $value }

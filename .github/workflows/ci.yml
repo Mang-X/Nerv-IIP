@@ -988,6 +988,11 @@ jobs:
     timeout-minutes: 55
     runs-on: ubuntu-latest
     needs: impact-plan
+    outputs:
+      sales-order-demand-selected: ${{ steps.plan.outputs.sales-order-demand-selected }}
+      tested-sha: ${{ steps.plan.outputs.tested-sha }}
+      manifest-digest: ${{ steps.plan.outputs.manifest-digest }}
+      artifact-digest: ${{ steps.plan.outputs.artifact-digest }}
     if: >-
       ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
     steps:
@@ -1011,6 +1016,7 @@ jobs:
 
       - name: Plan acceptance scenario matrix
         timeout-minutes: 30
+        id: plan
         shell: pwsh
         run: |
           $eventName = '${{ github.event_name }}'
@@ -1029,6 +1035,18 @@ jobs:
             -TestedSha $testedSha `
             -RunId '${{ github.run_id }}' `
             -RunAttempt ${{ github.run_attempt }}
+          $planningPath = 'artifacts/acceptance-scenario-matrix/planning.json'
+          $planningBytes = [IO.File]::ReadAllBytes($planningPath)
+          $planning = [Text.UTF8Encoding]::new($false, $true).GetString($planningBytes) | ConvertFrom-Json -Depth 50 -DateKind String
+          $salesMatches = @($planning.scenarios | Where-Object { [string]::Equals([string]$_.id, 'sales-order-demand', [StringComparison]::Ordinal) })
+          if ($salesMatches.Count -gt 1) { throw "Planning artifact selected sales-order-demand more than once." }
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($planningBytes))).ToLowerInvariant() }
+          finally { $sha256.Dispose() }
+          "sales-order-demand-selected=$($salesMatches.Count -eq 1)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+          "tested-sha=$([string]$planning.testedSha)" >> $env:GITHUB_OUTPUT
+          "manifest-digest=$([string]$planning.manifestDigest)" >> $env:GITHUB_OUTPUT
+          "artifact-digest=$artifactDigest" >> $env:GITHUB_OUTPUT
 
       - name: Upload acceptance scenario matrix plan
         timeout-minutes: 5
@@ -1039,11 +1057,126 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  acceptance-scenario-matrix-runtime:
+    name: Business FullChain Acceptance / sales-order-demand
+    timeout-minutes: 100
+    runs-on: ubuntu-latest
+    needs: acceptance-scenario-matrix-planning
+    if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
+    env:
+      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
+      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        timeout-minutes: 8
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Download acceptance scenario matrix plan
+        timeout-minutes: 3
+        uses: actions/download-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix
+
+      - name: Run acceptance scenario matrix
+        timeout-minutes: 45
+        id: acceptance-scenario-runtime
+        shell: pwsh
+        run: |
+          $artifactPath = 'artifacts/acceptance-scenario-matrix/planning.json'
+          $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($artifactBytes))).ToLowerInvariant() }
+          finally { $sha256.Dispose() }
+          if (-not [string]::Equals($artifactDigest, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-digest }}', [StringComparison]::Ordinal)) {
+            throw 'Downloaded planning artifact digest does not match the planning job output.'
+          }
+          $manifestDigest = '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}'
+          ./scripts/run-acceptance-scenario-matrix.ps1 `
+            -ArtifactPath $artifactPath `
+            -ExpectedArtifactDigest $artifactDigest `
+            -ExpectedManifestDigest $manifestDigest `
+            -Repository '${{ github.repository }}' `
+            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
+            -RunId '${{ github.run_id }}' `
+            -RunAttempt '${{ github.run_attempt }}' `
+            -Event '${{ github.event_name }}' `
+            -SummaryPath artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json `
+            -CanonicalResultPath artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json `
+            -TrackIdentifier 'shadow'
+
+      - name: Upload shadow runtime summary
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-runtime-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload shadow canonical result
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload shadow business evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-business-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload shadow cleanup evidence
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-cleanup-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance/man517/cleanup-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload shadow failure diagnostics
+        timeout-minutes: 5
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-diagnostics-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/acceptance/man517/diagnostics/**
+            artifacts/script-logs/man517-*
+          if-no-files-found: error
+          retention-days: 14
+
   business-full-chain-acceptance-v1:
     name: Business FullChain Acceptance / v1 Authority
     # NERV-767：五条 active/core 跨服务真实依赖场景。层级 A；显式 step
-    # 预算合计 214m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
-    # steps 保留 11m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
+    # 预算合计 219m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
+    # steps 保留 6m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
     timeout-minutes: 225
     runs-on: ubuntu-latest
     needs: acceptance-scenario-matrix-planning
@@ -1240,7 +1373,24 @@ jobs:
         run: |
           ./scripts/run-full-chain-test-lane.ps1 `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
-            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json `
+            -CanonicalResultPath artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json `
+            -TrackIdentifier 'v1' `
+            -Repository '${{ github.repository }}' `
+            -RunId '${{ github.run_id }}' `
+            -RunAttempt '${{ github.run_attempt }}' `
+            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
+            -ManifestDigest '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}' `
+            -ScenarioId 'sales-order-demand'
+
+      - name: Upload v1 sales-order-demand canonical result
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Collect FullChain evidence
         timeout-minutes: 5
@@ -1333,7 +1483,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
@@ -1391,7 +1541,21 @@ jobs:
       - name: Verify ERP sales-order demand bridge
         timeout-minutes: 15
         shell: pwsh
-        run: ./scripts/verify-erp-sales-order-demand-planning.ps1
+        run: |
+          $testedSha = (git rev-parse HEAD).Trim()
+          $manifestBytes = [IO.File]::ReadAllBytes('scripts/acceptance-scenario-matrix.json')
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $manifestDigest = ([Convert]::ToHexString($sha256.ComputeHash($manifestBytes))).ToLowerInvariant() }
+          finally { $sha256.Dispose() }
+          ./scripts/verify-erp-sales-order-demand-planning.ps1 `
+            -CanonicalResultPath artifacts/acceptance/man517/legacy-erp-canonical-result.json `
+            -TrackIdentifier 'legacy-erp' `
+            -Repository '${{ github.repository }}' `
+            -RunId '${{ github.run_id }}' `
+            -RunAttempt '${{ github.run_attempt }}' `
+            -TestedSha $testedSha `
+            -ManifestDigest $manifestDigest `
+            -ScenarioId 'sales-order-demand'
 
       - name: Upload ERP sales-order demand diagnostics
         timeout-minutes: 5
@@ -1404,6 +1568,93 @@ jobs:
             artifacts/script-logs/man517-*
           if-no-files-found: warn
           retention-days: 7
+
+  acceptance-scenario-matrix-equivalence:
+    name: Business FullChain Acceptance / sales-order-demand equivalence (internal)
+    timeout-minutes: 35
+    runs-on: ubuntu-latest
+    needs:
+      - acceptance-scenario-matrix-planning
+      - business-full-chain-acceptance-v1
+      - acceptance-scenario-matrix-runtime
+      - erp-sales-order-demand-acceptance
+    if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
+    steps:
+      - name: Require successful three-track prerequisites
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          test "${{ needs.business-full-chain-acceptance-v1.result }}" = "success"
+          test "${{ needs.acceptance-scenario-matrix-runtime.result }}" = "success"
+          test "${{ needs.erp-sales-order-demand-acceptance.result }}" = "success"
+
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Download acceptance scenario matrix plan
+        timeout-minutes: 3
+        uses: actions/download-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/equivalence/planning
+
+      - name: Download v1 canonical result
+        timeout-minutes: 3
+        uses: actions/download-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/equivalence/v1
+
+      - name: Download shadow canonical result
+        timeout-minutes: 3
+        uses: actions/download-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/equivalence/shadow
+
+      - name: Download legacy ERP canonical result
+        timeout-minutes: 3
+        uses: actions/download-artifact@v4
+        with:
+          name: erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/equivalence/legacy
+
+      - name: Compare sales-order-demand tracks
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $artifactPath = 'artifacts/equivalence/planning/planning.json'
+          $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
+          $sha256 = [Security.Cryptography.SHA256]::Create()
+          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($artifactBytes))).ToLowerInvariant() }
+          finally { $sha256.Dispose() }
+          if (-not [string]::Equals($artifactDigest, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-digest }}', [StringComparison]::Ordinal)) {
+            throw 'Downloaded planning artifact digest does not match the planning job output.'
+          }
+          ./scripts/verify-acceptance-scenario-matrix-equivalence.ps1 `
+            -ArtifactPath $artifactPath `
+            -ExpectedArtifactDigest $artifactDigest `
+            -ExpectedManifestDigest '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}' `
+            -Repository '${{ github.repository }}' `
+            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
+            -RunId '${{ github.run_id }}' `
+            -RunAttempt '${{ github.run_attempt }}' `
+            -Event '${{ github.event_name }}' `
+            -V1ResultPath artifacts/equivalence/v1/sales-order-demand-result.json `
+            -ShadowResultPath artifacts/equivalence/shadow/sales-order-demand-result.json `
+            -LegacyErpResultPath artifacts/equivalence/legacy/acceptance/man517/legacy-erp-canonical-result.json `
+            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json
+
+      - name: Upload sales-order-demand equivalence report
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-scenario-matrix-equivalence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/acceptance-scenario-matrix/equivalence-report.json
+          if-no-files-found: error
+          retention-days: 14
 
   connector-host-tests:
     name: Connector Host Tests
@@ -1810,8 +2061,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限。step 预算合计 138m（28 个 step：3m checkout
-    # + 27 × 5m；2026-08-20 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
+    # 10m job 预算是快速失败界限。step 预算合计 143m（29 个 step：3m checkout
+    # + 28 × 5m；2026-08-21 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
     # 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -1872,6 +2123,11 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1
+
+      - name: Test acceptance scenario matrix equivalence contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1
 
       - name: Test PostgreSQL lane contract
         timeout-minutes: 5

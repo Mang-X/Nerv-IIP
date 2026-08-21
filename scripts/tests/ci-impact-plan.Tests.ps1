@@ -26,6 +26,9 @@ $acceptanceScenarioMatrixRuntimeOwningPaths = @(
     'scripts/lib/AcceptanceScenarioMatrixRuntime.ps1'
     'scripts/run-acceptance-scenario-matrix.ps1'
     'scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1'
+    'scripts/lib/AcceptanceScenarioMatrixEquivalence.ps1'
+    'scripts/verify-acceptance-scenario-matrix-equivalence.ps1'
+    'scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1'
 )
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
@@ -71,7 +74,7 @@ function Assert-ConditionalRoutingWorkflow {
         'backend-tests-platform' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
         'backend-tests-business-core-a' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
         'backend-tests-business-core-b' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false') }}"
-        'erp-sales-order-demand-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
+        'erp-sales-order-demand-acceptance' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
         'connector-host-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false') }}"
         'openapi-client-drift' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false') }}"
         'postgres-provider-tests' = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false') }}"
@@ -163,6 +166,16 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ([int]$runtimeContractStep.'timeout-minutes' -eq 5) 'The acceptance scenario matrix runtime contract step must have a 5-minute budget.'
     Assert-Contract ($null -eq $runtimeContractStep.PSObject.Properties['if']) 'The acceptance scenario matrix runtime contract step must not have its own condition.'
 
+    $equivalenceContractSteps = @($scriptGovernanceSteps | Where-Object {
+            [string]::Equals([string]$_.name, 'Test acceptance scenario matrix equivalence contract', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($equivalenceContractSteps.Count -eq 1) 'Script Governance must contain exactly one independent acceptance scenario matrix equivalence contract step.'
+    $equivalenceContractStep = $equivalenceContractSteps[0]
+    Assert-Contract ([string]::Equals([string]$equivalenceContractStep.shell, 'pwsh', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$equivalenceContractStep.run, './scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1', [StringComparison]::Ordinal) -and
+        [int]$equivalenceContractStep.'timeout-minutes' -eq 5 -and
+        $null -eq $equivalenceContractStep.PSObject.Properties['if']) 'The equivalence fixture contract must run as one unconditional five-minute pwsh step.'
+
     Assert-Contract ($scriptGovernanceStepTimeouts.Count -eq $scriptGovernanceSteps.Count -and $scriptGovernanceStepTimeouts[0] -eq 3 -and $fiveMinuteStepCount -eq ($scriptGovernanceSteps.Count - 1)) 'Script Governance budget comment contract expects one three-minute checkout and all remaining steps to have five-minute timeouts.'
     Assert-Contract ($workflowSource.Contains($expectedBudgetHeadline, [StringComparison]::Ordinal) -and $workflowSource.Contains($expectedBudgetContinuation, [StringComparison]::Ordinal)) "Script Governance budget comment must match its actual $($scriptGovernanceSteps.Count)-step/$($scriptGovernanceStepBudgetMinutes)m structure."
     Assert-Contract (-not $workflowSource.Contains('实际为 103m', [StringComparison]::Ordinal)) 'Script Governance budget comment must not retain the obsolete 103m historical sentence.'
@@ -178,6 +191,16 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ($planningNeeds.Count -eq 1 -and [string]::Equals($planningNeeds[0], 'impact-plan', [StringComparison]::Ordinal)) 'The planning job must need exactly impact-plan.'
     $fullChainSelectionPolicy = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
     Assert-Contract ([string]::Equals([string]$planningJob.if, $fullChainSelectionPolicy, [StringComparison]::Ordinal)) 'The planning job must preserve conservative FullChain selection and skip only explicit full_chain=false on a successful PR impact plan.'
+    $expectedPlanningOutputs = [ordered]@{
+        'sales-order-demand-selected' = '${{ steps.plan.outputs.sales-order-demand-selected }}'
+        'tested-sha' = '${{ steps.plan.outputs.tested-sha }}'
+        'manifest-digest' = '${{ steps.plan.outputs.manifest-digest }}'
+        'artifact-digest' = '${{ steps.plan.outputs.artifact-digest }}'
+    }
+    foreach ($outputName in $expectedPlanningOutputs.Keys) {
+        $outputProperty = $planningJob.outputs.PSObject.Properties[$outputName]
+        Assert-Contract ($null -ne $outputProperty -and [string]::Equals([string]$outputProperty.Value, [string]$expectedPlanningOutputs[$outputName], [StringComparison]::Ordinal)) "Planning output '$outputName' must come from the generated planning artifact step."
+    }
 
     $planningSteps = @($planningJob.steps)
     Assert-Contract ($planningSteps.Count -eq 5) 'The planning job must contain only checkout, .NET setup, conditional impact-plan download, planning, and planning-artifact upload.'
@@ -246,11 +269,45 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         Assert-Contract (-not $planningRunSurface.Contains($forbiddenPlanningCommand, [StringComparison]::OrdinalIgnoreCase)) "The pure planning job must not invoke '$forbiddenPlanningCommand'."
     }
 
-    $unexpectedMatrixJobs = @($parsedWorkflow.jobs.PSObject.Properties | Where-Object {
-            $_.Name.Contains('acceptance-scenario-matrix', [StringComparison]::OrdinalIgnoreCase) -and
-            -not [string]::Equals([string]$_.Name, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)
+    $runtimeJobProperty = $parsedWorkflow.jobs.PSObject.Properties['acceptance-scenario-matrix-runtime']
+    Assert-Contract ($null -ne $runtimeJobProperty) 'CI must define the hosted acceptance-scenario-matrix-runtime job.'
+    $runtimeJob = $runtimeJobProperty.Value
+    Assert-Contract ([string]::Equals([string]$runtimeJob.name, 'Business FullChain Acceptance / sales-order-demand', [StringComparison]::Ordinal)) 'The hosted runtime must expose the exact sales-order-demand Actions name.'
+    Assert-Contract ([string]::Equals([string]$runtimeJob.needs, 'acceptance-scenario-matrix-planning', [StringComparison]::Ordinal)) 'The hosted runtime must need planning.'
+    Assert-Contract ([string]::Equals([string]$runtimeJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'The hosted runtime must run only for a successful plan that selected sales-order-demand.'
+    $runtimeSteps = @($runtimeJob.steps)
+    Assert-Contract (@($runtimeSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every hosted runtime step must have a positive explicit timeout.'
+    $runtimeStepBudget = (@($runtimeSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
+    Assert-Contract ([int]$runtimeJob.'timeout-minutes' -gt $runtimeStepBudget) 'The hosted runtime job timeout must exceed explicit steps plus action overhead.'
+    $runtimeRunStep = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Run acceptance scenario matrix', [StringComparison]::Ordinal) })
+    Assert-Contract ($runtimeRunStep.Count -eq 1 -and ([int]$runtimeRunStep[0].'timeout-minutes' * 60) -gt 2220) 'The hosted runtime step timeout must strictly exceed the governed 2220-second scenario budget.'
+    foreach ($requiredRuntimeArgument in @('-ExpectedArtifactDigest $artifactDigest', '-ExpectedManifestDigest $manifestDigest', "-TrackIdentifier 'shadow'")) {
+        Assert-Contract (([string]$runtimeRunStep[0].run).Contains($requiredRuntimeArgument, [StringComparison]::Ordinal)) "Hosted runtime invocation is missing '$requiredRuntimeArgument'."
+    }
+    $runtimeUploads = @($runtimeSteps | Where-Object {
+            $usesProperty = $_.PSObject.Properties['uses']
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
-    Assert-Contract ($unexpectedMatrixJobs.Count -eq 0) 'CI must not add a hosted shadow matrix runtime job in this layer.'
+    Assert-Contract ($runtimeUploads.Count -ge 4 -and @($runtimeUploads | Where-Object { -not [string]::Equals([string]$_.with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -or [int]$_.with.'retention-days' -ne 14 }).Count -eq 0) 'Hosted runtime summary, canonical, business/cleanup, and failure diagnostics uploads must fail closed and retain 14 days.'
+
+    $equivalenceJobProperty = $parsedWorkflow.jobs.PSObject.Properties['acceptance-scenario-matrix-equivalence']
+    Assert-Contract ($null -ne $equivalenceJobProperty) 'CI must define the internal three-track equivalence job.'
+    $equivalenceJob = $equivalenceJobProperty.Value
+    $equivalenceNeeds = @($equivalenceJob.needs | ForEach-Object { [string]$_ })
+    Assert-Contract ([string]::Equals(($equivalenceNeeds -join '|'), 'acceptance-scenario-matrix-planning|business-full-chain-acceptance-v1|acceptance-scenario-matrix-runtime|erp-sales-order-demand-acceptance', [StringComparison]::Ordinal)) 'Three-track equivalence must inspect planning, v1, shadow, and legacy ERP prerequisites.'
+    Assert-Contract ([string]::Equals([string]$equivalenceJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'Three-track equivalence must still run to inspect prerequisite failures without treating them as green.'
+    $equivalenceSurface = (@($equivalenceJob.steps | ForEach-Object {
+                foreach ($propertyName in @('run', 'with')) {
+                    $property = $_.PSObject.Properties[$propertyName]
+                    if ($null -ne $property) {
+                        if ([string]::Equals($propertyName, 'run', [StringComparison]::Ordinal)) { [string]$property.Value }
+                        else { [string]$property.Value.name; [string]$property.Value.path }
+                    }
+                }
+            }) -join "`n")
+    foreach ($requiredEquivalenceFragment in @('verify-acceptance-scenario-matrix-equivalence.ps1', 'acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}', 'acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}', 'erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}')) {
+        Assert-Contract ($equivalenceSurface.Contains($requiredEquivalenceFragment, [StringComparison]::Ordinal)) "Three-track equivalence workflow is missing '$requiredEquivalenceFragment'."
+    }
 
     $plannerInvocations = @(
         foreach ($jobProperty in $parsedWorkflow.jobs.PSObject.Properties) {
@@ -276,7 +333,9 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
             }
         }
     )
-    Assert-Contract ($runtimeInvocations.Count -eq 0) 'CI must not execute the shadow acceptance scenario matrix runtime runner.'
+    Assert-Contract ($runtimeInvocations.Count -eq 1 -and
+        [string]::Equals([string]$runtimeInvocations[0].Job, 'acceptance-scenario-matrix-runtime', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$runtimeInvocations[0].Step, 'Run acceptance scenario matrix', [StringComparison]::Ordinal)) 'Only the hosted shadow job may execute the acceptance scenario matrix runtime runner.'
 }
 
 function Assert-ImpactCase {
@@ -926,12 +985,12 @@ try {
 
 '@
     $workflowWithoutAcceptanceRuntimeContract = $workflow.Replace($acceptanceRuntimeContractStep, '').Replace(
-        'step 预算合计 138m（28 个 step：3m checkout',
-        'step 预算合计 133m（27 个 step：3m checkout').Replace(
-        '+ 27 × 5m；',
-        '+ 26 × 5m；')
+        'step 预算合计 143m（29 个 step：3m checkout',
+        'step 预算合计 138m（28 个 step：3m checkout').Replace(
+        '+ 28 × 5m；',
+        '+ 27 × 5m；')
     Assert-Contract (-not [string]::Equals($workflowWithoutAcceptanceRuntimeContract, $workflow, [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must remove the canonical pure fixture contract step.'
-    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 133m（27 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 26 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 27 steps and 133m.'
+    Assert-Contract ($workflowWithoutAcceptanceRuntimeContract.Contains('step 预算合计 138m（28 个 step：3m checkout', [StringComparison]::Ordinal) -and $workflowWithoutAcceptanceRuntimeContract.Contains('+ 27 × 5m；', [StringComparison]::Ordinal)) 'Acceptance runtime workflow mutation must keep its budget comment truthful at 28 steps and 138m.'
     $workflowWithoutAcceptanceRuntimeContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-runtime-contract.yml'
     [IO.File]::WriteAllText($workflowWithoutAcceptanceRuntimeContractPath, $workflowWithoutAcceptanceRuntimeContract, [Text.UTF8Encoding]::new($false))
     $runtimeWorkflowContractFailure = $null
@@ -940,17 +999,35 @@ try {
     $observedRuntimeStepDiagnostic = if ($null -eq $runtimeWorkflowContractFailure) { '<none>' } else { [string]$runtimeWorkflowContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedRuntimeStepDiagnostic, $expectedRuntimeStepDiagnostic, [StringComparison]::Ordinal)) "Removing the acceptance runtime Script Governance fixture step must fail with the exact runtime-step uniqueness diagnostic. Observed: $observedRuntimeStepDiagnostic"
 
+    $acceptanceEquivalenceContractStep = @'
+      - name: Test acceptance scenario matrix equivalence contract
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1
+
+'@
+    $workflowWithoutAcceptanceEquivalenceContract = $workflow.Replace($acceptanceEquivalenceContractStep, '').Replace(
+        'step 预算合计 143m（29 个 step：3m checkout',
+        'step 预算合计 138m（28 个 step：3m checkout').Replace(
+        '+ 28 × 5m；',
+        '+ 27 × 5m；')
+    $workflowWithoutAcceptanceEquivalenceContractPath = Join-Path $workflowMutationRoot 'script-governance-drops-acceptance-equivalence-contract.yml'
+    [IO.File]::WriteAllText($workflowWithoutAcceptanceEquivalenceContractPath, $workflowWithoutAcceptanceEquivalenceContract, [Text.UTF8Encoding]::new($false))
+    $equivalenceWorkflowContractFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutAcceptanceEquivalenceContractPath } catch { $equivalenceWorkflowContractFailure = $_ }
+    Assert-Contract ($null -ne $equivalenceWorkflowContractFailure) 'Removing the equivalence Script Governance fixture step must fail the workflow contract.'
+
     $workflowWithIncorrectBudgetComment = $workflow.Replace(
-        'step 预算合计 138m（28 个 step：3m checkout',
-        'step 预算合计 133m（27 个 step：3m checkout').Replace(
-        '+ 27 × 5m；',
-        '+ 26 × 5m；')
-    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 28-step/138m comment.'
+        'step 预算合计 143m（29 个 step：3m checkout',
+        'step 预算合计 138m（28 个 step：3m checkout').Replace(
+        '+ 28 × 5m；',
+        '+ 27 × 5m；')
+    Assert-Contract (-not [string]::Equals($workflowWithIncorrectBudgetComment, $workflow, [StringComparison]::Ordinal)) 'Script Governance budget-comment mutation must alter the canonical 29-step/143m comment.'
     $workflowWithIncorrectBudgetCommentPath = Join-Path $workflowMutationRoot 'script-governance-uses-incorrect-budget-comment.yml'
     [IO.File]::WriteAllText($workflowWithIncorrectBudgetCommentPath, $workflowWithIncorrectBudgetComment, [Text.UTF8Encoding]::new($false))
     $budgetCommentContractFailure = $null
     try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithIncorrectBudgetCommentPath } catch { $budgetCommentContractFailure = $_ }
-    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 28-step/138m structure.'
+    $expectedBudgetCommentDiagnostic = 'Script Governance budget comment must match its actual 29-step/143m structure.'
     $observedBudgetCommentDiagnostic = if ($null -eq $budgetCommentContractFailure) { '<none>' } else { [string]$budgetCommentContractFailure.Exception.Message }
     Assert-Contract ([string]::Equals($observedBudgetCommentDiagnostic, $expectedBudgetCommentDiagnostic, [StringComparison]::Ordinal)) "An incorrect Script Governance budget comment must fail with the exact budget diagnostic. Observed: $observedBudgetCommentDiagnostic"
 
@@ -982,18 +1059,18 @@ try {
             },
             @{
                 Name = 'erp-drops-impact-dependency'
-                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}`n"
-                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}`n"
+                Original = "    needs: impact-plan`n    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
+                Replacement = "    if: >-`n      `${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}`n"
             },
             @{
                 Name = 'erp-drops-plan-failure-fail-open'
-                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
-                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
+                Replacement = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
             },
             @{
                 Name = 'erp-drops-cancellation-guard'
-                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false') }}"
-                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' }}"
+                Original = "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}"
+                Replacement = "`${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false' }}"
             },
             @{
                 Name = 'erp-uses-wrong-signal'
