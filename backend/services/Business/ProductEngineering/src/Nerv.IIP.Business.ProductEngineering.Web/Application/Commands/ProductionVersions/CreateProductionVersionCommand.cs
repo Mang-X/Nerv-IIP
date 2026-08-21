@@ -100,18 +100,18 @@ internal static class ProductionVersionBindingValidator
         CancellationToken cancellationToken)
     {
         var mbom = await manufacturingBomRepository.GetByVersionIdAsync(organizationId, environmentId, mbomVersionId, cancellationToken)
-            ?? throw new KnownException($"MBOM version '{mbomVersionId}' was not found.");
+            ?? throw new KnownException($"MBOM 版本 '{mbomVersionId}' 不存在。");
         var routing = await routingRepository.GetByVersionIdAsync(organizationId, environmentId, routingVersionId, cancellationToken)
-            ?? throw new KnownException($"Routing version '{routingVersionId}' was not found.");
+            ?? throw new KnownException($"工艺路线版本 '{routingVersionId}' 不存在。");
 
         if (!string.Equals(mbom.SkuCode, skuCode, StringComparison.Ordinal))
         {
-            throw new KnownException($"MBOM version '{mbomVersionId}' belongs to SKU '{mbom.SkuCode}', not requested SKU '{skuCode}'.");
+            throw new KnownException($"MBOM版本'{mbomVersionId}'的SKU'{mbom.SkuCode}'与'{skuCode}'不一致。");
         }
 
         if (!string.Equals(routing.SkuCode, skuCode, StringComparison.Ordinal))
         {
-            throw new KnownException($"Routing version '{routingVersionId}' belongs to SKU '{routing.SkuCode}', not requested SKU '{skuCode}'.");
+            throw new KnownException($"工艺路线版本'{routingVersionId}'的SKU'{routing.SkuCode}'与'{skuCode}'不一致。");
         }
 
         EnsurePublishedAndEffective("MBOM", mbomVersionId, mbom.Status, mbom.EffectiveDate, validFrom, validTo);
@@ -129,12 +129,12 @@ internal static class ProductionVersionBindingValidator
     {
         if (status != EngineeringVersionStatus.Published)
         {
-            throw new KnownException($"{kind} version '{versionId}' must be published before it can be bound to a production version.");
+            throw new KnownException($"{kind}版本 '{versionId}' 必须先发布才能绑定生产版本。");
         }
 
         if (effectiveDate is not null && effectiveDate.Value > validFrom)
         {
-            throw new KnownException($"{kind} version '{versionId}' is not effective for the requested production version window.");
+            throw new KnownException($"{kind}版本 '{versionId}' 不在生产版本生效区间内。");
         }
     }
 }

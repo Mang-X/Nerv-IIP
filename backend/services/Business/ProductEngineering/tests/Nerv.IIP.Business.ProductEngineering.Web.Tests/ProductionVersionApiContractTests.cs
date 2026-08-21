@@ -186,8 +186,12 @@ public sealed class ProductionVersionApiContractTests
             NewCreateCommand("MBOM-DRAFT:A", "ROUTE-1000:A"),
             CancellationToken.None));
 
-        Assert.Contains("MBOM", missing.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("published", draft.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MBOM-MISSING:A", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在", missing.Message, StringComparison.Ordinal);
+        Assert.Contains("MBOM-DRAFT:A", draft.Message, StringComparison.Ordinal);
+        Assert.Contains("必须先发布", draft.Message, StringComparison.Ordinal);
+        Assert.True(missing.Message.Length <= 60, $"消息 {missing.Message.Length} 字，超过前端 60 字透传上限");
+        Assert.True(draft.Message.Length <= 60, $"消息 {draft.Message.Length} 字，超过前端 60 字透传上限");
     }
 
     [Fact]
@@ -214,7 +218,13 @@ public sealed class ProductionVersionApiContractTests
             CancellationToken.None));
 
         Assert.Contains("SKU", skuMismatch.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("effective", notEffective.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MBOM-OTHER:A", skuMismatch.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-OTHER", skuMismatch.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-1000", skuMismatch.Message, StringComparison.Ordinal);
+        Assert.Contains("MBOM-VALID:A", notEffective.Message, StringComparison.Ordinal);
+        Assert.Contains("生效区间", notEffective.Message, StringComparison.Ordinal);
+        Assert.True(skuMismatch.Message.Length <= 60, $"消息 {skuMismatch.Message.Length} 字，超过前端 60 字透传上限");
+        Assert.True(notEffective.Message.Length <= 60, $"消息 {notEffective.Message.Length} 字，超过前端 60 字透传上限");
     }
 
     [Fact]
@@ -261,7 +271,9 @@ public sealed class ProductionVersionApiContractTests
                 false),
             CancellationToken.None));
 
-        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(foreignProductionVersion.Id.Id.ToString("D"), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
         Assert.Equal("MBOM-FOREIGN:A", foreignProductionVersion.MbomVersionId);
         Assert.Equal(10, foreignProductionVersion.Priority);
     }
@@ -294,7 +306,9 @@ public sealed class ProductionVersionApiContractTests
             new ArchiveProductionVersionCommand("org-001", "env-dev", foreignProductionVersion.Id.Id.ToString("D"), "review isolation"),
             CancellationToken.None));
 
-        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(foreignProductionVersion.Id.Id.ToString("D"), exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
         Assert.Equal(ProductionVersionStatus.Active, foreignProductionVersion.Status);
     }
 

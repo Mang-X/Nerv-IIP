@@ -25,7 +25,7 @@ public sealed class ArchiveProductionVersionCommandHandler(IProductionVersionRep
     public async Task Handle(ArchiveProductionVersionCommand request, CancellationToken cancellationToken)
     {
         var version = await repository.GetByIdAsync(request.OrganizationId, request.EnvironmentId, request.ProductionVersionId, cancellationToken)
-            ?? throw new KnownException($"Production version '{request.ProductionVersionId}' was not found.");
+            ?? throw new KnownException($"生产版本 '{request.ProductionVersionId}' 不存在。");
         version.Archive(request.Reason);
     }
 }
