@@ -209,7 +209,7 @@ public sealed class DemandPlanningEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             createHandler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("已存在主生产计划桶", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("主生产计划桶已存在：SKU=SKU-FG-1000，站点=SITE-01，日期=2026-06-15。", exception.Message);
     }
 
     [Fact]

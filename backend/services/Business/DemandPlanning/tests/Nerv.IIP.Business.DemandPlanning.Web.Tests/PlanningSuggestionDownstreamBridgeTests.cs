@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
@@ -47,7 +49,10 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 """);
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.test") };
-        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(
+            httpClient,
+            NullLogger<HttpMesPlanningSuggestionDownstreamBridge>.Instance,
+            new TestInternalServiceTokenProvider());
 
         var reference = await bridge.CreateDownstreamAsync(
             suggestion,
@@ -87,7 +92,10 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 """);
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.test") };
-        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(
+            httpClient,
+            NullLogger<HttpMesPlanningSuggestionDownstreamBridge>.Instance,
+            new TestInternalServiceTokenProvider());
 
         var reference = await bridge.CreateDownstreamAsync(
             suggestion,
@@ -107,8 +115,12 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
             ReasonPhrase = "Conflict",
             Content = new StringContent("""{"message":"production work order already exists"}""")
         });
+        var logger = new ListLogger<HttpMesPlanningSuggestionDownstreamBridge>();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.test") };
-        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+        var bridge = new HttpMesPlanningSuggestionDownstreamBridge(
+            httpClient,
+            logger,
+            new TestInternalServiceTokenProvider());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             bridge.CreateDownstreamAsync(
@@ -119,6 +131,11 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
         Assert.Equal("MES 下游创建工单失败，请稍后重试。", exception.Message);
         Assert.DoesNotContain("HTTP 409", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("production work order already exists", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning
+                && entry.Message.Contains("HTTP 409 Conflict", StringComparison.Ordinal)
+                && entry.Message.Contains("production work order already exists", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -152,7 +169,10 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
                 """);
         });
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
-        var bridge = new HttpErpPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+        var bridge = new HttpErpPlanningSuggestionDownstreamBridge(
+            httpClient,
+            NullLogger<HttpErpPlanningSuggestionDownstreamBridge>.Instance,
+            new TestInternalServiceTokenProvider());
 
         var reference = await bridge.CreateDownstreamAsync(
             suggestion,
@@ -174,8 +194,12 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
             ReasonPhrase = "Conflict",
             Content = new StringContent("""{"message":"purchase source is blocked"}""")
         });
+        var logger = new ListLogger<HttpErpPlanningSuggestionDownstreamBridge>();
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
-        var bridge = new HttpErpPlanningSuggestionDownstreamBridge(httpClient, new TestInternalServiceTokenProvider());
+        var bridge = new HttpErpPlanningSuggestionDownstreamBridge(
+            httpClient,
+            logger,
+            new TestInternalServiceTokenProvider());
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             bridge.CreateDownstreamAsync(
@@ -186,6 +210,11 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
         Assert.Equal("ERP 下游创建采购申请失败，请稍后重试。", exception.Message);
         Assert.DoesNotContain("HTTP 409", exception.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("purchase source is blocked", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning
+                && entry.Message.Contains("HTTP 409 Conflict", StringComparison.Ordinal)
+                && entry.Message.Contains("purchase source is blocked", StringComparison.Ordinal));
     }
 
     private static PlanningSuggestion NewWorkOrderSuggestion()
@@ -236,6 +265,27 @@ public sealed class PlanningSuggestionDownstreamBridgeTests
     private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider
     {
         public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler

@@ -81,9 +81,14 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         var sourceRoot = Path.Combine(
             repositoryRoot,
             "backend/services/Business/DemandPlanning/src".Replace('/', Path.DirectorySeparatorChar));
-        var discoveredSourcePaths = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(file => File.ReadAllText(file).Contains("new KnownException", StringComparison.Ordinal))
-            .Select(file => Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'))
+        var allSourceDocuments = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(file => new DemandPlanningSourceDocument(
+                Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
+                File.ReadAllText(file)))
+            .ToArray();
+        var discoveredSourcePaths = DemandPlanningKnownExceptionSourceAnalyzer.Discover(allSourceDocuments)
+            .Select(site => site.Path)
+            .Distinct(StringComparer.Ordinal)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
         Assert.Equal(
@@ -139,18 +144,103 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
+    public void Known_exception_interpolation_cannot_include_catch_diagnostics()
+    {
+        var documents = new[]
+        {
+            new DemandPlanningSourceDocument(
+                "synthetic/DynamicKnownException.cs",
+                """
+                using NetCorePal.Extensions.Primitives;
+
+                public sealed class SyntheticDynamicKnownException
+                {
+                    public void Handle()
+                    {
+                        try
+                        {
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            throw new KnownException($"操作失败：{ex.Message}");
+                        }
+                    }
+                }
+                """),
+        };
+
+        var violations = DemandPlanningKnownExceptionMessageAnalyzer.Analyze(documents, []);
+
+        Assert.Contains(
+            violations,
+            violation => violation.Contains("不能透传动态异常文本", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Shared_code_allocator_is_registered_only_through_the_demand_planning_call_root()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var codingRoot = Path.Combine(repositoryRoot, DemandPlanningCodingPath.Replace('/', Path.DirectorySeparatorChar));
         var sharedAllocator = Path.Combine(repositoryRoot, SharedCodeAllocatorPath.Replace('/', Path.DirectorySeparatorChar));
-        var source = File.ReadAllText(codingRoot);
+        var sourceRoot = Path.Combine(
+            repositoryRoot,
+            "backend/services/Business/DemandPlanning/src".Replace('/', Path.DirectorySeparatorChar));
+        var documents = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Select(file => new DemandPlanningSourceDocument(
+                Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
+                File.ReadAllText(file)))
+            .ToArray();
+        var syntaxTrees = documents
+            .Select(document => CSharpSyntaxTree.ParseText(document.Text, path: document.Path))
+            .ToArray();
+        var compilation = CSharpCompilation.Create(
+            "DemandPlanningCodeAllocatorArchitecture",
+            syntaxTrees,
+            CreateMetadataReferences(typeof(Nerv.IIP.Coding.CodeAllocator)));
+        var allocatorSites = syntaxTrees
+            .SelectMany(syntaxTree =>
+            {
+                var semanticModel = compilation.GetSemanticModel(syntaxTree);
+                return syntaxTree.GetRoot()
+                    .DescendantNodes()
+                    .OfType<BaseObjectCreationExpressionSyntax>()
+                    .Where(creation => semanticModel.GetTypeInfo(creation).Type?.ToDisplayString() == "Nerv.IIP.Coding.CodeAllocator")
+                    .Select(creation => new
+                    {
+                        Path = syntaxTree.FilePath.Replace('\\', '/'),
+                        TypeName = creation.Ancestors()
+                            .OfType<TypeDeclarationSyntax>()
+                            .Select(type => type.Identifier.ValueText)
+                            .FirstOrDefault(),
+                        ConstructorName = creation.Ancestors()
+                            .OfType<ConstructorDeclarationSyntax>()
+                            .Select(constructor => constructor.Identifier.ValueText)
+                            .FirstOrDefault(),
+                    });
+            })
+            .ToArray();
 
-        Assert.Equal(2, Count(source, "new CodeAllocator"));
+        Assert.Equal(2, allocatorSites.Length);
+        Assert.All(allocatorSites, site =>
+        {
+            Assert.Equal(DemandPlanningCodingPath, site.Path);
+            Assert.Equal("DemandPlanningCodingService", site.TypeName);
+            Assert.Equal("DemandPlanningCodingService", site.ConstructorName);
+        });
         Assert.True(File.Exists(sharedAllocator));
-        Assert.DoesNotContain(SharedCodeAllocatorPath, SourcePaths, StringComparer.Ordinal);
-        Assert.Contains("Nerv.IIP.Coding", source, StringComparison.Ordinal);
-        Assert.Contains("DemandPlanningCodingService", source, StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences(params Type[] additionalTypes)
+    {
+        var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
+        var assemblyPaths = trustedPlatformAssemblies?
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Concat(additionalTypes.Select(type => type.Assembly.Location))
+            .Distinct(StringComparer.Ordinal)
+            ?? additionalTypes.Select(type => type.Assembly.Location).ToArray();
+
+        return assemblyPaths
+            .Select(path => MetadataReference.CreateFromFile(path))
+            .ToArray();
     }
 
     private static DemandPlanningKnownExceptionSite Target(string path, string typeName, string methodName, int count) =>
@@ -158,9 +248,6 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
 
     private static DemandPlanningKnownExceptionSite Excluded(string path, string typeName, string methodName, int count, string reason) =>
         new(path, typeName, methodName, count, DemandPlanningKnownExceptionSiteKind.Excluded, reason);
-
-    private static int Count(string source, string value) =>
-        source.Split(value, StringSplitOptions.None).Length - 1;
 
     private static string FindRepositoryRoot()
     {
@@ -201,11 +288,20 @@ internal sealed record DemandPlanningSourceDocument(string Path, string Text);
 
 internal sealed record DemandPlanningExcludedSite(string Path, string TypeName, string MethodName, string Reason);
 
+internal sealed record DemandPlanningDiscoveredKnownExceptionSite(
+    string Path,
+    string TypeName,
+    string MethodName,
+    int DirectKnownExceptionCount)
+{
+    public string Key => $"{Path}|{TypeName}|{MethodName}";
+}
+
 internal static class DemandPlanningKnownExceptionSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
 
-    public static IReadOnlyList<DemandPlanningKnownExceptionSite> Discover(
+    public static IReadOnlyList<DemandPlanningDiscoveredKnownExceptionSite> Discover(
         IReadOnlyCollection<DemandPlanningSourceDocument> documents)
     {
         if (documents.Count == 0)
@@ -225,7 +321,7 @@ internal static class DemandPlanningKnownExceptionSourceAnalyzer
             "DemandPlanningKnownExceptionArchitecture",
             syntaxTrees,
             CreateMetadataReferences());
-        var discovered = new List<DemandPlanningKnownExceptionSite>();
+        var discovered = new List<DemandPlanningDiscoveredKnownExceptionSite>();
 
         foreach (var syntaxTree in sourceTrees)
         {
@@ -251,13 +347,11 @@ internal static class DemandPlanningKnownExceptionSourceAnalyzer
                     continue;
                 }
 
-                discovered.Add(new DemandPlanningKnownExceptionSite(
+                discovered.Add(new DemandPlanningDiscoveredKnownExceptionSite(
                     syntaxTree.FilePath.Replace('\\', '/'),
                     typeName,
                     method.Identifier.ValueText,
-                    directKnownExceptionCount,
-                    DemandPlanningKnownExceptionSiteKind.Excluded,
-                    "discovered source site"));
+                    directKnownExceptionCount));
             }
         }
 
@@ -358,6 +452,13 @@ internal static class DemandPlanningKnownExceptionMessageAnalyzer
     private static void AddViolations(SyntaxTree syntaxTree, ExpressionSyntax expression, ICollection<Violation> violations)
     {
         var line = syntaxTree.GetLineSpan(expression.Span).StartLinePosition.Line + 1;
+        if (expression is InterpolatedStringExpressionSyntax interpolated
+            && ContainsDiagnosticInterpolation(interpolated))
+        {
+            violations.Add(new Violation(syntaxTree.FilePath, line, expression.SpanStart, "用户消息不能透传动态异常文本。"));
+            return;
+        }
+
         if (!TryExtractMessage(expression, out var message, out var estimatedLength))
         {
             violations.Add(new Violation(syntaxTree.FilePath, line, expression.SpanStart, "用户消息必须是静态字符串或插值字符串，不能透传动态异常文本。"));
@@ -373,6 +474,38 @@ internal static class DemandPlanningKnownExceptionMessageAnalyzer
         {
             violations.Add(new Violation(syntaxTree.FilePath, line, expression.SpanStart, "用户消息估算长度不能超过 60 个字符。"));
         }
+    }
+
+    private static bool ContainsDiagnosticInterpolation(InterpolatedStringExpressionSyntax interpolated)
+    {
+        var method = interpolated.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        var catchVariables = method?.DescendantNodes()
+            .OfType<CatchDeclarationSyntax>()
+            .Select(catchDeclaration => catchDeclaration.Identifier.ValueText)
+            .Where(identifier => !string.IsNullOrEmpty(identifier))
+            .ToHashSet(StringComparer.Ordinal)
+            ?? [];
+
+        foreach (var interpolation in interpolated.Contents.OfType<InterpolationSyntax>())
+        {
+            if (interpolation.Expression
+                .DescendantNodesAndSelf()
+                .OfType<IdentifierNameSyntax>()
+                .Any(identifier => catchVariables.Contains(identifier.Identifier.ValueText)))
+            {
+                return true;
+            }
+
+            if (interpolation.Expression
+                .DescendantNodesAndSelf()
+                .OfType<MemberAccessExpressionSyntax>()
+                .Any(member => member.Name.Identifier.ValueText is "Message" or "Content" or "ReasonPhrase" or "StatusCode" or "InnerException"))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryExtractMessage(ExpressionSyntax expression, out string message, out int estimatedLength)

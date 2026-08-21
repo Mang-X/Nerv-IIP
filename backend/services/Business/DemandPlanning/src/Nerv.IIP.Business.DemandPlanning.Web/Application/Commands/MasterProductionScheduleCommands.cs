@@ -105,7 +105,7 @@ public sealed class CreateMasterProductionScheduleBucketCommandHandler(Applicati
         if (existing is not null)
         {
             throw new KnownException(
-                $"SKU '{request.SkuCode}' 在站点 '{request.SiteCode}' 的日期已存在主生产计划桶。");
+                $"主生产计划桶已存在：SKU={request.SkuCode}，站点={request.SiteCode}，日期={request.BucketDate:yyyy-MM-dd}。");
         }
 
         var bucket = MasterProductionSchedule.Create(

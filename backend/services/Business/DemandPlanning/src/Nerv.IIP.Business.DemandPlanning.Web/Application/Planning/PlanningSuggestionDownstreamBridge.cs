@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Contracts.DemandPlanning;
@@ -33,6 +34,7 @@ public sealed class HttpPlanningSuggestionDownstreamBridge(
 
 public sealed class HttpMesPlanningSuggestionDownstreamBridge(
     HttpClient httpClient,
+    ILogger<HttpMesPlanningSuggestionDownstreamBridge> logger,
     IInternalServiceTokenProvider? internalTokenProvider = null) : IPlanningSuggestionDownstreamBridge
 {
     public async Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
@@ -86,6 +88,12 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var diagnostic = await PlanningSuggestionDownstreamDiagnostics.ReadResponseBodyAsync(response, cancellationToken);
+            logger.LogWarning(
+                "DemandPlanning MES downstream returned HTTP {StatusCode} {ReasonPhrase}; response body: {ResponseBody}",
+                (int)response.StatusCode,
+                response.ReasonPhrase,
+                diagnostic);
             throw new KnownException("MES 下游创建工单失败，请稍后重试。");
         }
 
@@ -111,6 +119,7 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
 
 public sealed class HttpErpPlanningSuggestionDownstreamBridge(
     HttpClient httpClient,
+    ILogger<HttpErpPlanningSuggestionDownstreamBridge> logger,
     IInternalServiceTokenProvider? internalTokenProvider = null) : IPlanningSuggestionDownstreamBridge
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -151,6 +160,12 @@ public sealed class HttpErpPlanningSuggestionDownstreamBridge(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            var diagnostic = await PlanningSuggestionDownstreamDiagnostics.ReadResponseBodyAsync(response, cancellationToken);
+            logger.LogWarning(
+                "DemandPlanning ERP downstream returned HTTP {StatusCode} {ReasonPhrase}; response body: {ResponseBody}",
+                (int)response.StatusCode,
+                response.ReasonPhrase,
+                diagnostic);
             throw new KnownException("ERP 下游创建采购申请失败，请稍后重试。");
         }
 
@@ -228,3 +243,29 @@ internal sealed record ErpCreatePurchaseRequisitionFromSuggestionRequest(
 internal sealed record ErpPurchaseRequisitionAcceptedResponse(
     string PurchaseRequisitionId,
     string? RequisitionNo = null);
+
+internal static class PlanningSuggestionDownstreamDiagnostics
+{
+    private const int MaximumResponseBodyLength = 512;
+
+    public static async Task<string> ReadResponseBodyAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            return body.Length <= MaximumResponseBodyLength
+                ? body
+                : body[..MaximumResponseBodyLength] + "…";
+        }
+        catch (HttpRequestException exception)
+        {
+            return $"<响应体读取失败：{exception.GetType().Name}>";
+        }
+        catch (IOException exception)
+        {
+            return $"<响应体读取失败：{exception.GetType().Name}>";
+        }
+    }
+}
