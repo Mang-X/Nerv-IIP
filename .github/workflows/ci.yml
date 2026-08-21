@@ -1059,7 +1059,8 @@ jobs:
 
   acceptance-scenario-matrix-runtime:
     name: Business FullChain Acceptance / sales-order-demand
-    timeout-minutes: 100
+    # 显式 step 预算合计 99m，小于 110m job 预算，为 action setup/post 保留 11m。
+    timeout-minutes: 110
     runs-on: ubuntu-latest
     needs: acceptance-scenario-matrix-planning
     if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
@@ -1092,6 +1093,30 @@ jobs:
         with:
           name: acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/acceptance-scenario-matrix
+
+      - name: Prepare shadow dependency images
+        timeout-minutes: 10
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          # `verify-erp-sales-order-demand-planning.ps1` 使用 `docker compose up --pull never`；
+          # hosted runner 必须先具备与 compose 契约一致的两个精确镜像。沿用 v1 的有限重试形状：
+          # 单次最多 2 × (75s + 10s SIGKILL 兜底) = 170s，最多 3 次并含两次 15s 退避，
+          # 最坏 540s，严格小于本 step 的 600s 预算。
+          docker_attempt=1
+          while true; do
+            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
+              && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
+              echo "Shadow 依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
+              break
+            fi
+            if [ "${docker_attempt}" -ge 3 ]; then
+              echo "Shadow 依赖镜像拉取失败：已连续尝试 3 次仍未成功。" >&2
+              exit 1
+            fi
+            echo "Shadow 依赖镜像拉取第 ${docker_attempt} 次尝试失败，15 秒后重试。" >&2
+            docker_attempt=$((docker_attempt + 1))
+            sleep 15
+          done
 
       - name: Run acceptance scenario matrix
         timeout-minutes: 45

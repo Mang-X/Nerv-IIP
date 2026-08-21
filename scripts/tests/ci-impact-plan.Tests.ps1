@@ -277,10 +277,21 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
     Assert-Contract ([string]::Equals([string]$runtimeJob.if, "`${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}", [StringComparison]::Ordinal)) 'The hosted runtime must run only for a successful plan that selected sales-order-demand.'
     $runtimeSteps = @($runtimeJob.steps)
     Assert-Contract (@($runtimeSteps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every hosted runtime step must have a positive explicit timeout.'
+    $runtimeImageSteps = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Prepare shadow dependency images', [StringComparison]::Ordinal) })
+    Assert-Contract ($runtimeImageSteps.Count -eq 1) 'The hosted shadow runtime must prepare its PostgreSQL and Redis images exactly once before the governed runner.'
+    $runtimeImageStep = $runtimeImageSteps[0]
+    Assert-Contract ([int]$runtimeImageStep.'timeout-minutes' -eq 10 -and
+        [string]::Equals([string]$runtimeImageStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'The hosted shadow image preparation must use one fail-fast ten-minute bash step.'
+    $runtimeImageMatches = @([regex]::Matches([string]$runtimeImageStep.run, '(?:docker image inspect|docker pull) (?<image>[a-z]+:[^\s;]+)') | ForEach-Object { [string]$_.Groups['image'].Value })
+    Assert-Contract ([string]::Equals(($runtimeImageMatches -join '|'), 'postgres:18|postgres:18|redis:8|redis:8', [StringComparison]::Ordinal)) 'The hosted shadow image preparation must inspect/pull exactly postgres:18 and redis:8.'
+    foreach ($boundedRetryFragment in @('timeout --kill-after=10 75 docker pull postgres:18', 'timeout --kill-after=10 75 docker pull redis:8', 'if [ "${docker_attempt}" -ge 3 ]', 'sleep 15')) {
+        Assert-Contract (([string]$runtimeImageStep.run).Contains($boundedRetryFragment, [StringComparison]::Ordinal)) "The hosted shadow image preparation is missing bounded retry fragment '$boundedRetryFragment'."
+    }
     $runtimeStepBudget = (@($runtimeSteps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
-    Assert-Contract ([int]$runtimeJob.'timeout-minutes' -gt $runtimeStepBudget) 'The hosted runtime job timeout must exceed explicit steps plus action overhead.'
+    Assert-Contract ($runtimeStepBudget -eq 99 -and [int]$runtimeJob.'timeout-minutes' -eq 110 -and ([int]$runtimeJob.'timeout-minutes' - $runtimeStepBudget) -eq 11) 'The hosted runtime must retain the complete 99-minute explicit budget inside a 110-minute job with 11 minutes for action setup/post overhead.'
     $runtimeRunStep = @($runtimeSteps | Where-Object { [string]::Equals([string]$_.name, 'Run acceptance scenario matrix', [StringComparison]::Ordinal) })
     Assert-Contract ($runtimeRunStep.Count -eq 1 -and ([int]$runtimeRunStep[0].'timeout-minutes' * 60) -gt 2220) 'The hosted runtime step timeout must strictly exceed the governed 2220-second scenario budget.'
+    Assert-Contract ([Array]::IndexOf($runtimeSteps, $runtimeImageStep) -lt [Array]::IndexOf($runtimeSteps, $runtimeRunStep[0])) 'The hosted shadow dependency images must be prepared before the governed runtime starts.'
     foreach ($requiredRuntimeArgument in @('-ExpectedArtifactDigest $artifactDigest', '-ExpectedManifestDigest $manifestDigest', "-TrackIdentifier 'shadow'")) {
         Assert-Contract (([string]$runtimeRunStep[0].run).Contains($requiredRuntimeArgument, [StringComparison]::Ordinal)) "Hosted runtime invocation is missing '$requiredRuntimeArgument'."
     }
@@ -960,6 +971,30 @@ try {
         $planningMutationFailure = $null
         try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $planningMutationPath } catch { $planningMutationFailure = $_ }
         Assert-Contract ($null -ne $planningMutationFailure) "Planning workflow mutation '$($planningMutation.Name)' must be rejected."
+    }
+
+    $workflowWithoutShadowImages = [regex]::Replace(
+        $workflow,
+        '(?ms)^      - name: Prepare shadow dependency images\n.*?(?=^      - name: Run acceptance scenario matrix\n)',
+        '')
+    Assert-Contract (-not [string]::Equals($workflowWithoutShadowImages, $workflow, [StringComparison]::Ordinal)) 'Shadow image preparation deletion mutation must remove the complete governed step.'
+    $workflowWithoutShadowImagesPath = Join-Path $workflowMutationRoot 'shadow-runtime-drops-dependency-images.yml'
+    [IO.File]::WriteAllText($workflowWithoutShadowImagesPath, $workflowWithoutShadowImages, [Text.UTF8Encoding]::new($false))
+    $shadowImagesDeletionFailure = $null
+    try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithoutShadowImagesPath } catch { $shadowImagesDeletionFailure = $_ }
+    Assert-Contract ($null -ne $shadowImagesDeletionFailure) 'Deleting the hosted shadow dependency image step must fail the workflow contract.'
+
+    foreach ($imageMutation in @(
+            @{ Name = 'wrong-postgres-image'; Original = 'postgres:18'; Replacement = 'postgres:17' },
+            @{ Name = 'wrong-redis-image'; Original = 'redis:8'; Replacement = 'redis:7' }
+        )) {
+        $workflowWithWrongImage = $workflow.Replace([string]$imageMutation.Original, [string]$imageMutation.Replacement)
+        Assert-Contract (-not [string]::Equals($workflowWithWrongImage, $workflow, [StringComparison]::Ordinal)) "Shadow image mutation '$($imageMutation.Name)' must alter the workflow."
+        $workflowWithWrongImagePath = Join-Path $workflowMutationRoot "$($imageMutation.Name).yml"
+        [IO.File]::WriteAllText($workflowWithWrongImagePath, $workflowWithWrongImage, [Text.UTF8Encoding]::new($false))
+        $wrongImageFailure = $null
+        try { Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowWithWrongImagePath } catch { $wrongImageFailure = $_ }
+        Assert-Contract ($null -ne $wrongImageFailure) "Shadow image mutation '$($imageMutation.Name)' must fail the workflow contract."
     }
 
     $acceptanceScenarioContractStep = @'
