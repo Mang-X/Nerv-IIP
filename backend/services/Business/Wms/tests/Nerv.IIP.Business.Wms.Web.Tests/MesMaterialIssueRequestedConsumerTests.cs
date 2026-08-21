@@ -96,12 +96,14 @@ public sealed class MesMaterialIssueRequestedConsumerTests
     {
         var databaseName = $"wms-mes-material-issue-{Guid.CreateVersion7():N}";
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var logger = new RecordingLogger<MesMaterialIssueRequestedIntegrationEventHandler>();
         await using var context = CreateContext(databaseName);
         var handler = new MesMaterialIssueRequestedIntegrationEventHandler(
             context,
             new CommandExecutingSender(databaseName),
             deadLetters,
-            ConfiguredLocations);
+            ConfiguredLocations,
+            logger);
 
         // No payload site code and no warehouse facts to derive one from: guessing a site would put the
         // picking work in the wrong warehouse, so the message is parked instead.
@@ -114,6 +116,10 @@ public sealed class MesMaterialIssueRequestedConsumerTests
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
         Assert.Equal("unresolved-site", deadLetter.FailureCode);
+        // 同 unresolved-location：站点也是部署/主数据面的成因，事件里看不出来，没有日志就只能翻死信表。
+        var warning = Assert.Single(logger.Entries, x => x.Level == LogLevel.Warning);
+        Assert.Contains("no single fulfillment site", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("MIR-001", warning.Message, StringComparison.Ordinal);
     }
 
     [Fact]

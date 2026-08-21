@@ -80,6 +80,16 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
             cancellationToken);
         if (siteCode is null)
         {
+            // 与下面的 unresolved-location 同构：MES 从不填 SiteCode，这条判定 100% 落在 DB 推断上，
+            // 事件里没有任何证据；成因在部署/主数据面（仓库作业池的站点不唯一或为空）。
+            logger?.LogWarning(
+                "Material issue request {EventId} ({RequestNo}) has no single fulfillment site for " +
+                "organization {OrganizationId} / environment {EnvironmentId}: the event named no site and WMS " +
+                "found zero or multiple sites in its own warehouse work pools and outbound orders.",
+                integrationEvent.EventId,
+                payload.RequestNo,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
                     ConsumerName,
