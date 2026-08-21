@@ -131,6 +131,9 @@ try
         throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessERP in Development. Use an explicit migrator, release script or migration bundle outside Development.");
     }
 
+    // 演示种子 fail-closed：非 Development 开启种子开关直接拒绝启动，且必须早于任何迁移与监听。
+    ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, app.Environment);
+
     if (autoMigrate)
     {
         using var scope = app.Services.CreateScope();
@@ -156,7 +159,7 @@ try
     app.MapMetrics();
 
     await app.StartAsync();
-    if (builder.Configuration.GetValue<bool>("Erp:Seed:SalesOrderDemandDemo:Enabled"))
+    if (ErpDemoSeedStartupGovernance.IsSalesOrderDemandDemoEnabled(builder.Configuration))
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<SalesOrderDemandDemoSeedService>();
