@@ -173,6 +173,35 @@ public sealed class StandardOperationApiContractTests
     }
 
     [Fact]
+    public async Task Update_standard_operation_returns_chinese_message_when_missing()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new UpdateStandardOperationCommandHandler(new StandardOperationRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new UpdateStandardOperationCommand(
+                "org-001",
+                "env-dev",
+                "OP-MISSING",
+                "混合",
+                "WC-MIX-01",
+                5,
+                30,
+                "INHOUSE",
+                true,
+                false,
+                false,
+                null),
+            CancellationToken.None));
+
+        Assert.Contains("OP-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
+    }
+
+    [Fact]
     public async Task List_standard_operations_returns_enabled_filter_and_split_default_minutes()
     {
         await using var provider = CreateInMemoryProvider();
@@ -229,6 +258,23 @@ public sealed class StandardOperationApiContractTests
 
         Assert.IsType<InvalidOperationException>(exception.InnerException);
         Assert.Contains("Archived standard operation", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Archive_standard_operation_returns_chinese_message_when_missing()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new ArchiveStandardOperationCommandHandler(new StandardOperationRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveStandardOperationCommand("org-001", "env-dev", "OP-MISSING", "not found"),
+            CancellationToken.None));
+
+        Assert.Contains("OP-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在", exception.Message, StringComparison.Ordinal);
+        Assert.True(exception.Message.Length <= 60, $"消息 {exception.Message.Length} 字，超过前端 60 字透传上限");
     }
 
     private static CreateStandardOperationCommand NewCreateCommand(string? operationCode, string? idempotencyKey = null)

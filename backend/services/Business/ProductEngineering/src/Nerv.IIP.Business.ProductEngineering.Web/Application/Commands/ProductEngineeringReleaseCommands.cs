@@ -445,7 +445,7 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             request.EngineeringBomCode,
             request.EngineeringBomRevision,
             cancellationToken)
-            ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
+            ?? throw new KnownException($"已发布 EBOM '{request.EngineeringBomCode}' 修订 '{request.EngineeringBomRevision}' 不存在。");
 
         ProductEngineeringReleaseValidation.ValidateManufacturingBomMaterialContinuity(ebom, request.SkuCode, request.MaterialLines);
         await _masterDataReferenceValidator.ValidateActiveReferencesAsync(
@@ -571,11 +571,11 @@ public sealed class ReleaseRoutingCommandHandler(
                 request.EnvironmentId,
                 operation.OperationCode,
                 cancellationToken)
-                ?? throw new KnownException($"Standard operation '{operation.OperationCode}' was not found.");
+                ?? throw new KnownException($"标准工序 '{operation.OperationCode}' 不存在。");
 
             if (!standardOperation.Enabled)
             {
-                throw new KnownException($"Standard operation '{operation.OperationCode}' is archived and cannot be selected by a new routing version.");
+                throw new KnownException($"标准工序 '{operation.OperationCode}' 已归档，不能用于新工艺路线版本。");
             }
 
             standardOperations[operation.OperationCode] = standardOperation;
@@ -628,7 +628,7 @@ internal static class ProductEngineeringReleaseValidation
         var normalizedManufacturingBomSkuCode = manufacturingBomSkuCode.Trim();
         if (!string.Equals(engineeringBom.ParentItemCode, normalizedManufacturingBomSkuCode, StringComparison.Ordinal))
         {
-            throw new KnownException($"Manufacturing BOM SKU '{normalizedManufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+            throw new KnownException($"MBOM SKU '{normalizedManufacturingBomSkuCode}' 必须与 EBOM 父 SKU '{engineeringBom.ParentItemCode}' 一致。");
         }
 
         var requiredEbomChildSkuCodes = engineeringBom.Lines
@@ -646,7 +646,7 @@ internal static class ProductEngineeringReleaseValidation
             .ToArray();
         if (missingMaterialSkuCodes.Length > 0)
         {
-            throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
+            throw new KnownException($"MBOM 缺少 EBOM 子 SKU 的物料行：{string.Join(", ", missingMaterialSkuCodes)}。");
         }
     }
 

@@ -68,7 +68,7 @@ public sealed class CreateStandardOperationCommandHandler(
                 cancellationToken);
             if (persisted is null)
             {
-                throw new KnownException($"Standard operation '{allocation.Code}' idempotency record exists but resource was not found.");
+                throw new KnownException($"标准工序 '{allocation.Code}' 幂等记录存在，但资源未找到。");
             }
 
             return new StandardOperationCommandResult(persisted.OperationCode);
@@ -128,7 +128,7 @@ public sealed class UpdateStandardOperationCommandHandler(IStandardOperationRepo
     public async Task<StandardOperationCommandResult> Handle(UpdateStandardOperationCommand request, CancellationToken cancellationToken)
     {
         var operation = await repository.GetByCodeAsync(request.OrganizationId, request.EnvironmentId, request.OperationCode, cancellationToken)
-            ?? throw new KnownException($"Standard operation '{request.OperationCode}' was not found.");
+            ?? throw new KnownException($"标准工序 '{request.OperationCode}' 不存在。");
 
         ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
@@ -167,7 +167,7 @@ public sealed class ArchiveStandardOperationCommandHandler(IStandardOperationRep
     public async Task Handle(ArchiveStandardOperationCommand request, CancellationToken cancellationToken)
     {
         var operation = await repository.GetByCodeAsync(request.OrganizationId, request.EnvironmentId, request.OperationCode, cancellationToken)
-            ?? throw new KnownException($"Standard operation '{request.OperationCode}' was not found.");
+            ?? throw new KnownException($"标准工序 '{request.OperationCode}' 不存在。");
         ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
             operation.Archive(request.Reason);
