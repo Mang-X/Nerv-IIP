@@ -15,6 +15,12 @@ ERP 发布三个 v1 具体事件：`SalesOrderReleasedIntegrationEvent`、`Sales
 5. envelope 或业务字段错误进入 DemandPlanning 持久 DLQ；数据库/网络瞬态错误仍由 CAP 重试，handler 不把业务拒绝变成 poison message。
 6. MRP 只读取 `source_status=active AND quantity>0` 的需求。pegging 和生产建议沿用 `source_reference`，因此可回溯到 ERP 订单号。
 
+## 预测输入与订单冲减
+
+DemandPlanning 同时拥有计划员维护的 `ForecastInput`：每条预测按 SKU、单位、工厂和预测期间记录数量，并配置向前、向后订单冲减窗口。预测编号由 `forecast` 编码规则生成；新建请求使用稳定幂等键，重试相同内容返回首次分配的编号，同键改动任一创建字段则拒绝，避免超时重试产生重复或静默覆盖。
+
+Business Console `/planning` 的“预测管理”页签提供预测筛选、新建和编辑。SKU、工厂、单位都从对应主数据类型中搜索选择，日期使用统一日期组件；字段错误在提交后同时显示于字段旁和汇总区，加载或保存失败只通过 toast 给出可操作提示，不在页面保留常驻错误条。销售订单只在相同 SKU、单位、工厂且落入配置窗口时消费预测，剩余数量才进入 MRP 输入；本阶段不提供删除、批量导入或版本历史。
+
 ## 可复用演示前置路径：SO-DEMO-001
 
 AppHost 为 ERP 显式开启 `Erp:Seed:SalesOrderDemandDemo:Enabled`。该 seed 幂等创建并保留 released 的 `QUO-DEMO-001` / `SO-DEMO-001`（客户 `CUST-DEMO-001`、SKU `SKU-DEMO-001`、UOM `EA`、站点 `SITE-001`），并通过正常 Unit of Work/CAP outbox 发布 released 事实；不会覆盖同编号的租户事实，若保留编号已被不兼容数据占用则启动明确失败。跨服务演示 profile 必须使用 Redis 或 RabbitMQ transport，不能使用仅进程内的 InMemory transport。

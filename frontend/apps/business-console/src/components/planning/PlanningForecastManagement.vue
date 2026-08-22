@@ -2,7 +2,7 @@
 import type { BusinessConsoleForecastInputItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { CalendarRangeIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -11,7 +11,7 @@ import { useBusinessForecasts, type ForecastForm } from '@/composables/useBusine
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {
-  inlineErrorMessage,
+  notifyError,
   notifyOperationFailure,
   notifySuccess,
   serverErrorMessage,
@@ -138,23 +138,30 @@ const editMode = shallowRef(false)
 const submitted = shallowRef(false)
 const form = reactive<ForecastForm>(defaultForm())
 
-const validationErrors = computed(() => {
-  const errors: string[] = []
-  if (!form.skuCode.trim()) errors.push('请选择 SKU。')
-  if (!form.siteCode.trim()) errors.push('请选择工厂。')
-  if (!form.uomCode.trim()) errors.push('请选择单位。')
-  if (!form.periodStartDate || !form.periodEndDate) errors.push('请选择完整预测期间。')
-  if (form.periodStartDate && form.periodEndDate && form.periodEndDate < form.periodStartDate) {
-    errors.push('预测结束日期不能早于开始日期。')
-  }
-  if ((form.quantity ?? 0) <= 0) errors.push('预测数量必须大于 0。')
-  if (!Number.isInteger(form.backwardConsumptionDays) || (form.backwardConsumptionDays ?? -1) < 0) {
-    errors.push('向前冲减天数必须是大于等于 0 的整数。')
-  }
-  if (!Number.isInteger(form.forwardConsumptionDays) || (form.forwardConsumptionDays ?? -1) < 0) {
-    errors.push('向后冲减天数必须是大于等于 0 的整数。')
-  }
-  return errors
+const fieldErrors = computed(() => ({
+  skuCode: form.skuCode.trim() ? [] : ['请选择 SKU。'],
+  siteCode: form.siteCode.trim() ? [] : ['请选择工厂。'],
+  uomCode: form.uomCode.trim() ? [] : ['请选择单位。'],
+  periodStartDate: form.periodStartDate ? [] : ['请选择开始日期。'],
+  periodEndDate: !form.periodEndDate
+    ? ['请选择结束日期。']
+    : form.periodStartDate && form.periodEndDate < form.periodStartDate
+      ? ['预测结束日期不能早于开始日期。']
+      : [],
+  quantity: (form.quantity ?? 0) > 0 ? [] : ['预测数量必须大于 0。'],
+  backwardConsumptionDays:
+    Number.isInteger(form.backwardConsumptionDays) && (form.backwardConsumptionDays ?? -1) >= 0
+      ? []
+      : ['向前冲减天数必须是大于等于 0 的整数。'],
+  forwardConsumptionDays:
+    Number.isInteger(form.forwardConsumptionDays) && (form.forwardConsumptionDays ?? -1) >= 0
+      ? []
+      : ['向后冲减天数必须是大于等于 0 的整数。'],
+}))
+const validationErrors = computed(() => [...new Set(Object.values(fieldErrors.value).flat())])
+
+watch(forecastsError, (error) => {
+  if (error) notifyError(error, '预测列表加载失败，请稍后重试。')
 })
 
 function replaceForm(next: ForecastForm) {
@@ -288,10 +295,6 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
       </template>
     </NvToolbar>
 
-    <p v-if="forecastsError" class="text-sm text-destructive" role="alert">
-      {{ inlineErrorMessage(forecastsError) }}
-    </p>
-
     <NvDataTable
       :columns="columns"
       :rows="visibleForecasts"
@@ -365,6 +368,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择 SKU"
                 search-placeholder="搜索 SKU 编码或名称"
                 aria-label="预测 SKU"
+                :aria-invalid="submitted && fieldErrors.skuCode.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.skuCode.length ? 'forecast-sku-error' : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.skuCode.length"
+                id="forecast-sku-error"
+                :errors="fieldErrors.skuCode"
               />
             </NvField>
             <NvField>
@@ -376,6 +388,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择工厂"
                 search-placeholder="搜索工厂编码或名称"
                 aria-label="预测工厂"
+                :aria-invalid="submitted && fieldErrors.siteCode.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.siteCode.length ? 'forecast-site-error' : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.siteCode.length"
+                id="forecast-site-error"
+                :errors="fieldErrors.siteCode"
               />
             </NvField>
             <NvField>
@@ -387,6 +408,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择单位"
                 search-placeholder="搜索单位编码或名称"
                 aria-label="预测单位"
+                :aria-invalid="submitted && fieldErrors.uomCode.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.uomCode.length ? 'forecast-uom-error' : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.uomCode.length"
+                id="forecast-uom-error"
+                :errors="fieldErrors.uomCode"
               />
             </NvField>
             <NvField>
@@ -395,6 +425,17 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 id="forecast-start"
                 v-model="form.periodStartDate"
                 class="w-full sm:w-full"
+                :aria-invalid="submitted && fieldErrors.periodStartDate.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.periodStartDate.length
+                    ? 'forecast-start-error'
+                    : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.periodStartDate.length"
+                id="forecast-start-error"
+                :errors="fieldErrors.periodStartDate"
               />
             </NvField>
             <NvField>
@@ -403,6 +444,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 id="forecast-end"
                 v-model="form.periodEndDate"
                 class="w-full sm:w-full"
+                :aria-invalid="submitted && fieldErrors.periodEndDate.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.periodEndDate.length ? 'forecast-end-error' : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.periodEndDate.length"
+                id="forecast-end-error"
+                :errors="fieldErrors.periodEndDate"
               />
             </NvField>
             <NvField>
@@ -413,6 +463,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0.0001"
                 step="0.0001"
                 type="number"
+                :aria-invalid="submitted && fieldErrors.quantity.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.quantity.length ? 'forecast-quantity-error' : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.quantity.length"
+                id="forecast-quantity-error"
+                :errors="fieldErrors.quantity"
               />
             </NvField>
             <NvField>
@@ -423,6 +482,17 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0"
                 step="1"
                 type="number"
+                :aria-invalid="submitted && fieldErrors.backwardConsumptionDays.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.backwardConsumptionDays.length
+                    ? 'forecast-backward-days-error'
+                    : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.backwardConsumptionDays.length"
+                id="forecast-backward-days-error"
+                :errors="fieldErrors.backwardConsumptionDays"
               />
             </NvField>
             <NvField>
@@ -433,10 +503,25 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0"
                 step="1"
                 type="number"
+                :aria-invalid="submitted && fieldErrors.forwardConsumptionDays.length > 0"
+                :aria-describedby="
+                  submitted && fieldErrors.forwardConsumptionDays.length
+                    ? 'forecast-forward-days-error'
+                    : undefined
+                "
+              />
+              <NvFieldError
+                v-if="submitted && fieldErrors.forwardConsumptionDays.length"
+                id="forecast-forward-days-error"
+                :errors="fieldErrors.forwardConsumptionDays"
               />
             </NvField>
           </NvFieldGroup>
-          <NvFieldError v-if="submitted && validationErrors.length" :errors="validationErrors" />
+          <NvFieldError
+            v-if="submitted && validationErrors.length"
+            id="forecast-validation-summary"
+            :errors="validationErrors"
+          />
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="dialogOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="saveForecastPending">

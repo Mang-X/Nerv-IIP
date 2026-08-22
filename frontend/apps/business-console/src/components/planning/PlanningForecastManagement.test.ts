@@ -8,40 +8,45 @@ import { useAuthStore } from '@/stores/auth'
 const spies = vi.hoisted(() => ({
   saveForecast: vi.fn(async (_form: Record<string, unknown>) => ({ success: true })),
   refreshForecasts: vi.fn(async () => undefined),
+  forecastsError: undefined as unknown as { value: unknown },
   success: vi.fn(),
+  error: vi.fn(),
   failure: vi.fn(),
 }))
 
 vi.mock('@/composables/useBusinessForecasts', () => ({
-  useBusinessForecasts: () => ({
-    filters: reactive({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      skuCode: '',
-      siteCode: '',
-      fromDate: '',
-      toDate: '',
-    }),
-    forecasts: shallowRef([
-      {
-        forecastInputId: 'forecast-1',
-        forecastReference: 'FC-2026-09-FG-1000',
-        skuCode: 'FG-1000',
-        uomCode: 'pcs',
-        siteCode: 'SITE-01',
-        periodStartDate: '2026-09-01',
-        periodEndDate: '2026-09-30',
-        quantity: 120,
-        backwardConsumptionDays: 7,
-        forwardConsumptionDays: 3,
-      },
-    ]),
-    forecastsError: shallowRef(null),
-    forecastsPending: shallowRef(false),
-    refreshForecasts: spies.refreshForecasts,
-    saveForecast: spies.saveForecast,
-    saveForecastPending: shallowRef(false),
-  }),
+  useBusinessForecasts: () => {
+    spies.forecastsError = shallowRef(null)
+    return {
+      filters: reactive({
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skuCode: '',
+        siteCode: '',
+        fromDate: '',
+        toDate: '',
+      }),
+      forecasts: shallowRef([
+        {
+          forecastInputId: 'forecast-1',
+          forecastReference: 'FC-2026-09-FG-1000',
+          skuCode: 'FG-1000',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          periodStartDate: '2026-09-01',
+          periodEndDate: '2026-09-30',
+          quantity: 120,
+          backwardConsumptionDays: 7,
+          forwardConsumptionDays: 3,
+        },
+      ]),
+      forecastsError: spies.forecastsError,
+      forecastsPending: shallowRef(false),
+      refreshForecasts: spies.refreshForecasts,
+      saveForecast: spies.saveForecast,
+      saveForecastPending: shallowRef(false),
+    }
+  },
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
@@ -61,6 +66,7 @@ vi.mock('@/utils/notify', () => ({
   serverErrorMessage: (error: unknown) =>
     typeof error === 'object' && error && 'message' in error ? String(error.message) : '',
   notifySuccess: spies.success,
+  notifyError: spies.error,
   notifyOperationFailure: spies.failure,
 }))
 
@@ -145,6 +151,7 @@ describe('PlanningForecastManagement', () => {
     spies.saveForecast.mockResolvedValue({ success: true })
     spies.refreshForecasts.mockClear()
     spies.success.mockClear()
+    spies.error.mockClear()
     spies.failure.mockClear()
     vi.stubGlobal('crypto', { randomUUID: () => 'forecast-create-uuid' })
   })
@@ -186,7 +193,7 @@ describe('PlanningForecastManagement', () => {
     expect(spies.success).toHaveBeenCalledWith('预测已更新。')
   })
 
-  it('新建表单点击提交后才显示校验汇总，且不发送无效请求', async () => {
+  it('新建表单点击提交后同时显示字段内联错误和校验汇总，且不发送无效请求', async () => {
     useAuthStore().$patch({
       principal: { permissionCodes: ['business.planning.demands.manage'] },
     } as never)
@@ -199,9 +206,24 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.get('[role="alert"]').text()).not.toContain('请填写预测编号')
-    expect(wrapper.get('[role="alert"]').text()).toContain('预测数量必须大于 0')
+    expect(wrapper.get('#forecast-sku-error').text()).toContain('请选择 SKU')
+    expect(wrapper.get('#forecast-site-error').text()).toContain('请选择工厂')
+    expect(wrapper.get('#forecast-uom-error').text()).toContain('请选择单位')
+    expect(wrapper.get('#forecast-quantity-error').text()).toContain('预测数量必须大于 0')
+    expect(wrapper.get('#forecast-validation-summary').text()).not.toContain('请填写预测编号')
+    expect(wrapper.get('#forecast-validation-summary').text()).toContain('预测数量必须大于 0')
     expect(spies.saveForecast).not.toHaveBeenCalled()
+  })
+
+  it('预测列表加载失败只显示 toast，不在页面保留常驻错误条', async () => {
+    const wrapper = mount(PlanningForecastManagement)
+    const error = new Error('upstream unavailable')
+
+    spies.forecastsError.value = error
+    await wrapper.vm.$nextTick()
+
+    expect(spies.error).toHaveBeenCalledWith(error, '预测列表加载失败，请稍后重试。')
+    expect(wrapper.text()).not.toContain('upstream unavailable')
   })
 
   it('新建使用可搜索选择器与日期组件，并隔离工厂和单位选项', async () => {
