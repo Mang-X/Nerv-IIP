@@ -1,6 +1,6 @@
 import { enableAutoUnmount } from '@vue/test-utils'
 import { afterEach } from 'vitest'
-import { disableUnovisTooltipThrottle } from './unovisTooltipTimers'
+import { disableUnovisTooltipThrottle } from '@nerv-iip/ui/test-support'
 
 enableAutoUnmount(afterEach)
 
@@ -41,6 +41,6 @@ if (!globalThis.localStorage) {
  * unovis tooltip 的 throttle 定时器会活过 jsdom 环境拆除，导致整包偶发假红（#2011）。
  * 必须在任何图表挂载（即任何 `Tooltip` 实例创建）之前收口；同时必须排在上面的
  * ResizeObserver 桩**之后**——unovis 在模块求值时就把 ResizeObserver 定死了，详见
- * `unovisTooltipTimers.ts` 的注释。
+ * `@nerv-iip/ui/test-support` 里 `unovisTooltipTimers.ts` 的注释。
  */
 await disableUnovisTooltipThrottle()

@@ -11,7 +11,7 @@ harness 不可见、或永远不会更新。
 | 层 | 位置 | 装法 | 放什么 |
 |---|---|---|---|
 | **项目专属** | `skills/`（**受 git 跟踪**） | `npx skills add ./skills/<name>` 登记进 [`skills-lock.json`](../skills-lock.json)，与第三方技能同一通道 | 只有本仓库才成立的流程 |
-| 第三方技能 | `.agents/skills/`（gitignored） | [`skills-lock.json`](../skills-lock.json) → `npx skills experimental_install` | 外部来源技能，带 hash 锁 |
+| 第三方技能 | `.agents/skills/`（gitignored） | [`skills-lock.json`](../skills-lock.json) → `npx skills experimental_install` | 外部来源技能（**不锁版本**，见下） |
 | 跨 harness 通用 | `~/.agents/skills/` + `~/.agents/.skill-lock.json` | `npx skills add -g` | 与本仓库无关的通用技能 |
 
 判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
@@ -108,6 +108,14 @@ ADR 0020 §1.2 与 `DESIGN/governance.md`；六件套 DoD 已由 `nvui-doc-cover
 项目专属技能与第三方技能走**同一条通道**：`skills-lock.json` 记录，
 `npx skills experimental_install` 还原。本地目录以 `sourceType: local` 登记，同样带
 `computedHash`。
+
+> **`computedHash` 不是版本锁。** 实测（2026-08-21）：把某个 github 来源条目的哈希改回
+> 旧值再跑 `experimental_install`，它会拉取上游最新版并把哈希改写回去；条目里也没有任何
+> ref/commit 字段可以表达"钉在某个版本"。该字段记录的是**装了什么**，不是**必须装什么**。
+>
+> 理论后果是不同时间初始化的 worktree 可能拿到不同版本。**owner 裁定不钉版本**
+> （2026-08-22）：`experimental_install` 只在 worktree 没有 payload 时才跑，实际触发面很窄，
+> 现行工作方式已足以保证技能稳定。此处只记录该性质，不要据此提出钉版本或 vendoring 方案。
 
 新增或修改技能后：
 
