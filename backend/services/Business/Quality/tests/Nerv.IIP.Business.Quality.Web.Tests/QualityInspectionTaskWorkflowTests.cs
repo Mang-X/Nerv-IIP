@@ -1736,6 +1736,29 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Get_inspection_task_not_found_returns_a_chinese_known_exception()
+    {
+        await using var dbContext = CreateDbContext(
+            nameof(Get_inspection_task_not_found_returns_a_chinese_known_exception));
+        var taskId = new InspectionTaskId(Guid.Parse("018f7b14-9fb0-7d9b-a7fb-78bd14f9b299"));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new GetInspectionTaskQueryHandler(dbContext).Handle(
+                new GetInspectionTaskQuery(
+                    taskId,
+                    "org-001",
+                    "env-dev",
+                    "organization",
+                    "qa-user-001",
+                    []),
+                CancellationToken.None));
+
+        Assert.Equal(
+            $"找不到检验任务 {taskId}，请在检验任务页刷新并确认任务编号后重试。",
+            exception.Message);
+    }
+
+    [Fact]
     public async Task Organization_task_detail_distinguishes_assignment_to_another_team()
     {
         await using var dbContext = CreateDbContext(

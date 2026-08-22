@@ -38,11 +38,11 @@ public sealed class CreateLabelPrintBatchCommandHandler(ApplicationDbContext dbC
     public async Task<LabelPrintBatchId> Handle(CreateLabelPrintBatchCommand request, CancellationToken cancellationToken)
     {
         var rule = await dbContext.BarcodeRules.SingleOrDefaultAsync(x => x.Id == request.BarcodeRuleId, cancellationToken)
-            ?? throw new KnownException($"Barcode rule not found, BarcodeRuleId = {request.BarcodeRuleId}");
+            ?? throw new KnownException($"未找到条码规则，规则 ID = {request.BarcodeRuleId}。");
         var templateExists = await dbContext.LabelTemplates.AnyAsync(x => x.Id == request.LabelTemplateId, cancellationToken);
         if (!templateExists)
         {
-            throw new KnownException($"Label template not found, LabelTemplateId = {request.LabelTemplateId}");
+            throw new KnownException($"未找到标签模板，模板 ID = {request.LabelTemplateId}。");
         }
 
         var candidate = LabelPrintBatch.Create(
@@ -71,7 +71,7 @@ public sealed class CreateLabelPrintBatchCommandHandler(ApplicationDbContext dbC
             }
             catch (InvalidOperationException ex)
             {
-                throw new KnownException(ex.Message, ex);
+                throw new KnownException("打印批次幂等键与已有记录不一致，请检查提交内容。", ex);
             }
 
             return existing.Id;

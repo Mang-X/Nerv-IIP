@@ -25,7 +25,7 @@ public sealed class RestartStockCountTaskCommandHandler(ApplicationDbContext dbC
     public async Task<RestartStockCountTaskResult> Handle(RestartStockCountTaskCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.StockCountTasks.SingleOrDefaultAsync(x => x.Id == request.CountTaskId, cancellationToken)
-            ?? throw new KnownException($"Stock count task '{request.CountTaskId}' was not found.");
+            ?? throw new KnownException($"未找到盘点任务：{request.CountTaskId}。");
 
         var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
             x => x.OrganizationId == task.LedgerOrganizationId
@@ -40,15 +40,15 @@ public sealed class RestartStockCountTaskCommandHandler(ApplicationDbContext dbC
                 && x.OwnerType == task.OwnerType
                 && x.OwnerId == task.OwnerId,
             cancellationToken)
-            ?? throw new KnownException("Stock ledger does not exist for the requested count recount.");
+            ?? throw new KnownException("未找到盘点任务对应的库存台账。");
 
         try
         {
             task.RestartRecount(ledger);
         }
-        catch (InvalidOperationException exception)
+        catch (InvalidOperationException)
         {
-            throw new KnownException(exception.Message);
+            throw new KnownException("盘点任务当前状态不支持重新盘点，请刷新后重试。");
         }
 
         return new RestartStockCountTaskResult(task.Id, task.Status, task.ExpectedLedgerVersion);
