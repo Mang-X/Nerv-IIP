@@ -1021,15 +1021,31 @@ function Invoke-NervFullStackGuardian {
         [ValidateRange(1, 10)] [int] $MaximumObservationFailures = 3,
         [ValidateRange(1, 10)] [int] $MaximumStopAttempts = 3,
         [scriptblock] $ReadAction,
-        [scriptblock] $CoordinatorAliveAction,
+        [scriptblock] $CoordinatorIdentityAction,
+        [scriptblock] $IdentityEvidenceAction,
         [scriptblock] $DiagnosticAction,
         [scriptblock] $StopAction,
         [scriptblock] $DelayAction
     )
 
     if ($null -eq $ReadAction) { $ReadAction = { Read-NervFullStackManifest -SessionId $SessionId } }
-    if ($null -eq $CoordinatorAliveAction) {
-        $CoordinatorAliveAction = { Test-NervProcessIdentity -ProcessId $CoordinatorPid -ProcessStartTimeUtc $CoordinatorStartTimeUtc }
+    if ($null -eq $CoordinatorIdentityAction) {
+        $CoordinatorIdentityAction = {
+            Get-NervProcessIdentityStatus `
+                -ProcessId $CoordinatorPid `
+                -ProcessStartTimeUtc $CoordinatorStartTimeUtc `
+                -Detailed
+        }
+    }
+    if ($null -eq $IdentityEvidenceAction) {
+        $IdentityEvidenceAction = {
+            param($InputManifest, $Observation, $InputLeaseExpired, $InputCoordinatorMissing)
+            Write-NervFullStackGuardianIdentityEvidence `
+                -Manifest $InputManifest `
+                -Observation $Observation `
+                -LeaseExpired $InputLeaseExpired `
+                -CoordinatorMissing $InputCoordinatorMissing | Out-Null
+        }
     }
     if ($null -eq $DiagnosticAction) {
         $DiagnosticAction = {
@@ -1068,14 +1084,46 @@ function Invoke-NervFullStackGuardian {
 
         if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
         $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset]::UtcNow
+        $coordinatorObservation = if ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc)) {
+            [pscustomobject][ordered]@{
+                status = 'Unknown'
+                processId = $CoordinatorPid
+                expectedStartTimeUtc = $CoordinatorStartTimeUtc
+                actualStartTimeUtc = $null
+                failureReason = 'Coordinator identity input is incomplete.'
+                observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            }
+        }
+        else {
+            try {
+                & $CoordinatorIdentityAction
+            }
+            catch {
+                [pscustomobject][ordered]@{
+                    status = 'Unknown'
+                    processId = $CoordinatorPid
+                    expectedStartTimeUtc = $CoordinatorStartTimeUtc
+                    actualStartTimeUtc = $null
+                    failureReason = $_.Exception.Message
+                    observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+                }
+            }
+        }
         $coordinatorMissing = [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
-            ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc) -or -not (& $CoordinatorAliveAction))
+            -not [string]::Equals([string]$coordinatorObservation.status, 'Active', [StringComparison]::Ordinal)
         if (-not ($leaseExpired -or $coordinatorMissing)) {
             & $DelayAction $IntervalSeconds
             continue
         }
 
-        Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing."
+        Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing coordinatorStatus=$($coordinatorObservation.status)."
+        try {
+            & $IdentityEvidenceAction $manifest $coordinatorObservation $leaseExpired $coordinatorMissing
+        }
+        catch {
+            $safeIdentityEvidenceError = Protect-NervFullStackDiagnosticText -Text "$($_.Exception.Message)"
+            Write-Warning "Guardian coordinator identity evidence failed for '$SessionId'; cleanup will continue: $safeIdentityEvidenceError"
+        }
         try {
             & $DiagnosticAction $manifest
         }
@@ -1096,6 +1144,54 @@ function Invoke-NervFullStackGuardian {
         }
         throw "Guardian could not stop session '$SessionId' after $MaximumStopAttempts attempts: $lastStopError"
     }
+}
+
+function Write-NervFullStackGuardianIdentityEvidence {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Observation,
+        [Parameter(Mandatory)] [bool] $LeaseExpired,
+        [Parameter(Mandatory)] [bool] $CoordinatorMissing
+    )
+
+    $artifactPath = [System.IO.Path]::GetFullPath("$($Manifest.artifactPath)")
+    [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
+    $evidencePath = Join-Path $artifactPath 'guardian-coordinator-identity.json'
+    $temporaryPath = "$evidencePath.tmp-$([guid]::NewGuid().ToString('N'))"
+    $evidence = [ordered]@{
+        schemaVersion = 1
+        sessionId = "$($Manifest.sessionId)"
+        observedAtUtc = "$($Observation.observedAtUtc)"
+        coordinator = [ordered]@{
+            status = "$($Observation.status)"
+            processId = [int] $Observation.processId
+            expectedStartTimeUtc = if ($null -eq $Observation.expectedStartTimeUtc) { $null } else { "$($Observation.expectedStartTimeUtc)" }
+            actualStartTimeUtc = if ($null -eq $Observation.actualStartTimeUtc) { $null } else { "$($Observation.actualStartTimeUtc)" }
+            failureReason = if ([string]::IsNullOrWhiteSpace("$($Observation.failureReason)")) {
+                $null
+            }
+            else {
+                Protect-NervFullStackDiagnosticText -Text "$($Observation.failureReason)"
+            }
+        }
+        trigger = [ordered]@{
+            leaseExpired = $LeaseExpired
+            coordinatorMissing = $CoordinatorMissing
+        }
+    }
+
+    try {
+        $safeJson = Protect-NervFullStackDiagnosticText -Text (($evidence | ConvertTo-Json -Depth 10) + "`n")
+        [System.IO.File]::WriteAllText($temporaryPath, $safeJson, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::Move($temporaryPath, $evidencePath, $true)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return $evidencePath
 }
 
 function Invoke-NervFullStackDiagnosticCollection {

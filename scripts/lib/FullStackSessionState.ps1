@@ -624,21 +624,36 @@ function Get-NervProcessIdentityStatus {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
         [Parameter(Mandatory)] [object] $ProcessStartTimeUtc,
-        [scriptblock] $ProcessLookupAction
+        [scriptblock] $ProcessLookupAction,
+        [switch] $Detailed
     )
 
     if ($null -eq $ProcessLookupAction) {
         $ProcessLookupAction = { param($ExactProcessId) Get-Process -Id $ExactProcessId -ErrorAction Stop }
     }
 
+    $observation = [ordered]@{
+        status = 'Unknown'
+        processId = $ProcessId
+        expectedStartTimeUtc = $ProcessStartTimeUtc
+        actualStartTimeUtc = $null
+        failureReason = $null
+        observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    }
+
     try {
         $process = & $ProcessLookupAction $ProcessId
     }
     catch [Microsoft.PowerShell.Commands.ProcessCommandException] {
-        return 'Absent'
+        $observation.status = 'Absent'
+        $observation.failureReason = $_.Exception.Message
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
     }
     catch {
-        return 'Unknown'
+        $observation.failureReason = $_.Exception.Message
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
     }
 
     try {
@@ -651,15 +666,22 @@ function Get-NervProcessIdentityStatus {
         else {
             [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
         }
+        $observation.expectedStartTimeUtc = $expected.ToString('O')
         $actual = $process.StartTime.ToUniversalTime()
+        $observation.actualStartTimeUtc = $actual.ToString('O')
         if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {
-            return 'Active'
+            $observation.status = 'Active'
         }
-        return 'Mismatched'
+        else {
+            $observation.status = 'Mismatched'
+        }
     }
     catch {
-        return 'Unknown'
+        $observation.failureReason = $_.Exception.Message
     }
+
+    if ($Detailed) { return [pscustomobject] $observation }
+    return $observation.status
 }
 
 function Test-NervFullStackSessionStale {
