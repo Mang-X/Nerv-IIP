@@ -66,4 +66,18 @@ describe('LoginForm', () => {
     expect(wrapper.text()).toContain('Login name')
     expect(wrapper.text()).toContain('Password')
   })
+
+  it('does not disclose seeded administrator credentials', () => {
+    const zhWrapper = mountForm()
+    const enWrapper = mount(LoginForm, {
+      global: {
+        plugins: [createConsoleI18n({ locale: 'en-US' })],
+      },
+    })
+
+    expect(zhWrapper.text()).not.toContain('管理员')
+    expect(zhWrapper.text()).not.toContain('admin')
+    expect(enWrapper.text()).not.toContain('Seeded')
+    expect(enWrapper.text()).not.toContain('admin')
+  })
 })
