@@ -640,6 +640,61 @@ try {
 
     $manifestDigest = Get-NervAcceptanceManifestDigest -ManifestPath $manifestPath
     Assert-Contract ($manifestDigest -cmatch '^[0-9a-f]{64}$') 'Manifest digest must be a lowercase SHA-256 hex string.'
+
+    $noImpactSelection = Select-NervAcceptanceScenarioMatrix `
+        -Manifest $manifest `
+        -Event 'pull_request' `
+        -ChangedPaths @('README.md') `
+        -ImpactRulesSucceeded $true
+    Assert-Contract (
+        [string]::Equals([string]$noImpactSelection.selectionMode, 'pull-request-impact', [StringComparison]::Ordinal) -and
+        [string]::Equals((@($noImpactSelection.reasons) -join '|'), 'no-impact', [StringComparison]::Ordinal) -and
+        @($noImpactSelection.scenarios).Count -eq 0
+    ) 'A pull request with no impacted acceptance scenario must select no scenarios with a no-impact reason.'
+    $noImpactProjects = @(Get-NervAcceptancePlanningProjects -Scenarios $noImpactSelection.scenarios)
+    Assert-Contract ($noImpactProjects.Count -eq 0) 'A no-impact selection must produce zero planning projects.'
+    $noImpactCalls = [Collections.Generic.List[object]]::new()
+    $noImpactCommandAction = {
+        param([string] $Operation, [string] $ProjectPath, [string[]] $Arguments, [int] $TimeoutSeconds)
+
+        $noImpactCalls.Add([pscustomobject]@{ operation = $Operation; projectPath = $ProjectPath })
+        return [pscustomobject]@{ Stdout = ''; Stderr = ''; ExitCode = 0 }
+    }
+    $noImpactArtifactPath = Join-Path $fixtureRoot 'artifacts/no-impact-planning.json'
+    $noImpactArtifact = Invoke-NervAcceptanceScenarioMatrixPlanning `
+        -Manifest $manifest `
+        -Selection $noImpactSelection `
+        -RepositoryRoot $repoRoot `
+        -Repository 'Mang-X/Nerv-IIP' `
+        -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -RunId '123456789' `
+        -RunAttempt 2 `
+        -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+        -ManifestDigest $manifestDigest `
+        -Event 'pull_request' `
+        -WorkflowPath $planningWorkflowPath `
+        -WorkflowJobName 'acceptance-scenario-matrix-planning' `
+        -WorkflowStepName 'Plan acceptance scenario matrix' `
+        -ArtifactPath $noImpactArtifactPath `
+        -ProjectCommandAction $noImpactCommandAction
+    Assert-Contract (@($noImpactCalls | Where-Object { [string]::Equals([string]$_.operation, 'restore', [StringComparison]::Ordinal) }).Count -eq 0) 'No-impact planning must not restore any project.'
+    Assert-Contract (@($noImpactCalls | Where-Object { [string]::Equals([string]$_.operation, 'discovery', [StringComparison]::Ordinal) }).Count -eq 0) 'No-impact planning must not discover any project.'
+    Assert-Contract (Test-Path -LiteralPath $noImpactArtifactPath -PathType Leaf) 'No-impact planning must write the declared zero-project artifact.'
+    $persistedNoImpactArtifact = Get-Content -LiteralPath $noImpactArtifactPath -Raw | ConvertFrom-Json -Depth 50
+    Assert-NervAcceptancePlanningArtifact `
+        -Artifact $persistedNoImpactArtifact `
+        -Manifest $manifest `
+        -Selection $noImpactSelection `
+        -Repository 'Mang-X/Nerv-IIP' `
+        -TestedSha '0123456789abcdef0123456789abcdef01234567' `
+        -RunId '123456789' `
+        -RunAttempt 2 `
+        -ManifestPath 'scripts/acceptance-scenario-matrix.json' `
+        -ManifestDigest $manifestDigest `
+        -Event 'pull_request' | Out-Null
+    Assert-Contract ([string]::Equals((@($persistedNoImpactArtifact.selectionReasons) -join '|'), 'no-impact', [StringComparison]::Ordinal)) 'No-impact artifact selectionReasons must record no-impact.'
+    Assert-Contract (@($persistedNoImpactArtifact.scenarios).Count -eq 0 -and @($persistedNoImpactArtifact.projects).Count -eq 0) 'No-impact artifact must contain empty scenarios and projects arrays.'
+
     $artifactPath = Join-Path $fixtureRoot 'artifacts/planning.json'
     $calls = [Collections.Generic.List[object]]::new()
     $projectCommandAction = {
