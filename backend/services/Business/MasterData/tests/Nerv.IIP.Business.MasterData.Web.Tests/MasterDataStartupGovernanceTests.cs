@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -81,6 +82,10 @@ public sealed class MasterDataStartupGovernanceTests
             .Get(JwtBearerDefaults.AuthenticationScheme);
 
         Assert.True(options.RequireHttpsMetadata);
+        Assert.Equal("nerv-iip-iam", options.TokenValidationParameters.ValidIssuer);
+        Assert.Equal("nerv-iip-api", options.TokenValidationParameters.ValidAudience);
+        Assert.True(options.TokenValidationParameters.ValidateIssuerSigningKey);
+        Assert.Contains(SecurityAlgorithms.RsaSha256, options.TokenValidationParameters.ValidAlgorithms);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

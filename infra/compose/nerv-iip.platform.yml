@@ -178,6 +178,9 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_business_masterdata;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
+      Iam__Jwt__Issuer: nerv-iip-iam
+      Iam__Jwt__Audience: nerv-iip-api
     ports:
       - "${NERV_IIP_MASTER_DATA_PORT:-5107}:8080"
 
@@ -192,6 +195,9 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_product_engineering;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
+      Iam__Jwt__Issuer: nerv-iip-iam
+      Iam__Jwt__Audience: nerv-iip-api
     ports:
       - "${NERV_IIP_PRODUCT_ENGINEERING_PORT:-5108}:8080"
 
@@ -220,6 +226,9 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_quality;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
+      Iam__Jwt__Issuer: nerv-iip-iam
+      Iam__Jwt__Audience: nerv-iip-api
     ports:
       - "${NERV_IIP_QUALITY_PORT:-5110}:8080"
 
