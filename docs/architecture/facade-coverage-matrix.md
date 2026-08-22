@@ -83,8 +83,8 @@ PR 审核须将声明与实际交付物交叉核验（facade + codegen + barrel 
 | ProductEngineering  |      39 |      38 |        0 |        1 |
 | Quality             |      41 |      29 |       12 |        0 |
 | Scheduling          |      15 |      13 |        1 |        1 |
-| Wms                 |      47 |      37 |        5 |        5 |
-| **Total**           | **416** | **345** |   **46** |   **25** |
+| Wms                 |      49 |      37 |        7 |        5 |
+| **Total**           | **418** | **345** |   **48** |   **25** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
 
@@ -167,6 +167,8 @@ MasterData/Inventory 库位目录或完整批次目录。本行是这三个公�
 | Wms                 | GET    | `/api/business/v1/wms/replenishment-tasks`                                                      | BusinessGateway facade 待交付；跟随 #707 跟踪的余下 WMS 深化和 Business Console 作业批次。                                                                                              |
 | Wms                 | POST   | `/api/business/v1/wms/backorder-orders/{backorderOrderId}/close`                                | BusinessGateway facade 待交付；跟随 #707 跟踪的余下 WMS 深化和 Business Console 作业批次。                                                                                              |
 | Wms                 | POST   | `/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel`                                 | BusinessGateway facade 待交付；WMS 出库取消跟随 WMS 作业菜单阶段。                                                                                                                      |
+| Wms                 | POST   | `/api/business/v1/wms/work-pools`                                                               | BusinessGateway facade 待交付；作业池管理页面尚未立项。#1910 先落写面，让现场作业池夹具不再依赖 LeaderDemo 世界观种子。                                                                 |
+| Wms                 | POST   | `/api/business/v1/wms/work-pools/{poolCode}/members`                                            | BusinessGateway facade 待交付；成员资格管理与 `provisionWmsWorkPool` 同一未立项页面（#1910）。                                                                                          |
 
 ### 内部 endpoint（按设计永不暴露）
 
