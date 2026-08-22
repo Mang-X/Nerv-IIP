@@ -704,6 +704,566 @@ finally {
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
 
+# F1a frozen member: authority-publication-and-residue.
+$member = 'authority-publication-and-residue'
+Write-Host "Running $member"
+
+$a5Library = Join-Path $repoRoot 'scripts/lib/FullStackAuthorityPublication.ps1'
+if (Test-Path -LiteralPath $a5Library -PathType Leaf) {
+    . $a5Library
+}
+
+$expectedA5Commands = @(
+    'Publish-NervFullStackInitialV2Session',
+    'Register-NervFullStackToolchainProbeIdentity',
+    'Complete-NervFullStackToolchainSnapshot',
+    'Test-NervFullStackRuntimeStartAllowed'
+)
+foreach ($commandName in $expectedA5Commands) {
+    Assert-True ($null -ne (Get-Command -Name $commandName -CommandType Function -ErrorAction SilentlyContinue)) "A5 interface '$commandName' is missing."
+}
+
+$a5Tokens = $null
+$a5ParseErrors = $null
+$a5Ast = [System.Management.Automation.Language.Parser]::ParseFile($a5Library, [ref] $a5Tokens, [ref] $a5ParseErrors)
+Assert-True ($a5ParseErrors.Count -eq 0) 'The A5 library must parse without errors.'
+$a5ForbiddenCommands = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($commandName in @(
+    'Start-Process', 'Stop-ProcessTree', 'Invoke-Aspire', 'Invoke-DockerCompose',
+    'Invoke-NativeCommandWithTimeout', 'dotnet', 'node', 'aspire', 'dcp', 'docker'
+)) {
+    [void] $a5ForbiddenCommands.Add($commandName)
+}
+$a5ForbiddenCommandHits = [System.Collections.Generic.List[string]]::new()
+foreach ($commandAst in @($a5Ast.FindAll({
+            param($node)
+            return $node -is [System.Management.Automation.Language.CommandAst]
+        }, $true))) {
+    $invokedName = $commandAst.GetCommandName()
+    if ($null -ne $invokedName -and $a5ForbiddenCommands.Contains($invokedName)) {
+        $a5ForbiddenCommandHits.Add($commandAst.Extent.Text)
+    }
+}
+Assert-True ($a5ForbiddenCommandHits.Count -eq 0) "A5 primitives must not start or stop Node/dotnet/Aspire/DCP/Docker/runtime processes. Observed: $($a5ForbiddenCommandHits -join ' | ')"
+
+function New-A5FixtureRoot([string] $Name) {
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a5-$Name-$([Guid]::NewGuid().ToString('N'))"
+    [void] [System.IO.Directory]::CreateDirectory($root)
+    return $root
+}
+
+function New-A5CreatedByIdentity {
+    return [pscustomobject][ordered]@{
+        pid = 5152
+        processStartTimeUtc = '2026-08-22T00:00:00.0000000Z'
+    }
+}
+
+function New-A5ProbeIdentity([int] $ProcessId = 5153, [string] $Role = 'toolchain-version-probe') {
+    return [pscustomobject][ordered]@{
+        pid = $ProcessId
+        processStartTimeUtc = '2026-08-22T00:00:01.0000000Z'
+        role = $Role
+    }
+}
+
+function Get-A5RecordProperty([object] $Record, [string] $Name) {
+    if ($null -eq $Record) {
+        return $null
+    }
+
+    return $Record.PSObject.Properties[$Name]
+}
+
+function Assert-A5PublicationPair([object] $Publication, [string] $Root, [string] $SessionId) {
+    Assert-True $Publication.Verified 'A5 publication must return a verified session capability.'
+    Assert-True $Publication.PublicationComplete 'A5 publication must return only after pair revalidation completes.'
+    Assert-True ([string]::Equals($Publication.StateRoot, (Get-NervFullStackNormalizedFullPath -Path $Root), (Get-NervFullStackPathComparison))) 'Publication must bind canonical StateRoot.'
+    Assert-True ([string]::Equals($Publication.SessionId, $SessionId, [StringComparison]::Ordinal)) 'Publication must bind the exact session ID.'
+    Assert-True ([regex]::IsMatch($Publication.CreationNonce, '^[a-f0-9]{32}$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)) 'Publication must create a lowercase 128-bit creation nonce.'
+    Assert-True ([string]::Equals($Publication.PathSet.ManifestPath, $Publication.ManifestPath, (Get-NervFullStackPathComparison))) 'Publication output must expose the A2 manifest path.'
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.AuthoritySnapshot -Right $Publication.AuthoritySnapshot) 'Publication must expose a complete authority readback snapshot.'
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.ManifestSnapshot -Right $Publication.ManifestSnapshot) 'Publication must expose a complete manifest readback snapshot.'
+
+    $authority = $Publication.AuthoritySnapshot.Record
+    $manifest = $Publication.ManifestSnapshot.Record
+    Assert-True ([string]::Equals($authority.sessionId, $SessionId, [StringComparison]::Ordinal)) 'Authority readback must contain the exact session ID.'
+    Assert-True ([string]::Equals($authority.creationNonce, $Publication.CreationNonce, [StringComparison]::Ordinal)) 'Authority readback must contain the generated creation nonce.'
+    Assert-True ([string]::Equals($manifest.sessionId, $SessionId, [StringComparison]::Ordinal)) 'Manifest readback must contain the exact session ID.'
+    Assert-True ([string]::Equals($manifest.creationNonce, $Publication.CreationNonce, [StringComparison]::Ordinal)) 'Manifest readback must contain the authority creation nonce.'
+    Assert-True ([int] $manifest.controlProtocolVersion -eq 2 -and [int] $manifest.schemaVersion -eq 2) 'Initial manifest must declare v2 schema and control protocol.'
+    Assert-True ([string]::Equals($manifest.state, 'Creating', [StringComparison]::Ordinal)) 'Initial manifest must remain Creating.'
+    Assert-True (-not [bool] $manifest.toolchainSnapshotComplete) 'Initial publication must leave the toolchain snapshot incomplete.'
+    Assert-True (@($manifest.toolchainProbeIdentities).Count -eq 0) 'Initial publication must not fabricate probe identities.'
+    Assert-True (-not [bool] $manifest.runtimeStartAttempted -and @($manifest.runtimeIdentities).Count -eq 0) 'Initial publication must not imply runtime startup.'
+}
+
+$a5Roots = [System.Collections.Generic.List[string]]::new()
+try {
+    $publicationRoot = New-A5FixtureRoot -Name 'publication'
+    $a5Roots.Add($publicationRoot)
+    $publicationSessionId = 'nerv-a500-000001'
+    $publicationBoundaries = [System.Collections.Generic.List[string]]::new()
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        $publicationBoundaries.Add([string] $Boundary)
+    }.GetNewClosure()
+    try {
+        $publication = Publish-NervFullStackInitialV2Session `
+            -StateRoot $publicationRoot `
+            -SessionId $publicationSessionId `
+            -WorktreeRoot $repoRoot `
+            -CreatedByIdentity (New-A5CreatedByIdentity)
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-A5PublicationPair -Publication $publication -Root $publicationRoot -SessionId $publicationSessionId
+    Assert-OrdinalSetEqual -Actual @($publicationBoundaries) -Expected @(
+        'before-temp-directory-create',
+        'after-temp-directory-create-before-lock-create',
+        'after-lock-create-before-authority-create',
+        'after-temp-authority-readback-before-rename',
+        'after-temp-revalidation-before-rename',
+        'after-rename-before-final-authority-readback',
+        'after-final-authority-readback-before-manifest-create',
+        'after-manifest-readback-before-pair-revalidation',
+        'after-pair-revalidation-before-return'
+    ) -Message 'Publication must expose every reachable ordering boundary exactly once.'
+    for ($index = 1; $index -lt $publicationBoundaries.Count; $index++) {
+        $previous = $publicationBoundaries[$index - 1]
+        $current = $publicationBoundaries[$index]
+        $expectedOrder = @(
+            'before-temp-directory-create',
+            'after-temp-directory-create-before-lock-create',
+            'after-lock-create-before-authority-create',
+            'after-temp-authority-readback-before-rename',
+            'after-temp-revalidation-before-rename',
+            'after-rename-before-final-authority-readback',
+            'after-final-authority-readback-before-manifest-create',
+            'after-manifest-readback-before-pair-revalidation',
+            'after-pair-revalidation-before-return'
+        )
+        Assert-True ([Array]::IndexOf([string[]] $expectedOrder, $previous) -lt [Array]::IndexOf([string[]] $expectedOrder, $current)) "Publication boundary '$previous' must precede '$current'."
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publicationRoot -SessionId $publicationSessionId).Boundary, 'published-unprobed', [StringComparison]::Ordinal)) 'A completed pair before probe registration must classify as published-unprobed.'
+    Assert-True (-not (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $publication)) 'Runtime must remain blocked immediately after publication.'
+
+    $authorityBytesBeforeDuplicate = [System.IO.File]::ReadAllBytes($publication.PathSet.AuthorityPath)
+    $manifestBytesBeforeDuplicate = [System.IO.File]::ReadAllBytes($publication.PathSet.ManifestPath)
+    Assert-ThrowsLike {
+        Publish-NervFullStackInitialV2Session `
+            -StateRoot $publicationRoot `
+            -SessionId $publicationSessionId `
+            -WorktreeRoot $repoRoot `
+            -CreatedByIdentity (New-A5CreatedByIdentity)
+    } 'publication:session-target-exists' 'Repeated publication must reject immutable authority and the existing manifest.'
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $authorityBytesBeforeDuplicate, [byte[]] [System.IO.File]::ReadAllBytes($publication.PathSet.AuthorityPath))) 'Repeated publication must preserve authority bytes.'
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $manifestBytesBeforeDuplicate, [byte[]] [System.IO.File]::ReadAllBytes($publication.PathSet.ManifestPath))) 'Repeated publication must preserve manifest bytes.'
+
+    $emptyFinalRoot = New-A5FixtureRoot -Name 'empty-final'
+    $a5Roots.Add($emptyFinalRoot)
+    [void] (Initialize-NervFullStackTrustedStateRoot -StateRoot $emptyFinalRoot)
+    $emptyFinalPaths = Get-NervFullStackControlPathSet -StateRoot $emptyFinalRoot -SessionId 'nerv-a500-000002'
+    [void] [System.IO.Directory]::CreateDirectory($emptyFinalPaths.SessionDirectory)
+    Assert-ThrowsLike {
+        Publish-NervFullStackInitialV2Session -StateRoot $emptyFinalRoot -SessionId $emptyFinalPaths.SessionId -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+    } 'publication:session-target-exists' 'An empty final control directory must fail closed before publication.'
+    Assert-True (-not [System.IO.File]::Exists($emptyFinalPaths.ManifestPath)) 'Rejecting an empty final directory must not publish a manifest.'
+    Assert-True ([System.IO.Directory]::Exists($emptyFinalPaths.SessionDirectory)) 'Rejecting an existing final target must not clean or replace it.'
+
+    $renameRaceRoot = New-A5FixtureRoot -Name 'rename-target-race'
+    $a5Roots.Add($renameRaceRoot)
+    $renameRaceSession = 'nerv-a500-000005'
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-temp-revalidation-before-rename', [StringComparison]::Ordinal)) {
+            [void] [System.IO.Directory]::CreateDirectory($Context.FinalDirectory)
+            Write-Utf8TestFile -Path (Join-Path $Context.FinalDirectory 'existing-owner.txt') -Content 'must-survive'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Publish-NervFullStackInitialV2Session -StateRoot $renameRaceRoot -SessionId $renameRaceSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+        } 'publication:session-target-exists' 'A final target that appears immediately before rename must fail closed instead of replace or merge.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    $renameRacePaths = Get-NervFullStackControlPathSet -StateRoot $renameRaceRoot -SessionId $renameRaceSession
+    Assert-True ([string]::Equals([System.IO.File]::ReadAllText((Join-Path $renameRacePaths.SessionDirectory 'existing-owner.txt')), 'must-survive', [StringComparison]::Ordinal)) 'A failed rename must preserve every pre-existing final-target byte.'
+    Assert-True (-not [System.IO.File]::Exists($renameRacePaths.ManifestPath)) 'A failed rename must not publish a manifest.'
+
+    $existingManifestRoot = New-A5FixtureRoot -Name 'existing-manifest'
+    $a5Roots.Add($existingManifestRoot)
+    [void] (Initialize-NervFullStackTrustedStateRoot -StateRoot $existingManifestRoot)
+    $existingManifestPaths = Get-NervFullStackControlPathSet -StateRoot $existingManifestRoot -SessionId 'nerv-a500-000003'
+    Write-Utf8TestFile -Path $existingManifestPaths.ManifestPath -Content '{"existing":true}'
+    Assert-ThrowsLike {
+        Publish-NervFullStackInitialV2Session -StateRoot $existingManifestRoot -SessionId $existingManifestPaths.SessionId -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+    } 'publication:session-target-exists' 'A canonical manifest target must reserve the session ID.'
+    Assert-True (-not [System.IO.Directory]::Exists($existingManifestPaths.SessionDirectory)) 'Rejecting an existing manifest must not create a final control directory.'
+    Assert-True ([string]::Equals([System.IO.File]::ReadAllText($existingManifestPaths.ManifestPath), '{"existing":true}', [StringComparison]::Ordinal)) 'Rejecting an existing manifest must not overwrite it.'
+
+    Assert-ThrowsLike {
+        Publish-NervFullStackInitialV2Session -StateRoot $publicationRoot -SessionId '../escape' -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+    } 'path:invalid-session-id' 'Publication must reject a non-canonical session ID.'
+    Assert-ThrowsLike {
+        Publish-NervFullStackInitialV2Session -StateRoot $publicationRoot -SessionId 'nerv-a500-000004' -WorktreeRoot $repoRoot -CreatedByIdentity ([pscustomobject]@{ pid = 0; processStartTimeUtc = 'bad' })
+    } 'publication:invalid-created-by-identity' 'Publication must reject an incomplete creator identity before creating residue.'
+
+    foreach ($tamperField in @('sessionId', 'creationNonce', 'worktreeRoot', 'manifestPath')) {
+        $tamperRoot = New-A5FixtureRoot -Name "tamper-$tamperField"
+        $a5Roots.Add($tamperRoot)
+        $tamperSessionId = if ([string]::Equals($tamperField, 'sessionId', [StringComparison]::Ordinal)) {
+            'nerv-a501-000001'
+        }
+        elseif ([string]::Equals($tamperField, 'creationNonce', [StringComparison]::Ordinal)) {
+            'nerv-a501-000002'
+        }
+        elseif ([string]::Equals($tamperField, 'worktreeRoot', [StringComparison]::Ordinal)) {
+            'nerv-a501-000003'
+        }
+        else {
+            'nerv-a501-000004'
+        }
+        $script:a5TamperField = $tamperField
+        $script:NervFullStackAuthorityPublicationCrashAction = {
+            param($Boundary, $Context)
+            if ([string]::Equals($Boundary, 'after-manifest-readback-before-pair-revalidation', [StringComparison]::Ordinal)) {
+                $record = [System.IO.File]::ReadAllText($Context.ManifestPath) | ConvertFrom-Json
+                if ([string]::Equals($script:a5TamperField, 'sessionId', [StringComparison]::Ordinal)) {
+                    $record.sessionId = 'nerv-dead-000000'
+                }
+                elseif ([string]::Equals($script:a5TamperField, 'creationNonce', [StringComparison]::Ordinal)) {
+                    $record.creationNonce = '00000000000000000000000000000000'
+                }
+                elseif ([string]::Equals($script:a5TamperField, 'worktreeRoot', [StringComparison]::Ordinal)) {
+                    $record.worktreeRoot = (Join-Path $Context.StateRoot 'wrong-worktree')
+                }
+                else {
+                    $authority = [System.IO.File]::ReadAllText($Context.AuthorityPath) | ConvertFrom-Json
+                    $authority.manifestPath = (Join-Path $Context.StateRoot 'fullstack-sessions/wrong.json')
+                    Write-Utf8TestFile -Path $Context.AuthorityPath -Content ($authority | ConvertTo-Json -Depth 20 -Compress)
+                }
+                if (-not [string]::Equals($script:a5TamperField, 'manifestPath', [StringComparison]::Ordinal)) {
+                    Write-Utf8TestFile -Path $Context.ManifestPath -Content ($record | ConvertTo-Json -Depth 20 -Compress)
+                }
+            }
+        }
+        try {
+            Assert-ThrowsLike {
+                Publish-NervFullStackInitialV2Session -StateRoot $tamperRoot -SessionId $tamperSessionId -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+            } 'publication:pair-mismatch' "Pair revalidation must reject a wrong $tamperField."
+        }
+        finally {
+            Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+            Remove-Variable -Name a5TamperField -Scope Script -ErrorAction SilentlyContinue
+        }
+    }
+
+    $notPublishedRoot = New-A5FixtureRoot -Name 'seam-not-published'
+    $a5Roots.Add($notPublishedRoot)
+    $notPublishedSession = 'nerv-a502-000001'
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'before-temp-directory-create', [StringComparison]::Ordinal)) {
+            throw 'test-only:before-temp'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Publish-NervFullStackInitialV2Session -StateRoot $notPublishedRoot -SessionId $notPublishedSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+        } 'test-only:before-temp' 'The pre-temp crash seam must surface.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $notPublishedRoot -SessionId $notPublishedSession).Boundary, 'not-published', [StringComparison]::Ordinal)) 'Crash boundary 1 must classify as not-published.'
+
+    foreach ($tempBoundary in @(
+            'after-temp-directory-create-before-lock-create',
+            'after-lock-create-before-authority-create',
+            'after-temp-authority-readback-before-rename',
+            'after-temp-revalidation-before-rename'
+        )) {
+        $tempRoot = New-A5FixtureRoot -Name 'seam-temp'
+        $a5Roots.Add($tempRoot)
+        $tempSession = 'nerv-a502-000002'
+        $script:a5CrashBoundary = $tempBoundary
+        $script:NervFullStackAuthorityPublicationCrashAction = {
+            param($Boundary, $Context)
+            if ([string]::Equals($Boundary, $script:a5CrashBoundary, [StringComparison]::Ordinal)) {
+                throw "test-only:$Boundary"
+            }
+        }
+        try {
+            Assert-ThrowsLike {
+                Publish-NervFullStackInitialV2Session -StateRoot $tempRoot -SessionId $tempSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+            } "test-only:$tempBoundary" "The temp publication seam '$tempBoundary' must surface."
+        }
+        finally {
+            Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+            Remove-Variable -Name a5CrashBoundary -Scope Script -ErrorAction SilentlyContinue
+        }
+        Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $tempRoot -SessionId $tempSession).Boundary, 'temp-publication-residue', [StringComparison]::Ordinal)) "Crash boundary 2 at '$tempBoundary' must classify as temp-publication-residue."
+        Assert-True (-not [System.IO.Directory]::Exists((Get-NervFullStackControlPathSet -StateRoot $tempRoot -SessionId $tempSession).SessionDirectory)) 'A temp crash residue must never expose an empty final directory.'
+    }
+
+    foreach ($finalAuthorityBoundary in @(
+            'after-rename-before-final-authority-readback',
+            'after-final-authority-readback-before-manifest-create'
+        )) {
+        $finalAuthorityRoot = New-A5FixtureRoot -Name 'seam-final-authority'
+        $a5Roots.Add($finalAuthorityRoot)
+        $finalAuthoritySession = 'nerv-a502-000003'
+        $script:a5CrashBoundary = $finalAuthorityBoundary
+        $script:NervFullStackAuthorityPublicationCrashAction = {
+            param($Boundary, $Context)
+            if ([string]::Equals($Boundary, $script:a5CrashBoundary, [StringComparison]::Ordinal)) {
+                throw "test-only:$Boundary"
+            }
+        }
+        try {
+            Assert-ThrowsLike {
+                Publish-NervFullStackInitialV2Session -StateRoot $finalAuthorityRoot -SessionId $finalAuthoritySession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+            } "test-only:$finalAuthorityBoundary" "The final-authority seam '$finalAuthorityBoundary' must surface."
+        }
+        finally {
+            Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+            Remove-Variable -Name a5CrashBoundary -Scope Script -ErrorAction SilentlyContinue
+        }
+        Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $finalAuthorityRoot -SessionId $finalAuthoritySession).Boundary, 'final-authority-only-init-incomplete', [StringComparison]::Ordinal)) "Crash boundary 3 at '$finalAuthorityBoundary' must classify as final-authority-only-init-incomplete."
+        Assert-True (-not [System.IO.File]::Exists((Get-NervFullStackControlPathSet -StateRoot $finalAuthorityRoot -SessionId $finalAuthoritySession).ManifestPath)) 'A final-authority-only residue must not be repaired with a manifest.'
+    }
+
+    $finalAuthorityReadbackRoot = New-A5FixtureRoot -Name 'final-authority-readback-failure'
+    $a5Roots.Add($finalAuthorityReadbackRoot)
+    $finalAuthorityReadbackSession = 'nerv-a502-000008'
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-rename-before-final-authority-readback', [StringComparison]::Ordinal)) {
+            Write-Utf8TestFile -Path $Context.AuthorityPath -Content '{"kind":"fullstack-session-authority"'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Publish-NervFullStackInitialV2Session -StateRoot $finalAuthorityReadbackRoot -SessionId $finalAuthorityReadbackSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+        } 'record:invalid-json' 'Final authority readback failure must stop publication before manifest CreateNew.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    $finalAuthorityReadbackPaths = Get-NervFullStackControlPathSet -StateRoot $finalAuthorityReadbackRoot -SessionId $finalAuthorityReadbackSession
+    Assert-True (-not [System.IO.File]::Exists($finalAuthorityReadbackPaths.ManifestPath)) 'A final authority readback failure must never leave a manifest-first false v2 publication.'
+
+    $manifestIncompleteRoot = New-A5FixtureRoot -Name 'seam-manifest-incomplete'
+    $a5Roots.Add($manifestIncompleteRoot)
+    $manifestIncompleteSession = 'nerv-a502-000004'
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-manifest-readback-before-pair-revalidation', [StringComparison]::Ordinal)) {
+            Write-Utf8TestFile -Path $Context.ManifestPath -Content '{"broken":'
+            throw 'test-only:manifest-readback'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Publish-NervFullStackInitialV2Session -StateRoot $manifestIncompleteRoot -SessionId $manifestIncompleteSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+        } 'test-only:manifest-readback' 'The manifest failure seam must surface.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $manifestIncompleteRoot -SessionId $manifestIncompleteSession).Boundary, 'manifest-init-incomplete', [StringComparison]::Ordinal)) 'Crash boundary 4 must classify as manifest-init-incomplete.'
+
+    $publishedUnprobedRoot = New-A5FixtureRoot -Name 'seam-published-unprobed'
+    $a5Roots.Add($publishedUnprobedRoot)
+    $publishedUnprobedSession = 'nerv-a502-000005'
+    $script:NervFullStackAuthorityPublicationCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-pair-revalidation-before-return', [StringComparison]::Ordinal)) {
+            throw 'test-only:published-unprobed'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Publish-NervFullStackInitialV2Session -StateRoot $publishedUnprobedRoot -SessionId $publishedUnprobedSession -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+        } 'test-only:published-unprobed' 'The publication-to-probe seam must surface.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publishedUnprobedRoot -SessionId $publishedUnprobedSession).Boundary, 'published-unprobed', [StringComparison]::Ordinal)) 'Crash boundary 5 must classify as published-unprobed.'
+
+    $unverifiedSession = [pscustomobject][ordered]@{
+        Verified = $publication.Verified
+        PublicationComplete = $false
+        StateRoot = $publication.StateRoot
+        SessionId = $publication.SessionId
+        CreationNonce = $publication.CreationNonce
+        WorktreeRoot = $publication.WorktreeRoot
+        AuthorityIdentity = $publication.AuthorityIdentity
+        ManifestSnapshot = $publication.ManifestSnapshot
+    }
+    Assert-ThrowsLike {
+        Register-NervFullStackToolchainProbeIdentity -VerifiedSession $unverifiedSession -ProbeIdentity (New-A5ProbeIdentity)
+    } 'publication:verified-complete-session-required' 'Probe registration must reject a session before publication completes.'
+    Assert-ThrowsLike {
+        Register-NervFullStackToolchainProbeIdentity -VerifiedSession $publication -ProbeIdentity ([pscustomobject]@{ pid = 5153; processStartTimeUtc = 'bad'; role = '' })
+    } 'publication:invalid-probe-identity' 'Probe registration must reject an incomplete exact identity.'
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $publication.ManifestSnapshot -Right (Read-NervFullStackVerifiedRecord -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $publication.StateRoot -CandidatePath $publication.ManifestPath -ExpectedKind File) -RecordKind $publication.ManifestSnapshot.RecordKind)) 'A rejected probe registration must preserve the original complete manifest snapshot.'
+
+    $registered = Register-NervFullStackToolchainProbeIdentity -VerifiedSession $publication -ProbeIdentity (New-A5ProbeIdentity)
+    Assert-True $registered.PublicationComplete 'Probe registration must preserve verified publication capability.'
+    Assert-True (@($registered.ManifestSnapshot.Record.toolchainProbeIdentities).Count -eq 1) 'Probe registration must persist exactly one identity.'
+    Assert-True ([int] $registered.ManifestSnapshot.Record.toolchainProbeIdentities[0].pid -eq 5153) 'Probe registration must preserve the exact PID.'
+    $expectedProbeStart = [DateTimeOffset]::ParseExact('2026-08-22T00:00:01.0000000Z', 'O', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+    $actualProbeStart = [DateTimeOffset] ([DateTime] $registered.ManifestSnapshot.Record.toolchainProbeIdentities[0].processStartTimeUtc)
+    Assert-True ($actualProbeStart.UtcTicks -eq $expectedProbeStart.UtcTicks) 'Probe registration must preserve the normalized process start instant.'
+    Assert-True ([string]::Equals($registered.ManifestSnapshot.Record.toolchainProbeIdentities[0].role, 'toolchain-version-probe', [StringComparison]::Ordinal)) 'Probe registration must preserve the exact role.'
+    Assert-True (-not [bool] $registered.ManifestSnapshot.Record.toolchainSnapshotComplete) 'Probe registration alone must leave the snapshot incomplete.'
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publicationRoot -SessionId $publicationSessionId).Boundary, 'toolchain-probe-incomplete', [StringComparison]::Ordinal)) 'Crash boundary 6 must classify a registered probe with incomplete snapshot as toolchain-probe-incomplete.'
+    Assert-True (-not (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $registered)) 'Runtime must remain blocked while the probe snapshot is incomplete.'
+
+    $preSnapshotBytes = [System.IO.File]::ReadAllBytes($registered.ManifestPath)
+    Assert-ThrowsLike {
+        Complete-NervFullStackToolchainSnapshot `
+            -VerifiedSession $registered `
+            -ExpectedSnapshot $publication.ManifestSnapshot `
+            -ToolchainSnapshot ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+    } 'record:cas-conflict' 'Snapshot completion must reject a stale full ExpectedSnapshot.'
+    Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $preSnapshotBytes, [byte[]] [System.IO.File]::ReadAllBytes($registered.ManifestPath))) 'A stale snapshot CAS must preserve the complete old manifest.'
+    Assert-ThrowsLike {
+        Complete-NervFullStackToolchainSnapshot -VerifiedSession $registered -ExpectedSnapshot $registered.ManifestSnapshot -ToolchainSnapshot ([pscustomobject][ordered]@{})
+    } 'publication:invalid-toolchain-snapshot' 'Snapshot completion must reject an empty toolchain snapshot.'
+
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-temp-readback-before-replace', [StringComparison]::Ordinal)) {
+            throw 'test-only:snapshot-before-replace'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Complete-NervFullStackToolchainSnapshot `
+                -VerifiedSession $registered `
+                -ExpectedSnapshot $registered.ManifestSnapshot `
+                -ToolchainSnapshot ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+        } 'test-only:snapshot-before-replace' 'The snapshot pre-replace crash seam must surface.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publicationRoot -SessionId $publicationSessionId).Boundary, 'toolchain-probe-incomplete', [StringComparison]::Ordinal)) 'Crash boundary 7 before atomic replace must retain the complete old incomplete manifest.'
+    Assert-True (-not (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $registered)) 'A pre-replace snapshot crash must keep runtime blocked.'
+
+    $postReplaceRoot = New-A5FixtureRoot -Name 'snapshot-post-replace'
+    $a5Roots.Add($postReplaceRoot)
+    $postReplacePublication = Publish-NervFullStackInitialV2Session -StateRoot $postReplaceRoot -SessionId 'nerv-a502-000006' -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+    $postReplaceRegistered = Register-NervFullStackToolchainProbeIdentity -VerifiedSession $postReplacePublication -ProbeIdentity (New-A5ProbeIdentity -ProcessId 5154)
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-replace-before-final-readback', [StringComparison]::Ordinal)) {
+            throw 'test-only:snapshot-after-replace'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Complete-NervFullStackToolchainSnapshot `
+                -VerifiedSession $postReplaceRegistered `
+                -ExpectedSnapshot $postReplaceRegistered.ManifestSnapshot `
+                -ToolchainSnapshot ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+        } 'test-only:snapshot-after-replace' 'The snapshot post-replace crash seam must surface.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $postReplaceRoot -SessionId $postReplacePublication.SessionId).Boundary, 'published-unstarted', [StringComparison]::Ordinal)) 'Crash boundary 7 after atomic replace must expose the complete new snapshot.'
+    Assert-True (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $postReplaceRegistered) 'A complete post-replace record must be admitted only from durable readback, even when the caller did not receive success.'
+
+    $completed = Complete-NervFullStackToolchainSnapshot `
+        -VerifiedSession $registered `
+        -ExpectedSnapshot $registered.ManifestSnapshot `
+        -ToolchainSnapshot ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+    Assert-True ([bool] $completed.ManifestSnapshot.Record.toolchainSnapshotComplete) 'Snapshot completion must return only a complete final readback.'
+    Assert-True ([string]::Equals($completed.ManifestSnapshot.Record.toolchainSnapshot.node, '22.22.3', [StringComparison]::Ordinal)) 'Snapshot completion must preserve every toolchain field.'
+    Assert-True (@($completed.ManifestSnapshot.Record.toolchainProbeIdentities).Count -eq 1) 'Snapshot completion must atomically preserve registered probe identities.'
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publicationRoot -SessionId $publicationSessionId).Boundary, 'published-unstarted', [StringComparison]::Ordinal)) 'Crash boundary 8 must classify a complete snapshot before runtime as published-unstarted.'
+    $runtimeOrDestructiveCallCount = 0
+    Assert-True (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $completed) 'Runtime gate must return true only after full snapshot CAS/readback.'
+    Assert-True ($runtimeOrDestructiveCallCount -eq 0) 'Gate evaluation must perform zero runtime or destructive calls.'
+
+    $readbackMismatchRoot = New-A5FixtureRoot -Name 'snapshot-readback-mismatch'
+    $a5Roots.Add($readbackMismatchRoot)
+    $readbackMismatchPublication = Publish-NervFullStackInitialV2Session -StateRoot $readbackMismatchRoot -SessionId 'nerv-a502-000007' -WorktreeRoot $repoRoot -CreatedByIdentity (New-A5CreatedByIdentity)
+    $readbackMismatchRegistered = Register-NervFullStackToolchainProbeIdentity -VerifiedSession $readbackMismatchPublication -ProbeIdentity (New-A5ProbeIdentity -ProcessId 5155)
+    $script:NervFullStackVerifiedRecordStoreCrashAction = {
+        param($Boundary, $Context)
+        if ([string]::Equals($Boundary, 'after-replace-before-final-readback', [StringComparison]::Ordinal)) {
+            Write-Utf8TestFile -Path $Context.Path -Content '{"schemaVersion":2,"kind":"request","tampered":true}'
+        }
+    }
+    try {
+        Assert-ThrowsLike {
+            Complete-NervFullStackToolchainSnapshot `
+                -VerifiedSession $readbackMismatchRegistered `
+                -ExpectedSnapshot $readbackMismatchRegistered.ManifestSnapshot `
+                -ToolchainSnapshot ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+        } 'record:readback-mismatch' 'Snapshot completion must reject final raw bytes/fields/identity readback mismatch.'
+    }
+    finally {
+        Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    }
+    Assert-True (-not (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $readbackMismatchRegistered)) 'A readback mismatch must never admit runtime.'
+
+    $runtimeFixtureRoot = New-A5FixtureRoot -Name 'runtime-old-new-fixtures'
+    $a5Roots.Add($runtimeFixtureRoot)
+    [void] (Initialize-NervFullStackTrustedStateRoot -StateRoot $runtimeFixtureRoot)
+    $runtimeFixtureSession = 'nerv-a503-000001'
+    $runtimeFixtureNonce = 'abcdef0123456789abcdef0123456789'
+    Publish-A4Authority -Root $runtimeFixtureRoot -SessionId $runtimeFixtureSession -CreationNonce $runtimeFixtureNonce
+    $runtimeOldRecord = New-A4V2ManifestRecord `
+        -Root $runtimeFixtureRoot `
+        -SessionId $runtimeFixtureSession `
+        -CreationNonce $runtimeFixtureNonce `
+        -ToolchainSnapshotComplete $true `
+        -ToolchainProbeIdentities @((New-A5ProbeIdentity -ProcessId 5156)) `
+        -RuntimeStartAttempted $true `
+        -RuntimeIdentities @()
+    $runtimeOldRecord | Add-Member -NotePropertyName toolchainSnapshot -NotePropertyValue ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+    Write-A4Record -Path (Join-Path $runtimeFixtureRoot "fullstack-sessions/$runtimeFixtureSession.json") -Record $runtimeOldRecord
+    Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $runtimeFixtureRoot -SessionId $runtimeFixtureSession).Boundary, 'published-starting-uncertain', [StringComparison]::Ordinal)) 'Crash boundary 9 must be classified from a complete old runtime fixture without launching runtime.'
+
+    $runtimeNewRecord = New-A4V2ManifestRecord `
+        -Root $runtimeFixtureRoot `
+        -SessionId $runtimeFixtureSession `
+        -CreationNonce $runtimeFixtureNonce `
+        -ToolchainSnapshotComplete $true `
+        -ToolchainProbeIdentities @((New-A5ProbeIdentity -ProcessId 5156)) `
+        -RuntimeStartAttempted $true `
+        -RuntimeIdentities @([pscustomobject][ordered]@{ pid = 5157; processStartTimeUtc = '2026-08-22T00:00:02.0000000Z'; role = 'fixture-runtime' })
+    $runtimeNewRecord | Add-Member -NotePropertyName toolchainSnapshot -NotePropertyValue ([pscustomobject][ordered]@{ node = '22.22.3'; dotnet = '10.0.100'; aspire = '13.4.6'; dcp = '13.4.6' })
+    Write-A4Record -Path (Join-Path $runtimeFixtureRoot "fullstack-sessions/$runtimeFixtureSession.json") -Record $runtimeNewRecord
+    $runtimeNewGeneration = Get-NervFullStackProtocolGenerationObservation -StateRoot $runtimeFixtureRoot -SessionId $runtimeFixtureSession
+    Assert-True ([string]::Equals($runtimeNewGeneration.Generation, 'v2', [StringComparison]::Ordinal)) 'Crash boundary 10 new complete runtime fixture must remain legal v2.'
+    Assert-True ($null -eq (Get-NervFullStackPublicationBoundaryObservation -StateRoot $runtimeFixtureRoot -SessionId $runtimeFixtureSession).Boundary) 'Crash boundary 10 must use the full new record without inventing a half-commit publication boundary.'
+    Assert-True ($runtimeOrDestructiveCallCount -eq 0) 'Runtime boundary fixtures must execute zero production runtime or destructive calls.'
+}
+finally {
+    Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name a5CrashBoundary -Scope Script -ErrorAction SilentlyContinue
+    Remove-Variable -Name a5TamperField -Scope Script -ErrorAction SilentlyContinue
+    foreach ($root in $a5Roots) {
+        if ([System.IO.Directory]::Exists($root)) {
+            [System.IO.Directory]::Delete($root, $true)
+        }
+    }
+}
+
+Write-Host "Full-stack v2 protocol tests passed: $member"
+
 # F1a frozen member: verified-session-cas-and-leases (A3 portion).
 $member = 'verified-session-cas-and-leases'
 Write-Host "Running $member (A3 portion)"
