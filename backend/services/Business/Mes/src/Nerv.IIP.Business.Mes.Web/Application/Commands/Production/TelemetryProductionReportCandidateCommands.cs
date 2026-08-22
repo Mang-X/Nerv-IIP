@@ -25,7 +25,7 @@ public sealed class PromoteTelemetryProductionReportCandidateCommandHandler(Appl
     {
         var candidate = await dbContext.TelemetryProductionReportCandidates.Include(x => x.Transitions).SingleOrDefaultAsync(
             x => x.Id == request.CandidateId && x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId,
-            cancellationToken) ?? throw new KnownException("Telemetry production report candidate was not found.");
+            cancellationToken) ?? throw new KnownException("未找到遥测报工候选。");
         if (candidate.Status == TelemetryProductionReportCandidate.ConfirmedStatus && candidate.ProductionReportId is not null)
         {
             var productionReportId = new ProductionReportId(Guid.Parse(candidate.ProductionReportId));
@@ -63,7 +63,7 @@ public sealed class DismissTelemetryProductionReportCandidateCommandHandler(Appl
     {
         var candidate = await dbContext.TelemetryProductionReportCandidates.Include(x => x.Transitions).SingleOrDefaultAsync(
             x => x.Id == request.CandidateId && x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId,
-            cancellationToken) ?? throw new KnownException("Telemetry production report candidate was not found.");
+            cancellationToken) ?? throw new KnownException("未找到遥测报工候选。");
         candidate.Dismiss(request.Reason, request.Actor, request.DismissedAtUtc);
     }
 }

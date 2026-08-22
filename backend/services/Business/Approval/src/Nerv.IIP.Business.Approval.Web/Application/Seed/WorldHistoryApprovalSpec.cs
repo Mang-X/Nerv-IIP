@@ -22,10 +22,9 @@ public static class WorldHistoryApprovalSpec
     #region 模板（世界观历史专用，与 *-DEMO-* 固定演示事实隔离）
 
     /// <summary>
-    /// 采购订单下达审批模板码：取自审批契约的唯一事实来源，ERP 发起侧 / 种子 / 界面三方共用
-    /// （#1344：ERP 此前硬编码 <c>erp-purchase-order-release</c>，种子态转单 / RFQ 必 400）。
+    /// 世界观历史专用的采购订单下达模板码。旧码已挂在历史链上，不随产品码迁移。
     /// </summary>
-    public const string PurchaseTemplateCode = ApprovalTemplateCodes.PurchaseOrderRelease;
+    public const string PurchaseTemplateCode = WorldHistoryNcrDispositionApprovals.LegacyPurchaseOrderReleaseTemplateCode;
     public const string PurchaseDocumentType = ApprovalDocumentTypes.PurchaseOrder;
 
     /// <summary>
@@ -36,13 +35,9 @@ public static class WorldHistoryApprovalSpec
     public const string PurchaseSourceService = ApprovalSourceServices.BusinessErp;
 
     /// <summary>
-    /// 采购订单**变更**再审批模板码（#1685）：取自审批契约的唯一事实来源，
-    /// ERP 变更发起侧（<c>RequestPurchaseOrderChangeCommandHandler</c>）与本侧种子逐字共用。
-    ///
-    /// 不挂任何世界观历史链——历史里的采购审批全是下达链；本模板只保证走查 / 演示时
-    /// 实时发起的变更审批开箱可用（少这张模板，种子态发起变更必 400「审批模板不存在」）。
+    /// 世界观历史专用的采购变更模板码；产品运行时改用中性码。
     /// </summary>
-    public const string PurchaseChangeTemplateCode = ApprovalTemplateCodes.PurchaseOrderChange;
+    public const string PurchaseChangeTemplateCode = WorldHistoryNcrDispositionApprovals.LegacyPurchaseOrderChangeTemplateCode;
 
     /// <summary>
     /// 变更模板的单据类型**刻意沿用**下达的 <see cref="ApprovalDocumentTypes.PurchaseOrder"/>：
@@ -68,11 +63,10 @@ public static class WorldHistoryApprovalSpec
     public const string PurchaseChangeStepName = "采购变更审批";
 
     /// <summary>
-    /// NCR 处置评审审批模板码：取自审批契约的唯一事实来源（#1684 收敛）——该码现在还参与
-    /// 跨服务确定性回链盐串（<see cref="WorldHistoryNcrDispositionApprovals.SeededDispositionChainId"/>），
-    /// Quality 侧回链与本侧种子必须逐字同码。
+    /// NCR 处置历史链的冻结模板码，同时是跨服务确定性回链的盐串输入。
+    /// Quality 侧回链与本侧种子必须继续逐字使用该旧码。
     /// </summary>
-    public const string NcrTemplateCode = ApprovalTemplateCodes.NcrDisposition;
+    public const string NcrTemplateCode = WorldHistoryNcrDispositionApprovals.LegacyNcrDispositionTemplateCode;
 
     /// <summary>
     /// NCR 处置审批的单据类型：取自审批契约的唯一事实来源，种子 / 前端发起面 / Quality 白名单三方共用
@@ -103,16 +97,14 @@ public static class WorldHistoryApprovalSpec
     public const string SalesCreditReleaseDocumentType = ApprovalDocumentTypes.SalesOrderCreditRelease;
 
     /// <summary>
-    /// 盘点差异审批模板（#1344 扩修）。同样不挂历史链，只保证 Inventory
-    /// <c>ConfirmStockCountAdjustmentCommand</c>（差异超阈值分支）引用的模板开箱存在——
-    /// 此前发起侧默认 <c>COUNT-VARIANCE</c> 而种子无此模板，盘点确认必 400（走查台账 #66）。
-    /// 审批人取厂长：账实差异有财务影响，由仓储部之外的人核准，且演示 / 走查用的就是该账号。
+    /// 盘点差异的 WorldHistory 冻结模板，不挂历史链。
+    /// Inventory 产品路径使用中性码，由 <see cref="ApprovalSeedService"/> 独立补齐。
     /// </summary>
-    public const string StockCountVarianceTemplateCode = ApprovalTemplateCodes.StockCountVariance;
+    public const string StockCountVarianceTemplateCode = WorldHistoryNcrDispositionApprovals.LegacyStockCountVarianceTemplateCode;
     public const string StockCountVarianceDocumentType = ApprovalDocumentTypes.StockCountVariance;
 
-    /// <summary>工程变更发布审批模板；不挂历史链，只保证新 ECO 可走现有审批发起链路。</summary>
-    public const string EngineeringChangeTemplateCode = ApprovalTemplateCodes.EngineeringChangeOrder;
+    /// <summary>工程变更的 WorldHistory 冻结模板；产品路径由独立 seed 补齐中性码。</summary>
+    public const string EngineeringChangeTemplateCode = WorldHistoryNcrDispositionApprovals.LegacyEngineeringChangeOrderTemplateCode;
     public const string EngineeringChangeDocumentType = ApprovalDocumentTypes.EngineeringChangeOrder;
     public const string EngineeringChangeSourceService = ApprovalSourceServices.ProductEngineering;
 

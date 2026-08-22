@@ -1223,7 +1223,7 @@ public sealed class MesPersistenceContractTests
                 "idem-force-release-2",
                 now.AddMinutes(5)),
             CancellationToken.None));
-        Assert.Contains("different payload", conflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("质量保留幂等键已被不同载荷复用。", conflict.Message);
         Assert.True(hold.Active);
 
     }

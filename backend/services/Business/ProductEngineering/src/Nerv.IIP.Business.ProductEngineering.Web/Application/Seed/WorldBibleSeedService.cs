@@ -23,11 +23,29 @@ public sealed class WorldBibleSeedService(ApplicationDbContext dbContext)
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
+        await SeedProductsAsync(organizationId, environmentId, WorldBibleSpec.Products, cancellationToken);
+    }
+
+    /// <summary>只派生人工走查成品的 BOM、工艺路线、工时定额和生产版本。</summary>
+    public async Task SeedWalkthroughAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default)
+    {
+        await SeedProductsAsync(organizationId, environmentId, [WalkthroughSeedSpec.Product], cancellationToken);
+    }
+
+    private async Task SeedProductsAsync(
+        string organizationId,
+        string environmentId,
+        IEnumerable<WorldBibleProduct> products,
+        CancellationToken cancellationToken)
+    {
         await SeedStandardOperationsAsync(organizationId, environmentId, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var pending = 0;
-        foreach (var product in WorldBibleSpec.Products)
+        foreach (var product in products)
         {
             await SeedProductAsync(organizationId, environmentId, product, WorldBibleSpec.V1Revision, cancellationToken);
             if (product.IsHotSelling)
