@@ -32,6 +32,20 @@ describe('NvSearchSelect', () => {
     expect(trigger.attributes('aria-expanded')).toBe('false')
   })
 
+  it('forwards validation semantics to the focusable trigger', () => {
+    const wrapper = mount(NvSearchSelect, {
+      props: {
+        options,
+        ariaInvalid: true,
+        ariaDescribedby: 'technician-error',
+      },
+    })
+    const trigger = wrapper.get('button[type="button"]')
+
+    expect(trigger.attributes('aria-invalid')).toBe('true')
+    expect(trigger.attributes('aria-describedby')).toBe('technician-error')
+  })
+
   // 审核复审:弹层内搜索框只有 placeholder(不是 label),读屏不知搜的是哪个字段。
   it('gives the popover search input an accessible name derived from the field', async () => {
     const wrapper = mount(NvSearchSelect, {
