@@ -2,6 +2,19 @@
 
 本文档记录 Nerv-IIP 从“文档冻结完成”到“第一、第二、第三阶段纵切已落地，第四阶段真实基础设施门禁已通过，第五阶段迁移发布底座已通过，第六阶段 schema 治理强化已完成，第七阶段 IAM 持久化认证基础已落地，阶段 8 IAM 管理控制台与蓝色设计系统基线已实现，脚本自动化治理开始收敛”的状态，给出首批实施的环境前置、目录落点、引用规则、已完成范围和后续边界。
 
+## FullChain man-440 SIGKILL 调查结论（#1878）
+
+#1877 的内存见证落地后，hosted runner 已捕获至少七次同时带信号分类与内存快照的
+`maintenance-runtime-hours` 137：七次 `/proc/vmstat oom_kill` 增量与
+`memory.events.oom_kill` 均为 0，失败 run 的 cgroup `memory.peak` 为 12.16–12.65 GB，
+低于既有成功 run 的 14.34 GB。代表性失败中，活动 coordinator 仍在等待并最终上抛
+`dotnet test` 的 SIGKILL，但 session 已先进入 `Stopping` 且 AppHost 已停止；触发时刻集中在
+guardian 的 60 秒观察边沿。因此这些 137 不是 kernel/cgroup OOM-kill，而是 guardian 对
+coordinator 身份的误判触发了提前 cleanup。当前不收窄 AppHost 资源集、不调整 FullChain 场景顺序、
+不修改 GC 配置。完整证据、Aspire 资源子集机制评估与四项调查回答见
+[`fullchain-man-440-sigkill-investigation.md`](fullchain-man-440-sigkill-investigation.md)；后续修复由
+[#2018](https://github.com/Mang-X/Nerv-IIP/issues/2018) 按 `scope:L` 拆分跟踪。
+
 ## Stryker.NET 单程序集变异测试预研（NERV-870）
 
 NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
