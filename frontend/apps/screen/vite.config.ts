@@ -33,6 +33,11 @@ export default defineConfig({
         new URL('../../packages/api-client/src/index.ts', import.meta.url),
       ),
       '@nerv-iip/auth': fileURLToPath(new URL('../../packages/auth/src/index.ts', import.meta.url)),
+      // test-only 子入口必须排在裸包名之前：vite 的对象别名按声明序做前缀匹配，
+      // 否则 `@nerv-iip/ui/test-support` 会被拼成 `.../src/index.ts/test-support`（#2014）。
+      '@nerv-iip/ui/test-support': fileURLToPath(
+        new URL('../../packages/ui/src/test-support/index.ts', import.meta.url),
+      ),
       '@nerv-iip/ui': fileURLToPath(new URL('../../packages/ui/src/index.ts', import.meta.url)),
     },
   },
