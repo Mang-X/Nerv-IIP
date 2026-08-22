@@ -23,6 +23,6 @@ public sealed class ReleaseSchedulePlanUniqueConflictBehaviorTests
             _ => Task.FromException<ReleaseSchedulePlanResponse>(dbUpdateException),
             CancellationToken.None));
 
-        Assert.Equal("Schedule release conflicted with another release in the same scope; refresh and retry.", exception.Message);
+        Assert.Equal("同一范围内的排程发布发生冲突，请刷新后重试。", exception.Message);
     }
 }
