@@ -82,7 +82,7 @@
     "nerv-pr-review": {
       "source": "./skills/nerv-pr-review",
       "sourceType": "local",
-      "computedHash": "f8176d36732c6c7809b56ac97bf6d8ce9b22d7c667fbad52067c01e77127e132"
+      "computedHash": "3aae99d5fe6e34d0938177381755cc1a1242476589f58fd24c348196ac26dd84"
     },
     "obscura-browser": {
       "source": "MangMax/obscura-browser-skill",
@@ -148,7 +148,7 @@
       "source": "Jakubantalik/transitions.dev",
       "sourceType": "github",
       "skillPath": "skills/transitions-dev/SKILL.md",
-      "computedHash": "14794b59f59570d60f3b5cc598c582ebc2e36fb940ebda1e58778e4e7ff0f3da"
+      "computedHash": "a0e64646586db8ba7603eb3a2132f01aa17725e4979d556a9050757db0b0d5e0"
     },
     "tsdown": {
       "source": "antfu/skills",
