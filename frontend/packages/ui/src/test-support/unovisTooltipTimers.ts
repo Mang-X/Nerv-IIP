@@ -9,13 +9,19 @@
  * （用例全绿但 `Errors 1`，退出码 1）。红绿只取决于定时器落点与环境拆除时刻的先后，
  * 因此表现为偶发假红（#2011）。
  *
- * 收口方式：在 app 级 setup 里把这两个 throttle 包装换成**直接同步调用**。
+ * 收口方式：在测试环境 setup 里把这两个 throttle 包装换成**直接同步调用**。
  * 语义不变（jsdom 里本就不需要限频，两个方法都幂等：一个把容器 position 置为
  * relative，一个用 d3 重绑同名事件），但从此不再产生任何跨环境存活的宏任务——
  * 这是消除定时器本身，而不是把未捕获异常吞掉（后者会连真实错误一起放过）。
  *
- * 落点在 app 级 setup 而不是逐个测试文件桩掉图表组件：只要还有别的页面挂
+ * 落点在 setup 而不是逐个测试文件桩掉图表组件：只要还有别的页面挂
  * `NvAreaChart` / `NvLineChart` / `NvBarChart` / `NvDonutChart`，逐个加桩就是打地鼠。
+ *
+ * 实现本身住在 `@nerv-iip/ui/test-support`（#2014）而不是某个 app 内部：暴露面不止
+ * business-console —— `packages/ui` 自己的组件测试就直接挂真实图表，其它 app 一旦挂图
+ * 也会复现。各包各写一份等于把「打地鼠」从文件级搬到包级，所以这里只留一份实现，
+ * 由各包的 setup 引用。这个子路径是 test-only 的：它不进 `src/index.ts` 主桶，
+ * 组件库的运行时消费者取不到它，也不受 NvUI 命名契约约束。
  *
  * 两个槽位都收口，但当前 jsdom 下只观测到 `_setContainerPositionThrottled` 真的排出过
  * 定时器（`mount()` 默认不挂 document → `hasContainer()` 恒假 → 每次重绘都重新
