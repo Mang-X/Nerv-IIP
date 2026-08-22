@@ -136,7 +136,7 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
             .ThenByDescending(x => x.BusinessPriorityRevision)
             .ToArrayAsync(cancellationToken);
         var latest = snapshots.FirstOrDefault()
-            ?? throw new KnownException($"Order urgency was not found, Reference = {orderReference}");
+            ?? throw new KnownException($"未找到订单紧急度，请刷新后重试，业务引用 = {orderReference}");
         var existingChanges = await LoadPriorityChangesAsync(
             organizationId, environmentId, latest.OrderId, cancellationToken);
         var now = timeProvider.GetUtcNow();
@@ -560,11 +560,11 @@ public sealed class OrderUrgencyPriorityConflictBehavior
         }
         catch (DbUpdateConcurrencyException)
         {
-            throw new KnownException("Order business priority changed concurrently; reload the latest revision and retry.");
+            throw new KnownException("订单业务优先级发生并发变更，请重新加载最新版本后重试。");
         }
         catch (DbUpdateException)
         {
-            throw new KnownException("Order business priority could not be recorded atomically; reload and retry.");
+            throw new KnownException("订单业务优先级无法原子记录，请重新加载后重试。");
         }
     }
 }

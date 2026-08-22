@@ -335,7 +335,7 @@ public sealed class OrderUrgencyApplicationTests
             _ => throw new DbUpdateConcurrencyException("forced"),
             CancellationToken.None));
 
-        Assert.Contains("concurrently", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("并发变更", exception.Message, StringComparison.Ordinal);
     }
 
     [Theory]
