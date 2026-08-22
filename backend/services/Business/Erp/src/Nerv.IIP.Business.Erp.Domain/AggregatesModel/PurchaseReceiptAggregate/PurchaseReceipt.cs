@@ -42,7 +42,13 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
         Status = PurchaseReceiptStatus.Recorded;
         RecordedAtUtc = DateTime.UtcNow;
-        foreach (var draft in lineDrafts)
+        var drafts = lineDrafts.ToArray();
+        foreach (var draft in drafts)
+        {
+            PurchaseReceiptLine.ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
+        }
+
+        foreach (var draft in drafts)
         {
             var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
             var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
@@ -123,7 +129,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     public decimal ReceivedQuantity { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
 
-    private static string ValidateQualityStatus(string value, string parameterName)
+    internal static string ValidateQualityStatus(string value, string parameterName)
     {
         var normalized = ErpText.Required(value, parameterName).ToLowerInvariant();
         return ErpReceiptQualityStatuses.IsSupported(normalized)
