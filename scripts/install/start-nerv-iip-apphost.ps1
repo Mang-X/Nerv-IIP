@@ -18,8 +18,10 @@ param(
     [ValidateSet("Development", "Staging", "Production")]
     [string] $EnvironmentName = "Development",
 
-    [ValidateSet("InMemory", "RabbitMQ")]
+    [ValidateSet("InMemory", "RabbitMQ", "Redis")]
     [string] $MessagingProvider = "InMemory",
+
+    [string] $RedisPassword,
 
     [string] $IamJwtSigningKeyId,
 
@@ -28,6 +30,8 @@ param(
     [string] $IamJwtJwksJson,
 
     [string] $IamSecretsPepper,
+
+    [string] $IamEnterpriseIdentityMfaCode,
 
     [string] $IamSeedAdminPassword,
 
@@ -76,6 +80,15 @@ Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
 if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), [StringComparison]::OrdinalIgnoreCase))) {
+    if ([string]::Equals([string]($MessagingProvider), [string]("InMemory"), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "-MessagingProvider InMemory is only allowed in Development. Use Redis or RabbitMQ outside Development."
+    }
+
+    if ([string]::Equals([string]($MessagingProvider), [string]("Redis"), [StringComparison]::OrdinalIgnoreCase) -and
+        [string]::IsNullOrWhiteSpace($RedisPassword)) {
+        throw "-RedisPassword is required when -MessagingProvider Redis is selected outside Development."
+    }
+
     if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
         throw "-IamJwtSigningKeyId is required outside Development."
     }
@@ -90,6 +103,11 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
 
     if ([string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
         throw "-IamSecretsPepper is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamEnterpriseIdentityMfaCode) -or
+        [string]::Equals([string]($IamEnterpriseIdentityMfaCode), [string]("000000"), [StringComparison]::Ordinal)) {
+        throw "-IamEnterpriseIdentityMfaCode must override the Development code outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
@@ -116,10 +134,6 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
         throw "-ConnectorIngestionTokenSigningKey is required outside Development."
     }
 
-    if ([string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
-        throw "-IamSeedAdminPassword is required outside Development."
-    }
-
     if ([string]::IsNullOrWhiteSpace($MinioRootUser)) {
         throw "-MinioRootUser is required outside Development."
     }
@@ -141,6 +155,10 @@ $environment = @{
 
 if ($UsePostgreSql) {
     $environment["Persistence__Provider"] = "PostgreSQL"
+}
+
+if (-not [string]::IsNullOrWhiteSpace($RedisPassword)) {
+    $environment["Parameters__redis-password"] = $RedisPassword
 }
 
 if ($AutoMigrate) {
@@ -169,6 +187,10 @@ if (-not [string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
 if (-not [string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
     $environment["Iam__Secrets__Pepper"] = $IamSecretsPepper
     $environment["Parameters__iam-secrets-pepper"] = $IamSecretsPepper
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamEnterpriseIdentityMfaCode)) {
+    $environment["Parameters__iam-enterprise-identity-mfa-code"] = $IamEnterpriseIdentityMfaCode
 }
 
 if (-not [string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
