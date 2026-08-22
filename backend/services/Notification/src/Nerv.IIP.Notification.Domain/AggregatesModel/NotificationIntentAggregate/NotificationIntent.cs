@@ -63,24 +63,24 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
         IReadOnlyCollection<string> recipientRefs,
         DateTimeOffset createdAtUtc)
     {
-        OrganizationId = Required(organizationId, "Organization is required.");
-        EnvironmentId = Required(environmentId, "Environment is required.");
-        SourceService = Required(sourceService, "Source service is required.");
-        SourceEventType = Required(sourceEventType, "Source event type is required.");
-        SourceEventId = Required(sourceEventId, "Source event id is required.");
+        OrganizationId = Required(organizationId, "组织");
+        EnvironmentId = Required(environmentId, "环境");
+        SourceService = Required(sourceService, "来源服务");
+        SourceEventType = Required(sourceEventType, "来源事件类型");
+        SourceEventId = Required(sourceEventId, "来源事件标识");
         IntentType = RequiredIntentType(intentType);
         Severity = RequiredSeverity(severity);
-        DedupeKey = Required(dedupeKey, "Dedupe key is required.");
+        DedupeKey = Required(dedupeKey, "去重键");
         ResourceType = string.IsNullOrWhiteSpace(resourceType) ? null : resourceType;
         ResourceId = string.IsNullOrWhiteSpace(resourceId) ? null : resourceId;
         FileId = string.IsNullOrWhiteSpace(fileId) ? null : fileId;
-        Title = Required(title, "Title is required.");
-        Summary = Required(summary, "Summary is required.");
+        Title = Required(title, "标题");
+        Summary = Required(summary, "摘要");
         CreatedAtUtc = createdAtUtc;
 
         if (recipientRefs is null || recipientRefs.Count == 0)
         {
-            throw new KnownException("Recipient refs are required.");
+            throw new KnownException("通知收件人不能为空。");
         }
 
         foreach (var recipientRef in recipientRefs)
@@ -88,7 +88,7 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
             var messageId = new NotificationMessageId(Guid.CreateVersion7());
             var message = new NotificationMessage(
                 messageId,
-                Required(recipientRef, "Recipient ref is required."),
+                Required(recipientRef, "收件人"),
                 Severity,
                 Title,
                 Summary,
@@ -134,7 +134,7 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
     public NotificationMessage MarkRead(NotificationMessageId messageId, DateTimeOffset now)
     {
         var message = _messages.SingleOrDefault(x => x.Id == messageId)
-            ?? throw new KnownException($"Notification message was not found: {messageId}");
+            ?? throw new KnownException("通知消息不存在。");
 
         if (message.MarkRead(now))
         {
@@ -144,11 +144,11 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
         return message;
     }
 
-    private static string Required(string? value, string message)
+    private static string Required(string? value, string fieldName)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            throw new KnownException($"通知意图{fieldName}不能为空。");
         }
 
         return value;
@@ -156,11 +156,11 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
 
     private static string RequiredIntentType(string? intentType)
     {
-        var value = Required(intentType, "Intent type is required.");
+        var value = Required(intentType, "类型");
         if (!string.Equals(value, NotificationIntentTypes.Message, StringComparison.Ordinal)
             && !string.Equals(value, NotificationIntentTypes.Task, StringComparison.Ordinal))
         {
-            throw new KnownException($"Unsupported notification intent type: {value}");
+            throw new KnownException("不支持的通知意图类型。");
         }
 
         return value;
@@ -168,12 +168,12 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
 
     private static string RequiredSeverity(string? severity)
     {
-        var value = Required(severity, "Severity is required.").Trim().ToLowerInvariant();
+        var value = Required(severity, "严重级别").Trim().ToLowerInvariant();
         if (value is not NotificationSeverities.Info
             and not NotificationSeverities.Warning
             and not NotificationSeverities.Critical)
         {
-            throw new KnownException($"Unsupported notification severity: {value}");
+            throw new KnownException("不支持的通知严重级别。");
         }
 
         return value;
