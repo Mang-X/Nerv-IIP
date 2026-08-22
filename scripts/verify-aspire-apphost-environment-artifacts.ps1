@@ -59,36 +59,37 @@ function Assert-EnvironmentArtifact {
     )
 
     $expectedEnabled = if ([string]::Equals($EnvironmentName, 'Development', [StringComparison]::Ordinal)) { 'true' } else { 'false' }
+    $expectedProjects = @('apphub', 'iam', 'ops', 'file-storage', 'notification', 'business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling', 'gateway', 'business-gateway', 'connector-host')
     $projectServices = @($Services.GetEnumerator() | Where-Object { $_.Value.ContainsKey('ASPNETCORE_ENVIRONMENT') })
-    if ($projectServices.Count -ne 21) { throw "Expected 21 published project resources, got $($projectServices.Count)." }
+    if ((@($projectServices | ForEach-Object Key | Sort-Object) -join ',') -ne (@($expectedProjects | Sort-Object) -join ',')) { throw 'Published project resource identity set differs from the #2031 contract.' }
     foreach ($service in $projectServices) {
         if ($service.Value['ASPNETCORE_ENVIRONMENT'] -ne $EnvironmentName -or $service.Value['DOTNET_ENVIRONMENT'] -ne $EnvironmentName) {
             throw "Service '$($service.Key)' did not inherit $EnvironmentName for both .NET environment variables."
         }
     }
 
+    $expectedPersistent = @('apphub', 'iam', 'ops', 'file-storage', 'notification', 'business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling')
     $persistentServices = @($projectServices | Where-Object { $_.Value.ContainsKey('Persistence__AutoMigrate') })
-    if ($persistentServices.Count -ne 18) { throw "Expected 18 published persistent project resources, got $($persistentServices.Count)." }
+    if ((@($persistentServices | ForEach-Object Key | Sort-Object) -join ',') -ne (@($expectedPersistent | Sort-Object) -join ',')) { throw 'Published AutoMigrate resource identity set differs from the #2031 contract.' }
     foreach ($service in $persistentServices) {
         if ($service.Value['Persistence__AutoMigrate'] -ne $expectedEnabled) {
             throw "Service '$($service.Key)' has Persistence__AutoMigrate='$($service.Value['Persistence__AutoMigrate'])', expected '$expectedEnabled'."
         }
     }
 
-    foreach ($key in @('Iam__Seed__Enabled', 'Erp__Seed__SalesOrderDemandDemo__Enabled')) {
-        $matching = @($projectServices | Where-Object { $_.Value.ContainsKey($key) })
-        if ($matching.Count -ne 1 -or $matching[0].Value[$key] -ne $expectedEnabled) {
-            throw "Published $EnvironmentName artifact must set $key to '$expectedEnabled'."
-        }
+    $expectedProfiles = @{
+        'Iam__Seed__Enabled' = @{ Services = @('iam'); Value = $expectedEnabled }
+        'Erp__Seed__SalesOrderDemandDemo__Enabled' = @{ Services = @('business-erp'); Value = $expectedEnabled }
+        'Walkthrough__Seed__Enabled' = @{ Services = @('business-master-data', 'business-product-engineering', 'business-erp'); Value = $expectedEnabled }
+        'LeaderDemo__Seed__Enabled' = @{ Services = @('business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-industrial-telemetry', 'business-maintenance'); Value = 'false' }
+        'LeaderDemo__World__Enabled' = @{ Services = @('iam', 'business-master-data', 'business-product-engineering', 'business-industrial-telemetry'); Value = 'false' }
+        'LeaderDemo__History__Enabled' = @{ Services = @('business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling'); Value = 'false' }
     }
-    foreach ($service in @($projectServices | Where-Object { $_.Value.ContainsKey('Walkthrough__Seed__Enabled') })) {
-        if ($service.Value['Walkthrough__Seed__Enabled'] -ne $expectedEnabled) {
-            throw "Service '$($service.Key)' has an invalid Walkthrough seed value."
-        }
-    }
-    foreach ($service in @($projectServices | Where-Object { $_.Value.ContainsKey('LeaderDemo__Seed__Enabled') })) {
-        if ($service.Value['LeaderDemo__Seed__Enabled'] -ne 'false') {
-            throw "Service '$($service.Key)' unexpectedly enables LeaderDemo seed without the opt-in."
+    foreach ($profile in $expectedProfiles.GetEnumerator()) {
+        $matching = @($projectServices | Where-Object { $_.Value.ContainsKey($profile.Key) })
+        if ((@($matching | ForEach-Object Key | Sort-Object) -join ',') -ne (@($profile.Value.Services | Sort-Object) -join ',')) { throw "Published $EnvironmentName artifact has an invalid service set for $($profile.Key)." }
+        foreach ($service in $matching) {
+            if ($service.Value[$profile.Key] -ne $profile.Value.Value) { throw "Service '$($service.Key)' has $($profile.Key)='$($service.Value[$profile.Key])', expected '$($profile.Value.Value)'." }
         }
     }
 }
