@@ -67,6 +67,7 @@ public sealed class GatewayProductionSecurityTests
                 builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                builder.UseSetting("Security:ForwardedHeaders:KnownProxies:0", "127.0.0.1");
                 builder.UseSetting("Iam:BaseUrl", "http://iam.local");
                 builder.UseSetting("Ops:BaseUrl", "http://ops.local");
                 builder.UseSetting("Notification:BaseUrl", "http://notification.local");
@@ -77,8 +78,57 @@ public sealed class GatewayProductionSecurityTests
         Assert.Contains("AppHub:BaseUrl", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Production_gateway_requires_a_trusted_proxy_boundary()
+    {
+        using var factory = PlatformGatewayTestHost.CreateFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
+                builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
+                builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                builder.UseSetting("AppHub:BaseUrl", "http://apphub.local");
+                builder.UseSetting("FileStorage:BaseUrl", "http://filestorage.local");
+                builder.UseSetting("Iam:BaseUrl", "http://iam.local");
+                builder.UseSetting("Ops:BaseUrl", "http://ops.local");
+                builder.UseSetting("Notification:BaseUrl", "http://notification.local");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Security:ForwardedHeaders:KnownProxies", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Production_gateway_accepts_https_scheme_only_from_the_trusted_proxy()
+    {
+        await using var factory = PlatformGatewayTestHost.CreateFactory()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("https_port", "443");
+                builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
+                builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
+                builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
+                ConfigureServiceBaseUrls(builder);
+            });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("http://localhost"),
+            AllowAutoRedirect = false
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health");
+        request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", "https");
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+    }
+
     private static void ConfigureServiceBaseUrls(IWebHostBuilder builder)
     {
+        builder.UseSetting("Security:ForwardedHeaders:KnownProxies:0", "127.0.0.1");
         builder.UseSetting("AppHub:BaseUrl", "http://apphub.local");
         builder.UseSetting("FileStorage:BaseUrl", "http://filestorage.local");
         builder.UseSetting("Iam:BaseUrl", "http://iam.local");

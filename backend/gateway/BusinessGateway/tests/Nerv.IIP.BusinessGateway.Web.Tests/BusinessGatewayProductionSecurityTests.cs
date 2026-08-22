@@ -10,7 +10,11 @@ public sealed class BusinessGatewayProductionSecurityTests
     {
         using var factory = BusinessGatewayTestHost.CreateDedicatedFactory(
             BusinessGatewayTestHostProfile.ServiceBaseUrls,
-            builder => builder.UseEnvironment("Production"));
+            builder =>
+            {
+                builder.UseEnvironment("Production");
+                ConfigureTrustedProxy(builder);
+            });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
@@ -25,6 +29,7 @@ public sealed class BusinessGatewayProductionSecurityTests
             builder =>
             {
                 builder.UseEnvironment("Production");
+                ConfigureTrustedProxy(builder);
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
             });
@@ -48,6 +53,7 @@ public sealed class BusinessGatewayProductionSecurityTests
             configureBuilder: builder =>
             {
                 builder.UseEnvironment("Production");
+                ConfigureTrustedProxy(builder);
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
                 builder.UseSetting("Iam:BaseUrl", "http://iam.local");
@@ -62,4 +68,7 @@ public sealed class BusinessGatewayProductionSecurityTests
 
         Assert.Contains("DemandPlanning:BaseUrl", exception.Message, StringComparison.Ordinal);
     }
+
+    private static void ConfigureTrustedProxy(IWebHostBuilder builder) =>
+        builder.UseSetting("Security:ForwardedHeaders:KnownProxies:0", "127.0.0.1");
 }
