@@ -90,7 +90,7 @@ vi.mock('@nerv-iip/ui', () => {
     props: ['modelValue', 'id'],
     emits: ['update:modelValue'],
     template:
-      '<button type="button" :id="id" @click="$emit(\'update:modelValue\', id.includes(\'start\') ? \'2026-09-01\' : \'2026-09-30\')">{{ modelValue }}</button>',
+      "<button type=\"button\" :id=\"id\" @click=\"$emit('update:modelValue', id.includes('start') ? '2026-09-01' : '2026-09-30')\">{{ modelValue }}</button>",
   })
   const DataTable = defineComponent({
     props: ['columns', 'rows'],
