@@ -57,7 +57,7 @@ public sealed class GetInspectionTaskQueryHandler(ApplicationDbContext dbContext
                 && x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId,
             cancellationToken)
-            ?? throw new KnownException($"Inspection task '{request.InspectionTaskId}' was not found.");
+            ?? throw new KnownException($"找不到检验任务 {request.InspectionTaskId}，请在检验任务页刷新并确认任务编号后重试。");
         var inSelectedScope = request.ScopeKind switch
         {
             "self" => string.Equals(
