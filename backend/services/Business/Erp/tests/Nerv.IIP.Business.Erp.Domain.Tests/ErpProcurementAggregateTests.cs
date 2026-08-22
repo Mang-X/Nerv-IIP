@@ -267,11 +267,16 @@ public sealed class ErpProcurementAggregateTests
             [NewPurchaseOrderLine(quantity: 10m)]);
         order.MarkApprovalRequested("approval-chain-001");
         order.ReleaseAfterApproval("approval-chain-001");
+        var orderLine = Assert.Single(order.Lines);
 
-        Assert.Throws<ArgumentException>(() => PurchaseReceipt.Record(
+        var exception = Assert.Throws<ArgumentException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
             [new PurchaseReceiptLineDraft("LINE-001", 1m, "passed")]));
+
+        Assert.Equal(PurchaseOrderStatus.Released, order.Status);
+        Assert.Equal(0m, orderLine.ReceivedQuantity);
+        Assert.Equal(nameof(PurchaseReceiptLineDraft.QualityStatus), exception.ParamName);
     }
 
     [Fact]
