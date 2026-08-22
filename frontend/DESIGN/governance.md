@@ -53,6 +53,21 @@ token 之上。
 - CSS 类名前缀与 token 命名空间对齐：PC `nv-*`、screen `nv-scr-*`、mobile `nv-m-*`、
   touch `nv-t-*`；Nv 件 `data-slot` 值以 `nv-` 开头。
 
+## 包子入口边界
+
+应用只通过裸 `@nerv-iip/ui` / `@nerv-iip/ui-mobile` 主桶消费组件库；深导入由每个 app 的
+`src/nvui-imports.contract.test.ts` 硬禁。当前只有两个例外，除此之外不得新增子入口：
+
+| 子入口                      | 性质                      | 放行面                               |
+| --------------------------- | ------------------------- | ------------------------------------ |
+| `@nerv-iip/ui/file-preview` | 运行时子入口              | 全 app 源码                          |
+| `@nerv-iip/ui/test-support` | test-only 子入口（#2014） | 只在各 app 的 `src/test/setup.ts` 里 |
+
+`test-support` 装的是各包 vitest `setupFiles` 用的支撑件（unovis tooltip 定时器收口等），
+不进主桶 `src/index.ts`，因此不属于组件边界、也不受 ADR 0020 的 NvUI 命名约束；页面、
+组件、composable 乃至普通测试文件引用它一律判红。新增任何子入口都要先改这张表，
+再改四份 contract test 的放行集。
+
 ## 样式层（CSS 层叠层，ADR 0020）
 
 全部组件样式进入 CSS 层叠层，全局唯一层序（每个 app `main.css` 首条语句声明）：

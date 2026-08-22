@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import NvMetricCard from './NvMetricCard.vue'
 import NvMetricRing from './NvMetricRing.vue'
 import NvMetricStrip from './NvMetricStrip.vue'
@@ -9,16 +9,7 @@ import NvMetricStrip from './NvMetricStrip.vue'
 // structured footers replacing free text, and the action/facet emits that make
 // a KPI card an entry point rather than a dead end.
 
-beforeAll(() => {
-  // NvAreaChart (unovis) observes size; not exercised here but keep it safe.
-  if (!globalThis.ResizeObserver) {
-    globalThis.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver
-  }
-})
+// NvAreaChart（unovis）要用的 ResizeObserver 桩现在由 `src/test/setup.ts` 统一提供（#2014）。
 
 describe('NvMetricCard 变体契约', () => {
   it('delta 方向派生语义 tone，可被 override 表达「涨了但是坏事」', () => {

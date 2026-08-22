@@ -9,5 +9,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // 见 src/test/setup.ts：unovis tooltip 定时器收口 + ResizeObserver 桩（#2014）。
+    setupFiles: ['./src/test/setup.ts'],
   },
 })

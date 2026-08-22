@@ -17,6 +17,8 @@ Set-StrictMode -Version Latest
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
 $script:NervFullStackManifestFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\.json$'
 $script:NervFullStackSidecarFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\..+\.json$'
+# Linux 进程启动时间按时钟 tick 暴露；跨进程重复读取允许一个 10ms jiffy 内的换算漂移。
+$script:NervProcessStartTimeToleranceMilliseconds = 10
 $script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
@@ -613,10 +615,30 @@ function Test-NervProcessIdentity {
             [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
         }
         $actual = (Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime()
-        return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1
+        return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt $script:NervProcessStartTimeToleranceMilliseconds
     }
     catch {
         return $false
+    }
+}
+
+function New-NervProcessIdentityObservation {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('Active', 'Absent', 'Mismatched', 'Unknown')] [string] $Status,
+        [Parameter(Mandatory)] [int] $ProcessId,
+        [AllowNull()] [object] $ExpectedStartTimeUtc,
+        [AllowNull()] [object] $ActualStartTimeUtc = $null,
+        [AllowNull()] [string] $FailureReason = $null,
+        [string] $ObservedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    )
+
+    return [pscustomobject][ordered]@{
+        status = $Status
+        processId = $ProcessId
+        expectedStartTimeUtc = $ExpectedStartTimeUtc
+        actualStartTimeUtc = $ActualStartTimeUtc
+        failureReason = $FailureReason
+        observedAtUtc = $ObservedAtUtc
     }
 }
 
@@ -624,23 +646,21 @@ function Get-NervProcessIdentityStatus {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
         [Parameter(Mandatory)] [object] $ProcessStartTimeUtc,
-        [scriptblock] $ProcessLookupAction
+        [scriptblock] $ProcessLookupAction,
+        [switch] $Detailed
     )
 
     if ($null -eq $ProcessLookupAction) {
         $ProcessLookupAction = { param($ExactProcessId) Get-Process -Id $ExactProcessId -ErrorAction Stop }
     }
 
-    try {
-        $process = & $ProcessLookupAction $ProcessId
-    }
-    catch [Microsoft.PowerShell.Commands.ProcessCommandException] {
-        return 'Absent'
-    }
-    catch {
-        return 'Unknown'
-    }
+    $observation = New-NervProcessIdentityObservation `
+        -Status Unknown `
+        -ProcessId $ProcessId `
+        -ExpectedStartTimeUtc $ProcessStartTimeUtc
 
+    $expected = $null
+    $expectedFailureReason = $null
     try {
         $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
             ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
@@ -651,15 +671,49 @@ function Get-NervProcessIdentityStatus {
         else {
             [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
         }
-        $actual = $process.StartTime.ToUniversalTime()
-        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {
-            return 'Active'
-        }
-        return 'Mismatched'
+        $observation.expectedStartTimeUtc = $expected.ToString('O')
     }
     catch {
-        return 'Unknown'
+        $expectedFailureReason = $_.Exception.Message
     }
+
+    try {
+        $process = & $ProcessLookupAction $ProcessId
+    }
+    catch [Microsoft.PowerShell.Commands.ProcessCommandException] {
+        $observation.status = 'Absent'
+        $observation.failureReason = $_.Exception.Message
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
+    }
+    catch {
+        $observation.failureReason = $_.Exception.Message
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
+    }
+
+    if ($null -ne $expectedFailureReason) {
+        $observation.failureReason = $expectedFailureReason
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
+    }
+
+    try {
+        $actual = $process.StartTime.ToUniversalTime()
+        $observation.actualStartTimeUtc = $actual.ToString('O')
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt $script:NervProcessStartTimeToleranceMilliseconds) {
+            $observation.status = 'Active'
+        }
+        else {
+            $observation.status = 'Mismatched'
+        }
+    }
+    catch {
+        $observation.failureReason = $_.Exception.Message
+    }
+
+    if ($Detailed) { return [pscustomobject] $observation }
+    return $observation.status
 }
 
 function Test-NervFullStackSessionStale {
