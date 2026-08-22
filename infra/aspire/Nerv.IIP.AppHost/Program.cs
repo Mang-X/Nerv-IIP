@@ -112,6 +112,17 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
     gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125,http://localhost:5128";
 }
 
+// 仓储世界观演示站点/库位（SITE-001 + WH-WB-*）是本地种子事实，只在 Development 成立。
+// 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
+// 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
+// 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
+// MATERIAL_SUPPLY_LOCATION_UNCONFIGURED / FINISHED_GOODS_LOCATION_UNCONFIGURED。
+// 门控判据与 file-storage 的 Persistence__AutoMigrate 同源：AppHost 自身的 EnvironmentName。
+var localDevelopmentAppHost = string.Equals(
+    builder.Environment.EnvironmentName,
+    LocalDevelopmentEnvironment,
+    StringComparison.OrdinalIgnoreCase);
+
 var postgres = WithFullStackOwnership(builder.AddPostgres("postgres"))
     .WithImageTag("18")
     .WithDataVolume(SessionVolume("nerv-iip-postgres-18"));
@@ -435,18 +446,6 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
-    // 站点/库位必须与库存种子事实一致（SITE-001 + WH-WB-*）：MES 过去按 warehouse/production +
-    // line-side 臆造位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。
-    // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
-    // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
-    .WithEnvironment("Inventory__SiteCode", "SITE-001")
-    .WithEnvironment("Inventory__SourceLocationCodes__0", "WH-WB-RM-01")
-    .WithEnvironment("Inventory__SourceLocationCodes__1", "WH-WB-SF-01")
-    .WithEnvironment("Inventory__SourceLocationCodes__2", "WH-WB-FG-01")
-    .WithEnvironment("Inventory__LineSideLocationCode", "WH-WB-LINE-01")
-    // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
-    // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
-    .WithEnvironment("Inventory__FinishedGoodsLocationCode", "WH-WB-FG-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
@@ -456,6 +455,36 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
+// 站点/库位必须与库存事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
+// NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到种子事实（SITE-001 + WH-WB-*），其他环境
+// 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
+// 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
+// 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
+businessMes = WithDeploymentEnvironment(
+    businessMes,
+    "Inventory__SiteCode",
+    DeploymentWarehouseLocation("Inventory:SiteCode", "SITE-001"));
+var mesSourceLocationCodes = DeploymentWarehouseLocations(
+    "Inventory:SourceLocationCodes",
+    ["WH-WB-RM-01", "WH-WB-SF-01", "WH-WB-FG-01"]);
+for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.Count; sourceLocationIndex++)
+{
+    businessMes = businessMes.WithEnvironment(
+        "Inventory__SourceLocationCodes__" +
+            sourceLocationIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        mesSourceLocationCodes[sourceLocationIndex]);
+}
+
+businessMes = WithDeploymentEnvironment(
+    businessMes,
+    "Inventory__LineSideLocationCode",
+    DeploymentWarehouseLocation("Inventory:LineSideLocationCode", "WH-WB-LINE-01"));
+// 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
+// 不再让 MES 硬编码 finished-goods/receiving 命名空间。
+businessMes = WithDeploymentEnvironment(
+    businessMes,
+    "Inventory__FinishedGoodsLocationCode",
+    DeploymentWarehouseLocation("Inventory:FinishedGoodsLocationCode", "WH-WB-FG-01"));
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -558,15 +587,21 @@ var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
-    // MES 领料事件不带库位时的默认库位：与库存种子事实（SITE-001 + WH-WB-*）同码。
-    // 仓库代码里不再内置演示库位兜底，未配置就进死信（#1754）。
-    .WithEnvironment("MaterialIssue__SourceLocationCode", "WH-WB-RM-01")
-    .WithEnvironment("MaterialIssue__LineSideLocationCode", "WH-WB-LINE-01")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessWmsDatabase, "PostgreSQL")
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
+// MES 领料事件不带库位时的默认库位：Development 与库存种子事实（WH-WB-*）同码，其他环境只下发
+// 部署方显式配置的真实库位（#2008）。仓库代码里不再内置演示库位兜底，两者都缺就进死信（#1754）。
+businessWms = WithDeploymentEnvironment(
+    businessWms,
+    "MaterialIssue__SourceLocationCode",
+    DeploymentWarehouseLocation("MaterialIssue:SourceLocationCode", "WH-WB-RM-01"));
+businessWms = WithDeploymentEnvironment(
+    businessWms,
+    "MaterialIssue__LineSideLocationCode",
+    DeploymentWarehouseLocation("MaterialIssue:LineSideLocationCode", "WH-WB-LINE-01"));
 businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {
@@ -971,6 +1006,57 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<T> WithFullStackOwnership<T>(
     return fullStackEphemeral
         ? resource.WithContainerRuntimeArgs("--label", $"com.nerv-iip.session={fullStackSessionId}")
         : resource;
+}
+
+// 单值仓储位置：显式配置优先；未配置时只有 Development 回落到演示种子值，其他环境返回 null
+// 表示「不下发」，让服务侧 fail-closed 生效（#2008）。
+string? DeploymentWarehouseLocation(string configurationKey, string developmentSeedValue)
+{
+    var configured = builder.Configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return configured.Trim();
+    }
+
+    return localDevelopmentAppHost ? developmentSeedValue : null;
+}
+
+// 多值仓储位置：既接受 `Key:N` 索引形式，也接受逗号/分号分隔的一串；都没有时只有 Development
+// 回落到演示种子候选库位，其他环境返回空集合表示「一个都不下发」（#2008）。
+IReadOnlyList<string> DeploymentWarehouseLocations(string configurationKey, string[] developmentSeedValues)
+{
+    var indexed = builder.Configuration.GetSection(configurationKey)
+        .GetChildren()
+        .Select(child => child.Value)
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .Select(value => value!.Trim())
+        .ToArray();
+    if (indexed.Length > 0)
+    {
+        return indexed;
+    }
+
+    var delimited = builder.Configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(delimited))
+    {
+        var values = delimited.Split(
+            [',', ';'],
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length > 0)
+        {
+            return values;
+        }
+    }
+
+    return localDevelopmentAppHost ? developmentSeedValues : [];
+}
+
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithDeploymentEnvironment(
+    Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project,
+    string name,
+    string? value)
+{
+    return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);
 }
 
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithRedisMessagingTransport(

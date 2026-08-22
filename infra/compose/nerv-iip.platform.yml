@@ -232,6 +232,11 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_mes;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      # 本 legacy overlay 不下发 Inventory__SiteCode / Inventory__SourceLocationCodes__N /
+      # Inventory__LineSideLocationCode / Inventory__FinishedGoodsLocationCode，因此不支持线边收料
+      # 与完工入库过账：resolver 会抛 MATERIAL_SUPPLY_LOCATION_UNCONFIGURED /
+      # FINISHED_GOODS_LOCATION_UNCONFIGURED。完整拓扑走 .\nerv.ps1 publish-compose 生成的 Aspire
+      # 产物，见 docs/architecture/deployment-baseline.md「当前阶段」第 12、13 条（#2008）。
     ports:
       - "${NERV_IIP_MES_PORT:-5111}:8080"
 
@@ -291,6 +296,9 @@ services:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_wms;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
       Inventory__BaseUrl: http://business-inventory:8080
+      # 本 legacy overlay 不下发 MaterialIssue__* 仓储库位，因此不支持 MES→WMS 领料链路：
+      # 领料消息会全量进死信 unresolved-location。完整拓扑走 .\nerv.ps1 publish-compose 生成的
+      # Aspire 产物，见 docs/architecture/deployment-baseline.md「当前阶段」第 12、13 条（#2008）。
     ports:
       - "${NERV_IIP_WMS_PORT:-5115}:8080"
 
