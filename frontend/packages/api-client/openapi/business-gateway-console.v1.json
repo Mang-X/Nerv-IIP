@@ -42209,7 +42209,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "forecastReference",
           "skuCode",
           "uomCode",
           "siteCode"
@@ -42231,7 +42230,7 @@
             "type": "string",
             "maxLength": 150,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "skuCode": {
             "type": "string",
@@ -42274,6 +42273,12 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0.0
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },

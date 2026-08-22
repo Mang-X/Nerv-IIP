@@ -46,14 +46,13 @@ vi.mock('@/composables/useBusinessForecasts', () => ({
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
-    skus: shallowRef([{ code: 'FG-1000', displayName: '减振器总成' }]),
+    skus: shallowRef([{ resourceType: 'sku', code: 'FG-1000', displayName: '减振器总成' }]),
   }),
-  useBusinessMasterDataResources: (type: string) => ({
-    resources: shallowRef(
-      type === 'site'
-        ? [{ code: 'SITE-01', displayName: '上海工厂' }]
-        : [{ code: 'pcs', displayName: '件' }],
-    ),
+  useBusinessMasterDataResources: () => ({
+    resources: shallowRef([
+      { resourceType: 'site', code: 'SITE-01', displayName: '上海工厂' },
+      { resourceType: 'unit-of-measure', code: 'pcs', displayName: '件' },
+    ]),
   }),
 }))
 
@@ -78,6 +77,20 @@ vi.mock('@nerv-iip/ui', () => {
     emits: ['update:modelValue'],
     template:
       '<input :value="modelValue" :disabled="disabled" :type="type || \'text\'" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  })
+  const SearchSelect = defineComponent({
+    name: 'NvSearchSelect',
+    props: ['modelValue', 'options', 'ariaLabel', 'searchPlaceholder'],
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" :aria-label="ariaLabel" aria-haspopup="listbox" :data-search-placeholder="searchPlaceholder" @click="$emit(\'update:modelValue\', options.find((option) => option.value !== \'all\')?.value || \'\')">{{ options.map((option) => option.label).join("|") }}</button>',
+  })
+  const DatePicker = defineComponent({
+    name: 'NvDatePicker',
+    props: ['modelValue', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<button type="button" :id="id" @click="$emit(\'update:modelValue\', id.includes(\'start\') ? \'2026-09-01\' : \'2026-09-30\')">{{ modelValue }}</button>',
   })
   const DataTable = defineComponent({
     props: ['columns', 'rows'],
@@ -111,6 +124,8 @@ vi.mock('@nerv-iip/ui', () => {
     NvFieldGroup: Shell,
     NvFieldLabel: Shell,
     NvInput: Input,
+    NvDatePicker: DatePicker,
+    NvSearchSelect: SearchSelect,
     NvSelect: Shell,
     NvSelectContent: Shell,
     NvSelectItem: Shell,
@@ -128,6 +143,7 @@ describe('PlanningForecastManagement', () => {
     spies.refreshForecasts.mockClear()
     spies.success.mockClear()
     spies.failure.mockClear()
+    vi.stubGlobal('crypto', { randomUUID: () => 'forecast-create-uuid' })
   })
 
   it('只读账号能查看预测，但看不到新建和编辑入口', () => {
@@ -147,7 +163,8 @@ describe('PlanningForecastManagement', () => {
     const wrapper = mount(PlanningForecastManagement)
 
     await wrapper.get('[aria-label="编辑预测 FC-2026-09-FG-1000"]').trigger('click')
-    expect(wrapper.get('#forecast-reference').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('#forecast-reference').exists()).toBe(false)
+    expect(wrapper.text()).toContain('FC-2026-09-FG-1000')
     await wrapper.get('form').trigger('submit')
 
     expect(spies.saveForecast).toHaveBeenCalledWith({
@@ -179,8 +196,63 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.get('[role="alert"]').text()).toContain('请填写预测编号')
+    expect(wrapper.get('[role="alert"]').text()).not.toContain('请填写预测编号')
     expect(wrapper.get('[role="alert"]').text()).toContain('预测数量必须大于 0')
     expect(spies.saveForecast).not.toHaveBeenCalled()
+  })
+
+  it('新建使用可搜索选择器与日期组件，并隔离工厂和单位选项', async () => {
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.planning.demands.manage'] },
+    } as never)
+    const wrapper = mount(PlanningForecastManagement)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建预测'))!
+      .trigger('click')
+
+    expect(wrapper.find('#forecast-reference').exists()).toBe(false)
+    expect(wrapper.text()).toContain('保存后自动生成')
+    const sku = wrapper.get('[aria-label="预测 SKU"]')
+    expect(sku.attributes('data-search-placeholder')).toBe('搜索 SKU 编码或名称')
+    expect(sku.text()).toBe('减振器总成 · FG-1000')
+    expect(wrapper.get('[aria-label="预测工厂"]').text()).toBe('上海工厂 · SITE-01')
+    expect(wrapper.get('[aria-label="预测单位"]').text()).toBe('件 · pcs')
+    expect(wrapper.findAllComponents({ name: 'NvDatePicker' })).toHaveLength(2)
+  })
+
+  it('新建提交不要求预测编号，并复用当前对话框的幂等键', async () => {
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.planning.demands.manage'] },
+    } as never)
+    const wrapper = mount(PlanningForecastManagement)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建预测'))!
+      .trigger('click')
+    await wrapper.get('[aria-label="预测 SKU"]').trigger('click')
+    await wrapper.get('[aria-label="预测工厂"]').trigger('click')
+    await wrapper.get('[aria-label="预测单位"]').trigger('click')
+    await wrapper.get('#forecast-start').trigger('click')
+    await wrapper.get('#forecast-end').trigger('click')
+    await wrapper.get('#forecast-quantity').setValue('120')
+    await wrapper.get('form').trigger('submit')
+
+    expect(spies.saveForecast).toHaveBeenCalledWith({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      forecastReference: undefined,
+      skuCode: 'FG-1000',
+      uomCode: 'pcs',
+      siteCode: 'SITE-01',
+      periodStartDate: '2026-09-01',
+      periodEndDate: '2026-09-30',
+      quantity: 120,
+      backwardConsumptionDays: 0,
+      forwardConsumptionDays: 0,
+      idempotencyKey: 'forecast-create-forecast-create-uuid',
+    })
   })
 })

@@ -200,13 +200,14 @@ public sealed class PlanningInputAdapterTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateOrUpdateForecastInputCommandHandler(dbContext);
 
-        var id = await handler.Handle(NewForecastCommand(), CancellationToken.None);
+        var result = await handler.Handle(NewForecastCommand(), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var forecasts = await new ListForecastInputsQueryHandler(dbContext)
             .Handle(new ListForecastInputsQuery("org-001", "env-dev", "SKU-FG-1000", "SITE-01", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)), CancellationToken.None);
 
-        Assert.NotEqual(default, id);
+        Assert.NotEqual(default, result.ForecastInputId);
+        Assert.Equal("FC-2026-06-SKU-FG-1000", result.ForecastReference);
         var forecast = Assert.Single(forecasts);
         Assert.Equal("FC-2026-06-SKU-FG-1000", forecast.ForecastReference);
         Assert.Equal(new DateOnly(2026, 6, 1), forecast.PeriodStartDate);
@@ -214,6 +215,41 @@ public sealed class PlanningInputAdapterTests
         Assert.Equal(10m, forecast.Quantity);
         Assert.Equal(7, forecast.BackwardConsumptionDays);
         Assert.Equal(3, forecast.ForwardConsumptionDays);
+    }
+
+    [Fact]
+    public async Task Forecast_input_command_generates_reference_when_create_omits_it()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateOrUpdateForecastInputCommandHandler(dbContext, new DemandPlanningCodingService());
+
+        await handler.Handle(NewForecastCommand() with { ForecastReference = null! }, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Matches("^FC-[0-9]{8}-[0-9]{6}$", Assert.Single(dbContext.ForecastInputs).ForecastReference);
+    }
+
+    [Fact]
+    public async Task Forecast_input_command_replays_generated_reference_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateOrUpdateForecastInputCommandHandler(dbContext, new DemandPlanningCodingService());
+        var command = NewForecastCommand() with
+        {
+            ForecastReference = null,
+            IdempotencyKey = "forecast-create-001",
+        };
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(first, replay);
+        Assert.Single(dbContext.ForecastInputs);
     }
 
     [Fact]

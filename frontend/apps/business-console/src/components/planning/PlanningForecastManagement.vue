@@ -14,6 +14,7 @@ import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/uti
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -25,11 +26,7 @@ import {
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
+  NvSearchSelect,
   NvToolbar,
   Spinner,
 } from '@nerv-iip/ui'
@@ -61,7 +58,7 @@ const skuOptions = computed(() =>
 )
 const siteOptions = computed(() =>
   sites.value
-    .filter((item) => item.code)
+    .filter((item) => item.resourceType === 'site' && item.code)
     .map((item) => ({
       value: item.code as string,
       label: `${item.displayName ?? item.code} · ${item.code}`,
@@ -69,7 +66,7 @@ const siteOptions = computed(() =>
 )
 const uomOptions = computed(() =>
   units.value
-    .filter((item) => item.code)
+    .filter((item) => item.resourceType === 'unit-of-measure' && item.code)
     .map((item) => ({
       value: item.code as string,
       label: `${item.displayName ?? item.code} · ${item.code}`,
@@ -109,7 +106,7 @@ function defaultForm(): ForecastForm {
   return {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    forecastReference: '',
+    forecastReference: undefined,
     skuCode: '',
     uomCode: '',
     siteCode: '',
@@ -118,7 +115,17 @@ function defaultForm(): ForecastForm {
     quantity: 0,
     backwardConsumptionDays: 0,
     forwardConsumptionDays: 0,
+    idempotencyKey: newForecastIdempotencyKey(),
   }
+}
+
+function newForecastIdempotencyKey() {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  const suffix =
+    cryptoApi && typeof cryptoApi.randomUUID === 'function'
+      ? cryptoApi.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `forecast-create-${suffix}`
 }
 
 const dialogOpen = shallowRef(false)
@@ -128,7 +135,6 @@ const form = reactive<ForecastForm>(defaultForm())
 
 const validationErrors = computed(() => {
   const errors: string[] = []
-  if (!form.forecastReference.trim()) errors.push('请填写预测编号。')
   if (!form.skuCode.trim()) errors.push('请选择 SKU。')
   if (!form.siteCode.trim()) errors.push('请选择工厂。')
   if (!form.uomCode.trim()) errors.push('请选择单位。')
@@ -172,6 +178,7 @@ function openEdit(row: BusinessConsoleForecastInputItem) {
     quantity: row.quantity ?? 0,
     backwardConsumptionDays: row.backwardConsumptionDays ?? 0,
     forwardConsumptionDays: row.forwardConsumptionDays ?? 0,
+    idempotencyKey: null,
   })
   dialogOpen.value = true
 }
@@ -180,12 +187,14 @@ async function submitForecast() {
   submitted.value = true
   if (validationErrors.value.length > 0) return
   try {
+    const { idempotencyKey, ...values } = form
     await saveForecast({
-      ...form,
-      forecastReference: form.forecastReference.trim(),
+      ...values,
+      forecastReference: form.forecastReference?.trim() || undefined,
       skuCode: form.skuCode.trim(),
       uomCode: form.uomCode.trim(),
       siteCode: form.siteCode.trim(),
+      ...(!editMode.value && idempotencyKey ? { idempotencyKey } : {}),
     })
     dialogOpen.value = false
     notifySuccess(editMode.value ? '预测已更新。' : '预测已创建。')
@@ -211,28 +220,22 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
       search-label="预测关键字"
     >
       <template #filters>
-        <NvSelect v-model="filters.skuCode">
-          <NvSelectTrigger class="h-9 w-48" aria-label="预测 SKU 筛选">
-            <NvSelectValue placeholder="全部 SKU" />
-          </NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem value="all">全部 SKU</NvSelectItem>
-            <NvSelectItem v-for="option in skuOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </NvSelectItem>
-          </NvSelectContent>
-        </NvSelect>
-        <NvSelect v-model="filters.siteCode">
-          <NvSelectTrigger class="h-9 w-48" aria-label="预测工厂筛选">
-            <NvSelectValue placeholder="全部工厂" />
-          </NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem value="all">全部工厂</NvSelectItem>
-            <NvSelectItem v-for="option in siteOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </NvSelectItem>
-          </NvSelectContent>
-        </NvSelect>
+        <NvSearchSelect
+          v-model="filters.skuCode"
+          :options="[{ value: 'all', label: '全部 SKU' }, ...skuOptions]"
+          placeholder="全部 SKU"
+          search-placeholder="搜索 SKU 编码或名称"
+          aria-label="预测 SKU 筛选"
+          class="sm:w-48"
+        />
+        <NvSearchSelect
+          v-model="filters.siteCode"
+          :options="[{ value: 'all', label: '全部工厂' }, ...siteOptions]"
+          placeholder="全部工厂"
+          search-placeholder="搜索工厂编码或名称"
+          aria-label="预测工厂筛选"
+          class="sm:w-48"
+        />
       </template>
       <template #actions>
         <NvButton
@@ -314,74 +317,60 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
         </NvDialogHeader>
         <form class="grid gap-4" novalidate @submit.prevent="submitForecast">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="forecast-reference">预测编号</NvFieldLabel>
-              <NvInput
-                id="forecast-reference"
-                v-model="form.forecastReference"
-                :disabled="editMode"
-                maxlength="128"
-                placeholder="FC-2026-09-SKU-FG-1000"
-              />
+            <NvField class="sm:col-span-2">
+              <NvFieldLabel>预测编号</NvFieldLabel>
+              <p class="text-sm text-muted-foreground">
+                {{ editMode ? form.forecastReference : '保存后自动生成' }}
+              </p>
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-sku">SKU</NvFieldLabel>
-              <NvSelect v-model="form.skuCode">
-                <NvSelectTrigger id="forecast-sku"
-                  ><NvSelectValue placeholder="选择 SKU"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in skuOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="forecast-sku"
+                v-model="form.skuCode"
+                :options="skuOptions"
+                placeholder="选择 SKU"
+                search-placeholder="搜索 SKU 编码或名称"
+                aria-label="预测 SKU"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-site">工厂</NvFieldLabel>
-              <NvSelect v-model="form.siteCode">
-                <NvSelectTrigger id="forecast-site"
-                  ><NvSelectValue placeholder="选择工厂"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in siteOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="forecast-site"
+                v-model="form.siteCode"
+                :options="siteOptions"
+                placeholder="选择工厂"
+                search-placeholder="搜索工厂编码或名称"
+                aria-label="预测工厂"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-uom">单位</NvFieldLabel>
-              <NvSelect v-model="form.uomCode">
-                <NvSelectTrigger id="forecast-uom"
-                  ><NvSelectValue placeholder="选择单位"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="option in uomOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <NvSearchSelect
+                id="forecast-uom"
+                v-model="form.uomCode"
+                :options="uomOptions"
+                placeholder="选择单位"
+                search-placeholder="搜索单位编码或名称"
+                aria-label="预测单位"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-start">开始日期</NvFieldLabel>
-              <NvInput id="forecast-start" v-model="form.periodStartDate" type="date" />
+              <NvDatePicker
+                id="forecast-start"
+                v-model="form.periodStartDate"
+                class="w-full sm:w-full"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-end">结束日期</NvFieldLabel>
-              <NvInput id="forecast-end" v-model="form.periodEndDate" type="date" />
+              <NvDatePicker
+                id="forecast-end"
+                v-model="form.periodEndDate"
+                class="w-full sm:w-full"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="forecast-quantity">预测数量</NvFieldLabel>

@@ -538,7 +538,7 @@ public sealed class BusinessConsoleCreateOrUpdateForecastInputRequestValidator
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ForecastReference).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ForecastReference).MaximumLength(150);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
@@ -546,6 +546,7 @@ public sealed class BusinessConsoleCreateOrUpdateForecastInputRequestValidator
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.BackwardConsumptionDays).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ForwardConsumptionDays).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
