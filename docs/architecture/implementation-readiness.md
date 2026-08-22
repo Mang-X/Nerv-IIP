@@ -17,8 +17,9 @@ coordinator 身份的误判触发了提前 cleanup。当前不收窄 AppHost 资
 
 #2018 子项①已让 guardian 使用 `Active / Absent / Mismatched / Unknown` 四态身份观察并在首次
 stop 前持久保存脱敏证据；子项②进一步把 coordinator-loss cleanup 限定为已确认的 `Absent` 或
-`Mismatched`。自动模式首次得到 `Unknown` 时会以 1 秒间隔执行最多 3 次有界观察；恢复为
-`Active` 时继续正常周期，达到上限仍为 `Unknown` 时仅记录脱敏警告并保留活动会话。明确的 lease
+`Mismatched`。自动模式对可重试的身份读取首次得到 `Unknown` 时会以 1 秒间隔执行最多 3 次有界观察；
+恢复为 `Active` 时继续正常周期，达到上限仍为 `Unknown` 时仅记录脱敏警告并保留活动会话。PID 或
+StartTime 不完整这类不可变输入会直接保留会话并回到正常观察周期，不执行无效的身份短重试。明确的 lease
 过期仍独立触发 cleanup，不由身份重观测阻塞。本文描述的是代码合同；真实 FullChain 结果仍须以
 该 PR exact-head 与合并后 main 的 Actions 证据分别确认。
 
