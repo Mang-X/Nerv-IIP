@@ -1,3 +1,4 @@
+using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -22,18 +23,25 @@ public sealed class IamErpRoleSeedTests
             ["role-erp-procurement"] =
             ("ERP 采购专员",
             [
+                "business.masterdata.products.read",
+                "business.masterdata.resources.read",
                 "business.erp.procurement.read",
                 "business.erp.procurement.manage",
             ]),
             ["role-erp-sales"] =
             ("ERP 销售专员",
             [
+                "business.masterdata.products.read",
+                "business.masterdata.resources.read",
                 "business.erp.sales.read",
                 "business.erp.sales.manage",
             ]),
             ["role-erp-finance"] =
             ("ERP 财务专员",
             [
+                "business.masterdata.resources.read",
+                "business.erp.procurement.read",
+                "business.erp.sales.read",
                 "business.erp.finance.read",
                 "business.erp.finance.manage",
             ]),
@@ -71,6 +79,11 @@ public sealed class IamErpRoleSeedTests
     public void In_memory_profile_exposes_the_same_three_erp_job_roles()
     {
         var store = new InMemoryIamStore();
+        var roleDataScopesField = typeof(InMemoryIamStore)
+            .GetField("_roleDataScopes", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(roleDataScopesField);
+        var roleDataScopes = Assert.IsAssignableFrom<IReadOnlyDictionary<string, IReadOnlySet<DataScopeBinding>>>(
+            roleDataScopesField.GetValue(store));
 
         var roles = store.Roles
             .Where(role => ExpectedRoles.ContainsKey(role.RoleId))
@@ -83,6 +96,9 @@ public sealed class IamErpRoleSeedTests
             Assert.Equal(
                 expected.PermissionCodes.Order(StringComparer.Ordinal),
                 roles[roleId].PermissionCodes.Order(StringComparer.Ordinal));
+            var scope = Assert.Single(roleDataScopes[roleId]);
+            Assert.Equal(DataScopeBinding.Organization, scope.ScopeType);
+            Assert.Equal("org-001", scope.ScopeCode);
         }
     }
 
