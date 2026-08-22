@@ -7,7 +7,9 @@
 > （不是 shadcn 原版透传），也是当前从 `@nerv-iip/ui` 导出的规范
 > 应用侧名称；[NvUI 命名映射表](../nvui-naming-map.md) 附录 A（原 ADR 0020 附录 A）
 > 未为其分配 `Nv*` 重命名。文件预览辅助项位于
-> `@nerv-iip/ui/file-preview` 子入口（唯一允许的子入口）。
+> `@nerv-iip/ui/file-preview` 子入口（唯一允许的**运行时**子入口；
+> `@nerv-iip/ui/test-support` 是 #2014 引入的 test-only 子入口，只给各包 vitest
+> `setupFiles` 用，不对运行时消费者开放）。
 
 ## 导出
 
