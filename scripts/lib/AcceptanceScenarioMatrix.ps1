@@ -942,7 +942,7 @@ function New-NervAcceptancePlanningArtifact {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [object] $Selection,
-        [Parameter(Mandatory)] [object[]] $Projects,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Projects,
         [Parameter(Mandatory)] [Collections.Generic.Dictionary[string, string[]]] $DiscoveredByProject,
         [Parameter(Mandatory)] [string] $Repository,
         [Parameter(Mandatory)] [string] $TestedSha,
