@@ -13,6 +13,7 @@
       "@nerv-iip/business-core": ["packages/business-core/src/index.ts"],
       "@nerv-iip/scheduling": ["packages/scheduling/src/index.ts"],
       "@nerv-iip/ui": ["packages/ui/src/index.ts"],
+      "@nerv-iip/ui/test-support": ["packages/ui/src/test-support/index.ts"],
       "@nerv-iip/ui-mobile": ["packages/ui-mobile/src/index.ts"],
       "@dhx/trial-gantt": ["packages/scheduling/src/engine/dhtmlx/stub.ts"]
     },

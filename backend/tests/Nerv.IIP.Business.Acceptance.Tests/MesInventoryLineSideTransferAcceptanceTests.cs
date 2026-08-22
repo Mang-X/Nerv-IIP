@@ -553,7 +553,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal(0m, persistedIssue.ReceivedQuantity);
         Assert.Null(persistedIssue.ReceivedAtUtc);
         Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
-        Assert.Contains("negative", persistedIssue.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("库存数量不足", persistedIssue.InventoryPostingFailureMessage, StringComparison.Ordinal);
         Assert.NotNull(persistedIssue.InventoryPostingFailedAtUtc);
         // 失败的尝试没有留下在途数量，也没有把幂等键占死。
         Assert.Equal(0m, persistedIssue.PendingReceiptQuantity);
@@ -771,14 +771,14 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
         var persistedConsumption = await mesDb.ProductionReportMaterialConsumptions.SingleAsync();
         Assert.Equal("NEGATIVE_ON_HAND", persistedConsumption.InventoryPostingFailureCode);
-        Assert.Contains("negative", persistedConsumption.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("库存数量不足", persistedConsumption.InventoryPostingFailureMessage, StringComparison.Ordinal);
         Assert.NotNull(persistedConsumption.InventoryPostingFailedAtUtc);
         var reports = await new ListProductionReportsQueryHandler(mesDb).Handle(
             new ListProductionReportsQuery("org-001", "env-dev", "WO-446"),
             CancellationToken.None);
         var visibleReport = Assert.Single(reports.Items);
         Assert.Equal("NEGATIVE_ON_HAND", visibleReport.InventoryPostingFailureCode);
-        Assert.Contains("negative", visibleReport.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("库存数量不足", visibleReport.InventoryPostingFailureMessage, StringComparison.Ordinal);
         var persistedIssue = await mesDb.MaterialIssueRequests.SingleAsync();
         Assert.Null(persistedIssue.InventoryPostingFailureCode);
         Assert.Equal(MaterialIssueRequest.ReceivedStatus, persistedIssue.Status);

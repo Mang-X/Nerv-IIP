@@ -167,7 +167,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             .ToListAsync(cancellationToken);
         if (projectedItems.Count > MaxResultLines)
         {
-            throw new KnownException($"Inventory availability query returned more than {MaxResultLines} dimension lines. Add location, lot, serial, quality, or owner filters to narrow the request.");
+            throw new KnownException($"库存可用量结果超过 {MaxResultLines} 行，请增加筛选条件后重试。");
         }
 
         var ambiguousCountScopes = projectedItems

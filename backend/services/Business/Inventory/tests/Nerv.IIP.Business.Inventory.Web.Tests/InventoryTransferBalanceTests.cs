@@ -26,7 +26,7 @@ public sealed class InventoryTransferBalanceTests
             CancellationToken.None));
 
         Assert.Equal(InventoryPostingFailureCodes.TransferLegsUnbalanced, exception.FailureCode);
-        Assert.Contains("必须一次提交两腿", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("必须同时提交", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var ledger = Assert.Single(dbContext.StockLedgers);
         Assert.Equal(SourceLocation, ledger.LocationCode);
@@ -112,7 +112,7 @@ public sealed class InventoryTransferBalanceTests
             CancellationToken.None));
 
         Assert.Equal(InventoryPostingFailureCodes.TransferLegsUnbalanced, exception.FailureCode);
-        Assert.Contains("调拨幂等键最长", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("调拨幂等键过长", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "transfer"));
     }
@@ -205,7 +205,7 @@ public sealed class InventoryTransferBalanceTests
             CancellationToken.None));
 
         Assert.Equal(InventoryPostingFailureCodes.TransferLegsUnbalanced, exception.FailureCode);
-        Assert.Contains("只有调拨", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("非调拨移动", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

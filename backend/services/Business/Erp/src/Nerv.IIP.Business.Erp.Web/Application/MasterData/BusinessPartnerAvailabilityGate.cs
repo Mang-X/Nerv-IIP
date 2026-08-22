@@ -22,7 +22,7 @@ public static class BusinessPartnerAvailabilityGate
 
         if (isDisabled)
         {
-            throw new KnownException($"Business partner '{partnerCode}' is disabled and cannot be used for a new order.");
+            throw new KnownException($"业务伙伴『{partnerCode}』已停用，不能用于新订单。");
         }
     }
 }

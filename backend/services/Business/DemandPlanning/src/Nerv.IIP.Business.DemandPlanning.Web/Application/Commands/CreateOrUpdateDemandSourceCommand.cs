@@ -26,7 +26,7 @@ public sealed class CreateOrUpdateDemandSourceCommandValidator : AbstractValidat
             .NotEmpty()
             .MaximumLength(32)
             .Must(value => !DemandSource.IsSalesOrderDemandType(value))
-            .WithMessage("Demand type 'sales-order' is integration-owned and cannot be created manually.");
+            .WithMessage("sales-order 类型由集成流程维护，不能手工创建。");
         RuleFor(x => x.SourceReference).MaximumLength(128);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(64);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(32);
@@ -45,7 +45,7 @@ public sealed class CreateOrUpdateDemandSourceCommandHandler(ApplicationDbContex
         var demandType = DemandSource.NormalizeDemandType(request.DemandType);
         if (DemandSource.IsSalesOrderDemandType(demandType))
         {
-            throw new KnownException("Demand type 'sales-order' is integration-owned and cannot be created manually.");
+            throw new KnownException("sales-order 类型由集成流程维护，不能手工创建。");
         }
 
         var allocation = await _codingService.AllocateDemandReferenceAsync(

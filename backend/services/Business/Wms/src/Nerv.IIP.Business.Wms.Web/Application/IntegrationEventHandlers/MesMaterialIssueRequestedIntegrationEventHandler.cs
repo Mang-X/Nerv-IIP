@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Contracts.Mes;
@@ -19,16 +20,14 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
     ApplicationDbContext dbContext,
     ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<WmsMaterialIssueLocationOptions>? locationOptions = null,
     ILogger<MesMaterialIssueRequestedIntegrationEventHandler>? logger = null)
     : IIntegrationEventHandler<MesMaterialIssueRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-wms.mes-material-issue-requested";
 
-    /// <summary>Warehouse source bin used when MES does not name one (the raw-material store).</summary>
-    public const string DefaultSourceLocationCode = "WH-WB-RM-01";
-
-    /// <summary>Line-side destination used when MES does not name one.</summary>
-    public const string DefaultLineSideLocationCode = "WH-WB-LINE-01";
+    private readonly WmsMaterialIssueLocationOptions locations =
+        locationOptions?.Value ?? new WmsMaterialIssueLocationOptions();
 
     private readonly IntegrationEventConsumerGuard<MesMaterialIssueRequestedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -81,12 +80,47 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
             cancellationToken);
         if (siteCode is null)
         {
+            // 与下面的 unresolved-location 同构：MES 从不填 SiteCode，这条判定 100% 落在 DB 推断上，
+            // 事件里没有任何证据；成因在部署/主数据面（仓库作业池的站点不唯一或为空）。
+            logger?.LogWarning(
+                "Material issue request {EventId} ({RequestNo}) has no single fulfillment site for " +
+                "organization {OrganizationId} / environment {EnvironmentId}: the event named no site and WMS " +
+                "found zero or multiple sites in its own warehouse work pools and outbound orders.",
+                integrationEvent.EventId,
+                payload.RequestNo,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
                     ConsumerName,
                     integrationEvent,
                     "unresolved-site",
                     "WMS could not resolve a single fulfillment site for this organization/environment."),
+                cancellationToken);
+            return;
+        }
+
+        var sourceLocationCode = ResolveLocationCode(payload.SourceLocationCode, locations.SourceLocationCode);
+        var lineSideLocationCode = ResolveLocationCode(payload.LineSideLocationCode, locations.LineSideLocationCode);
+        if (sourceLocationCode is null || lineSideLocationCode is null)
+        {
+            // 这条死信的成因是部署配置缺失，不是数据问题：不打日志的话，运维只能翻死信表才知道
+            // 「领料消息全部静默消失」。另外两条死信按事件内容判定，保持原状。
+            logger?.LogWarning(
+                "Material issue request {EventId} ({RequestNo}) has no usable warehouse location: " +
+                "the event named source={PayloadSourceLocationCode} / line-side={PayloadLineSideLocationCode} and " +
+                "MaterialIssue:SourceLocationCode / MaterialIssue:LineSideLocationCode are not configured.",
+                integrationEvent.EventId,
+                payload.RequestNo,
+                payload.SourceLocationCode,
+                payload.LineSideLocationCode);
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "unresolved-location",
+                    "WMS has no source or line-side location for this material issue: MES did not name one and " +
+                    "MaterialIssue:SourceLocationCode / MaterialIssue:LineSideLocationCode are not configured."),
                 cancellationToken);
             return;
         }
@@ -102,10 +136,25 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
                 payload.UomCode,
                 payload.RequestedQuantity,
                 siteCode,
-                string.IsNullOrWhiteSpace(payload.SourceLocationCode) ? DefaultSourceLocationCode : payload.SourceLocationCode.Trim(),
-                string.IsNullOrWhiteSpace(payload.LineSideLocationCode) ? DefaultLineSideLocationCode : payload.LineSideLocationCode.Trim(),
+                sourceLocationCode,
+                lineSideLocationCode,
                 payload.RequestedAtUtc),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// 库位只有两个来源：事件里 MES 明说的，或部署侧配置的默认库位。**没有领域内置默认值**——
+    /// 过去这里兜底到世界观演示库位（`WH-WB-RM-01` / `WH-WB-LINE-01`），生产环境会把拣货工作
+    /// 派到一个根本不存在的库位上（#1754）。两者都缺就进死信，让配置缺失显式暴露。
+    /// </summary>
+    private static string? ResolveLocationCode(string? payloadLocationCode, string configuredLocationCode)
+    {
+        if (!string.IsNullOrWhiteSpace(payloadLocationCode))
+        {
+            return payloadLocationCode.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(configuredLocationCode) ? null : configuredLocationCode.Trim();
     }
 
     private async Task<string?> ResolveSiteCodeAsync(
@@ -141,4 +190,17 @@ public sealed class MesMaterialIssueRequestedIntegrationEventHandler(
 
         return siteCodes.Length == 1 ? siteCodes[0] : null;
     }
+}
+
+/// <summary>
+/// MES 领料在仓库侧落地的库位配置（配置节 <c>MaterialIssue</c>）。MES 不建模仓库库位，事件里
+/// 常常不带库位；此时仓库用部署侧配置的默认库位，而不是猜一个演示库位（#1754）。
+/// </summary>
+public sealed class WmsMaterialIssueLocationOptions
+{
+    /// <summary>未指定来源库位时使用的默认发料库位；留空即视为未配置（消息进死信）。</summary>
+    public string SourceLocationCode { get; init; } = string.Empty;
+
+    /// <summary>未指定线边库位时使用的默认线边库位；留空即视为未配置（消息进死信）。</summary>
+    public string LineSideLocationCode { get; init; } = string.Empty;
 }
