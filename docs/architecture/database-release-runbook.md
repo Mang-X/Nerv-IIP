@@ -6,7 +6,7 @@
 
 | Profile（配置档） | 当前状态 | 是否支持发布 | 证据 |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops/IAM/FileStorage 已有 migrations 和 schema 治理元数据/profile 门禁；FileStorage 另有显式受治理 migrator 与重启持久化冒烟测试。 | 尚不支持完整客户发布。FileStorage migration 步骤已具备，但仍需全服务安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/verify-fifth-slice-persistence-foundation.ps1`、`scripts/verify-iam-persistent-auth-foundation.ps1`、`scripts/install/migrate-file-storage.ps1` |
+| PostgreSQL | AppHub/Ops/IAM/Notification/FileStorage 已有 migrations 和 schema 治理元数据/profile 门禁；AppHub/IAM/Ops/Notification 共享受治理平台 migrator，FileStorage 保留独立受治理 migrator 与重启持久化冒烟测试。 | 尚不支持完整客户发布。平台与 FileStorage migration 步骤已具备，但仍需业务数据库安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
 | GaussDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | 其他数据库 | 仅处于评估阶段。 | 否。 | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
@@ -96,9 +96,23 @@ SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
 
 确认目标服务 schema 已包含旧库已应用的 `InitialCreate` migration 后，才可以执行下面的 AppHub/Ops/IAM 手动迁移命令。不要在同一个发布中删除 `public.__EFMigrationsHistory`；等备份、迁移和服务健康验证都完成后，再单独评估清理。
 
-## 当前 AppHub/Ops/IAM 手动迁移命令与 FileStorage 受治理入口
+## 当前平台与 FileStorage 受治理迁移入口
 
-第五阶段已经为 AppHub/Ops 提供 migration runner 和 migrations，第七阶段已经为 IAM 提供 migration runner 和初始持久化认证 migration，但尚未提供最终发布用 bundle。当前只允许开发者或 CI 在受控环境中使用以下手动命令；客户交付前必须封装为安装脚本或 migration bundle。
+AppHub、IAM、Ops、Notification 通过显式 allowlist manifest 共享一个 release-install 入口。连接串只能放在当前进程环境变量中；脚本先核对目标 database 名称，再串行执行，任一服务失败即停止后续服务，不建库、不 seed、不删除或回滚已经成功应用的 migration：
+
+```powershell
+$env:NERV_IIP_APPHUB_DB = "<apphub-postgres-connection-string>"
+$env:NERV_IIP_IAM_DB = "<iam-postgres-connection-string>"
+$env:NERV_IIP_OPS_DB = "<ops-postgres-connection-string>"
+$env:NERV_IIP_NOTIFICATION_DB = "<notification-postgres-connection-string>"
+pwsh scripts/install/migrate-platform-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-platform-databases.ps1 -ReleaseId "<release-id>"
+Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,Env:\NERV_IIP_NOTIFICATION_DB -ErrorAction SilentlyContinue
+```
+
+`-Service apphub,iam` 可用于经过发布计划明确批准的子集；未传 `-Service` 时必须覆盖 manifest 全部服务。manifest 的 service、连接变量、expected database、Infrastructure project 与 DbContext 都是显式 allowlist，不允许用目录扫描替代。
+
+下面的 `dotnet-ef` 命令只保留为实现原理与开发排障参考，不是客户 release-install 入口。
 
 AppHub:
 
@@ -248,7 +262,7 @@ CAP 表由系统所有，不是业务表：
 
 面向 PoC 或私有化交付前，至少完成：
 
-1. AppHub/Ops/IAM 发布脚本或 migration bundle。
+1. AppHub/IAM/Ops/Notification 受治理平台 migrator；业务数据库仍需受治理 manifest 与发布编排。
 2. FileStorage 受治理 migrator、schema catalog、migration、启动 profile 矩阵和重启持久化冒烟测试；完整安装流程仍需在调用 migrator 前后编排备份、健康检查与诊断归档。
 3. PostgreSQL 备份/恢复演练记录。
 4. seed 清单和初始凭据安全处理方案。
