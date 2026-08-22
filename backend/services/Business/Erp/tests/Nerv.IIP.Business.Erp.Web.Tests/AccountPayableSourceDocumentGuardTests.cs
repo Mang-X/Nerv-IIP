@@ -22,9 +22,8 @@ public sealed class AccountPayableSourceDocumentGuardTests
             new CreateAccountPayableCommand("org-001", "env-dev", null, "PO-DOES-NOT-EXIST", "SUP-001", 1m, "CNY"),
             CancellationToken.None));
 
-        Assert.Contains("在 ERP 中不存在", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在，无法登记应付", exception.Message, StringComparison.Ordinal);
         Assert.Contains("财务 › 会计凭证 › 过账凭证", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("供应商发票", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
         Assert.Empty(dbContext.JournalVouchers);
@@ -42,7 +41,7 @@ public sealed class AccountPayableSourceDocumentGuardTests
             new CreateAccountPayableCommand("org-001", "env-dev", null, "RCV-GUARD-001", "SUP-FAKE", 1m, "CNY"),
             CancellationToken.None));
 
-        Assert.Contains("与登记的供应商", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("单据『RCV-GUARD-001』供应商『SUP-REAL』与『SUP-FAKE』不符", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
     }
@@ -60,8 +59,7 @@ public sealed class AccountPayableSourceDocumentGuardTests
             new CreateAccountPayableCommand("org-001", "env-dev", null, "RCV-GUARD-MISMATCH", "SUP-OTHER", 1m, "CNY"),
             CancellationToken.None));
 
-        Assert.Contains("来源单据『RCV-GUARD-MISMATCH』的供应商是『SUP-SOURCE』", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("与登记的供应商『SUP-OTHER』不一致", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("单据『RCV-GUARD-MISMATCH』供应商『SUP-SOURCE』与『SUP-OTHER』不符", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountPayables);
     }

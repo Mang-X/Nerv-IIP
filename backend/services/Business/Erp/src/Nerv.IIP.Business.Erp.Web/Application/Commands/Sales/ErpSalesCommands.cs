@@ -123,7 +123,7 @@ public sealed class ApproveQuotationCommandHandler(ApplicationDbContext dbContex
             && x.EnvironmentId == request.EnvironmentId
             && x.QuotationNo == request.QuotationNo,
             cancellationToken)
-            ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
+            ?? throw new KnownException($"报价单『{request.QuotationNo}』不存在。");
         quotation.Approve();
     }
 }
@@ -180,7 +180,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.EnvironmentId == request.EnvironmentId
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
-            ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
+            ?? throw new KnownException($"报价单『{request.QuotationNo}』不存在。");
 
         // 已转出报价的重复转换：幂等返回既有订单号（不再走业务伙伴可用性与信用检查——不产生任何新敞口）。
         if (quotation.IsConverted)
@@ -201,7 +201,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
         }
 
         var creditProfile = await creditProfileReader.GetAsync(request.OrganizationId, request.EnvironmentId, quotation.CustomerCode, cancellationToken)
-            ?? throw new KnownException($"Customer '{quotation.CustomerCode}' credit limit master data is required before creating a sales order.");
+            ?? throw new KnownException($"客户『{quotation.CustomerCode}』缺少信用额度主数据。");
         var openReceivables = await dbContext.AccountReceivables
             .Where(x =>
                 x.OrganizationId == request.OrganizationId
@@ -228,7 +228,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("销售订单数据无效，无法创建。", exception);
         }
 
         dbContext.SalesOrders.Add(order);
@@ -243,7 +243,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SalesOrderNo == salesOrderNo,
                 cancellationToken)
-            ?? throw new KnownException($"Sales order '{salesOrderNo}' referenced by quotation '{request.QuotationNo}' was not found.");
+            ?? throw new KnownException($"报价单『{request.QuotationNo}』关联的销售订单『{salesOrderNo}』不存在。");
         return new CreateSalesOrderResult(order.Id, order.SalesOrderNo, ReusedExistingOrder: true);
     }
 
@@ -308,7 +308,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SalesOrderNo == request.SalesOrderNo,
                 cancellationToken)
-            ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+            ?? throw new KnownException($"销售订单『{request.SalesOrderNo}』不存在。");
 
         try
         {
@@ -335,7 +335,7 @@ public sealed class ReleaseSalesOrderCreditHoldCommandHandler(
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("销售订单信用释放失败，请检查订单状态。", exception);
         }
     }
 }
@@ -402,7 +402,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SalesOrderNo == request.SalesOrderNo,
                 cancellationToken)
-            ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+            ?? throw new KnownException($"销售订单『{request.SalesOrderNo}』不存在。");
         var drafts = isWholeOrderRelease
             ? order.Lines
                 .Where(x => x.OpenQuantity > 0m)
@@ -411,7 +411,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
             : [.. requestedLines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo))];
         if (drafts.Length == 0)
         {
-            throw new KnownException($"销售订单 {request.SalesOrderNo} 没有可发货的未发行，无法释放发货。");
+            throw new KnownException($"销售订单『{request.SalesOrderNo}』没有可发货数量。");
         }
 
         DeliveryOrder delivery;
@@ -424,7 +424,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("发货数据无效，无法释放发货单。", exception);
         }
 
         dbContext.DeliveryOrders.Add(delivery);

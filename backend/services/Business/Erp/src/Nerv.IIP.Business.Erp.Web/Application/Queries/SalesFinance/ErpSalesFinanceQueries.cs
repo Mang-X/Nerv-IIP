@@ -845,7 +845,7 @@ public sealed class GetAccountPayableBySourceDocumentQueryHandler(ApplicationDbC
                 x.CurrencyCode,
                 x.CreatedAtUtc))
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Account payable was not found for source document: {request.SourceDocumentNo}");
+            ?? throw new KnownException($"来源单据『{request.SourceDocumentNo}』的应付单不存在。");
     }
 }
 
@@ -884,7 +884,7 @@ public sealed class GetAccountReceivableBySourceDocumentQueryHandler(Application
                 x.CurrencyCode,
                 x.CreatedAtUtc))
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Account receivable was not found for source document: {request.SourceDocumentNo}");
+            ?? throw new KnownException($"来源单据『{request.SourceDocumentNo}』的应收单不存在。");
     }
 }
 
@@ -929,6 +929,6 @@ public sealed class GetCostCandidateBySourceDocumentQueryHandler(ApplicationDbCo
                 x.CurrencyCode,
                 x.CreatedAtUtc))
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Cost candidate was not found for source document: {request.SourceDocumentNo}");
+            ?? throw new KnownException($"来源单据『{request.SourceDocumentNo}』的成本候选不存在。");
     }
 }
