@@ -551,6 +551,27 @@ function Get-NervFullStackProtocolActivationObservation {
     [void] (Test-NervFullStackTrustedPathGraph -StateRoot $root -CandidatePath $root -ExpectedKind Directory)
     $markerPath = Join-Path $root 'fullstack-sessions/.protocol-mode.json'
     if (-not [System.IO.File]::Exists($markerPath)) {
+        $markerResidueExists = $false
+        try {
+            [void] [System.IO.File]::GetAttributes($markerPath)
+            $markerResidueExists = $true
+        }
+        catch [System.IO.FileNotFoundException] {
+        }
+        catch [System.IO.DirectoryNotFoundException] {
+        }
+        catch {
+            $markerResidueExists = $true
+        }
+
+        if ($markerResidueExists) {
+            return [pscustomobject][ordered]@{
+                Activation = 'InvalidMarker'
+                MarkerPath = $markerPath
+                Warnings = [string[]] @("classifier:invalid-activation-marker '$markerPath'")
+            }
+        }
+
         return [pscustomobject][ordered]@{
             Activation = 'GateOff'
             MarkerPath = $markerPath
@@ -710,11 +731,5 @@ function Get-NervFullStackPublicationBoundaryObservation {
         Boundary = $boundary
         SessionId = $SessionId
         Warnings = [string[]] $warnings.ToArray()
-        WriteCount = 0
-        MigrationCount = 0
-        DeleteCount = 0
-        AspireCallCount = 0
-        ProcessCallCount = 0
-        DockerCallCount = 0
     }
 }
