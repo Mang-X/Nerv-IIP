@@ -62,11 +62,16 @@ $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullsta
 Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+$runtimeLibraryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
 Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
 Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
 Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
+Assert-True ($fullStackSessionText -match "'production-release-smoke'") 'Full-stack sessions must expose the opt-in Production release smoke.'
+Assert-True ($nervEntrypointText -match "'production-release-smoke'") 'The governed root entrypoint must expose the opt-in Production release smoke.'
+Assert-True ($runtimeLibraryText -match "'redis-cli', '--tls', '--insecure', 'ping'") 'Production Redis acceptance probes must use the TLS endpoint.'
+Assert-True ($runtimeLibraryText -match "NOAUTH\|Authentication required") 'Production Redis acceptance must prove an explicit authentication rejection.'
 Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'", [StringComparison]::Ordinal)) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"', [StringComparison]::Ordinal)) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
@@ -330,6 +335,13 @@ $invalidEnvironmentFailed = $false
 try { Get-NervFullStackEnvironment -SessionId 'unsafe-session' | Out-Null } catch { $invalidEnvironmentFailed = $true }
 Assert-True $invalidEnvironmentFailed 'Invalid session IDs must be rejected by the AppHost environment contract.'
 
+$productionEnvironment = Get-NervFullStackEnvironment -SessionId $sessionId -EnvironmentName Production
+Assert-True ([string]::Equals([string]$productionEnvironment.ASPNETCORE_ENVIRONMENT, 'Production', [StringComparison]::Ordinal)) 'Production full-stack must set ASPNETCORE_ENVIRONMENT.'
+Assert-True ([string]::Equals([string]$productionEnvironment.DOTNET_ENVIRONMENT, 'Production', [StringComparison]::Ordinal)) 'Production full-stack must set DOTNET_ENVIRONMENT.'
+Assert-True ([string]::Equals([string]$productionEnvironment.Persistence__AutoMigrate, 'false', [StringComparison]::Ordinal)) 'Production full-stack must explicitly disable AutoMigrate.'
+Assert-True ([string]::Equals([string]$productionEnvironment.Walkthrough__Seed__Enabled, 'false', [StringComparison]::Ordinal)) 'Production full-stack must explicitly disable walkthrough seed.'
+Assert-True (-not [string]::IsNullOrWhiteSpace($productionEnvironment.Security__ForwardedHeaders__KnownProxies)) 'Production full-stack must configure a trusted proxy boundary.'
+
 Invoke-NervHttpSuccessCheck `
     -Name 'console' `
     -Url 'http://leader-demo.test/' `
@@ -405,6 +417,7 @@ Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - 
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
 foreach ($requiredName in @(
+    'Parameters__postgres-password',
     'Parameters__iam-jwt-signing-key-id',
     'Parameters__iam-jwt-private-key-pem',
     'Parameters__iam-jwt-jwks-json',
@@ -431,6 +444,23 @@ Assert-True `
     'The session JWKS key ID must match the private signing key ID.'
 $secretEnvironment.Environment.Clear()
 $secretEnvironment = $null
+
+foreach ($requiredProductionContract in @(
+    'function Initialize-NervProductionFullStackDatabase',
+    'migrate-file-storage.ps1',
+    'migrate-platform-databases.ps1',
+    'migrate-business-databases.ps1',
+    'production-migrations.json',
+    'function Invoke-NervProductionReleaseSmokeScenario',
+    'production-fullstack-summary.json',
+    'redisUnauthenticatedRejected',
+    "@('container', 'rm', '--force', `$containerName)"
+)) {
+    Assert-True ($runtimeLibraryText.Contains($requiredProductionContract, [StringComparison]::Ordinal)) "Production release smoke is missing '$requiredProductionContract'."
+}
+$migrationInitializationIndex = $fullStackSessionText.IndexOf('Initialize-NervProductionFullStackDatabase', [StringComparison]::Ordinal)
+$productionAspireStartIndex = $fullStackSessionText.IndexOf('Invoke-NervAspireStartWithRetry', [StringComparison]::Ordinal)
+Assert-True ($migrationInitializationIndex -ge 0 -and $migrationInitializationIndex -lt $productionAspireStartIndex) 'Production migrations must finish before Aspire starts the Production AppHost.'
 
 $scenarioManifest = [pscustomobject]@{
     sessionId = $sessionId
@@ -1304,8 +1334,7 @@ foreach ($scenarioName in @('leader-demo-quality-branch', 'leader-demo-equipment
 }
 # A failing branch run must leave the log that explains it; the diagnostic sweep therefore has to
 # cover every service the branch scenarios wait on.
-$runtimeLibraryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
-$collectResourceBlock = [regex]::Match($runtimeLibraryText, "(?s)\`$resourceNames = @\(\s*'iam'.*?\)").Value
+$collectResourceBlock = (Get-Command Collect-NervFullStackDiagnostics -ErrorAction Stop).Definition
 foreach ($collected in @('iam', 'business-industrial-telemetry', 'business-maintenance', 'business-approval', 'business-quality', 'business-mes')) {
     Assert-True ($collectResourceBlock -match "'$collected'") "Diagnostic collection must include '$collected'."
 }
@@ -1344,7 +1373,7 @@ try {
     foreach ($requiredDiagnosticResource in @(
         'business-master-data', 'business-product-engineering', 'business-inventory',
         'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
-        'business-erp', 'business-scheduling'
+        'business-erp', 'business-scheduling', 'connector-host'
     )) {
         Assert-True `
             (Test-Path -LiteralPath (Join-Path $diagnosticRoot "aspire-logs/$requiredDiagnosticResource.ndjson")) `

@@ -466,6 +466,157 @@ function Invoke-NervFullStackSmokeScenario {
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
 }
 
+function Invoke-NervProductionReleaseSmokeScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $PostgresPassword,
+        [Parameter(Mandatory)] [string] $RedisPassword
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PostgresPassword) -or [string]::IsNullOrWhiteSpace($RedisPassword)) {
+        throw 'Production release smoke requires session-scoped PostgreSQL and Redis credentials.'
+    }
+
+    $serviceNames = @(
+        'iam', 'apphub', 'ops', 'file-storage', 'notification',
+        'business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality',
+        'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval',
+        'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp',
+        'business-scheduling', 'gateway', 'business-gateway', 'connector-host'
+    )
+    foreach ($serviceName in $serviceNames) {
+        Wait-NervAspireResource `
+            -AppHostProject "$($Manifest.appHostProject)" `
+            -ResourceName $serviceName `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 900
+    }
+
+    $snapshot = Get-NervAspireDescribeObject `
+        -AppHostProject "$($Manifest.appHostProject)" `
+        -WorkingDirectory "$($Manifest.worktreeRoot)"
+    $projectResources = @($snapshot.resources | Where-Object { "$($_.resourceType)" -like 'Project*' })
+    $observedNames = [Collections.Generic.HashSet[string]]::new([string[]]@($projectResources.displayName), [StringComparer]::Ordinal)
+    $missingServices = @($serviceNames | Where-Object { -not $observedNames.Contains($_) })
+    if ($projectResources.Count -ne 21 -or $missingServices.Count -gt 0) {
+        throw "Production acceptance expected 21 project resources; observed=$($projectResources.Count), missing=$($missingServices -join ', ')."
+    }
+
+    foreach ($gatewayName in @('gateway', 'business-gateway')) {
+        $gatewayUrl = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName $gatewayName
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.AllowAutoRedirect = $false
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        try {
+            $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $gatewayUrl)
+            $request.Headers.TryAddWithoutValidation('X-Forwarded-Proto', 'https') | Out-Null
+            $response = $client.Send($request)
+            if ([int]$response.StatusCode -in @(301, 302, 307, 308) -or [int]$response.StatusCode -ge 500) {
+                throw "Trusted TLS termination probe for '$gatewayName' returned HTTP $([int]$response.StatusCode)."
+            }
+            $response.Dispose()
+            $request.Dispose()
+        }
+        finally {
+            $client.Dispose()
+            $handler.Dispose()
+        }
+    }
+
+    $containerIds = @($Manifest.runtime.containerIds | ForEach-Object { "$_" })
+    $containers = @(Get-NervDockerInspectObjects `
+        -Kind container `
+        -Identifiers $containerIds `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -Name "fullstack-$($Manifest.sessionId)-production-container-inspect")
+    $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
+    $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
+    if ($postgres.Count -ne 1 -or $redis.Count -ne 1) {
+        throw "Production acceptance expected one PostgreSQL and Redis container; postgres=$($postgres.Count), redis=$($redis.Count)."
+    }
+
+    $unauthenticatedRedisEvidence = ''
+    try {
+        $unauthenticatedRedis = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @('exec', "$($redis[0].Id)", 'redis-cli', '--tls', '--insecure', 'ping') `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 30 `
+            -Name "fullstack-$($Manifest.sessionId)-production-redis-unauthenticated"
+        $unauthenticatedRedisEvidence = "$($unauthenticatedRedis.Stdout)`n$($unauthenticatedRedis.Stderr)"
+    }
+    catch { $unauthenticatedRedisEvidence = "$($_.Exception.Message)" }
+    if ($unauthenticatedRedisEvidence -notmatch '(?i)NOAUTH|Authentication required') {
+        throw 'Production Redis unauthenticated PING did not return an authentication rejection.'
+    }
+
+    $savedRedisCliAuth = [Environment]::GetEnvironmentVariable('REDISCLI_AUTH', 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable('REDISCLI_AUTH', $RedisPassword, 'Process')
+        $authenticatedRedis = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @('exec', '--env', 'REDISCLI_AUTH', "$($redis[0].Id)", 'redis-cli', '--tls', '--insecure', 'ping') `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 30 `
+            -Name "fullstack-$($Manifest.sessionId)-production-redis-authenticated"
+        if (-not "$($authenticatedRedis.Stdout)".Contains('PONG', [StringComparison]::Ordinal)) {
+            throw 'Production Redis authenticated PING did not return PONG.'
+        }
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('REDISCLI_AUTH', $savedRedisCliAuth, 'Process')
+    }
+
+    $platformManifest = @(Get-Content -LiteralPath (Join-Path $Manifest.worktreeRoot 'scripts/install/release-database-migrations.json') -Raw | ConvertFrom-Json)
+    $businessManifest = @(Get-Content -LiteralPath (Join-Path $Manifest.worktreeRoot 'scripts/install/business-release-database-migrations.json') -Raw | ConvertFrom-Json)
+    $databaseNames = @('nerv_iip_filestorage') + @($platformManifest.expectedDatabase) + @($businessManifest.expectedDatabase)
+    foreach ($databaseName in $databaseNames) {
+        $historyResult = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @('exec', "$($postgres[0].Id)", 'psql', '-U', 'postgres', '-d', [string]$databaseName, '-Atqc', "SELECT count(*) FROM pg_tables WHERE tablename = '__EFMigrationsHistory';") `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 30 `
+            -Name "fullstack-$($Manifest.sessionId)-production-history-$databaseName"
+        if (-not [string]::Equals("$($historyResult.Stdout)".Trim(), '1', [StringComparison]::Ordinal)) {
+            throw "Production database '$databaseName' lost its EF migration history."
+        }
+    }
+
+    $migrationSummaryPath = Join-Path "$($Manifest.artifactPath)" 'production-migrations.json'
+    if (-not (Test-Path -LiteralPath $migrationSummaryPath -PathType Leaf)) {
+        throw 'Production migration summary is missing.'
+    }
+    $migrationSummary = Get-Content -LiteralPath $migrationSummaryPath -Raw | ConvertFrom-Json
+    if ([int]$migrationSummary.databaseCount -ne 18 -or [int]$migrationSummary.migrationHistoryCount -ne 18) {
+        throw 'Production migration summary does not prove all 18 databases.'
+    }
+
+    $summary = [ordered]@{
+        schemaVersion = 1
+        sessionId = "$($Manifest.sessionId)"
+        environment = 'Production'
+        serviceCount = $serviceNames.Count
+        healthyServices = @($serviceNames)
+        databaseCount = $databaseNames.Count
+        migrationHistoryCount = $databaseNames.Count
+        redisAuthenticated = $true
+        redisUnauthenticatedRejected = $true
+        trustedTlsTerminationGateways = @('gateway', 'business-gateway')
+        controls = [ordered]@{
+            persistenceAutoMigrate = $false
+            walkthroughSeed = $false
+            leaderDemoSeed = $false
+            leaderDemoWorld = $false
+        }
+        completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    }
+    [System.IO.File]::WriteAllText(
+        (Join-Path "$($Manifest.artifactPath)" 'production-fullstack-summary.json'),
+        ($summary | ConvertTo-Json -Depth 10),
+        [System.Text.UTF8Encoding]::new($false))
+    return $summary
+}
+
 function Assert-NervPlaywrightJsonReport {
     param([Parameter(Mandatory)] [string] $ReportPath)
 
@@ -1312,9 +1463,10 @@ function Collect-NervFullStackDiagnostics {
     # run leaves exactly the log that would explain it missing (equipment-branch failures live in
     # business-industrial-telemetry / business-maintenance, auth failures live in iam).
     $resourceNames = @(
-        'iam', 'gateway', 'business-gateway', 'console', 'business-console', 'screen',
+        'apphub', 'iam', 'ops', 'file-storage', 'notification',
+        'gateway', 'business-gateway', 'connector-host', 'console', 'business-console', 'screen',
         'business-master-data', 'business-product-engineering', 'business-inventory',
-        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-wms',
         'business-erp', 'business-scheduling',
         'business-industrial-telemetry', 'business-maintenance', 'business-approval',
         'postgres', 'redis', 'minio'
@@ -1412,24 +1564,189 @@ function Invoke-NervManagedFullStackRun {
 function Get-NervFullStackEnvironment {
     param(
         [Parameter(Mandatory)]
-        [string] $SessionId
+        [string] $SessionId,
+
+        [ValidateSet('Development', 'Production')]
+        [string] $EnvironmentName = 'Development'
     )
 
     if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
         throw "Invalid full-stack session ID '$SessionId'."
     }
 
-    return @{
+    $environment = @{
         NERV_IIP_EPHEMERAL = 'true'
         NERV_IIP_SESSION_ID = $SessionId
         Messaging__Provider = 'Redis'
         Persistence__Provider = 'PostgreSQL'
-        ASPNETCORE_ENVIRONMENT = 'Development'
-        DOTNET_ENVIRONMENT = 'Development'
+        ASPNETCORE_ENVIRONMENT = $EnvironmentName
+        DOTNET_ENVIRONMENT = $EnvironmentName
         NERV_IIP_POSTGRES_VOLUME = "nerv-iip-postgres-18-$SessionId"
         NERV_IIP_REDIS_VOLUME = "nerv-iip-redis-$SessionId"
         NERV_IIP_MINIO_VOLUME = "nerv-iip-minio-$SessionId"
         NERV_IIP_VICTORIA_LOGS_VOLUME = "nerv-iip-victoria-logs-$SessionId"
+    }
+
+    if ([string]::Equals($EnvironmentName, 'Production', [StringComparison]::Ordinal)) {
+        $environment['ConnectorHost__ConnectorHostId'] = "connector-$SessionId"
+        $environment['ConnectorHost__OrganizationId'] = "org-$SessionId"
+        $environment['ConnectorHost__EnvironmentId'] = "env-$SessionId"
+        $environment['Security__Cors__AllowedOrigins'] = 'https://production-acceptance.invalid'
+        $environment['Security__ForwardedHeaders__KnownProxies'] = '127.0.0.1,::1'
+        $environment['Persistence__AutoMigrate'] = 'false'
+        $environment['Walkthrough__Seed__Enabled'] = 'false'
+        $environment['LeaderDemo__Seed__Enabled'] = 'false'
+        $environment['LeaderDemo__World__Enabled'] = 'false'
+    }
+
+    return $environment
+}
+
+function Initialize-NervProductionFullStackDatabase {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $PostgresPassword
+    )
+
+    $sessionId = "$($Manifest.sessionId)"
+    if ($sessionId -notmatch $script:NervFullStackSessionIdPattern) {
+        throw "Invalid full-stack session ID '$sessionId'."
+    }
+    if ([string]::IsNullOrWhiteSpace($PostgresPassword)) {
+        throw 'Production full-stack migration requires a non-empty session PostgreSQL password.'
+    }
+
+    $volumeName = "nerv-iip-postgres-18-$sessionId"
+    $containerName = "production-migrator-postgres-$sessionId"
+    $releaseId = "production-$sessionId"
+    $originalPostgresPassword = [Environment]::GetEnvironmentVariable('POSTGRES_PASSWORD', 'Process')
+    $containerStarted = $false
+    try {
+        Invoke-NativeCommandWithTimeout `
+            -Command 'docker' `
+            -Arguments @('volume', 'create', '--label', "com.nerv-iip.session=$sessionId", $volumeName) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 30 `
+            -Name "fullstack-$sessionId-production-migration-volume" | Out-Null
+
+        [Environment]::SetEnvironmentVariable('POSTGRES_PASSWORD', $PostgresPassword, 'Process')
+        Invoke-NativeCommandWithTimeout `
+            -Command 'docker' `
+            -Arguments @(
+                'run', '--detach', '--name', $containerName,
+                '--label', "com.nerv-iip.session=$sessionId",
+                '--env', 'POSTGRES_PASSWORD',
+                '--publish', '127.0.0.1::5432',
+                '--volume', "${volumeName}:/var/lib/postgresql",
+                'postgres:18', '-c', 'max_connections=300'
+            ) `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 120 `
+            -Name "fullstack-$sessionId-production-migration-postgres-start" | Out-Null
+        $containerStarted = $true
+
+        $readyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
+        $ready = $false
+        while (-not $ready -and [DateTimeOffset]::UtcNow -lt $readyDeadline) {
+            try {
+                Invoke-NativeCommandWithTimeout `
+                    -Command 'docker' `
+                    -Arguments @('exec', $containerName, 'pg_isready', '-U', 'postgres', '-d', 'postgres') `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 10 `
+                    -Name "fullstack-$sessionId-production-migration-postgres-ready" | Out-Null
+                $ready = $true
+            }
+            catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        if (-not $ready) { throw 'Disposable Production migration PostgreSQL did not become ready within 90 seconds.' }
+
+        $portResult = Invoke-NativeCommandOutput `
+            -Command 'docker' `
+            -Arguments @('port', $containerName, '5432/tcp') `
+            -WorkingDirectory "$($Manifest.worktreeRoot)" `
+            -TimeoutSeconds 30 `
+            -Name "fullstack-$sessionId-production-migration-postgres-port"
+        $portMatch = [regex]::Match("$($portResult.Stdout)", ':(\d+)\s*$')
+        if (-not $portMatch.Success) { throw 'Disposable Production migration PostgreSQL host port could not be resolved.' }
+        $hostPort = $portMatch.Groups[1].Value
+
+        $platformManifest = @(Get-Content -LiteralPath (Join-Path $Manifest.worktreeRoot 'scripts/install/release-database-migrations.json') -Raw | ConvertFrom-Json)
+        $businessManifest = @(Get-Content -LiteralPath (Join-Path $Manifest.worktreeRoot 'scripts/install/business-release-database-migrations.json') -Raw | ConvertFrom-Json)
+        $migrationEnvironment = @{
+            NERV_IIP_FILE_STORAGE_DB = "Host=127.0.0.1;Port=$hostPort;Database=nerv_iip_filestorage;Username=postgres;Password=$PostgresPassword;Include Error Detail=false"
+        }
+        foreach ($entry in @($platformManifest + $businessManifest)) {
+            $migrationEnvironment[[string]$entry.connectionEnvironmentVariable] =
+                "Host=127.0.0.1;Port=$hostPort;Database=$($entry.expectedDatabase);Username=postgres;Password=$PostgresPassword;Include Error Detail=false"
+        }
+
+        Invoke-WithScopedEnvironment -Variables $migrationEnvironment -ScriptBlock {
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $Manifest.worktreeRoot 'scripts/install/migrate-file-storage.ps1') `
+                -Arguments @('-ReleaseId', $releaseId) `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 1200 `
+                -Name "fullstack-$sessionId-production-migrate-file-storage" | Out-Null
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $Manifest.worktreeRoot 'scripts/install/migrate-platform-databases.ps1') `
+                -Arguments @('-ReleaseId', $releaseId) `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 3600 `
+                -Name "fullstack-$sessionId-production-migrate-platform" | Out-Null
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $Manifest.worktreeRoot 'scripts/install/migrate-business-databases.ps1') `
+                -Arguments @('-ReleaseId', $releaseId) `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 7200 `
+                -Name "fullstack-$sessionId-production-migrate-business" | Out-Null
+        }
+
+        $databaseNames = @('nerv_iip_filestorage') + @($platformManifest.expectedDatabase) + @($businessManifest.expectedDatabase)
+        foreach ($databaseName in $databaseNames) {
+            $historyResult = Invoke-NativeCommandOutput `
+                -Command 'docker' `
+                -Arguments @('exec', $containerName, 'psql', '-U', 'postgres', '-d', [string]$databaseName, '-Atqc', "SELECT count(*) FROM pg_tables WHERE tablename = '__EFMigrationsHistory';") `
+                -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                -TimeoutSeconds 30 `
+                -Name "fullstack-$sessionId-production-history-$databaseName"
+            if (-not [string]::Equals("$($historyResult.Stdout)".Trim(), '1', [StringComparison]::Ordinal)) {
+                throw "Database '$databaseName' does not contain exactly one EF migration history table."
+            }
+        }
+
+        $migrationSummary = [ordered]@{
+            schemaVersion = 1
+            sessionId = $sessionId
+            environment = 'Production'
+            releaseId = $releaseId
+            databaseCount = $databaseNames.Count
+            migrationHistoryCount = $databaseNames.Count
+            autoMigrate = $false
+            seedsEnabled = $false
+            completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        }
+        [System.IO.File]::WriteAllText(
+            (Join-Path "$($Manifest.artifactPath)" 'production-migrations.json'),
+            ($migrationSummary | ConvertTo-Json -Depth 10),
+            [System.Text.UTF8Encoding]::new($false))
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('POSTGRES_PASSWORD', $originalPostgresPassword, 'Process')
+        if ($containerStarted) {
+            try {
+                Invoke-NativeCommandWithTimeout `
+                    -Command 'docker' `
+                    -Arguments @('container', 'rm', '--force', $containerName) `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 60 `
+                    -Name "fullstack-$sessionId-production-migration-postgres-stop" | Out-Null
+            }
+            catch { }
+        }
+        $PostgresPassword = $null
     }
 }
 
@@ -1460,7 +1777,11 @@ function ConvertTo-NervBase64Url {
 function New-NervFullStackSecretEnvironment {
     param(
         [Parameter(Mandatory)]
-        [string] $SessionId
+        [string] $SessionId,
+
+        [string] $PostgresPassword,
+
+        [string] $RedisPassword
     )
 
     if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
@@ -1483,13 +1804,14 @@ function New-NervFullStackSecretEnvironment {
         } | ConvertTo-Json -Compress -Depth 5
         $adminPassword = New-NervFullStackSecretValue -Bytes 24
         $environment = @{
+            'Parameters__postgres-password' = if ([string]::IsNullOrWhiteSpace($PostgresPassword)) { New-NervFullStackSecretValue -Bytes 24 } else { $PostgresPassword }
             'Parameters__iam-jwt-signing-key-id' = $kid
             'Parameters__iam-jwt-private-key-pem' = $rsa.ExportPkcs8PrivateKeyPem()
             'Parameters__iam-jwt-jwks-json' = $jwks
             'Parameters__iam-secrets-pepper' = New-NervFullStackSecretValue -Bytes 48
             'Parameters__iam-enterprise-identity-mfa-code' = '654321'
             'Parameters__internal-service-bearer-token' = New-NervFullStackSecretValue -Bytes 48
-            'Parameters__redis-password' = New-NervFullStackSecretValue -Bytes 24
+            'Parameters__redis-password' = if ([string]::IsNullOrWhiteSpace($RedisPassword)) { New-NervFullStackSecretValue -Bytes 24 } else { $RedisPassword }
             'Parameters__minio-root-user' = "nerv-$SessionId"
             'Parameters__minio-root-password' = New-NervFullStackSecretValue -Bytes 24
             'Parameters__iam-seed-admin-password' = $adminPassword

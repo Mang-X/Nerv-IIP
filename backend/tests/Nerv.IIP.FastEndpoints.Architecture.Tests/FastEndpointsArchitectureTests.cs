@@ -608,6 +608,42 @@ public sealed class FastEndpointsArchitectureTests
         }
     }
 
+    [Fact]
+    public void Production_gateways_receive_the_file_storage_endpoint_from_apphost()
+    {
+        var root = FindRepositoryRoot();
+        var appHostText = File.ReadAllText(Path.Combine(root, "infra/aspire/Nerv.IIP.AppHost/Program.cs"));
+
+        var gatewayStart = appHostText.IndexOf("var gateway =", StringComparison.Ordinal);
+        var businessGatewayStart = appHostText.IndexOf("var businessGateway =", gatewayStart, StringComparison.Ordinal);
+        var connectorHostStart = appHostText.IndexOf("var connectorHost =", businessGatewayStart, StringComparison.Ordinal);
+        Assert.True(gatewayStart >= 0 && businessGatewayStart > gatewayStart && connectorHostStart > businessGatewayStart);
+
+        Assert.Contains(
+            ".WithEnvironment(\"FileStorage__BaseUrl\", fileStorage.GetEndpoint(\"http\"))",
+            appHostText[gatewayStart..businessGatewayStart]);
+        Assert.Contains(
+            ".WithEnvironment(\"FileStorage__BaseUrl\", fileStorage.GetEndpoint(\"http\"))",
+            appHostText[businessGatewayStart..connectorHostStart]);
+        Assert.Contains(".WithReference(fileStorage)", appHostText[businessGatewayStart..connectorHostStart]);
+        Assert.Contains(".WaitFor(fileStorage)", appHostText[businessGatewayStart..connectorHostStart]);
+    }
+
+    [Fact]
+    public void Connector_host_receives_the_internal_service_token_from_apphost()
+    {
+        var root = FindRepositoryRoot();
+        var appHostText = File.ReadAllText(Path.Combine(root, "infra/aspire/Nerv.IIP.AppHost/Program.cs"));
+
+        var connectorHostStart = appHostText.IndexOf("var connectorHost =", StringComparison.Ordinal);
+        var leaderDemoStart = appHostText.IndexOf("if (leaderDemoWorldEnabled)", connectorHostStart, StringComparison.Ordinal);
+        Assert.True(connectorHostStart >= 0 && leaderDemoStart > connectorHostStart);
+
+        Assert.Contains(
+            ".WithEnvironment(\"InternalService__BearerToken\", internalServiceBearerToken)",
+            appHostText[connectorHostStart..leaderDemoStart]);
+    }
+
     private static string GetAspireResourceBlock(string programText, string resourceVariable)
     {
         var resourceStart = programText.IndexOf($"var {resourceVariable} =", StringComparison.Ordinal);

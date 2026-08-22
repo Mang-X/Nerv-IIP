@@ -2,14 +2,17 @@
 #   Category: verify
 #   SideEffects:
 #     - Starts and inspects session-owned Aspire and Docker resources
+#     - production-release-smoke applies governed EF Core migrations to its disposable PostgreSQL volume
 #   Writes:
 #     - Local full-stack session manifests and artifacts
+#     - production-release-smoke writes migration histories only to the session-owned PostgreSQL volume
 #   Cleanup:
 #     - Stop and GC are installed by the lifecycle task
 #   Requires:
 #     - PowerShell 7
 #     - Aspire CLI 13.4.x
 #     - Docker
+#     - .NET SDK 10 and repository dotnet tools for production-release-smoke
 
 [CmdletBinding()]
 param(
@@ -17,7 +20,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'production-release-smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [int] $Tail = 120,
@@ -36,6 +39,7 @@ Nerv-IIP isolated full-stack sessions
 
 Usage:
   .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario production-release-smoke [-NoBuild]
   .\nerv.ps1 fullstack run -Scenario man-440
   .\nerv.ps1 fullstack run -Scenario man-528
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
@@ -335,6 +339,8 @@ function Start-NervFullStackSession {
         [int] $CoordinatorPid,
         [string] $CoordinatorStartTimeUtc,
         [string] $SessionAdminPassword,
+        [string] $SessionPostgresPassword,
+        [string] $SessionRedisPassword,
         [switch] $PassThru
     )
 
@@ -365,7 +371,8 @@ function Start-NervFullStackSession {
         $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
         $artifactPath = Join-Path $repoRoot "artifacts/fullstack/$newSessionId"
         [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
-        $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId
+        $profileEnvironmentName = if ([string]::Equals([string]($Scenario), [string]('production-release-smoke'), [StringComparison]::OrdinalIgnoreCase)) { 'Production' } else { 'Development' }
+        $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId -EnvironmentName $profileEnvironmentName
         $manifest = New-NervFullStackManifest `
             -SessionId $newSessionId `
             -WorktreeRoot $repoRoot `
@@ -382,7 +389,8 @@ function Start-NervFullStackSession {
     $newSessionId = "$($manifest.sessionId)"
     $appHostProject = "$($manifest.appHostProject)"
 
-    $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
+    $profileEnvironmentName = if ([string]::Equals([string]($Scenario), [string]('production-release-smoke'), [StringComparison]::OrdinalIgnoreCase)) { 'Production' } else { 'Development' }
+    $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId -EnvironmentName $profileEnvironmentName
     if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
         $sessionEnvironment['Maintenance__PmGeneration__Enabled'] = 'true'
         $sessionEnvironment['Maintenance__PmGeneration__OrganizationId'] = 'org-man440'
@@ -404,7 +412,10 @@ function Start-NervFullStackSession {
             $latest.runtime.persistenceProvider = $sessionEnvironment.Persistence__Provider
             return $latest
         }
-        $secretSet = New-NervFullStackSecretEnvironment -SessionId $newSessionId
+        $secretSet = New-NervFullStackSecretEnvironment `
+            -SessionId $newSessionId `
+            -PostgresPassword $SessionPostgresPassword `
+            -RedisPassword $SessionRedisPassword
         $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
             $SessionAdminPassword
         }
@@ -432,6 +443,11 @@ function Start-NervFullStackSession {
         try {
             foreach ($entry in $sessionEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
             foreach ($entry in $secretSet.Environment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
+            if ([string]::Equals([string]($Scenario), [string]('production-release-smoke'), [StringComparison]::OrdinalIgnoreCase)) {
+                Initialize-NervProductionFullStackDatabase `
+                    -Manifest $manifest `
+                    -PostgresPassword ([string]$secretSet.Environment['Parameters__postgres-password'])
+            }
             $arguments = @('start', '--isolated', '--format', 'Json', '--apphost', $appHostProject, '--non-interactive', '--nologo')
             if ($NoBuild) { $arguments += '--no-build' }
             $startResult = Invoke-NervAspireStartWithRetry `
@@ -638,6 +654,8 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
             if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot }
             $runProcess = Get-Process -Id $PID
             $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
+            $sessionPostgresPassword = New-NervFullStackSecretValue -Bytes 24
+            $sessionRedisPassword = New-NervFullStackSecretValue -Bytes 24
             try {
                 $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
                     Invoke-NervManagedFullStackRun `
@@ -647,6 +665,8 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
                             -CoordinatorPid $PID `
                             -CoordinatorStartTimeUtc $runProcess.StartTime.ToUniversalTime().ToString('O') `
                             -SessionAdminPassword $sessionAdminPassword `
+                            -SessionPostgresPassword $sessionPostgresPassword `
+                            -SessionRedisPassword $sessionRedisPassword `
                             -PassThru
                     } `
                     -ScenarioAction {
@@ -655,6 +675,12 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
                                 Invoke-NervFullStackSmokeScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword | Out-Null
+                            }
+elseif ([string]::Equals([string]($Scenario), [string]('production-release-smoke'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervProductionReleaseSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -PostgresPassword $sessionPostgresPassword `
+                                    -RedisPassword $sessionRedisPassword | Out-Null
                             }
 elseif ([string]::Equals([string]($Scenario), [string]('man-528'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervFullStackSmokeScenario `
@@ -686,7 +712,9 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                     } `
                     -FailureAction {
                         param($InputManifest, $FailureRecord)
-                        $failureMessage = Protect-NervFullStackDiagnosticText -Text "$($FailureRecord.Exception.Message)" -SensitiveValues @($sessionAdminPassword)
+                        $failureMessage = Protect-NervFullStackDiagnosticText `
+                            -Text "$($FailureRecord.Exception.Message)" `
+                            -SensitiveValues @($sessionAdminPassword, $sessionPostgresPassword, $sessionRedisPassword)
                         Update-NervFullStackManifest `
                             -SessionId "$($InputManifest.sessionId)" `
                             -AllowedStates @('Creating', 'Running', 'Collecting', 'Failed') `
@@ -705,7 +733,7 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                         param($InputManifest)
                         Invoke-NervFullStackDiagnosticCollection `
                             -Manifest $InputManifest `
-                            -SensitiveValues @($sessionAdminPassword) | Out-Null
+                            -SensitiveValues @($sessionAdminPassword, $sessionPostgresPassword, $sessionRedisPassword) | Out-Null
                     } `
                     -CollectionFailureAction {
                         param($InputManifest, $FailureRecord)
@@ -729,6 +757,8 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
             }
             finally {
                 $sessionAdminPassword = $null
+                $sessionPostgresPassword = $null
+                $sessionRedisPassword = $null
             }
             Write-Output "$($manifest.sessionId) state=$($manifest.state) artifacts=$($manifest.artifactPath)"
         }
