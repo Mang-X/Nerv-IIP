@@ -22,7 +22,7 @@ public sealed class AccountReceivableSourceDocumentGuardTests
             new CreateAccountReceivableCommand("org-001", "env-dev", null, "SO-DOES-NOT-EXIST", "CUST-001", 1m, "CNY"),
             CancellationToken.None));
 
-        Assert.Contains("在 ERP 中不存在", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("不存在，无法登记应收", exception.Message, StringComparison.Ordinal);
         Assert.Contains("财务 › 会计凭证 › 过账凭证", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountReceivables);
@@ -41,7 +41,7 @@ public sealed class AccountReceivableSourceDocumentGuardTests
             new CreateAccountReceivableCommand("org-001", "env-dev", null, "DO-GUARD-001", "CUST-FAKE", 1m, "CNY"),
             CancellationToken.None));
 
-        Assert.Contains("与登记的客户", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("单据『DO-GUARD-001』客户『CUST-REAL』与『CUST-FAKE』不符", exception.Message, StringComparison.Ordinal);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Empty(dbContext.AccountReceivables);
     }

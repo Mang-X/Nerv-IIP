@@ -236,6 +236,472 @@ Assert-Throws {
         -RecordKind 'fullstack-session-authority'
 } 'Protocol observation values must be validated with Ordinal semantics.'
 
+$a4Library = Join-Path $repoRoot 'scripts/lib/FullStackProtocolClassifier.ps1'
+if (Test-Path -LiteralPath $a4Library -PathType Leaf) {
+    . $a4Library
+}
+
+$expectedA4Commands = @(
+    'Get-NervFullStackProtocolGenerationObservation',
+    'Get-NervFullStackProtocolActivationObservation',
+    'Get-NervFullStackCompatibilityDisposition',
+    'Get-NervFullStackPublicationBoundaryObservation'
+)
+$missingA4Commands = @($expectedA4Commands | Where-Object {
+    $null -eq (Get-Command -Name $_ -CommandType Function -ErrorAction SilentlyContinue)
+})
+Assert-True ($missingA4Commands.Count -eq 0) "A4 interfaces are missing: $($missingA4Commands -join ', ')."
+
+# Governance/PublicContract: this read-only classifier may call only the frozen
+# set of parsing, trusted-read, and protocol-observation commands below.  AST
+# command nodes are used so call operators, native executables, Start-Process,
+# Aspire/Docker CLIs, or a new destructive helper cannot hide behind spelling.
+$classifierTokens = $null
+$classifierParseErrors = $null
+$classifierAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $a4Library,
+    [ref] $classifierTokens,
+    [ref] $classifierParseErrors
+)
+Assert-True ($classifierParseErrors.Count -eq 0) 'The A4 classifier must parse before its external-call governance contract is evaluated.'
+$allowedClassifierCommands = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($commandName in @(
+    'Assert-NervFullStackProtocolValue',
+    'ConvertFrom-Json',
+    'Get-NervFullStackClassifierArrayCount',
+    'Get-NervFullStackClassifierProperty',
+    'Get-NervFullStackClassifierSessionReadback',
+    'Get-NervFullStackControlPathSet',
+    'Get-NervFullStackNormalizedFullPath',
+    'Get-NervFullStackPathComparison',
+    'Join-Path',
+    'Open-NervFullStackVerifiedPathHandle',
+    'Read-NervFullStackClassifierJsonRecord',
+    'Read-NervFullStackOpenedRecordBytes',
+    'Read-NervFullStackVerifiedRecord',
+    'Set-StrictMode',
+    'Test-NervFullStackClassifierActivationMarker',
+    'Test-NervFullStackClassifierExactString',
+    'Test-NervFullStackClassifierIdentityArray',
+    'Test-NervFullStackClassifierIdentityRecord',
+    'Test-NervFullStackClassifierIntegerValue',
+    'Test-NervFullStackClassifierPattern',
+    'Test-NervFullStackClassifierPositiveInteger',
+    'Test-NervFullStackClassifierTimestamp',
+    'Test-NervFullStackClassifierV2Readback',
+    'Test-NervFullStackProtocolValue',
+    'Test-NervFullStackTrustedPathGraph'
+)) {
+    [void] $allowedClassifierCommands.Add($commandName)
+}
+$unapprovedClassifierInvocations = [System.Collections.Generic.List[string]]::new()
+$classifierCommandAsts = @($classifierAst.FindAll({
+    param($node)
+    return $node -is [System.Management.Automation.Language.CommandAst]
+}, $true))
+foreach ($commandAst in $classifierCommandAsts) {
+    if ($commandAst.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Dot) {
+        continue
+    }
+
+    $commandName = $commandAst.GetCommandName()
+    if ($commandAst.InvocationOperator -ne [System.Management.Automation.Language.TokenKind]::Unknown -or
+        [string]::IsNullOrWhiteSpace($commandName) -or
+        -not $allowedClassifierCommands.Contains($commandName)) {
+        $unapprovedClassifierInvocations.Add($commandAst.Extent.Text)
+    }
+}
+Assert-True ($unapprovedClassifierInvocations.Count -eq 0) "The A4 classifier must not invoke external commands, Start-Process, Aspire, Docker, or destructive process helpers. Observed: $($unapprovedClassifierInvocations -join ' | ')"
+
+# Governance/PublicContract: CommandAst does not include .NET member calls.  Freeze
+# the classifier's necessary pure/read-only members plus collection bookkeeping and
+# verified-handle disposal so process launch and destructive static members fail
+# closed.  This proves the checked-in classifier has no unapproved member-call
+# entry point; it is not evidence from a real Aspire/AppHost/process/Docker run.
+$allowedClassifierMemberInvocations = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($memberInvocation in @(
+    'Static|[DateTimeOffset]|TryParseExact',
+    'Static|[regex]|IsMatch',
+    'Static|[string]|Equals',
+    'Static|[string]|IsNullOrWhiteSpace',
+    'Static|[System.Collections.Generic.List[string]]|new',
+    'Static|[System.IO.Directory]|EnumerateDirectories',
+    'Static|[System.IO.Directory]|Exists',
+    'Static|[System.IO.File]|Exists',
+    'Static|[System.IO.File]|GetAttributes',
+    'Static|[System.IO.Path]|GetFileName',
+    'Static|[System.Text.UTF8Encoding]|new',
+    'Instance|$name|StartsWith',
+    'Instance|$name|Substring',
+    'Instance|$proof.Handle|Dispose',
+    'Instance|$PSBoundParameters|ContainsKey',
+    'Instance|$rawBytes|Clone',
+    'Instance|$requiredExactStrings|GetEnumerator',
+    'Instance|$tempDirectories|Add',
+    'Instance|$tempDirectories|ToArray',
+    'Instance|$warnings|Add',
+    'Instance|$warnings|ToArray',
+    'Instance|[System.Text.UTF8Encoding]::new($false, $true)|GetString'
+)) {
+    [void] $allowedClassifierMemberInvocations.Add($memberInvocation)
+}
+$unapprovedClassifierMemberInvocations = [System.Collections.Generic.List[string]]::new()
+$classifierMemberInvocationAsts = @($classifierAst.FindAll({
+    param($node)
+    return $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst]
+}, $true))
+foreach ($memberInvocationAst in $classifierMemberInvocationAsts) {
+    $invocationKind = if ($memberInvocationAst.Static) { 'Static' } else { 'Instance' }
+    $invocationIdentity = '{0}|{1}|{2}' -f @(
+        $invocationKind,
+        $memberInvocationAst.Expression.Extent.Text,
+        $memberInvocationAst.Member.Extent.Text
+    )
+    if (-not $allowedClassifierMemberInvocations.Contains($invocationIdentity)) {
+        $unapprovedClassifierMemberInvocations.Add($memberInvocationAst.Extent.Text)
+    }
+}
+Assert-True ($unapprovedClassifierMemberInvocations.Count -eq 0) "The A4 classifier must not invoke unapproved .NET members, including process launch or destructive filesystem members. Observed: $($unapprovedClassifierMemberInvocations -join ' | ')"
+
+function New-A4FixtureRoot([string] $Name) {
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a4-$Name-$([Guid]::NewGuid().ToString('N'))"
+    [void] [System.IO.Directory]::CreateDirectory((Join-Path $root 'fullstack-sessions'))
+    [void] [System.IO.Directory]::CreateDirectory((Join-Path $root 'fullstack-controls'))
+    return $root
+}
+
+function New-A4AuthorityRecord([string] $Root, [string] $SessionId, [string] $CreationNonce) {
+    $manifestPath = Join-Path $Root "fullstack-sessions/$SessionId.json"
+    return [ordered]@{
+        schemaVersion = 2
+        kind = 'fullstack-session-authority'
+        sessionId = $SessionId
+        creationNonce = $CreationNonce
+        worktreeRoot = $Root
+        manifestPath = $manifestPath
+        createdBy = [ordered]@{
+            pid = 4242
+            processStartTimeUtc = '2026-08-18T00:00:00.0000000Z'
+        }
+        createdAtUtc = '2026-08-18T00:00:00.0000000Z'
+    }
+}
+
+function New-A4V2ManifestRecord {
+    param(
+        [string] $Root,
+        [string] $SessionId,
+        [string] $CreationNonce,
+        [bool] $ToolchainSnapshotComplete = $false,
+        [object[]] $ToolchainProbeIdentities = @(),
+        [bool] $RuntimeStartAttempted = $false,
+        [object[]] $RuntimeIdentities = @()
+    )
+
+    return [ordered]@{
+        schemaVersion = 2
+        controlProtocolVersion = 2
+        sessionId = $SessionId
+        creationNonce = $CreationNonce
+        worktreeRoot = $Root
+        state = 'Creating'
+        toolchainSnapshotComplete = $ToolchainSnapshotComplete
+        toolchainProbeIdentities = @($ToolchainProbeIdentities)
+        runtimeStartAttempted = $RuntimeStartAttempted
+        runtimeIdentities = @($RuntimeIdentities)
+    }
+}
+
+function Write-A4Record([string] $Path, [object] $Record) {
+    [void] [System.IO.Directory]::CreateDirectory((Split-Path -Parent $Path))
+    Write-Utf8TestFile -Path $Path -Content ($Record | ConvertTo-Json -Depth 20 -Compress)
+}
+
+function Publish-A4Authority([string] $Root, [string] $SessionId, [string] $CreationNonce) {
+    $sessionDirectory = Join-Path $Root "fullstack-controls/$SessionId"
+    [void] [System.IO.Directory]::CreateDirectory($sessionDirectory)
+    Write-Utf8TestFile -Path (Join-Path $sessionDirectory '.session.lock') -Content ''
+    Write-A4Record `
+        -Path (Join-Path $sessionDirectory 'authority.json') `
+        -Record (New-A4AuthorityRecord -Root $Root -SessionId $SessionId -CreationNonce $CreationNonce)
+}
+
+function Publish-A4V2Session {
+    param(
+        [string] $Root,
+        [string] $SessionId,
+        [string] $CreationNonce,
+        [bool] $ToolchainSnapshotComplete = $false,
+        [object[]] $ToolchainProbeIdentities = @(),
+        [bool] $RuntimeStartAttempted = $false,
+        [object[]] $RuntimeIdentities = @()
+    )
+
+    Publish-A4Authority -Root $Root -SessionId $SessionId -CreationNonce $CreationNonce
+    Write-A4Record `
+        -Path (Join-Path $Root "fullstack-sessions/$SessionId.json") `
+        -Record (New-A4V2ManifestRecord `
+            -Root $Root `
+            -SessionId $SessionId `
+            -CreationNonce $CreationNonce `
+            -ToolchainSnapshotComplete $ToolchainSnapshotComplete `
+            -ToolchainProbeIdentities $ToolchainProbeIdentities `
+            -RuntimeStartAttempted $RuntimeStartAttempted `
+            -RuntimeIdentities $RuntimeIdentities)
+}
+
+function Write-A4ActivationMarker([string] $Root, [bool] $Valid) {
+    $marker = if ($Valid) {
+        [ordered]@{
+            schemaVersion = 2
+            kind = 'fullstack-protocol-mode'
+            controlProtocolVersion = 2
+            stateRoot = $Root
+            e1CapabilityVersion = 'e1-v1'
+            e3CapabilityVersion = 'e3-v1'
+            activatedFromHeadSha = ('a' * 40)
+            f1FrozenManifestHash = ('b' * 64)
+            f1EvidenceHash = ('c' * 64)
+            activationNonce = '0123456789abcdef0123456789abcdef'
+            activatedAtUtc = '2026-08-18T00:00:00.0000000Z'
+        }
+    }
+    else {
+        [ordered]@{
+            schemaVersion = 2
+            kind = 'fullstack-protocol-mode'
+            controlProtocolVersion = 2
+            stateRoot = (Join-Path $Root 'wrong-root')
+        }
+    }
+    Write-A4Record -Path (Join-Path $Root 'fullstack-sessions/.protocol-mode.json') -Record $marker
+}
+
+function Get-A4TreeFingerprint([string] $Root) {
+    $rows = [System.Collections.Generic.List[string]]::new()
+    foreach ($path in [System.IO.Directory]::EnumerateFileSystemEntries($Root, '*', [System.IO.SearchOption]::AllDirectories)) {
+        $relativePath = [System.IO.Path]::GetRelativePath($Root, $path)
+        if ([System.IO.Directory]::Exists($path)) {
+            $rows.Add("D|$relativePath")
+        }
+        else {
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            $hash = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes))
+            $rows.Add("F|$relativePath|$hash")
+        }
+    }
+    $rows.Sort([StringComparer]::Ordinal)
+    return ($rows -join "`n")
+}
+
+function Assert-A4ObservationReadOnly([string] $Root, [scriptblock] $Action, [string] $Message) {
+    $before = Get-A4TreeFingerprint -Root $Root
+    $results = @($Action.Invoke())
+    $after = Get-A4TreeFingerprint -Root $Root
+    Assert-True ([string]::Equals($before, $after, [StringComparison]::Ordinal)) $Message
+    Assert-True ($results.Count -eq 1) "$Message The read must return exactly one observation."
+    return $results[0]
+}
+
+$a4Roots = [System.Collections.Generic.List[string]]::new()
+try {
+    $v0StoppedRoot = New-A4FixtureRoot -Name 'v0-stopped'
+    $a4Roots.Add($v0StoppedRoot)
+    $v0SessionId = 'nerv-a400-000001'
+    Write-A4Record -Path (Join-Path $v0StoppedRoot "fullstack-sessions/$v0SessionId.json") -Record ([ordered]@{
+        schemaVersion = 1; sessionId = $v0SessionId; state = 'Stopped'; worktreeRoot = $v0StoppedRoot
+    })
+    [System.IO.Directory]::Delete((Join-Path $v0StoppedRoot 'fullstack-controls'))
+    $v0Stopped = Assert-A4ObservationReadOnly -Root $v0StoppedRoot -Action {
+        Get-NervFullStackProtocolGenerationObservation -StateRoot $v0StoppedRoot -SessionId $v0SessionId
+    } -Message 'Reading a stopped v0 fixture must not write, migrate, or delete files.'
+    Assert-True ([string]::Equals($v0Stopped.Generation, 'v0', [StringComparison]::Ordinal)) 'A canonical legacy manifest must remain v0.'
+    Assert-True ([string]::Equals($v0Stopped.State, 'Stopped', [StringComparison]::Ordinal)) 'The v0 state must be observed ordinally.'
+    $gateOff = Assert-A4ObservationReadOnly -Root $v0StoppedRoot -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $v0StoppedRoot
+    } -Message 'Reading an absent activation marker must not create marker residue.'
+    Assert-True ([string]::Equals($gateOff.Activation, 'GateOff', [StringComparison]::Ordinal)) 'An absent marker must mean GateOff.'
+    $v0StoppedDisposition = Get-NervFullStackCompatibilityDisposition -GenerationObservation $v0Stopped -ActivationObservation $gateOff
+    Assert-True ([string]::Equals($v0StoppedDisposition.Disposition, 'ReadOnlyLegacyStopped', [StringComparison]::Ordinal)) 'Stopped v0 must be read-only idempotent.'
+
+    $v0ActiveRoot = New-A4FixtureRoot -Name 'v0-active'
+    $a4Roots.Add($v0ActiveRoot)
+    Write-A4Record -Path (Join-Path $v0ActiveRoot "fullstack-sessions/$v0SessionId.json") -Record ([ordered]@{
+        schemaVersion = 1; sessionId = $v0SessionId; state = 'Running'; worktreeRoot = $v0ActiveRoot
+    })
+    Write-A4ActivationMarker -Root $v0ActiveRoot -Valid $true
+    $v0Active = Assert-A4ObservationReadOnly -Root $v0ActiveRoot -Action {
+        Get-NervFullStackProtocolGenerationObservation -StateRoot $v0ActiveRoot -SessionId $v0SessionId
+    } -Message 'Reading an active v0 fixture must not write, migrate, or delete files.'
+    $activeMarker = Assert-A4ObservationReadOnly -Root $v0ActiveRoot -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $v0ActiveRoot
+    } -Message 'Reading a valid marker beside active v0 state must not change either record.'
+    Assert-True ([string]::Equals($v0Active.Generation, 'v0', [StringComparison]::Ordinal)) 'A valid marker must not upgrade a v0 record to v2 generation.'
+    Assert-True ([string]::Equals($activeMarker.Activation, 'ActiveV2', [StringComparison]::Ordinal)) 'A complete marker must be observed independently as ActiveV2.'
+    $v0ActiveDisposition = Get-NervFullStackCompatibilityDisposition -GenerationObservation $v0Active -ActivationObservation $activeMarker
+    Assert-True ([string]::Equals($v0ActiveDisposition.Disposition, 'BlockedLegacyActive', [StringComparison]::Ordinal)) 'An active v0 record must fail closed even when activation is ActiveV2.'
+
+    $v1Root = New-A4FixtureRoot -Name 'v1-flat'
+    $a4Roots.Add($v1Root)
+    Write-A4Record -Path (Join-Path $v1Root "fullstack-sessions/$v0SessionId.json") -Record ([ordered]@{
+        schemaVersion = 1; sessionId = $v0SessionId; state = 'Running'; worktreeRoot = $v1Root
+    })
+    Write-Utf8TestFile -Path (Join-Path $v1Root "fullstack-sessions/$v0SessionId.authority") -Content '{"creationNonce":"0123456789abcdef0123456789abcdef"}'
+    $v1 = Assert-A4ObservationReadOnly -Root $v1Root -Action {
+        Get-NervFullStackProtocolGenerationObservation -StateRoot $v1Root -SessionId $v0SessionId
+    } -Message 'Reading a flat v1 sidecar must not adopt, migrate, or delete it.'
+    Assert-True ([string]::Equals($v1.Generation, 'v1', [StringComparison]::Ordinal)) 'A flat v1 sidecar must remain unsupported prototype state.'
+    $v1Disposition = Get-NervFullStackCompatibilityDisposition -GenerationObservation $v1 -ActivationObservation (Get-NervFullStackProtocolActivationObservation -StateRoot $v1Root)
+    Assert-True ([string]::Equals($v1Disposition.Disposition, 'BlockedPrototypeV1', [StringComparison]::Ordinal)) 'A flat v1 prototype must be blocked without promotion.'
+
+    $validV2Root = New-A4FixtureRoot -Name 'valid-v2'
+    $a4Roots.Add($validV2Root)
+    $v2SessionId = 'nerv-a400-000002'
+    $v2Nonce = '0123456789abcdef0123456789abcdef'
+    Publish-A4V2Session -Root $validV2Root -SessionId $v2SessionId -CreationNonce $v2Nonce
+    $v2 = Assert-A4ObservationReadOnly -Root $validV2Root -Action {
+        Get-NervFullStackProtocolGenerationObservation -StateRoot $validV2Root -SessionId $v2SessionId
+    } -Message 'Reading a legal v2 fixture must not change authority or manifest records.'
+    Assert-True ([string]::Equals($v2.Generation, 'v2', [StringComparison]::Ordinal)) 'Matching authority and manifest must be classified as v2 independently of activation.'
+    $v2GateOff = Assert-A4ObservationReadOnly -Root $validV2Root -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $validV2Root
+    } -Message 'Reading an absent marker beside legal v2 state must not create marker residue.'
+    $v2Disposition = Get-NervFullStackCompatibilityDisposition -GenerationObservation $v2 -ActivationObservation $v2GateOff
+    Assert-True ([string]::Equals($v2Disposition.Disposition, 'v2', [StringComparison]::Ordinal)) 'A legal v2 generation remains v2 while activation is reported separately.'
+    Assert-True ([string]::Equals($v2Disposition.Activation, 'GateOff', [StringComparison]::Ordinal)) 'Compatibility must preserve GateOff rather than infer activation from v2 generation.'
+
+    $invalidMarkerRoot = New-A4FixtureRoot -Name 'invalid-marker'
+    $a4Roots.Add($invalidMarkerRoot)
+    Write-A4ActivationMarker -Root $invalidMarkerRoot -Valid $false
+    $invalidMarker = Assert-A4ObservationReadOnly -Root $invalidMarkerRoot -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $invalidMarkerRoot
+    } -Message 'Reading an invalid marker must not rewrite or delete it.'
+    Assert-True ([string]::Equals($invalidMarker.Activation, 'InvalidMarker', [StringComparison]::Ordinal)) 'A field-mismatched marker must fail closed as InvalidMarker.'
+
+    $markerDirectoryRoot = New-A4FixtureRoot -Name 'marker-directory'
+    $a4Roots.Add($markerDirectoryRoot)
+    [void] [System.IO.Directory]::CreateDirectory((Join-Path $markerDirectoryRoot 'fullstack-sessions/.protocol-mode.json'))
+    $markerDirectory = Assert-A4ObservationReadOnly -Root $markerDirectoryRoot -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $markerDirectoryRoot
+    } -Message 'Reading a directory-shaped marker residue must not rewrite or delete it.'
+    Assert-True ([string]::Equals($markerDirectory.Activation, 'InvalidMarker', [StringComparison]::Ordinal)) 'A directory occupying the marker path must fail closed as InvalidMarker rather than GateOff.'
+    Assert-True ($markerDirectory.Warnings.Count -gt 0) 'A directory-shaped marker residue must produce a visible warning.'
+
+    $markerLinkRoot = New-A4FixtureRoot -Name 'marker-link'
+    $a4Roots.Add($markerLinkRoot)
+    Write-A4ActivationMarker -Root $markerLinkRoot -Valid $true
+    $markerLinkPath = Join-Path $markerLinkRoot 'fullstack-sessions/.protocol-mode.json'
+    $markerLinkTarget = Join-Path $markerLinkRoot 'fullstack-sessions/protocol-mode-target.json'
+    [System.IO.File]::Move($markerLinkPath, $markerLinkTarget)
+    [void] [System.IO.File]::CreateSymbolicLink($markerLinkPath, $markerLinkTarget)
+    $markerLink = Assert-A4ObservationReadOnly -Root $markerLinkRoot -Action {
+        Get-NervFullStackProtocolActivationObservation -StateRoot $markerLinkRoot
+    } -Message 'Reading a linked marker residue must not follow, rewrite, or delete it.'
+    Assert-True ([string]::Equals($markerLink.Activation, 'InvalidMarker', [StringComparison]::Ordinal)) 'A symlink/reparse marker must remain fail closed as InvalidMarker.'
+    Assert-True ($markerLink.Warnings.Count -gt 0) 'A symlink/reparse marker must produce a visible warning.'
+
+    $boundaryFixtures = [System.Collections.Generic.List[object]]::new()
+
+    $boundary1Root = New-A4FixtureRoot -Name 'boundary-01'
+    $a4Roots.Add($boundary1Root)
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 1; Root = $boundary1Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'not-published' }
+    ) })
+
+    $boundary2Root = New-A4FixtureRoot -Name 'boundary-02'
+    $a4Roots.Add($boundary2Root)
+    $tempDirectory = Join-Path $boundary2Root "fullstack-controls/.tmp-$v2SessionId-$v2Nonce"
+    [void] [System.IO.Directory]::CreateDirectory($tempDirectory)
+    Write-Utf8TestFile -Path (Join-Path $tempDirectory 'authority.json') -Content '{"kind":"fullstack-session-authority"'
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 2; Root = $boundary2Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'temp-publication-residue' }
+    ) })
+
+    $boundary3Root = New-A4FixtureRoot -Name 'boundary-03'
+    $a4Roots.Add($boundary3Root)
+    Publish-A4Authority -Root $boundary3Root -SessionId $v2SessionId -CreationNonce $v2Nonce
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 3; Root = $boundary3Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'final-authority-only-init-incomplete' }
+    ) })
+
+    $boundary4Root = New-A4FixtureRoot -Name 'boundary-04'
+    $a4Roots.Add($boundary4Root)
+    Publish-A4Authority -Root $boundary4Root -SessionId $v2SessionId -CreationNonce $v2Nonce
+    Write-Utf8TestFile -Path (Join-Path $boundary4Root "fullstack-sessions/$v2SessionId.json") -Content '{"toolchainSnapshotComplete":true'
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 4; Root = $boundary4Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'manifest-init-incomplete' }
+    ) })
+
+    $boundary5Root = New-A4FixtureRoot -Name 'boundary-05'
+    $a4Roots.Add($boundary5Root)
+    Publish-A4V2Session -Root $boundary5Root -SessionId $v2SessionId -CreationNonce $v2Nonce
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 5; Root = $boundary5Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'published-unprobed' }
+    ) })
+
+    $probeIdentity = [pscustomobject]@{ pid = 4243; processStartTimeUtc = '2026-08-18T00:00:01.0000000Z'; role = 'dotnet-version-probe' }
+    $boundary6Root = New-A4FixtureRoot -Name 'boundary-06'
+    $a4Roots.Add($boundary6Root)
+    Publish-A4V2Session -Root $boundary6Root -SessionId $v2SessionId -CreationNonce $v2Nonce -ToolchainProbeIdentities @($probeIdentity)
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 6; Root = $boundary6Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'toolchain-probe-incomplete' }
+    ) })
+
+    $boundary7Root = New-A4FixtureRoot -Name 'boundary-07'
+    $a4Roots.Add($boundary7Root)
+    $snapshotOldSession = 'nerv-a400-000007'
+    $snapshotNewSession = 'nerv-a400-000017'
+    Publish-A4V2Session -Root $boundary7Root -SessionId $snapshotOldSession -CreationNonce $v2Nonce -ToolchainProbeIdentities @($probeIdentity)
+    Publish-A4V2Session -Root $boundary7Root -SessionId $snapshotNewSession -CreationNonce $v2Nonce -ToolchainSnapshotComplete $true
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 7; Root = $boundary7Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $snapshotOldSession; Expected = 'toolchain-probe-incomplete' },
+        [pscustomobject]@{ SessionId = $snapshotNewSession; Expected = 'published-unstarted' }
+    ) })
+
+    $boundary8Root = New-A4FixtureRoot -Name 'boundary-08'
+    $a4Roots.Add($boundary8Root)
+    Publish-A4V2Session -Root $boundary8Root -SessionId $v2SessionId -CreationNonce $v2Nonce -ToolchainSnapshotComplete $true
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 8; Root = $boundary8Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'published-unstarted' }
+    ) })
+
+    $boundary9Root = New-A4FixtureRoot -Name 'boundary-09'
+    $a4Roots.Add($boundary9Root)
+    Publish-A4V2Session -Root $boundary9Root -SessionId $v2SessionId -CreationNonce $v2Nonce -ToolchainSnapshotComplete $true -RuntimeStartAttempted $true
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 9; Root = $boundary9Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $v2SessionId; Expected = 'published-starting-uncertain' }
+    ) })
+
+    $runtimeIdentity = [pscustomobject]@{ pid = 4244; processStartTimeUtc = '2026-08-18T00:00:02.0000000Z'; role = 'apphost' }
+    $boundary10Root = New-A4FixtureRoot -Name 'boundary-10'
+    $a4Roots.Add($boundary10Root)
+    $runtimeOldSession = 'nerv-a400-000010'
+    $runtimeNewSession = 'nerv-a400-000020'
+    Publish-A4V2Session -Root $boundary10Root -SessionId $runtimeOldSession -CreationNonce $v2Nonce -ToolchainSnapshotComplete $true -RuntimeStartAttempted $true
+    Publish-A4V2Session -Root $boundary10Root -SessionId $runtimeNewSession -CreationNonce $v2Nonce -ToolchainSnapshotComplete $true -RuntimeStartAttempted $true -RuntimeIdentities @($runtimeIdentity)
+    $boundaryFixtures.Add([pscustomobject]@{ Number = 10; Root = $boundary10Root; Sessions = @(
+        [pscustomobject]@{ SessionId = $runtimeOldSession; Expected = 'published-starting-uncertain' },
+        [pscustomobject]@{ SessionId = $runtimeNewSession; Expected = $null }
+    ) })
+
+    Assert-True ($boundaryFixtures.Count -eq 10) 'Spec r2 section 5.3 must have ten independent OS temporary fixtures.'
+    foreach ($fixture in $boundaryFixtures) {
+        foreach ($session in $fixture.Sessions) {
+            $boundary = Assert-A4ObservationReadOnly -Root $fixture.Root -Action {
+                Get-NervFullStackPublicationBoundaryObservation -StateRoot $fixture.Root -SessionId $session.SessionId
+            } -Message "Crash boundary $($fixture.Number) classification must not write, migrate, delete, cleanup, or start external resources."
+            Assert-True ([string]::Equals([string] $boundary.Boundary, [string] $session.Expected, [StringComparison]::Ordinal)) "Crash boundary $($fixture.Number) must classify only the complete readback; expected '$($session.Expected)', actual '$($boundary.Boundary)'."
+        }
+    }
+}
+finally {
+    foreach ($root in $a4Roots) {
+        if ([System.IO.Directory]::Exists($root)) {
+            [System.IO.Directory]::Delete($root, $true)
+        }
+    }
+}
+
 Write-Host "Full-stack v2 protocol tests passed: $member"
 
 # F1a frozen member: verified-session-cas-and-leases (A3 portion).

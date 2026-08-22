@@ -86,7 +86,8 @@ public sealed class BusinessPartnerChangedConsumerTests
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new BusinessPartnerChangedIntegrationEventHandlerForProjectBusinessPartnerAvailability(dbContext, deadLetters);
         var integrationEvent = PartnerChanged("evt-missing-status", "partner-missing-status", "active", DateTimeOffset.Parse("2026-07-13T04:00:00Z"))
-            with { Payload = new MasterDataChangedPayload("business-partner", "BP-001", null!, DateTimeOffset.Parse("2026-07-13T04:00:00Z")) };
+            with
+        { Payload = new MasterDataChangedPayload("business-partner", "BP-001", null!, DateTimeOffset.Parse("2026-07-13T04:00:00Z")) };
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
@@ -106,7 +107,8 @@ public sealed class BusinessPartnerChangedConsumerTests
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new BusinessPartnerChangedIntegrationEventHandlerForProjectBusinessPartnerAvailability(dbContext, deadLetters);
         var integrationEvent = PartnerChanged("evt-missing-payload", "partner-missing-payload", "active", DateTimeOffset.Parse("2026-07-13T04:00:00Z"))
-            with { Payload = null! };
+            with
+        { Payload = null! };
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
 
@@ -236,8 +238,8 @@ public sealed class BusinessPartnerChangedConsumerTests
                 new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", "SITE-001"),
                 CancellationToken.None));
 
-        Assert.Contains("disabled", purchaseException.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("disabled", salesException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("业务伙伴『BP-001』已停用", purchaseException.Message, StringComparison.Ordinal);
+        Assert.Contains("业务伙伴『BP-001』已停用", salesException.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.PurchaseOrders);
         Assert.Empty(dbContext.SalesOrders);
     }
