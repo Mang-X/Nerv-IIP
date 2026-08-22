@@ -1043,6 +1043,8 @@ function Invoke-NervFullStackGuardian {
         [int] $CoordinatorPid,
         [string] $CoordinatorStartTimeUtc,
         [ValidateRange(1, 3600)] [int] $IntervalSeconds = 60,
+        [ValidateRange(1, 10)] [int] $MaximumCoordinatorIdentityObservations = 3,
+        [ValidateRange(1, 60)] [int] $CoordinatorIdentityRetryDelaySeconds = 1,
         [ValidateRange(1, 10)] [int] $MaximumObservationFailures = 3,
         [ValidateRange(1, 10)] [int] $MaximumStopAttempts = 3,
         [scriptblock] $ReadAction,
@@ -1051,6 +1053,7 @@ function Invoke-NervFullStackGuardian {
         [scriptblock] $DiagnosticAction,
         [scriptblock] $StopAction,
         [scriptblock] $DelayAction,
+        [scriptblock] $UtcNowAction,
         [string[]] $SensitiveValues = @()
     )
 
@@ -1103,25 +1106,10 @@ function Invoke-NervFullStackGuardian {
         }
     }
     if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
-
-    Write-Host "Guardian started for '$SessionId' in $Mode mode."
-    $observationFailures = 0
-    while ($true) {
-        try {
-            $manifest = & $ReadAction
-            $observationFailures = 0
-        }
-        catch {
-            $observationFailures++
-            Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $($_.Exception.Message)"
-            if ($observationFailures -ge $MaximumObservationFailures) { throw }
-            & $DelayAction $IntervalSeconds
-            continue
-        }
-
-        if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
-        $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset]::UtcNow
-        $coordinatorObservation = if ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc)) {
+    if ($null -eq $UtcNowAction) { $UtcNowAction = { [DateTimeOffset]::UtcNow } }
+    $coordinatorIdentityInputComplete = $CoordinatorPid -gt 0 -and -not [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc)
+    $observeCoordinatorIdentity = {
+        if (-not $coordinatorIdentityInputComplete) {
             New-NervProcessIdentityObservation `
                 -Status Unknown `
                 -ProcessId $CoordinatorPid `
@@ -1140,8 +1128,79 @@ function Invoke-NervFullStackGuardian {
                     -FailureReason $_.Exception.Message
             }
         }
+    }
+
+    Write-Host "Guardian started for '$SessionId' in $Mode mode."
+    $observationFailures = 0
+    while ($true) {
+        try {
+            $manifest = & $ReadAction
+            $observationFailures = 0
+        }
+        catch {
+            $observationFailures++
+            $safeManifestObservationError = Protect-NervFullStackDiagnosticText `
+                -Text "$($_.Exception.Message)" `
+                -SensitiveValues @($effectiveSensitiveValues)
+            Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
+            if ($observationFailures -ge $MaximumObservationFailures) {
+                throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+            }
+            & $DelayAction $IntervalSeconds
+            continue
+        }
+
+        if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
+        $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)
+        $coordinatorObservation = & $observeCoordinatorIdentity
+        $coordinatorIdentityObservationCount = 1
+        if (
+            -not $leaseExpired -and
+            [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
+            [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)
+        ) {
+            if ($coordinatorIdentityInputComplete) {
+                for ($identityObservation = 2; $identityObservation -le $MaximumCoordinatorIdentityObservations; $identityObservation++) {
+                    & $DelayAction $CoordinatorIdentityRetryDelaySeconds
+                    $coordinatorObservation = & $observeCoordinatorIdentity
+                    $coordinatorIdentityObservationCount++
+                    if (-not [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)) { break }
+                }
+                if ([DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)) {
+                    try {
+                        $manifest = & $ReadAction
+                        $observationFailures = 0
+                    }
+                    catch {
+                        $observationFailures++
+                        $safeManifestObservationError = Protect-NervFullStackDiagnosticText `
+                            -Text "$($_.Exception.Message)" `
+                            -SensitiveValues @($effectiveSensitiveValues)
+                        Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
+                        if ($observationFailures -ge $MaximumObservationFailures) {
+                            throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+                        }
+                        & $DelayAction $IntervalSeconds
+                        continue
+                    }
+                    if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
+                    $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)
+                }
+            }
+            if (
+                -not $leaseExpired -and
+                [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)
+            ) {
+                Write-Warning "Guardian retained '$SessionId' after coordinator identity remained Unknown for $coordinatorIdentityObservationCount observation(s)."
+                & $DelayAction $IntervalSeconds
+                continue
+            }
+        }
         $coordinatorMissing = [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
-            -not [string]::Equals([string]$coordinatorObservation.status, 'Active', [StringComparison]::Ordinal)
+            (
+                [string]::Equals([string]$coordinatorObservation.status, 'Absent', [StringComparison]::Ordinal) -or
+                [string]::Equals([string]$coordinatorObservation.status, 'Mismatched', [StringComparison]::Ordinal)
+            )
         if (-not ($leaseExpired -or $coordinatorMissing)) {
             & $DelayAction $IntervalSeconds
             continue
