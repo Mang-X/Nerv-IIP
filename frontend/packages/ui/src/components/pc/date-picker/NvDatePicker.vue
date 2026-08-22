@@ -16,6 +16,8 @@ const props = withDefaults(
     modelValue?: string | null
     placeholder?: string
     disabled?: boolean
+    ariaInvalid?: boolean
+    ariaDescribedby?: string
     class?: HTMLAttributes['class']
   }>(),
   { modelValue: null, placeholder: '选择日期', disabled: false },
@@ -85,6 +87,8 @@ function pickToday() {
       <NvButton
         variant="outline"
         :disabled="disabled"
+        :aria-invalid="ariaInvalid || undefined"
+        :aria-describedby="ariaDescribedby"
         :class="
           cn(
             // 窄屏占满、到 sm 断点才收成固定宽度：跟 NvFilterBar 里搜索框 / 下拉框

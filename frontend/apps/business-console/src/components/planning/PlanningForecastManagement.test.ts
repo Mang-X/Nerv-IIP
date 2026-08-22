@@ -205,14 +205,12 @@ describe('PlanningForecastManagement', () => {
       .find((button) => button.text().includes('新建预测'))!
       .trigger('click')
     const formDates = wrapper.findAllComponents({ name: 'NvDatePicker' })
-    formDates.find((component) => component.props('id') === 'forecast-start')!.vm.$emit(
-      'update:modelValue',
-      '',
-    )
-    formDates.find((component) => component.props('id') === 'forecast-end')!.vm.$emit(
-      'update:modelValue',
-      '',
-    )
+    formDates
+      .find((component) => component.props('id') === 'forecast-start')!
+      .vm.$emit('update:modelValue', '')
+    formDates
+      .find((component) => component.props('id') === 'forecast-end')!
+      .vm.$emit('update:modelValue', '')
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
@@ -226,6 +224,14 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.get('[aria-label="预测单位"]').classes()).toContain('border-destructive')
     expect(wrapper.get('#forecast-start').classes()).toContain('border-destructive')
     expect(wrapper.get('#forecast-end').classes()).toContain('border-destructive')
+    expect(wrapper.get('[aria-label="预测 SKU"]').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('[aria-label="预测 SKU"]').attributes('aria-describedby')).toBe(
+      'forecast-sku-error',
+    )
+    expect(wrapper.get('#forecast-start').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('#forecast-start').attributes('aria-describedby')).toBe(
+      'forecast-start-error',
+    )
     expect(wrapper.get('#forecast-quantity').attributes('data-invalid')).toBe('true')
     expect(wrapper.get('#forecast-validation-summary').text()).not.toContain('请填写预测编号')
     expect(wrapper.get('#forecast-validation-summary').text()).toContain('预测数量必须大于 0')
