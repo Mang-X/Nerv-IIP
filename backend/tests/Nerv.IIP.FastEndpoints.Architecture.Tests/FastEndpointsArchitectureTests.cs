@@ -112,11 +112,12 @@ public sealed class FastEndpointsArchitectureTests
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web"
     };
 
-    public static TheoryData<string> LocalPostgreSqlAppHostResources => new()
+    public static TheoryData<string> PostgreSqlAppHostResources => new()
     {
         "apphub",
         "iam",
         "ops",
+        "fileStorage",
         "notification",
         "businessMasterData",
         "businessProductEngineering",
@@ -299,33 +300,62 @@ public sealed class FastEndpointsArchitectureTests
     }
 
     [Fact]
-    public void Aspire_apphost_runs_project_resources_as_development()
+    public void Aspire_apphost_project_resources_inherit_the_apphost_environment()
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var normalizedProgramText = programText.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-        Assert.Contains("ASPNETCORE_ENVIRONMENT", programText);
-        Assert.Contains("DOTNET_ENVIRONMENT", programText);
         Assert.Contains("AddParameter(\"redis-password\", secret: true)", programText);
         Assert.Contains("AddRedis(\"redis\", password: redisPassword)", programText);
-        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>", programText);
-        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>", programText);
-        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>", programText);
-        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>", programText);
-        Assert.Contains("WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>", programText);
-        Assert.Matches(
-            "businessMes[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
-            programText);
-        Assert.Matches(
-            "businessMaintenance[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
-            programText);
-        Assert.Matches(
-            "apphub[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
-            programText);
-        Assert.Matches(
-            "notification[\\s\\S]*WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
-            programText);
+
+        var projectRegistrations = Regex.Matches(programText, @"builder\.AddProject<Projects\.[^>]+>\(");
+        var inheritedEnvironmentRegistrations = Regex.Matches(
+            programText,
+            @"WithAppHostEnvironment\(builder\.AddProject<Projects\.[^>]+>\(");
+        Assert.Equal(21, projectRegistrations.Count);
+        Assert.Equal(projectRegistrations.Count, inheritedEnvironmentRegistrations.Count);
+        Assert.DoesNotContain("WithLocalDevelopmentEnvironment", programText, StringComparison.Ordinal);
+
+        var helper = Regex.Match(
+            normalizedProgramText,
+            @"ProjectResource> WithAppHostEnvironment\([\s\S]*?\n\}").Value;
+        Assert.NotEmpty(helper);
+        Assert.Contains(
+            ".WithEnvironment(\"ASPNETCORE_ENVIRONMENT\", builder.Environment.EnvironmentName)",
+            helper,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithEnvironment(\"DOTNET_ENVIRONMENT\", builder.Environment.EnvironmentName)",
+            helper,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("LocalDevelopmentEnvironment", helper, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Aspire_apphost_disables_development_only_seed_profiles_outside_development()
+    {
+        var root = FindRepositoryRoot();
+        var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var collapsed = Regex.Replace(programText.Replace("\r\n", "\n", StringComparison.Ordinal), @"\s+", " ");
+
+        Assert.Contains(
+            "var developmentOnlyEnabledValue = localDevelopmentAppHost ? \"true\" : \"false\";",
+            collapsed,
+            StringComparison.Ordinal);
+        Assert.Contains("var leaderDemoEnabled = localDevelopmentAppHost &&", collapsed, StringComparison.Ordinal);
+        Assert.Contains("var walkthroughSeedEnabled = localDevelopmentAppHost &&", collapsed, StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithEnvironment(\"Iam__Seed__Enabled\", developmentOnlyEnabledValue)",
+            programText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithEnvironment(\"Erp__Seed__SalesOrderDemandDemo__Enabled\", developmentOnlyEnabledValue)",
+            programText,
+            StringComparison.Ordinal);
+        Assert.DoesNotMatch("WithEnvironment\\(\"(?:Iam__Seed__Enabled|Erp__Seed__SalesOrderDemandDemo__Enabled)\", \"true\"\\)", programText);
     }
 
     [Fact]
@@ -403,16 +433,17 @@ public sealed class FastEndpointsArchitectureTests
     }
 
     [Theory]
-    [MemberData(nameof(LocalPostgreSqlAppHostResources))]
-    public void Aspire_apphost_local_postgresql_resources_enable_development_automigration(string resourceVariable)
+    [MemberData(nameof(PostgreSqlAppHostResources))]
+    public void Aspire_apphost_postgresql_resources_only_enable_development_automigration(string resourceVariable)
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
         var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
 
         Assert.Matches(
-            $"var {resourceVariable} =(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)",
+            $"var {resourceVariable} =(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__AutoMigrate\", developmentOnlyEnabledValue\\)",
             programText);
+        Assert.DoesNotMatch("WithEnvironment\\(\"Persistence__AutoMigrate\", \"true\"\\)", programText);
     }
 
     [Fact]
