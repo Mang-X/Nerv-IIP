@@ -63,10 +63,21 @@ token 之上。
 | `@nerv-iip/ui/file-preview` | 运行时子入口              | 全 app 源码                          |
 | `@nerv-iip/ui/test-support` | test-only 子入口（#2014） | 只在各 app 的 `src/test/setup.ts` 里 |
 
-`test-support` 装的是各包 vitest `setupFiles` 用的支撑件（unovis tooltip 定时器收口等），
-不进主桶 `src/index.ts`，因此不属于组件边界、也不受 ADR 0020 的 NvUI 命名约束；页面、
-组件、composable 乃至普通测试文件引用它一律判红。新增任何子入口都要先改这张表，
-再改四份 contract test 的放行集。
+`test-support` 装的是各包 vitest `setupFiles` 用的支撑件（unovis tooltip 定时器收口等）
+与这条 import hygiene 门禁自身的实现，不进主桶 `src/index.ts`，因此不属于组件边界、也不受
+ADR 0020 的 NvUI 命名约束；页面、组件、composable 乃至普通测试文件引用它一律判红。
+
+**门禁只有一份实现（#2022）。** 规则本体在
+`packages/ui/src/test-support/nvuiImportHygiene.ts`，四个 app 的
+`src/nvui-imports.contract.test.ts` 只是调用 `runNvUiImportHygieneContract(import.meta.url)`
+的固定壳。新增或调整子入口放行集改那一处，不要在某个 app 里加特例；四份壳必须字节相同。
+这两件事都由机器守护：门禁自己枚举「消费组件库且有 vitest `test` 脚本」的 app（判据从各
+app 的 `package.json` 推导，不是写死名单），断言它们都挂了壳、且壳字节一致，四个 app 的
+job 里各跑一次，失败归属仍落到具体 app。`apps/design-system` 消费组件库但没有测试运行器
+（VitePress 文档站），因此不在集合里。
+
+给某个 app 新挂这条门禁：把任一份壳原样复制到该 app 的 `src/`，并在它的 vite 配置里补
+`@nerv-iip/ui/test-support` 别名（必须排在裸 `@nerv-iip/ui` 之前，见上）。
 
 ## 样式层（CSS 层叠层，ADR 0020）
 
