@@ -142,7 +142,7 @@ public sealed class SkuDisabledConsumerTests
                     null),
                 CancellationToken.None));
 
-        Assert.Contains("disabled", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("SKU「SKU-DISABLED」已停用，不能新建 MES 工单。", exception.Message);
         Assert.Single(await commandContext.WorkOrders.ToListAsync(CancellationToken.None));
         Assert.Equal("WO-HISTORICAL", (await commandContext.WorkOrders.SingleAsync(CancellationToken.None)).WorkOrderIdValue);
         Assert.Single(await commandContext.MesSkuAvailabilities.ToListAsync(CancellationToken.None));

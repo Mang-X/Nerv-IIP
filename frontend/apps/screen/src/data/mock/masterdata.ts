@@ -2,7 +2,7 @@
 // 真实平台无 workshop/line 聚合维度，最细到 WorkCenter/Device；此处提供前端聚合所需映射真相源。
 // 见 spec §1.1「数据现实」。
 //
-// ⚠️ 本文件是《工厂世界观设定集》（docs/superpowers/plans/2026-07-26-factory-world-bible.md）
+// ⚠️ 本文件是《工厂设定与人工走查最小数据》（docs/architecture/factory-world-bible.md）
 // L0 主数据在大屏侧的镜像：编码与中文名**逐字**取自后端权威种子
 // `backend/services/Business/MasterData/.../Application/Seed/WorldBibleSpec.cs`
 // （SITE-001 一号工厂 / 3 车间 / 14 产线 / 17 工作中心 / 46 台设备）。

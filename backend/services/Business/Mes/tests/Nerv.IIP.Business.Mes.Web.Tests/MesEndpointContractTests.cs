@@ -2077,10 +2077,12 @@ public sealed class MesEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new GetProductionReportQueryHandler(dbContext);
-        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new GetProductionReportQuery("org-001", "env-dev", "PRPT-MISSING"), CancellationToken.None));
-        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        var hidden = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new GetProductionReportQuery("org-001", "env-dev", "PRPT-HIDDEN"), CancellationToken.None));
+        Assert.Equal("未找到报工记录，ReportNo = PRPT-MISSING", missing.Message);
+        Assert.Equal("未找到报工记录，ReportNo = PRPT-HIDDEN", hidden.Message);
     }
 
     [Fact]
