@@ -42228,7 +42228,7 @@
           },
           "forecastReference": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": true
           },
@@ -42276,7 +42276,7 @@
           },
           "idempotencyKey": {
             "type": "string",
-            "maxLength": 150,
+            "maxLength": 128,
             "minLength": 0,
             "nullable": true
           }

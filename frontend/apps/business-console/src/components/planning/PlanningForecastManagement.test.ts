@@ -6,7 +6,7 @@ import PlanningForecastManagement from './PlanningForecastManagement.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const spies = vi.hoisted(() => ({
-  saveForecast: vi.fn(async () => ({ success: true })),
+  saveForecast: vi.fn(async (_form: Record<string, unknown>) => ({ success: true })),
   refreshForecasts: vi.fn(async () => undefined),
   success: vi.fn(),
   failure: vi.fn(),
@@ -58,6 +58,8 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 vi.mock('@/utils/notify', () => ({
   inlineErrorMessage: (error: unknown) => String(error ?? ''),
+  serverErrorMessage: (error: unknown) =>
+    typeof error === 'object' && error && 'message' in error ? String(error.message) : '',
   notifySuccess: spies.success,
   notifyOperationFailure: spies.failure,
 }))
@@ -87,10 +89,10 @@ vi.mock('@nerv-iip/ui', () => {
   })
   const DatePicker = defineComponent({
     name: 'NvDatePicker',
-    props: ['modelValue', 'id'],
+    props: ['modelValue', 'id', 'ariaLabel'],
     emits: ['update:modelValue'],
     template:
-      "<button type=\"button\" :id=\"id\" @click=\"$emit('update:modelValue', id.includes('start') ? '2026-09-01' : '2026-09-30')\">{{ modelValue }}</button>",
+      "<button type=\"button\" :id=\"id\" :aria-label=\"ariaLabel\" @click=\"$emit('update:modelValue', id.includes('start') ? '2026-09-01' : '2026-09-30')\">{{ modelValue }}</button>",
   })
   const DataTable = defineComponent({
     props: ['columns', 'rows'],
@@ -139,7 +141,8 @@ vi.mock('@nerv-iip/ui', () => {
 describe('PlanningForecastManagement', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    spies.saveForecast.mockClear()
+    spies.saveForecast.mockReset()
+    spies.saveForecast.mockResolvedValue({ success: true })
     spies.refreshForecasts.mockClear()
     spies.success.mockClear()
     spies.failure.mockClear()
@@ -219,7 +222,20 @@ describe('PlanningForecastManagement', () => {
     expect(sku.text()).toBe('减振器总成 · FG-1000')
     expect(wrapper.get('[aria-label="预测工厂"]').text()).toBe('上海工厂 · SITE-01')
     expect(wrapper.get('[aria-label="预测单位"]').text()).toBe('件 · pcs')
-    expect(wrapper.findAllComponents({ name: 'NvDatePicker' })).toHaveLength(2)
+    expect(wrapper.find('#forecast-start').exists()).toBe(true)
+    expect(wrapper.find('#forecast-end').exists()).toBe(true)
+  })
+
+  it('预测期间筛选使用日期组件并写入查询筛选状态', async () => {
+    const wrapper = mount(PlanningForecastManagement)
+
+    const dateFilters = wrapper.findAllComponents({ name: 'NvDatePicker' })
+    expect(dateFilters).toHaveLength(2)
+    await wrapper.get('[aria-label="预测开始日期筛选"]').trigger('click')
+    await wrapper.get('[aria-label="预测结束日期筛选"]').trigger('click')
+
+    expect(wrapper.get('[aria-label="预测开始日期筛选"]').text()).toBe('2026-09-01')
+    expect(wrapper.get('[aria-label="预测结束日期筛选"]').text()).toBe('2026-09-30')
   })
 
   it('新建提交不要求预测编号，并复用当前对话框的幂等键', async () => {
@@ -254,5 +270,72 @@ describe('PlanningForecastManagement', () => {
       forwardConsumptionDays: 0,
       idempotencyKey: 'forecast-create-forecast-create-uuid',
     })
+  })
+
+  it('新建失败后在同一对话框重试仍复用首次幂等键', async () => {
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.planning.demands.manage'] },
+    } as never)
+    spies.saveForecast.mockRejectedValueOnce(new Error('network error'))
+    const randomUUID = vi
+      .fn()
+      .mockReturnValueOnce('setup-key')
+      .mockReturnValueOnce('dialog-key')
+      .mockReturnValueOnce('first-submit-key')
+      .mockReturnValueOnce('retry-submit-key')
+    vi.stubGlobal('crypto', { randomUUID })
+    const wrapper = mount(PlanningForecastManagement)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建预测'))!
+      .trigger('click')
+    await wrapper.get('[aria-label="预测 SKU"]').trigger('click')
+    await wrapper.get('[aria-label="预测工厂"]').trigger('click')
+    await wrapper.get('[aria-label="预测单位"]').trigger('click')
+    await wrapper.get('#forecast-start').trigger('click')
+    await wrapper.get('#forecast-end').trigger('click')
+    await wrapper.get('#forecast-quantity').setValue('120')
+
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('form').trigger('submit')
+
+    expect(spies.saveForecast).toHaveBeenCalledTimes(2)
+    expect(spies.saveForecast.mock.calls[0]?.[0].idempotencyKey).toBe(
+      'forecast-create-dialog-key',
+    )
+    expect(spies.saveForecast.mock.calls[1]?.[0].idempotencyKey).toBe(
+      'forecast-create-dialog-key',
+    )
+  })
+
+  it('幂等冲突提示先刷新确认结果并重新打开新建对话框', async () => {
+    useAuthStore().$patch({
+      principal: { permissionCodes: ['business.planning.demands.manage'] },
+    } as never)
+    spies.saveForecast.mockRejectedValueOnce({
+      message: "Idempotency key 'forecast-create-1' conflicts with a different forecast input create payload.",
+    })
+    const wrapper = mount(PlanningForecastManagement)
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建预测'))!
+      .trigger('click')
+    await wrapper.get('[aria-label="预测 SKU"]').trigger('click')
+    await wrapper.get('[aria-label="预测工厂"]').trigger('click')
+    await wrapper.get('[aria-label="预测单位"]').trigger('click')
+    await wrapper.get('#forecast-start').trigger('click')
+    await wrapper.get('#forecast-end').trigger('click')
+    await wrapper.get('#forecast-quantity').setValue('120')
+    await wrapper.get('form').trigger('submit')
+
+    expect(spies.failure).toHaveBeenCalledWith(
+      '保存预测失败',
+      expect.objectContaining({
+        message: '本次填写内容与先前提交不一致。请先刷新预测列表确认首次提交结果；如需重新创建，请关闭当前窗口后再次新建。',
+      }),
+      '保存预测失败，请稍后重试。',
+    )
   })
 })

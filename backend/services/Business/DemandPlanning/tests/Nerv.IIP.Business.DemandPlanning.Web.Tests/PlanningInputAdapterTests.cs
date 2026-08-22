@@ -225,7 +225,7 @@ public sealed class PlanningInputAdapterTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateOrUpdateForecastInputCommandHandler(dbContext, new DemandPlanningCodingService());
 
-        await handler.Handle(NewForecastCommand() with { ForecastReference = null! }, CancellationToken.None);
+        await handler.Handle(NewForecastCommand() with { ForecastReference = null }, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Matches("^FC-[0-9]{8}-[0-9]{6}$", Assert.Single(dbContext.ForecastInputs).ForecastReference);

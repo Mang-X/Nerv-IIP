@@ -10,7 +10,12 @@ import {
 import { useBusinessForecasts, type ForecastForm } from '@/composables/useBusinessForecasts'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -199,8 +204,22 @@ async function submitForecast() {
     dialogOpen.value = false
     notifySuccess(editMode.value ? '预测已更新。' : '预测已创建。')
   } catch (error) {
-    notifyOperationFailure('保存预测失败', error, '保存预测失败，请稍后重试。')
+    notifyOperationFailure(
+      '保存预测失败',
+      forecastSaveNotificationError(error),
+      '保存预测失败，请稍后重试。',
+    )
   }
+}
+
+function forecastSaveNotificationError(error: unknown) {
+  const message = serverErrorMessage(error)
+  if (/idempotency key.+conflicts with a different.+payload/i.test(message)) {
+    return new Error(
+      '本次填写内容与先前提交不一致。请先刷新预测列表确认首次提交结果；如需重新创建，请关闭当前窗口后再次新建。',
+    )
+  }
+  return error
 }
 
 function formatDate(value?: string | null) {
@@ -235,6 +254,20 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
           search-placeholder="搜索工厂编码或名称"
           aria-label="预测工厂筛选"
           class="sm:w-48"
+        />
+        <NvDatePicker
+          id="forecast-filter-start"
+          v-model="filters.fromDate"
+          placeholder="开始日期"
+          aria-label="预测开始日期筛选"
+          class="sm:w-40"
+        />
+        <NvDatePicker
+          id="forecast-filter-end"
+          v-model="filters.toDate"
+          placeholder="结束日期"
+          aria-label="预测结束日期筛选"
+          class="sm:w-40"
         />
       </template>
       <template #actions>
