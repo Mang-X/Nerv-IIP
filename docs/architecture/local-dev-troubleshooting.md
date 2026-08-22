@@ -34,19 +34,19 @@
 
 ## AppHost 配置
 
-6. **新项目资源在本地以 Development 运行。** 平台 AppHost 是规范的开发启动器。除非有明确的
-   测试/部署理由，新项目资源必须设置
-   `ASPNETCORE_ENVIRONMENT=Development` 和 `DOTNET_ENVIRONMENT=Development` 运行。否则服务可能
-   选择近似生产的持久化或消息分支，导致与本地预期不同的失败。
+6. **项目资源继承 AppHost 环境。** 平台 AppHost 是规范的开发启动器。项目资源必须经
+   `WithAppHostEnvironment` 继承 AppHost 的 `EnvironmentName`，而不是为资源硬写 `Development`；因此
+   `./nerv.ps1 dev` 下两项 .NET 环境变量为 `Development`，而生产 Compose publish 下为 `Production`。
 
-7. **PostgreSQL 服务需要启用本地 migration。** 若本地 Development 服务依赖 PostgreSQL
-   migration，核实 AppHost 是否必须为该资源传入 `Persistence__AutoMigrate=true`。未启用 migration
+7. **PostgreSQL 服务只在本地 Development 启用 migration。** 若本地 Development 服务依赖 PostgreSQL
+   migration，AppHost 必须以 `developmentOnlyEnabledValue` 为该资源传入 `Persistence__AutoMigrate`，使其在
+   Development 为 `true`、在非 Development publish 为 `false`。未启用本地 migration
    可能表现为范围宽泛的 Console 请求失败、下游 500s 或 Gateway circuit breaker；根因可能是缺少表，
    例如 `relation "...table..." does not exist`。已观察到的本地失败包括 AppHub
    `apphub.registration_idempotency`、MES 执行表、Maintenance readiness 表，以及 Notification 的
    `notification_messages` / `notification_tasks`。
    FileStorage 不支持 Development InMemory metadata；必须从 `./nerv.ps1 dev` 启动，由 AppHost 注入
-   `Persistence__Provider=PostgreSQL`、`FileStorageDb` 和 `Persistence__AutoMigrate=true`。直接运行其 Web
+   `Persistence__Provider=PostgreSQL`、`FileStorageDb` 和由上述判据决定的 `Persistence__AutoMigrate`。直接运行其 Web
    项目或设置 `Persistence:Provider=InMemory` 会在启动阶段失败，以避免磁盘 tus 字节变成无 metadata 的孤儿。
 
 8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL
