@@ -13,6 +13,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
+using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.DistributedLocking;
 using Nerv.IIP.Localization;
@@ -34,6 +35,8 @@ try
     builder.Services.AddHealthChecks();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.Configure<WcsRetryOptions>(builder.Configuration.GetSection("Wcs:Retry"));
+    // MES 领料默认库位来自部署配置；留空即「未配置」，消费者进死信而不是兜底到演示库位（#1754）。
+    builder.Services.Configure<WmsMaterialIssueLocationOptions>(builder.Configuration.GetSection("MaterialIssue"));
     builder.Services.AddMvc();
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();

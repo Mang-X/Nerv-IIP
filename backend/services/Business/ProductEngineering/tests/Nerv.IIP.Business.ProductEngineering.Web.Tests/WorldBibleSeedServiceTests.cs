@@ -14,6 +14,26 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 public sealed class WorldBibleSeedServiceTests
 {
     [Fact]
+    public async Task Walkthrough_projection_seeds_one_auditable_product_and_its_work_standards()
+    {
+        await using var db = CreateDbContext();
+        var seed = new WorldBibleSeedService(db);
+
+        await seed.SeedWalkthroughAsync("org-001", "env-dev");
+        await seed.SeedWalkthroughAsync("org-001", "env-dev");
+
+        Assert.Equal(8, await db.StandardOperations.CountAsync());
+        Assert.Equal(2, await db.EngineeringItems.CountAsync());
+        Assert.Equal(2, await db.EngineeringBoms.CountAsync());
+        Assert.Equal(2, await db.ManufacturingBoms.CountAsync());
+        var routing = Assert.Single(await db.Routings.Include(x => x.Operations).ToArrayAsync());
+        Assert.Equal(WalkthroughSeedSpec.FinishedSkuCode, routing.SkuCode);
+        Assert.Equal(8, routing.Operations.Count);
+        Assert.All(routing.Operations, operation => Assert.True(operation.RunMinutes > 0));
+        Assert.Equal(2, await db.ProductionVersions.CountAsync());
+    }
+
+    [Fact]
     public void Spec_declares_twenty_four_products_with_eight_to_twelve_bom_lines()
     {
         Assert.Equal(24, WorldBibleSpec.Products.Count);

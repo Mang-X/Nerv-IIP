@@ -51,7 +51,7 @@ public sealed class GetTelemetryProductionReportCandidateQueryHandler(Applicatio
     {
         var row = await dbContext.TelemetryProductionReportCandidates.AsNoTracking().Include(x => x.Transitions).SingleOrDefaultAsync(
             x => x.Id == request.CandidateId && x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId, cancellationToken)
-            ?? throw new KnownException("Telemetry production report candidate was not found.");
+            ?? throw new KnownException("未找到遥测报工候选。");
         return TelemetryCandidateProjection.Map(row);
     }
 }

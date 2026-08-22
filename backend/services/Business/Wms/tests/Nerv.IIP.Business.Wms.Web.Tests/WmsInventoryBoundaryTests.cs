@@ -84,7 +84,7 @@ public sealed class WmsInventoryBoundaryTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(conflict, CancellationToken.None));
 
-        Assert.Contains("different inbound facts", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("入库事实不一致", exception.Message, StringComparison.Ordinal);
         Assert.Equal(1, await dbContext.InboundOrders.CountAsync());
     }
 
@@ -1395,7 +1395,7 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Reservation_client_preserves_inventory_business_rejection_message()
+    public async Task Reservation_client_uses_a_safe_outer_message_for_downstream_rejection()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(
             """{"data":null,"success":false,"message":"Reservation quantity exceeds available stock.","code":400}"""))
@@ -1424,7 +1424,8 @@ public sealed class WmsInventoryBoundaryTests
                 4m),
             CancellationToken.None));
 
-        Assert.Contains("exceeds available stock", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("库存预留失败，请检查库存可用量后重试。", exception.Message);
+        Assert.DoesNotContain("exceeds available stock", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

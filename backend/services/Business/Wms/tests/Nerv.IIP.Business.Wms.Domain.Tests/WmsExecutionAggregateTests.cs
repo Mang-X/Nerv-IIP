@@ -249,7 +249,7 @@ public sealed class WmsExecutionAggregateTests
         var exception = Assert.Throws<KnownException>(() =>
             outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 5m));
 
-        Assert.Contains("pick", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("拣货数量不能超过出库行数量", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

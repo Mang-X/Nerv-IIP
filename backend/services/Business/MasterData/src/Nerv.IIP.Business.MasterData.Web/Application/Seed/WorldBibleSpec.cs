@@ -1,7 +1,7 @@
 namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 /// <summary>
-/// 《工厂世界观设定集》（`docs/superpowers/plans/2026-07-26-factory-world-bible.md`）L0 主数据的
+/// 《工厂设定与人工走查最小数据》（`docs/architecture/factory-world-bible.md`）L0 主数据的
 /// MasterData 侧固定形状：3 车间 / 14 产线 / 17 工作中心 / 46 台设备 / 84 SKU / 6 部门 / 6 班组 /
 /// 10 项技能 / 58 名员工 / 8 客户 / 10 供应商（宁沪减振科技有限公司）。
 ///

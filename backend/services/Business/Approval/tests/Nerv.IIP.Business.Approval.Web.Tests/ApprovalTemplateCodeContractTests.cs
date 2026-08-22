@@ -12,11 +12,8 @@ namespace Nerv.IIP.Business.Approval.Web.Tests;
 
 /// <summary>
 /// #1344 三方漂移契约（审批 / 种子侧）：审批模板码的唯一事实来源是
-/// <see cref="ApprovalTemplateCodes"/>，种子模板、业务服务发起侧、界面侧共用。
-///
-/// 覆盖两例词表错配：ERP 硬编码 <c>erp-purchase-order-release</c> 而种子落库
-/// <c>APT-WB-PO-001</c>（第六例，转单 / RFQ 必 400）；Inventory 盘点差异默认
-/// <c>COUNT-VARIANCE</c> 而种子根本没有该模板（第八例，差异超阈值盘点确认必 400）。
+/// <see cref="ApprovalTemplateCodes"/>，产品基线种子、业务服务发起侧、界面侧共用。
+/// WorldHistory 的 <c>APT-WB-*</c> 旧码只用于已持久历史事实，不得再作为产品发起契约。
 /// </summary>
 public sealed class ApprovalTemplateCodeContractTests
 {
@@ -183,17 +180,18 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.DoesNotContain("Nerv.IIP.Contracts.Inventory", referenced);
     }
 
-    /// <summary>任何一侧改动常量或种子字面量，本用例必红：权威码值 = 落库事实 APT-WB-PO-001。</summary>
+    /// <summary>产品码与 WorldHistory 旧码必须分离；旧码仍保持逐字冻结。</summary>
     [Fact]
     public void Seed_spec_and_contract_pin_the_same_purchase_template_vocabulary()
     {
-        Assert.Equal("APT-WB-PO-001", ApprovalTemplateCodes.PurchaseOrderRelease);
-        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
+        Assert.Equal("purchase-order-release", ApprovalTemplateCodes.PurchaseOrderRelease);
+        Assert.Equal("APT-WB-PO-001", WorldHistoryApprovalSpec.PurchaseTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
         Assert.Equal("purchase-order", WorldHistoryApprovalSpec.PurchaseDocumentType);
 
-        // #1685：采购**变更**再审批拆出独立模板码（沿用 APT-WB- 号段），发起侧 / 种子侧共用。
-        Assert.Equal("APT-WB-PO-002", ApprovalTemplateCodes.PurchaseOrderChange);
-        Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
+        Assert.Equal("purchase-order-change", ApprovalTemplateCodes.PurchaseOrderChange);
+        Assert.Equal("APT-WB-PO-002", WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderChange, WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
         Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalTemplateCodes.PurchaseOrderChange);
 
         // 单据类型刻意与下达相同：换新值就必须同步 ERP 回写消费侧 / 委托单据范围 / 界面词表三处。
@@ -205,21 +203,23 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Equal("采购变更审批", WorldHistoryApprovalSpec.PurchaseChangeStepName);
         Assert.NotEqual(WorldHistoryApprovalSpec.PurchaseReleaseStepName, WorldHistoryApprovalSpec.PurchaseChangeStepName);
 
-        // #1684：NCR 处置模板码收敛进契约（参与跨服务确定性回链盐串），权威码值 = 落库事实 APT-WB-NCR-001。
-        Assert.Equal("APT-WB-NCR-001", ApprovalTemplateCodes.NcrDisposition);
-        Assert.Equal(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
+        Assert.Equal("ncr-disposition", ApprovalTemplateCodes.NcrDisposition);
+        Assert.Equal("APT-WB-NCR-001", WorldHistoryApprovalSpec.NcrTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
 
         Assert.Equal("erp-sales-credit-release", ApprovalTemplateCodes.SalesCreditRelease);
         Assert.Equal(ApprovalTemplateCodes.SalesCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode);
 
         // #1344 扩修：盘点差异（Inventory 发起侧默认值 ↔ 种子模板）。
-        Assert.Equal("APT-WB-CNT-001", ApprovalTemplateCodes.StockCountVariance);
-        Assert.Equal(ApprovalTemplateCodes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
+        Assert.Equal("stock-count-variance", ApprovalTemplateCodes.StockCountVariance);
+        Assert.Equal("APT-WB-CNT-001", WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
         Assert.Equal("inventory-count-variance", ApprovalDocumentTypes.StockCountVariance);
         Assert.Equal(ApprovalDocumentTypes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceDocumentType);
 
-        Assert.Equal("APT-WB-ECO-001", ApprovalTemplateCodes.EngineeringChangeOrder);
-        Assert.Equal(ApprovalTemplateCodes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
+        Assert.Equal("engineering-change-order", ApprovalTemplateCodes.EngineeringChangeOrder);
+        Assert.Equal("APT-WB-ECO-001", WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
+        Assert.NotEqual(ApprovalTemplateCodes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
         Assert.Equal("engineering-change-order", ApprovalDocumentTypes.EngineeringChangeOrder);
         Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeDocumentType);
         Assert.Equal("product-engineering", WorldHistoryApprovalSpec.EngineeringChangeSourceService);
@@ -234,8 +234,8 @@ public sealed class ApprovalTemplateCodeContractTests
         dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
             "org-001",
             "env-dev",
-            WorldHistoryApprovalSpec.EngineeringChangeTemplateCode,
-            WorldHistoryApprovalSpec.EngineeringChangeDocumentType,
+            ApprovalTemplateCodes.EngineeringChangeOrder,
+            ApprovalDocumentTypes.EngineeringChangeOrder,
             version: 1,
             isActive: true,
             [
@@ -269,7 +269,7 @@ public sealed class ApprovalTemplateCodeContractTests
 
     /// <summary>
     /// #1344 扩修（第八例）：Inventory 盘点差异发起元组（默认模板码 / inventory / 单据类型）
-    /// 必须命中种子补齐的 <c>APT-WB-CNT-001</c> 模板并可由厂长核准——**不新建模板**。
+    /// 必须命中产品种子补齐的中性码模板并可由管理员核准。
     /// </summary>
     [Fact]
     public async Task Inventory_stock_count_variance_tuple_reaches_the_seeded_template()
@@ -280,8 +280,8 @@ public sealed class ApprovalTemplateCodeContractTests
         dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
             "org-001",
             "env-dev",
-            WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
-            WorldHistoryApprovalSpec.StockCountVarianceDocumentType,
+            ApprovalTemplateCodes.StockCountVariance,
+            ApprovalDocumentTypes.StockCountVariance,
             version: 1,
             isActive: true,
             [
@@ -326,8 +326,8 @@ public sealed class ApprovalTemplateCodeContractTests
         dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
             "org-001",
             "env-dev",
-            WorldHistoryApprovalSpec.StockCountVarianceTemplateCode,
-            WorldHistoryApprovalSpec.StockCountVarianceDocumentType,
+            ApprovalTemplateCodes.StockCountVariance,
+            ApprovalDocumentTypes.StockCountVariance,
             version: 1,
             isActive: true,
             [
@@ -424,17 +424,12 @@ public sealed class ApprovalTemplateCodeContractTests
     /// 或让契约常量与种子常量漂移，本用例都必红。
     /// </summary>
     [Fact]
-    public async Task Erp_change_start_tuple_reaches_the_template_written_by_the_world_history_seed()
+    public async Task Erp_change_start_tuple_reaches_the_template_written_by_the_product_seed()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new WorldHistoryApprovalSeedService(dbContext).SeedAsync(
-            "org-001",
-            "env-dev",
-            new DateOnly(2026, 7, 26),
-            0.05d,
-            CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var seededChangeTemplate = await dbContext.ApprovalTemplates
@@ -483,12 +478,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new WorldHistoryApprovalSeedService(dbContext).SeedAsync(
-            "org-001",
-            "env-dev",
-            new DateOnly(2026, 7, 26),
-            0.05d,
-            CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var handler = new StartApprovalChainCommandHandler(dbContext);
@@ -522,13 +512,13 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.NotEqual(releaseChain.PendingIdentityKey, changeChain.PendingIdentityKey);
     }
 
-    /// <summary>与 <c>WorldHistoryApprovalSeedService.SeedTemplatesAsync</c> 同形状的采购模板（不落任何演示专属字段）。</summary>
+    /// <summary>与 Approval 产品基线 seed 同形状的采购模板。</summary>
     private static ApprovalTemplate NewSeedShapedPurchaseTemplate()
     {
         return ApprovalTemplate.Create(
             "org-001",
             "env-dev",
-            WorldHistoryApprovalSpec.PurchaseTemplateCode,
+            ApprovalTemplateCodes.PurchaseOrderRelease,
             WorldHistoryApprovalSpec.PurchaseDocumentType,
             version: 1,
             isActive: true,
