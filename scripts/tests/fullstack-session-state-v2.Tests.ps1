@@ -313,6 +313,56 @@ foreach ($commandAst in $classifierCommandAsts) {
 }
 Assert-True ($unapprovedClassifierInvocations.Count -eq 0) "The A4 classifier must not invoke external commands, Start-Process, Aspire, Docker, or destructive process helpers. Observed: $($unapprovedClassifierInvocations -join ' | ')"
 
+# Governance/PublicContract: CommandAst does not include .NET member calls.  Freeze
+# the classifier's necessary pure/read-only members plus collection bookkeeping and
+# verified-handle disposal so process launch and destructive static members fail
+# closed.  This proves the checked-in classifier has no unapproved member-call
+# entry point; it is not evidence from a real Aspire/AppHost/process/Docker run.
+$allowedClassifierMemberInvocations = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($memberInvocation in @(
+    'Static|[DateTimeOffset]|TryParseExact',
+    'Static|[regex]|IsMatch',
+    'Static|[string]|Equals',
+    'Static|[string]|IsNullOrWhiteSpace',
+    'Static|[System.Collections.Generic.List[string]]|new',
+    'Static|[System.IO.Directory]|EnumerateDirectories',
+    'Static|[System.IO.Directory]|Exists',
+    'Static|[System.IO.File]|Exists',
+    'Static|[System.IO.File]|GetAttributes',
+    'Static|[System.IO.Path]|GetFileName',
+    'Static|[System.Text.UTF8Encoding]|new',
+    'Instance|$name|StartsWith',
+    'Instance|$name|Substring',
+    'Instance|$proof.Handle|Dispose',
+    'Instance|$PSBoundParameters|ContainsKey',
+    'Instance|$rawBytes|Clone',
+    'Instance|$requiredExactStrings|GetEnumerator',
+    'Instance|$tempDirectories|Add',
+    'Instance|$tempDirectories|ToArray',
+    'Instance|$warnings|Add',
+    'Instance|$warnings|ToArray',
+    'Instance|[System.Text.UTF8Encoding]::new($false, $true)|GetString'
+)) {
+    [void] $allowedClassifierMemberInvocations.Add($memberInvocation)
+}
+$unapprovedClassifierMemberInvocations = [System.Collections.Generic.List[string]]::new()
+$classifierMemberInvocationAsts = @($classifierAst.FindAll({
+    param($node)
+    return $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst]
+}, $true))
+foreach ($memberInvocationAst in $classifierMemberInvocationAsts) {
+    $invocationKind = if ($memberInvocationAst.Static) { 'Static' } else { 'Instance' }
+    $invocationIdentity = '{0}|{1}|{2}' -f @(
+        $invocationKind,
+        $memberInvocationAst.Expression.Extent.Text,
+        $memberInvocationAst.Member.Extent.Text
+    )
+    if (-not $allowedClassifierMemberInvocations.Contains($invocationIdentity)) {
+        $unapprovedClassifierMemberInvocations.Add($memberInvocationAst.Extent.Text)
+    }
+}
+Assert-True ($unapprovedClassifierMemberInvocations.Count -eq 0) "The A4 classifier must not invoke unapproved .NET members, including process launch or destructive filesystem members. Observed: $($unapprovedClassifierMemberInvocations -join ' | ')"
+
 function New-A4FixtureRoot([string] $Name) {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a4-$Name-$([Guid]::NewGuid().ToString('N'))"
     [void] [System.IO.Directory]::CreateDirectory((Join-Path $root 'fullstack-sessions'))
