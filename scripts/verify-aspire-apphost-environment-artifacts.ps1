@@ -52,6 +52,15 @@ function Get-ComposeProjectEnvironments {
     return $services
 }
 
+function Test-OrdinalSetEquals {
+    param([string[]] $Actual, [string[]] $Expected)
+    $actualSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $expectedSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($value in $Actual) { [void] $actualSet.Add($value) }
+    foreach ($value in $Expected) { [void] $expectedSet.Add($value) }
+    return $actualSet.Count -eq $Expected.Count -and $actualSet.SetEquals($expectedSet)
+}
+
 function Assert-EnvironmentArtifact {
     param(
         [Parameter(Mandatory)][hashtable] $Services,
@@ -61,7 +70,7 @@ function Assert-EnvironmentArtifact {
     $expectedEnabled = if ([string]::Equals($EnvironmentName, 'Development', [StringComparison]::Ordinal)) { 'true' } else { 'false' }
     $expectedProjects = @('apphub', 'iam', 'ops', 'file-storage', 'notification', 'business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling', 'gateway', 'business-gateway', 'connector-host')
     $projectServices = @($Services.GetEnumerator() | Where-Object { $_.Value.ContainsKey('ASPNETCORE_ENVIRONMENT') })
-    if ((@($projectServices | ForEach-Object Key | Sort-Object) -join ',') -ne (@($expectedProjects | Sort-Object) -join ',')) { throw 'Published project resource identity set differs from the #2031 contract.' }
+    if (-not (Test-OrdinalSetEquals -Actual @($projectServices | ForEach-Object Key) -Expected $expectedProjects)) { throw 'Published project resource identity set differs from the #2031 contract.' }
     foreach ($service in $projectServices) {
         if ($service.Value['ASPNETCORE_ENVIRONMENT'] -ne $EnvironmentName -or $service.Value['DOTNET_ENVIRONMENT'] -ne $EnvironmentName) {
             throw "Service '$($service.Key)' did not inherit $EnvironmentName for both .NET environment variables."
@@ -70,7 +79,7 @@ function Assert-EnvironmentArtifact {
 
     $expectedPersistent = @('apphub', 'iam', 'ops', 'file-storage', 'notification', 'business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling')
     $persistentServices = @($projectServices | Where-Object { $_.Value.ContainsKey('Persistence__AutoMigrate') })
-    if ((@($persistentServices | ForEach-Object Key | Sort-Object) -join ',') -ne (@($expectedPersistent | Sort-Object) -join ',')) { throw 'Published AutoMigrate resource identity set differs from the #2031 contract.' }
+    if (-not (Test-OrdinalSetEquals -Actual @($persistentServices | ForEach-Object Key) -Expected $expectedPersistent)) { throw 'Published AutoMigrate resource identity set differs from the #2031 contract.' }
     foreach ($service in $persistentServices) {
         if ($service.Value['Persistence__AutoMigrate'] -ne $expectedEnabled) {
             throw "Service '$($service.Key)' has Persistence__AutoMigrate='$($service.Value['Persistence__AutoMigrate'])', expected '$expectedEnabled'."
@@ -87,7 +96,7 @@ function Assert-EnvironmentArtifact {
     }
     foreach ($profile in $expectedProfiles.GetEnumerator()) {
         $matching = @($projectServices | Where-Object { $_.Value.ContainsKey($profile.Key) })
-        if ((@($matching | ForEach-Object Key | Sort-Object) -join ',') -ne (@($profile.Value.Services | Sort-Object) -join ',')) { throw "Published $EnvironmentName artifact has an invalid service set for $($profile.Key)." }
+        if (-not (Test-OrdinalSetEquals -Actual @($matching | ForEach-Object Key) -Expected $profile.Value.Services)) { throw "Published $EnvironmentName artifact has an invalid service set for $($profile.Key)." }
         foreach ($service in $matching) {
             if ($service.Value[$profile.Key] -ne $profile.Value.Value) { throw "Service '$($service.Key)' has $($profile.Key)='$($service.Value[$profile.Key])', expected '$($profile.Value.Value)'." }
         }
