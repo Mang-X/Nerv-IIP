@@ -72,21 +72,7 @@ try
         builder.Services.AddDataProtection().PersistKeysToStackExchangeRedis(redis, "DataProtection-Keys");
     }
 
-    builder.Services
-        .AddAuthentication(options =>
-        {
-            options.DefaultScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-            options.TokenValidationParameters.ValidAudience = "netcorepal";
-            options.TokenValidationParameters.ValidateAudience = true;
-            options.TokenValidationParameters.ValidIssuer = "netcorepal";
-            options.TokenValidationParameters.ValidateIssuer = true;
-        });
+    builder.Services.AddNervIipPublicJwtAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();

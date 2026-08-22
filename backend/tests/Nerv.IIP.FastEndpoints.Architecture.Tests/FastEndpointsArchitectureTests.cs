@@ -575,6 +575,39 @@ public sealed class FastEndpointsArchitectureTests
         }
     }
 
+    [Fact]
+    public void Public_business_jwt_validation_uses_shared_jwks_boundary_and_apphost_distributes_only_public_material()
+    {
+        var root = FindRepositoryRoot();
+        var servicePrograms = new[]
+        {
+            "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Program.cs",
+            "backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web/Program.cs",
+            "backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Program.cs"
+        };
+
+        foreach (var relativePath in servicePrograms)
+        {
+            var programText = File.ReadAllText(Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            Assert.Contains("AddNervIipPublicJwtAuthentication(builder.Configuration, builder.Environment)", programText);
+            Assert.DoesNotContain(".AddJwtBearer(", programText);
+        }
+
+        var appHostText = File.ReadAllText(Path.Combine(root, "infra/aspire/Nerv.IIP.AppHost/Program.cs"));
+        foreach (var resourceName in new[] { "businessMasterData", "businessProductEngineering", "businessQuality" })
+        {
+            var start = appHostText.IndexOf($"var {resourceName} =", StringComparison.Ordinal);
+            var end = appHostText.IndexOf("\nvar ", start + 1, StringComparison.Ordinal);
+            Assert.True(start >= 0 && end > start, $"Aspire resource block '{resourceName}' is missing.");
+            var resourceBlock = appHostText[start..end];
+
+            Assert.Contains(".WithEnvironment(\"Iam__Jwt__JwksJson\", iamJwtJwksJson)", resourceBlock);
+            Assert.Contains(".WithEnvironment(\"Iam__Jwt__Issuer\", \"nerv-iip-iam\")", resourceBlock);
+            Assert.Contains(".WithEnvironment(\"Iam__Jwt__Audience\", \"nerv-iip-api\")", resourceBlock);
+            Assert.DoesNotContain("iamJwtPrivateKeyPem", resourceBlock);
+        }
+    }
+
     private static string GetAspireResourceBlock(string programText, string resourceVariable)
     {
         var resourceStart = programText.IndexOf($"var {resourceVariable} =", StringComparison.Ordinal);
