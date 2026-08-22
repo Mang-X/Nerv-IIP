@@ -213,8 +213,9 @@ export function runNvUiImportHygieneContract(contractFileUrl: string): void {
           .map(([app]) => app)
         expect(
           drifted,
-          `contract shells diverged from ${appName}'s — the shell is a fixed 3-line call into ` +
-            `@nerv-iip/ui/test-support; rules belong in that module, not in a per-app copy. Digests: ` +
+          `contract shells diverged from ${appName}'s — the shell is a fixed call into ` +
+            `@nerv-iip/ui/test-support and must stay byte-identical across apps; rules belong in ` +
+            `that module, not in a per-app copy. Digests: ` +
             JSON.stringify(digests, null, 2),
         ).toEqual([])
       })
