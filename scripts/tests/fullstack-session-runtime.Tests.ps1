@@ -1456,44 +1456,457 @@ finally {
     Remove-Item -LiteralPath $cleanupStateRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$script:guardianUnknownRecoveryReads = 0
+$script:guardianUnknownRecoveryObservations = 0
+$script:guardianUnknownRecoveryStops = 0
+$guardianUnknownRecoveryOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid $PID `
+    -CoordinatorStartTimeUtc (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime().ToString('O') `
+    -IntervalSeconds 1 `
+    -ReadAction {
+        $script:guardianUnknownRecoveryReads++
+        $state = if ($script:guardianUnknownRecoveryReads -ge 3) { 'Stopped' } else { 'Running' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+        }
+    } `
+    -CoordinatorIdentityAction {
+        $script:guardianUnknownRecoveryObservations++
+        $status = if ($script:guardianUnknownRecoveryObservations -eq 1) { 'Unknown' } else { 'Active' }
+        return New-NervProcessIdentityObservation `
+            -Status $status `
+            -ProcessId $PID `
+            -ExpectedStartTimeUtc (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime().ToString('O') `
+            -FailureReason $(if ([string]::Equals($status, 'Unknown', [StringComparison]::Ordinal)) { 'transient identity inspection failure' } else { $null })
+    } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { $script:guardianUnknownRecoveryStops++ } `
+    -DelayAction { param($Seconds) } 3>&1 6>&1)
+$guardianUnknownRecoveryResult = @($guardianUnknownRecoveryOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+Assert-True ([string]::Equals([string]$guardianUnknownRecoveryResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must keep observing until the externally stopped session is visible.'
+Assert-True ($script:guardianUnknownRecoveryObservations -eq 3) 'Guardian must re-observe a transient Unknown identity and continue observing an active coordinator across later cycles.'
+Assert-True ($script:guardianUnknownRecoveryStops -eq 0) 'A transient Unknown identity followed by Active must not trigger coordinator-loss cleanup.'
+
+$script:guardianPersistentUnknownReads = 0
+$script:guardianPersistentUnknownObservations = 0
+$script:guardianPersistentUnknownStops = 0
+$guardianPersistentUnknownOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 4107 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 1 `
+    -ReadAction {
+        $script:guardianPersistentUnknownReads++
+        $state = if ($script:guardianPersistentUnknownReads -ge 2) { 'Stopped' } else { 'Running' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+        }
+    } `
+    -CoordinatorIdentityAction {
+        $script:guardianPersistentUnknownObservations++
+        return New-NervProcessIdentityObservation `
+            -Status Unknown `
+            -ProcessId 4107 `
+            -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+            -FailureReason 'persistent identity inspection failure token=unknown-secret'
+    } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { $script:guardianPersistentUnknownStops++ } `
+    -DelayAction { param($Seconds) } 3>&1 6>&1)
+$guardianPersistentUnknownResult = @($guardianPersistentUnknownOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+$guardianPersistentUnknownLogText = @($guardianPersistentUnknownOutput | ForEach-Object { "$_" }) -join "`n"
+Assert-True ([string]::Equals([string]$guardianPersistentUnknownResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must preserve a persistently Unknown coordinator until the session is stopped externally.'
+Assert-True ($script:guardianPersistentUnknownObservations -eq 3) 'Guardian must bound identity re-observation for a persistently Unknown coordinator.'
+Assert-True ($script:guardianPersistentUnknownStops -eq 0) 'A persistently Unknown identity must not trigger coordinator-loss cleanup.'
+Assert-True ($guardianPersistentUnknownLogText.Contains("Guardian retained '$sessionId' after coordinator identity remained Unknown", [StringComparison]::Ordinal)) 'Guardian must explain why an Unknown coordinator was retained after bounded re-observation.'
+Assert-True (-not $guardianPersistentUnknownLogText.Contains('unknown-secret', [StringComparison]::Ordinal)) 'Guardian must not log the failure detail while retaining an Unknown coordinator.'
+
+$guardianInitialObservationError = $null
+try {
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+        -MaximumObservationFailures 1 `
+        -ReadAction { throw 'initial token=manifest-initial-terminal-secret unavailable' } `
+        -SensitiveValues @('manifest-initial-terminal-secret') | Out-Null
+}
+catch {
+    $guardianInitialObservationError = "$( $_.Exception.Message )"
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace($guardianInitialObservationError)) 'Guardian must surface an error after initial manifest observation failures reach the limit.'
+Assert-True ($guardianInitialObservationError.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian terminal initial manifest observation errors must retain a redaction marker.'
+Assert-True (-not $guardianInitialObservationError.Contains('manifest-initial-terminal-secret', [StringComparison]::Ordinal)) 'Guardian terminal initial manifest observation errors must not expose sensitive values.'
+
+$script:guardianIncompleteIdentityReads = 0
+$script:guardianIncompleteIdentityActions = 0
+$script:guardianIncompleteIdentityDelays = [System.Collections.Generic.List[int]]::new()
+$guardianIncompleteIdentityOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 0 `
+    -CoordinatorStartTimeUtc '' `
+    -IntervalSeconds 60 `
+    -CoordinatorIdentityRetryDelaySeconds 2 `
+    -ReadAction {
+        $script:guardianIncompleteIdentityReads++
+        $state = if ($script:guardianIncompleteIdentityReads -ge 2) { 'Stopped' } else { 'Running' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+        }
+    } `
+    -CoordinatorIdentityAction { $script:guardianIncompleteIdentityActions++; throw 'Incomplete identity input must bypass the probe.' } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { throw 'Incomplete identity input must not trigger cleanup.' } `
+    -DelayAction { param($Seconds) $script:guardianIncompleteIdentityDelays.Add($Seconds) } 3>&1 6>&1)
+$guardianIncompleteIdentityResult = @($guardianIncompleteIdentityOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+$guardianIncompleteIdentityLogText = @($guardianIncompleteIdentityOutput | ForEach-Object { "$_" }) -join "`n"
+Assert-True ([string]::Equals([string]$guardianIncompleteIdentityResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must retain a session with incomplete coordinator identity input until it is stopped externally.'
+Assert-True ($script:guardianIncompleteIdentityActions -eq 0) 'Incomplete immutable coordinator identity input must bypass the identity probe.'
+Assert-True (-not $script:guardianIncompleteIdentityDelays.Contains(2)) 'Incomplete immutable coordinator identity input must not spend short retries that cannot change the result.'
+Assert-True (@($script:guardianIncompleteIdentityDelays | Where-Object { $_ -eq 60 }).Count -eq 1) 'Incomplete coordinator identity input must return directly to the normal guardian interval.'
+Assert-True ($guardianIncompleteIdentityLogText.Contains('remained Unknown for 1 observation(s)', [StringComparison]::Ordinal)) 'Guardian must report the actual observation count when incomplete identity input skips short retries.'
+
+$script:guardianConfirmedAbsentReads = 0
+$script:guardianConfirmedAbsentObservations = 0
+$script:guardianConfirmedAbsentStops = 0
+$script:guardianConfirmedAbsentEvidenceStatus = $null
+$guardianConfirmedAbsentOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 4107 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 1 `
+    -ReadAction {
+        $script:guardianConfirmedAbsentReads++
+        if ($script:guardianConfirmedAbsentReads -gt 4) { throw 'Guardian confirmed-Absent fixture exceeded bounded reads before cleanup.' }
+        $state = if ($script:guardianConfirmedAbsentStops -eq 0) { 'Running' } else { 'Stopped' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+        }
+    } `
+    -CoordinatorIdentityAction {
+        $script:guardianConfirmedAbsentObservations++
+        $status = if ($script:guardianConfirmedAbsentObservations -eq 1) { 'Unknown' } else { 'Absent' }
+        return New-NervProcessIdentityObservation `
+            -Status $status `
+            -ProcessId 4107 `
+            -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+            -FailureReason $(if ([string]::Equals($status, 'Unknown', [StringComparison]::Ordinal)) { 'transient identity inspection failure' } else { $null })
+    } `
+    -IdentityEvidenceAction {
+        param($Manifest, $Observation, $LeaseExpired, $CoordinatorMissing)
+        $script:guardianConfirmedAbsentEvidenceStatus = [string] $Observation.status
+    } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { $script:guardianConfirmedAbsentStops++ } `
+    -MaximumObservationFailures 1 `
+    -DelayAction { param($Seconds) } 3>&1 6>&1)
+$guardianConfirmedAbsentResult = @($guardianConfirmedAbsentOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+Assert-True ([string]::Equals([string]$guardianConfirmedAbsentResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must stop after bounded re-observation confirms the coordinator is absent.'
+Assert-True ($script:guardianConfirmedAbsentObservations -eq 2) 'Guardian must use the confirmed Absent observation after a transient Unknown result.'
+Assert-True ($script:guardianConfirmedAbsentStops -eq 1) 'A confirmed Absent coordinator must trigger cleanup exactly once.'
+Assert-True ([string]::Equals([string]$script:guardianConfirmedAbsentEvidenceStatus, 'Absent', [StringComparison]::Ordinal)) 'Guardian evidence must record the confirmed Absent observation that triggered cleanup.'
+
+$script:guardianLeaseDuringRetryNow = [DateTimeOffset]::Parse('2026-08-22T00:00:00Z')
+$script:guardianLeaseDuringRetryObservations = 0
+$script:guardianLeaseDuringRetryStops = 0
+$script:guardianLeaseDuringRetryDelays = [System.Collections.Generic.List[int]]::new()
+$guardianLeaseDuringRetryOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 4107 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 60 `
+    -UtcNowAction { $script:guardianLeaseDuringRetryNow } `
+    -ReadAction {
+        $state = if ($script:guardianLeaseDuringRetryStops -eq 0) { 'Running' } else { 'Stopped' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = '2026-08-22T00:00:01.5000000Z'
+        }
+    } `
+    -CoordinatorIdentityAction {
+        $script:guardianLeaseDuringRetryObservations++
+        return New-NervProcessIdentityObservation `
+            -Status Unknown `
+            -ProcessId 4107 `
+            -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+            -FailureReason 'identity inspection unavailable'
+    } `
+    -IdentityEvidenceAction { param($Manifest, $Observation, $LeaseExpired, $CoordinatorMissing) } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { $script:guardianLeaseDuringRetryStops++ } `
+    -DelayAction {
+        param($Seconds)
+        $script:guardianLeaseDuringRetryDelays.Add($Seconds)
+        $script:guardianLeaseDuringRetryNow = $script:guardianLeaseDuringRetryNow.AddSeconds($Seconds)
+    } 3>&1 6>&1)
+$guardianLeaseDuringRetryResult = @($guardianLeaseDuringRetryOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+Assert-True ([string]::Equals([string]$guardianLeaseDuringRetryResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must stop when a lease expires during bounded identity re-observation.'
+Assert-True ($script:guardianLeaseDuringRetryObservations -eq 3) 'Guardian must finish the bounded identity observations before confirming lease expiry.'
+Assert-True ($script:guardianLeaseDuringRetryStops -eq 1) 'Lease expiry confirmed during identity re-observation must trigger cleanup exactly once.'
+Assert-True (-not $script:guardianLeaseDuringRetryDelays.Contains(60)) 'Lease expiry during identity re-observation must not wait for another full guardian interval.'
+
+$script:guardianLeaseRenewalNow = [DateTimeOffset]::Parse('2026-08-22T00:00:00Z')
+$script:guardianLeaseRenewalReads = 0
+$script:guardianLeaseRenewalObservations = 0
+$script:guardianLeaseRenewalStops = 0
+$script:guardianLeaseRenewalDelays = [System.Collections.Generic.List[int]]::new()
+$guardianLeaseRenewalOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 4107 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 60 `
+    -UtcNowAction { $script:guardianLeaseRenewalNow } `
+    -ReadAction {
+        $script:guardianLeaseRenewalReads++
+        if ($script:guardianLeaseRenewalReads -ge 3) {
+            return [pscustomobject]@{ sessionId = $sessionId; state = 'Stopped'; leaseExpiresAtUtc = '2026-08-22T00:02:00Z' }
+        }
+        $leaseExpiresAtUtc = if ($script:guardianLeaseRenewalReads -eq 1) {
+            '2026-08-22T00:00:01.5000000Z'
+        }
+        else {
+            '2026-08-22T00:02:00Z'
+        }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = 'Running'
+            leaseExpiresAtUtc = $leaseExpiresAtUtc
+        }
+    } `
+    -CoordinatorIdentityAction {
+        $script:guardianLeaseRenewalObservations++
+        return New-NervProcessIdentityObservation `
+            -Status Unknown `
+            -ProcessId 4107 `
+            -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+            -FailureReason 'identity inspection unavailable'
+    } `
+    -IdentityEvidenceAction { param($Manifest, $Observation, $LeaseExpired, $CoordinatorMissing) } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { $script:guardianLeaseRenewalStops++ } `
+    -DelayAction {
+        param($Seconds)
+        $script:guardianLeaseRenewalDelays.Add($Seconds)
+        $script:guardianLeaseRenewalNow = $script:guardianLeaseRenewalNow.AddSeconds($Seconds)
+    } 3>&1 6>&1)
+$guardianLeaseRenewalResult = @($guardianLeaseRenewalOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+Assert-True ([string]::Equals([string]$guardianLeaseRenewalResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must continue observing until a lease-renewed session is stopped externally.'
+Assert-True ($script:guardianLeaseRenewalReads -eq 3) 'Guardian must refresh the manifest after identity retries cross the prior lease deadline.'
+Assert-True ($script:guardianLeaseRenewalObservations -eq 3) 'A refreshed future lease must retain the bounded Unknown observation count for that cycle.'
+Assert-True ($script:guardianLeaseRenewalStops -eq 0) 'Guardian must not clean up when the refreshed manifest confirms the lease was renewed.'
+Assert-True ($script:guardianLeaseRenewalDelays.Contains(60)) 'A renewed lease with Unknown identity must return to the normal guardian interval.'
+
+$script:guardianRefreshFailureNow = [DateTimeOffset]::Parse('2026-08-22T00:00:00Z')
+$script:guardianRefreshFailureReads = 0
+$guardianRefreshFailureOutput = @(Invoke-NervFullStackGuardian `
+    -SessionId $sessionId `
+    -Mode Automated `
+    -CoordinatorPid 4107 `
+    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+    -IntervalSeconds 60 `
+    -UtcNowAction { $script:guardianRefreshFailureNow } `
+    -ReadAction {
+        $script:guardianRefreshFailureReads++
+        if ($script:guardianRefreshFailureReads -eq 2) { throw 'refresh token=manifest-refresh-secret unavailable' }
+        $state = if ($script:guardianRefreshFailureReads -ge 3) { 'Stopped' } else { 'Running' }
+        return [pscustomobject]@{
+            sessionId = $sessionId
+            state = $state
+            leaseExpiresAtUtc = '2026-08-22T00:00:01.5000000Z'
+        }
+    } `
+    -CoordinatorIdentityAction {
+        return New-NervProcessIdentityObservation `
+            -Status Unknown `
+            -ProcessId 4107 `
+            -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+            -FailureReason 'identity inspection unavailable'
+    } `
+    -DiagnosticAction { param($Manifest) } `
+    -StopAction { throw 'Refresh failure fixture must stop externally.' } `
+    -SensitiveValues @('manifest-refresh-secret') `
+    -DelayAction {
+        param($Seconds)
+        $script:guardianRefreshFailureNow = $script:guardianRefreshFailureNow.AddSeconds($Seconds)
+    } 3>&1 6>&1)
+$guardianRefreshFailureResult = @($guardianRefreshFailureOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
+$guardianRefreshFailureLogText = @($guardianRefreshFailureOutput | ForEach-Object { "$_" }) -join "`n"
+Assert-True ([string]::Equals([string]$guardianRefreshFailureResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive a transient manifest refresh failure after identity retries cross the lease deadline.'
+Assert-True ($guardianRefreshFailureLogText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian must redact sensitive values from manifest refresh failure warnings.'
+Assert-True (-not $guardianRefreshFailureLogText.Contains('manifest-refresh-secret', [StringComparison]::Ordinal)) 'Guardian manifest refresh failure warnings must not expose sensitive values.'
+
+$script:guardianRefreshTerminalNow = [DateTimeOffset]::Parse('2026-08-22T00:00:00Z')
+$script:guardianRefreshTerminalReads = 0
+$guardianRefreshTerminalError = $null
+try {
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+        -MaximumObservationFailures 1 `
+        -UtcNowAction { $script:guardianRefreshTerminalNow } `
+        -ReadAction {
+            $script:guardianRefreshTerminalReads++
+            if ($script:guardianRefreshTerminalReads -ge 2) { throw 'refresh token=manifest-refresh-terminal-secret unavailable' }
+            return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = '2026-08-22T00:00:01.5000000Z' }
+        } `
+        -CoordinatorIdentityAction {
+            New-NervProcessIdentityObservation `
+                -Status Unknown `
+                -ProcessId 4107 `
+                -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+                -FailureReason 'identity inspection unavailable'
+        } `
+        -SensitiveValues @('manifest-refresh-terminal-secret') `
+        -DelayAction {
+            param($Seconds)
+            $script:guardianRefreshTerminalNow = $script:guardianRefreshTerminalNow.AddSeconds($Seconds)
+        } | Out-Null
+}
+catch {
+    $guardianRefreshTerminalError = "$( $_.Exception.Message )"
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace($guardianRefreshTerminalError)) 'Guardian must surface an error after manifest refresh failures reach the limit.'
+Assert-True ($guardianRefreshTerminalError.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian terminal manifest refresh errors must retain a redaction marker.'
+Assert-True (-not $guardianRefreshTerminalError.Contains('manifest-refresh-terminal-secret', [StringComparison]::Ordinal)) 'Guardian terminal manifest refresh errors must not expose sensitive values.'
+
+$guardianManagedChild = Start-Process `
+    -FilePath (Get-Process -Id $PID -ErrorAction Stop).Path `
+    -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 20') `
+    -PassThru
+try {
+    $script:guardianManagedChildReads = 0
+    $script:guardianManagedChildObservations = 0
+    $script:guardianManagedChildStops = 0
+    $script:guardianManagedChildDelays = [System.Collections.Generic.List[int]]::new()
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid $PID `
+        -CoordinatorStartTimeUtc (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime().ToString('O') `
+        -IntervalSeconds 1 `
+        -CoordinatorIdentityRetryDelaySeconds 2 `
+        -ReadAction {
+            $script:guardianManagedChildReads++
+            $state = if ($script:guardianManagedChildReads -ge 3) { 'Stopped' } else { 'Running' }
+            return [pscustomobject]@{
+                sessionId = $sessionId
+                state = $state
+                leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+            }
+        } `
+        -CoordinatorIdentityAction {
+            $script:guardianManagedChildObservations++
+            $status = if ($script:guardianManagedChildObservations -eq 1) { 'Unknown' } else { 'Active' }
+            return New-NervProcessIdentityObservation `
+                -Status $status `
+                -ProcessId $PID `
+                -ExpectedStartTimeUtc (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime().ToString('O') `
+                -FailureReason $(if ([string]::Equals($status, 'Unknown', [StringComparison]::Ordinal)) { 'transient identity inspection failure' } else { $null })
+        } `
+        -DiagnosticAction { param($Manifest) } `
+        -StopAction {
+            $script:guardianManagedChildStops++
+            Stop-Process -Id $guardianManagedChild.Id -Force -ErrorAction SilentlyContinue
+        } `
+        -DelayAction { param($Seconds) $script:guardianManagedChildDelays.Add($Seconds) } | Out-Null
+    $guardianManagedChild.Refresh()
+    Assert-True (-not $guardianManagedChild.HasExited) 'A managed child process must remain alive after the guardian observes an active coordinator across more than one interval.'
+    Assert-True ($script:guardianManagedChildStops -eq 0) 'Guardian must not stop a managed child while its coordinator remains active.'
+    Assert-True (@($script:guardianManagedChildDelays | Where-Object { $_ -eq 1 }).Count -eq 2) 'Managed child survival must cover two complete guardian observation intervals.'
+}
+finally {
+    Stop-Process -Id $guardianManagedChild.Id -Force -ErrorAction SilentlyContinue
+    $guardianManagedChild.Dispose()
+}
+
 $script:guardianReads = 0
 $script:guardianStops = 0
 $script:guardianLifecycle = [System.Collections.Generic.List[string]]::new()
-$guardianOutput = @(Invoke-NervFullStackGuardian `
-    -SessionId $sessionId `
-    -Mode Automated `
-    -CoordinatorPid 1 `
-    -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
-    -IntervalSeconds 1 `
-    -MaximumObservationFailures 3 `
-    -MaximumStopAttempts 3 `
-    -ReadAction {
-        $script:guardianReads++
-        if ($script:guardianReads -eq 1) { throw 'transient manifest lock' }
-        if ($script:guardianStops -eq 0) { return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') } }
-        return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
-    } `
-    -CoordinatorAliveAction { $false } `
-    -DiagnosticAction {
-        param($Manifest)
-        $script:guardianLifecycle.Add('diagnostics')
-    } `
-    -StopAction {
-        $script:guardianLifecycle.Add('stop')
-        $script:guardianStops++
-        if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
-    } `
-    -DelayAction { param($Seconds) } 6>&1)
+$script:guardianEvidencePresentAtDiagnostics = $false
+$currentProcess = Get-Process -Id $PID -ErrorAction Stop
+$currentStartTimeUtc = $currentProcess.StartTime.ToUniversalTime()
+$guardianExpectedStartTimeUtc = $currentStartTimeUtc.AddSeconds(-1).ToString('O')
+$guardianActualStartTimeUtc = $currentStartTimeUtc.ToString('O')
+$guardianEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-guardian-evidence-$([guid]::NewGuid().ToString('N'))"
+$guardianEvidencePath = Join-Path $guardianEvidenceRoot 'guardian-coordinator-identity.json'
+try {
+    $guardianOutput = @(Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid $PID `
+        -CoordinatorStartTimeUtc $guardianExpectedStartTimeUtc `
+        -IntervalSeconds 1 `
+        -MaximumObservationFailures 3 `
+        -MaximumStopAttempts 3 `
+        -SensitiveValues @('manifest-read-secret') `
+        -ReadAction {
+            $script:guardianReads++
+            if ($script:guardianReads -gt 6) { throw 'Guardian Mismatched fixture exceeded bounded reads before cleanup.' }
+            $state = if ($script:guardianStops -eq 0) { 'Running' } else { 'Stopped' }
+            if ($script:guardianReads -eq 1) { throw 'transient manifest lock token=manifest-read-secret' }
+            return [pscustomobject]@{
+                sessionId = $sessionId
+                state = $state
+                leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(5).ToString('O')
+                artifactPath = $guardianEvidenceRoot
+            }
+        } `
+        -DiagnosticAction {
+            param($Manifest)
+            $script:guardianEvidencePresentAtDiagnostics = Test-Path -LiteralPath $guardianEvidencePath -PathType Leaf
+            $script:guardianLifecycle.Add('diagnostics')
+        } `
+        -StopAction {
+            Assert-True (Test-Path -LiteralPath $guardianEvidencePath -PathType Leaf) 'Guardian identity evidence must be persisted before the first stop.'
+            $script:guardianLifecycle.Add('stop')
+            $script:guardianStops++
+            if ($script:guardianStops -eq 1) { throw 'transient stop failure' }
+        } `
+        -DelayAction { param($Seconds) } 3>&1 6>&1)
+    $guardianEvidence = Get-Content -LiteralPath $guardianEvidencePath -Raw | ConvertFrom-Json -DateKind String
+    Assert-True ([string]::Equals([string]$guardianEvidence.coordinator.status, 'Mismatched', [StringComparison]::Ordinal)) 'Guardian evidence must retain the four-state coordinator status.'
+    Assert-True ([string]::Equals([string]$guardianEvidence.coordinator.expectedStartTimeUtc, $guardianExpectedStartTimeUtc, [StringComparison]::Ordinal)) 'Guardian evidence must retain the expected coordinator StartTime.'
+    Assert-True ([string]::Equals([string]$guardianEvidence.coordinator.actualStartTimeUtc, $guardianActualStartTimeUtc, [StringComparison]::Ordinal)) 'Guardian evidence must retain the actual coordinator StartTime for PID reuse diagnosis.'
+    Assert-True (-not $guardianEvidence.trigger.leaseExpired) 'PID reuse cleanup must not depend on lease expiry.'
+    Assert-True $guardianEvidence.trigger.coordinatorMissing 'A confirmed Mismatched identity must be recorded as coordinator loss.'
+}
+finally {
+    Remove-Item -LiteralPath $guardianEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 $guardianResult = @($guardianOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
 $guardianLogText = @($guardianOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
+Assert-True $script:guardianEvidencePresentAtDiagnostics 'Guardian identity evidence must be persisted before diagnostics and the first stop.'
 Assert-True ([string]::Equals(($script:guardianLifecycle -join ','), 'diagnostics,stop,stop', [StringComparison]::Ordinal)) 'Guardian must collect diagnostics exactly once before its first stop attempt.'
 Assert-True ($guardianLogText.Contains("Guardian started for '$sessionId' in Automated mode.", [StringComparison]::Ordinal)) 'Guardian stdout must identify every managed session even when no warning is emitted.'
 Assert-True ($guardianLogText.Contains("Guardian cleanup triggered for '$sessionId'", [StringComparison]::Ordinal)) 'Guardian stdout must explain whether lease expiry or coordinator loss triggered cleanup.'
+Assert-True ($guardianLogText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian must redact sensitive values from initial manifest observation warnings.'
+Assert-True (-not $guardianLogText.Contains('manifest-read-secret', [StringComparison]::Ordinal)) 'Guardian initial manifest observation warnings must not expose sensitive values.'
 
 $script:guardianDiagnosticFailureStops = 0
+$script:guardianDiagnosticFailureIdentityObservations = 0
+$script:guardianFailureLifecycle = [System.Collections.Generic.List[string]]::new()
 $guardianDiagnosticFailureOutput = @(Invoke-NervFullStackGuardian `
     -SessionId $sessionId `
     -Mode Automated `
@@ -1504,15 +1917,126 @@ $guardianDiagnosticFailureOutput = @(Invoke-NervFullStackGuardian `
         if ($script:guardianDiagnosticFailureStops -eq 0) { return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') } }
         return [pscustomobject]@{ state = 'Stopped'; leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O') }
     } `
-    -CoordinatorAliveAction { $false } `
-    -DiagnosticAction { param($Manifest) throw 'diagnostic transport unavailable' } `
-    -StopAction { $script:guardianDiagnosticFailureStops++ } `
+    -CoordinatorIdentityAction { $script:guardianDiagnosticFailureIdentityObservations++; throw 'identity token=coordinator-secret unavailable' } `
+    -IdentityEvidenceAction { param($Manifest, $Observation, $LeaseExpired, $CoordinatorMissing) throw 'evidence token=coordinator-secret unavailable' } `
+    -DiagnosticAction { param($Manifest) $script:guardianFailureLifecycle.Add('diagnostics'); throw 'diagnostic transport unavailable' } `
+    -StopAction { $script:guardianFailureLifecycle.Add('stop'); $script:guardianDiagnosticFailureStops++ } `
     -DelayAction { param($Seconds) } 3>&1 6>&1)
 $guardianDiagnosticFailureResult = @($guardianDiagnosticFailureOutput | Where-Object { $null -ne $_.PSObject.Properties['State'] }) | Select-Object -Last 1
 $guardianDiagnosticFailureLogText = @($guardianDiagnosticFailureOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianDiagnosticFailureResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian diagnostic failure must not block cleanup completion.'
 Assert-True ($script:guardianDiagnosticFailureStops -eq 1) 'Guardian must attempt stop after best-effort diagnostics fail.'
+Assert-True ($script:guardianDiagnosticFailureIdentityObservations -eq 1) 'An expired lease must trigger cleanup without waiting for repeated Unknown identity observations.'
+Assert-True ([string]::Equals(($script:guardianFailureLifecycle -join ','), 'diagnostics,stop', [StringComparison]::Ordinal)) 'Guardian evidence and diagnostic failures must not change the existing cleanup policy order.'
 Assert-True ($guardianDiagnosticFailureLogText.Contains("Guardian diagnostic collection failed for '$sessionId'; cleanup will continue", [StringComparison]::Ordinal)) 'Guardian must record that diagnostic failure was downgraded before cleanup.'
+Assert-True ($guardianDiagnosticFailureLogText.Contains("Guardian coordinator identity evidence failed for '$sessionId'; cleanup will continue", [StringComparison]::Ordinal)) 'Guardian must downgrade identity evidence persistence failure before cleanup.'
+Assert-True (-not $guardianDiagnosticFailureLogText.Contains('coordinator-secret', [StringComparison]::Ordinal)) 'Guardian identity probe and persistence failures must be redacted before logging.'
+
+$activeIdentity = Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentStartTimeUtc -Detailed
+Assert-True ([string]::Equals([string]$activeIdentity.status, 'Active', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Active.'
+$linuxPrecisionIdentity = Get-NervProcessIdentityStatus `
+    -ProcessId $PID `
+    -ProcessStartTimeUtc $currentStartTimeUtc `
+    -ProcessLookupAction { param($ExactProcessId) [pscustomobject]@{ StartTime = $currentStartTimeUtc.AddMilliseconds(2).ToLocalTime() } } `
+    -Detailed
+Assert-True ([string]::Equals([string]$linuxPrecisionIdentity.status, 'Active', [StringComparison]::Ordinal)) 'Process identity must tolerate sub-jiffy StartTime precision drift across Linux process observations.'
+$mismatchedIdentity = Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentStartTimeUtc.AddSeconds(-1) -Detailed
+Assert-True ([string]::Equals([string]$mismatchedIdentity.status, 'Mismatched', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Mismatched.'
+Assert-True (-not [string]::IsNullOrWhiteSpace("$($mismatchedIdentity.actualStartTimeUtc)")) 'Mismatched process identity must retain the actual StartTime.'
+$absentIdentity = Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentStartTimeUtc -Detailed
+Assert-True ([string]::Equals([string]$absentIdentity.status, 'Absent', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Absent.'
+Assert-True ($null -eq $absentIdentity.actualStartTimeUtc) 'Absent process identity must not invent an actual StartTime.'
+Assert-True ([string]::Equals([string]$absentIdentity.expectedStartTimeUtc, $currentStartTimeUtc.ToString('O'), [StringComparison]::Ordinal)) 'Absent process identity must normalize the expected StartTime to the evidence schema format.'
+$lookupFailureIdentity = Get-NervProcessIdentityStatus `
+    -ProcessId 4107 `
+    -ProcessStartTimeUtc $currentStartTimeUtc `
+    -ProcessLookupAction { param($ProcessId) throw 'simulated process lookup inspection failure' } `
+    -Detailed
+Assert-True ([string]::Equals([string]$lookupFailureIdentity.status, 'Unknown', [StringComparison]::Ordinal)) 'A non-absence process lookup failure must remain Unknown.'
+Assert-True ([string]::Equals([string]$lookupFailureIdentity.expectedStartTimeUtc, $currentStartTimeUtc.ToString('O'), [StringComparison]::Ordinal)) 'Unknown process lookup failure must normalize the expected StartTime to the evidence schema format.'
+$script:unknownIdentityProcess = [pscustomobject]@{}
+$script:unknownIdentityProcess | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw 'token=coordinator-secret inspection failed' }
+$unknownIdentity = Get-NervProcessIdentityStatus `
+    -ProcessId 4107 `
+    -ProcessStartTimeUtc $currentStartTimeUtc `
+    -ProcessLookupAction { param($ProcessId) $script:unknownIdentityProcess } `
+    -Detailed
+Assert-True ([string]::Equals([string]$unknownIdentity.status, 'Unknown', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Unknown for StartTime inspection failure.'
+Assert-True (-not [string]::IsNullOrWhiteSpace("$($unknownIdentity.failureReason)")) 'Detailed process identity must retain an internal failure reason for later evidence redaction.'
+
+$guardianRedactionRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-guardian-redaction-$([guid]::NewGuid().ToString('N'))"
+try {
+    $redactedEvidencePath = Write-NervFullStackGuardianIdentityEvidence `
+        -Manifest ([pscustomobject]@{ sessionId = $sessionId; artifactPath = $guardianRedactionRoot }) `
+        -Observation ([pscustomobject]@{
+            status = 'Unknown'
+            processId = 4107
+            expectedStartTimeUtc = $currentStartTimeUtc.ToString('O')
+            actualStartTimeUtc = $null
+            failureReason = 'token=coordinator-secret inspection failed'
+            observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        }) `
+        -LeaseExpired $false `
+        -CoordinatorMissing $true
+    $redactedEvidenceText = Get-Content -LiteralPath $redactedEvidencePath -Raw
+    Assert-True ($redactedEvidenceText.Contains('"status": "Unknown"', [StringComparison]::Ordinal)) 'Guardian evidence must retain Unknown as distinct from Absent and Mismatched.'
+    Assert-True ($redactedEvidenceText.Contains('token=<redacted>', [StringComparison]::Ordinal)) 'Guardian evidence must retain a redacted failure classification.'
+    Assert-True (-not $redactedEvidenceText.Contains('coordinator-secret', [StringComparison]::Ordinal)) 'Guardian evidence must not persist the sensitive failure detail.'
+}
+finally {
+    Remove-Item -LiteralPath $guardianRedactionRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$guardianSensitiveEnvironmentName = 'Parameters__internal-service-bearer-token'
+$guardianSensitiveValue = "guardian-sensitive-value-$([guid]::NewGuid().ToString('N'))"
+$guardianSensitiveEnvironmentHadValue = Test-Path -LiteralPath "Env:$guardianSensitiveEnvironmentName"
+$guardianSensitiveEnvironmentOriginalValue = [Environment]::GetEnvironmentVariable($guardianSensitiveEnvironmentName, 'Process')
+$guardianSensitiveEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-guardian-sensitive-evidence-$([guid]::NewGuid().ToString('N'))"
+$guardianSensitiveEvidencePath = Join-Path $guardianSensitiveEvidenceRoot 'guardian-coordinator-identity.json'
+$script:guardianSensitiveStops = 0
+try {
+    Set-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -Value $guardianSensitiveValue
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc $currentStartTimeUtc.ToString('O') `
+        -IntervalSeconds 1 `
+        -ReadAction {
+            $state = if ($script:guardianSensitiveStops -eq 0) { 'Running' } else { 'Stopped' }
+            return [pscustomobject]@{
+                sessionId = $sessionId
+                state = $state
+                leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
+                artifactPath = $guardianSensitiveEvidenceRoot
+            }
+        } `
+        -CoordinatorIdentityAction {
+            [pscustomobject][ordered]@{
+                status = 'Unknown'
+                processId = 4107
+                expectedStartTimeUtc = $currentStartTimeUtc.ToString('O')
+                actualStartTimeUtc = $null
+                failureReason = "identity inspection failed for $guardianSensitiveValue"
+                observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            }
+        } `
+        -DiagnosticAction { param($Manifest) } `
+        -StopAction { $script:guardianSensitiveStops++ } `
+        -DelayAction { param($Seconds) } | Out-Null
+    $guardianSensitiveEvidenceText = Get-Content -LiteralPath $guardianSensitiveEvidencePath -Raw
+    Assert-True ($guardianSensitiveEvidenceText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian evidence must redact a sensitive inherited environment value without relying on name-pattern redaction.'
+    Assert-True (-not $guardianSensitiveEvidenceText.Contains($guardianSensitiveValue, [StringComparison]::Ordinal)) 'Guardian evidence must not persist a sensitive inherited environment value.'
+}
+finally {
+    if ($guardianSensitiveEnvironmentHadValue) {
+        Set-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -Value $guardianSensitiveEnvironmentOriginalValue
+    }
+    else {
+        Remove-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $guardianSensitiveEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $script:relationProbeAttempts = 0
 $relationReadiness = Wait-NervFullStackPostgresRelations `

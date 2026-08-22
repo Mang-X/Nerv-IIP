@@ -1011,6 +1011,31 @@ function Invoke-NervLeaderDemoEquipmentBranchScenario {
         -BrowserAction $BrowserAction
 }
 
+function Get-NervFullStackGuardianSensitiveValues {
+    $environmentNames = @(
+        'NERV_IIP_FULLSTACK_ADMIN_PASSWORD',
+        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD',
+        'Parameters__iam-jwt-private-key-pem',
+        'Parameters__iam-secrets-pepper',
+        'Parameters__internal-service-bearer-token',
+        'Parameters__redis-password',
+        'Parameters__minio-root-password',
+        'Parameters__iam-seed-admin-password',
+        'Parameters__iam-seed-demo-worker-password',
+        'Parameters__iam-seed-connector-host-secret',
+        'Parameters__connector-ingestion-token-signing-key'
+    )
+    $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $values = [Collections.Generic.List[string]]::new()
+    foreach ($environmentName in $environmentNames) {
+        $value = [Environment]::GetEnvironmentVariable($environmentName, 'Process')
+        if (-not [string]::IsNullOrEmpty($value) -and $seen.Add($value)) {
+            $values.Add($value)
+        }
+    }
+    return @($values)
+}
+
 function Invoke-NervFullStackGuardian {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
@@ -1018,23 +1043,54 @@ function Invoke-NervFullStackGuardian {
         [int] $CoordinatorPid,
         [string] $CoordinatorStartTimeUtc,
         [ValidateRange(1, 3600)] [int] $IntervalSeconds = 60,
+        [ValidateRange(1, 10)] [int] $MaximumCoordinatorIdentityObservations = 3,
+        [ValidateRange(1, 60)] [int] $CoordinatorIdentityRetryDelaySeconds = 1,
         [ValidateRange(1, 10)] [int] $MaximumObservationFailures = 3,
         [ValidateRange(1, 10)] [int] $MaximumStopAttempts = 3,
         [scriptblock] $ReadAction,
-        [scriptblock] $CoordinatorAliveAction,
+        [scriptblock] $CoordinatorIdentityAction,
+        [scriptblock] $IdentityEvidenceAction,
         [scriptblock] $DiagnosticAction,
         [scriptblock] $StopAction,
-        [scriptblock] $DelayAction
+        [scriptblock] $DelayAction,
+        [scriptblock] $UtcNowAction,
+        [string[]] $SensitiveValues = @()
     )
 
+    $effectiveSensitiveValueSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $effectiveSensitiveValues = [Collections.Generic.List[string]]::new()
+    foreach ($sensitiveValue in @($SensitiveValues) + @(Get-NervFullStackGuardianSensitiveValues)) {
+        if (-not [string]::IsNullOrEmpty($sensitiveValue) -and $effectiveSensitiveValueSet.Add($sensitiveValue)) {
+            $effectiveSensitiveValues.Add($sensitiveValue)
+        }
+    }
+
     if ($null -eq $ReadAction) { $ReadAction = { Read-NervFullStackManifest -SessionId $SessionId } }
-    if ($null -eq $CoordinatorAliveAction) {
-        $CoordinatorAliveAction = { Test-NervProcessIdentity -ProcessId $CoordinatorPid -ProcessStartTimeUtc $CoordinatorStartTimeUtc }
+    if ($null -eq $CoordinatorIdentityAction) {
+        $CoordinatorIdentityAction = {
+            Get-NervProcessIdentityStatus `
+                -ProcessId $CoordinatorPid `
+                -ProcessStartTimeUtc $CoordinatorStartTimeUtc `
+                -Detailed
+        }
+    }
+    if ($null -eq $IdentityEvidenceAction) {
+        $IdentityEvidenceAction = {
+            param($InputManifest, $Observation, $InputLeaseExpired, $InputCoordinatorMissing)
+            Write-NervFullStackGuardianIdentityEvidence `
+                -Manifest $InputManifest `
+                -Observation $Observation `
+                -LeaseExpired $InputLeaseExpired `
+                -CoordinatorMissing $InputCoordinatorMissing `
+                -SensitiveValues @($effectiveSensitiveValues) | Out-Null
+        }
     }
     if ($null -eq $DiagnosticAction) {
         $DiagnosticAction = {
             param($InputManifest)
-            Invoke-NervFullStackDiagnosticCollection -Manifest $InputManifest | Out-Null
+            Invoke-NervFullStackDiagnosticCollection `
+                -Manifest $InputManifest `
+                -SensitiveValues @($effectiveSensitiveValues) | Out-Null
         }
     }
     if ($null -eq $StopAction) {
@@ -1050,6 +1106,29 @@ function Invoke-NervFullStackGuardian {
         }
     }
     if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
+    if ($null -eq $UtcNowAction) { $UtcNowAction = { [DateTimeOffset]::UtcNow } }
+    $coordinatorIdentityInputComplete = $CoordinatorPid -gt 0 -and -not [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc)
+    $observeCoordinatorIdentity = {
+        if (-not $coordinatorIdentityInputComplete) {
+            New-NervProcessIdentityObservation `
+                -Status Unknown `
+                -ProcessId $CoordinatorPid `
+                -ExpectedStartTimeUtc $CoordinatorStartTimeUtc `
+                -FailureReason 'Coordinator identity input is incomplete.'
+        }
+        else {
+            try {
+                & $CoordinatorIdentityAction
+            }
+            catch {
+                New-NervProcessIdentityObservation `
+                    -Status Unknown `
+                    -ProcessId $CoordinatorPid `
+                    -ExpectedStartTimeUtc $CoordinatorStartTimeUtc `
+                    -FailureReason $_.Exception.Message
+            }
+        }
+    }
 
     Write-Host "Guardian started for '$SessionId' in $Mode mode."
     $observationFailures = 0
@@ -1060,27 +1139,91 @@ function Invoke-NervFullStackGuardian {
         }
         catch {
             $observationFailures++
-            Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $($_.Exception.Message)"
-            if ($observationFailures -ge $MaximumObservationFailures) { throw }
+            $safeManifestObservationError = Protect-NervFullStackDiagnosticText `
+                -Text "$($_.Exception.Message)" `
+                -SensitiveValues @($effectiveSensitiveValues)
+            Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
+            if ($observationFailures -ge $MaximumObservationFailures) {
+                throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+            }
             & $DelayAction $IntervalSeconds
             continue
         }
 
         if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
-        $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset]::UtcNow
+        $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)
+        $coordinatorObservation = & $observeCoordinatorIdentity
+        $coordinatorIdentityObservationCount = 1
+        if (
+            -not $leaseExpired -and
+            [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
+            [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)
+        ) {
+            if ($coordinatorIdentityInputComplete) {
+                for ($identityObservation = 2; $identityObservation -le $MaximumCoordinatorIdentityObservations; $identityObservation++) {
+                    & $DelayAction $CoordinatorIdentityRetryDelaySeconds
+                    $coordinatorObservation = & $observeCoordinatorIdentity
+                    $coordinatorIdentityObservationCount++
+                    if (-not [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)) { break }
+                }
+                if ([DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)) {
+                    try {
+                        $manifest = & $ReadAction
+                        $observationFailures = 0
+                    }
+                    catch {
+                        $observationFailures++
+                        $safeManifestObservationError = Protect-NervFullStackDiagnosticText `
+                            -Text "$($_.Exception.Message)" `
+                            -SensitiveValues @($effectiveSensitiveValues)
+                        Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
+                        if ($observationFailures -ge $MaximumObservationFailures) {
+                            throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+                        }
+                        & $DelayAction $IntervalSeconds
+                        continue
+                    }
+                    if ([string]::Equals([string]$manifest.state, 'Stopped', [StringComparison]::OrdinalIgnoreCase)) { return [pscustomobject]@{ State = 'Stopped' } }
+                    $leaseExpired = [DateTimeOffset] $manifest.leaseExpiresAtUtc -le [DateTimeOffset] (& $UtcNowAction)
+                }
+            }
+            if (
+                -not $leaseExpired -and
+                [string]::Equals([string]$coordinatorObservation.status, 'Unknown', [StringComparison]::Ordinal)
+            ) {
+                Write-Warning "Guardian retained '$SessionId' after coordinator identity remained Unknown for $coordinatorIdentityObservationCount observation(s)."
+                & $DelayAction $IntervalSeconds
+                continue
+            }
+        }
         $coordinatorMissing = [string]::Equals($Mode, 'Automated', [StringComparison]::OrdinalIgnoreCase) -and
-            ($CoordinatorPid -le 0 -or [string]::IsNullOrWhiteSpace($CoordinatorStartTimeUtc) -or -not (& $CoordinatorAliveAction))
+            (
+                [string]::Equals([string]$coordinatorObservation.status, 'Absent', [StringComparison]::Ordinal) -or
+                [string]::Equals([string]$coordinatorObservation.status, 'Mismatched', [StringComparison]::Ordinal)
+            )
         if (-not ($leaseExpired -or $coordinatorMissing)) {
             & $DelayAction $IntervalSeconds
             continue
         }
 
-        Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing."
+        Write-Host "Guardian cleanup triggered for '$SessionId': leaseExpired=$leaseExpired coordinatorMissing=$coordinatorMissing coordinatorStatus=$($coordinatorObservation.status)."
+        try {
+            & $IdentityEvidenceAction $manifest $coordinatorObservation $leaseExpired $coordinatorMissing
+        }
+        catch {
+            $safeIdentityEvidenceError = Protect-NervFullStackDiagnosticText `
+                -Text "$($_.Exception.Message)" `
+                -SensitiveValues @($effectiveSensitiveValues)
+            Write-Warning "Guardian coordinator identity evidence failed for '$SessionId'; cleanup will continue: $safeIdentityEvidenceError"
+        }
         try {
             & $DiagnosticAction $manifest
         }
         catch {
-            Write-Warning "Guardian diagnostic collection failed for '$SessionId'; cleanup will continue: $($_.Exception.Message)"
+            $safeDiagnosticError = Protect-NervFullStackDiagnosticText `
+                -Text "$($_.Exception.Message)" `
+                -SensitiveValues @($effectiveSensitiveValues)
+            Write-Warning "Guardian diagnostic collection failed for '$SessionId'; cleanup will continue: $safeDiagnosticError"
         }
         $lastStopError = 'cleanup did not reach Stopped'
         for ($attempt = 1; $attempt -le $MaximumStopAttempts; $attempt++) {
@@ -1096,6 +1239,59 @@ function Invoke-NervFullStackGuardian {
         }
         throw "Guardian could not stop session '$SessionId' after $MaximumStopAttempts attempts: $lastStopError"
     }
+}
+
+function Write-NervFullStackGuardianIdentityEvidence {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object] $Observation,
+        [Parameter(Mandatory)] [bool] $LeaseExpired,
+        [Parameter(Mandatory)] [bool] $CoordinatorMissing,
+        [string[]] $SensitiveValues = @()
+    )
+
+    $artifactPath = [System.IO.Path]::GetFullPath("$($Manifest.artifactPath)")
+    [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
+    $evidencePath = Join-Path $artifactPath 'guardian-coordinator-identity.json'
+    $temporaryPath = "$evidencePath.tmp-$([guid]::NewGuid().ToString('N'))"
+    $evidence = [ordered]@{
+        schemaVersion = 1
+        sessionId = "$($Manifest.sessionId)"
+        observedAtUtc = "$($Observation.observedAtUtc)"
+        coordinator = [ordered]@{
+            status = "$($Observation.status)"
+            processId = [int] $Observation.processId
+            expectedStartTimeUtc = if ($null -eq $Observation.expectedStartTimeUtc) { $null } else { "$($Observation.expectedStartTimeUtc)" }
+            actualStartTimeUtc = if ($null -eq $Observation.actualStartTimeUtc) { $null } else { "$($Observation.actualStartTimeUtc)" }
+            failureReason = if ([string]::IsNullOrWhiteSpace("$($Observation.failureReason)")) {
+                $null
+            }
+            else {
+                Protect-NervFullStackDiagnosticText `
+                    -Text "$($Observation.failureReason)" `
+                    -SensitiveValues $SensitiveValues
+            }
+        }
+        trigger = [ordered]@{
+            leaseExpired = $LeaseExpired
+            coordinatorMissing = $CoordinatorMissing
+        }
+    }
+
+    try {
+        $safeJson = Protect-NervFullStackDiagnosticText `
+            -Text (($evidence | ConvertTo-Json -Depth 10) + "`n") `
+            -SensitiveValues $SensitiveValues
+        [System.IO.File]::WriteAllText($temporaryPath, $safeJson, [System.Text.UTF8Encoding]::new($false))
+        [System.IO.File]::Move($temporaryPath, $evidencePath, $true)
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return $evidencePath
 }
 
 function Invoke-NervFullStackDiagnosticCollection {

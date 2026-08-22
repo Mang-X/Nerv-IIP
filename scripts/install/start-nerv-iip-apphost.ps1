@@ -51,6 +51,18 @@ param(
 
     [string] $CorsAllowedOrigins,
 
+    [string] $InventorySiteCode,
+
+    [string] $InventorySourceLocationCodes,
+
+    [string] $InventoryLineSideLocationCode,
+
+    [string] $InventoryFinishedGoodsLocationCode,
+
+    [string] $MaterialIssueSourceLocationCode,
+
+    [string] $MaterialIssueLineSideLocationCode,
+
     [switch] $UsePostgreSql,
 
     [switch] $AutoMigrate
@@ -209,6 +221,39 @@ if (-not [string]::IsNullOrWhiteSpace($MinioRootPassword)) {
 
 if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
     $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
+}
+
+# 仓储站点/库位：AppHost 只在 Development 回落到演示种子值（SITE-001 + WH-WB-*），非 Development
+# 必须由这里显式给出真实值，否则相关键根本不下发，MES 线边收料与 WMS 领料按各自 fail-closed
+# 路径显式失败（#2008）。键名与服务读取的配置节同名。
+if (-not [string]::IsNullOrWhiteSpace($InventorySiteCode)) {
+    $environment["Inventory__SiteCode"] = $InventorySiteCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($InventorySourceLocationCodes)) {
+    # 逗号/分号分隔的候选来源库位，按索引键下发；不下发标量键，避免同一配置路径既有值又有子节点。
+    $sourceLocationCodes = @($InventorySourceLocationCodes -split '[,;]' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    for ($sourceLocationIndex = 0; $sourceLocationIndex -lt $sourceLocationCodes.Count; $sourceLocationIndex++) {
+        $environment["Inventory__SourceLocationCodes__$sourceLocationIndex"] = $sourceLocationCodes[$sourceLocationIndex]
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($InventoryLineSideLocationCode)) {
+    $environment["Inventory__LineSideLocationCode"] = $InventoryLineSideLocationCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($InventoryFinishedGoodsLocationCode)) {
+    $environment["Inventory__FinishedGoodsLocationCode"] = $InventoryFinishedGoodsLocationCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MaterialIssueSourceLocationCode)) {
+    $environment["MaterialIssue__SourceLocationCode"] = $MaterialIssueSourceLocationCode
+}
+
+if (-not [string]::IsNullOrWhiteSpace($MaterialIssueLineSideLocationCode)) {
+    $environment["MaterialIssue__LineSideLocationCode"] = $MaterialIssueLineSideLocationCode
 }
 
 $appHostProject = "infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj"
