@@ -102,7 +102,7 @@ public sealed class CreateInboundOrderCommandHandler(ApplicationDbContext dbCont
         {
             if (!HasSameInboundFacts(existingOrder, proposedOrder))
             {
-                throw new KnownException($"Inbound order '{request.InboundOrderNo}' already exists with different inbound facts.");
+                throw new KnownException($"入库单已存在但入库事实不一致：'{request.InboundOrderNo}'");
             }
 
             return existingOrder.Id;
@@ -153,7 +153,7 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
     public async Task<WarehouseTaskId> Handle(CreatePutawayTaskCommand request, CancellationToken cancellationToken)
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
-            ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+            ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
         var existingTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
@@ -170,7 +170,7 @@ public sealed class CreatePutawayTaskCommandHandler(ApplicationDbContext dbConte
                 || existingTask.AssignedOperatorUserId != inbound.AssignedOperatorUserId
                 || existingTask.AssignedPoolCode != inbound.AssignedPoolCode)
             {
-                throw new KnownException($"Warehouse task '{request.TaskNo}' already exists with different putaway facts.");
+                throw new KnownException($"仓库任务已存在但上架事实不一致：'{request.TaskNo}'");
             }
 
             return existingTask.Id;
@@ -283,7 +283,7 @@ public sealed class CompleteInboundOrderCommandHandler
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
             x => x.Id == request.InboundOrderId,
             cancellationToken)
-            ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+            ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
         await executionAuthorizer.AuthorizeAsync(
             AssignedResourceExecution(request, inbound),
             cancellationToken);
@@ -519,16 +519,16 @@ public sealed class CreatePickingTaskCommandHandler(
     public async Task<WarehouseTaskId> Handle(CreatePickingTaskCommand request, CancellationToken cancellationToken)
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
-            ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+            ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
-            ?? throw new KnownException($"Outbound line was not found: {request.LineNo}");
+            ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
         try
         {
             outbound.EnsureCanCreatePickingTask(line.LineNo, request.Quantity);
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
         }
 
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
@@ -584,14 +584,14 @@ public sealed class CreatePickingTaskCommandHandler(
             if (fefo.Allocations.Count != 1)
             {
                 await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
-                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+                throw new KnownException("库存按批次预留未能合并为单行，暂不支持拆分拣货。");
             }
 
             var allocation = fefo.Allocations.Single();
             if (allocation.ReservedQuantity != quantity)
             {
                 await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
-                throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
+                throw new KnownException("库存按批次预留未能合并为单行，暂不支持拆分拣货。");
             }
 
             return new PickingReservationResult(allocation.ReservationId, allocation.LocationCode, allocation.LotNo, allocation.SerialNo);
@@ -1444,7 +1444,7 @@ public sealed class CompleteOutboundOrderCommandHandler
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
             x => x.Id == request.OutboundOrderId,
             cancellationToken)
-            ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+            ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         await executionAuthorizer.AuthorizeAsync(
             AssignedResourceExecution(request, outbound),
             cancellationToken);
@@ -1470,7 +1470,7 @@ public sealed class CompleteOutboundOrderCommandHandler
                         : WmsText.ReplayLineIdempotencyKeys(
                             request.IdempotencyKey,
                             x.SourceDocumentLineId
-                                ?? throw new KnownException("Completed outbound order contains an invalid movement line.")))
+                                ?? throw new KnownException("已完成出库单包含无效的库存移动行。")))
                     .Contains(x.IdempotencyKey, StringComparer.Ordinal));
             if (!matchesSuppliedKey)
             {
@@ -1624,7 +1624,7 @@ public sealed class CompleteOutboundOrderCommandHandler
             && Math.Min(executedQuantity, line.RequestedQuantity) < line.RequestedQuantity);
         if (requiresRelease)
         {
-            throw new KnownException("Inventory reservation client is required to release short-picked reserved stock before completing outbound order.");
+            throw new KnownException("短拣出库单需要库存预留服务才能释放余量。");
         }
     }
 
@@ -1636,7 +1636,7 @@ public sealed class CompleteOutboundOrderCommandHandler
         {
             if (inventoryReservationClient is null)
             {
-                throw new KnownException("Inventory reservation client is required to release short-picked reserved stock.");
+                throw new KnownException("需要库存预留服务才能释放短拣预留库存。");
             }
 
             await inventoryReservationClient.ReleaseAsync(
@@ -1791,7 +1791,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
     public async Task<CompleteWmsMovementResult> Handle(RetryOutboundInventoryPostingCommand request, CancellationToken cancellationToken)
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
-            ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+            ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var failedRequests = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
@@ -1808,7 +1808,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
         outbound.EnsureCanRetryInventoryPosting(failedLineNos);
         if (inventoryReservationClient is null)
         {
-            throw new KnownException("Inventory reservation client is required to retry outbound Inventory posting.");
+            throw new KnownException("重试出库过账需要库存预留服务。");
         }
 
         var reservationIds = new Dictionary<string, string?>(StringComparer.Ordinal);
@@ -1980,7 +1980,7 @@ public sealed class CompleteCountExecutionCommandHandler
         var count = await dbContext.CountExecutions.SingleOrDefaultAsync(
             x => x.Id == request.CountExecutionId,
             cancellationToken)
-            ?? throw new KnownException($"Count execution was not found: {request.CountExecutionId}");
+            ?? throw new KnownException($"未找到盘点执行单，盘点执行单 ID = {request.CountExecutionId}");
         await executionAuthorizer.AuthorizeAsync(
             AssignedResourceExecution(request, count),
             cancellationToken);
@@ -2062,7 +2062,7 @@ public sealed class CompleteCountExecutionCommandHandler
                 WmsReceivingQualityStatuses.Qualified,
                 "company",
                 count.VarianceQuantity
-                    ?? throw new KnownException("Count execution variance was not calculated."),
+                    ?? throw new KnownException("未计算盘点执行差异。"),
                 adjustment.MovementId);
             dbContext.InventoryMovementRequests.Add(postedReceipt);
             return new CompleteWmsMovementResult(postedReceipt.Id, adjustment.MovementId);
@@ -2082,7 +2082,7 @@ public sealed class CompleteCountExecutionCommandHandler
         }
 
         var varianceQuantity = count.VarianceQuantity
-            ?? throw new KnownException("Count execution variance was not calculated.");
+            ?? throw new KnownException("未计算盘点执行差异。");
         var movementRequest = InventoryMovementRequest.Create(
             count.OrganizationId,
             count.EnvironmentId,
@@ -2489,7 +2489,7 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
                     && x.EnvironmentId == request.EnvironmentId
                     && x.ExternalTaskId == request.ExternalTaskId,
                 cancellationToken)
-            ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
+            ?? throw new KnownException($"未找到 WCS 任务，外部任务 ID = {request.ExternalTaskId}");
         if (task.Status == WcsTaskStatus.Completed)
         {
             return;
@@ -2497,7 +2497,7 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
 
         var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson);
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
-            ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
+            ?? throw new KnownException($"未找到仓库任务，任务 ID = {task.WarehouseTaskId}");
         var claimReference = task.Id.Id.ToString("D");
         try
         {
@@ -2626,7 +2626,7 @@ public sealed class WcsTaskCallbackCommandLock<TCommand>(ApplicationDbContext db
                 && x.ExternalTaskId == command.ExternalTaskId)
             .Select(x => new { x.WarehouseTaskId })
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"WCS task was not found: {command.ExternalTaskId}");
+            ?? throw new KnownException($"未找到 WCS 任务，外部任务 ID = {command.ExternalTaskId}");
         return new CommandLockSettings(
             $"business-wms:warehouse-task-action:{task.WarehouseTaskId}",
             30);
@@ -2646,11 +2646,11 @@ public sealed class FailWcsTaskCommandHandler(
                     && x.EnvironmentId == request.EnvironmentId
                     && x.ExternalTaskId == request.ExternalTaskId,
             cancellationToken)
-            ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
+            ?? throw new KnownException($"未找到 WCS 任务，外部任务 ID = {request.ExternalTaskId}");
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(
             x => x.Id == task.WarehouseTaskId,
             cancellationToken)
-            ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
+            ?? throw new KnownException($"未找到仓库任务，任务 ID = {task.WarehouseTaskId}");
         try
         {
             warehouseTask.ValidateWcsExecution(task.Id.Id.ToString("D"));
