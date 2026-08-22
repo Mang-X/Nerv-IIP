@@ -143,7 +143,7 @@ public sealed class WorkCenterCostRateApplicationTests
             Command("org-a", "env-a", 45m) with { CurrencyCode = "USD" },
             CancellationToken.None));
 
-        Assert.Contains("currency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("币种已固定", exception.Message, StringComparison.Ordinal);
         Assert.Single(await db.WorkCenterCostRates.ToListAsync());
     }
 

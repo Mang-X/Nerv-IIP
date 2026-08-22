@@ -436,7 +436,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => reader.GetAsync("org-001", "env-dev", "CUST-001", CancellationToken.None));
 
-        Assert.Contains("HTTP 502", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("客户『CUST-001』的信用额度主数据不可用", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -456,7 +456,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
                 new CreateSalesOrderCommand("org-001", "env-dev", "SO-MISSING-CREDIT", "QUO-MISSING-CREDIT", "SITE-001"),
                 CancellationToken.None));
 
-        Assert.Contains("credit limit", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("客户『CUST-MISSING』缺少信用额度主数据", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

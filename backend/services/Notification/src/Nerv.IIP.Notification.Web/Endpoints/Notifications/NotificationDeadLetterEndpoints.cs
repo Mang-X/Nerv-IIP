@@ -109,7 +109,7 @@ public sealed class IgnoreNotificationDeadLetterEndpoint(
     {
         if (string.IsNullOrWhiteSpace(req.Reason))
         {
-            throw new KnownException("Ignore reason is required.");
+            throw new KnownException("忽略原因不能为空。");
         }
 
         var deadLetterId = Route<Guid>("deadLetterId");
@@ -199,7 +199,7 @@ internal static class NotificationDeadLetterEndpointMapper
 
         return Enum.TryParse<IntegrationEventDeadLetterStatus>(status, ignoreCase: true, out var parsed)
             ? parsed
-            : throw new KnownException($"Dead-letter status '{status}' is not supported.");
+            : throw new KnownException("不支持的死信状态。");
     }
 
     private static int ParseSkip(int? skip)
@@ -211,7 +211,7 @@ internal static class NotificationDeadLetterEndpointMapper
 
         return skip >= 0
             ? skip.Value
-            : throw new KnownException("Dead-letter skip must be a non-negative integer.");
+            : throw new KnownException("死信跳过数量必须为非负整数。");
     }
 
     private static int ParseTake(int? take)
@@ -223,6 +223,6 @@ internal static class NotificationDeadLetterEndpointMapper
 
         return take > 0
             ? take.Value
-            : throw new KnownException("Dead-letter take must be a positive integer.");
+            : throw new KnownException("死信获取数量必须为正整数。");
     }
 }

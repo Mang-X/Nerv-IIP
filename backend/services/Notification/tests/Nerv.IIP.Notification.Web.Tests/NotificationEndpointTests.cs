@@ -234,9 +234,24 @@ public sealed class NotificationEndpointTests
         using var factory = new NotificationWebApplicationFactory();
         using var client = factory.CreateNotificationClient();
 
-        var response = await client.PostAsync("/api/notifications/v1/messages/not-a-guid/read", null);
+        var response = await client.PostAsync("/api/notifications/v1/messages/not-a-guid/read?recipientRef=user%3Aadmin", null);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("通知消息标识无效。", await ReadErrorMessageAsync(response));
+    }
+
+    [Fact]
+    public async Task Submit_intent_rejects_unsupported_intent_type_with_chinese_message()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateNotificationClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/notifications/v1/intents",
+            CreateIntent("dedupe-invalid-intent-type", "user:admin") with { IntentType = "unsupported" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("不支持的通知意图类型。", await ReadErrorMessageAsync(response));
     }
 
     [Fact]
@@ -589,6 +604,13 @@ public sealed class NotificationEndpointTests
         using var document = await JsonDocument.ParseAsync(stream);
         var data = document.RootElement.GetProperty("data");
         return data.Deserialize<T>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    }
+
+    private static async Task<string> ReadErrorMessageAsync(HttpResponseMessage response)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var document = await JsonDocument.ParseAsync(stream);
+        return document.RootElement.GetProperty("message").GetString()!;
     }
 
     public sealed class NotificationWebApplicationFactory : WebApplicationFactory<Program>

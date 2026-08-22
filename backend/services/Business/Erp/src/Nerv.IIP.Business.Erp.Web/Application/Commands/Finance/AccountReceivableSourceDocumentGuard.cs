@@ -41,7 +41,7 @@ internal static class AccountReceivableSourceDocumentGuard
         if (sourceCustomerCode is null)
         {
             throw new KnownException(
-                $"来源单据『{normalizedSourceDocumentNo}』在 ERP 中不存在（既不是发货单，也不是销售订单），应收不能凭空登记。确需无来源手工入账，请前往财务 › 会计凭证 › 过账凭证。");
+                $"来源单据『{normalizedSourceDocumentNo}』不存在，无法登记应收；无来源手工入账请走财务 › 会计凭证 › 过账凭证。");
         }
 
         // 客户编码按大小写不敏感比对，与库存侧同类比对一致：编码大小写差异不是不同客户，不能据此误拒。
@@ -49,7 +49,7 @@ internal static class AccountReceivableSourceDocumentGuard
         if (!string.Equals(authoritativeCustomerCode, customerCode.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             throw new KnownException(
-                $"来源单据『{normalizedSourceDocumentNo}』的客户是『{sourceCustomerCode}』，与登记的客户『{customerCode}』不一致，应收登记已拒绝。");
+                $"单据『{normalizedSourceDocumentNo}』客户『{sourceCustomerCode}』与『{customerCode}』不符，应收拒绝。");
         }
 
         return authoritativeCustomerCode;

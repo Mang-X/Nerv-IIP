@@ -206,7 +206,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
         var successful = Assert.Single(new[] { first, second }, task => task.Status == TaskStatus.RanToCompletion);
         var failed = Assert.Single(new[] { first, second }, task => task.IsFaulted);
         var knownException = Assert.IsType<KnownException>(failed.Exception!.GetBaseException());
-        Assert.Contains("Stock count task code conflicts", knownException.Message, StringComparison.Ordinal);
+        Assert.Contains("盘点任务编码已存在", knownException.Message, StringComparison.Ordinal);
         await using var assertScope = inventoryProvider.CreateAsyncScope();
         var inventoryDb = assertScope.ServiceProvider.GetRequiredService<InventoryDbContext>();
         var task = Assert.Single(await inventoryDb.StockCountTasks.ToListAsync());
