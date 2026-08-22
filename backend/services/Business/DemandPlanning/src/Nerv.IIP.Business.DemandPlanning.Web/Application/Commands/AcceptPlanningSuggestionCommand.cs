@@ -55,7 +55,7 @@ public sealed class UnsupportedPlanningSuggestionDownstreamBridge : IPlanningSug
         PlanningSuggestionDownstreamRequest request,
         CancellationToken cancellationToken)
     {
-        throw new KnownException($"Planning suggestion downstream bridge is not configured for {request.DownstreamService}/{request.DownstreamDocumentType}.");
+        throw new KnownException("计划建议下游创建方式不受支持，请检查下游服务和单据类型。");
     }
 }
 
@@ -69,7 +69,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         var suggestion = await dbContext.PlanningSuggestions
             .Include(x => x.PeggingLinks)
             .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
-            ?? throw new KnownException($"Planning suggestion was not found: {request.SuggestionId}");
+            ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
         var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, cancellationToken);
         try
         {
@@ -82,9 +82,9 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 downstreamReference.DownstreamDocumentType,
                 downstreamReference.DownstreamDocumentId);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            throw new KnownException(ex.Message);
+            throw new KnownException("计划建议接受失败，请检查建议状态和下游引用。");
         }
     }
 
@@ -104,7 +104,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
 
         if (suggestion.Status == PlanningSuggestionStatus.Accepted)
         {
-            throw new KnownException("Planning suggestion has already been accepted with a different downstream reference.");
+            throw new KnownException("计划建议已使用其他下游引用接受。");
         }
 
         EnsureCanCreateDownstreamReference(suggestion);
@@ -175,7 +175,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
     {
         if (suggestion.Status != PlanningSuggestionStatus.Open)
         {
-            throw new KnownException("Only open planning suggestions can be accepted.");
+            throw new KnownException("只有开放状态的计划建议才能接受。");
         }
     }
 }

@@ -129,7 +129,7 @@ public sealed class GetStockBySourceQueryHandler(ApplicationDbContext dbContext)
 
         if (movements.Length > MaxMovements)
         {
-            throw new KnownException($"Inventory source query returned more than {MaxMovements} movements. Add both source document id and source document line id to narrow the request.");
+            throw new KnownException($"库存来源流水超过 {MaxMovements} 条，请同时指定来源单据和明细后重试。");
         }
 
         if (movements.Length == 0)

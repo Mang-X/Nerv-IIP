@@ -22,7 +22,7 @@ public sealed class MarkNotificationMessageReadCommandHandler(ApplicationDbConte
                 && x.EnvironmentId == command.EnvironmentId
                 && x.Messages.Any(message => message.Id == messageId && message.RecipientRef == command.RecipientRef),
                 cancellationToken)
-            ?? throw new KnownException($"Notification message was not found: {command.MessageId}");
+            ?? throw new KnownException("通知消息不存在。");
 
         var message = intent.MarkRead(messageId, command.Now);
         return new MarkNotificationMessageReadResponse(
@@ -35,7 +35,7 @@ public sealed class MarkNotificationMessageReadCommandHandler(ApplicationDbConte
     {
         if (!Guid.TryParse(messageId, out var value))
         {
-            throw new KnownException($"Notification message id is invalid: {messageId}");
+            throw new KnownException("通知消息标识无效。");
         }
 
         return new NotificationMessageId(value);

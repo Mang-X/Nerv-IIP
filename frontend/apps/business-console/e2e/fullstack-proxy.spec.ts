@@ -5,13 +5,36 @@ const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 
 test.skip(!baseURL || !adminPassword, 'requires a managed full-stack session')
 
-test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ page }) => {
+test('dynamic origin uses both same-origin gateway proxies @smoke', async ({ page, request }) => {
   const viteOrigin = new URL(baseURL!).origin
   const apiRequests: string[] = []
   page.on('request', (request) => {
     const url = new URL(request.url())
     if (url.pathname.startsWith('/api/')) apiRequests.push(request.url())
   })
+
+  let consecutiveReadyResponses = 0
+  await expect
+    .poll(
+      async () => {
+        try {
+          const response = await request.get(new URL('/login', baseURL!).toString(), {
+            failOnStatusCode: false,
+            timeout: 5_000,
+          })
+          consecutiveReadyResponses = response.status() < 500 ? consecutiveReadyResponses + 1 : 0
+        } catch {
+          consecutiveReadyResponses = 0
+        }
+        return consecutiveReadyResponses
+      },
+      {
+        message: `business-console endpoint did not become stable before navigation: ${viteOrigin}`,
+        timeout: 30_000,
+        intervals: [500, 1_000, 1_000],
+      },
+    )
+    .toBeGreaterThanOrEqual(3)
 
   await page.goto('/login')
   const loginResponse = page.waitForResponse(

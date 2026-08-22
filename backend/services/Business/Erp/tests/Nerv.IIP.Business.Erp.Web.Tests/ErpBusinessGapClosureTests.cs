@@ -689,7 +689,7 @@ public sealed class ErpBusinessGapClosureTests
             IdempotencyKey: "idem-jv-closed-001");
         var exception = await Assert.ThrowsAsync<KnownException>(() => new PostJournalVoucherCommandHandler(dbContext).Handle(postCommand, CancellationToken.None));
 
-        Assert.Contains("closed accounting period", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("会计期间『2026-06』已关闭", exception.Message, StringComparison.Ordinal);
         Assert.Empty(dbContext.JournalVouchers);
 
         await new ReopenAccountingPeriodCommandHandler(dbContext).Handle(
@@ -898,7 +898,7 @@ public sealed class ErpBusinessGapClosureTests
                 ]),
             CancellationToken.None));
 
-        Assert.Contains("only settle payables", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("一次付款只能结算同一供应商的应付单", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1270,7 +1270,7 @@ public sealed class ErpBusinessGapClosureTests
             new ReleaseDeliveryOrderCommand("org-001", "env-dev", null, "SO-WHOLE-2", null, "idem-whole-2-002"),
             CancellationToken.None));
 
-        Assert.Contains("没有可发货的未发行", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("销售订单『SO-WHOLE-2』没有可发货数量", exception.Message, StringComparison.Ordinal);
         Assert.Single(dbContext.DeliveryOrders.Where(x => x.SalesOrderNo == "SO-WHOLE-2"));
     }
 

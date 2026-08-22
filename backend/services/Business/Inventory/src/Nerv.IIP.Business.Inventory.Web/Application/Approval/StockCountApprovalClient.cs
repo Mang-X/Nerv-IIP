@@ -70,7 +70,7 @@ public sealed class HttpStockCountApprovalClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<StartApprovalChainHttpResponse>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "BusinessApproval did not return an approval chain id.");
+            throw new KnownException("审批服务未返回审批链，请稍后重试。");
         }
 
         return new StockCountApprovalResult(envelope.Data.ChainId);

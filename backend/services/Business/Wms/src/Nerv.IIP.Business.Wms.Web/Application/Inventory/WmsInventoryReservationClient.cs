@@ -140,7 +140,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory reservation was rejected without a response payload.");
+            throw new KnownException("库存预留失败，请检查库存可用量后重试。");
         }
 
         return envelope.Data;
@@ -161,7 +161,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryFefoReservationResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory FEFO reservation was rejected without a response payload.");
+            throw new KnownException("库存按批次预留失败，请检查库存可用量后重试。");
         }
 
         return envelope.Data;
@@ -182,7 +182,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationReleaseResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory reservation release was rejected without a response payload.");
+            throw new KnownException("库存预留释放失败，请刷新后重试。");
         }
 
         return envelope.Data;
@@ -203,7 +203,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationRenewalResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory reservation renewal was rejected without a response payload.");
+            throw new KnownException("库存预留续期失败，请刷新后重试。");
         }
 
         return envelope.Data;
@@ -224,7 +224,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryCountTaskResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory count task creation was rejected without a response payload.");
+            throw new KnownException("库存盘点任务创建失败，请刷新后重试。");
         }
 
         return envelope.Data;
@@ -245,7 +245,7 @@ public sealed class HttpWmsInventoryReservationClient(
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryCountAdjustmentResult>>(cancellationToken);
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
-            throw new KnownException(envelope?.Message ?? "Inventory count adjustment was rejected without a response payload.");
+            throw new KnownException("库存盘点调整失败，请刷新后重试。");
         }
 
         return envelope.Data;
