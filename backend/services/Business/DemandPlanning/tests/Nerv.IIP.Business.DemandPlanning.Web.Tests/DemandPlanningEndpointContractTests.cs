@@ -209,7 +209,7 @@ public sealed class DemandPlanningEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             createHandler.Handle(command, CancellationToken.None));
 
-        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("主生产计划桶已存在：SKU=SKU-FG-1000，站点=SITE-01，日期=2026-06-15。", exception.Message);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public sealed class DemandPlanningEndpointContractTests
                 new ReleaseMasterProductionScheduleBucketCommand("org-001", "env-dev", mpsId, "planning.manager"),
                 CancellationToken.None));
 
-        Assert.Contains("reviewed", directRelease.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("只有已审核的主生产计划桶才能发布。", directRelease.Message);
         var bucket = await dbContext.MasterProductionSchedules.SingleAsync(x => x.Id == mpsId);
         bucket.MarkReviewed("planner.li");
         bucket.Release("planning.manager");
@@ -257,7 +257,7 @@ public sealed class DemandPlanningEndpointContractTests
                     132m),
                 CancellationToken.None));
 
-        Assert.Contains("cannot be updated", updateAfterRelease.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("已发布的主生产计划桶不能修改。", updateAfterRelease.Message);
     }
 
     [Fact]
@@ -693,7 +693,7 @@ public sealed class DemandPlanningEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "erp", "purchase-request", "PR-002"), CancellationToken.None));
 
-        Assert.Contains("different downstream", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("计划建议已使用其他下游引用接受。", exception.Message);
     }
 
     [Fact]
@@ -796,7 +796,7 @@ public sealed class DemandPlanningEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None));
 
-        Assert.Contains("Only open planning suggestions can be accepted", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("只有开放状态的计划建议才能接受。", exception.Message);
         Assert.Equal(0, bridge.CreateCount);
     }
 
@@ -850,7 +850,7 @@ public sealed class DemandPlanningEndpointContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "too-late"), CancellationToken.None));
 
-        Assert.Contains("Only open planning suggestions can be rejected", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("只有开放状态的计划建议才能拒绝。", exception.Message);
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
     }
 
