@@ -431,7 +431,7 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
         var parts = versionId.Split(':', 2, StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
         {
-            throw new KnownException("RoutingVersionId 必须使用 'routingCode:revision' 格式。");
+            throw new KnownException("RoutingVersionId 格式无效，请使用 routingCode:revision 格式。");
         }
 
         return (parts[0], parts[1]);
@@ -486,7 +486,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             cancellationToken);
         return new SchedulingProblemWorkCenterSnapshot(
             detail.Code,
-            detail.DefaultCalendarCode ?? throw new KnownException($"工作中心 '{workCenterCode}' 未配置默认日历。"),
+            detail.DefaultCalendarCode ?? throw new KnownException($"工作中心 '{workCenterCode}' 未配置默认日历，请先补充配置。"),
             Math.Max(1, detail.NumberOfCapacities ?? 1),
             [detail.Code]);
     }

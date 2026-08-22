@@ -91,7 +91,7 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
         var missing = requested.Where(x => !byId.ContainsKey(x.WorkOrderId)).Select(x => x.WorkOrderId).ToArray();
         if (missing.Length > 0)
         {
-            throw new KnownException($"在请求范围内未找到 MES 工单：{string.Join(", ", missing)}");
+            throw new KnownException($"在请求范围内未找到 MES 工单，请检查工单状态后重试：{string.Join(", ", missing)}");
         }
 
         var productionVersionIds = requested
@@ -119,18 +119,18 @@ public sealed class HttpSchedulingWorkbenchSourceProvider(
             var order = byId[selection.WorkOrderId];
             if (TerminalStatuses.Contains(order.Status))
             {
-                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 已处于终态，不能排程。");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 已处于终态，请选择未完成工单。");
             }
 
             if (string.IsNullOrWhiteSpace(order.ProductionVersionId))
             {
-                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 没有生产版本。");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 没有生产版本，请先补充配置。");
             }
 
             var routing = routingsByVersion[order.ProductionVersionId];
             if (!string.Equals(order.SkuCode ?? order.SkuId, routing.SkuCode, StringComparison.OrdinalIgnoreCase))
             {
-                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 与生产版本 '{order.ProductionVersionId}' 不匹配。");
+                throw new KnownException($"MES 工单 '{order.WorkOrderId}' 与生产版本 '{order.ProductionVersionId}' 不匹配，请检查配置。");
             }
 
             return new SchedulingProblemSourceOrder(

@@ -44,11 +44,11 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
         var plan = await dbContext.SchedulePlans.AsNoTracking()
             .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId && x.PlanId == request.PlanId, cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
         var snapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId && x.ProblemId == plan.ProblemId, cancellationToken)
-            ?? throw new KnownException($"未找到排程问题快照，问题 ID = {plan.ProblemId}");
+            ?? throw new KnownException($"未找到排程问题快照，请重新生成方案，问题 ID = {plan.ProblemId}");
         SchedulingProblemContract problem;
         try
         {
@@ -79,14 +79,14 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
             .SingleOrDefault(x => x.Operation.OperationId == request.OperationId);
         if (pair.Operation is null)
         {
-            throw new KnownException($"未找到排程工序，工序 ID = {request.OperationId}");
+            throw new KnownException($"未找到排程工序，请刷新后重试，工序 ID = {request.OperationId}");
         }
         if (!pair.Operation.EligibleResourceIds.Contains(request.ResourceId, StringComparer.Ordinal))
         {
-            throw new KnownException($"资源不可用于工序，资源 ID = {request.ResourceId}，工序 ID = {request.OperationId}");
+            throw new KnownException($"资源不可用于工序，请选择可用资源，资源 ID = {request.ResourceId}，工序 ID = {request.OperationId}");
         }
         var resource = problem.Resources.SingleOrDefault(x => x.ResourceId == request.ResourceId)
-            ?? throw new KnownException($"未找到排程资源，资源 ID = {request.ResourceId}");
+            ?? throw new KnownException($"未找到排程资源，请刷新资源列表后重试，资源 ID = {request.ResourceId}");
         var now = timeProvider.GetUtcNow();
         var actor = contextAccessor.GetContext().Actor;
         var fact = await dbContext.ScheduleOperationOverrides.SingleOrDefaultAsync(x =>

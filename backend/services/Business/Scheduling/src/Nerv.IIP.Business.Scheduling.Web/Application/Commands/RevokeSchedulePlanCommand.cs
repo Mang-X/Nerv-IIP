@@ -46,11 +46,11 @@ public sealed class RevokeSchedulePlanCommandHandler(
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId,
             cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
 
         if (plan.Status == SchedulePlanLifecycleStatus.Generated)
         {
-            throw new KnownException("生成的排程方案尚未发布，不能撤销。");
+            throw new KnownException("生成的排程方案尚未发布，无需撤销。");
         }
 
         if (plan.Status == SchedulePlanLifecycleStatus.Released)

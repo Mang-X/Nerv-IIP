@@ -244,7 +244,7 @@ public sealed class SchedulingIntegrationEventTests
 
         var exception = Assert.Throws<KnownException>(() => accessor.GetContext());
 
-        Assert.Equal("转发请求必须提供规范的 X-Actor。", exception.Message);
+        Assert.Equal("转发请求缺少规范的 X-Actor，请补充后重试。", exception.Message);
     }
 
     [Fact]

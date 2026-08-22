@@ -113,7 +113,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
         var snapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleAsync(x =>
                 x.ProblemId == basePlanEntity.ProblemId &&
@@ -121,13 +121,13 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
                 x.EnvironmentId == request.EnvironmentId,
                 cancellationToken);
         var baseProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(snapshot.ProblemJson, SchedulingJson.Options)
-            ?? throw new KnownException($"排程问题快照无效，问题 ID = {snapshot.ProblemId}");
+            ?? throw new KnownException($"排程问题快照无效，请重新生成方案，问题 ID = {snapshot.ProblemId}");
         var included = request.IncludedOrderIds.ToHashSet(StringComparer.Ordinal);
         var orders = baseProblem.Orders.Where(x => included.Contains(x.OrderId)).ToArray();
         var missingOrders = included.Except(orders.Select(x => x.OrderId), StringComparer.Ordinal).ToArray();
         if (missingOrders.Length > 0)
         {
-            throw new KnownException($"所选工单不在基础方案中：{string.Join(", ", missingOrders)}");
+            throw new KnownException($"所选工单不在基础方案中，请刷新后重新选择：{string.Join(", ", missingOrders)}");
         }
 
         var normalizedLocks = ValidateLocks(baseProblem, orders, request.LockedAssignments);
@@ -156,19 +156,19 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         {
             if (!operations.TryGetValue((assignment.OrderId, assignment.OperationId), out var source))
             {
-                throw new KnownException($"锁定工序不在修订方案中：'{assignment.OperationId}'");
+                throw new KnownException($"锁定工序不在修订方案中，请刷新后重新选择：'{assignment.OperationId}'");
             }
 
             if (!resources.TryGetValue(assignment.ResourceId, out var resource) ||
                 !source.Operation.EligibleResourceIds.Contains(assignment.ResourceId, StringComparer.Ordinal))
             {
-                throw new KnownException($"资源不可用于工序：资源 '{assignment.ResourceId}'，工序 '{assignment.OperationId}'");
+                throw new KnownException($"资源不可用于工序，请选择可用资源：资源 '{assignment.ResourceId}'，工序 '{assignment.OperationId}'");
             }
 
             if (assignment.StartUtc < problem.HorizonStartUtc || assignment.EndUtc > problem.HorizonEndUtc ||
                 assignment.EndUtc <= assignment.StartUtc)
             {
-                throw new KnownException($"锁定工序超出排程时间范围：'{assignment.OperationId}'");
+                throw new KnownException($"锁定工序超出排程时间范围，请调整时间：'{assignment.OperationId}'");
             }
 
             return assignment with

@@ -27,7 +27,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Target($"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs", "UpsertScheduleOperationOverrideCommandHandler", "Handle", 6),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanUniqueConflictBehavior", "Handle", 1),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanCommandHandler", "Handle", 4),
-        Excluded($"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs", "AssembleSchedulingProblemCommandHandler", "Handle", 3, "异步 AssembleSchedulingProblem 无 facade，不属于 transportVisible"),
+        Excluded($"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs", "AssembleSchedulingProblemCommandHandler", "Handle", 3, "deferred/no-facade；若 facade matrix 转为 exposed，必须重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs", "RevokeSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs", "CreateSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanDetailQueryHandler", "Handle", 1),
@@ -49,8 +49,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         var repositoryRoot = FindRepositoryRoot();
         var sourceRoot = Path.Combine(
             repositoryRoot,
-            SchedulingWebRoot.Replace('/', Path.DirectorySeparatorChar),
-            "Application");
+            SchedulingWebRoot.Replace('/', Path.DirectorySeparatorChar));
         var sourceFiles = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
             .OrderBy(file => file, StringComparer.Ordinal)
             .ToArray();
@@ -109,7 +108,7 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
     }
 
     [Fact]
-    public void Analyzer_reports_dynamic_messages_and_ignores_the_async_exclusion()
+    public void Analyzer_reports_dynamic_messages_and_ignores_the_deferred_exclusion()
     {
         const string source = "using NetCorePal.Extensions.Primitives; class Probe { void Handle(string message) { throw new KnownException(message); } }";
         var documents = new[] { new SchedulingSourceDocument("Probe.cs", source) };
@@ -119,8 +118,12 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
         Assert.Equal(["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"], violations);
 
         var excluded = SchedulingUserMessageSourceAnalyzer.Analyze(
-            [new SchedulingSourceDocument("Async.cs", "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"internal\"); } }")],
-            [new SchedulingExcludedSite("Async.cs", "Probe", "Handle", "async/no-facade")]);
+            [new SchedulingSourceDocument("Deferred.cs", "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"internal\"); } }")],
+            [new SchedulingExcludedSite(
+                "Deferred.cs",
+                "Probe",
+                "Handle",
+                "deferred/no-facade；若 facade matrix 转为 exposed，必须重新分类")]);
 
         Assert.Empty(excluded);
     }

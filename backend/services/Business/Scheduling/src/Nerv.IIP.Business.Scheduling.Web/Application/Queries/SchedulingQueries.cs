@@ -139,7 +139,7 @@ public sealed class GetSchedulePlanDetailQueryHandler(
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
 
         // 工作日历与不可用窗口存在问题快照里(排程输入),读面顺带投影出来,不新增端点。
         // 快照缺失(历史数据)时按无日历返回,读面自行退化,不编造。
@@ -212,7 +212,7 @@ public sealed class GetSchedulePlanGanttQueryHandler(ApplicationDbContext dbCont
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
 
         return SchedulePlanContractMapper.ToContract(plan).GanttItems;
     }

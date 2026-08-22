@@ -60,7 +60,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException($"未找到排程方案，方案 ID = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
 
         if (plan.Status == SchedulePlanLifecycleStatus.Released)
         {
@@ -69,7 +69,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
 
         if (plan.Status is SchedulePlanLifecycleStatus.Superseded or SchedulePlanLifecycleStatus.Revoked)
         {
-            throw new KnownException("已取代或已撤销的排程方案不能再次发布。");
+            throw new KnownException("已取代或已撤销的排程方案不能再次发布，请重新生成方案。");
         }
 
         var hasErrorConflict = await dbContext.Set<SchedulePlanConflict>()
@@ -81,7 +81,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
             .AnyAsync(x => x.SchedulePlanId == plan.Id, cancellationToken);
         if (hasErrorConflict || hasUnscheduledOperation)
         {
-            throw new KnownException("排程方案包含错误冲突或未排工序，不能发布。");
+            throw new KnownException("排程方案包含错误冲突或未排工序，不能发布，请处理后再发布。");
         }
 
         // A plan whose scheduling inputs have since changed (recorded as an invalidation) is stale and

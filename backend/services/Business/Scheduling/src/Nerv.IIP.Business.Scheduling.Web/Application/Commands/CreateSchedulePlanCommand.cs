@@ -55,7 +55,7 @@ public sealed class CreateSchedulePlanCommandHandler(
         {
             if (!string.Equals(existingSnapshot.ProblemFingerprint, problemFingerprint, StringComparison.Ordinal))
             {
-                throw new KnownException($"排程问题已存在但指纹不同，问题 ID = {request.Problem.ProblemId}");
+                throw new KnownException($"排程问题已存在但指纹不同，请刷新后重试，问题 ID = {request.Problem.ProblemId}");
             }
 
             var existingPlan = await dbContext.SchedulePlans.AsNoTracking()
@@ -69,7 +69,7 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.EnvironmentId == request.Problem.EnvironmentId &&
                         x.ProblemId == request.Problem.ProblemId,
                     cancellationToken)
-                ?? throw new KnownException($"排程问题快照已存在，但未找到生成方案，问题 ID = {request.Problem.ProblemId}");
+                ?? throw new KnownException($"排程问题快照已存在但未找到生成方案，请重新生成，问题 ID = {request.Problem.ProblemId}");
             // 命中既有方案时同样带出日历/不可用窗口:口径与落库的问题快照一致(即 normalizedProblem)。
             var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan, normalizedProblem);
             var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);

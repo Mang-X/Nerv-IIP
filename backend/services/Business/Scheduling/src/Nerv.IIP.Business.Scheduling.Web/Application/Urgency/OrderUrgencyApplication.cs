@@ -136,7 +136,7 @@ public sealed class OrderUrgencyService(ApplicationDbContext dbContext, TimeProv
             .ThenByDescending(x => x.BusinessPriorityRevision)
             .ToArrayAsync(cancellationToken);
         var latest = snapshots.FirstOrDefault()
-            ?? throw new KnownException($"未找到订单紧急度，业务引用 = {orderReference}");
+            ?? throw new KnownException($"未找到订单紧急度，请刷新后重试，业务引用 = {orderReference}");
         var existingChanges = await LoadPriorityChangesAsync(
             organizationId, environmentId, latest.OrderId, cancellationToken);
         var now = timeProvider.GetUtcNow();
