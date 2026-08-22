@@ -257,7 +257,7 @@ public sealed class StandardOperationApiContractTests
             CancellationToken.None));
 
         Assert.IsType<InvalidOperationException>(exception.InnerException);
-        Assert.Contains("Archived standard operation", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("标准工序归档失败，请检查状态和归档原因。", exception.Message);
     }
 
     [Fact]

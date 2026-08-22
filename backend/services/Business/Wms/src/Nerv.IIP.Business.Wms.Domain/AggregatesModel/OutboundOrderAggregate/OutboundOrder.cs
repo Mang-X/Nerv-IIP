@@ -187,12 +187,12 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     {
         if (quantity <= 0)
         {
-            throw new KnownException("Pick quantity must be positive.");
+            throw new KnownException("拣货数量必须大于零。");
         }
 
         if (quantity > line.RequestedQuantity)
         {
-            throw new KnownException("Pick quantity cannot exceed outbound line quantity.");
+            throw new KnownException("拣货数量不能超过出库行数量。");
         }
     }
 

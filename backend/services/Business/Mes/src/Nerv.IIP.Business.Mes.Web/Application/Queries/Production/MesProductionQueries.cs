@@ -134,7 +134,7 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
                 && x.ReportNo == request.ReportNo)
             .SelectFacts(dbContext)
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Production report was not found. ReportNo = {request.ReportNo}");
+            ?? throw new KnownException($"未找到报工记录，ReportNo = {request.ReportNo}");
 
         var consumedMaterialLots = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()

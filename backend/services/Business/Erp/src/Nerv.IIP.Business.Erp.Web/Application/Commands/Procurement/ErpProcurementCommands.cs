@@ -1272,7 +1272,7 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 $"{request.PurchaseOrderNo}:change:{Guid.CreateVersion7():N}");
-            // #1685：同上，变更审批走 APT-WB-PO-002；下达路径（创建 / 转单 / RFQ）继续用 PurchaseOrderRelease。
+            // 变更审批走独立中性产品码；下达路径（创建 / 转单 / RFQ）继续用 PurchaseOrderRelease。
             var approval = await _approvalClient.StartApprovalAsync(
                 new PurchaseOrderApprovalRequest(request.OrganizationId, request.EnvironmentId, ApprovalTemplateCodes.PurchaseOrderChange, ApprovalSourceServices.BusinessErp, ApprovalDocumentTypes.PurchaseOrder, request.PurchaseOrderNo, null, request.StartedBy, chainId),
                 cancellationToken);
