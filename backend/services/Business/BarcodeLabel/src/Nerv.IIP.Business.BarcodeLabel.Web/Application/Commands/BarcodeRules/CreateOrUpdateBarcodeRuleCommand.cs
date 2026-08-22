@@ -61,11 +61,11 @@ public sealed class CreateOrUpdateBarcodeRuleCommandHandler(ApplicationDbContext
             }
             catch (ArgumentException ex)
             {
-                throw new KnownException(ex.Message, ex);
+                throw new KnownException("条码规则参数无效，请检查后重试。", ex);
             }
             catch (InvalidOperationException ex)
             {
-                throw new KnownException(ex.Message, ex);
+                throw new KnownException("条码规则状态不允许当前操作，请检查后重试。", ex);
             }
 
             return existing.Id;
@@ -88,11 +88,11 @@ public sealed class CreateOrUpdateBarcodeRuleCommandHandler(ApplicationDbContext
         }
         catch (ArgumentException ex)
         {
-            throw new KnownException(ex.Message, ex);
+            throw new KnownException("条码规则参数无效，请检查后重试。", ex);
         }
         catch (InvalidOperationException ex)
         {
-            throw new KnownException(ex.Message, ex);
+            throw new KnownException("条码规则状态不允许当前操作，请检查后重试。", ex);
         }
 
         dbContext.BarcodeRules.Add(rule);
