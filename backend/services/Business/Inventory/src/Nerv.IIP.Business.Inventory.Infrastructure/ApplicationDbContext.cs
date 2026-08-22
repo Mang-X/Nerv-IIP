@@ -46,7 +46,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         }
         catch (DbUpdateConcurrencyException)
         {
-            throw new KnownException("Inventory stock balance was updated concurrently. Retry the command with the latest ledger state.");
+            throw new KnownException("库存台账在并发更新时发生冲突，请刷新后重试。");
         }
     }
 

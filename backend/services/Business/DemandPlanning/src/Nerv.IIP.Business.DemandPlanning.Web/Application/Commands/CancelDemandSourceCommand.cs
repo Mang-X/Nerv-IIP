@@ -29,7 +29,7 @@ public sealed class CancelDemandSourceCommandHandler(ApplicationDbContext dbCont
             && x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId,
             cancellationToken)
-            ?? throw new KnownException($"Demand source '{request.DemandSourceId}' was not found.");
+            ?? throw new KnownException($"需求来源不存在：{request.DemandSourceId}");
 
         dbContext.DemandSources.Remove(demand);
     }
