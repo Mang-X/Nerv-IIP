@@ -729,7 +729,7 @@ $a5Ast = [System.Management.Automation.Language.Parser]::ParseFile($a5Library, [
 Assert-True ($a5ParseErrors.Count -eq 0) 'The A5 library must parse without errors.'
 $a5ForbiddenCommands = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($commandName in @(
-    'Start-Process', 'Stop-ProcessTree', 'Invoke-Aspire', 'Invoke-DockerCompose',
+    'Start-Process', 'Stop-Process', 'Stop-ProcessTree', 'Invoke-Aspire', 'Invoke-DockerCompose',
     'Invoke-NativeCommandWithTimeout', 'dotnet', 'node', 'aspire', 'dcp', 'docker'
 )) {
     [void] $a5ForbiddenCommands.Add($commandName)
@@ -745,6 +745,53 @@ foreach ($commandAst in @($a5Ast.FindAll({
     }
 }
 Assert-True ($a5ForbiddenCommandHits.Count -eq 0) "A5 primitives must not start or stop Node/dotnet/Aspire/DCP/Docker/runtime processes. Observed: $($a5ForbiddenCommandHits -join ' | ')"
+
+# Governance/PublicContract: CommandAst excludes .NET member calls. Freeze the
+# A5 library's exact file-publication, cryptographic nonce, collection, and
+# verified-handle member surface so process launch and unapproved destructive
+# members fail closed. This is a static checked-in-code contract, not evidence
+# from a real runtime/Aspire/Docker execution.
+$allowedA5MemberInvocations = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($memberInvocation in @(
+    'Static|[byte[]]|new',
+    'Static|[Convert]|ToHexString',
+    'Static|[DateTimeOffset]|TryParseExact',
+    'Static|[string]|Equals',
+    'Static|[string]|IsNullOrWhiteSpace',
+    'Static|[System.Collections.Generic.List[object]]|new',
+    'Static|[System.IO.Directory]|CreateDirectory',
+    'Static|[System.IO.Directory]|Move',
+    'Static|[System.IO.File]|Open',
+    'Static|[System.IO.File]|SetUnixFileMode',
+    'Static|[System.Security.Cryptography.RandomNumberGenerator]|Fill',
+    'Instance|[Convert]::ToHexString($bytes)|ToLowerInvariant',
+    'Instance|$action|Invoke',
+    'Instance|$authorityProof.Handle|Dispose',
+    'Instance|$finalDirectoryProof.Handle|Dispose',
+    'Instance|$lockStream|Dispose',
+    'Instance|$lockStream|Flush',
+    'Instance|$nextIdentities|Add',
+    'Instance|$nextIdentities|ToArray',
+    'Instance|$tempDirectoryProof.Handle|Dispose'
+)) {
+    [void] $allowedA5MemberInvocations.Add($memberInvocation)
+}
+$unapprovedA5MemberInvocations = [System.Collections.Generic.List[string]]::new()
+foreach ($memberInvocationAst in @($a5Ast.FindAll({
+            param($node)
+            return $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst]
+        }, $true))) {
+    $invocationKind = if ($memberInvocationAst.Static) { 'Static' } else { 'Instance' }
+    $invocationIdentity = '{0}|{1}|{2}' -f @(
+        $invocationKind,
+        $memberInvocationAst.Expression.Extent.Text,
+        $memberInvocationAst.Member.Extent.Text
+    )
+    if (-not $allowedA5MemberInvocations.Contains($invocationIdentity)) {
+        $unapprovedA5MemberInvocations.Add($memberInvocationAst.Extent.Text)
+    }
+}
+Assert-True ($unapprovedA5MemberInvocations.Count -eq 0) "A5 primitives must not invoke unapproved .NET members, including process launch or destructive filesystem members. Observed: $($unapprovedA5MemberInvocations -join ' | ')"
 
 function New-A5FixtureRoot([string] $Name) {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-a5-$Name-$([Guid]::NewGuid().ToString('N'))"
@@ -782,11 +829,26 @@ function Assert-A5PublicationPair([object] $Publication, [string] $Root, [string
     Assert-True ([string]::Equals($Publication.SessionId, $SessionId, [StringComparison]::Ordinal)) 'Publication must bind the exact session ID.'
     Assert-True ([regex]::IsMatch($Publication.CreationNonce, '^[a-f0-9]{32}$', [Text.RegularExpressions.RegexOptions]::CultureInvariant)) 'Publication must create a lowercase 128-bit creation nonce.'
     Assert-True ([string]::Equals($Publication.PathSet.ManifestPath, $Publication.ManifestPath, (Get-NervFullStackPathComparison))) 'Publication output must expose the A2 manifest path.'
-    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.AuthoritySnapshot -Right $Publication.AuthoritySnapshot) 'Publication must expose a complete authority readback snapshot.'
-    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.ManifestSnapshot -Right $Publication.ManifestSnapshot) 'Publication must expose a complete manifest readback snapshot.'
+    $authorityReadback = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $Root -CandidatePath $Publication.PathSet.AuthorityPath -ExpectedKind File) `
+        -RecordKind $Publication.AuthoritySnapshot.RecordKind
+    $manifestReadback = Read-NervFullStackVerifiedRecord `
+        -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $Root -CandidatePath $Publication.PathSet.ManifestPath -ExpectedKind File) `
+        -RecordKind $Publication.ManifestSnapshot.RecordKind
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.AuthoritySnapshot -Right $authorityReadback) 'Publication must expose the independently verified authority disk readback.'
+    Assert-True (Test-NervFullStackRecordSnapshotEqual -Left $Publication.ManifestSnapshot -Right $manifestReadback) 'Publication must expose the independently verified manifest disk readback.'
 
     $authority = $Publication.AuthoritySnapshot.Record
     $manifest = $Publication.ManifestSnapshot.Record
+    $authorityJson = [System.IO.File]::ReadAllText($Publication.PathSet.AuthorityPath)
+    $createdAtWireMatch = [regex]::Match($authorityJson, '"createdAtUtc"\s*:\s*"(?<value>[^"]+)"', [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    Assert-True $createdAtWireMatch.Success 'Authority persistence must contain a createdAtUtc JSON string.'
+    $createdAtWire = $createdAtWireMatch.Groups['value'].Value
+    $createdAtInstant = [DateTimeOffset]::MinValue
+    Assert-True ($createdAtWire.EndsWith('Z', [StringComparison]::Ordinal)) 'Authority createdAtUtc wire value must use the UTC Z designator.'
+    Assert-True ([DateTimeOffset]::TryParse($createdAtWire, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref] $createdAtInstant)) 'Authority createdAtUtc wire value must be a parseable instant.'
+    Assert-True ($createdAtInstant.Offset -eq [TimeSpan]::Zero) 'Authority createdAtUtc wire value must have zero UTC offset.'
+    Assert-True ([DateTimeOffset] ([DateTime] $authority.createdAtUtc) -eq $createdAtInstant) 'Authority readback createdAtUtc must preserve the persisted UTC instant.'
     Assert-True ([string]::Equals($authority.sessionId, $SessionId, [StringComparison]::Ordinal)) 'Authority readback must contain the exact session ID.'
     Assert-True ([string]::Equals($authority.creationNonce, $Publication.CreationNonce, [StringComparison]::Ordinal)) 'Authority readback must contain the generated creation nonce.'
     Assert-True ([string]::Equals($manifest.sessionId, $SessionId, [StringComparison]::Ordinal)) 'Manifest readback must contain the exact session ID.'
@@ -1190,9 +1252,7 @@ try {
     Assert-True ([string]::Equals($completed.ManifestSnapshot.Record.toolchainSnapshot.node, '22.22.3', [StringComparison]::Ordinal)) 'Snapshot completion must preserve every toolchain field.'
     Assert-True (@($completed.ManifestSnapshot.Record.toolchainProbeIdentities).Count -eq 1) 'Snapshot completion must atomically preserve registered probe identities.'
     Assert-True ([string]::Equals((Get-NervFullStackPublicationBoundaryObservation -StateRoot $publicationRoot -SessionId $publicationSessionId).Boundary, 'published-unstarted', [StringComparison]::Ordinal)) 'Crash boundary 8 must classify a complete snapshot before runtime as published-unstarted.'
-    $runtimeOrDestructiveCallCount = 0
     Assert-True (Test-NervFullStackRuntimeStartAllowed -VerifiedSession $completed) 'Runtime gate must return true only after full snapshot CAS/readback.'
-    Assert-True ($runtimeOrDestructiveCallCount -eq 0) 'Gate evaluation must perform zero runtime or destructive calls.'
 
     $readbackMismatchRoot = New-A5FixtureRoot -Name 'snapshot-readback-mismatch'
     $a5Roots.Add($readbackMismatchRoot)
@@ -1248,7 +1308,6 @@ try {
     $runtimeNewGeneration = Get-NervFullStackProtocolGenerationObservation -StateRoot $runtimeFixtureRoot -SessionId $runtimeFixtureSession
     Assert-True ([string]::Equals($runtimeNewGeneration.Generation, 'v2', [StringComparison]::Ordinal)) 'Crash boundary 10 new complete runtime fixture must remain legal v2.'
     Assert-True ($null -eq (Get-NervFullStackPublicationBoundaryObservation -StateRoot $runtimeFixtureRoot -SessionId $runtimeFixtureSession).Boundary) 'Crash boundary 10 must use the full new record without inventing a half-commit publication boundary.'
-    Assert-True ($runtimeOrDestructiveCallCount -eq 0) 'Runtime boundary fixtures must execute zero production runtime or destructive calls.'
 }
 finally {
     Remove-Variable -Name NervFullStackAuthorityPublicationCrashAction -Scope Script -ErrorAction SilentlyContinue

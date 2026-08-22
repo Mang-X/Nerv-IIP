@@ -99,11 +99,10 @@ function ConvertTo-NervFullStackPublicationTimestamp {
         throw $ErrorCode
     }
 
-    # ConvertFrom-Json materializes ISO timestamps as local DateTime values. Use
-    # that same representation before A3 serializes the record so its mandatory
-    # field fingerprint remains stable across durable readback; the persisted
-    # ISO offset still names the exact UTC instant.
-    return $parsed.LocalDateTime
+    # Keep the normalized value in UTC so A3 persists the field with the Z wire
+    # designator and its mandatory-field fingerprint remains stable after the
+    # durable ConvertFrom-Json readback.
+    return $parsed.UtcDateTime
 }
 
 function ConvertTo-NervFullStackPublicationIdentity {
@@ -520,7 +519,7 @@ function Publish-NervFullStackInitialV2Session {
             worktreeRoot = $canonicalWorktree
             manifestPath = $pathSet.ManifestPath
             createdBy = $createdBy
-            createdAtUtc = [DateTimeOffset]::UtcNow.LocalDateTime
+            createdAtUtc = [DateTimeOffset]::UtcNow.UtcDateTime
         }
         $tempAuthorityTarget = Test-NervFullStackTrustedPathGraph `
             -StateRoot $pathSet.StateRoot `
