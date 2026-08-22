@@ -256,6 +256,25 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Purchase_receipt_rejects_unsupported_quality_status_when_bypassing_command_validation()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        Assert.Throws<ArgumentException>(() => PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 1m, "passed")]));
+    }
+
+    [Fact]
     public void Purchase_receipt_rejects_over_receipt_beyond_tolerance()
     {
         var order = PurchaseOrder.Create(
