@@ -24,6 +24,9 @@ public sealed class MasterDataSeedServiceTests
         Assert.Equal("晚班", (await db.Shifts.SingleAsync(x => x.Code == "NIGHT")).Name);
         Assert.Equal("标准工作日历", (await db.WorkCalendars.SingleAsync(x => x.Code == "STANDARD")).Name);
         Assert.Equal("千克", (await db.UnitsOfMeasure.SingleAsync(x => x.Code == "kg")).Name);
+        Assert.Equal(
+            "原料库",
+            (await db.ReferenceDataCodes.SingleAsync(x => x.CodeSet == "inventory-location" && x.Code == "loc-raw-01")).Name);
         Assert.Equal("生产工单", (await db.CodeRules.SingleAsync(x => x.RuleKey == "work-order")).DisplayName);
         Assert.Equal("工艺路线", (await db.CodeRules.SingleAsync(x => x.RuleKey == "routing")).DisplayName);
 

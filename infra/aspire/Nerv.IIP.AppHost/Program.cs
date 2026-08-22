@@ -112,7 +112,7 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
     gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125,http://localhost:5128";
 }
 
-// 仓储世界观演示站点/库位（SITE-001 + WH-WB-*）是本地种子事实，只在 Development 成立。
+// 主线产品站点/库位（SITE-001 + loc-*）是本地主线种子事实，只在 Development 成立。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
@@ -455,8 +455,8 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
-// 站点/库位必须与库存事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
-// NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到种子事实（SITE-001 + WH-WB-*），其他环境
+// 站点/库位必须与主线产品配置事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
+// NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到主线种子事实（SITE-001 + loc-*），其他环境
 // 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
 // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
 // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
@@ -466,7 +466,7 @@ businessMes = WithDeploymentEnvironment(
     DeploymentWarehouseLocation("Inventory:SiteCode", "SITE-001"));
 var mesSourceLocationCodes = DeploymentWarehouseLocations(
     "Inventory:SourceLocationCodes",
-    ["WH-WB-RM-01", "WH-WB-SF-01", "WH-WB-FG-01"]);
+    ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
 for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.Count; sourceLocationIndex++)
 {
     businessMes = businessMes.WithEnvironment(
@@ -478,13 +478,13 @@ for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.C
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__LineSideLocationCode",
-    DeploymentWarehouseLocation("Inventory:LineSideLocationCode", "WH-WB-LINE-01"));
+    DeploymentWarehouseLocation("Inventory:LineSideLocationCode", "loc-line-01"));
 // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
 // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__FinishedGoodsLocationCode",
-    DeploymentWarehouseLocation("Inventory:FinishedGoodsLocationCode", "WH-WB-FG-01"));
+    DeploymentWarehouseLocation("Inventory:FinishedGoodsLocationCode", "loc-fg-01"));
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -592,16 +592,16 @@ var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
-// MES 领料事件不带库位时的默认库位：Development 与库存种子事实（WH-WB-*）同码，其他环境只下发
+// MES 领料事件不带库位时的默认库位：Development 与主线产品种子（loc-*）同码，其他环境只下发
 // 部署方显式配置的真实库位（#2008）。仓库代码里不再内置演示库位兜底，两者都缺就进死信（#1754）。
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__SourceLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:SourceLocationCode", "WH-WB-RM-01"));
+    DeploymentWarehouseLocation("MaterialIssue:SourceLocationCode", "loc-raw-01"));
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__LineSideLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:LineSideLocationCode", "WH-WB-LINE-01"));
+    DeploymentWarehouseLocation("MaterialIssue:LineSideLocationCode", "loc-line-01"));
 businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {
