@@ -6,6 +6,7 @@ public static class StandardCodeRules
     [
         Document("sku", "物料编码", "SKU"),
         Document("demand", "需求来源", "DEMAND"),
+        Document("forecast", "预测", "FC"),
         Document("work-order", "生产工单", "WO"),
         Document("production-report", "生产报工单", "PRPT"),
         Document("finished-goods-receipt-request", "成品入库申请", "FGR"),
