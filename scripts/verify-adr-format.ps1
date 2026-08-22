@@ -39,6 +39,44 @@ $synonymSections = [ordered]@{
 }
 $allowedStatuses = @('已接受', '已否决', '被取代')
 
+# 生命周期禁用标题：决策记录只写裁决，不写提案期与进度期段落。判据、逐条理由和这张表的
+# 权威副本见 docs/architecture/decision-record-governance.md 的「生命周期禁用标题表」；
+# 两处必须逐字对齐，由 scripts/tests/verify-adr-format-lifecycle.Tests.ps1 双向锁定。
+# 前缀匹配而不是全等：`实施状态` 与 `实施状态声明`、`当前实现事实` 与
+# `当前实现事实与目标状态` 是同一档欠账的两种写法，全等表每来一个变体就要补一行。
+$lifecycleForbiddenPrefixes = @(
+    '实施',
+    '迁移计划',
+    '验收标准',
+    '验收条件',
+    '当前实现',
+    '下一步',
+    '待办',
+    '计划',
+    '路线图',
+    '进度',
+    '票映射'
+)
+# 英文提案期标题按全等匹配：英文词在中文标题里做前缀会误伤（`Complete 提交时序` 之类的
+# 领域小节是合法的），而这几条只会以整节标题的形式出现。
+$lifecycleForbiddenExactHeadings = @(
+    'Proposal',
+    'Plan',
+    'Migration plan',
+    'Acceptance criteria',
+    'Next steps',
+    'TODO',
+    'Roadmap',
+    'Implementation status'
+)
+# 白名单：`## 实施说明` 是本仓库既定约定（27 篇里 15 篇在用），部分取代记录的编号项就住在
+# 这里。它必须先于 `实施` 前缀判定，否则前缀禁令会把它连带禁掉。白名单只豁免前缀禁令，
+# 不豁免日期戳禁令——`## 实施说明（2026-08-20 修订）` 仍然是按时间叠加的段落。
+$lifecycleSectionAllowlist = @('实施说明')
+# 日期戳标题：带日期的小节等于把决策记录写成变更日志，读者必须读完全文才知道哪条还有效。
+# 只查标题不查正文——正文里的票号与日期是耐久指针，下探正文会误伤（见门禁小节）。
+$dateStampedHeadingPattern = '\d{4}-\d{2}-\d{2}'
+
 $adrFiles = @(Get-NervItemsSortedByString -Items @(Get-ChildItem -LiteralPath $AdrRoot -Filter '*.md' -File) -KeySelector { param($row) [string]$row.Name } -Comparer ([StringComparer]::Ordinal))
 if ($adrFiles.Count -eq 0) { Write-Host "No ADR found under $AdrRoot"; exit 1 }
 
@@ -104,6 +142,38 @@ foreach ($file in $adrFiles) {
     foreach ($section in $sections) {
         if ($synonymSections.Contains($section)) {
             $findings.Add("${name}: 小节 '## $section' 是同义异名，必须写成 '## $($synonymSections[$section])'")
+        }
+    }
+
+    # 生命周期禁令查 `##` 及以下的全部标题：欠账复发时未必落在顶级小节上。
+    $headings = @([regex]::Matches($text, '(?m)^(#{2,})[ \t]+(.+?)[ \t]*$') | ForEach-Object {
+            [pscustomobject]@{ Marker = $_.Groups[1].Value; Title = $_.Groups[2].Value }
+        })
+    foreach ($heading in $headings) {
+        $title = $heading.Title
+        $marker = $heading.Marker
+        $allowlisted = @($lifecycleSectionAllowlist | Where-Object {
+                [string]::Equals($_, $title, [StringComparison]::Ordinal)
+            }).Count -gt 0
+        if (-not $allowlisted) {
+            $matchedPrefix = @($lifecycleForbiddenPrefixes | Where-Object {
+                    $title.StartsWith($_, [StringComparison]::Ordinal)
+                })
+            if ($matchedPrefix.Count -gt 0) {
+                $findings.Add("${name}: 标题 '$marker $title' 是提案期/进度期段落（禁用前缀 '$($matchedPrefix[0])'），已实施的决策记录不得出现；见 docs/architecture/decision-record-governance.md 的生命周期禁用标题表")
+            }
+            else {
+                $matchedExact = @($lifecycleForbiddenExactHeadings | Where-Object {
+                        [string]::Equals($_, $title, [StringComparison]::OrdinalIgnoreCase)
+                    })
+                if ($matchedExact.Count -gt 0) {
+                    $findings.Add("${name}: 标题 '$marker $title' 是提案期段落（禁用标题 '$($matchedExact[0])'），已实施的决策记录不得出现；见 docs/architecture/decision-record-governance.md 的生命周期禁用标题表")
+                }
+            }
+        }
+
+        if ([regex]::IsMatch($title, $dateStampedHeadingPattern)) {
+            $findings.Add("${name}: 标题 '$marker $title' 带日期戳，决策变更必须新开记录而不是按时间叠加段落；见 docs/architecture/decision-record-governance.md")
         }
     }
 }
