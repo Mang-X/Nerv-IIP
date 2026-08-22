@@ -223,6 +223,20 @@ try
             builder.Configuration["MasterData:Seed:EnvironmentId"] ?? "env-dev");
     }
 
+    var walkthroughSeedEnabled = builder.Configuration.GetValue<bool>("Walkthrough:Seed:Enabled");
+    if (walkthroughSeedEnabled && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Walkthrough:Seed:Enabled=true is only allowed for BusinessMasterData in Development.");
+    }
+
+    if (walkthroughSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedWalkthroughAsync(
+            builder.Configuration["Walkthrough:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Walkthrough:Seed:EnvironmentId"] ?? "env-dev");
+    }
+
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
     if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
     {

@@ -120,7 +120,7 @@ Docker PostgreSQL 上，seed 1000 个订单在 ERP 中约需 3 秒、在 MES 中
 已 seed 订单构成积压池，而一次生成最多消耗其中 500 个。
 
 第二个 opt-in 块会 seed **factory world-bible L0 主数据**
-（`docs/superpowers/plans/2026-07-26-factory-world-bible.md` 第 1-6 节）：3 个车间、
+（`docs/architecture/factory-world-bible.md`）：3 个车间、
 14 条生产线、17 个工作中心、46 个设备资产（跨 3 个采集连接器，共 96 个采集标签）、
 84 个 SKU（含 BOM/工艺路线/生产版本）、58 名员工（含团队和技能）、8 个客户和 10 个供应商。
 它由 `LeaderDemo:World:Enabled` 控制；AppHost 在 leader-demo profile 下启用它，其他环境一律
