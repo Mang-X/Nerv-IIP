@@ -89,7 +89,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
                     request.OwnerType,
                     request.OwnerId))
             {
-                throw new KnownException("Stock count task idempotency key conflicts with an existing count scope.");
+                throw new KnownException("盘点幂等键与已有盘点范围冲突，请更换幂等键。");
             }
 
             return new CreateStockCountTaskResult(existing.Id, existing.ExpectedLedgerVersion);
@@ -102,7 +102,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             cancellationToken);
         if (existingCountCode is not null)
         {
-            throw new KnownException("Stock count task code conflicts with an existing idempotency key.");
+            throw new KnownException("盘点任务编码已存在，请更换任务编码。");
         }
 
         var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
@@ -118,7 +118,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
                 && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId,
             cancellationToken)
-            ?? throw new KnownException("Stock ledger does not exist for the requested count scope.");
+            ?? throw new KnownException("未找到盘点任务对应的库存台账。");
 
         var task = StockCountTask.Create(
             request.OrganizationId,

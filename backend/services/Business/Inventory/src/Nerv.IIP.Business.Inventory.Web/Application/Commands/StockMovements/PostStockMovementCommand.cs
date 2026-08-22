@@ -112,7 +112,7 @@ public sealed class PostStockMovementCommandHandler(
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.IdempotencyConflict,
-                    "Stock movement idempotency key conflicts with an existing movement payload.");
+                    "库存移动幂等键与已有流水内容冲突，请更换幂等键。");
             }
 
             var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
@@ -140,7 +140,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                "Expired stock cannot be posted by regular outbound movement without expiry override permission.");
+                "普通出库不能过账已过期库存，请申请过期库存权限后重试。");
         }
 
         if (request.ReservationId is not null)
@@ -149,13 +149,13 @@ public sealed class PostStockMovementCommandHandler(
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.ReservationAllocationRejected,
-                    "Only outbound movements can allocate an existing stock reservation.");
+                    "只有出库移动才能分配已有库存预留。");
             }
 
             var reservation = await dbContext.StockReservations.SingleOrDefaultAsync(x => x.Id == request.ReservationId, cancellationToken)
                 ?? throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.ReservationNotFound,
-                    $"Stock reservation '{request.ReservationId}' was not found.");
+                    $"未找到库存预留：{request.ReservationId}。");
             try
             {
                 ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
@@ -344,7 +344,7 @@ public sealed class PostStockMovementCommandHandler(
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                    "只有调拨（transfer）移动才携带入库腿；入库、出库、调整类过账请不要填写目标库位与入库数量。");
+                    "非调拨移动不能携带入库腿，请移除目标库位和入库数量。");
             }
 
             return;
@@ -354,7 +354,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                "调拨过账必须一次提交两腿：出库腿（当前库位、数量为负）与入库腿（目标库位、等额为正）。单腿调拨会凭空增减库存，已整笔拒绝。");
+                "调拨过账必须同时提交出库腿和入库腿，且数量保持配平。");
         }
 
         // 两腿要在调用方幂等键上各追加 :out / :in，不能截断——截断会让仅末几位不同的两个长键
@@ -363,21 +363,21 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                $"调拨幂等键最长 {TransferBaseIdempotencyKeyMaxLength} 位（两腿需分别追加 {TransferOutLegSuffix} / {TransferInLegSuffix} 后缀），当前 {request.IdempotencyKey.Length} 位，请缩短后重试。");
+                "调拨幂等键过长，请缩短后重试。");
         }
 
         if (request.Quantity >= 0)
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                $"调拨出库腿数量必须为负数（从当前库位扣减），当前为 {request.Quantity}。");
+                "调拨出库腿数量必须为负数，请核对调拨数量。");
         }
 
         if (request.TransferInQuantity <= 0)
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                $"调拨入库腿数量必须为正数（加到目标库位），当前为 {request.TransferInQuantity}。");
+                "调拨入库腿数量必须为正数，请核对调拨数量。");
         }
 
         var netQuantity = request.Quantity + request.TransferInQuantity.Value;
@@ -385,7 +385,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.TransferLegsUnbalanced,
-                $"调拨两腿数量必须配平：出库腿 {request.Quantity}、入库腿 {request.TransferInQuantity}，合计 {netQuantity} 不为零，已整笔拒绝。");
+                "调拨两腿数量必须配平，请核对出入库数量。");
         }
 
         if (string.Equals(ResolveTransferInSiteCode(request).Trim(), request.SiteCode?.Trim(), StringComparison.OrdinalIgnoreCase)
@@ -450,7 +450,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                exception.Message,
+                "调拨入库腿参数无效，请核对移动类型和质量状态。",
                 exception);
         }
     }
@@ -488,7 +488,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                exception.Message,
+                "库存移动参数无效，请核对移动类型和质量状态。",
                 exception);
         }
     }
@@ -508,7 +508,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                "Shelf life days cannot derive an expiry date within the supported date range.",
+                "保质期天数无法计算有效失效日期，请核对日期范围。",
                 exception);
         }
     }
@@ -530,7 +530,7 @@ public sealed class PostStockMovementCommandHandler(
             ? normalized
             : throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                $"Movement type '{movementType}' cannot be posted through the external stock movement command.");
+                $"移动类型无效：{movementType}。请核对后重试。");
     }
 
     private static string NormalizeOwnerTypeOrReject(string ownerType)
@@ -543,7 +543,7 @@ public sealed class PostStockMovementCommandHandler(
         {
             throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                exception.Message,
+                "库存归属类型无效，请核对归属类型后重试。",
                 exception);
         }
     }
@@ -553,7 +553,7 @@ public sealed class PostStockMovementCommandHandler(
         return string.IsNullOrWhiteSpace(value)
             ? throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                $"{parameterName} cannot be blank.")
+                $"参数“{parameterName}”不能为空。")
             : value.Trim().ToLowerInvariant();
     }
 
