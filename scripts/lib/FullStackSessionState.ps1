@@ -620,6 +620,26 @@ function Test-NervProcessIdentity {
     }
 }
 
+function New-NervProcessIdentityObservation {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('Active', 'Absent', 'Mismatched', 'Unknown')] [string] $Status,
+        [Parameter(Mandatory)] [int] $ProcessId,
+        [AllowNull()] [object] $ExpectedStartTimeUtc,
+        [AllowNull()] [object] $ActualStartTimeUtc = $null,
+        [AllowNull()] [string] $FailureReason = $null,
+        [string] $ObservedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+    )
+
+    return [pscustomobject][ordered]@{
+        status = $Status
+        processId = $ProcessId
+        expectedStartTimeUtc = $ExpectedStartTimeUtc
+        actualStartTimeUtc = $ActualStartTimeUtc
+        failureReason = $FailureReason
+        observedAtUtc = $ObservedAtUtc
+    }
+}
+
 function Get-NervProcessIdentityStatus {
     param(
         [Parameter(Mandatory)] [int] $ProcessId,
@@ -632,14 +652,10 @@ function Get-NervProcessIdentityStatus {
         $ProcessLookupAction = { param($ExactProcessId) Get-Process -Id $ExactProcessId -ErrorAction Stop }
     }
 
-    $observation = [ordered]@{
-        status = 'Unknown'
-        processId = $ProcessId
-        expectedStartTimeUtc = $ProcessStartTimeUtc
-        actualStartTimeUtc = $null
-        failureReason = $null
-        observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-    }
+    $observation = New-NervProcessIdentityObservation `
+        -Status Unknown `
+        -ProcessId $ProcessId `
+        -ExpectedStartTimeUtc $ProcessStartTimeUtc
 
     $expected = $null
     $expectedFailureReason = $null

@@ -1591,6 +1591,57 @@ finally {
     Remove-Item -LiteralPath $guardianRedactionRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$guardianSensitiveEnvironmentName = 'Parameters__internal-service-bearer-token'
+$guardianSensitiveValue = "guardian-sensitive-value-$([guid]::NewGuid().ToString('N'))"
+$guardianSensitiveEnvironmentHadValue = Test-Path -LiteralPath "Env:$guardianSensitiveEnvironmentName"
+$guardianSensitiveEnvironmentOriginalValue = [Environment]::GetEnvironmentVariable($guardianSensitiveEnvironmentName, 'Process')
+$guardianSensitiveEvidenceRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-guardian-sensitive-evidence-$([guid]::NewGuid().ToString('N'))"
+$guardianSensitiveEvidencePath = Join-Path $guardianSensitiveEvidenceRoot 'guardian-coordinator-identity.json'
+$script:guardianSensitiveStops = 0
+try {
+    Set-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -Value $guardianSensitiveValue
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc $currentStartTimeUtc.ToString('O') `
+        -IntervalSeconds 1 `
+        -ReadAction {
+            $state = if ($script:guardianSensitiveStops -eq 0) { 'Running' } else { 'Stopped' }
+            return [pscustomobject]@{
+                sessionId = $sessionId
+                state = $state
+                leaseExpiresAtUtc = [DateTimeOffset]::UtcNow.AddMinutes(-1).ToString('O')
+                artifactPath = $guardianSensitiveEvidenceRoot
+            }
+        } `
+        -CoordinatorIdentityAction {
+            [pscustomobject][ordered]@{
+                status = 'Unknown'
+                processId = 4107
+                expectedStartTimeUtc = $currentStartTimeUtc.ToString('O')
+                actualStartTimeUtc = $null
+                failureReason = "identity inspection failed for $guardianSensitiveValue"
+                observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            }
+        } `
+        -DiagnosticAction { param($Manifest) } `
+        -StopAction { $script:guardianSensitiveStops++ } `
+        -DelayAction { param($Seconds) } | Out-Null
+    $guardianSensitiveEvidenceText = Get-Content -LiteralPath $guardianSensitiveEvidencePath -Raw
+    Assert-True ($guardianSensitiveEvidenceText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian evidence must redact a sensitive inherited environment value without relying on name-pattern redaction.'
+    Assert-True (-not $guardianSensitiveEvidenceText.Contains($guardianSensitiveValue, [StringComparison]::Ordinal)) 'Guardian evidence must not persist a sensitive inherited environment value.'
+}
+finally {
+    if ($guardianSensitiveEnvironmentHadValue) {
+        Set-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -Value $guardianSensitiveEnvironmentOriginalValue
+    }
+    else {
+        Remove-Item -LiteralPath "Env:$guardianSensitiveEnvironmentName" -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $guardianSensitiveEvidenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $script:relationProbeAttempts = 0
 $relationReadiness = Wait-NervFullStackPostgresRelations `
     -ContainerId 'postgres-owned' `
