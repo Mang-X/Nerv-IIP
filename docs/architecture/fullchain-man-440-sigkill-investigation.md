@@ -19,8 +19,8 @@ coordinator 仍在等待并最终上抛受管子进程 137，但 session 已先�
 或内存峰值。
 
 因此本 spike 裁决：不收窄 AppHost 资源集、不调整场景顺序、不修改 GC 配置。后续工作转向
-[#2018](https://github.com/Mang-X/Nerv-IIP/issues/2018)，修复 guardian 对 coordinator 身份的
-不可审计布尔判定与误清理路径。
+[#2018](https://github.com/Mang-X/Nerv-IIP/issues/2018)，让 guardian 改用可审计的身份状态并
+修复误清理路径。
 
 ## 证据判定
 
@@ -55,25 +55,29 @@ attempt 1 保留了最清楚的时序：
 | 时刻（UTC） | 事件 |
 | --- | --- |
 | `15:09:11.928` | `startup-network-inspect` 完成，session 启动阶段即将结束 |
+| `15:09:31.048` | 受治理的 `fullstack-...-guardian-stop` 命令开始执行 |
 | `15:09:46.976` | `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` 的 `dotnet test` 启动 |
+| `15:09:52.417` | `guardian-stop` 日志记录执行 `aspire stop` |
 | `15:10:08.413` | `dotnet` 收到 SIGKILL，退出码 137 |
 | `15:10:08.540` 起 | coordinator 收集日志时，Aspire CLI 报告 AppHost 已不存在 |
 | `15:10:12.550` | session summary 记录状态为 `Stopping` |
 
-SIGKILL 距 `startup-network-inspect` 约 56.5 秒，与 guardian 的 60 秒观察边沿一致。
-coordinator 在 SIGKILL 后仍能继续运行、捕获错误并收集诊断，因此它并未真实退出；但在它进入失败
-清理前，session 已被另一条路径推进到 `Stopping` 并停止 AppHost。唯一具备这项并发清理职责的
-路径是 Automated guardian。
+`fullstack-...-guardian-stop` 的 artifact 目录时间与 stdout 直接证明 guardian 先启动清理、
+执行 `aspire stop`，约 16 秒后 `dotnet` 才收到 SIGKILL；这不再只依赖“56.5 秒接近 60 秒”
+的时序推断。coordinator 在 SIGKILL 后仍能继续运行、捕获错误并收集诊断，因此它并未真实退出；
+但在它进入失败清理前，session 已被 guardian 推进到 `Stopping` 并停止 AppHost。
 
-当前 `Test-NervProcessIdentity` 把以下情况全部折叠为 `false`：
+guardian 当前接入的 `Test-NervProcessIdentity` 把以下情况全部折叠为 `false`：
 
 - PID 不存在；
 - PID 已复用且 StartTime 不匹配；
 - `Get-Process` 或 StartTime 读取抛错。
 
 `Invoke-NervFullStackGuardian` 又把这个布尔值直接当作 `coordinatorMissing`，第一次判为
-`false` 就进入 stop。现有 artifact 没有保留当时到底是 `Absent`、`Mismatched` 还是读取失败；
-因此“guardian 误清理”已由时序证实，“身份探针为何返回 false”仍是 #2018 子项 ① 的证据缺口。
+`false` 就进入 stop。仓库已经存在返回 `Active / Absent / Mismatched / Unknown` 的
+`Get-NervProcessIdentityStatus`，并已用于 owner 回收通道，但 guardian 尚未接入。现有 artifact
+也没有保留当时到底是哪一种状态；因此“guardian 误清理”已由时序证实，guardian 的状态接线与
+触发证据持久化仍由 #2018 跟踪。
 
 ## 四个调查问题的回答
 
@@ -114,20 +118,13 @@ coordinator 在 SIGKILL 后仍能继续运行、捕获错误并收集诊断，�
 不同，公共边沿都是各自 session 的 guardian 观察周期。
 
 既有成功 run 的高水位又只由 `man-440` 抬升，换序不会降低峰值本身；它最多改变冷/热态，不能修复
-guardian 对单个 session 的误判。因此不修改 `scripts/full-chain-test-lane.json` 的冻结顺序。
+guardian 对单个 session 的误判。因此本 spike 未执行已失去辨识力的换序实验，也不修改
+`scripts/full-chain-test-lane.json` 的冻结顺序。只有在 guardian 修复完成后，同一 runner 画像的
+受控对照再次显示顺序会独立改变失败率或峰值时，才复评本裁决。
 
 ### 4. 是否有比资源收窄更便宜的降峰手段
 
 GC 配置或其他降峰手段不应作为本故障的修复：失败峰值比成功峰值低约 1.7–2.2 GB，OOM 计数也没有
 增长。更便宜且命中根因的路径是修正 guardian 身份观察与 cleanup 策略，详见 #2018。
-
-## 后续交付边界
-
-#2018 按 `scope:L` 跟踪，不承载代码，并拆成两个顺序 `scope:M` 子项：
-
-1. 将 coordinator 身份探针改为可审计的 `Active / Absent / Mismatched / Unknown`，并在首次
-   stop 前持久记录触发原因；
-2. 让 guardian 只对确认的 `Absent`/`Mismatched` 执行 coordinator-loss cleanup，读取异常
-   采用有界重观测，不再把一次未知状态变成活动场景的 SIGKILL。
-
-本 #1878 spike 不合并生产代码；本报告与实施状态台账是唯一仓库改动。
+若后续样本出现 `/proc/vmstat oom_kill` 增量，或引入了明确的内存上限/容量目标且场景实际越线，
+再把 GC 与其他降峰手段作为独立容量问题复评；不能用当前无 OOM 见证的 137 触发该工作。
