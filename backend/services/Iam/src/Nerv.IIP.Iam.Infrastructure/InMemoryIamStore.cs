@@ -766,6 +766,19 @@ public sealed class InMemoryIamStore
             {
                 new(DataScopeBinding.Organization, "org-001"),
             };
+        foreach (var role in NervIipSeedRoles.ErpJobRoles)
+        {
+            _roles.Add(new RoleFact(
+                role.RoleId,
+                role.RoleName,
+                role.PermissionCodes.ToHashSet(StringComparer.Ordinal)));
+            _roleDataScopes[role.RoleId] =
+                new HashSet<DataScopeBinding>
+                {
+                    new(DataScopeBinding.Organization, "org-001"),
+                };
+        }
+
         var now = DateTimeOffset.UtcNow;
         _users.Add(new UserFact(
             "user-admin",
