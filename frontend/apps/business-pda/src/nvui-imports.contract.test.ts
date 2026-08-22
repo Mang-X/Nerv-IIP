@@ -10,7 +10,8 @@ import { describe, expect, it } from 'vitest'
  * bare `@nerv-iip/ui` / `@nerv-iip/ui-mobile` specifiers, using the `Nv*` brand names.
  *
  *  1. **Hard bans** (always fail): deep imports into `@nerv-iip/ui|ui-mobile/*`
- *     (except the `file-preview` sub-entry), direct `reka-ui`, direct `shadcn-vue`.
+ *     (except the `file-preview` sub-entry, plus the test-only `test-support`
+ *     sub-entry inside `src/test/`), direct `reka-ui`, direct `shadcn-vue`.
  *  2. **Closeout invariant**: the codemod closeout (#789) removed every `@deprecated`
  *     old-name alias from the library barrels, so an old name is no longer importable
  *     at all — any attempt is now a hard typecheck error rather than a soft ratchet
@@ -22,6 +23,16 @@ import { describe, expect, it } from 'vitest'
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(srcDir, '../../..')
 const ALLOWED_UI_SUBPATHS = new Set(['file-preview'])
+/**
+ * test-only 子入口（#2014）：`@nerv-iip/ui/test-support` 装的是各包 vitest `setupFiles`
+ * 用的支撑件（unovis tooltip 定时器收口等），不是组件边界的一部分。它只在 `src/test/`
+ * 下的 setup 文件里放行；页面 / 组件 / composable 引用它照旧判红。
+ */
+const TEST_ONLY_UI_SUBPATHS = new Set(['test-support'])
+// 放行面刻意钉死到 setup 文件本身，而不是整个 `src/test/` 目录：这个子入口的用途只有
+// 「在 vitest 环境装好之前改一次全局」，普通测试文件没有理由碰它。目录级放行会把
+// 「随便哪个 test/ 下的辅助文件都能深导入」也一并放过，比这条规则想表达的宽。
+const isTestSetupFile = (rel: string) => rel === 'test/setup.ts'
 
 function walk(dir: string, keep: (name: string) => boolean): string[] {
   const out: string[] = []
@@ -78,7 +89,12 @@ describe('NvUI import hygiene (stable package boundary)', () => {
         const uiDeep = /^@nerv-iip\/ui\/(.+)$/.exec(spec)
         expect
           .soft(
-            uiDeep ? !ALLOWED_UI_SUBPATHS.has(uiDeep[1]) : false,
+            uiDeep
+              ? !(
+                  ALLOWED_UI_SUBPATHS.has(uiDeep[1]) ||
+                  (isTestSetupFile(rel) && TEST_ONLY_UI_SUBPATHS.has(uiDeep[1]))
+                )
+              : false,
             `deep import "${spec}" — use the bare @nerv-iip/ui barrel`,
           )
           .toBe(false)
