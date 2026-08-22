@@ -646,11 +646,9 @@ try {
         -Event 'pull_request' `
         -ChangedPaths @('README.md') `
         -ImpactRulesSucceeded $true
-    Assert-Contract (
-        [string]::Equals([string]$noImpactSelection.selectionMode, 'pull-request-impact', [StringComparison]::Ordinal) -and
-        [string]::Equals((@($noImpactSelection.reasons) -join '|'), 'no-impact', [StringComparison]::Ordinal) -and
-        @($noImpactSelection.scenarios).Count -eq 0
-    ) 'A pull request with no impacted acceptance scenario must select no scenarios with a no-impact reason.'
+    Assert-Contract ([string]::Equals([string]$noImpactSelection.selectionMode, 'pull-request-impact', [StringComparison]::Ordinal)) 'A no-impact pull request selection must report pull-request-impact mode.'
+    Assert-Contract ([string]::Equals((@($noImpactSelection.reasons) -join '|'), 'no-impact', [StringComparison]::Ordinal)) 'A no-impact pull request selection must record the no-impact reason.'
+    Assert-Contract (@($noImpactSelection.scenarios).Count -eq 0) 'A no-impact pull request selection must select zero scenarios.'
     $noImpactProjects = @(Get-NervAcceptancePlanningProjects -Scenarios $noImpactSelection.scenarios)
     Assert-Contract ($noImpactProjects.Count -eq 0) 'A no-impact selection must produce zero planning projects.'
     $noImpactCalls = [Collections.Generic.List[object]]::new()
@@ -677,6 +675,7 @@ try {
         -WorkflowStepName 'Plan acceptance scenario matrix' `
         -ArtifactPath $noImpactArtifactPath `
         -ProjectCommandAction $noImpactCommandAction
+    Assert-Contract (@($noImpactCalls).Count -eq 0) 'No-impact planning must not invoke any project command.'
     Assert-Contract (@($noImpactCalls | Where-Object { [string]::Equals([string]$_.operation, 'restore', [StringComparison]::Ordinal) }).Count -eq 0) 'No-impact planning must not restore any project.'
     Assert-Contract (@($noImpactCalls | Where-Object { [string]::Equals([string]$_.operation, 'discovery', [StringComparison]::Ordinal) }).Count -eq 0) 'No-impact planning must not discover any project.'
     Assert-Contract (Test-Path -LiteralPath $noImpactArtifactPath -PathType Leaf) 'No-impact planning must write the declared zero-project artifact.'
@@ -693,7 +692,8 @@ try {
         -ManifestDigest $manifestDigest `
         -Event 'pull_request' | Out-Null
     Assert-Contract ([string]::Equals((@($persistedNoImpactArtifact.selectionReasons) -join '|'), 'no-impact', [StringComparison]::Ordinal)) 'No-impact artifact selectionReasons must record no-impact.'
-    Assert-Contract (@($persistedNoImpactArtifact.scenarios).Count -eq 0 -and @($persistedNoImpactArtifact.projects).Count -eq 0) 'No-impact artifact must contain empty scenarios and projects arrays.'
+    Assert-Contract (@($persistedNoImpactArtifact.scenarios).Count -eq 0) 'No-impact artifact must contain an empty scenarios array.'
+    Assert-Contract (@($persistedNoImpactArtifact.projects).Count -eq 0) 'No-impact artifact must contain an empty projects array.'
 
     $artifactPath = Join-Path $fixtureRoot 'artifacts/planning.json'
     $calls = [Collections.Generic.List[object]]::new()
