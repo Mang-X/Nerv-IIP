@@ -58,43 +58,55 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
     }
 
     [Fact]
-    public void AppHost_never_injects_demo_warehouse_locations_unconditionally()
+    public void AppHost_confines_every_demo_location_literal_to_the_gated_helpers()
     {
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-
-        // 演示站点/库位只能作为 DeploymentWarehouseLocation(s) 的 Development 回落值出现，
-        // 不允许再以 .WithEnvironment("Key", "WH-WB-...") 的形式无条件下发。
-        var unconditional = Regex
-            .Matches(appHost, @"\.WithEnvironment\(\s*""[^""]+""\s*,\s*""(?<value>(SITE-|WH-WB-)[^""]*)""")
-            .Select(match => match.Groups["value"].Value)
-            .ToArray();
-
-        Assert.Empty(unconditional);
+        // 围栏而不是形态匹配：只禁 `.WithEnvironment("Key", "WH-WB-…")` 双字面量形态时，把演示值
+        // 经 const/局部变量转手就能绕过。这里改为要求**每一个**演示字面量都出现在同一条语句内的
+        // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
+        foreach (var literal in DemandLocationLiterals(ReadRepositoryFile(AppHostProgramPath)))
+        {
+            Assert.True(
+                literal.IsGated,
+                $"演示站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
+        }
     }
 
     [Fact]
     public void AppHost_gates_the_development_seed_fallback_on_its_own_environment_name()
     {
         var appHost = ReadRepositoryFile(AppHostProgramPath);
+        var collapsed = CollapseWhitespace(appHost);
 
+        // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量改成
+        // "Production" 就恰好是本门禁要拦的错误（生产回落演示库位），却一条测试都不会红。
         Assert.Contains(
-            "var localDevelopmentAppHost = string.Equals(\n    builder.Environment.EnvironmentName,\n" +
-            "    LocalDevelopmentEnvironment,\n    StringComparison.OrdinalIgnoreCase);",
-            Normalize(appHost),
-            StringComparison.Ordinal);
-        // 未配置且非 Development 时返回 null / 空集合 = 该键根本不下发，服务侧 fail-closed 生效。
-        Assert.Contains(
-            "return localDevelopmentAppHost ? developmentSeedValue : null;",
+            "const string LocalDevelopmentEnvironment = \"Development\";",
             appHost,
             StringComparison.Ordinal);
         Assert.Contains(
-            "return localDevelopmentAppHost ? developmentSeedValues : [];",
-            appHost,
+            "var localDevelopmentAppHost = string.Equals( builder.Environment.EnvironmentName, " +
+            "LocalDevelopmentEnvironment, StringComparison.OrdinalIgnoreCase);",
+            collapsed,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);",
-            appHost,
-            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AppHost_gating_helpers_have_no_return_path_that_bypasses_the_environment_check()
+    {
+        // 钉 return 语句的**完整集合**而不是若干子串：子串断言对加性变异无感——在受门控 return
+        // 之前插一句无条件早退，原来的子串全都还在，测试照绿。集合断言里多出一条 return 即红。
+        // 语句内空白已归一，等价重排版不会假红。
+        var appHost = ReadRepositoryFile(AppHostProgramPath);
+
+        Assert.Equal(
+            ["return configured.Trim();", "return localDevelopmentAppHost ? developmentSeedValue : null;"],
+            ReturnStatements(appHost, "string? DeploymentWarehouseLocation(", "IReadOnlyList<string> DeploymentWarehouseLocations("));
+        Assert.Equal(
+            ["return indexed;", "return values;", "return localDevelopmentAppHost ? developmentSeedValues : [];"],
+            ReturnStatements(appHost, "IReadOnlyList<string> DeploymentWarehouseLocations(", "> WithDeploymentEnvironment("));
+        Assert.Equal(
+            ["return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);"],
+            ReturnStatements(appHost, "> WithDeploymentEnvironment(", "> WithRedisMessagingTransport("));
     }
 
     [Fact]
@@ -106,8 +118,12 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
             "business-wms");
         var baseline = ReadRepositoryFile("docs/architecture/deployment-baseline.md");
 
+        // 扫**整个 overlay 文件**而不是单个服务块：键塞进共享锚点 `&dotnet-env` 同样会到达
+        // business-wms，只看服务块会漏。整个 legacy overlay 都不支持该链路，全文件扫描才是对的强度。
         // 只看真正的环境变量赋值行；注释里点名这些键正是「明确声明不支持」的载体。
-        Assert.DoesNotMatch($@"(?m)^\s*{Regex.Escape(section)}__[A-Za-z0-9_]+:", wms);
+        Assert.DoesNotMatch(
+            $@"(?m)^\s*{Regex.Escape(section)}__[A-Za-z0-9_]+:",
+            ReadRepositoryFile("infra/compose/nerv-iip.platform.yml"));
         Assert.Contains("不支持 MES→WMS 领料链路", wms, StringComparison.Ordinal);
         Assert.Contains("不支持 MES→WMS 领料链路", baseline, StringComparison.Ordinal);
     }
@@ -130,6 +146,33 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
         TextBetween(ReadRepositoryFile(AppHostProgramPath), "var businessWms =", "var businessIndustrialTelemetry =");
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
+
+    private static string CollapseWhitespace(string text) =>
+        Regex.Replace(Normalize(text), @"\s+", " ");
+
+    /// <summary>
+    /// 取局部函数体内的全部 <c>return</c> 语句，语句内空白归一，保持源码顺序。
+    /// </summary>
+    private static string[] ReturnStatements(string appHost, string startMarker, string endMarker) =>
+        Regex.Matches(TextBetween(appHost, startMarker, endMarker), @"return\s[^;]*;")
+            .Select(match => Regex.Replace(match.Value, @"\s+", " "))
+            .ToArray();
+
+    /// <summary>
+    /// AppHost 源码里的全部演示站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
+    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>WH-WB-*</c> 不带
+    /// 引号，不会被计入。
+    /// </summary>
+    internal static IReadOnlyList<(string Value, bool IsGated)> DemandLocationLiterals(string appHost) =>
+        Regex.Matches(appHost, @"""(SITE-|WH-WB-)[^""]*""")
+            .Select(match =>
+            {
+                var precedingText = appHost[..match.Index];
+                var lastCall = precedingText.LastIndexOf("DeploymentWarehouseLocation", StringComparison.Ordinal);
+                var lastStatementEnd = precedingText.LastIndexOfAny([';', '{', '}']);
+                return (match.Value, lastCall > lastStatementEnd);
+            })
+            .ToArray();
 
     private static string ComposeServiceBlock(string yaml, string serviceName)
     {
