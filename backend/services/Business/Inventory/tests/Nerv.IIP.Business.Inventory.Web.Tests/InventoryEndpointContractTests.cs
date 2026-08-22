@@ -759,7 +759,7 @@ public sealed class InventoryEndpointContractTests
                 new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-count-001"),
                 CancellationToken.None));
 
-        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("重新盘点", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -882,7 +882,7 @@ public sealed class InventoryEndpointContractTests
                     "owner-001"),
                 CancellationToken.None));
 
-        Assert.Contains("conflicts", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("范围冲突", exception.Message, StringComparison.Ordinal);
         Assert.Single(dbContext.StockCountTasks);
     }
 
@@ -1231,7 +1231,7 @@ public sealed class InventoryEndpointContractTests
             new PostStockMovementCommandHandler(secondDbContext).Handle(NewPostMovementCommand("idem-in-001", 6m), CancellationToken.None));
 
         Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, exception.FailureCode);
-        Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("幂等键", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1288,7 +1288,7 @@ public sealed class InventoryEndpointContractTests
         await firstDbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => secondDbContext.SaveChangesAsync(CancellationToken.None));
-        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("并发更新", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1342,7 +1342,7 @@ public sealed class InventoryEndpointContractTests
         await reservationDbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => movementDbContext.SaveChangesAsync(CancellationToken.None));
-        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("并发更新", exception.Message, StringComparison.Ordinal);
 
         await using var verifyScope = provider.CreateAsyncScope();
         var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -1430,7 +1430,7 @@ public sealed class InventoryEndpointContractTests
                 new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-001"),
                 CancellationToken.None));
 
-        Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("幂等键", exception.Message, StringComparison.Ordinal);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -1560,7 +1560,7 @@ public sealed class InventoryEndpointContractTests
                 new RestartStockCountTaskCommand(taskResult.CountTaskId),
                 CancellationToken.None));
 
-        Assert.Contains("confirmed", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("状态不支持重新盘点", exception.Message, StringComparison.Ordinal);
         Assert.Equal(StockCountTaskStatuses.Confirmed, dbContext.StockCountTasks.Single().Status);
     }
 
