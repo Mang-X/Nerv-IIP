@@ -36,7 +36,7 @@ public sealed class BarcodeLabelPostgresProfileTests
 
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
 
-            Assert.Contains("accepted barcode scan natural key", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码扫描记录已存在，请检查幂等键、条码或来源单据。", exception.Message);
         }
 
         await using (var dbContext = CreatePostgresDbContext(LaneConnectionString))
@@ -55,7 +55,7 @@ public sealed class BarcodeLabelPostgresProfileTests
 
             var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
 
-            Assert.Contains("Duplicate BarcodeLabel EPCIS event", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("条码追溯事件已存在，请检查事件类型和唯一标识。", exception.Message);
         }
     }
 
