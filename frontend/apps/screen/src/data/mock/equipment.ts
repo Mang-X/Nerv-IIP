@@ -22,7 +22,7 @@ import type {
   StateCounts,
 } from '@/data/contracts/equipment'
 import { clock, jitter, seq } from './fixtures'
-import type { DeviceCategory } from './masterdata'
+import type { DeviceCategory } from '@/data/contracts/masterdata'
 import {
   DEFAULT_FACTORY_ID,
   deviceLabel,

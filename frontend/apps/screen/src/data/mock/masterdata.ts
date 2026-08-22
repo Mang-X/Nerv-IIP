@@ -8,55 +8,14 @@
 // （SITE-001 一号工厂 / 3 车间 / 14 产线 / 17 工作中心 / 46 台设备）。
 // 领导会在 PC 控制台与大屏之间来回看，两边必须是同一家工厂 —— 改这里前先改设定集。
 
-export interface FactoryRef {
-  id: string
-  name: string
-}
-export interface WorkshopRef {
-  id: string
-  code: string
-  /** L0 全名（与 PC 控制台一致），如「一车间 · 机加车间」 */
-  name: string
-  /** 远视距短名（角标/事件流/chip 用），如「机加车间」 */
-  shortName: string
-  factoryId: string
-  /** 车间主任（L0 §5：EMP-001..003） */
-  managerName: string
-}
-export interface LineRef {
-  id: string
-  code: string
-  name: string
-  workshopId: string
-}
-export interface WorkCenterRef {
-  id: string
-  code: string
-  name: string
-  workshopId: string
-  lineId: string
-}
-export interface DeviceRef {
-  id: string
-  code: string
-  /** 设备型号名（L0 §3），如「数控车床 CK6150」 */
-  name: string
-  /** 设备类别键，参数模板与报警语义按它匹配 */
-  category: DeviceCategory
-  workshopId: string
-  lineId: string
-  workCenterId: string
-}
-
-export type DeviceCategory =
-  | 'cnc'
-  | 'grinder'
-  | 'welding-robot'
-  | 'assembly-station'
-  | 'coating'
-  | 'test-bench'
-  | 'packaging-line'
-  | 'utility'
+import type {
+  DeviceCategory,
+  DeviceRef,
+  FactoryRef,
+  LineRef,
+  WorkCenterRef,
+  WorkshopRef,
+} from '@/data/contracts/masterdata'
 
 // 设定集 §1：宁沪减振科技只有一个基地 SITE-001「一号工厂」——
 // 门厅的工厂切换器在只有一个工厂时自动隐藏（index.vue `factories.length > 1`）。
