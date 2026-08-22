@@ -1017,6 +1017,7 @@ function Get-NervFullStackGuardianSensitiveValues {
         'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD',
         'Parameters__iam-jwt-private-key-pem',
         'Parameters__iam-secrets-pepper',
+        'Parameters__iam-enterprise-identity-mfa-code',
         'Parameters__internal-service-bearer-token',
         'Parameters__redis-password',
         'Parameters__minio-root-password',
@@ -1486,6 +1487,7 @@ function New-NervFullStackSecretEnvironment {
             'Parameters__iam-jwt-private-key-pem' = $rsa.ExportPkcs8PrivateKeyPem()
             'Parameters__iam-jwt-jwks-json' = $jwks
             'Parameters__iam-secrets-pepper' = New-NervFullStackSecretValue -Bytes 48
+            'Parameters__iam-enterprise-identity-mfa-code' = '654321'
             'Parameters__internal-service-bearer-token' = New-NervFullStackSecretValue -Bytes 48
             'Parameters__redis-password' = New-NervFullStackSecretValue -Bytes 24
             'Parameters__minio-root-user' = "nerv-$SessionId"

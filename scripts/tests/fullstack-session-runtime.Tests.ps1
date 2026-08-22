@@ -409,6 +409,7 @@ foreach ($requiredName in @(
     'Parameters__iam-jwt-private-key-pem',
     'Parameters__iam-jwt-jwks-json',
     'Parameters__iam-secrets-pepper',
+    'Parameters__iam-enterprise-identity-mfa-code',
     'Parameters__internal-service-bearer-token',
     'Parameters__redis-password',
     'Parameters__minio-root-user',
