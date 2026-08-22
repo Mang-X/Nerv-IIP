@@ -1810,8 +1810,8 @@ jobs:
     name: Script Governance
     # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
     # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限。step 预算合计 138m（28 个 step：3m checkout
-    # + 27 × 5m；2026-08-20 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
+    # 10m job 预算是快速失败界限。step 预算合计 143m（29 个 step：3m checkout
+    # + 28 × 5m；2026-08-22 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
     # 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
     # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
     # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
@@ -1820,8 +1820,8 @@ jobs:
     # 判据不变：新增 step 若本地均在秒级完成，job 预算保持 10m
     # （MAN-669 PR-C 的两个 solution-configuration-membership step、#1509 的扫描
     # 边界契约 step、#1512 的两个 ordinal 合同 step、#1826 的跨域对账契约 step、
-    # #1876 的信号退出码契约 step、#1877 的 FullChain 内存证据契约 step 均按此
-    # 判断）。
+    # #1876 的信号退出码契约 step、#1877 的 FullChain 内存证据契约 step、#1887 的 ADR
+    # 生命周期禁令契约 step（本机 4.3s）均按此判断）。
     timeout-minutes: 10
     runs-on: ubuntu-latest
     needs: impact-plan
@@ -1847,6 +1847,15 @@ jobs:
         timeout-minutes: 5
         shell: pwsh
         run: ./scripts/verify-adr-format.ps1
+
+      # #1887：`日期戳增量段落` 与 `实施状态与票映射` 两档欠账刚清零，清完没有防复发门禁——按仓库
+      # 既有教训（同一红门在 #1508 里重生三次）它会回来。这一步守的是那条禁令本身的鉴别力：
+      # 禁令加上去时对 27 篇 ADR 零命中，「跑一遍 docs/adr 是绿的」什么都不证明，所以测试自带
+      # 变异矩阵，并把治理文档的禁用标题表与脚本里的三个列表双向锁定。
+      - name: Test ADR lifecycle section governance
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./scripts/tests/verify-adr-format-lifecycle.Tests.ps1
 
       - name: Verify CI required summary
         timeout-minutes: 5
