@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 
@@ -41,7 +42,13 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
         Status = PurchaseReceiptStatus.Recorded;
         RecordedAtUtc = DateTime.UtcNow;
-        foreach (var draft in lineDrafts)
+        var drafts = lineDrafts.ToArray();
+        foreach (var draft in drafts)
+        {
+            PurchaseReceiptLine.ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
+        }
+
+        foreach (var draft in drafts)
         {
             var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
             var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
@@ -96,7 +103,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     {
         PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
-        QualityStatus = ErpText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+        QualityStatus = ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
         SkuCode = string.Empty;
         UomCode = string.Empty;
         LocationCode = string.Empty;
@@ -107,7 +114,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     {
         PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
-        QualityStatus = ErpText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+        QualityStatus = ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
         SkuCode = orderLine.SkuCode;
         UomCode = orderLine.UomCode;
         LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? siteCode : draft.LocationCode.Trim();
@@ -121,6 +128,14 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     public string? LotNo { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
+
+    internal static string ValidateQualityStatus(string value, string parameterName)
+    {
+        var normalized = ErpText.Required(value, parameterName).ToLowerInvariant();
+        return ErpReceiptQualityStatuses.IsSupported(normalized)
+            ? normalized
+            : throw new ArgumentException($"质检状态不受支持：{normalized}。", parameterName);
+    }
 
     public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft)
     {
