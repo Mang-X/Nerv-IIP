@@ -1544,6 +1544,12 @@ Assert-True (-not $guardianDiagnosticFailureLogText.Contains('coordinator-secret
 
 $activeIdentity = Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentStartTimeUtc -Detailed
 Assert-True ([string]::Equals([string]$activeIdentity.status, 'Active', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Active.'
+$linuxPrecisionIdentity = Get-NervProcessIdentityStatus `
+    -ProcessId $PID `
+    -ProcessStartTimeUtc $currentStartTimeUtc `
+    -ProcessLookupAction { param($ExactProcessId) [pscustomobject]@{ StartTime = $currentStartTimeUtc.AddMilliseconds(2).ToLocalTime() } } `
+    -Detailed
+Assert-True ([string]::Equals([string]$linuxPrecisionIdentity.status, 'Active', [StringComparison]::Ordinal)) 'Process identity must tolerate sub-jiffy StartTime precision drift across Linux process observations.'
 $mismatchedIdentity = Get-NervProcessIdentityStatus -ProcessId $PID -ProcessStartTimeUtc $currentStartTimeUtc.AddSeconds(-1) -Detailed
 Assert-True ([string]::Equals([string]$mismatchedIdentity.status, 'Mismatched', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Mismatched.'
 Assert-True (-not [string]::IsNullOrWhiteSpace("$($mismatchedIdentity.actualStartTimeUtc)")) 'Mismatched process identity must retain the actual StartTime.'

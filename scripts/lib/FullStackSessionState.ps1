@@ -17,6 +17,8 @@ Set-StrictMode -Version Latest
 $script:NervFullStackSessionIdPattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}$'
 $script:NervFullStackManifestFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\.json$'
 $script:NervFullStackSidecarFileNamePattern = '^nerv-[a-f0-9]{4}-[a-f0-9]{6}\..+\.json$'
+# Linux 进程启动时间按时钟 tick 暴露；跨进程重复读取允许一个 10ms jiffy 内的换算漂移。
+$script:NervProcessStartTimeToleranceMilliseconds = 10
 $script:NervLeaderDemoOwnershipStates = @('Reserved', 'Current')
 $script:NervFullStackStates = @('Creating', 'Running', 'Collecting', 'Failed', 'Stopping', 'Stopped', 'CleanupFailed')
 $script:NervFullStackTransitions = @{
@@ -613,7 +615,7 @@ function Test-NervProcessIdentity {
             [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
         }
         $actual = (Get-Process -Id $ProcessId -ErrorAction Stop).StartTime.ToUniversalTime()
-        return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1
+        return [Math]::Abs(($actual - $expected).TotalMilliseconds) -lt $script:NervProcessStartTimeToleranceMilliseconds
     }
     catch {
         return $false
@@ -699,7 +701,7 @@ function Get-NervProcessIdentityStatus {
     try {
         $actual = $process.StartTime.ToUniversalTime()
         $observation.actualStartTimeUtc = $actual.ToString('O')
-        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt $script:NervProcessStartTimeToleranceMilliseconds) {
             $observation.status = 'Active'
         }
         else {
