@@ -3,16 +3,22 @@ using System.Text.RegularExpressions;
 
 var builder = DistributedApplication.CreateBuilder(args);
 const string LocalDevelopmentEnvironment = "Development";
+var localDevelopmentAppHost = string.Equals(
+    builder.Environment.EnvironmentName,
+    LocalDevelopmentEnvironment,
+    StringComparison.OrdinalIgnoreCase);
+var developmentOnlyEnabledValue = localDevelopmentAppHost ? "true" : "false";
 
 var fullStackSessionId = Environment.GetEnvironmentVariable("NERV_IIP_SESSION_ID");
 var fullStackEphemeral = string.Equals(
     Environment.GetEnvironmentVariable("NERV_IIP_EPHEMERAL"),
     "true",
     StringComparison.OrdinalIgnoreCase);
-var leaderDemoEnabled = string.Equals(
-    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO"),
-    "true",
-    StringComparison.OrdinalIgnoreCase);
+var leaderDemoEnabled = localDevelopmentAppHost &&
+    string.Equals(
+        Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO"),
+        "true",
+        StringComparison.OrdinalIgnoreCase);
 // MAN-519 白名单内的领导演示「规模块」订单数（默认 1000，设为 0 关闭）。
 // 仅在 leader-demo profile 下生效，普通 dev/full-stack 会话保持既有个位数固定案例。
 var leaderDemoScaleOrderCount = 0;
@@ -40,10 +46,11 @@ var leaderDemoWorldEnabled = leaderDemoEnabled && !string.Equals(
 var leaderDemoWorldEnabledValue = leaderDemoWorldEnabled ? "true" : "false";
 
 // 人工走查最小数据默认随本地 AppHost 启用，并可独立关闭；它不依赖待拆除的世界观/历史开关。
-var walkthroughSeedEnabled = !string.Equals(
-    Environment.GetEnvironmentVariable("NERV_IIP_WALKTHROUGH_SEED"),
-    "false",
-    StringComparison.OrdinalIgnoreCase);
+var walkthroughSeedEnabled = localDevelopmentAppHost &&
+    !string.Equals(
+        Environment.GetEnvironmentVariable("NERV_IIP_WALKTHROUGH_SEED"),
+        "false",
+        StringComparison.OrdinalIgnoreCase);
 var walkthroughSeedEnabledValue = walkthroughSeedEnabled ? "true" : "false";
 
 // 《工厂世界观设定集》L1 背景历史引擎（2026-01-05 至今约 29 周的 ERP/MES 单据历史）。
@@ -117,11 +124,7 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
 // MATERIAL_SUPPLY_LOCATION_UNCONFIGURED / FINISHED_GOODS_LOCATION_UNCONFIGURED。
-// 门控判据与 file-storage 的 Persistence__AutoMigrate 同源：AppHost 自身的 EnvironmentName。
-var localDevelopmentAppHost = string.Equals(
-    builder.Environment.EnvironmentName,
-    LocalDevelopmentEnvironment,
-    StringComparison.OrdinalIgnoreCase);
+// 门控判据与所有项目资源的运行环境、Development-only 注入同源：AppHost 自身的 EnvironmentName。
 
 var postgres = WithFullStackOwnership(builder.AddPostgres("postgres"))
     .WithImageTag("18")
@@ -189,10 +192,10 @@ if (useOtelCollector)
         .WithHttpEndpoint(port: fullStackEphemeral ? null : 4318, targetPort: 4318, name: "otlp-http");
 }
 
-var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")))
+var apphub = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_AppHub_Web>("apphub")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5101, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("ConnectorHostCredential__ConnectorHostId", connectorHostId)
     .WithEnvironment("ConnectorHostCredential__OrganizationId", connectorHostOrganizationId)
@@ -216,11 +219,11 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")))
+var iam = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Iam_Web>("iam")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5102, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
-    .WithEnvironment("Iam__Seed__Enabled", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+    .WithEnvironment("Iam__Seed__Enabled", developmentOnlyEnabledValue)
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)
@@ -234,10 +237,10 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WaitFor(iamDatabase)
     .WaitFor(redis);
 
-var ops = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")))
+var ops = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Ops_Web>("ops")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5103, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
@@ -252,14 +255,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var fileStorage = WithNervIipTelemetry(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage"))
+var fileStorage = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
-    .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
-    .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment(
-        "Persistence__AutoMigrate",
-        string.Equals(builder.Environment.EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase) ? "true" : "false")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
@@ -272,10 +271,10 @@ var fileStorage = WithNervIipTelemetry(builder.AddProject<Projects.Nerv_IIP_File
     .WaitFor(redis)
     .WaitFor(minio);
 
-var notification = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")))
+var notification = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5106, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     // 设备预警可达工作台：Notification 对 alarm-raised 的收件人默认回退 role:maintenance，
@@ -327,10 +326,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMasterData = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
+var businessMasterData = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
@@ -348,10 +347,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessProductEngineering = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering")))
+var businessProductEngineering = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5108, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
@@ -386,10 +385,10 @@ businessMasterData = businessMasterData
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithReference(businessProductEngineering);
 
-var businessInventory = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")))
+var businessInventory = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Inventory_Web>("business-inventory")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5109, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
@@ -411,10 +410,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessQuality = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")))
+var businessQuality = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5110, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
@@ -432,11 +431,11 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")))
+var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Mes_Web>("business-mes")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5111, name: "http")
     .WithHttpHealthCheck("/swagger/v1/swagger.json")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
@@ -493,10 +492,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessDemandPlanning = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")))
+var businessDemandPlanning = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5112, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
@@ -524,10 +523,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessBarcodeLabel = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_BarcodeLabel_Web>("business-barcode-label")))
+var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_BarcodeLabel_Web>("business-barcode-label")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5113, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
@@ -543,10 +542,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessApproval = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Approval_Web>("business-approval")))
+var businessApproval = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Approval_Web>("business-approval")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5114, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Approval__OverdueCheck__Enabled", "true")
     .WithEnvironment("Approval__OverdueCheck__Scopes__0__OrganizationId", "org-001")
@@ -578,10 +577,10 @@ businessProductEngineering = businessProductEngineering
     .WithReference(businessApproval)
     .WaitFor(businessApproval);
 
-var businessWms = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms")))
+var businessWms = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Wms_Web>("business-wms")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5115, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
@@ -610,10 +609,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessIndustrialTelemetry = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_IndustrialTelemetry_Web>("business-industrial-telemetry")))
+var businessIndustrialTelemetry = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_IndustrialTelemetry_Web>("business-industrial-telemetry")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5116, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
@@ -634,10 +633,10 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessMaintenance = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>("business-maintenance")))
+var businessMaintenance = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Maintenance_Web>("business-maintenance")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5117, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
@@ -664,13 +663,13 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp")))
+var businessErp = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Erp_Web>("business-erp")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5118, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
-    .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", "true")
+    .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", developmentOnlyEnabledValue)
     .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
@@ -717,10 +716,10 @@ businessQuality = businessQuality
     .WaitFor(businessErp)
     .WaitFor(businessApproval);
 
-var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")))
+var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5120, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
-    .WithEnvironment("Persistence__AutoMigrate", "true")
+    .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     // 排产「生成首版」依赖 MasterData（产能日历/工作中心）与 ProductEngineering（工艺路线）HTTP 读面；
     // 此前漏注入这两行，服务回退固定端口 5107/5108，在动态端口的 ephemeral 会话上
@@ -760,7 +759,7 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-var gateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")))
+var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_PlatformGateway_Web>("gateway")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
@@ -820,7 +819,7 @@ else
         .WithEnvironment("VictoriaLogs__Enabled", "false");
 }
 
-var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
+var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5119, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
@@ -878,7 +877,7 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WaitFor(businessMaintenance)
     .WaitFor(redis);
 
-var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
+var connectorHost = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
     .WithEnvironment("ConnectorHost__ConnectorHostId", connectorHostId)
     .WithEnvironment("ConnectorHost__OrganizationId", connectorHostOrganizationId)
@@ -1067,12 +1066,12 @@ Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel
         : project;
 }
 
-Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithLocalDevelopmentEnvironment(
+Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithAppHostEnvironment(
     Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> project)
 {
     return project
-        .WithEnvironment("ASPNETCORE_ENVIRONMENT", LocalDevelopmentEnvironment)
-        .WithEnvironment("DOTNET_ENVIRONMENT", LocalDevelopmentEnvironment);
+        .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
+        .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName);
 }
 
 Aspire.Hosting.ApplicationModel.IResourceBuilder<Aspire.Hosting.ApplicationModel.ProjectResource> WithNervIipTelemetry(
