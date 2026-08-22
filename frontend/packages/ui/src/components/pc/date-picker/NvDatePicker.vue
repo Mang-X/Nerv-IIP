@@ -14,6 +14,7 @@ import NvButton from '../button/NvButton.vue'
 const props = withDefaults(
   defineProps<{
     modelValue?: string | null
+    id?: string
     placeholder?: string
     disabled?: boolean
     ariaInvalid?: boolean
@@ -85,6 +86,7 @@ function pickToday() {
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <NvButton
+        :id="id"
         variant="outline"
         :disabled="disabled"
         :aria-invalid="ariaInvalid || undefined"

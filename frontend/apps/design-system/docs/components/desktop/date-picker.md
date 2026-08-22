@@ -71,6 +71,7 @@ const range = ref({ start: '2026-06-10', end: '2026-06-18' })
 | 属性               | 说明                            | 类型             | 默认       |
 | ------------------ | ------------------------------- | ---------------- | ---------- |
 | `v-model`          | 绑定日期（`YYYY-MM-DD` 字符串） | `string \| null` | `null`     |
+| `id`               | 触发按钮 ID，用于关联字段标签   | `string`         | —          |
 | `placeholder`      | 未选中占位文本                  | `string`         | `选择日期` |
 | `disabled`         | 是否禁用                        | `boolean`        | `false`    |
 | `aria-invalid`     | 字段是否处于校验失败状态        | `boolean`        | `false`    |
