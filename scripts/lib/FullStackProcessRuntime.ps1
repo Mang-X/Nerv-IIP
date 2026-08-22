@@ -469,7 +469,15 @@ function Get-NervFullStackFrozenProcessTree {
         }
     }
 
-    return @($frozen | Sort-Object -Property @{ Expression = 'depth'; Descending = $true }, @{ Expression = { [int] $_.record.pid }; Descending = $false })
+    $frozen.Sort([Comparison[object]] {
+        param($left, $right)
+        if ([int] $left.depth -gt [int] $right.depth) { return -1 }
+        if ([int] $left.depth -lt [int] $right.depth) { return 1 }
+        if ([int] $left.record.pid -lt [int] $right.record.pid) { return -1 }
+        if ([int] $left.record.pid -gt [int] $right.record.pid) { return 1 }
+        return 0
+    })
+    return $frozen.ToArray()
 }
 
 function Add-NervFullStackUniqueProcessId {
