@@ -1,10 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtempSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   appsRequiringContract,
+  contractShellDefect,
   CONTRACT_SHELL_BASENAME,
+  deriveDeprecated,
   isSource,
   modulesOf,
   nvuiImportViolation,
@@ -46,6 +49,21 @@ describe('nvuiImportViolation', () => {
 
   it('allows the bare barrels and unrelated packages', () => {
     for (const spec of ['@nerv-iip/ui', '@nerv-iip/ui-mobile', 'vue', '@/components/Foo.vue']) {
+      expect(nvuiImportViolation(spec, PAGE), spec).toBeNull()
+    }
+  })
+
+  it('matches on the package boundary, not anywhere in the string', () => {
+    // 去锚（`/^reka-ui(\/|$)/` → `/reka-ui/`）方向只会变严不会变松，但仍然会误伤本地件；
+    // 这几条阴性用例把锚点钉住。
+    for (const spec of [
+      './reka-ui-shim',
+      '@/lib/reka-ui',
+      'my-reka-ui',
+      '@scope/shadcn-vue',
+      './shadcn-vue.helpers',
+      '@nerv-iip/ui-kit/deep',
+    ]) {
       expect(nvuiImportViolation(spec, PAGE), spec).toBeNull()
     }
   })
@@ -116,5 +134,81 @@ describe('appsRequiringContract', () => {
       return readFileSync(shell).toString('base64')
     })
     expect(new Set(contents).size, 'app contract shells diverged').toBe(1)
+  })
+})
+
+describe('deriveDeprecated', () => {
+  // 正则对 barrel 的**多行** export 形状敏感（单行 `export { default as X }` 匹配不到）。
+  // #2022 的变异对照第一次就是因为造错形状而假绿，所以把真实形状钉成常驻用例。
+  const write = (name: string, content: string) => {
+    const file = join(mkdtempSync(join(tmpdir(), 'nvui-deprecated-')), name)
+    writeFileSync(file, content, 'utf8')
+    return file
+  }
+
+  it('picks up the multi-line barrel alias shape used by the library', () => {
+    const file = write(
+      'index.ts',
+      [
+        'export {',
+        '  /** @deprecated Use `NvPageHeader` (ADR 0020 NvUI); alias removed after codemod #789. */',
+        '  default as PageHeader,',
+        '  type PageHeaderCrumb,',
+        "} from './PageHeader.vue'",
+        'export {',
+        '  /** @deprecated Superseded by `NvDataTable` per ADR 0020. */',
+        '  NvDataTable as DataTablePro,',
+        "} from './DataTable.vue'",
+      ].join('\n'),
+    )
+    expect([...deriveDeprecated([file])].sort()).toEqual(['DataTablePro', 'PageHeader'])
+  })
+
+  it('returns the empty set for a barrel with no @deprecated aliases', () => {
+    const file = write('clean.ts', "export { default as NvPageHeader } from './PageHeader.vue'\n")
+    expect([...deriveDeprecated([file])]).toEqual([])
+  })
+
+  it('is empty for the real library barrels (the #789 closeout invariant)', () => {
+    const uiBarrels = [
+      resolve(frontendRoot, 'packages/ui/src/index.ts'),
+      resolve(frontendRoot, 'packages/ui-mobile/src/index.ts'),
+    ]
+    expect([...deriveDeprecated(uiBarrels)]).toEqual([])
+  })
+})
+
+describe('contractShellDefect', () => {
+  const GOOD = [
+    "import { runNvUiImportHygieneContract } from '@nerv-iip/ui/test-support'",
+    '',
+    'runNvUiImportHygieneContract(import.meta.url)',
+  ].join('\n')
+
+  it('accepts the canonical shell', () => {
+    expect(contractShellDefect(GOOD)).toBeNull()
+  })
+
+  it('rejects a shell that imports but never calls', () => {
+    expect(contractShellDefect(GOOD.replace(/^runNvUi.*$/m, ''))).toMatch(/does not call/)
+  })
+
+  it('rejects a shell that calls something else or drops the import', () => {
+    expect(contractShellDefect("it('ok', () => {})\n")).toMatch(/does not import/)
+    expect(
+      contractShellDefect(GOOD.replace('@nerv-iip/ui/test-support', './somewhere-else')),
+    ).toMatch(/does not import/)
+    expect(contractShellDefect(GOOD.replace('import.meta.url', "'hardcoded'"))).toMatch(
+      /does not call/,
+    )
+  })
+
+  it('every app shell in the repo actually arms the guard', () => {
+    // 这条住在 `@nerv-iip/ui` 的 job 里，所以四份壳被同时掏空时仍然有人报警——
+    // per-app 的同名断言那时根本不会被执行。
+    for (const app of appsRequiringContract(frontendRoot)) {
+      const shell = resolve(frontendRoot, 'apps', app, 'src', CONTRACT_SHELL_BASENAME)
+      expect(contractShellDefect(readFileSync(shell, 'utf8')), app).toBeNull()
+    }
   })
 })

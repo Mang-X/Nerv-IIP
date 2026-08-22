@@ -20,7 +20,8 @@ import { describe, expect, it } from 'vitest'
  *     根本不可导入——是硬 typecheck 错误而不是软棘轮告警（per-app 的
  *     `nvui-legacy-imports.baseline.json` 已退役）。这里断言库暴露零个 `@deprecated` 别名，
  *     所以重新引入一个别名会在这里红。
- *  3. **副本一致性**（#2022）：断言所有该受守护的 app 都有这个壳、且四份壳字节相同。
+ *  3. **副本护栏**（#2022）：断言所有该受守护的 app 都有这个壳、所有壳字节相同、且每份壳
+ *     确实导入并调用了本函数（字节一致是自指判据，单靠它兜不住「一起被掏空」）。
  */
 
 /** 运行时子入口，全 app 源码放行；见 `frontend/DESIGN/governance.md` 的「包子入口边界」。 */
@@ -38,6 +39,30 @@ const isTestSetupFile = (rel: string) => rel === 'test/setup.ts'
 
 /** 各 app 里这个壳的固定文件名——完整性断言按它找副本。 */
 export const CONTRACT_SHELL_BASENAME = 'nvui-imports.contract.test.ts'
+
+/**
+ * 壳必须真的把门禁挂起来。
+ *
+ * 「四份壳字节一致」是**自指**判据：四份被同时换成同样的空壳（`it('ok', () => {})`）时
+ * 一致性断言仍然全绿，而门禁已经全灭。所以另加这条形状断言——它不比较副本之间，而是把每份
+ * 壳钉到「从 `@nerv-iip/ui/test-support` 导入并调用 `runNvUiImportHygieneContract`」这个
+ * 事实上。该断言同时住在 `@nerv-iip/ui` 包自己的单测里，因此四份壳同时被掏空时仍有人报警。
+ */
+export const CONTRACT_SHELL_IMPORT_RE =
+  /import\s*\{[^}]*\brunNvUiImportHygieneContract\b[^}]*\}\s*from\s*['"]@nerv-iip\/ui\/test-support['"]/
+export const CONTRACT_SHELL_CALL_RE =
+  /^\s*runNvUiImportHygieneContract\(\s*import\.meta\.url\s*\)\s*$/m
+
+/** 壳没有真的挂上门禁时返回原因，正常返回 `null`。 */
+export function contractShellDefect(source: string): string | null {
+  if (!CONTRACT_SHELL_IMPORT_RE.test(source)) {
+    return 'shell does not import runNvUiImportHygieneContract from @nerv-iip/ui/test-support'
+  }
+  if (!CONTRACT_SHELL_CALL_RE.test(source)) {
+    return 'shell does not call runNvUiImportHygieneContract(import.meta.url)'
+  }
+  return null
+}
 
 /**
  * 判定单条 import specifier 是否违反 import hygiene。
@@ -127,7 +152,11 @@ export function appsRequiringContract(frontendRoot: string): string[] {
       }
       const deps = { ...pkg.dependencies, ...pkg.devDependencies }
       const consumesLibrary = '@nerv-iip/ui' in deps || '@nerv-iip/ui-mobile' in deps
-      return consumesLibrary && typeof pkg.scripts?.test === 'string'
+      // `scripts.test` 与 vitest 依赖任一存在即算「有测试运行器」：只删 test 脚本不足以让一个
+      // app 从集合里溜走。两者都没有时这里确实兜不住——最终闭合点是 `@nerv-iip/ui` 包自己
+      // 单测里那份写死的四元素期望列表（改集合必须人工复核）。
+      const hasTestRunner = typeof pkg.scripts?.test === 'string' || 'vitest' in deps
+      return consumesLibrary && hasTestRunner
     })
     .sort()
 }
@@ -199,6 +228,21 @@ export function runNvUiImportHygieneContract(contractFileUrl: string): void {
           missing,
           `these apps consume the component library and run vitest but have no src/${CONTRACT_SHELL_BASENAME}`,
         ).toEqual([])
+      })
+
+      it('every contract shell actually arms the guard', () => {
+        // 「字节一致」判不出「四份一起被掏空」——这条补上：每份壳都必须真的导入并调用门禁。
+        const defects = Object.fromEntries(
+          expectedApps
+            .filter((app) => existsSync(shellOf(app)))
+            .map((app) => [app, contractShellDefect(readFileSync(shellOf(app), 'utf8'))])
+            .filter(([, defect]) => defect !== null),
+        )
+        expect(
+          defects,
+          'a contract shell no longer arms the guard — it must import ' +
+            'runNvUiImportHygieneContract from @nerv-iip/ui/test-support and call it with import.meta.url',
+        ).toEqual({})
       })
 
       it('all app contract shells are byte-identical', () => {
