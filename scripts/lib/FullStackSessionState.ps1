@@ -641,6 +641,24 @@ function Get-NervProcessIdentityStatus {
         observedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
     }
 
+    $expected = $null
+    $expectedFailureReason = $null
+    try {
+        $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
+            ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
+        }
+        elseif ($ProcessStartTimeUtc -is [DateTimeOffset]) {
+            ([DateTimeOffset] $ProcessStartTimeUtc).UtcDateTime
+        }
+        else {
+            [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
+        }
+        $observation.expectedStartTimeUtc = $expected.ToString('O')
+    }
+    catch {
+        $expectedFailureReason = $_.Exception.Message
+    }
+
     try {
         $process = & $ProcessLookupAction $ProcessId
     }
@@ -656,17 +674,13 @@ function Get-NervProcessIdentityStatus {
         return $observation.status
     }
 
+    if ($null -ne $expectedFailureReason) {
+        $observation.failureReason = $expectedFailureReason
+        if ($Detailed) { return [pscustomobject] $observation }
+        return $observation.status
+    }
+
     try {
-        $expected = if ($ProcessStartTimeUtc -is [DateTime]) {
-            ([DateTime] $ProcessStartTimeUtc).ToUniversalTime()
-        }
-        elseif ($ProcessStartTimeUtc -is [DateTimeOffset]) {
-            ([DateTimeOffset] $ProcessStartTimeUtc).UtcDateTime
-        }
-        else {
-            [DateTimeOffset]::Parse("$ProcessStartTimeUtc").UtcDateTime
-        }
-        $observation.expectedStartTimeUtc = $expected.ToString('O')
         $actual = $process.StartTime.ToUniversalTime()
         $observation.actualStartTimeUtc = $actual.ToString('O')
         if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -lt 1) {

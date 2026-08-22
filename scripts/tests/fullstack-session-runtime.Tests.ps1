@@ -1459,6 +1459,7 @@ finally {
 $script:guardianReads = 0
 $script:guardianStops = 0
 $script:guardianLifecycle = [System.Collections.Generic.List[string]]::new()
+$script:guardianEvidencePresentAtDiagnostics = $false
 $currentProcess = Get-Process -Id $PID -ErrorAction Stop
 $currentStartTimeUtc = $currentProcess.StartTime.ToUniversalTime()
 $guardianExpectedStartTimeUtc = $currentStartTimeUtc.AddSeconds(-1).ToString('O')
@@ -1487,7 +1488,7 @@ try {
         } `
         -DiagnosticAction {
             param($Manifest)
-            Assert-True (Test-Path -LiteralPath $guardianEvidencePath -PathType Leaf) 'Guardian identity evidence must be persisted before diagnostics and the first stop.'
+            $script:guardianEvidencePresentAtDiagnostics = Test-Path -LiteralPath $guardianEvidencePath -PathType Leaf
             $script:guardianLifecycle.Add('diagnostics')
         } `
         -StopAction {
@@ -1510,6 +1511,7 @@ $guardianLogText = @($guardianOutput | ForEach-Object { "$_" }) -join "`n"
 Assert-True ([string]::Equals([string]$guardianResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive transient manifest and stop failures until cleanup reaches Stopped.'
 Assert-True ($script:guardianReads -ge 3) 'Guardian must retry manifest observation after a transient read failure.'
 Assert-True ($script:guardianStops -eq 2) 'Guardian must retry a failed stop operation.'
+Assert-True $script:guardianEvidencePresentAtDiagnostics 'Guardian identity evidence must be persisted before diagnostics and the first stop.'
 Assert-True ([string]::Equals(($script:guardianLifecycle -join ','), 'diagnostics,stop,stop', [StringComparison]::Ordinal)) 'Guardian must collect diagnostics exactly once before its first stop attempt.'
 Assert-True ($guardianLogText.Contains("Guardian started for '$sessionId' in Automated mode.", [StringComparison]::Ordinal)) 'Guardian stdout must identify every managed session even when no warning is emitted.'
 Assert-True ($guardianLogText.Contains("Guardian cleanup triggered for '$sessionId'", [StringComparison]::Ordinal)) 'Guardian stdout must explain whether lease expiry or coordinator loss triggered cleanup.'
@@ -1548,6 +1550,14 @@ Assert-True (-not [string]::IsNullOrWhiteSpace("$($mismatchedIdentity.actualStar
 $absentIdentity = Get-NervProcessIdentityStatus -ProcessId ([int]::MaxValue) -ProcessStartTimeUtc $currentStartTimeUtc -Detailed
 Assert-True ([string]::Equals([string]$absentIdentity.status, 'Absent', [StringComparison]::Ordinal)) 'Detailed process identity must preserve Absent.'
 Assert-True ($null -eq $absentIdentity.actualStartTimeUtc) 'Absent process identity must not invent an actual StartTime.'
+Assert-True ([string]::Equals([string]$absentIdentity.expectedStartTimeUtc, $currentStartTimeUtc.ToString('O'), [StringComparison]::Ordinal)) 'Absent process identity must normalize the expected StartTime to the evidence schema format.'
+$lookupFailureIdentity = Get-NervProcessIdentityStatus `
+    -ProcessId 4107 `
+    -ProcessStartTimeUtc $currentStartTimeUtc `
+    -ProcessLookupAction { param($ProcessId) throw 'simulated process lookup inspection failure' } `
+    -Detailed
+Assert-True ([string]::Equals([string]$lookupFailureIdentity.status, 'Unknown', [StringComparison]::Ordinal)) 'A non-absence process lookup failure must remain Unknown.'
+Assert-True ([string]::Equals([string]$lookupFailureIdentity.expectedStartTimeUtc, $currentStartTimeUtc.ToString('O'), [StringComparison]::Ordinal)) 'Unknown process lookup failure must normalize the expected StartTime to the evidence schema format.'
 $script:unknownIdentityProcess = [pscustomobject]@{}
 $script:unknownIdentityProcess | Add-Member -MemberType ScriptProperty -Name StartTime -Value { throw 'token=coordinator-secret inspection failed' }
 $unknownIdentity = Get-NervProcessIdentityStatus `
