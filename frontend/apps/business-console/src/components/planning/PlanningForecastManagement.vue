@@ -359,7 +359,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 {{ editMode ? form.forecastReference : '保存后自动生成' }}
               </p>
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.skuCode.length > 0">
               <NvFieldLabel for="forecast-sku">SKU</NvFieldLabel>
               <NvSearchSelect
                 id="forecast-sku"
@@ -368,6 +368,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择 SKU"
                 search-placeholder="搜索 SKU 编码或名称"
                 aria-label="预测 SKU"
+                :class="submitted && fieldErrors.skuCode.length ? 'border-destructive' : undefined"
                 :aria-invalid="submitted && fieldErrors.skuCode.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.skuCode.length ? 'forecast-sku-error' : undefined
@@ -379,7 +380,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.skuCode"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.siteCode.length > 0">
               <NvFieldLabel for="forecast-site">工厂</NvFieldLabel>
               <NvSearchSelect
                 id="forecast-site"
@@ -388,6 +389,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择工厂"
                 search-placeholder="搜索工厂编码或名称"
                 aria-label="预测工厂"
+                :class="submitted && fieldErrors.siteCode.length ? 'border-destructive' : undefined"
                 :aria-invalid="submitted && fieldErrors.siteCode.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.siteCode.length ? 'forecast-site-error' : undefined
@@ -399,7 +401,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.siteCode"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.uomCode.length > 0">
               <NvFieldLabel for="forecast-uom">单位</NvFieldLabel>
               <NvSearchSelect
                 id="forecast-uom"
@@ -408,6 +410,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 placeholder="选择单位"
                 search-placeholder="搜索单位编码或名称"
                 aria-label="预测单位"
+                :class="submitted && fieldErrors.uomCode.length ? 'border-destructive' : undefined"
                 :aria-invalid="submitted && fieldErrors.uomCode.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.uomCode.length ? 'forecast-uom-error' : undefined
@@ -419,12 +422,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.uomCode"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.periodStartDate.length > 0">
               <NvFieldLabel for="forecast-start">开始日期</NvFieldLabel>
               <NvDatePicker
                 id="forecast-start"
                 v-model="form.periodStartDate"
-                class="w-full sm:w-full"
+                :class="[
+                  'w-full sm:w-full',
+                  submitted && fieldErrors.periodStartDate.length && 'border-destructive',
+                ]"
                 :aria-invalid="submitted && fieldErrors.periodStartDate.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.periodStartDate.length
@@ -438,12 +444,15 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.periodStartDate"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.periodEndDate.length > 0">
               <NvFieldLabel for="forecast-end">结束日期</NvFieldLabel>
               <NvDatePicker
                 id="forecast-end"
                 v-model="form.periodEndDate"
-                class="w-full sm:w-full"
+                :class="[
+                  'w-full sm:w-full',
+                  submitted && fieldErrors.periodEndDate.length && 'border-destructive',
+                ]"
                 :aria-invalid="submitted && fieldErrors.periodEndDate.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.periodEndDate.length ? 'forecast-end-error' : undefined
@@ -455,7 +464,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.periodEndDate"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.quantity.length > 0">
               <NvFieldLabel for="forecast-quantity">预测数量</NvFieldLabel>
               <NvInput
                 id="forecast-quantity"
@@ -463,6 +472,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0.0001"
                 step="0.0001"
                 type="number"
+                :invalid="submitted && fieldErrors.quantity.length > 0"
                 :aria-invalid="submitted && fieldErrors.quantity.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.quantity.length ? 'forecast-quantity-error' : undefined
@@ -474,7 +484,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.quantity"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.backwardConsumptionDays.length > 0">
               <NvFieldLabel for="forecast-backward-days">向前冲减天数</NvFieldLabel>
               <NvInput
                 id="forecast-backward-days"
@@ -482,6 +492,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0"
                 step="1"
                 type="number"
+                :invalid="submitted && fieldErrors.backwardConsumptionDays.length > 0"
                 :aria-invalid="submitted && fieldErrors.backwardConsumptionDays.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.backwardConsumptionDays.length
@@ -495,7 +506,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 :errors="fieldErrors.backwardConsumptionDays"
               />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && fieldErrors.forwardConsumptionDays.length > 0">
               <NvFieldLabel for="forecast-forward-days">向后冲减天数</NvFieldLabel>
               <NvInput
                 id="forecast-forward-days"
@@ -503,6 +514,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
                 min="0"
                 step="1"
                 type="number"
+                :invalid="submitted && fieldErrors.forwardConsumptionDays.length > 0"
                 :aria-invalid="submitted && fieldErrors.forwardConsumptionDays.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.forwardConsumptionDays.length

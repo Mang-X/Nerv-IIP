@@ -81,10 +81,11 @@ vi.mock('@nerv-iip/ui', () => {
       '<button :type="type || \'button\'" :disabled="disabled" @click="$emit(\'click\', $event)"><slot /></button>',
   })
   const Input = defineComponent({
-    props: ['modelValue', 'disabled', 'type'],
+    name: 'NvInput',
+    props: ['modelValue', 'disabled', 'type', 'invalid'],
     emits: ['update:modelValue'],
     template:
-      '<input :value="modelValue" :disabled="disabled" :type="type || \'text\'" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+      '<input :value="modelValue" :disabled="disabled" :type="type || \'text\'" :data-invalid="invalid || undefined" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   })
   const SearchSelect = defineComponent({
     name: 'NvSearchSelect',
@@ -203,6 +204,16 @@ describe('PlanningForecastManagement', () => {
       .findAll('button')
       .find((button) => button.text().includes('新建预测'))!
       .trigger('click')
+    const formDates = wrapper.findAllComponents({ name: 'NvDatePicker' })
+    formDates.find((component) => component.props('id') === 'forecast-start')!.vm.$emit(
+      'update:modelValue',
+      '',
+    )
+    formDates.find((component) => component.props('id') === 'forecast-end')!.vm.$emit(
+      'update:modelValue',
+      '',
+    )
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
 
@@ -210,6 +221,12 @@ describe('PlanningForecastManagement', () => {
     expect(wrapper.get('#forecast-site-error').text()).toContain('请选择工厂')
     expect(wrapper.get('#forecast-uom-error').text()).toContain('请选择单位')
     expect(wrapper.get('#forecast-quantity-error').text()).toContain('预测数量必须大于 0')
+    expect(wrapper.get('[aria-label="预测 SKU"]').classes()).toContain('border-destructive')
+    expect(wrapper.get('[aria-label="预测工厂"]').classes()).toContain('border-destructive')
+    expect(wrapper.get('[aria-label="预测单位"]').classes()).toContain('border-destructive')
+    expect(wrapper.get('#forecast-start').classes()).toContain('border-destructive')
+    expect(wrapper.get('#forecast-end').classes()).toContain('border-destructive')
+    expect(wrapper.get('#forecast-quantity').attributes('data-invalid')).toBe('true')
     expect(wrapper.get('#forecast-validation-summary').text()).not.toContain('请填写预测编号')
     expect(wrapper.get('#forecast-validation-summary').text()).toContain('预测数量必须大于 0')
     expect(spies.saveForecast).not.toHaveBeenCalled()
