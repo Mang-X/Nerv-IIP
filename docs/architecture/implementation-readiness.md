@@ -15,6 +15,13 @@ coordinator 身份的误判触发了提前 cleanup。当前不收窄 AppHost 资
 [`fullchain-man-440-sigkill-investigation.md`](fullchain-man-440-sigkill-investigation.md)；后续修复由
 [#2018](https://github.com/Mang-X/Nerv-IIP/issues/2018) 按 `scope:L` 拆分跟踪。
 
+#2018 子项①已让 guardian 使用 `Active / Absent / Mismatched / Unknown` 四态身份观察并在首次
+stop 前持久保存脱敏证据；子项②进一步把 coordinator-loss cleanup 限定为已确认的 `Absent` 或
+`Mismatched`。自动模式首次得到 `Unknown` 时会以 1 秒间隔执行最多 3 次有界观察；恢复为
+`Active` 时继续正常周期，达到上限仍为 `Unknown` 时仅记录脱敏警告并保留活动会话。明确的 lease
+过期仍独立触发 cleanup，不由身份重观测阻塞。本文描述的是代码合同；真实 FullChain 结果仍须以
+该 PR exact-head 与合并后 main 的 Actions 证据分别确认。
+
 ## Stryker.NET 单程序集变异测试预研（NERV-870）
 
 NERV-870 已完成 Scheduling 单个纯领域文件的 Stryker.NET 4.16.0 预研。当前结论是仅允许 NERV-873 与 NERV-874 继续执行边界冻结的本地或手动试点，不得接入 required PR CI，也不得把变异分数设为 KPI；未来若要进入 CI，必须另开治理票。完整的环境、可复现命令、结果口径、限制和试点前置条件见 [`mutation-testing-spike.md`](mutation-testing-spike.md)。
