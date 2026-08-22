@@ -29,7 +29,10 @@ const ALLOWED_UI_SUBPATHS = new Set(['file-preview'])
  * 下的 setup 文件里放行；页面 / 组件 / composable 引用它照旧判红。
  */
 const TEST_ONLY_UI_SUBPATHS = new Set(['test-support'])
-const isTestSetupFile = (rel: string) => rel.startsWith('test/')
+// 放行面刻意钉死到 setup 文件本身，而不是整个 `src/test/` 目录：这个子入口的用途只有
+// 「在 vitest 环境装好之前改一次全局」，普通测试文件没有理由碰它。目录级放行会把
+// 「随便哪个 test/ 下的辅助文件都能深导入」也一并放过，比这条规则想表达的宽。
+const isTestSetupFile = (rel: string) => rel === 'test/setup.ts'
 
 function walk(dir: string, keep: (name: string) => boolean): string[] {
   const out: string[] = []
