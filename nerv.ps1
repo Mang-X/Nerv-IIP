@@ -37,7 +37,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')]
+    [ValidateSet('smoke', 'production-release-smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')]
     [string] $Scenario,
 
     [string] $SessionId,
@@ -69,6 +69,7 @@ Usage:
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
   .\nerv.ps1 fullstack run -Scenario smoke
+  .\nerv.ps1 fullstack run -Scenario production-release-smoke
   .\nerv.ps1 demo start
   .\nerv.ps1 demo reset
   .\nerv.ps1 demo seed
