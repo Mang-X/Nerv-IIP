@@ -128,7 +128,7 @@ public sealed class SchedulingLockCommandTests
                 assignment.OperationId, assignment.ResourceId, assignment.StartUtc, assignment.EndUtc),
             CancellationToken.None));
 
-        Assert.Contains("unavailable for manual override", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("手动调整所需的排程问题详情不可用", exception.Message, StringComparison.Ordinal);
     }
 
     private static ApplicationDbContext CreateDbContext()
