@@ -50,7 +50,7 @@ internal static class AccountPayableSourceDocumentGuard
         if (sourceSupplierCode is null)
         {
             throw new KnownException(
-                $"来源单据『{normalizedSourceDocumentNo}』在 ERP 中不存在（既不是采购收货单、采购订单，也不是供应商发票），应付不能凭空登记。确需无来源手工入账，请前往财务 › 会计凭证 › 过账凭证。");
+                $"来源单据『{normalizedSourceDocumentNo}』不存在，无法登记应付；无来源手工入账请走财务 › 会计凭证 › 过账凭证。");
         }
 
         // 供应商编码按大小写不敏感比对，与库存侧同类比对一致：编码大小写差异不是不同供应商，不能据此误拒。
@@ -58,7 +58,7 @@ internal static class AccountPayableSourceDocumentGuard
         if (!string.Equals(authoritativeSupplierCode, supplierCode.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             throw new KnownException(
-                $"来源单据『{normalizedSourceDocumentNo}』的供应商是『{sourceSupplierCode}』，与登记的供应商『{supplierCode}』不一致，应付登记已拒绝。");
+                $"单据『{normalizedSourceDocumentNo}』供应商『{sourceSupplierCode}』与『{supplierCode}』不符，应付拒绝。");
         }
 
         return authoritativeSupplierCode;

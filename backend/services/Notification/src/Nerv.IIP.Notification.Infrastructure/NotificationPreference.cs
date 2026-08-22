@@ -20,11 +20,11 @@ public sealed class NotificationPreference : Entity<NotificationPreferenceId>
         bool enabled,
         DateTimeOffset now)
     {
-        OrganizationId = Required(organizationId, "Organization is required.");
-        EnvironmentId = Required(environmentId, "Environment is required.");
-        RecipientRef = Required(recipientRef, "Recipient ref is required.");
-        NotificationType = Required(notificationType, "Notification type is required.");
-        Channel = Required(channel, "Delivery channel is required.");
+        OrganizationId = Required(organizationId, "组织");
+        EnvironmentId = Required(environmentId, "环境");
+        RecipientRef = Required(recipientRef, "收件人");
+        NotificationType = Required(notificationType, "通知类型");
+        Channel = Required(channel, "渠道");
         Enabled = enabled;
         CreatedAtUtc = now;
         UpdatedAtUtc = now;
@@ -59,11 +59,11 @@ public sealed class NotificationPreference : Entity<NotificationPreferenceId>
         UpdatedAtUtc = now;
     }
 
-    private static string Required(string? value, string message)
+    private static string Required(string? value, string fieldName)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            throw new KnownException($"通知偏好{fieldName}不能为空。");
         }
 
         return value;
