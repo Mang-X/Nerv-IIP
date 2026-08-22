@@ -1143,7 +1143,9 @@ function Invoke-NervFullStackGuardian {
                 -Text "$($_.Exception.Message)" `
                 -SensitiveValues @($effectiveSensitiveValues)
             Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
-            if ($observationFailures -ge $MaximumObservationFailures) { throw }
+            if ($observationFailures -ge $MaximumObservationFailures) {
+                throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+            }
             & $DelayAction $IntervalSeconds
             continue
         }
@@ -1175,7 +1177,9 @@ function Invoke-NervFullStackGuardian {
                             -Text "$($_.Exception.Message)" `
                             -SensitiveValues @($effectiveSensitiveValues)
                         Write-Warning "Guardian manifest observation $observationFailures/$MaximumObservationFailures failed for '$SessionId': $safeManifestObservationError"
-                        if ($observationFailures -ge $MaximumObservationFailures) { throw }
+                        if ($observationFailures -ge $MaximumObservationFailures) {
+                            throw "Guardian manifest observation failed for '$SessionId': $safeManifestObservationError"
+                        }
                         & $DelayAction $IntervalSeconds
                         continue
                     }

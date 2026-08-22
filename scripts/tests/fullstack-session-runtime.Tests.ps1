@@ -1528,6 +1528,24 @@ Assert-True ($script:guardianPersistentUnknownStops -eq 0) 'A persistently Unkno
 Assert-True ($guardianPersistentUnknownLogText.Contains("Guardian retained '$sessionId' after coordinator identity remained Unknown", [StringComparison]::Ordinal)) 'Guardian must explain why an Unknown coordinator was retained after bounded re-observation.'
 Assert-True (-not $guardianPersistentUnknownLogText.Contains('unknown-secret', [StringComparison]::Ordinal)) 'Guardian must not log the failure detail while retaining an Unknown coordinator.'
 
+$guardianInitialObservationError = $null
+try {
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+        -MaximumObservationFailures 1 `
+        -ReadAction { throw 'initial token=manifest-initial-terminal-secret unavailable' } `
+        -SensitiveValues @('manifest-initial-terminal-secret') | Out-Null
+}
+catch {
+    $guardianInitialObservationError = "$( $_.Exception.Message )"
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace($guardianInitialObservationError)) 'Guardian must surface an error after initial manifest observation failures reach the limit.'
+Assert-True ($guardianInitialObservationError.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian terminal initial manifest observation errors must retain a redaction marker.'
+Assert-True (-not $guardianInitialObservationError.Contains('manifest-initial-terminal-secret', [StringComparison]::Ordinal)) 'Guardian terminal initial manifest observation errors must not expose sensitive values.'
+
 $script:guardianIncompleteIdentityReads = 0
 $script:guardianIncompleteIdentityActions = 0
 $script:guardianIncompleteIdentityDelays = [System.Collections.Generic.List[int]]::new()
@@ -1733,6 +1751,42 @@ $guardianRefreshFailureLogText = @($guardianRefreshFailureOutput | ForEach-Objec
 Assert-True ([string]::Equals([string]$guardianRefreshFailureResult.State, 'Stopped', [StringComparison]::Ordinal)) 'Guardian must survive a transient manifest refresh failure after identity retries cross the lease deadline.'
 Assert-True ($guardianRefreshFailureLogText.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian must redact sensitive values from manifest refresh failure warnings.'
 Assert-True (-not $guardianRefreshFailureLogText.Contains('manifest-refresh-secret', [StringComparison]::Ordinal)) 'Guardian manifest refresh failure warnings must not expose sensitive values.'
+
+$script:guardianRefreshTerminalNow = [DateTimeOffset]::Parse('2026-08-22T00:00:00Z')
+$script:guardianRefreshTerminalReads = 0
+$guardianRefreshTerminalError = $null
+try {
+    Invoke-NervFullStackGuardian `
+        -SessionId $sessionId `
+        -Mode Automated `
+        -CoordinatorPid 4107 `
+        -CoordinatorStartTimeUtc '2000-01-01T00:00:00Z' `
+        -MaximumObservationFailures 1 `
+        -UtcNowAction { $script:guardianRefreshTerminalNow } `
+        -ReadAction {
+            $script:guardianRefreshTerminalReads++
+            if ($script:guardianRefreshTerminalReads -ge 2) { throw 'refresh token=manifest-refresh-terminal-secret unavailable' }
+            return [pscustomobject]@{ state = 'Running'; leaseExpiresAtUtc = '2026-08-22T00:00:01.5000000Z' }
+        } `
+        -CoordinatorIdentityAction {
+            New-NervProcessIdentityObservation `
+                -Status Unknown `
+                -ProcessId 4107 `
+                -ExpectedStartTimeUtc '2000-01-01T00:00:00Z' `
+                -FailureReason 'identity inspection unavailable'
+        } `
+        -SensitiveValues @('manifest-refresh-terminal-secret') `
+        -DelayAction {
+            param($Seconds)
+            $script:guardianRefreshTerminalNow = $script:guardianRefreshTerminalNow.AddSeconds($Seconds)
+        } | Out-Null
+}
+catch {
+    $guardianRefreshTerminalError = "$( $_.Exception.Message )"
+}
+Assert-True (-not [string]::IsNullOrWhiteSpace($guardianRefreshTerminalError)) 'Guardian must surface an error after manifest refresh failures reach the limit.'
+Assert-True ($guardianRefreshTerminalError.Contains('<redacted>', [StringComparison]::Ordinal)) 'Guardian terminal manifest refresh errors must retain a redaction marker.'
+Assert-True (-not $guardianRefreshTerminalError.Contains('manifest-refresh-terminal-secret', [StringComparison]::Ordinal)) 'Guardian terminal manifest refresh errors must not expose sensitive values.'
 
 $guardianManagedChild = Start-Process `
     -FilePath (Get-Process -Id $PID -ErrorAction Stop).Path `
