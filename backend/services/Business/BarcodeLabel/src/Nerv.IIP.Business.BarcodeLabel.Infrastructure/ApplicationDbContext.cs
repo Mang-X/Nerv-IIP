@@ -18,8 +18,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     [
         new(
             ["UX_scan_records_idempotency"],
-            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.idempotency_key"],
-            "Duplicate barcode scan idempotency key is not allowed."),
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.idempotency_key"]),
         new(
             ["UX_scan_records_accepted_scan_natural_key"],
             [
@@ -28,12 +27,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 "scan_records.scanned_value",
                 "scan_records.source_workflow",
                 "scan_records.source_document_id"
-            ],
-            "Duplicate accepted barcode scan natural key is not allowed."),
+            ]),
         new(
             ["UX_scan_records_epc_uri"],
-            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.epc_uri"],
-            "Duplicate serialized barcode scan is not allowed."),
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.epc_uri"]),
         new(
             ["UX_scan_records_gtin_lot_serial"],
             [
@@ -42,20 +39,17 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 "scan_records.gtin",
                 "scan_records.lot_no",
                 "scan_records.serial_number"
-            ],
-            "Duplicate serialized barcode scan is not allowed."),
+            ]),
         new(
             ["UX_scan_records_gtin_serial_no_lot"],
-            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.gtin", "scan_records.serial_number"],
-            "Duplicate serialized barcode scan is not allowed.")
+            ["scan_records.organization_id", "scan_records.environment_id", "scan_records.gtin", "scan_records.serial_number"])
     ];
 
     private static readonly UniqueConflictMapping[] EpcisEventUniqueConflicts =
     [
         new(
             ["UX_epcis_events_epc_uri"],
-            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.epc_uri"],
-            "Duplicate BarcodeLabel EPCIS event is not allowed."),
+            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.epc_uri"]),
         new(
             ["UX_epcis_events_gtin_lot_serial"],
             [
@@ -65,12 +59,10 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
                 "epcis_events.gtin",
                 "epcis_events.lot_no",
                 "epcis_events.serial_number"
-            ],
-            "Duplicate BarcodeLabel EPCIS event is not allowed."),
+            ]),
         new(
             ["UX_epcis_events_gtin_serial_no_lot"],
-            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.gtin", "epcis_events.serial_number"],
-            "Duplicate BarcodeLabel EPCIS event is not allowed.")
+            ["epcis_events.organization_id", "epcis_events.environment_id", "epcis_events.event_type", "epcis_events.gtin", "epcis_events.serial_number"])
     ];
 
     public DbSet<BarcodeRule> BarcodeRules => Set<BarcodeRule>();
@@ -119,7 +111,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             {
                 if (IsUniqueConflict(current, mapping))
                 {
-                    knownException = new KnownException(mapping.Message, exception);
+                    knownException = new KnownException("条码扫描记录已存在，请检查幂等键、条码或来源单据。", exception);
                     return true;
                 }
             }
@@ -128,7 +120,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             {
                 if (IsUniqueConflict(current, mapping))
                 {
-                    knownException = new KnownException(mapping.Message, exception);
+                    knownException = new KnownException("条码追溯事件已存在，请检查事件类型和唯一标识。", exception);
                     return true;
                 }
             }
@@ -222,6 +214,5 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     private sealed record UniqueConflictMapping(
         IReadOnlyCollection<string> IndexNames,
-        IReadOnlyCollection<string> SqliteColumnNames,
-        string Message);
+        IReadOnlyCollection<string> SqliteColumnNames);
 }

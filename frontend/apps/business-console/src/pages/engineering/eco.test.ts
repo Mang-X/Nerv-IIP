@@ -260,7 +260,7 @@ describe('engineering eco page', () => {
     expect(panel.attributes('data-document-id')).toBe('ECO-20260801-000001')
     expect(panel.attributes('data-source-service')).toBe('product-engineering')
     expect(panel.attributes('data-document-type')).toBe('engineering-change-order')
-    expect(panel.attributes('data-preferred-template-code')).toBe('APT-WB-ECO-001')
+    expect(panel.attributes('data-preferred-template-code')).toBe('engineering-change-order')
     expect(findButton(wrapper, '发起审批')).toBeDefined()
 
     await findButton(wrapper, '发起审批')!.trigger('click')

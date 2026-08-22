@@ -49,6 +49,6 @@ public sealed class GetLabelPrintBatchQueryHandler(ApplicationDbContext dbContex
                 x.FailureReason,
                 x.Items.OrderBy(item => item.SequenceNo).Select(item => new LabelPrintItemDetail(item.SequenceNo, item.LabelValue, item.FileId, item.Status, item.VoidReason)).ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException($"Print batch not found, PrintBatchId = {request.PrintBatchId}");
+            ?? throw new KnownException($"未找到打印批次，批次 ID = {request.PrintBatchId}。");
     }
 }

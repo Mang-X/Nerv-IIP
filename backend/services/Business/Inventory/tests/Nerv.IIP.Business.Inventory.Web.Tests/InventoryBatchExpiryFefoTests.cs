@@ -121,12 +121,12 @@ public sealed class InventoryBatchExpiryFefoTests
         var reservationHandler = new ReserveStockCommandHandler(dbContext);
         var reserveException = await Assert.ThrowsAsync<KnownException>(() =>
             reservationHandler.Handle(CreateReserveCommand("LOT-EXPIRED", asOfDate: Today), CancellationToken.None));
-        Assert.Contains("expired", reserveException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Expired stock", reserveException.Message, StringComparison.Ordinal);
 
         var movementHandler = new PostStockMovementCommandHandler(dbContext);
         var movementException = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
             movementHandler.Handle(CreateOutboundCommand("LOT-EXPIRED", asOfDate: Today), CancellationToken.None));
-        Assert.Contains("expired", movementException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("过期库存", movementException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -570,7 +570,7 @@ public sealed class InventoryBatchExpiryFefoTests
                 ProductionDate: new DateOnly(9999, 12, 30),
                 ShelfLifeDays: 10), CancellationToken.None));
 
-        Assert.Contains("shelf life", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("保质期", exception.Message, StringComparison.Ordinal);
     }
 
     private static async Task SeedLedgerAsync(

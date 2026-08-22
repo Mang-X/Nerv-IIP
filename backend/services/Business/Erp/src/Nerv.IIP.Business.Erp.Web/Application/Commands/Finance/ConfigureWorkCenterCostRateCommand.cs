@@ -80,7 +80,7 @@ public sealed class ConfigureWorkCenterCostRateCommandHandler(
             .Any(existing => !string.Equals(existing, currencyCode, StringComparison.Ordinal)))
         {
             throw new KnownException(
-                $"Work-center cost-rate scope '{organizationId}/{environmentId}/{workCenterId}' already uses another currency. Currency changes require an explicit governed migration.");
+                $"成本率『{organizationId}·{environmentId}·{workCenterId}』币种已固定。");
         }
         var databaseRevision = await dbContext.WorkCenterCostRates
             .Where(x => x.OrganizationId == organizationId

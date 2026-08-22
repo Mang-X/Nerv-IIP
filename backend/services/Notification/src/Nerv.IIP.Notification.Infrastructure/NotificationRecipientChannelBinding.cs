@@ -19,11 +19,11 @@ public sealed class NotificationRecipientChannelBinding : Entity<NotificationRec
         string recipientAddress,
         DateTimeOffset now)
     {
-        OrganizationId = Required(organizationId, "Organization is required.");
-        EnvironmentId = Required(environmentId, "Environment is required.");
-        RecipientRef = Required(recipientRef, "Recipient ref is required.");
-        Channel = Required(channel, "Delivery channel is required.");
-        RecipientAddress = Required(recipientAddress, "Recipient channel address is required.");
+        OrganizationId = Required(organizationId, "组织");
+        EnvironmentId = Required(environmentId, "环境");
+        RecipientRef = Required(recipientRef, "收件人");
+        Channel = Required(channel, "渠道");
+        RecipientAddress = Required(recipientAddress, "收件地址");
         Enabled = true;
         CreatedAtUtc = now;
         UpdatedAtUtc = now;
@@ -53,16 +53,16 @@ public sealed class NotificationRecipientChannelBinding : Entity<NotificationRec
 
     public void Update(string recipientAddress, bool enabled, DateTimeOffset now)
     {
-        RecipientAddress = Required(recipientAddress, "Recipient channel address is required.");
+        RecipientAddress = Required(recipientAddress, "收件地址");
         Enabled = enabled;
         UpdatedAtUtc = now;
     }
 
-    private static string Required(string? value, string message)
+    private static string Required(string? value, string fieldName)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            throw new KnownException($"通知渠道绑定{fieldName}不能为空。");
         }
 
         return value;

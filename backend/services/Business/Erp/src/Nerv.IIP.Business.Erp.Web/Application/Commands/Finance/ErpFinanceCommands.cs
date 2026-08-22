@@ -91,7 +91,7 @@ internal static class AccountingPeriodPostingGuard
             && x.EnvironmentId == environmentId
             && x.PeriodCode == periodCode,
             cancellationToken)
-            ?? throw new KnownException($"Accounting period '{periodCode}' was not found.");
+            ?? throw new KnownException($"会计期间『{periodCode}』不存在。");
     }
 
     public static async Task EnsureOpenAsync(
@@ -99,7 +99,7 @@ internal static class AccountingPeriodPostingGuard
         string organizationId,
         string environmentId,
         DateOnly postingDate,
-        string sourceDescription,
+        string _sourceDescription,
         CancellationToken cancellationToken)
     {
         var period = await dbContext.AccountingPeriods
@@ -116,7 +116,7 @@ internal static class AccountingPeriodPostingGuard
             return;
         }
 
-        throw new KnownException($"Cannot post {sourceDescription} into closed accounting period '{period.PeriodCode}'. Reopen the period with an auditable reason before posting late integration or manual voucher facts.");
+        throw new KnownException($"会计期间『{period.PeriodCode}』已关闭，请先重开期间。");
     }
 }
 
@@ -484,7 +484,7 @@ public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext d
                 && x.EnvironmentId == request.EnvironmentId
                 && x.PaymentExecutionNo == request.PaymentExecutionNo,
                 cancellationToken)
-            ?? throw new KnownException($"Payment execution '{request.PaymentExecutionNo}' was not found.");
+            ?? throw new KnownException($"付款执行『{request.PaymentExecutionNo}』不存在。");
         if (paymentExecution.Status == PaymentExecutionStatus.Executed)
         {
             return;
@@ -510,7 +510,7 @@ public sealed class ExecutePaymentExecutionCommandHandler(ApplicationDbContext d
         var supplierCode = PaymentExecutionCommandFacts.ResolveSingleSupplierCode(voucherAllocations);
         if (!string.Equals(supplierCode, paymentExecution.SupplierCode, StringComparison.Ordinal))
         {
-            throw new KnownException($"Payment execution '{request.PaymentExecutionNo}' supplier does not match its payable allocations.");
+            throw new KnownException($"付款执行『{request.PaymentExecutionNo}』供应商与应付分配不符。");
         }
 
         foreach (var voucherAllocation in voucherAllocations)
@@ -655,7 +655,7 @@ public sealed class RegisterCashReceiptCommandHandler(ApplicationDbContext dbCon
             && x.EnvironmentId == request.EnvironmentId
             && x.ReceivableNo == request.ReceivableNo,
             cancellationToken)
-            ?? throw new KnownException($"Account receivable '{request.ReceivableNo}' was not found.");
+            ?? throw new KnownException($"应收单『{request.ReceivableNo}』不存在。");
 
         dbContext.CashReceipts.Add(CashReceipt.Register(
             request.OrganizationId,
@@ -688,7 +688,7 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
                 && x.EnvironmentId == request.EnvironmentId
                 && x.CashReceiptNo == request.CashReceiptNo,
                 cancellationToken)
-            ?? throw new KnownException($"Cash receipt '{request.CashReceiptNo}' was not found.");
+            ?? throw new KnownException($"收款单『{request.CashReceiptNo}』不存在。");
         if (cashReceipt.Status == CashReceiptStatus.Matched)
         {
             return;
@@ -703,7 +703,7 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
             cancellationToken);
         if (cashReceipt.Allocations.Count != 1)
         {
-            throw new KnownException($"Cash receipt '{request.CashReceiptNo}' must have exactly one receivable allocation before matching.");
+            throw new KnownException($"收款单『{request.CashReceiptNo}』必须只有一条应收分配。");
         }
 
         var allocation = cashReceipt.Allocations.Single();
@@ -712,7 +712,7 @@ public sealed class MatchCashReceiptCommandHandler(ApplicationDbContext dbContex
             && x.EnvironmentId == request.EnvironmentId
             && x.ReceivableNo == allocation.ReceivableNo,
             cancellationToken)
-            ?? throw new KnownException($"Account receivable '{allocation.ReceivableNo}' was not found.");
+            ?? throw new KnownException($"应收单『{allocation.ReceivableNo}』不存在。");
 
         receivable.RegisterCollection(allocation.Amount);
         cashReceipt.Match();
@@ -826,7 +826,7 @@ internal static class PaymentExecutionCommandFacts
         var allocatedAmount = allocationLines.Sum(x => x.Amount);
         if (allocatedAmount > paymentAmount)
         {
-            throw new KnownException("Allocated payment amount cannot exceed cash payment amount.");
+            throw new KnownException("分配付款金额不能超过付款金额。");
         }
 
         var payableNos = allocationLines.Select(x => x.PayableNo).Distinct(StringComparer.Ordinal).ToArray();
@@ -841,7 +841,7 @@ internal static class PaymentExecutionCommandFacts
         {
             if (!payables.TryGetValue(line.PayableNo, out var payable))
             {
-                throw new KnownException($"Account payable '{line.PayableNo}' was not found.");
+                throw new KnownException($"应付单『{line.PayableNo}』不存在。");
             }
 
             voucherAllocations.Add(new PayablePaymentVoucherAllocation(payable, line.Amount));
@@ -858,7 +858,7 @@ internal static class PaymentExecutionCommandFacts
             .ToArray();
         if (supplierCodes.Length != 1)
         {
-            throw new KnownException("A payment execution can only settle payables from one supplier. Split cross-supplier payments into separate executions.");
+            throw new KnownException("一次付款只能结算同一供应商的应付单。");
         }
 
         return supplierCodes[0];
