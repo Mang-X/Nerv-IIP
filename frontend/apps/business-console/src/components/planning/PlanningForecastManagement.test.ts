@@ -92,7 +92,7 @@ vi.mock('@nerv-iip/ui', () => {
     props: ['modelValue', 'id', 'ariaLabel'],
     emits: ['update:modelValue'],
     template:
-      "<button type=\"button\" :id=\"id\" :aria-label=\"ariaLabel\" @click=\"$emit('update:modelValue', id.includes('start') ? '2026-09-01' : '2026-09-30')\">{{ modelValue }}</button>",
+      '<button type="button" :id="id" :aria-label="ariaLabel" @click="$emit(\'update:modelValue\', id.includes(\'start\') ? \'2026-09-01\' : \'2026-09-30\')">{{ modelValue }}</button>',
   })
   const DataTable = defineComponent({
     props: ['columns', 'rows'],
@@ -301,12 +301,8 @@ describe('PlanningForecastManagement', () => {
     await wrapper.get('form').trigger('submit')
 
     expect(spies.saveForecast).toHaveBeenCalledTimes(2)
-    expect(spies.saveForecast.mock.calls[0]?.[0].idempotencyKey).toBe(
-      'forecast-create-dialog-key',
-    )
-    expect(spies.saveForecast.mock.calls[1]?.[0].idempotencyKey).toBe(
-      'forecast-create-dialog-key',
-    )
+    expect(spies.saveForecast.mock.calls[0]?.[0].idempotencyKey).toBe('forecast-create-dialog-key')
+    expect(spies.saveForecast.mock.calls[1]?.[0].idempotencyKey).toBe('forecast-create-dialog-key')
   })
 
   it('幂等冲突提示先刷新确认结果并重新打开新建对话框', async () => {
@@ -314,7 +310,8 @@ describe('PlanningForecastManagement', () => {
       principal: { permissionCodes: ['business.planning.demands.manage'] },
     } as never)
     spies.saveForecast.mockRejectedValueOnce({
-      message: "Idempotency key 'forecast-create-1' conflicts with a different forecast input create payload.",
+      message:
+        "Idempotency key 'forecast-create-1' conflicts with a different forecast input create payload.",
     })
     const wrapper = mount(PlanningForecastManagement)
 
@@ -333,7 +330,8 @@ describe('PlanningForecastManagement', () => {
     expect(spies.failure).toHaveBeenCalledWith(
       '保存预测失败',
       expect.objectContaining({
-        message: '本次填写内容与先前提交不一致。请先刷新预测列表确认首次提交结果；如需重新创建，请关闭当前窗口后再次新建。',
+        message:
+          '本次填写内容与先前提交不一致。请先刷新预测列表确认首次提交结果；如需重新创建，请关闭当前窗口后再次新建。',
       }),
       '保存预测失败，请稍后重试。',
     )
