@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -53,7 +54,14 @@ public sealed class MesWmsMaterialIssueChainAcceptanceTests
         var wmsHandler = new MesMaterialIssueRequestedIntegrationEventHandler(
             wmsDb,
             new WmsCommandSender(wmsDb),
-            new InMemoryIntegrationEventDeadLetterStore());
+            new InMemoryIntegrationEventDeadLetterStore(),
+            // MES 不建模仓库库位；默认库位来自仓库部署配置（Aspire 里取库存种子事实），
+            // 生产代码里不再有演示库位兜底（#1754）。
+            Options.Create(new WmsMaterialIssueLocationOptions
+            {
+                SourceLocationCode = MaterialSupplyTestFixtures.SourceLocationCode,
+                LineSideLocationCode = MaterialSupplyTestFixtures.LineSideLocationCode,
+            }));
         await wmsHandler.HandleAsync(
             requestedEvent with { Payload = requestedEvent.Payload with { SiteCode = "SITE-001" } },
             CancellationToken.None);
