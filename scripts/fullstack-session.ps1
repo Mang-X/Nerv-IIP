@@ -703,17 +703,9 @@ elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-br
                     } `
                     -CollectAction {
                         param($InputManifest)
-                        $latest = Update-NervFullStackManifest `
-                            -SessionId "$($InputManifest.sessionId)" `
-                            -AllowedStates @('Running') `
-                            -ReturnUnchangedOnStateMismatch `
-                            -UpdateAction {
-                                param($current)
-                                return (Move-NervFullStackSessionState -Manifest $current -State Collecting)
-                            }
-                        if ([string]::Equals([string]("$($latest.state)"), [string]('Collecting'), [StringComparison]::OrdinalIgnoreCase)) {
-                            Collect-NervFullStackDiagnostics -Manifest $latest -SensitiveValues @($sessionAdminPassword) | Out-Null
-                        }
+                        Invoke-NervFullStackDiagnosticCollection `
+                            -Manifest $InputManifest `
+                            -SensitiveValues @($sessionAdminPassword) | Out-Null
                     } `
                     -CollectionFailureAction {
                         param($InputManifest, $FailureRecord)
