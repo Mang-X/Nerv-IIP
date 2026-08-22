@@ -5,8 +5,9 @@
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
 #     - artifacts/script-logs/man703-fixture-governance/**
+#     - A temporary canonical-result failure fixture under .superpowers/sdd/**
 #   Cleanup:
-#     - None
+#     - Removes the temporary canonical-result failure fixture
 #   Requires:
 #     - PowerShell 7
 
@@ -14,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$runtimeRunner = Join-Path $repoRoot 'scripts/run-acceptance-scenario-matrix.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
 $governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
 $ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
@@ -22,6 +24,7 @@ if (-not (Test-Path -LiteralPath $verifyScript)) {
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
+$runtimeRunnerContent = Get-Content -LiteralPath $runtimeRunner -Raw
 $fixtureContent = Get-Content -LiteralPath $fixtureScript -Raw
 $workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 $tokens = $null
@@ -375,6 +378,29 @@ Assert-Contract ($content.Contains('disposable database still present', [StringC
 Assert-Contract ($content.Contains('script-owned compose services still running', [StringComparison]::Ordinal)) 'Cleanup must verify only the compose services this run started are gone.'
 Assert-Contract ($content.Contains('cleanup-evidence.json', [StringComparison]::Ordinal)) 'Cleanup accounting must be written as reusable evidence.'
 Assert-Contract ($content.Contains('sales-order-demand-planning-evidence.json', [StringComparison]::Ordinal)) 'Verify script must write reusable acceptance evidence.'
+foreach ($parameterName in @('CanonicalResultPath', 'TrackIdentifier', 'Repository', 'RunId', 'RunAttempt', 'TestedSha', 'ManifestDigest', 'ScenarioId')) {
+    $parameterMatches = @($scriptAst.ParamBlock.Parameters | Where-Object { [string]::Equals($_.Name.VariablePath.UserPath, $parameterName, [StringComparison]::OrdinalIgnoreCase) })
+    Assert-Contract ($parameterMatches.Count -eq 1) "Verify script must accept caller-supplied canonical result parameter '$parameterName'."
+}
+Assert-Contract ($content.Contains('Write-NervAcceptanceCanonicalJson', [StringComparison]::Ordinal)) 'Canonical result must use the shared atomic JSON replacement helper.'
+Assert-Contract ($content.Contains('Resolve-NervAcceptanceCanonicalOutputPath', [StringComparison]::Ordinal)) 'Canonical result must use the shared canonical physical output-path helper.'
+Assert-Contract ($content.Contains('failureCaptureSupported = $true', [StringComparison]::Ordinal)) 'Canonical result must report the existing failure-diagnostic capability.'
+Assert-Contract ($content.Contains('failureDiagnosticsCaptured = $false', [StringComparison]::Ordinal)) 'A successful canonical result must truthfully report that failure diagnostics were not captured.'
+foreach ($businessFact in @('sourceStateCommittedBeforeMutation', 'changeV2Converged', 'changeV3Converged', 'duplicateConverged', 'outOfOrderConverged', 'cancellationConverged')) {
+    Assert-Contract ($content.Contains($businessFact, [StringComparison]::Ordinal)) "Canonical result must publish actual business fact '$businessFact'."
+}
+foreach ($unsupportedClaim in @('http200BusinessErrorRejected', 'firstConsumeFailureRecovered', 'capturedBeforeCleanup')) {
+    Assert-Contract (-not $content.Contains($unsupportedClaim, [StringComparison]::Ordinal)) "Verifier must not publish unsupported canonical claim '$unsupportedClaim'."
+}
+Assert-Contract ($content.Contains('Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events', [StringComparison]::Ordinal)) 'Canonical result must use the exact frozen test identity.'
+$canonicalWriteIndex = $content.LastIndexOf('Write-NervAcceptanceCanonicalJson', [StringComparison]::Ordinal)
+$acceptanceRethrowIndexForCanonical = $content.LastIndexOf('throw $acceptanceFailure', [StringComparison]::Ordinal)
+$cleanupThrowIndexForCanonical = $content.LastIndexOf('throw "MAN-517 cleanup failed:', [StringComparison]::Ordinal)
+Assert-Contract ($canonicalWriteIndex -gt $acceptanceRethrowIndexForCanonical -and $canonicalWriteIndex -gt $cleanupThrowIndexForCanonical) 'Canonical success may be atomically written only after acceptance and cleanup failures have been rejected.'
+Assert-Contract ($runtimeRunnerContent.Contains('Invoke-PwshScript', [StringComparison]::Ordinal)) 'The default runtime action must invoke the governed ERP verifier adapter exactly once.'
+Assert-Contract ($runtimeRunnerContent.Contains('-TimeoutSeconds ([int]$Contract.requiredSeconds)', [StringComparison]::Ordinal)) 'The default runtime adapter must preserve the full checked readiness, execution, diagnostics, cleanup, evidence, and safety budget.'
+Assert-Contract ($runtimeRunnerContent.Contains('CanonicalResultPath', [StringComparison]::Ordinal)) 'The default runtime adapter must supply a caller-selected canonical result path.'
+Assert-Contract ($runtimeRunnerContent.Contains('Read-NervAcceptanceRuntimeJsonSnapshot', [StringComparison]::Ordinal)) 'The default runtime adapter must consume the canonical result without reimplementing business steps.'
 Assert-Contract ($content.Contains('lastHttpStatus', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last HTTP status.'
 Assert-Contract ($content.Contains('lastResponseBody', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last HTTP response body.'
 Assert-Contract ($content.Contains('lastRequestException', [StringComparison]::Ordinal)) 'Wait-Demand must preserve the last request exception.'
@@ -404,6 +430,38 @@ $unsafeDiagnostic = 'pwd=pwd-value token=token-value secret=secret-value client_
 $safeDiagnostic = Protect-ScriptAutomationText $unsafeDiagnostic
 foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'client-value', 'bearer-value', 'password-value')) {
     Assert-Contract (-not $safeDiagnostic.Contains($sensitiveValue, [StringComparison]::Ordinal)) "Shared diagnostic redaction leaked $sensitiveValue."
+}
+
+$canonicalFailureFixtureRoot = Join-Path $repoRoot ".superpowers/sdd/canonical-result-failure-$([Guid]::NewGuid().ToString('N'))"
+$canonicalFailureResultPath = Join-Path $canonicalFailureFixtureRoot 'result.json'
+try {
+    [IO.Directory]::CreateDirectory($canonicalFailureFixtureRoot) | Out-Null
+    [IO.File]::WriteAllText($canonicalFailureResultPath, '{"conclusion":"passed"}', [Text.UTF8Encoding]::new($false))
+    $canonicalFailureObserved = $false
+    try {
+        Invoke-PwshScript `
+            -ScriptPath $verifyScript `
+            -Arguments @(
+                '-PostgresAdminConnectionString', '',
+                '-RedisConnectionString', '',
+                '-CanonicalResultPath', $canonicalFailureResultPath,
+                '-TrackIdentifier', 'shadow',
+                '-Repository', 'Mang-X/Nerv-IIP',
+                '-RunId', '123456789',
+                '-RunAttempt', '2',
+                '-TestedSha', '0123456789abcdef0123456789abcdef01234567',
+                '-ManifestDigest', ('a' * 64),
+                '-ScenarioId', 'sales-order-demand'
+            ) `
+            -WorkingDirectory $repoRoot `
+            -Name 'man517-canonical-failure-fixture' | Out-Null
+    }
+    catch { $canonicalFailureObserved = $_.Exception.Message.Contains('exited with 1', [StringComparison]::Ordinal) }
+    Assert-Contract $canonicalFailureObserved 'The controlled verifier failure fixture must fail before any infrastructure action.'
+    Assert-Contract (-not (Test-Path -LiteralPath $canonicalFailureResultPath)) 'A verifier failure must not leave a stale canonical success result.'
+}
+finally {
+    if (Test-Path -LiteralPath $canonicalFailureFixtureRoot) { Remove-Item -LiteralPath $canonicalFailureFixtureRoot -Recurse -Force }
 }
 
 Write-Host 'ERP sales-order DemandPlanning cross-process verify script contract tests passed.'
