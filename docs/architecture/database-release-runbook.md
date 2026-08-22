@@ -6,7 +6,7 @@
 
 | Profile（配置档） | 当前状态 | 是否支持发布 | 证据 |
 | --- | --- | --- | --- |
-| PostgreSQL | AppHub/Ops/IAM/Notification/FileStorage 已有 migrations 和 schema 治理元数据/profile 门禁；AppHub/IAM/Ops/Notification 共享受治理平台 migrator，FileStorage 保留独立受治理 migrator 与重启持久化冒烟测试。 | 尚不支持完整客户发布。平台与 FileStorage migration 步骤已具备，但仍需业务数据库安装编排、备份恢复演练、seed 清单和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
+| PostgreSQL | 18 个 AppHost database resource 均有 migrations、design-time factory 和受治理显式迁移入口；平台 4 库与业务 13 库分别使用显式 allowlist manifest，FileStorage 保留独立 migrator。 | migration 步骤已具备，但完整客户发布仍需备份恢复演练、seed 清单、TLS/JWT 前置和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
 | GaussDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | DMDB | 仅为候选项。 | 否。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
 | 其他数据库 | 仅处于评估阶段。 | 否。 | 不在 NetCorePal.Template 当前公开 profile 基线内。 |
@@ -111,6 +111,17 @@ Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,En
 ```
 
 `-Service apphub,iam` 可用于经过发布计划明确批准的子集；未传 `-Service` 时必须覆盖 manifest 全部服务。manifest 的 service、连接变量、expected database、Infrastructure project 与 DbContext 都是显式 allowlist，不允许用目录扫描替代。
+
+13 个业务数据库使用同一个执行器的独立 `business` manifest，并通过受治理包装入口执行：
+
+```powershell
+# 按 scripts/install/business-release-database-migrations.json 的
+# connectionEnvironmentVariable 字段设置 13 个当前进程连接变量。
+pwsh scripts/install/migrate-business-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-business-databases.ps1 -ReleaseId "<release-id>"
+```
+
+业务 manifest 必须与 AppHost 的 13 个 business `AddDatabase` resource 一一对应；脚本验证 expected database 后串行运行，任一项失败立即停止。连接变量名与清理动作以 manifest 为事实源，部署工具应从 manifest 生成 operator checklist，不得把连接串复制进命令行、仓库文件或日志。
 
 下面的 `dotnet-ef` 命令只保留为实现原理与开发排障参考，不是客户 release-install 入口。
 
@@ -262,7 +273,7 @@ CAP 表由系统所有，不是业务表：
 
 面向 PoC 或私有化交付前，至少完成：
 
-1. AppHub/IAM/Ops/Notification 受治理平台 migrator；业务数据库仍需受治理 manifest 与发布编排。
+1. AppHub/IAM/Ops/Notification 与 13 个业务数据库的受治理 manifest migrator；FileStorage 保留独立受治理入口。
 2. FileStorage 受治理 migrator、schema catalog、migration、启动 profile 矩阵和重启持久化冒烟测试；完整安装流程仍需在调用 migrator 前后编排备份、健康检查与诊断归档。
 3. PostgreSQL 备份/恢复演练记录。
 4. seed 清单和初始凭据安全处理方案。
