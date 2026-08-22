@@ -40,7 +40,7 @@ public sealed class MarkNotificationMessagesReadCommandHandler(ApplicationDbCont
         var missingId = messageIds.FirstOrDefault(id => !foundIds.Contains(id));
         if (missingId is not null)
         {
-            throw new KnownException($"Notification message was not found: {missingId.Id}");
+            throw new KnownException("通知消息不存在。");
         }
 
         foreach (var item in messages)
