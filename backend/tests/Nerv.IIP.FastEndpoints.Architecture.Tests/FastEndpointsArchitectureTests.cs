@@ -373,6 +373,15 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("DeploymentRequiredValue(\"ConnectorHost:OrganizationId\"", programText);
         Assert.Contains("DeploymentRequiredValue(\"ConnectorHost:EnvironmentId\"", programText);
         Assert.Contains("Security:Cors:AllowedOrigins is required outside Development.", programText);
+        Assert.Contains(
+            "Security:ForwardedHeaders:KnownProxies or Security:ForwardedHeaders:KnownNetworks is required outside Development.",
+            programText);
+        Assert.Equal(
+            2,
+            Regex.Matches(programText, "WithEnvironment\\(\"Security__ForwardedHeaders__KnownProxies\"").Count);
+        Assert.Equal(
+            2,
+            Regex.Matches(programText, "WithEnvironment\\(\"Security__ForwardedHeaders__KnownNetworks\"").Count);
         Assert.DoesNotContain(
             "builder.Configuration[\"ConnectorHost:EnvironmentId\"] ?? \"env-dev\"",
             programText,

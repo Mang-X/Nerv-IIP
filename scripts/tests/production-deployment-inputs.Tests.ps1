@@ -64,15 +64,20 @@ foreach ($contract in @(
     @($startText, '[ValidateSet("InMemory", "RabbitMQ", "Redis")]', 'release-install must accept Redis messaging'),
     @($startText, '$environment["Parameters__redis-password"] = $RedisPassword', 'release-install must map the Redis password to the AppHost parameter'),
     @($startText, '$environment["Parameters__iam-enterprise-identity-mfa-code"] = $IamEnterpriseIdentityMfaCode', 'release-install must map the MFA override to the AppHost parameter'),
+    @($startText, '$environment["Security__ForwardedHeaders__KnownProxies"] = $TrustedProxyAddresses', 'release-install must map exact trusted proxy addresses'),
+    @($startText, '$environment["Security__ForwardedHeaders__KnownNetworks"] = $TrustedProxyNetworks', 'release-install must map trusted proxy networks'),
     @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
     @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
     @($dependenciesText, '--requirepass', 'legacy Redis must require authentication'),
     @($platformText, 'password=${NERV_IIP_REDIS_PASSWORD:?set NERV_IIP_REDIS_PASSWORD}', 'legacy services must authenticate to Redis'),
     @($platformText, 'Iam__Secrets__Pepper: ${NERV_IIP_IAM_SECRETS_PEPPER:?set NERV_IIP_IAM_SECRETS_PEPPER}', 'legacy IAM must receive its pepper'),
     @($platformText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode: ${NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE:?set NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE}', 'legacy IAM must receive its MFA override'),
+    @($platformText, 'Security__ForwardedHeaders__KnownProxies: ${NERV_IIP_TRUSTED_PROXY_ADDRESSES:-}', 'legacy gateways must receive exact trusted proxies'),
+    @($platformText, 'Security__ForwardedHeaders__KnownNetworks: ${NERV_IIP_TRUSTED_PROXY_NETWORKS:-}', 'legacy gateways must receive trusted proxy networks'),
     @($environmentExampleText, 'NERV_IIP_REDIS_PASSWORD=change-me-strong-redis-password', 'production env example must declare the Redis password'),
     @($environmentExampleText, 'NERV_IIP_IAM_SECRETS_PEPPER=change-me-strong-iam-secrets-pepper', 'production env example must declare the IAM pepper'),
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
+    @($environmentExampleText, 'NERV_IIP_TRUSTED_PROXY_ADDRESSES=10.0.0.10', 'production env example must declare the trusted proxy boundary'),
     @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]

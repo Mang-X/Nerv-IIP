@@ -109,6 +109,7 @@ function New-ReleaseRehearsalEnvironment {
         NERV_IIP_IAM_SECRETS_PEPPER = "iam-pepper-48chars-test-value-not-a-real-secret"
         NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE = "654321"
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
+        NERV_IIP_TRUSTED_PROXY_ADDRESSES = "127.0.0.1"
         NERV_IIP_IMAGE_TAG = "release-rehearsal"
         NERV_IIP_AUTO_MIGRATE = "false"
         NERV_IIP_POSTGRES_PORT = ($PortBase + 432).ToString()

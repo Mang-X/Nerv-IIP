@@ -55,6 +55,10 @@ param(
 
     [string] $CorsAllowedOrigins,
 
+    [string] $TrustedProxyAddresses,
+
+    [string] $TrustedProxyNetworks,
+
     [string] $InventorySiteCode,
 
     [string] $InventorySourceLocationCodes,
@@ -144,6 +148,10 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
 
     if ([string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
         throw "-CorsAllowedOrigins is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($TrustedProxyAddresses) -and [string]::IsNullOrWhiteSpace($TrustedProxyNetworks)) {
+        throw "-TrustedProxyAddresses or -TrustedProxyNetworks is required outside Development."
     }
 }
 
@@ -243,6 +251,14 @@ if (-not [string]::IsNullOrWhiteSpace($MinioRootPassword)) {
 
 if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
     $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
+}
+
+if (-not [string]::IsNullOrWhiteSpace($TrustedProxyAddresses)) {
+    $environment["Security__ForwardedHeaders__KnownProxies"] = $TrustedProxyAddresses
+}
+
+if (-not [string]::IsNullOrWhiteSpace($TrustedProxyNetworks)) {
+    $environment["Security__ForwardedHeaders__KnownNetworks"] = $TrustedProxyNetworks
 }
 
 # 仓储站点/库位：AppHost 只在 Development 回落到演示种子值（SITE-001 + WH-WB-*），非 Development

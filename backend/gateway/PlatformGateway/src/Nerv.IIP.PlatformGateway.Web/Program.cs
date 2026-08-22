@@ -40,6 +40,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "platform-gatewa
 builder.Services.AddVictoriaLogsClient(builder.Configuration);
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
+builder.Services.AddNervIipTrustedProxyForwarding(builder.Configuration, builder.Environment);
 builder.Services.Configure<GatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.AddSingleton<GatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();
@@ -116,6 +117,7 @@ builder.Services.AddRateLimiter(options =>
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
+    app.UseForwardedHeaders();
     app.UseHsts();
     app.UseHttpsRedirection();
 }

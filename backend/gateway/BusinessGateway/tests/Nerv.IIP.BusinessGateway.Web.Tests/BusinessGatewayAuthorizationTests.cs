@@ -35,6 +35,7 @@ public sealed class BusinessGatewayAuthorizationTests
         {
             builder.UseEnvironment("Testing");
             BusinessGatewayTestServiceBaseUrls.Configure(builder);
+            builder.UseSetting("Security:ForwardedHeaders:KnownProxies:0", "127.0.0.1");
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IBusinessGatewayAuthorizationClient>();

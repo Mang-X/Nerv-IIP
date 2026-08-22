@@ -125,6 +125,15 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
         ? "http://localhost:5105,http://localhost:5125,http://localhost:5128"
         : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
+var gatewayKnownProxies = builder.Configuration["Security:ForwardedHeaders:KnownProxies"];
+var gatewayKnownNetworks = builder.Configuration["Security:ForwardedHeaders:KnownNetworks"];
+if (!localDevelopmentAppHost &&
+    string.IsNullOrWhiteSpace(gatewayKnownProxies) &&
+    string.IsNullOrWhiteSpace(gatewayKnownNetworks))
+{
+    throw new InvalidOperationException(
+        "Security:ForwardedHeaders:KnownProxies or Security:ForwardedHeaders:KnownNetworks is required outside Development.");
+}
 
 // 仓储世界观演示站点/库位（SITE-001 + WH-WB-*）是本地种子事实，只在 Development 成立。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
@@ -773,6 +782,8 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
+    .WithEnvironment("Security__ForwardedHeaders__KnownProxies", gatewayKnownProxies ?? string.Empty)
+    .WithEnvironment("Security__ForwardedHeaders__KnownNetworks", gatewayKnownNetworks ?? string.Empty)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
@@ -835,6 +846,8 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
     .WithEnvironment("Iam__Jwt__Audience", "nerv-iip-api")
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
+    .WithEnvironment("Security__ForwardedHeaders__KnownProxies", gatewayKnownProxies ?? string.Empty)
+    .WithEnvironment("Security__ForwardedHeaders__KnownNetworks", gatewayKnownNetworks ?? string.Empty)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
