@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// 线边收料/完工入库的站点与库位部署面契约（#2008）。服务读的 <c>Inventory:*</c> 配置键与 AppHost
 /// 下发的 <c>Inventory__*</c> 环境变量键过去只靠人眼对齐，改名的唯一表现是运行时 KnownException，
 /// 没有任何测试转红。这里把 AppHost 下发的键约束为服务真的会读的键，并钉住环境门控：
-/// 演示站点/库位（SITE-001 + WH-WB-*）只允许在 Development 回落。
+/// 主线产品站点/库位（SITE-001 + loc-*）只允许在 Development 回落。
 /// </summary>
 public sealed class MesInventoryLocationDeploymentConfigurationTests
 {
@@ -71,9 +71,9 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     }
 
     [Fact]
-    public void AppHost_confines_every_demo_location_literal_to_the_gated_helpers()
+    public void AppHost_confines_every_product_location_literal_to_the_gated_helpers()
     {
-        // 围栏而不是形态匹配：只禁 `.WithEnvironment("Key", "SITE-…")` 双字面量形态时，把演示值经
+        // 围栏而不是形态匹配：只禁 `.WithEnvironment("Key", "loc-…")` 双字面量形态时，把主线产品值经
         // const/局部变量转手就能绕过。这里要求**每一个**演示字面量都出现在同一条语句内的
         // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
         var appHost = ReadRepositoryFile(AppHostProgramPath);
@@ -157,12 +157,12 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     }
 
     /// <summary>
-    /// AppHost 源码里的全部演示站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
-    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>WH-WB-*</c> 不带
+    /// AppHost 源码里的全部主线产品站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
+    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>loc-*</c> 不带
     /// 引号，不会被计入。
     /// </summary>
     private static IReadOnlyList<(string Value, bool IsGated)> DemandLocationLiterals(string appHost) =>
-        Regex.Matches(appHost, @"""(SITE-|WH-WB-)[^""]*""")
+        Regex.Matches(appHost, @"""(SITE-|loc-)[^""]*""")
             .Select(match =>
             {
                 var precedingText = appHost[..match.Index];

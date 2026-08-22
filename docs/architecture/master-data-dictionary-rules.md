@@ -30,6 +30,7 @@
 | `serial-tracking-policy` | 序列号追踪策略 | 系统枚举 | `none`=不管理 / `on-receipt`=入库赋序 / `on-production`=生产赋序 / `on-shipment`=出货赋序 |
 | `shelf-life-policy` | 保质期策略 | 系统枚举 | `none`=无保质期 / `fifo`=先进先出 / `fefo`=先到期先出 / `expiry-controlled`=到期管控 |
 | `storage-condition` | 仓储条件 | 平台预置+可维护 | `ambient`=常温 / `refrigerated`=冷藏 / `frozen`=冷冻 / `dry`=干燥防潮 / `esd`=防静电 / `hazardous`=危化品 |
+| `inventory-location` | 主线产品库位候选码（实际 `StockLocation` 仍由 Inventory 拥有） | 平台预置+可维护 | `loc-raw-01`=原料库 / `loc-semi-01`=半成品库 / `loc-fg-01`=成品库 / `loc-line-01`=线边库 |
 | `barcode-rule` | 条码规则 | 平台预置+可维护 | `code128`=Code128 / `ean13`=EAN-13 / `gs1-128`=GS1-128 / `qr`=二维码 / `customer-spec`=客户指定 |
 | `uom-dimension` | 计量量纲 | 系统枚举 | `count`=计数 / `length`=长度 / `area`=面积 / `volume`=体积 / `weight`=重量 / `time`=时间 |
 
@@ -103,6 +104,7 @@ UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(�
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
 - **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。**产品分类除外**——它取自 ProductCategory 独立目录 API，不走 `?codeSet=`（#1596）。
 - **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。产品分类改由「产品分类」页维护、走独立目录 API（#1596）。
+- `inventory-location` 仅作为主线部署配置与跨域位置约定，不进入当前物料表单，因此前端无需为它增加下拉兜底；实际库存库位目录仍以 Inventory 的 `StockLocation` 为准。
 - 三处的 code 值集合必须等同；前端离线兜底的中文 label 应与本文件和后端种子 name 保持一致，避免实时字典不可用时出现不同展示名。
 
 ## 6. 落地状态（2026-06-10）

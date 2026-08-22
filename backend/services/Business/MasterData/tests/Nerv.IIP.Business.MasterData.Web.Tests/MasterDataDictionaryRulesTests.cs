@@ -438,6 +438,7 @@ public sealed class MasterDataDictionaryRulesTests
             ["serial-tracking-policy"] = ["none", "on-production", "on-receipt", "on-shipment"],
             ["shelf-life-policy"] = ["expiry-controlled", "fefo", "fifo", "none"],
             ["storage-condition"] = ["ambient", "dry", "esd", "frozen", "hazardous", "refrigerated"],
+            ["inventory-location"] = ["loc-fg-01", "loc-line-01", "loc-raw-01", "loc-semi-01"],
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
             ["uom-dimension"] = ["area", "count", "force", "length", "pressure", "ratio", "time", "torque", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],

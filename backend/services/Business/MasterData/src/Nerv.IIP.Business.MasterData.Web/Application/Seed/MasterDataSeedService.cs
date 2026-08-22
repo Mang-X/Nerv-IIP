@@ -197,6 +197,8 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
             }
         }
 
+        // 主线产品库位码（inventory-location）与其它受控字典一起幂等补种，供 AppHost/MES/WMS
+        // 使用产品级位置；世界观历史库位仍由 Inventory 历史 seed 独立拥有。
         foreach (var item in MasterDataDictionaryRules.StandardReferenceData)
         {
             var existing = await dbContext.ReferenceDataCodes.SingleOrDefaultAsync(x =>
