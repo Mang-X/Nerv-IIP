@@ -37,7 +37,7 @@ public sealed class ReleaseSchedulePlanUniqueConflictBehavior
         catch (DbUpdateException exception) when (
             ScheduleReleaseUniqueConflictClassifier.IsReleaseGovernanceConflict(exception))
         {
-            throw new KnownException("Schedule release conflicted with another release in the same scope; refresh and retry.");
+            throw new KnownException("同一范围内的排程发布发生冲突，请刷新后重试。");
         }
     }
 }
@@ -60,7 +60,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
                     x.OrganizationId == request.OrganizationId &&
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-            ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
 
         if (plan.Status == SchedulePlanLifecycleStatus.Released)
         {
@@ -69,7 +69,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
 
         if (plan.Status is SchedulePlanLifecycleStatus.Superseded or SchedulePlanLifecycleStatus.Revoked)
         {
-            throw new KnownException("Superseded or revoked schedule plan cannot be released again.");
+            throw new KnownException("已取代或已撤销的排程方案不能再次发布，请重新生成方案。");
         }
 
         var hasErrorConflict = await dbContext.Set<SchedulePlanConflict>()
@@ -81,7 +81,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
             .AnyAsync(x => x.SchedulePlanId == plan.Id, cancellationToken);
         if (hasErrorConflict || hasUnscheduledOperation)
         {
-            throw new KnownException("Schedule plan cannot be released because it contains error conflicts or unscheduled operations.");
+            throw new KnownException("排程方案包含错误冲突或未排工序，不能发布，请处理后再发布。");
         }
 
         // A plan whose scheduling inputs have since changed (recorded as an invalidation) is stale and
@@ -94,7 +94,7 @@ public sealed class ReleaseSchedulePlanCommandHandler(
                 cancellationToken);
         if (isInvalidated)
         {
-            throw new KnownException("Schedule plan cannot be released because it has been invalidated by a scheduling input change; regenerate the plan first.");
+            throw new KnownException("排程方案已因排程输入变化失效，请先重新生成方案。");
         }
 
         var activePlan = await dbContext.SchedulePlans.SingleOrDefaultAsync(

@@ -44,11 +44,11 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
         var plan = await dbContext.SchedulePlans.AsNoTracking()
             .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId && x.PlanId == request.PlanId, cancellationToken)
-            ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
+            ?? throw new KnownException($"未找到排程方案，请刷新后重试，方案 ID = {request.PlanId}");
         var snapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId && x.ProblemId == plan.ProblemId, cancellationToken)
-            ?? throw new KnownException($"Schedule problem snapshot was not found, ProblemId = {plan.ProblemId}");
+            ?? throw new KnownException($"未找到排程问题快照，请重新生成方案，问题 ID = {plan.ProblemId}");
         SchedulingProblemContract problem;
         try
         {
@@ -72,21 +72,21 @@ public sealed class UpsertScheduleOperationOverrideCommandHandler(
         catch (Exception exception) when (exception is JsonException or ArgumentException)
         {
             throw new KnownException(
-                $"Schedule problem details are unavailable for manual override, ProblemId = {plan.ProblemId}");
+                $"手动调整所需的排程问题详情不可用，问题 ID = {plan.ProblemId}");
         }
         var pair = problem.Orders
             .SelectMany(order => order.Operations.Select(operation => (Order: order, Operation: operation)))
             .SingleOrDefault(x => x.Operation.OperationId == request.OperationId);
         if (pair.Operation is null)
         {
-            throw new KnownException($"Schedule operation was not found, OperationId = {request.OperationId}");
+            throw new KnownException($"未找到排程工序，请刷新后重试，工序 ID = {request.OperationId}");
         }
         if (!pair.Operation.EligibleResourceIds.Contains(request.ResourceId, StringComparer.Ordinal))
         {
-            throw new KnownException($"Resource is not eligible for operation, ResourceId = {request.ResourceId}, OperationId = {request.OperationId}");
+            throw new KnownException($"资源不可用于工序，请选择可用资源，资源 ID = {request.ResourceId}，工序 ID = {request.OperationId}");
         }
         var resource = problem.Resources.SingleOrDefault(x => x.ResourceId == request.ResourceId)
-            ?? throw new KnownException($"Schedule resource was not found, ResourceId = {request.ResourceId}");
+            ?? throw new KnownException($"未找到排程资源，请刷新资源列表后重试，资源 ID = {request.ResourceId}");
         var now = timeProvider.GetUtcNow();
         var actor = contextAccessor.GetContext().Actor;
         var fact = await dbContext.ScheduleOperationOverrides.SingleOrDefaultAsync(x =>
