@@ -83,7 +83,7 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             }
             catch (InvalidOperationException ex)
             {
-                throw new KnownException(ex.Message, ex);
+                throw new KnownException("扫描幂等键与已有记录不一致，请检查提交内容。", ex);
             }
 
             return existing.Id;
@@ -103,15 +103,15 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
         }
         catch (ArgumentOutOfRangeException ex)
         {
-            throw new KnownException(ex.Message, ex);
+            throw new KnownException("扫描数据无效，请检查数量和条码内容。", ex);
         }
         catch (ArgumentException ex)
         {
-            throw new KnownException(ex.Message, ex);
+            throw new KnownException("扫描数据无效，请检查必填字段。", ex);
         }
         catch (InvalidOperationException ex)
         {
-            throw new KnownException(ex.Message, ex);
+            throw new KnownException("扫描状态不允许当前操作，请检查后重试。", ex);
         }
 
         if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
@@ -132,7 +132,7 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
                 }
                 catch (InvalidOperationException ex)
                 {
-                    throw new KnownException(ex.Message, ex);
+                    throw new KnownException("扫描记录已存在但内容不一致，请检查来源单据和条码。", ex);
                 }
 
                 return existingNaturalKeyScan.Id;
@@ -155,7 +155,7 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
                 cancellationToken);
             if (duplicateSerializedScan)
             {
-                throw new KnownException("Duplicate serialized barcode scan is not allowed.");
+                throw new KnownException("序列化条码已被扫描，请勿重复提交。");
             }
         }
 

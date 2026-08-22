@@ -43,7 +43,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
     public async Task<ConfirmStockCountAdjustmentResult> Handle(ConfirmStockCountAdjustmentCommand request, CancellationToken cancellationToken)
     {
         var task = await dbContext.StockCountTasks.SingleOrDefaultAsync(x => x.Id == request.CountTaskId, cancellationToken)
-            ?? throw new KnownException($"Stock count task '{request.CountTaskId}' was not found.");
+            ?? throw new KnownException($"未找到盘点任务：{request.CountTaskId}。");
         var existingAdjustment = await dbContext.StockCountAdjustments.SingleOrDefaultAsync(
             x => x.OrganizationId == task.OrganizationId
                 && x.EnvironmentId == task.EnvironmentId
@@ -54,7 +54,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
         {
             if (existingAdjustment.CountedQuantity != request.CountedQuantity)
             {
-                throw new KnownException("Stock count adjustment idempotency key conflicts with an existing counted quantity.");
+                throw new KnownException("盘点调整幂等键与已有盘点数量冲突，请更换幂等键。");
             }
 
             return new ConfirmStockCountAdjustmentResult(
@@ -91,7 +91,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                 && x.OwnerType == task.OwnerType
                 && x.OwnerId == task.OwnerId,
             cancellationToken)
-            ?? throw new KnownException("Stock ledger does not exist for the requested count adjustment.");
+            ?? throw new KnownException("未找到盘点任务对应的库存台账。");
 
         var varianceQuantity = request.CountedQuantity - ledger.OnHandQuantity;
         var varianceAmount = Math.Round(Math.Abs(varianceQuantity * ledger.MovingAverageUnitCost), 6, MidpointRounding.ToEven);
@@ -101,9 +101,9 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
             {
                 task.SubmitForApproval(ledger, request.CountedQuantity);
             }
-            catch (StockCountRecountRequiredException exception)
+            catch (StockCountRecountRequiredException)
             {
-                throw new KnownException(exception.Message);
+                throw new KnownException("盘点快照已过期，请先重新盘点后再提交审批。");
             }
 
             var approval = await approvalClient.StartApprovalAsync(
@@ -128,13 +128,13 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
         {
             movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
         }
-        catch (StockCountRecountRequiredException exception)
+        catch (StockCountRecountRequiredException)
         {
-            throw new KnownException(exception.Message);
+            throw new KnownException("盘点快照已过期，请先重新盘点后再确认调整。");
         }
         catch (InventoryDomainException exception) when (IsCommittedStockGuard(exception))
         {
-            throw new KnownException(exception.Message);
+            throw new KnownException("已过账库存不允许再次调整，请刷新后重试。");
         }
 
         dbContext.StockMovements.Add(movement);
