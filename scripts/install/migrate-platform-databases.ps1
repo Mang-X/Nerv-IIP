@@ -23,6 +23,9 @@ param(
 
     [string[]] $Service = @(),
 
+    [ValidateSet('platform', 'business')]
+    [string] $Profile = 'platform',
+
     [switch] $ValidateOnly
 )
 
@@ -36,7 +39,13 @@ if ($ReleaseId -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'ReleaseId may contain only letters, digits, dot, underscore, and hyphen.'
 }
 
-$manifestPath = Join-Path $PSScriptRoot 'release-database-migrations.json'
+$manifestFileName = if ([string]::Equals($Profile, 'business', [StringComparison]::OrdinalIgnoreCase)) {
+    'business-release-database-migrations.json'
+}
+else {
+    'release-database-migrations.json'
+}
+$manifestPath = Join-Path $PSScriptRoot $manifestFileName
 $manifest = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
 if ($manifest.Count -eq 0) {
     throw 'Release database migration manifest is empty.'
@@ -96,7 +105,7 @@ foreach ($entry in $selected) {
         throw "Target database '$targetDatabase' for service '$($entry.service)' does not match allowlisted database '$($entry.expectedDatabase)'."
     }
 
-    $validationLogDirectory = New-ScriptAutomationLogDirectory -Name "platform-migration-$($entry.service)-validation"
+    $validationLogDirectory = New-ScriptAutomationLogDirectory -Name "$Profile-migration-$($entry.service)-validation"
     Write-Diagnostic "releaseId=$ReleaseId service=$($entry.service) dbProfile=PostgreSQL targetDatabase=$targetDatabase migrationFrom=database-current migrationTo=repository-latest seedStep=none correlationId=$CorrelationId logPath=$validationLogDirectory"
     $validated.Add([pscustomobject]@{
         Entry = $entry
@@ -106,7 +115,7 @@ foreach ($entry in $selected) {
 }
 
 if ($ValidateOnly) {
-    Write-Diagnostic "Platform migration configuration validation completed for $($validated.Count) service(s); no database command was executed."
+    Write-Diagnostic "$Profile migration configuration validation completed for $($validated.Count) service(s); no database command was executed."
     exit 0
 }
 
@@ -114,7 +123,7 @@ $restore = Invoke-DotNet `
     -Arguments @('tool', 'restore') `
     -WorkingDirectory $root `
     -TimeoutSeconds 300 `
-    -Name "platform-migration-tool-restore-$ReleaseId"
+    -Name "$Profile-migration-tool-restore-$ReleaseId"
 
 foreach ($item in $validated) {
     $entry = $item.Entry
@@ -130,8 +139,8 @@ foreach ($item in $validated) {
         -Arguments $migrationArguments `
         -WorkingDirectory $root `
         -TimeoutSeconds 900 `
-        -Name "platform-migration-apply-$($entry.service)-$ReleaseId" `
+        -Name "$Profile-migration-apply-$($entry.service)-$ReleaseId" `
         -SensitiveArgumentIndexes @($connectionArgumentIndex)
 
-    Write-Diagnostic "Platform migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) correlationId=$CorrelationId restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
+    Write-Diagnostic "$Profile migration completed releaseId=$ReleaseId service=$($entry.service) targetDatabase=$($item.TargetDatabase) correlationId=$CorrelationId restoreLog=$($restore.LogDirectory) migrationLog=$($migration.LogDirectory) exitCode=0."
 }
