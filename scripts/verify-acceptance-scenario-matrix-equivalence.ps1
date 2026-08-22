@@ -1,5 +1,5 @@
 # Script-Governance:
-#   Category: check
+#   Category: check, generate
 #   SideEffects:
 #     - Reads one governed planning artifact and exactly three canonical acceptance result files
 #   Writes:
