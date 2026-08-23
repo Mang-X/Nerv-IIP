@@ -60,7 +60,6 @@ export function toolingTypeLabel(value: string | null | undefined) {
       fixture: '夹具',
       jig: '工装夹具',
       cutting: '刀具',
-      'cutting-tool': '刀具',
       gauge: '检具',
     }[value ?? ''] ??
     value ??

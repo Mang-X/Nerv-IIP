@@ -7,6 +7,7 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import {
   toolingStatusLabel,
@@ -27,6 +28,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvDropdownMenuItem,
   NvField,
   NvFieldDescription,
   NvFieldError,
@@ -34,6 +36,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
+  NvRowActions,
   NvSelect,
   NvSelectContent,
   NvSelectItem,
@@ -101,7 +104,7 @@ const columns: NvDataTableColumn<BusinessConsoleToolingAssetItem>[] = [
   { key: 'life', header: '使用寿命', width: 'w-44' },
   { key: 'schedulable', header: '排程资格', width: 'w-28' },
   { key: 'scope', header: '适用范围', width: 'w-44' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-64' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-44' },
 ]
 
 function lifeLabel(row: BusinessConsoleToolingAssetItem) {
@@ -136,6 +139,7 @@ function openDetail(row: BusinessConsoleToolingAssetItem) {
 const registerOpen = shallowRef(false)
 const registerShowErrors = shallowRef(false)
 const registerForm = reactive({
+  idempotencyKey: '',
   code: '',
   name: '',
   toolingType: 'mould',
@@ -151,18 +155,47 @@ const lifeValidationMessage = computed(() => {
   const value = Number(registerForm.maintenanceLifeCount)
   return Number.isInteger(value) && value > 0 ? '' : '使用寿命必须是正整数。'
 })
+const registerNameError = computed(() =>
+  registerShowErrors.value && !registerForm.name.trim() ? '请填写工装名称。' : '',
+)
+const registerTypeError = computed(() =>
+  registerShowErrors.value && !registerForm.toolingType ? '请选择工装类型。' : '',
+)
+const registerLifeError = computed(() =>
+  registerShowErrors.value ? lifeValidationMessage.value : '',
+)
+const registerWorkCenterError = computed(() =>
+  registerShowErrors.value && registerForm.workCenterCodes.length === 0
+    ? '请至少选择一个适用工作中心。'
+    : '',
+)
+const registerSkuError = computed(() =>
+  registerShowErrors.value && registerForm.skuCodes.length === 0 ? '请至少选择一个适用 SKU。' : '',
+)
+const registerErrors = computed(() =>
+  [
+    registerNameError.value,
+    registerTypeError.value,
+    registerLifeError.value,
+    registerWorkCenterError.value,
+    registerSkuError.value,
+  ].filter(Boolean),
+)
 const registerValidationMessage = computed(() => {
-  if (!registerShowErrors.value) return ''
-  if (!registerForm.name.trim()) return '请填写工装名称。'
-  if (!registerForm.toolingType) return '请选择工装类型。'
-  if (lifeValidationMessage.value) return lifeValidationMessage.value
-  if (registerForm.workCenterCodes.length === 0) return '请至少选择一个适用工作中心。'
-  if (registerForm.skuCodes.length === 0) return '请至少选择一个适用 SKU。'
-  return ''
+  return registerErrors.value[0] ?? ''
 })
+function newRegisterIdempotencyKey() {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto
+  const suffix =
+    cryptoApi && typeof cryptoApi.randomUUID === 'function'
+      ? cryptoApi.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  return `tooling-register-${suffix}`
+}
 function openRegister() {
   if (!canManage.value) return
   Object.assign(registerForm, {
+    idempotencyKey: newRegisterIdempotencyKey(),
     code: '',
     name: '',
     toolingType: 'mould',
@@ -179,6 +212,7 @@ async function submitRegister() {
   if (registerValidationMessage.value) return
   const body: Omit<BusinessConsoleRegisterToolingAssetRequest, 'organizationId' | 'environmentId'> =
     {
+      idempotencyKey: registerForm.idempotencyKey,
       code: registerForm.code.trim() || null,
       name: registerForm.name.trim(),
       toolingType: registerForm.toolingType,
@@ -340,6 +374,15 @@ const listErrorMessage = computed(() =>
       @update:page="paging.page.value = $event"
       @update:page-size="(value) => (paging.pageSize.value = String(value))"
     >
+      <template #cell-code="{ row }">
+        <button
+          type="button"
+          class="text-left font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          @click="openDetail(row)"
+        >
+          {{ row.code ?? '—' }}
+        </button>
+      </template>
       <template #cell-type="{ row }">{{ toolingTypeLabel(row.toolingType) }}</template>
       <template #cell-status="{ row }">
         <NvStatusBadge :label="toolingStatusLabel(row.status)" :tone="statusTone(row.status)" />
@@ -363,31 +406,33 @@ const listErrorMessage = computed(() =>
       </template>
       <template #cell-actions="{ row }">
         <div class="flex flex-wrap justify-end gap-1">
-          <NvButton type="button" size="sm" variant="ghost" @click="openDetail(row)">查看</NvButton>
-          <template v-if="canManage && row.status !== 'retired'">
-            <NvButton type="button" size="sm" variant="ghost" @click="openUsage(row)"
-              >登记使用</NvButton
-            >
-            <NvButton
+          <NvButton
+            v-if="canManage && row.status !== 'retired'"
+            type="button"
+            size="sm"
+            variant="ghost"
+            @click="openUsage(row)"
+          >
+            登记使用
+          </NvButton>
+          <NvRowActions
+            v-if="canManage && row.status !== 'retired'"
+            :label="`工装操作 ${row.code ?? ''}`"
+          >
+            <NvDropdownMenuItem
               v-if="row.status === 'available'"
-              type="button"
-              size="sm"
-              variant="ghost"
               @click="openStatus(row, 'maintenance')"
-              >转保养</NvButton
             >
-            <NvButton
+              转保养
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem
               v-if="row.status === 'maintenance'"
-              type="button"
-              size="sm"
-              variant="ghost"
               @click="openStatus(row, 'available')"
-              >完成保养</NvButton
             >
-            <NvButton type="button" size="sm" variant="ghost" @click="openStatus(row, 'retired')">
-              退役
-            </NvButton>
-          </template>
+              完成保养
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem @click="openStatus(row, 'retired')"> 退役 </NvDropdownMenuItem>
+          </NvRowActions>
         </div>
       </template>
     </NvDataTable>
@@ -437,6 +482,12 @@ const listErrorMessage = computed(() =>
             >
           </NvSheetHeader>
           <NvFieldGroup class="grid gap-4 px-4 sm:grid-cols-2">
+            <NvFieldError
+              v-if="registerErrors.length"
+              class="sm:col-span-2"
+              :errors="['请检查以下必填项。']"
+            />
+            <FormSectionTitle class="sm:col-span-2">基本信息</FormSectionTitle>
             <NvField>
               <NvFieldLabel for="tooling-code">工装编码</NvFieldLabel>
               <NvInput
@@ -449,12 +500,19 @@ const listErrorMessage = computed(() =>
               <NvFieldLabel for="tooling-name"
                 >工装名称 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvInput id="tooling-name" v-model="registerForm.name" />
+              <NvInput
+                id="tooling-name"
+                v-model="registerForm.name"
+                :aria-invalid="Boolean(registerNameError)"
+              />
+              <NvFieldError v-if="registerNameError" :errors="[registerNameError]" />
             </NvField>
             <NvField>
               <NvFieldLabel>工装类型 <span class="text-destructive">*</span></NvFieldLabel>
               <NvSelect v-model="registerForm.toolingType">
-                <NvSelectTrigger><NvSelectValue /></NvSelectTrigger>
+                <NvSelectTrigger :aria-invalid="Boolean(registerTypeError)">
+                  <NvSelectValue />
+                </NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem
                     v-for="option in toolingTypes"
@@ -464,6 +522,7 @@ const listErrorMessage = computed(() =>
                   >
                 </NvSelectContent>
               </NvSelect>
+              <NvFieldError v-if="registerTypeError" :errors="[registerTypeError]" />
             </NvField>
             <NvField>
               <NvFieldLabel for="tooling-life">保养使用寿命（次）</NvFieldLabel>
@@ -473,14 +532,20 @@ const listErrorMessage = computed(() =>
                 type="number"
                 min="1"
                 step="1"
+                :aria-invalid="Boolean(registerLifeError)"
               />
               <NvFieldDescription
                 >可留空；达到寿命后转入保养状态并停止参与排程。</NvFieldDescription
               >
+              <NvFieldError v-if="registerLifeError" :errors="[registerLifeError]" />
             </NvField>
+            <FormSectionTitle class="sm:col-span-2">适用范围</FormSectionTitle>
             <NvField class="sm:col-span-2">
               <NvFieldLabel>适用工作中心 <span class="text-destructive">*</span></NvFieldLabel>
-              <div class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+              <div
+                class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
+                :class="registerWorkCenterError ? 'border-destructive' : ''"
+              >
                 <label
                   v-for="row in workCenters.resources.value.filter(
                     (item) => item.active !== false && item.code,
@@ -500,10 +565,20 @@ const listErrorMessage = computed(() =>
                   >
                 </label>
               </div>
+              <NvFieldDescription
+                v-if="workCenters.resourcesTotal.value > workCenters.filters.take"
+              >
+                工作中心目录共 {{ workCenters.resourcesTotal.value }} 项，当前候选加载上限为
+                {{ workCenters.filters.take }} 项。
+              </NvFieldDescription>
+              <NvFieldError v-if="registerWorkCenterError" :errors="[registerWorkCenterError]" />
             </NvField>
             <NvField class="sm:col-span-2">
               <NvFieldLabel>适用 SKU <span class="text-destructive">*</span></NvFieldLabel>
-              <div class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+              <div
+                class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
+                :class="registerSkuError ? 'border-destructive' : ''"
+              >
                 <label
                   v-for="row in skus.resources.value.filter(
                     (item) => item.active !== false && item.code,
@@ -523,13 +598,13 @@ const listErrorMessage = computed(() =>
                   >
                 </label>
               </div>
+              <NvFieldDescription v-if="skus.resourcesTotal.value > skus.filters.take">
+                SKU 目录共 {{ skus.resourcesTotal.value }} 项，当前候选加载上限为
+                {{ skus.filters.take }} 项。
+              </NvFieldDescription>
               <NvFieldDescription>{{ applicabilityCount }} 个适用组合</NvFieldDescription>
+              <NvFieldError v-if="registerSkuError" :errors="[registerSkuError]" />
             </NvField>
-            <NvFieldError
-              v-if="registerValidationMessage"
-              class="sm:col-span-2"
-              :errors="[registerValidationMessage]"
-            />
           </NvFieldGroup>
           <NvSheetFooter class="px-4">
             <NvButton type="button" variant="outline" @click="registerOpen = false">取消</NvButton>

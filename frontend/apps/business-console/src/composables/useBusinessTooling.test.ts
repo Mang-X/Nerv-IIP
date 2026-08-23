@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
-import { useBusinessTooling } from './useBusinessTooling'
+import { toolingStatusLabel, toolingTypeLabel, useBusinessTooling } from './useBusinessTooling'
 
 const state = vi.hoisted(() => ({
   queryFactory: undefined as undefined | (() => Record<string, unknown>),
@@ -78,6 +78,15 @@ describe('useBusinessTooling', () => {
     state.queryFactory = undefined
     state.mutationCalls.clear()
     state.invalidations = 0
+  })
+
+  it('将工装状态和类型映射为中文，并对未知类型保留服务端值', () => {
+    expect(toolingStatusLabel('available')).toBe('可用')
+    expect(toolingStatusLabel('maintenance')).toBe('保养中')
+    expect(toolingStatusLabel('retired')).toBe('已退役')
+    expect(toolingTypeLabel('mould')).toBe('模具')
+    expect(toolingTypeLabel('cutting')).toBe('刀具')
+    expect(toolingTypeLabel('cutting-tool')).toBe('cutting-tool')
   })
 
   it('把关键字、状态与分页作为服务端查询参数，并读取服务端总数', () => {
