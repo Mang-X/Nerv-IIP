@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 
@@ -825,16 +826,16 @@ public sealed record InspectionUomConversion(
 
 public static class InspectionRecordResults
 {
-    public const string Passed = "passed";
-    public const string Rejected = "rejected";
-    public const string ConditionalRelease = "conditional-release";
+    public const string Passed = QualityInspectionDispositionStatuses.Passed;
+    public const string Rejected = QualityInspectionDispositionStatuses.Rejected;
+    public const string ConditionalRelease = QualityInspectionDispositionStatuses.ConditionalRelease;
 }
 
 public static class InspectionLineResults
 {
-    public const string Passed = "passed";
+    public const string Passed = QualityInspectionDispositionStatuses.Passed;
     public const string Failed = "failed";
-    public const string ConditionalRelease = "conditional-release";
+    public const string ConditionalRelease = QualityInspectionDispositionStatuses.ConditionalRelease;
 
     public static readonly HashSet<string> All = [Passed, Failed, ConditionalRelease];
 }

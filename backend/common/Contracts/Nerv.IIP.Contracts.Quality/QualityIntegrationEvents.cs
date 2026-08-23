@@ -43,13 +43,6 @@ public static class QualityInspectionSourceTypes
     public const string Receiving = "receiving";
 }
 
-public static class QualityInspectionDispositionStatuses
-{
-    public const string Passed = "passed";
-    public const string ConditionalRelease = "conditional-release";
-    public const string Rejected = "rejected";
-}
-
 public static class QualityStockReleaseTargetStatuses
 {
     public const string Unrestricted = "unrestricted";
