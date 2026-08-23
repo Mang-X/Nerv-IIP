@@ -114,3 +114,7 @@ if ($startText.Contains('throw "-IamSeedAdminPassword is required outside Develo
 }
 
 Write-Host 'Production deployment input contracts passed.'
+
+# GitHub 的 pwsh shell 包装会以残留 $LASTEXITCODE 收尾；Assert-StartFails 的预期失败子进程会留下 1，
+# 此处显式归零。本脚本独占一个 CI step，任何断言 throw 仍会被包装器转为失败。
+exit 0
