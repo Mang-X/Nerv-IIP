@@ -40,7 +40,7 @@ public sealed class InspectionPlanEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(150).HasComment("Optional device asset public reference id.");
         builder.Property(x => x.DocumentType).HasColumnName("document_type").HasMaxLength(100).HasComment("Optional source document type covered by the plan.");
         builder.Property(x => x.TimeIntervalHours).HasColumnName("time_interval_hours").HasPrecision(18, 6).HasComment("Optional positive hour interval for periodic operation inspection task generation.");
-        builder.Property(x => x.QuantityInterval).HasColumnName("quantity_interval").HasPrecision(18, 6).HasComment("Optional positive produced quantity interval for periodic operation inspection task generation.");
+        builder.Property(x => x.QuantityInterval).HasColumnName("quantity_interval").HasPrecision(18, 6).HasComment("Optional positive produced quantity interval in the SKU base unit of measure for periodic operation inspection task generation.");
         builder.Property(x => x.AssignedInspectorUserId).HasColumnName("assigned_inspector_user_id").HasMaxLength(150).HasComment("Optional inspector user target copied to generated periodic inspection tasks.");
         builder.Property(x => x.AssignedTeamId).HasColumnName("assigned_team_id").HasMaxLength(150).HasComment("Optional team target copied to generated periodic inspection tasks.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().HasComment("Plan version number.");

@@ -36,7 +36,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 precision: 18,
                 scale: 6,
                 nullable: true,
-                comment: "Optional positive produced quantity interval for periodic operation inspection task generation.");
+                comment: "Optional positive produced quantity interval in the SKU base unit of measure for periodic operation inspection task generation.");
 
             migrationBuilder.AddColumn<decimal>(
                 name: "time_interval_hours",

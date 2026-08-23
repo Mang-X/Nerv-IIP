@@ -7531,6 +7531,21 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public void Create_quality_inspection_plan_validator_rejects_quantity_interval_above_database_precision()
+    {
+        var validator = new Nerv.IIP.BusinessGateway.Web.Endpoints.Quality.BusinessConsoleCreateInspectionPlanRequestValidator();
+        var request = new BusinessConsoleCreateInspectionPlanRequest(
+            "org-001", "env-dev", "IP-RUN-001", "operation", "SKU-RUN-001", null, "WC-RUN-001", null, "operation-task",
+            [new BusinessConsoleInspectionPlanCharacteristicInput("ATTR-001", "Appearance", "visual", "major", true, "100-percent")],
+            QuantityInterval: 1_000_000_000_000m);
+
+        var result = validator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Quality_http_client_maps_real_downstream_inspection_plan_payload_to_console_items()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new

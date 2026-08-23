@@ -311,7 +311,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("quantity_interval")
-                        .HasComment("Optional positive produced quantity interval for periodic operation inspection task generation.");
+                        .HasComment("Optional positive produced quantity interval in the SKU base unit of measure for periodic operation inspection task generation.");
 
                     b.Property<string>("SkuCode")
                         .HasMaxLength(100)

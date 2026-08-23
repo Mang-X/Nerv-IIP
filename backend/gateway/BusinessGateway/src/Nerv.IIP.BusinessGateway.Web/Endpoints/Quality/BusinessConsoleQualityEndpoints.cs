@@ -291,6 +291,8 @@ public sealed class BusinessConsoleQualityInspectionPlanCharacteristicsRequestVa
 public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
     : Validator<BusinessConsoleCreateInspectionPlanRequest>
 {
+    private const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
+
     public BusinessConsoleCreateInspectionPlanRequestValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
@@ -311,6 +313,9 @@ public sealed class BusinessConsoleCreateInspectionPlanRequestValidator
         RuleFor(x => x.QuantityInterval)
             .Must(value => value is null || value >= 0.000001m)
             .WithMessage("巡检数量间隔必须至少为 0.000001。");
+        RuleFor(x => x.QuantityInterval)
+            .Must(value => value is null || value <= MaximumQuantityInterval)
+            .WithMessage($"巡检数量间隔不能超过 {MaximumQuantityInterval}。");
         RuleFor(x => x.AssignedInspectorUserId).MaximumLength(150);
         RuleFor(x => x.AssignedTeamId).MaximumLength(150);
         RuleFor(x => x)

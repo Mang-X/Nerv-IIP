@@ -9,6 +9,7 @@ public partial record InspectionPlanCharacteristicId : IGuidStronglyTypedId;
 public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
 {
     private const decimal MinimumPeriodicInterval = 0.000001m;
+    public const decimal MaximumQuantityInterval = 999_999_999_999.999999m;
     private static readonly HashSet<string> Categories =
     [
         "receiving",
@@ -133,6 +134,11 @@ public sealed class InspectionPlan : Entity<InspectionPlanId>, IAggregateRoot
         if (quantityInterval is < MinimumPeriodicInterval)
         {
             throw new ArgumentOutOfRangeException(nameof(quantityInterval), "Quantity interval must be at least 0.000001.");
+        }
+
+        if (quantityInterval > MaximumQuantityInterval)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantityInterval), $"Quantity interval must not exceed {MaximumQuantityInterval}.");
         }
 
         if (normalizedInspectorUserId is not null && normalizedTeamId is not null)

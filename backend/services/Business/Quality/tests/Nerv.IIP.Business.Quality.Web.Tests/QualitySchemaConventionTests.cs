@@ -115,7 +115,7 @@ public sealed class QualitySchemaConventionTests
     }
 
     [Fact]
-    public void Inspection_plan_periodic_policy_migration_fails_closed_on_invalid_persisted_values()
+    public void Inspection_plan_periodic_policy_migration_generates_periodic_policy_check_constraints()
     {
         using var fixture = CreateFixture();
 
@@ -129,6 +129,16 @@ public sealed class QualitySchemaConventionTests
         Assert.Contains("ck_inspection_plans_periodic_policy_applicability", script, StringComparison.Ordinal);
         Assert.Contains("ck_inspection_plans_periodic_assignment_target", script, StringComparison.Ordinal);
         Assert.Contains("ck_inspection_plans_periodic_assignment_requires_interval", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inspection_plan_quantity_interval_documents_sku_base_unit_of_measure()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InspectionPlan))!;
+        var quantityInterval = entity.FindProperty(nameof(InspectionPlan.QuantityInterval))!;
+
+        Assert.Contains("SKU base unit of measure", quantityInterval.GetComment(), StringComparison.Ordinal);
     }
 
     [Fact]

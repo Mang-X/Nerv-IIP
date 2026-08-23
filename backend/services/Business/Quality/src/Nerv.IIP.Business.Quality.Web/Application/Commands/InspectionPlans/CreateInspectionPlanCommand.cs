@@ -57,6 +57,9 @@ public sealed class CreateInspectionPlanCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.QuantityInterval)
             .Must(value => value is null || value >= 0.000001m)
             .WithMessage("巡检数量间隔必须至少为 0.000001。");
+        RuleFor(x => x.QuantityInterval)
+            .Must(value => value is null || value <= InspectionPlan.MaximumQuantityInterval)
+            .WithMessage($"巡检数量间隔不能超过 {InspectionPlan.MaximumQuantityInterval}。");
         RuleFor(x => x.AssignedInspectorUserId).MaximumLength(150);
         RuleFor(x => x.AssignedTeamId).MaximumLength(150);
         RuleFor(x => x)

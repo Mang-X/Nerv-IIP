@@ -1,13 +1,18 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
@@ -361,6 +366,66 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("operation", StringComparison.Ordinal));
         Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("不能同时", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Create_inspection_plan_validator_rejects_quantity_interval_above_database_precision()
+    {
+        var validator = new CreateInspectionPlanCommandValidator();
+        var command = new CreateInspectionPlanCommand(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            QuantityInterval: 1_000_000_000_000m);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.ErrorMessage.Contains("数量间隔", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Create_inspection_plan_http_request_persists_periodic_policy_fields()
+    {
+        var databaseName = $"quality-inspection-plan-http-{Guid.NewGuid():N}";
+        await using var factory = CreateFactory(databaseName);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-service-token");
+        var request = new CreateInspectionPlanRequest(
+            "org-001",
+            "env-dev",
+            "IQP-OPERATION-HTTP-001",
+            "operation",
+            "SKU-FG-1000",
+            null,
+            "WC-001",
+            null,
+            "mes-operation",
+            [new InspectionPlanCharacteristicInput("appearance", "Appearance", "visual", "critical", true, "zero-defect")],
+            TimeIntervalHours: 2.5m,
+            QuantityInterval: 100m,
+            AssignedInspectorUserId: "user-inspector-001");
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/quality/inspection-plans", request);
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, responseBody);
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var persisted = await dbContext.InspectionPlans
+            .AsNoTracking()
+            .SingleAsync(plan => plan.PlanCode == request.PlanCode);
+        Assert.Equal(2.5m, persisted.TimeIntervalHours);
+        Assert.Equal(100m, persisted.QuantityInterval);
+        Assert.Equal("user-inspector-001", persisted.AssignedInspectorUserId);
+        Assert.Null(persisted.AssignedTeamId);
     }
 
     [Fact]
@@ -1573,6 +1638,23 @@ public sealed class QualityInspectionEndpointContractTests
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(settings));
             });
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(string inMemoryDatabaseName)
+    {
+        return CreateFactory().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ApplicationDbContext>();
+                services.RemoveAll<DbContextOptions>();
+                services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options
+                    .UseInMemoryDatabase(inMemoryDatabaseName)
+                    .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+            });
+        });
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
