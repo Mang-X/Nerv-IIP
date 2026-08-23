@@ -115,6 +115,33 @@ public sealed class QualitySchemaConventionTests
     }
 
     [Fact]
+    public void Inspection_plan_periodic_policy_migration_generates_periodic_policy_check_constraints()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260730150913_AddInspectionTaskAssignmentScope",
+            "20260823032400_AddInspectionPlanPeriodicPolicy");
+
+        Assert.Contains("ck_inspection_plans_time_interval_positive", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_quantity_interval_positive", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_policy_operation_only", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_policy_applicability", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_assignment_target", script, StringComparison.Ordinal);
+        Assert.Contains("ck_inspection_plans_periodic_assignment_requires_interval", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inspection_plan_quantity_interval_documents_sku_base_unit_of_measure()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(InspectionPlan))!;
+        var quantityInterval = entity.FindProperty(nameof(InspectionPlan.QuantityInterval))!;
+
+        Assert.Contains("SKU base unit of measure", quantityInterval.GetComment(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Mes_defect_source_unique_index_is_scoped_to_auto_created_mes_ncrs()
     {
         using var fixture = CreateFixture();
