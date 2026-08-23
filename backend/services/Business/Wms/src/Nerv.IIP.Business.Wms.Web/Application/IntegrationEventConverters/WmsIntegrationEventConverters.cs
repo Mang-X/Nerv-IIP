@@ -326,7 +326,7 @@ internal static class InventoryMovementRequestEventMapping
         this InventoryMovementRequest request,
         DateTimeOffset requestedAtUtc)
     {
-        var quantity = request.MovementType is "outbound"
+        var quantity = request.MovementType is InventoryMovementTypes.Outbound
             ? -Math.Abs(request.Quantity)
             : request.Quantity;
 
