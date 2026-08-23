@@ -49,6 +49,8 @@ const props = withDefaults(
     sourceText?: string
     loading?: boolean
     disabled?: boolean
+    /** 字段校验失败状态；同时标记容器并把 `aria-invalid` 传给触发按钮。 */
+    invalid?: boolean
     /** 允许清除已选值（触发按钮右侧出现清除叉）。 */
     clearable?: boolean
     /**
@@ -85,6 +87,7 @@ const props = withDefaults(
     emptyText: '无匹配实体',
     loading: false,
     disabled: false,
+    invalid: false,
     clearable: false,
     showCode: true,
     serverSearch: false,
@@ -155,7 +158,11 @@ function clear() {
     :open="open"
     @update:open="setOpen"
   >
-    <div :class="cn('relative flex w-full items-center', props.class)" data-slot="nv-entity-picker">
+    <div
+      :class="cn('relative flex w-full items-center', props.class)"
+      data-slot="nv-entity-picker"
+      :data-invalid="invalid || undefined"
+    >
       <component :is="variant === 'dialog' ? DialogTrigger : PopoverTrigger" as-child>
         <button
           :id="id"
@@ -163,10 +170,13 @@ function clear() {
           :aria-label="ariaLabel"
           :aria-haspopup="variant === 'dialog' ? 'dialog' : 'listbox'"
           :aria-expanded="open"
+          :aria-invalid="invalid || undefined"
           :disabled="disabled"
           :class="
             cn(
               'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30',
+              invalid &&
+                'border-destructive focus-visible:border-destructive focus-visible:ring-destructive/20',
               // 有清除叉时给右侧让位，否则长文案会钻到叉底下。
               // 叉在 right-8（2rem）起、size-5（1.25rem）宽，收边到 3.25rem，再留一点余量。
               clearable && selected && !disabled && 'pr-14',

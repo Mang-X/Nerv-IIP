@@ -90,7 +90,13 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
 
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as
-    | { organizationId: string; environmentId: string; status?: string; keyword?: string }
+    | {
+        organizationId: string
+        environmentId: string
+        category?: string
+        status?: string
+        keyword?: string
+      }
     | undefined,
   inspectionContextInitiallyEmpty: false,
   recordError: undefined as unknown,
@@ -231,6 +237,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       const filters = reactive({
         organizationId: qualityState.inspectionContextInitiallyEmpty ? '' : 'org-001',
         environmentId: qualityState.inspectionContextInitiallyEmpty ? '' : 'env-dev',
+        category: undefined as string | undefined,
         status: undefined as string | undefined,
         keyword: undefined as string | undefined,
         skip: 0,
@@ -344,7 +351,12 @@ const uiStubs = {
   Select: { template: '<div><slot /></div>' },
   SelectContent: { template: '<div><slot /></div>' },
   SelectItem: { props: ['value'], template: '<div><slot /></div>' },
-  NvSelect: { template: '<div><slot /></div>' },
+  NvSelect: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select aria-label="检验类别" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="all">全部类别</option><option value="first-article">首件检验</option></select>',
+  },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div><slot /></div>' },
   NvSelectTrigger: { template: '<button><slot /></button>' },
@@ -552,6 +564,14 @@ describe('quality route location behavior', () => {
 
     expect(qualityState.inspectionFilters!.keyword).toBeUndefined()
     expect(qualityState.inspectionFilters!.status).toBe('active')
+  })
+
+  it('lets the user independently filter first-article inspection plans', async () => {
+    const wrapper = mountQualityPage(InspectionsPage)
+
+    await wrapper.get('select[aria-label="检验类别"]').setValue('first-article')
+
+    expect(qualityState.inspectionFilters!.category).toBe('first-article')
   })
 
   it('does not open the inspection record dialog for a plain inspectionPlanId location route', async () => {

@@ -44,10 +44,10 @@ const stubs = {
       '<div data-slot="nv-input" :data-invalid="invalid || undefined"><input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" /></div>',
   },
   NvEntityPicker: {
-    props: ['id', 'modelValue', 'options'],
+    props: ['id', 'invalid', 'modelValue', 'options'],
     emits: ['update:modelValue'],
     template:
-      '<select :id="id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select>',
+      '<div data-slot="nv-entity-picker" :data-invalid="invalid || undefined"><select :id="id" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>',
   },
   NvButton: {
     props: ['disabled', 'type'],
@@ -143,6 +143,15 @@ describe('首件检验方案配置', () => {
     ]) {
       expect(
         wrapper.get(id).element.closest('[data-slot="nv-input"]')?.getAttribute('data-invalid'),
+      ).toBe('true')
+    }
+
+    for (const id of ['#first-article-sku', '#first-article-work-center']) {
+      expect(
+        wrapper
+          .get(id)
+          .element.closest('[data-slot="nv-entity-picker"]')
+          ?.getAttribute('data-invalid'),
       ).toBe('true')
     }
   })

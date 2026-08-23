@@ -228,6 +228,7 @@ async function submit() {
               placeholder="选择物料"
               source-text="数据来自物料主数据"
               aria-label="适用物料"
+              :invalid="submitted && !form.skuCode.trim()"
               :aria-invalid="submitted && !form.skuCode.trim()"
             />
           </NvField>
@@ -242,6 +243,7 @@ async function submit() {
               placeholder="选择工作中心"
               source-text="数据来自工作中心主数据"
               aria-label="工序工作中心"
+              :invalid="submitted && !form.workCenterId.trim()"
               :aria-invalid="submitted && !form.workCenterId.trim()"
             />
           </NvField>

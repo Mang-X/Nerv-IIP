@@ -32,6 +32,7 @@ import { executeLifecycleAction } from './lifecycleAction'
 const DEFAULT_TAKE = 100
 
 export interface QualityListFilters extends BusinessContextFields {
+  category?: string
   status?: string
   keyword?: string
   skip: number
@@ -63,6 +64,7 @@ function toListQuery(filters: QualityListFilters) {
   return {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
+    ...optionalQuery('category', filters.category),
     ...optionalQuery('status', filters.status),
     ...optionalQuery('keyword', filters.keyword),
     skip: filters.skip,
