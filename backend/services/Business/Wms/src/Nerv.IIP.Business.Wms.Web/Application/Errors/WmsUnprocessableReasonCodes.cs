@@ -48,6 +48,11 @@ public static class WmsUnprocessableReasonCodes
     public const string ExecutedQuantityOutOfRange = "executed-quantity-out-of-range";
 
     /// <summary>
+    /// 作业池成员资格的生效窗口倒挂（结束时间不晚于开始时间），资格窗口不成立。
+    /// </summary>
+    public const string WorkPoolMembershipWindowNotForward = "membership-window-not-forward";
+
+    /// <summary>
     /// 把仓库任务聚合抛出的 <see cref="ArgumentException"/> 归类成稳定代码。
     ///
     /// 按 <see cref="ArgumentException.ParamName"/> 判定而**不是**匹配消息文本：
