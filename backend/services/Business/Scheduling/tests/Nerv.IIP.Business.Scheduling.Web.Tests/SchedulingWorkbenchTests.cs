@@ -123,7 +123,7 @@ public sealed class SchedulingWorkbenchTests
             CancellationToken.None));
 
         Assert.Contains("MES", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("work-order", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("无效的工单响应", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -160,7 +160,7 @@ public sealed class SchedulingWorkbenchTests
             [new("WO-DONE", 10, false)],
             CancellationToken.None));
 
-        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已处于终态", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public sealed class SchedulingWorkbenchTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => provider.ResolveOrdersAsync(
             "org-001", "env-dev", start, [new("WO-900", 10, false)], CancellationToken.None));
 
-        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("已处于终态", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

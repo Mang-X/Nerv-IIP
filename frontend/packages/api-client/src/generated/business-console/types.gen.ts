@@ -3485,7 +3485,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleForecastInputIte
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateForecastInputRequest = {
     organizationId: string;
     environmentId: string;
-    forecastReference: string;
+    forecastReference?: string | null;
     skuCode: string;
     uomCode: string;
     siteCode: string;
@@ -3494,6 +3494,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     quantity?: number;
     backwardConsumptionDays?: number;
     forwardConsumptionDays?: number;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse = NetCorePalExtensionsDtoResponseData & {
