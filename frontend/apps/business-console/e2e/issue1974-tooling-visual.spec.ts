@@ -78,7 +78,9 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
 
   await page.getByRole('button', { name: '注册工装' }).click()
   const nameInput = page.getByLabel('工装名称 *')
+  const lifeInput = page.getByLabel('保养使用寿命（次）')
   const nameFrame = nameInput.locator('..')
+  const lifeFrame = lifeInput.locator('..')
   const nameLabel = page.locator('label[for="tooling-name"] > span')
   const firstCandidate = page.getByRole('checkbox').first().locator('..')
   const beforeBorder = await nameFrame.evaluate((element) => getComputedStyle(element).borderColor)
@@ -86,9 +88,15 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   const beforeCandidate = await firstCandidate.evaluate(
     (element) => getComputedStyle(element).color,
   )
+  const beforeLifeBorder = await lifeFrame.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  await lifeInput.fill('0')
   await page.getByRole('button', { name: '确认注册' }).click()
   await expect(page.getByText('请填写工装名称。', { exact: true })).toBeVisible()
+  await expect(page.getByText('使用寿命必须是正整数。', { exact: true })).toBeVisible()
   await expect(nameFrame).toHaveAttribute('data-invalid', 'true')
+  await expect(lifeFrame).toHaveAttribute('data-invalid', 'true')
   await expect
     .poll(() => nameFrame.evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(beforeBorder)
@@ -98,6 +106,9 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
   await expect
     .poll(() => firstCandidate.evaluate((element) => getComputedStyle(element).color))
     .toBe(beforeCandidate)
+  await expect
+    .poll(() => lifeFrame.evaluate((element) => getComputedStyle(element).borderColor))
+    .not.toBe(beforeLifeBorder)
   await page.screenshot({
     path: path.join(SCREENSHOT_DIR, '03-register-validation.png'),
   })
@@ -117,6 +128,13 @@ test('工装维护台真实浏览器视觉核验', async ({ page }) => {
     .poll(() => statusFrame.evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(statusBorderBefore)
   await statusDialog.getByRole('button', { name: '取消' }).click()
+
+  await page.getByRole('button', { name: '工装操作 FIXTURE-WELD-07' }).click()
+  await page.getByRole('menuitem', { name: '完成保养' }).click()
+  const completionDialog = page.getByRole('dialog')
+  await expect(completionDialog).toContainText('请说明本次状态变更原因。')
+  await expect(completionDialog).not.toContainText('完成保养后将清零累计使用次数')
+  await completionDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '登记使用' }).first().click()
   const usageDialog = page.getByRole('dialog')
