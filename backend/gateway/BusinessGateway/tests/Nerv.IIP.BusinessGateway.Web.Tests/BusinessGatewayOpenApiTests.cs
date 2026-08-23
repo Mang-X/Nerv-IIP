@@ -534,6 +534,18 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "post", "createBusinessConsoleBarcodePrintBatch");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches", "get", "listBusinessConsoleBarcodePrintBatches");
         AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}", "get", "getBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "dispatchBusinessConsoleBarcodePrintBatch");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "reprintBusinessConsoleBarcodeLabel");
+        AssertOperationId(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "voidBusinessConsoleBarcodeLabel");
+        AssertPathParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "printBatchId");
+        AssertPathParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "printBatchId", "sequenceNo");
+        AssertPathParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "printBatchId", "sequenceNo");
+        AssertQueryParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "organizationId", "environmentId");
+        AssertQueryParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "organizationId", "environmentId");
+        AssertQueryParameters(paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "organizationId", "environmentId");
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch", "post", "printerId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint", "post", "printerId", 100);
+        AssertRequiredStringBodyProperty(document, paths, "/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void", "post", "reason", 500);
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "post", "recordBusinessConsoleBarcodeScan");
         AssertOperationId(paths, "/api/business-console/v1/barcode/scans", "get", "listBusinessConsoleBarcodeScans");
         AssertOperationId(paths, "/api/business-console/v1/wms/inbound-orders", "get", "listBusinessConsoleWmsInboundOrders");
@@ -1105,6 +1117,24 @@ public sealed class BusinessGatewayOpenApiTests
         foreach (var name in names)
         {
             Assert.Contains(name, parameters);
+        }
+    }
+
+    private static void AssertPathParameters(JsonElement paths, string path, string method, params string[] names)
+    {
+        var parameters = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "path")
+            .ToDictionary(
+                parameter => parameter.GetProperty("name").GetString()!,
+                parameter => parameter.GetProperty("required").GetBoolean(),
+                StringComparer.Ordinal);
+
+        foreach (var name in names)
+        {
+            Assert.True(parameters.TryGetValue(name, out var required) && required);
         }
     }
 

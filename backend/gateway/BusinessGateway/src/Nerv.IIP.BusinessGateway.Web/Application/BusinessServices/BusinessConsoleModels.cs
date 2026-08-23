@@ -4122,6 +4122,34 @@ public sealed record BusinessConsoleCreateBarcodePrintBatchRequest(
 
 public sealed record BusinessConsoleCreateBarcodePrintBatchResponse(string PrintBatchId);
 
+public sealed record BusinessConsoleDispatchBarcodePrintBatchRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
+
+public sealed record BusinessConsoleReprintBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string PrinterId);
+
+public sealed record BusinessConsoleVoidBarcodeLabelRequest(
+    [property: RouteParam] string PrintBatchId,
+    [property: RouteParam] int SequenceNo,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason);
+
+public sealed record BusinessConsoleBarcodePrintLifecycleResponse(string PrintBatchId);
+
+public sealed record BusinessConsoleReprintBarcodeLabelResponse(
+    string PrintBatchId,
+    string Status,
+    string? PrintJobId,
+    string? FailureReason);
+
 public sealed record BusinessConsoleBarcodePrintBatchRequest(
     string OrganizationId,
     string EnvironmentId,

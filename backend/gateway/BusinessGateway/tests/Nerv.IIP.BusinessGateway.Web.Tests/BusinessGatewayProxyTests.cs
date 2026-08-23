@@ -4655,6 +4655,39 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Barcode_lifecycle_facades_forward_route_identity_and_action_body()
+    {
+        var barcode = new RecordingBarcodeLabelClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessBarcodeLabelClient>();
+            services.AddSingleton<IBusinessBarcodeLabelClient>(barcode);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var dispatch = await client.PostAsJsonAsync(
+            "/api/business-console/v1/barcode/print-batches/batch-route/dispatch?organizationId=org-001&environmentId=env-dev",
+            new { printBatchId = "batch-body", printerId = "printer-01" });
+        var reprint = await client.PostAsJsonAsync(
+            "/api/business-console/v1/barcode/print-batches/batch-route/items/7/reprint?organizationId=org-001&environmentId=env-dev",
+            new { printBatchId = "batch-body", sequenceNo = 99, printerId = "printer-02" });
+        var voidResponse = await client.PostAsJsonAsync(
+            "/api/business-console/v1/barcode/print-batches/batch-route/items/7/void?organizationId=org-001&environmentId=env-dev",
+            new { printBatchId = "batch-body", sequenceNo = 99, reason = "标签损坏" });
+
+        Assert.Equal(HttpStatusCode.OK, dispatch.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reprint.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, voidResponse.StatusCode);
+        Assert.Equal("internal-test-token", barcode.LastInternalToken);
+        Assert.Equal(new BusinessConsoleDispatchBarcodePrintBatchRequest("batch-route", "org-001", "env-dev", "printer-01"), barcode.LastDispatchRequest);
+        Assert.Equal(new BusinessConsoleReprintBarcodeLabelRequest("batch-route", 7, "org-001", "env-dev", "printer-02"), barcode.LastReprintRequest);
+        Assert.Equal(new BusinessConsoleVoidBarcodeLabelRequest("batch-route", 7, "org-001", "env-dev", "标签损坏"), barcode.LastVoidRequest);
+    }
+
+    [Fact]
     public async Task Barcode_facade_forwards_rule_print_batch_template_and_scan_list_paging()
     {
         var barcode = new RecordingBarcodeLabelClient();
@@ -13403,6 +13436,42 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
     public BusinessConsoleRecordBarcodeScanRequest? LastScanRequest { get; private set; }
 
     public BusinessConsoleBarcodeScanListRequest? LastScanListRequest { get; private set; }
+
+    public BusinessConsoleDispatchBarcodePrintBatchRequest? LastDispatchRequest { get; private set; }
+
+    public BusinessConsoleReprintBarcodeLabelRequest? LastReprintRequest { get; private set; }
+
+    public BusinessConsoleVoidBarcodeLabelRequest? LastVoidRequest { get; private set; }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDispatchRequest = request;
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.PrintBatchId));
+    }
+
+    public Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReprintRequest = request;
+        return Task.FromResult(new BusinessConsoleReprintBarcodeLabelResponse(request.PrintBatchId, "printed", "job-001", null));
+    }
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastVoidRequest = request;
+        return Task.FromResult(new BusinessConsoleBarcodePrintLifecycleResponse(request.PrintBatchId));
+    }
 
     public Task<BusinessConsoleBarcodeRuleListResponse> ListRulesAsync(
         string internalBearerToken,

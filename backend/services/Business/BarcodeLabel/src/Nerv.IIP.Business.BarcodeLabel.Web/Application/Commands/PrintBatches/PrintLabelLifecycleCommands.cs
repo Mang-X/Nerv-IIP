@@ -58,7 +58,7 @@ public sealed class ReprintLabelCommandHandler(ApplicationDbContext dbContext, I
     {
         var batch = await LabelPrintLifecycle.LoadBatchAsync(dbContext, request.PrintBatchId, cancellationToken);
         var item = batch.Items.SingleOrDefault(x => x.SequenceNo == request.SequenceNo)
-            ?? throw new KnownException($"Print item not found, SequenceNo = {request.SequenceNo}");
+            ?? throw new KnownException($"未找到打印项，SequenceNo = {request.SequenceNo}");
         var result = await LabelPrintLifecycle.DispatchAsync(printer, request.PrinterId, [item.LabelValue], cancellationToken);
         if (result.Status == "printed")
         {
@@ -90,7 +90,7 @@ internal static class LabelPrintLifecycle
         return await dbContext.LabelPrintBatches
             .Include(x => x.Items)
             .SingleOrDefaultAsync(x => x.Id == printBatchId, cancellationToken)
-            ?? throw new KnownException($"Print batch not found, PrintBatchId = {printBatchId}");
+            ?? throw new KnownException($"未找到打印批次，PrintBatchId = {printBatchId}");
     }
 
     public static async Task<LabelPrinterDispatchResult> DispatchAsync(
@@ -132,7 +132,7 @@ internal static class LabelPrintLifecycle
     private static string RequiredJobId(LabelPrinterDispatchResult result)
     {
         return string.IsNullOrWhiteSpace(result.PrintJobId)
-            ? throw new KnownException("Printer adapter returned no print job id.")
+            ? throw new KnownException("打印机适配器未返回打印任务标识。")
             : result.PrintJobId;
     }
 }

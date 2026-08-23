@@ -1112,6 +1112,21 @@ public interface IBusinessBarcodeLabelClient
         BusinessConsoleCreateBarcodePrintBatchRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchRequest request,
@@ -7942,6 +7957,39 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> DispatchPrintBatchAsync(
+        string internalBearerToken,
+        BusinessConsoleDispatchBarcodePrintBatchRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/dispatch",
+            new DownstreamDispatchBarcodePrintBatchRequest(request.PrintBatchId, request.PrinterId),
+            cancellationToken);
+
+    public Task<BusinessConsoleReprintBarcodeLabelResponse> ReprintLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleReprintBarcodeLabelRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleReprintBarcodeLabelResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/reprint",
+            new DownstreamReprintBarcodeLabelRequest(request.PrintBatchId, request.SequenceNo, request.PrinterId),
+            cancellationToken);
+
+    public Task<BusinessConsoleBarcodePrintLifecycleResponse> VoidLabelAsync(
+        string internalBearerToken,
+        BusinessConsoleVoidBarcodeLabelRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBarcodePrintLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/barcodes/print-batches/{Uri.EscapeDataString(request.PrintBatchId)}/items/{request.SequenceNo}/void",
+            new DownstreamVoidBarcodeLabelRequest(request.PrintBatchId, request.SequenceNo, request.Reason),
+            cancellationToken);
+
     public Task<BusinessConsoleBarcodePrintBatchResponse> GetPrintBatchAsync(
         string internalBearerToken,
         BusinessConsoleBarcodePrintBatchRequest request,
@@ -8000,6 +8048,12 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
                 ("take", request.Take)),
             null,
             cancellationToken);
+
+    private sealed record DownstreamDispatchBarcodePrintBatchRequest(string PrintBatchId, string PrinterId);
+
+    private sealed record DownstreamReprintBarcodeLabelRequest(string PrintBatchId, int SequenceNo, string PrinterId);
+
+    private sealed record DownstreamVoidBarcodeLabelRequest(string PrintBatchId, int SequenceNo, string Reason);
 }
 
 public sealed class HttpBusinessMesClient(HttpClient httpClient)

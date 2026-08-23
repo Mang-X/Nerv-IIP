@@ -14,6 +14,28 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayAuthorizationTests
 {
+    [Theory]
+    [InlineData("/api/business-console/v1/barcode/print-batches/batch-001/dispatch", "{\"printerId\":\"printer-01\"}")]
+    [InlineData("/api/business-console/v1/barcode/print-batches/batch-001/items/7/reprint", "{\"printerId\":\"printer-01\"}")]
+    [InlineData("/api/business-console/v1/barcode/print-batches/batch-001/items/7/void", "{\"reason\":\"标签损坏\"}")]
+    public async Task Barcode_lifecycle_facades_authorize_the_print_batch_resource(string path, string body)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Forbidden();
+        await using var lease = LeaseHost(auth);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        var response = await client.PostAsync($"{path}?organizationId=org-001&environmentId=env-dev", content);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.BarcodePrint, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("barcode-print-batch", auth.LastRequirement.ResourceType);
+        Assert.Equal("batch-001", auth.LastRequirement.ResourceId);
+    }
+
     [Fact]
     public async Task Business_console_endpoint_requires_user_authentication()
     {
@@ -526,6 +548,15 @@ public sealed class BusinessGatewayAuthorizationTests
 
         return path switch
         {
+            "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/dispatch" or
+            "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/items/7/reprint" => new
+            {
+                printerId = "printer-authz-01",
+            },
+            "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/items/7/void" => new
+            {
+                reason = "授权测试作废原因",
+            },
         "/api/business-console/v1/master-data/resources/sku/SKU-001/disable" or
         "/api/business-console/v1/master-data/resources/sku/SKU-001/enable" => new
         {
@@ -1367,6 +1398,9 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches", BusinessGatewayPermissions.BarcodePrint);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/print-batches", BusinessGatewayPermissions.BarcodePrint);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/dispatch", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/items/7/reprint", BusinessGatewayPermissions.BarcodePrint);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/print-batches/018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9/items/7/void", BusinessGatewayPermissions.BarcodePrint);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/barcode/scans", BusinessGatewayPermissions.BarcodeScansWrite);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
