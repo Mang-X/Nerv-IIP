@@ -267,7 +267,9 @@ try {
         -Timeout ([timespan]::FromMilliseconds(100))
     Assert-True (-not $incompleteResult.complete) 'Incomplete inventory must be non-green.'
     Assert-OrdinalEqual $incompleteResult.disposition 'Blocked' 'Incomplete pass inventory must be blocked.'
-    Assert-True (@($incompleteResult.diagnostics).Contains('process:inventory-incomplete')) 'Incomplete pass inventory must retain its pass-level diagnostic.'
+    Assert-True (@($incompleteResult.diagnostics | Where-Object {
+        [string]::Equals([string] $_, 'process:inventory-incomplete', [StringComparison]::Ordinal)
+    }).Count -eq 1) 'Incomplete pass inventory must retain its pass-level diagnostic.'
     Assert-True ($script:testStopOrder.Count -eq 0) 'Incomplete inventory must cause zero destructive calls.'
 
     $script:inventoryCallCount = 0
@@ -283,7 +285,9 @@ try {
         -Timeout ([timespan]::FromMilliseconds(100))
     Assert-True (-not $revalidationIncompleteResult.complete) 'Incomplete revalidation inventory must be non-green.'
     Assert-OrdinalEqual $revalidationIncompleteResult.disposition 'Blocked' 'Incomplete revalidation inventory must be blocked.'
-    Assert-True (@($revalidationIncompleteResult.diagnostics).Contains('process:revalidation-inventory-incomplete')) 'Incomplete revalidation must retain its phase diagnostic.'
+    Assert-True (@($revalidationIncompleteResult.diagnostics | Where-Object {
+        [string]::Equals([string] $_, 'process:revalidation-inventory-incomplete', [StringComparison]::Ordinal)
+    }).Count -eq 1) 'Incomplete revalidation must retain its phase diagnostic.'
     Assert-True ($script:testStopOrder.Count -eq 0) 'Incomplete revalidation inventory must cause zero destructive calls.'
 
     $script:NervFullStackProcessRuntimeInventoryAction = { New-TestInventory -Records @((New-TestProcessRecord -ProcessId 41001 -ParentPid 1 -StartTimeUtc $nextTime)) }
