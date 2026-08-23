@@ -143,8 +143,11 @@ function New-PlanningArtifact {
         [Parameter(Mandatory)] [string[]] $SelectionReasons
     )
 
-    $scenarioIdSet = [Collections.Generic.HashSet[string]]::new($ScenarioIds, [StringComparer]::Ordinal)
-    $scenarios = @($Manifest.scenarios | Where-Object { $scenarioIdSet.Contains([string]$_.id) })
+    $scenarioById = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+    foreach ($scenario in @($Manifest.scenarios)) {
+        $scenarioById.Add([string]$scenario.id, $scenario)
+    }
+    $scenarios = @($ScenarioIds | ForEach-Object { $scenarioById[[string]$_] })
     $projects = @(Get-NervAcceptancePlanningProjects -Scenarios $scenarios | ForEach-Object {
         [pscustomobject][ordered]@{
             path = [string]$_.path
@@ -684,7 +687,9 @@ function Invoke-PwshScript {
     Assert-RunnerBoundaryRejected -Name 'planning-run-attempt-leading-zero' -ExpectedMessage 'planning run attempt must be a canonical positive integer' -ArtifactPath $artifactPath -ArtifactDigest $artifactDigest -ManifestDigest $manifestDigest -WorkflowPath $workflowPath -Overrides @{ PlanningRunAttempt = '01' }
 
     $activeCoreIds = @($manifest.scenarios | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) -and [string]::Equals([string]$_.tier, 'core', [StringComparison]::Ordinal) } | ForEach-Object { [string]$_.id })
-    $mainArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $activeCoreIds -Event 'push' -SelectionMode 'main-active-core' -SelectionReasons @('main')
+    $planningOrderedActiveCoreIds = [string[]]@($activeCoreIds)
+    [Array]::Sort($planningOrderedActiveCoreIds, [StringComparer]::Ordinal)
+    $mainArtifact = New-PlanningArtifact -Manifest $manifest -ManifestDigest $manifestDigest -ScenarioIds $planningOrderedActiveCoreIds -Event 'push' -SelectionMode 'main-active-core' -SelectionReasons @('main')
     $mainArtifactPath = Join-Path $fixtureRoot 'main-five-planning-artifact.json'
     Write-JsonFixture -Path $mainArtifactPath -Value $mainArtifact
     $mainSummaryPath = Join-Path $fixtureRoot 'main-five/runtime-summary.json'

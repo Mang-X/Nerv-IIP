@@ -9,6 +9,7 @@ export const BUSINESS_PERMISSION_CODES = {
   engineeringChangesRead: 'business.engineering.changes.read',
   engineeringProductionVersionsRead: 'business.engineering.production-versions.read',
   planningDemandsRead: 'business.planning.demands.read',
+  planningDemandsManage: 'business.planning.demands.manage',
   planningMpsRead: 'business.planning.mps.read',
   planningMpsManage: 'business.planning.mps.manage',
   planningMpsRelease: 'business.planning.mps.release',
@@ -89,6 +90,7 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
   ],
   planning: [
     P.planningDemandsRead,
+    P.planningDemandsManage,
     P.planningMpsRead,
     P.planningMpsManage,
     P.planningMpsRelease,
