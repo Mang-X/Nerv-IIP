@@ -72,15 +72,18 @@ describe('LoginForm', () => {
     const bodyChildrenBefore = new Set(document.body.children)
     document.body.append(renderTarget)
 
-    const zhWrapper = mountForm({ attachTo: renderTarget })
-    const enWrapper = mount(LoginForm, {
-      attachTo: renderTarget,
-      global: {
-        plugins: [createConsoleI18n({ locale: 'en-US' })],
-      },
-    })
+    let zhWrapper: ReturnType<typeof mountForm> | undefined
+    let enWrapper: ReturnType<typeof mount> | undefined
 
     try {
+      zhWrapper = mountForm({ attachTo: renderTarget })
+      enWrapper = mount(LoginForm, {
+        attachTo: renderTarget,
+        global: {
+          plugins: [createConsoleI18n({ locale: 'en-US' })],
+        },
+      })
+
       const renderedBodyRoots = Array.from(document.body.children).filter(
         (element) => !bodyChildrenBefore.has(element) && element !== renderTarget,
       )
@@ -121,8 +124,8 @@ describe('LoginForm', () => {
         }
       }
     } finally {
-      zhWrapper.unmount()
-      enWrapper.unmount()
+      zhWrapper?.unmount()
+      enWrapper?.unmount()
       renderTarget.remove()
     }
   })
