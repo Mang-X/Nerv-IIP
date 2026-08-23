@@ -196,6 +196,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/master-data/devices' },
           requiredPermissions: [P.masterDataResourcesRead],
         },
+        {
+          title: '工装与模具',
+          icon: WrenchIcon,
+          to: { path: '/master-data/tooling' },
+          requiredPermissions: [P.masterDataResourcesRead],
+        },
       ],
     },
     {

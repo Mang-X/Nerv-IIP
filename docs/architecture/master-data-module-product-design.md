@@ -34,7 +34,7 @@
 - **生命周期完整**：主数据价值在「能改、能停用、能追溯版本」，不止新增。
 - **诚实暴露后端边界**：后端没有的能力/字段，前端**不伪造、不猜**，用禁用入口 + 说明占位。
 
-**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
+**进（In Scope）**：物料与产品（Sku）；工厂/产线/工作中心/设备（Site/ProductionLine/WorkCenter/DeviceAsset）；工装与模具（ToolingAsset，含适用工作中心/SKU、寿命、使用累计与专用状态）；客户/供应商/承运商（BusinessPartner）；字典与受控值（ReferenceDataCode）；计量单位与换算（UnitOfMeasure/UomConversion）；组织与排班（Department/Team/Shift/WorkCalendar/PersonnelSkill）；员工主数据（Worker——工号/姓名/部门/岗位/在岗状态，是班组成员、人员技能与 MES 派工共同的人员事实源）。
 
 **不进（Non-Goals）**：BOM/工艺路线/工序版本（属产品工程，`/master-data/process` 归 engineering，不动）；库存余额/库位实物（inventory/wms）；价格/合同/账期（ERP）；用户/权限（平台管理）；主数据审批工作流、数据质量评分、跨组织主数据治理（远期）。
 
@@ -87,7 +87,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 > **修订 v2（2026-06-10）：废弃"用平铺 Tab 切层级/塞杂物抽屉"。** 经成熟系统对标（SAP / Oracle EBS / D365 / 主流 MES）+ PM/业务/UX 三视角重审,确立**让页型匹配关系本质**:层级关系上**树**、归属关系**列表-详情挂父**、多对多用**矩阵**、二级受控值用**主从**、单主体多角色用**主体+角色叠加**。原 §3 的「工厂与产线/组织与日历用页内 Tab 切多实体」**违反 AGENTS §1.5-A.2,作废**。配套 UX 模板:`frontend/DESIGN/patterns/pages/master-data-templates.md`。
 
-### 3.1 修订后导航树（9 页 / 3 分组，侧栏带分组标签）
+### 3.1 修订后导航树（侧栏按 3 组组织）
 
 ```
 基础数据 (master-data)
@@ -95,7 +95,8 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 ├── 物料与产品    /master-data/skus           [Sku]            列表-重详情(分组表单)
 ├── 业务伙伴      /master-data/partners       [BusinessPartner] 单主体+多角色(对标 S/4 BP)
 ├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
-└── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+├── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+└── 工装与模具    /master-data/tooling        [ToolingAsset]   服务端分页维护台(寿命/状态/适用范围)
 【组织与排班】
 ├── 员工          /master-data/workers        [Worker 平表(工号/姓名/部门/班组/技能/在岗状态)]
 ├── 组织与班组    /master-data/organization   [Department 树 + Team 列表-详情(成员主从)]
@@ -116,6 +117,7 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 | 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
 | **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
 | 设备台账 | 平表 + 详情/编辑 | 已深化 | 厂区/车间/产线/工位归属，购置/保修/供应商/退役台账，父设备与关键部件清单；维修工单读面展示保修状态 |
+| **工装与模具** | **平表 + 注册 Sheet + 状态/使用动作** | **新页** | 关键字与状态走服务端筛选；登记真实工作中心 × SKU 适用组合；展示累计使用/寿命预警与排程资格；可用→保养、完成保养→可用、退役终态，状态原因必填；`resources.read` 可查看，`resources.manage` 才可写 |
 | **员工** | 平表 + 新建/编辑弹窗 | **新页** | 「人」的业务权威源（IAM 只管账号）。工号由编码引擎分配（EMP-）；姓名/部门/岗位/在岗状态可维护，班组与技能只读展示（分别在「组织与班组」「人员技能」维护）；停用后不再进入派工与班组候选 |
 | **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、**班组挂车间**（班组是车间级的，派工按「工作中心→车间→班组」找人）、成员主从 |
 | **排班与日历** | 班次设置表 + 日历月历 | **新页(从组织拆)** | 月历可视化(标工作日/节假日)；**依赖后端日历明细** |

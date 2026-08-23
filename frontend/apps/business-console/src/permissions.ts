@@ -1,6 +1,7 @@
 export const BUSINESS_PERMISSION_CODES = {
   masterDataProductsRead: 'business.masterdata.products.read',
   masterDataResourcesRead: 'business.masterdata.resources.read',
+  masterDataResourcesManage: 'business.masterdata.resources.manage',
   engineeringDocumentsRead: 'business.engineering.documents.read',
   engineeringItemsRead: 'business.engineering.items.read',
   engineeringBomsRead: 'business.engineering.boms.read',
@@ -78,7 +79,7 @@ const P = BUSINESS_PERMISSION_CODES
 
 export const BUSINESS_DOMAIN_PERMISSIONS = {
   workbench: Object.values(P),
-  masterData: [P.masterDataProductsRead, P.masterDataResourcesRead],
+  masterData: [P.masterDataProductsRead, P.masterDataResourcesRead, P.masterDataResourcesManage],
   engineering: [
     P.engineeringDocumentsRead,
     P.engineeringItemsRead,
