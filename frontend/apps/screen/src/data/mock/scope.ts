@@ -1,15 +1,4 @@
-export type ScreenKey = 'factory' | 'equipment' | 'line' | 'workshop' | 'warehouse' | 'quality'
-
-export interface Persona {
-  id: string
-  label: string
-  factoryIds: string[]
-  /** 'all' = 该工厂全部车间；否则白名单 workshopId */
-  workshopIds: string[] | 'all'
-  /** 'all' = 可见车间下全部产线；否则白名单 lineId */
-  lineIds: string[] | 'all'
-  allowedScreens: ScreenKey[]
-}
+import type { Persona } from '@/data/contracts/scope'
 
 // 演示 persona：只证明"按权限进入 + 收窄车间/产线"，不写死真实策略；
 // IAM 接入后本表由真实 claims 派生。见 spec §1.2。

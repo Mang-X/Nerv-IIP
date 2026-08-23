@@ -7,11 +7,13 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// 线边收料/完工入库的站点与库位部署面契约（#2008）。服务读的 <c>Inventory:*</c> 配置键与 AppHost
 /// 下发的 <c>Inventory__*</c> 环境变量键过去只靠人眼对齐，改名的唯一表现是运行时 KnownException，
 /// 没有任何测试转红。这里把 AppHost 下发的键约束为服务真的会读的键，并钉住环境门控：
-/// 演示站点/库位（SITE-001 + WH-WB-*）只允许在 Development 回落。
+/// 主线产品站点/库位（SITE-001 + loc-*）只允许在 Development 回落。
 /// </summary>
 public sealed class MesInventoryLocationDeploymentConfigurationTests
 {
     private const string AppHostProgramPath = "infra/aspire/Nerv.IIP.AppHost/Program.cs";
+    private const string MasterDataDictionaryRulesPath =
+        "backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs";
     private const string MesProgramPath =
         "backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Program.cs";
 
@@ -71,10 +73,10 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     }
 
     [Fact]
-    public void AppHost_confines_every_demo_location_literal_to_the_gated_helpers()
+    public void AppHost_confines_every_location_literal_to_the_gated_helpers()
     {
-        // 围栏而不是形态匹配：只禁 `.WithEnvironment("Key", "SITE-…")` 双字面量形态时，把演示值经
-        // const/局部变量转手就能绕过。这里要求**每一个**演示字面量都出现在同一条语句内的
+        // 围栏而不是形态匹配：只禁某一个位置码前缀的双字面量形态时，把受治理位置值经
+        // const/局部变量转手就能绕过。这里要求**每一个**位置字面量都出现在同一条语句内的
         // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
         var appHost = ReadRepositoryFile(AppHostProgramPath);
         var literals = DemandLocationLiterals(appHost);
@@ -84,15 +86,42 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         {
             Assert.True(
                 literal.IsGated,
-                $"演示站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
+                $"受治理站点/库位字面量 {literal.Value} 未经 DeploymentWarehouseLocation(s) 门控下发。");
         }
+    }
+
+    [Fact]
+    public void AppHost_does_not_reintroduce_world_bible_location_literals()
+    {
+        Assert.DoesNotMatch(@"""WH-WB-[^""]*""", ReadRepositoryFile(AppHostProgramPath));
+    }
+
+    [Fact]
+    public void AppHost_product_location_fallbacks_are_present_in_master_data_dictionary()
+    {
+        var fallbackCodes = DemandLocationLiterals(ReadRepositoryFile(AppHostProgramPath))
+            .Select(literal => literal.Value.Trim('"'))
+            .Where(value => value.StartsWith("loc-", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var dictionaryCodes = Regex
+            .Matches(
+                ReadRepositoryFile(MasterDataDictionaryRulesPath),
+                @"new\(""inventory-location"",\s*""(?<code>[^""]+)""")
+            .Select(match => match.Groups["code"].Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(fallbackCodes);
+        Assert.NotEmpty(dictionaryCodes);
+        Assert.True(
+            fallbackCodes.IsSubsetOf(dictionaryCodes),
+            $"AppHost fallback 库位码未在 MasterData inventory-location 字典中：{string.Join(", ", fallbackCodes.Except(dictionaryCodes, StringComparer.Ordinal))}");
     }
 
     [Fact]
     public void AppHost_gates_the_development_seed_fallback_on_a_pinned_environment_name()
     {
         // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量
-        // 改成 "Production" 就恰好是本门禁要拦的错误（生产回落演示库位），却一条测试都不会红。
+        // 改成 "Production" 就恰好是本门禁要拦的错误（生产回落主线位置），却一条测试都不会红。
         var appHost = ReadRepositoryFile(AppHostProgramPath);
 
         Assert.Contains(
@@ -157,12 +186,12 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     }
 
     /// <summary>
-    /// AppHost 源码里的全部演示站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
-    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>WH-WB-*</c> 不带
-    /// 引号，不会被计入。
+    /// AppHost 源码里的全部受治理站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的
+    /// <c>DeploymentWarehouseLocation(s)</c> 调用中。注释里的 <c>SITE-001</c>/<c>WH-WB-*</c>/
+    /// <c>loc-*</c> 不带引号，不会被计入。
     /// </summary>
     private static IReadOnlyList<(string Value, bool IsGated)> DemandLocationLiterals(string appHost) =>
-        Regex.Matches(appHost, @"""(SITE-|WH-WB-)[^""]*""")
+        Regex.Matches(appHost, @"""(SITE-|WH-WB-|loc-)[^""]*""")
             .Select(match =>
             {
                 var precedingText = appHost[..match.Index];
