@@ -251,6 +251,7 @@ const statusActionLabel = computed(() =>
       ? '完成保养'
       : '退役',
 )
+const statusReasonInvalid = computed(() => statusShowErrors.value && !statusReason.value.trim())
 function openStatus(
   row: BusinessConsoleToolingAssetItem,
   status: BusinessConsoleToolingAssetStatus,
@@ -417,7 +418,7 @@ const listErrorMessage = computed(() =>
         {{ row.workCenterCodes?.length ?? 0 }} 个工作中心 · {{ row.skuCodes?.length ?? 0 }} 个 SKU
       </template>
       <template #cell-actions="{ row }">
-        <div class="flex flex-wrap justify-end gap-1">
+        <div class="flex flex-nowrap items-center justify-end gap-1">
           <NvButton
             v-if="canManage && row.status !== 'retired'"
             type="button"
@@ -568,7 +569,7 @@ const listErrorMessage = computed(() =>
               <NvFieldError v-if="registerLifeError" :errors="[registerLifeError]" />
             </NvField>
             <FormSectionTitle class="sm:col-span-2">适用范围</FormSectionTitle>
-            <NvField class="sm:col-span-2" :data-invalid="Boolean(registerWorkCenterError)">
+            <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerWorkCenterError)">
               <NvFieldLabel>
                 <span :class="registerWorkCenterError ? 'text-destructive' : undefined">
                   适用工作中心 <span class="text-destructive">*</span>
@@ -576,7 +577,7 @@ const listErrorMessage = computed(() =>
               </NvFieldLabel>
               <div
                 class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
-                :aria-invalid="Boolean(registerWorkCenterError)"
+                :data-invalid="Boolean(registerWorkCenterError)"
                 :class="registerWorkCenterError ? 'border-destructive' : ''"
               >
                 <label
@@ -606,7 +607,7 @@ const listErrorMessage = computed(() =>
               </NvFieldDescription>
               <NvFieldError v-if="registerWorkCenterError" :errors="[registerWorkCenterError]" />
             </NvField>
-            <NvField class="sm:col-span-2" :data-invalid="Boolean(registerSkuError)">
+            <NvField class="sm:col-span-2" :aria-invalid="Boolean(registerSkuError)">
               <NvFieldLabel>
                 <span :class="registerSkuError ? 'text-destructive' : undefined">
                   适用 SKU <span class="text-destructive">*</span>
@@ -614,7 +615,7 @@ const listErrorMessage = computed(() =>
               </NvFieldLabel>
               <div
                 class="grid gap-2 rounded-lg border p-3 sm:grid-cols-2"
-                :aria-invalid="Boolean(registerSkuError)"
+                :data-invalid="Boolean(registerSkuError)"
                 :class="registerSkuError ? 'border-destructive' : ''"
               >
                 <label
@@ -661,21 +662,25 @@ const listErrorMessage = computed(() =>
           <NvDialogTitle>{{ statusActionLabel }}</NvDialogTitle>
           <NvDialogDescription>
             {{
-              nextStatus === 'retired'
-                ? '退役为终态，工装将永久退出排程。'
-                : '原因会随状态变更留痕。'
+              nextStatus === 'available'
+                ? '完成保养后将清零累计使用次数，请说明本次状态变更原因。'
+                : '请说明本次状态变更原因。'
             }}
           </NvDialogDescription>
         </NvDialogHeader>
-        <NvField>
-          <NvFieldLabel for="tooling-status-reason"
-            >原因 <span class="text-destructive">*</span></NvFieldLabel
-          >
-          <NvInput id="tooling-status-reason" v-model="statusReason" />
-          <NvFieldError
-            v-if="statusShowErrors && !statusReason.trim()"
-            :errors="['请填写状态变更原因。']"
+        <NvField :data-invalid="statusReasonInvalid">
+          <NvFieldLabel for="tooling-status-reason">
+            <span :class="statusReasonInvalid ? 'text-destructive' : undefined">
+              原因 <span class="text-destructive">*</span>
+            </span>
+          </NvFieldLabel>
+          <NvInput
+            id="tooling-status-reason"
+            v-model="statusReason"
+            :invalid="statusReasonInvalid"
+            :class="statusReasonInvalid ? '!border-destructive' : undefined"
           />
+          <NvFieldError v-if="statusReasonInvalid" :errors="['请填写状态变更原因。']" />
         </NvField>
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="statusOpen = false">取消</NvButton>
@@ -697,20 +702,20 @@ const listErrorMessage = computed(() =>
           <NvAlertDialogTitle>退役</NvAlertDialogTitle>
           <NvAlertDialogDescription> 退役为终态，工装将永久退出排程。 </NvAlertDialogDescription>
         </NvAlertDialogHeader>
-        <NvField :data-invalid="statusShowErrors && !statusReason.trim()">
-          <NvFieldLabel for="tooling-retire-reason"
-            >原因 <span class="text-destructive">*</span></NvFieldLabel
-          >
+        <NvField :data-invalid="statusReasonInvalid">
+          <NvFieldLabel for="tooling-retire-reason">
+            <span :class="statusReasonInvalid ? 'text-destructive' : undefined">
+              原因 <span class="text-destructive">*</span>
+            </span>
+          </NvFieldLabel>
           <NvInput
             id="tooling-retire-reason"
             v-model="statusReason"
-            :invalid="statusShowErrors && !statusReason.trim()"
+            :invalid="statusReasonInvalid"
+            :class="statusReasonInvalid ? '!border-destructive' : undefined"
           />
-          <NvFieldDescription>原因会随状态变更留痕。</NvFieldDescription>
-          <NvFieldError
-            v-if="statusShowErrors && !statusReason.trim()"
-            :errors="['请填写退役原因。']"
-          />
+          <NvFieldDescription>请说明本次退役原因。</NvFieldDescription>
+          <NvFieldError v-if="statusReasonInvalid" :errors="['请填写退役原因。']" />
         </NvField>
         <NvAlertDialogFooter>
           <NvAlertDialogCancel>取消</NvAlertDialogCancel>
@@ -743,11 +748,21 @@ const listErrorMessage = computed(() =>
             保存后工装将自动转为保养中，并停止参与排程。
           </p>
         </div>
-        <NvField>
-          <NvFieldLabel for="tooling-usage-count"
-            >本次使用次数 <span class="text-destructive">*</span></NvFieldLabel
-          >
-          <NvInput id="tooling-usage-count" v-model="usageCount" type="number" min="1" step="1" />
+        <NvField :data-invalid="Boolean(usageValidationMessage)">
+          <NvFieldLabel for="tooling-usage-count">
+            <span :class="usageValidationMessage ? 'text-destructive' : undefined">
+              本次使用次数 <span class="text-destructive">*</span>
+            </span>
+          </NvFieldLabel>
+          <NvInput
+            id="tooling-usage-count"
+            v-model="usageCount"
+            type="number"
+            min="1"
+            step="1"
+            :invalid="Boolean(usageValidationMessage)"
+            :class="usageValidationMessage ? '!border-destructive' : undefined"
+          />
           <NvFieldError v-if="usageValidationMessage" :errors="[usageValidationMessage]" />
         </NvField>
         <NvDialogFooter>
