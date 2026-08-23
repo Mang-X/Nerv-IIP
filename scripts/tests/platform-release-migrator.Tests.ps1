@@ -92,3 +92,6 @@ if ($unknown.ExitCode -eq 0 -or -not $unknown.Output.Contains('Unknown migration
 }
 
 Write-Host 'Platform release migrator contracts passed.'
+# GitHub Actions dot-sources the generated pwsh step script, so the final expected-failure
+# child probe would otherwise leak LASTEXITCODE=1 after every assertion has passed.
+$global:LASTEXITCODE = 0
