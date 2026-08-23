@@ -68,6 +68,72 @@ internal static class FileStoragePurposePolicies
         return FileStoragePolicyValidationResult.Accepted;
     }
 
+    public static FileStoragePolicyValidationResult ValidateExpectedSize(
+        string filePurpose,
+        long expectedSizeBytes,
+        IConfiguration? configuration)
+    {
+        var maximumFileSizeBytes = configuration?.GetValue<long?>(
+            $"FileStorage:PurposePolicies:{filePurpose}:MaximumFileSizeBytes");
+        return maximumFileSizeBytes is not null && expectedSizeBytes > maximumFileSizeBytes.Value
+            ? FileStoragePolicyValidationResult.Rejected($"File size is not allowed for purpose '{filePurpose}'.")
+            : FileStoragePolicyValidationResult.Accepted;
+    }
+
+    public static FileStoragePolicyValidationResult ValidateOwner(
+        string filePurpose,
+        string ownerService,
+        string ownerType,
+        IConfiguration? configuration)
+    {
+        var requiredOwnerService = configuration?[$"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerService"];
+        var requiredOwnerType = configuration?[$"FileStorage:PurposePolicies:{filePurpose}:RequiredOwnerType"];
+        var ownerMatches = (string.IsNullOrWhiteSpace(requiredOwnerService)
+                || string.Equals(ownerService, requiredOwnerService, StringComparison.Ordinal))
+            && (string.IsNullOrWhiteSpace(requiredOwnerType)
+                || string.Equals(ownerType, requiredOwnerType, StringComparison.Ordinal));
+        return ownerMatches
+            ? FileStoragePolicyValidationResult.Accepted
+            : FileStoragePolicyValidationResult.Rejected($"File owner is not allowed for purpose '{filePurpose}'.");
+    }
+
+    public static FileStoragePolicyValidationResult ValidateChecksum(
+        string filePurpose,
+        string? checksum,
+        IConfiguration? configuration)
+    {
+        if (configuration?.GetValue<bool?>($"FileStorage:PurposePolicies:{filePurpose}:RequireSha256Checksum") != true)
+        {
+            return FileStoragePolicyValidationResult.Accepted;
+        }
+
+        const string prefix = "sha256:";
+        var digest = checksum?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true
+            ? checksum[prefix.Length..]
+            : string.Empty;
+        return digest.Length == 64 && digest.All(char.IsAsciiHexDigit)
+            ? FileStoragePolicyValidationResult.Accepted
+            : FileStoragePolicyValidationResult.Rejected($"File checksum is not allowed for purpose '{filePurpose}'.");
+    }
+
+    public static FileStoragePolicyValidationResult ValidateCompletionChecksum(
+        string filePurpose,
+        string? sessionChecksum,
+        string? completionChecksum,
+        IConfiguration? configuration)
+    {
+        if (configuration?.GetValue<bool?>($"FileStorage:PurposePolicies:{filePurpose}:RequireSha256Checksum") != true)
+        {
+            return FileStoragePolicyValidationResult.Accepted;
+        }
+
+        var declaredChecksum = ValidateChecksum(filePurpose, completionChecksum, configuration);
+        return declaredChecksum.IsAllowed
+            && string.Equals(sessionChecksum, completionChecksum, StringComparison.OrdinalIgnoreCase)
+                ? FileStoragePolicyValidationResult.Accepted
+                : FileStoragePolicyValidationResult.Rejected("Upload checksum does not match the upload session.");
+    }
+
     public static async Task<bool> MatchesDeclaredContentAsync(
         string fileName,
         string contentType,

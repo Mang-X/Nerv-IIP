@@ -56,7 +56,9 @@ POST /api/files/v1/files/{fileId}/download-grants
 
 2026-07-05 安全硬化已补齐以下运行路径：上传会话创建时按 `FileStorage:PurposePolicies:{purpose}` 校验 content type、扩展名 allowlist/blocklist，并按 `FileStorage:Quotas:OrganizationPurpose:{org}:{env}:{purpose}:MaxBytes`、`FileStorage:Quotas:Organization:{org}:{env}:MaxBytes` 或用途级 `QuotaBytes` 做配额拒绝；组织级配额使用组织/环境总用量并按 organization/environment 加锁，组织用途级和用途级配额使用对应 purpose 用量并按 organization/environment/purpose 加锁，使 usedBytes 检查和 upload session reservation 写入在当前服务进程内串行化；`GET /api/files/v1/usage` 返回匹配配额口径下的当前已存字节加未过期上传会话预留字节，以及匹配配额。只有 `status == available` 的文件可由 download grant content endpoint 兑换为字节。正式文件生命周期清理由 `FileStorage:PurposePolicies:{purpose}:RetentionSeconds` 触发软删，再按 `FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds` 物理删除 `stored_files`、关联 `upload_sessions` / `download_grants` 和本地 tus 字节。
 
-2026-08-17 起，`FileStorage:PurposePolicies` 的直接子键同时是 purpose 注册目录的单一事实源，Domain 不再维护硬编码白名单。平台内置目录为 `application-package`、`avatar`、`attachment`、`diagnostic-log`、`quality-evidence`、`maintenance-photo` 与 `engineering-document`；PostgreSQL metadata 实现和 `/internal/file-storage/v1/purposes/{purpose}` 共用同一配置解析。未注册值以 HTTP 400 返回稳定错误码 `file-purpose-not-registered`，消息包含实际 purpose 和配置路径，内部边界端点返回同一诊断。NvUI 测试和设计系统示例复用或对齐该目录；本项不引入 owner allowlist、传输 eligibility、策略版本或新的契约生成链。
+2026-08-17 起，`FileStorage:PurposePolicies` 的直接子键同时是 purpose 注册目录的单一事实源，Domain 不再维护硬编码白名单。平台内置目录为 `application-package`、`avatar`、`attachment`、`diagnostic-log`、`quality-evidence`、`maintenance-photo`、`engineering-document` 与 `barcode-label-template`；PostgreSQL metadata 实现和 `/internal/file-storage/v1/purposes/{purpose}` 共用同一配置解析。未注册值以 HTTP 400 返回稳定错误码 `file-purpose-not-registered`，消息包含实际 purpose 和配置路径，内部边界端点返回同一诊断。NvUI 测试和设计系统示例复用或对齐该目录。
+
+2026-08-23 起，`barcode-label-template` 只接受 `.json` 与 `application/vnd.nerv-iip.label-template+json`，单文件和组织/环境/用途总量上限均为 65,536 bytes；owner 必须为 `business-barcode-label / label-template / {templateCode}`，创建与 complete 都要求相同的 `sha256:` 加 64 位十六进制摘要。complete 的 organization、environment 或 purpose 与会话不一致时保持失败关闭，下载 metadata 保留同一 scope、owner、purpose 与 checksum。该 purpose 不配置 `RetentionSeconds`，因此 FileStorage 不自动清理标签模板；引用治理与物理删除授权仍由后续 BarcodeLabel 消费链负责。本项不修改 renderer、Gateway/OpenAPI、generated client、printer 配置、通用字节 provider 或数据库 schema。
 
 ## 已批准目标，尚未实现
 
@@ -92,7 +94,7 @@ File Storage 创建上传会话时必须先应用平台策略，不能等文件�
 
 当前配置口径：
 
-1. `FileStorage:PurposePolicies` 的直接子键定义已注册 purpose；子键下的 `AllowedContentTypes`、`AllowedExtensions`、`BlockedExtensions` 控制声明校验。如果某个 allowlist 未配置，则该维度保持兼容放行，但 blocked extension 始终优先；整个 purpose 子键未注册时，在创建上传会话前失败关闭。
+1. `FileStorage:PurposePolicies` 的直接子键定义已注册 purpose；子键下的 `AllowedContentTypes`、`AllowedExtensions`、`BlockedExtensions` 控制声明校验，`MaximumFileSizeBytes` 控制单文件声明上限，`RequiredOwnerService` / `RequiredOwnerType` 控制用途专属 owner，`RequireSha256Checksum` 控制创建与 complete 的 SHA-256 证据，`QuotaBytes` 控制用途总量。如果某个 allowlist 或可选约束未配置，则对应维度保持兼容放行，但 blocked extension 始终优先；整个 purpose 子键未注册时，在创建上传会话前失败关闭。
 2. tus complete 对 zip、png、jpeg 和 pdf 做魔数复核；普通文本/日志类按声明策略治理。
 3. 配额优先级为组织+环境+用途、组织+环境、用途默认；超配额在上传会话创建阶段返回冲突，不创建临时会话。
 

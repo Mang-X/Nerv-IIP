@@ -72,6 +72,7 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
     [InlineData("quality-evidence")]
     [InlineData("maintenance-photo")]
     [InlineData("engineering-document")]
+    [InlineData("barcode-label-template")]
     public async Task Configured_file_purpose_is_exposed_as_registered(string purpose)
     {
         var client = factory.CreateClient();
