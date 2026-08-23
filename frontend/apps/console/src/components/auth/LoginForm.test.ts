@@ -67,7 +67,7 @@ describe('LoginForm', () => {
     expect(wrapper.text()).toContain('Password')
   })
 
-  it('does not disclose seeded administrator credentials', () => {
+  it('does not disclose seeded administrator credentials in rendered login surfaces', () => {
     const zhWrapper = mountForm()
     const enWrapper = mount(LoginForm, {
       global: {
@@ -75,9 +75,27 @@ describe('LoginForm', () => {
       },
     })
 
-    expect(zhWrapper.text()).not.toContain('管理员')
-    expect(zhWrapper.text()).not.toContain('admin')
-    expect(enWrapper.text()).not.toContain('Seeded')
-    expect(enWrapper.text()).not.toContain('admin')
+    for (const wrapper of [zhWrapper, enWrapper]) {
+      const forbidden = /admin|管理员|seeded/i
+      const renderedRoot = wrapper.element as HTMLElement
+      const renderedAttributeValues = Array.from(renderedRoot.querySelectorAll('*')).flatMap(
+        (element) => Array.from(element.attributes, (attribute) => attribute.value),
+      )
+
+      expect(wrapper.text()).not.toMatch(forbidden)
+      for (const value of renderedAttributeValues) {
+        expect(value).not.toMatch(forbidden)
+      }
+
+      for (const input of Array.from(renderedRoot.querySelectorAll('input'))) {
+        const inputElement = input as HTMLInputElement
+
+        expect(inputElement.value).not.toMatch(forbidden)
+        expect(inputElement.placeholder).not.toMatch(forbidden)
+        for (const attribute of ['aria-label', 'aria-description', 'title']) {
+          expect(inputElement.getAttribute(attribute) ?? '').not.toMatch(forbidden)
+        }
+      }
+    }
   })
 })
