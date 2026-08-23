@@ -63,6 +63,7 @@ const technicianOptions = [
 
 从固定集合里选一个；触发按钮展示所选标签，弹层顶部带搜索框，比长下拉更好定位。
 `options` 支持 `hint`（如工号）辅助识别。
+字段校验失败时可传 `aria-invalid` 与 `aria-describedby`；组件会将它们转发到实际获得焦点的触发按钮。
 
 <Demo>
   <div style="max-width: 320px">

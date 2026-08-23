@@ -2869,7 +2869,7 @@ public sealed record BusinessConsoleForecastInputListRequest(
 public sealed record BusinessConsoleCreateOrUpdateForecastInputRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ForecastReference,
+    string? ForecastReference,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -2877,7 +2877,8 @@ public sealed record BusinessConsoleCreateOrUpdateForecastInputRequest(
     DateOnly PeriodEndDate,
     decimal Quantity,
     int BackwardConsumptionDays = 0,
-    int ForwardConsumptionDays = 0);
+    int ForwardConsumptionDays = 0,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleForecastInputItem(
     string ForecastInputId,
