@@ -1,5 +1,6 @@
 /**
- * `@nerv-iip/ui/test-support`：只给**测试环境 setup** 用的支撑件（#2014）。
+ * `@nerv-iip/ui/test-support`：只给**测试环境**用的东西（#2014 / #2022）——vitest
+ * `setupFiles` 的支撑件，以及跨 app 共享的契约门禁本体。
  *
  * 刻意不从 `src/index.ts` 主桶导出——这些东西会改 unovis 原型、装全局桩，
  * 不属于组件库的运行时公共边界，也不受 NvUI 命名契约约束。消费方只在 vitest 的
@@ -15,3 +16,13 @@
  *    **之前**——对象别名按声明序做前缀匹配，否则会被拼成 `.../src/index.ts/test-support`。
  */
 export { disableUnovisTooltipThrottle } from './unovisTooltipTimers'
+/**
+ * NvUI import hygiene 门禁的唯一实现（#2022）。四个 app 的
+ * `src/nvui-imports.contract.test.ts` 只是调用壳，规则改这里。
+ */
+export {
+  appsRequiringContract,
+  CONTRACT_SHELL_BASENAME,
+  nvuiImportViolation,
+  runNvUiImportHygieneContract,
+} from './nvuiImportHygiene'

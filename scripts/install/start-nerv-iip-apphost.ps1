@@ -84,9 +84,8 @@ if ((-not [string]::Equals([string]($EnvironmentName), [string]("Development"), 
         throw "-MessagingProvider InMemory is only allowed in Development. Use Redis or RabbitMQ outside Development."
     }
 
-    if ([string]::Equals([string]($MessagingProvider), [string]("Redis"), [StringComparison]::OrdinalIgnoreCase) -and
-        [string]::IsNullOrWhiteSpace($RedisPassword)) {
-        throw "-RedisPassword is required when -MessagingProvider Redis is selected outside Development."
+    if ([string]::IsNullOrWhiteSpace($RedisPassword)) {
+        throw "-RedisPassword is required outside Development because the AppHost Redis cache resource is always present."
     }
 
     if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {

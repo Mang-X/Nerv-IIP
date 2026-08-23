@@ -7,6 +7,12 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Contracts.Erp 是采购收货质检状态值域的唯一权威；Domain 仅单向依赖该公共契约。 -->
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Erp\Nerv.IIP.Contracts.Erp.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="NetCorePal.Extensions.CodeAnalysis" />
     <PackageReference Include="NetCorePal.Extensions.Domain.Abstractions" />

@@ -102,7 +102,7 @@ public sealed record CancelDemandSourceRequest(
 public sealed record CreateOrUpdateForecastInputRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ForecastReference,
+    string? ForecastReference,
     string SkuCode,
     string UomCode,
     string SiteCode,
@@ -110,9 +110,12 @@ public sealed record CreateOrUpdateForecastInputRequest(
     DateOnly PeriodEndDate,
     decimal Quantity,
     int BackwardConsumptionDays = 0,
-    int ForwardConsumptionDays = 0);
+    int ForwardConsumptionDays = 0,
+    string? IdempotencyKey = null);
 
-public sealed record CreateOrUpdateForecastInputResponse(ForecastInputId ForecastInputId);
+public sealed record CreateOrUpdateForecastInputResponse(
+    ForecastInputId ForecastInputId,
+    string ForecastReference);
 
 public sealed record ListForecastInputsRequest(
     string OrganizationId,
@@ -328,7 +331,7 @@ public sealed class CreateOrUpdateForecastInputEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateOrUpdateForecastInputRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateOrUpdateForecastInputCommand(
+        var result = await sender.Send(new CreateOrUpdateForecastInputCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.ForecastReference,
@@ -339,8 +342,11 @@ public sealed class CreateOrUpdateForecastInputEndpoint(ISender sender)
             req.PeriodEndDate,
             req.Quantity,
             req.BackwardConsumptionDays,
-            req.ForwardConsumptionDays), ct);
-        await Send.OkAsync(new CreateOrUpdateForecastInputResponse(id).AsResponseData(), cancellation: ct);
+            req.ForwardConsumptionDays,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(
+            new CreateOrUpdateForecastInputResponse(result.ForecastInputId, result.ForecastReference).AsResponseData(),
+            cancellation: ct);
     }
 }
 

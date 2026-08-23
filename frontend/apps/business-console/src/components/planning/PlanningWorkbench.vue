@@ -29,6 +29,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
+import PlanningForecastManagement from '@/components/planning/PlanningForecastManagement.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
@@ -1192,6 +1193,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           demandFilterActive ? `${filteredDemands.length}/${demands.length}` : demands.length
         }})</NvTabsTrigger
       >
+      <NvTabsTrigger value="forecasts">预测管理</NvTabsTrigger>
       <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
       <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
       <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
@@ -1299,6 +1301,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             :tone="demandCoverage(row.skuCode).tone"
         /></template>
       </NvDataTable>
+    </NvTabsContent>
+
+    <NvTabsContent value="forecasts">
+      <PlanningForecastManagement />
     </NvTabsContent>
 
     <NvTabsContent value="mps">

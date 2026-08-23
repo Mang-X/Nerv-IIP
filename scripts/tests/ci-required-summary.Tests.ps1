@@ -84,10 +84,17 @@ function Assert-FullChainAggregateContract {
     Assert-Contract ([string]::Equals([string]$aggregate.if, "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}", [StringComparison]::Ordinal)) 'The stable FullChain aggregate must run always when selected and remain skipped for an explicit successful-PR full_chain=false policy decision.'
 
     [string[]]$aggregateNeeds = @($aggregate.needs | ForEach-Object { [string]$_ })
-    [string[]]$expectedAggregateNeeds = @('impact-plan', 'acceptance-scenario-matrix-planning', 'business-full-chain-acceptance-v1')
+    [string[]]$expectedAggregateNeeds = @(
+        'impact-plan',
+        'acceptance-scenario-matrix-planning',
+        'business-full-chain-acceptance-v1',
+        'acceptance-scenario-matrix-runtime',
+        'erp-sales-order-demand-acceptance',
+        'acceptance-scenario-matrix-equivalence'
+    )
     [Array]::Sort($aggregateNeeds, [StringComparer]::Ordinal)
     [Array]::Sort($expectedAggregateNeeds, [StringComparer]::Ordinal)
-    Assert-Contract ([string]::Equals(($aggregateNeeds -join '|'), ($expectedAggregateNeeds -join '|'), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must need exactly impact-plan, planning, and the physical v1 worker.'
+    Assert-Contract ([string]::Equals(($aggregateNeeds -join '|'), ($expectedAggregateNeeds -join '|'), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must need exactly impact-plan, planning, v1, shadow runtime, legacy ERP, and equivalence.'
 
     $aggregateSteps = @($aggregate.steps)
     Assert-Contract ($aggregateSteps.Count -eq 1) 'The stable FullChain aggregate must contain exactly one fail-fast assertion step.'
@@ -96,14 +103,33 @@ function Assert-FullChainAggregateContract {
     Assert-Contract ([string]::Equals([string]$aggregateStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'The stable FullChain aggregate must use the governed fail-fast Bash shell.'
     Assert-Contract ($null -eq $aggregateStep.PSObject.Properties['if'] -and $null -eq $aggregateStep.PSObject.Properties['continue-on-error']) 'The aggregate assertion step must run naturally without a skip or continue-on-error escape.'
     $aggregateRun = [string]$aggregateStep.run
-    foreach ($requiredAggregateAssertion in @(
-            'planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"',
-            'v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"',
-            'test "$planning_result" = "success"',
-            'test "$v1_result" = "success"'
-        )) {
-        Assert-Contract ($aggregateRun.Contains($requiredAggregateAssertion, [StringComparison]::Ordinal)) "The stable FullChain aggregate is missing required assertion '$requiredAggregateAssertion'."
-    }
+    $expectedAggregateRun = @'
+planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
+v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
+sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
+shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
+legacy_erp_result="${{ needs.erp-sales-order-demand-acceptance.result }}"
+equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
+
+test "$planning_result" = "success"
+test "$v1_result" = "success"
+case "$sales_order_demand_selected" in
+  true)
+    test "$shadow_result" = "success"
+    test "$legacy_erp_result" = "success"
+    test "$equivalence_result" = "success"
+    ;;
+  false)
+    test "$shadow_result" = "skipped"
+    test "$equivalence_result" = "skipped"
+    ;;
+  *)
+    echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
+    exit 1
+    ;;
+esac
+'@
+    Assert-Contract ([string]::Equals($aggregateRun.Replace("`r`n", "`n").TrimEnd(), $expectedAggregateRun.Replace("`r`n", "`n").TrimEnd(), [StringComparison]::Ordinal)) 'The stable FullChain aggregate must enforce the exact selected/unselected fail-closed result matrix.'
     Assert-Contract (-not $aggregateRun.Contains('test "$impact_result" = "success"', [StringComparison]::Ordinal)) 'The stable aggregate must allow the governed conservative path when impact-plan itself failed.'
     foreach ($forbiddenAggregateWork in @('collect-test-evidence.ps1', 'upload-artifact', 'run-full-chain-test-lane.ps1', 'run-acceptance-scenario-matrix.ps1')) {
         Assert-Contract (-not $aggregateRun.Contains($forbiddenAggregateWork, [StringComparison]::OrdinalIgnoreCase)) "The stable aggregate must not execute or publish '$forbiddenAggregateWork'."
@@ -115,13 +141,46 @@ function Assert-FullChainAggregateContract {
     Assert-Contract ($legacyErpProperties.Count -eq 1) 'The legacy ERP Sales Order Demand Acceptance job must not be deleted or renamed.'
     $legacyErp = $legacyErpProperties[0].Value
     Assert-Contract ([string]::Equals([string]$legacyErp.name, 'ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal) -and [int]$legacyErp.'timeout-minutes' -eq 55) 'The legacy ERP job name and budget must remain unchanged in this layer.'
+    Assert-Contract ([string]::Equals([string]$legacyErp.needs, 'impact-plan', [StringComparison]::Ordinal)) 'The legacy ERP job must remain independent of planning so ERP-only selection still runs when FullChain planning is skipped.'
+    Assert-Contract ([string]::Equals([string]$legacyErp.if, "`${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.erp_sales_order_demand != 'false' || needs.impact-plan.outputs.full_chain != 'false') }}", [StringComparison]::Ordinal)) 'The legacy ERP job must retain its independent ERP route while participating in FullChain equivalence.'
+    $legacyErpOutputsProperty = $legacyErp.PSObject.Properties['outputs']
+    Assert-Contract ($null -ne $legacyErpOutputsProperty -and
+        [string]::Equals([string]$legacyErpOutputsProperty.Value.'artifact-name', '${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$legacyErpOutputsProperty.Value.'producer-run-attempt', '${{ steps.legacy-erp-artifact-identity.outputs.producer-run-attempt }}', [StringComparison]::Ordinal)) 'The legacy ERP job must publish its artifact identity and physical producer attempt without depending on planning.'
+    $legacyErpVerifierSteps = @($legacyErp.steps | Where-Object {
+            [string]::Equals([string]$_.name, 'Verify ERP sales-order demand bridge', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($legacyErpVerifierSteps.Count -eq 1 -and
+        ([string]$legacyErpVerifierSteps[0].run).Contains('./scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) 'The legacy ERP job must retain the governed business verifier entrypoint.'
+    $legacyErpVerifierRun = [string]$legacyErpVerifierSteps[0].run
+    Assert-Contract ($legacyErpVerifierRun.Contains("`$legacyErpCanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance/man517/legacy-erp-canonical-result.json')", [StringComparison]::Ordinal) -and
+        $legacyErpVerifierRun.Contains('-CanonicalResultPath $legacyErpCanonicalResultPath', [StringComparison]::Ordinal)) 'The legacy ERP verifier must receive a canonical absolute repository path.'
     $legacyErpUploads = @($legacyErp.steps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
             $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
         })
+    $legacyErpIdentitySteps = @($legacyErp.steps | Where-Object {
+            $idProperty = $_.PSObject.Properties['id']
+            $null -ne $idProperty -and [string]::Equals([string]$idProperty.Value, 'legacy-erp-artifact-identity', [StringComparison]::Ordinal)
+        })
+    Assert-Contract ($legacyErpIdentitySteps.Count -eq 1 -and
+        [string]::Equals([string]$legacyErpIdentitySteps[0].if, 'always()', [StringComparison]::Ordinal) -and
+        ([string]$legacyErpIdentitySteps[0].run).Contains('artifact-name=erp-sales-order-demand-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal) -and
+        ([string]$legacyErpIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'The legacy ERP job must single-source its physical artifact identity even when the always-upload evidence path follows verifier failure.'
     Assert-Contract ($legacyErpUploads.Count -eq 1 -and
-        [string]::Equals([string]$legacyErpUploads[0].with.'if-no-files-found', 'warn', [StringComparison]::Ordinal) -and
-        [int]$legacyErpUploads[0].with.'retention-days' -eq 7) 'The legacy ERP artifact must retain its existing warn/7-day behavior until the later equivalence layer.'
+        [string]::Equals([string]$legacyErpUploads[0].with.name, '${{ steps.legacy-erp-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and
+        [string]::Equals([string]$legacyErpUploads[0].with.'if-no-files-found', 'error', [StringComparison]::Ordinal) -and
+        [int]$legacyErpUploads[0].with.'retention-days' -eq 14 -and
+        $null -eq $legacyErpUploads[0].with.PSObject.Properties['overwrite']) 'The legacy ERP artifact must fail on missing files, retain evidence for 14 days, and never overwrite an earlier attempt.'
+
+    $summary = $parsedWorkflow.jobs.'ci-summary'
+    [string[]]$summaryNeeds = @($summary.needs | ForEach-Object { [string]$_ })
+    Assert-Contract ([Array]::IndexOf($summaryNeeds, 'business-full-chain-acceptance') -ge 0 -and
+        [Array]::IndexOf($summaryNeeds, 'erp-sales-order-demand-acceptance') -ge 0 -and
+        [Array]::IndexOf($summaryNeeds, 'acceptance-scenario-matrix-runtime') -lt 0 -and
+        [Array]::IndexOf($summaryNeeds, 'acceptance-scenario-matrix-equivalence') -lt 0 -and
+        [Array]::IndexOf($summaryNeeds, 'business-full-chain-acceptance-v1') -lt 0) 'CI Summary must continue to consume only the stable FullChain aggregate while retaining its independent legacy ERP dependency.'
+    Assert-Contract (([string]$summary.steps[0].run).Contains('erp_selected="${{ github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.erp_sales_order_demand != ''false'' || needs.impact-plan.outputs.full_chain != ''false'' }}"', [StringComparison]::Ordinal)) 'CI Summary must mirror the legacy ERP job route when FullChain selects it for equivalence.'
 }
 
 try {
@@ -166,9 +225,34 @@ try {
                 Replacement = 'test "$v1_result" = "skipped"'
             },
             @{
+                Name = 'full-chain-aggregate-selected-allows-shadow-skip'
+                Original = '    test "$shadow_result" = "success"'
+                Replacement = '    test "$shadow_result" = "skipped"'
+            },
+            @{
+                Name = 'full-chain-aggregate-selected-drops-legacy-erp'
+                Original = ('    test "$legacy_erp_result" = "success"' + [Environment]::NewLine)
+                Replacement = ''
+            },
+            @{
+                Name = 'full-chain-aggregate-unselected-allows-shadow-success'
+                Original = '    test "$shadow_result" = "skipped"'
+                Replacement = '    test "$shadow_result" = "success"'
+            },
+            @{
+                Name = 'full-chain-aggregate-invalid-selection-falls-through'
+                Original = "    exit 1$([Environment]::NewLine)"
+                Replacement = "    exit 0$([Environment]::NewLine)"
+            },
+            @{
                 Name = 'full-chain-aggregate-treats-missing-signal-as-unselected'
                 Original = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}"
                 Replacement = "`${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain == 'true') }}"
+            },
+            @{
+                Name = 'legacy-erp-relative-canonical-result-path'
+                Original = '-CanonicalResultPath $legacyErpCanonicalResultPath'
+                Replacement = '-CanonicalResultPath artifacts/acceptance/man517/legacy-erp-canonical-result.json'
             }
         )) {
         $mutatedAggregateWorkflow = $workflow.Replace([string]$aggregateMutation.Original, [string]$aggregateMutation.Replacement)
@@ -220,6 +304,11 @@ try {
 
     Invoke-Mutation -Name 'ci-summary-erp-unselected-allows-success' -Workflow $workflow `
         -Original '            test "$erp_result" = "skipped"' -Replacement '            test "$erp_result" = "success"' `
+        -ExpectedDiagnostic $policyDiagnostic
+
+    Invoke-Mutation -Name 'ci-summary-erp-route-drops-full-chain-selection' -Workflow $workflow `
+        -Original '          erp_selected="${{ github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.erp_sales_order_demand != ''false'' || needs.impact-plan.outputs.full_chain != ''false'' }}"' `
+        -Replacement '          erp_selected="${{ github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.erp_sales_order_demand != ''false'' }}"' `
         -ExpectedDiagnostic $policyDiagnostic
 
     Invoke-Mutation -Name 'ci-summary-hides-erp-skipped-by-design-audit' -Workflow $workflow `

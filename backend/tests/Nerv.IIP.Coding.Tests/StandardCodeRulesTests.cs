@@ -7,6 +7,7 @@ public sealed class StandardCodeRulesTests
     [Theory]
     [InlineData("sku", "SKU")]
     [InlineData("demand", "DEMAND")]
+    [InlineData("forecast", "FC")]
     [InlineData("work-order", "WO")]
     [InlineData("production-report", "PRPT")]
     [InlineData("finished-goods-receipt-request", "FGR")]
