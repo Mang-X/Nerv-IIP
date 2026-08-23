@@ -35,7 +35,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
-import FirstArticlePlanDialog from '@/components/quality/FirstArticlePlanDialog.vue'
+import FirstArticlePlanSheet from '@/components/quality/FirstArticlePlanSheet.vue'
 import {
   NvButton,
   NvCombobox,
@@ -104,13 +104,16 @@ const {
 } = useQualityInspectionPlans(
   initialInspectionPlanKeyword ? { keyword: initialInspectionPlanKeyword } : {},
 )
+const pageHeaderCount = computed(() =>
+  activeView.value === 'plans' ? `${inspectionPlansTotal.value} 个检验方案` : undefined,
+)
 const taskActions = useQualityInspectionTaskActions(filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
 
 const recordSheetOpen = shallowRef(false)
-const firstArticlePlanDialogOpen = shallowRef(false)
+const firstArticlePlanSheetOpen = shallowRef(false)
 const recordCreatedFromLocatedPlanId = shallowRef('')
 const characteristicsAppliedPlanId = shallowRef('')
 
@@ -819,7 +822,7 @@ function isPresent(value: string | undefined | null): value is string {
     <NvPageHeader
       title="检验任务与记录"
       :breadcrumbs="[{ label: '质量' }]"
-      :count="`${inspectionPlansTotal} 个检验方案`"
+      :count="pageHeaderCount"
     >
       <template #actions>
         <NvButton
@@ -827,7 +830,7 @@ function isPresent(value: string | undefined | null): value is string {
           size="sm"
           type="button"
           variant="outline"
-          @click="firstArticlePlanDialogOpen = true"
+          @click="firstArticlePlanSheetOpen = true"
         >
           <Settings2Icon aria-hidden="true" />
           配置首件检验方案
@@ -871,7 +874,6 @@ function isPresent(value: string | undefined | null): value is string {
               首件检验方案固定关联物料与工序工作中心，草稿方案可在行操作中继续启用。
             </p>
           </div>
-          <span class="text-sm text-muted-foreground">{{ inspectionPlansTotal }} 个方案</span>
         </div>
 
         <NvToolbar :show-search="false">
@@ -939,9 +941,9 @@ function isPresent(value: string | undefined | null): value is string {
       </NvTabsContent>
     </NvTabs>
 
-    <FirstArticlePlanDialog
+    <FirstArticlePlanSheet
       v-if="canManageInspectionPlans"
-      v-model:open="firstArticlePlanDialogOpen"
+      v-model:open="firstArticlePlanSheetOpen"
       :organization-id="filters.organizationId"
       :environment-id="filters.environmentId"
       :sku-options="skuCatalog.skuOptions.value"

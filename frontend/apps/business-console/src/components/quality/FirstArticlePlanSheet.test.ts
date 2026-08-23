@@ -1,7 +1,7 @@
 import { shallowRef } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import FirstArticlePlanDialog from './FirstArticlePlanDialog.vue'
+import FirstArticlePlanSheet from './FirstArticlePlanSheet.vue'
 
 const state = vi.hoisted(() => ({
   createAndActivate: vi.fn(),
@@ -27,7 +27,13 @@ const stubs = {
   NvDialogFooter: { template: '<footer><slot /></footer>' },
   NvDialogHeader: { template: '<header><slot /></header>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
-  NvField: { template: '<div><slot /></div>' },
+  NvSheet: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+  NvSheetContent: { template: '<aside><slot /></aside>' },
+  NvSheetDescription: { template: '<p><slot /></p>' },
+  NvSheetFooter: { template: '<footer><slot /></footer>' },
+  NvSheetHeader: { template: '<header><slot /></header>' },
+  NvSheetTitle: { template: '<h2><slot /></h2>' },
+  NvField: { template: '<div v-bind="$attrs"><slot /></div>' },
   NvFieldDescription: { template: '<p><slot /></p>' },
   NvFieldGroup: { template: '<div><slot /></div>' },
   NvFieldLabel: { template: '<label><slot /></label>' },
@@ -60,8 +66,8 @@ const stubs = {
   SelectValue: { template: '<span />' },
 }
 
-function mountDialog() {
-  return mount(FirstArticlePlanDialog, {
+function mountSheet() {
+  return mount(FirstArticlePlanSheet, {
     props: {
       open: true,
       organizationId: 'org-1',
@@ -75,7 +81,7 @@ function mountDialog() {
   })
 }
 
-async function fillRequiredFields(wrapper: ReturnType<typeof mountDialog>) {
+async function fillRequiredFields(wrapper: ReturnType<typeof mountSheet>) {
   await wrapper.get('#first-article-plan-code').setValue('FA-PLAN-001')
   await wrapper.get('#first-article-sku').setValue('SKU-FA-001')
   await wrapper.get('#first-article-work-center').setValue('WC-ASSEMBLY-01')
@@ -90,12 +96,54 @@ describe('首件检验方案配置', () => {
     state.notifySuccess.mockReset()
   })
 
+  it('使用侧边面板承载动态检验项表单', () => {
+    const wrapper = mountSheet()
+
+    expect(wrapper.find('[data-testid="first-article-plan-sheet"]').exists()).toBe(true)
+  })
+
   it('点提交后显示必填缺口且不发送请求', async () => {
-    const wrapper = mountDialog()
+    const wrapper = mountSheet()
     await wrapper.get('form').trigger('submit')
 
-    expect(wrapper.text()).toContain('请选择适用物料。')
-    expect(wrapper.text()).toContain('请选择工序工作中心。')
+    const summary = wrapper.get('[role="alert"]')
+    expect(summary.text()).toContain('请选择适用物料。')
+    expect(summary.text()).toContain('请选择工序工作中心。')
+    expect(wrapper.get('form').element.firstElementChild).toBe(summary.element)
+    expect(wrapper.get('#first-article-plan-code').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(wrapper.get('#first-article-sku').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(wrapper.get('#first-article-work-center').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(wrapper.get('#first-article-item-name-0').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(state.createAndActivate).not.toHaveBeenCalled()
+  })
+
+  it('取消后重新打开会清空草稿和校验反馈', async () => {
+    const wrapper = mountSheet()
+    await wrapper.get('#first-article-plan-code').setValue('FA-PLAN-DRAFT')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect((wrapper.get('#first-article-plan-code').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('重复检验项编号会标记两个冲突字段且不发送请求', async () => {
+    const wrapper = mountSheet()
+    await fillRequiredFields(wrapper)
+    const addButton = wrapper.findAll('button').find((button) => button.text().includes('添加检验项'))
+    expect(addButton).toBeDefined()
+    await addButton!.trigger('click')
+    await wrapper.get('#first-article-item-code-1').setValue('APPEARANCE')
+    await wrapper.get('#first-article-item-name-1').setValue('外观复核')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('检验项编号不能重复。')
+    expect(wrapper.get('#first-article-item-code-0').element.closest('[data-invalid="true"]')).not.toBeNull()
+    expect(wrapper.get('#first-article-item-code-1').element.closest('[data-invalid="true"]')).not.toBeNull()
     expect(state.createAndActivate).not.toHaveBeenCalled()
   })
 
@@ -106,7 +154,7 @@ describe('首件检验方案配置', () => {
       activated: false,
       activationError,
     })
-    const wrapper = mountDialog()
+    const wrapper = mountSheet()
     await fillRequiredFields(wrapper)
     await wrapper.get('form').trigger('submit')
     await flushPromises()

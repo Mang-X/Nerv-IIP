@@ -6,12 +6,6 @@ import type {
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import {
   NvButton,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
   NvEntityPicker,
   NvField,
   NvFieldDescription,
@@ -23,10 +17,16 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
+  NvSheet,
+  NvSheetContent,
+  NvSheetDescription,
+  NvSheetFooter,
+  NvSheetHeader,
+  NvSheetTitle,
   Spinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { useQualityFirstArticlePlanActions } from '@/composables/useBusinessQuality'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
@@ -112,6 +112,16 @@ function removeCharacteristic(index: number) {
   form.characteristics.splice(index, 1)
 }
 
+function characteristicCodeInvalid(index: number) {
+  if (!submitted.value) return false
+  const code = form.characteristics[index]?.characteristicCode.trim().toLowerCase() ?? ''
+  if (!code) return true
+  return form.characteristics.some(
+    (item, candidateIndex) =>
+      candidateIndex !== index && item.characteristicCode.trim().toLowerCase() === code,
+  )
+}
+
 function resetForm() {
   form.planCode = ''
   form.skuCode = ''
@@ -119,6 +129,14 @@ function resetForm() {
   form.characteristics = [emptyCharacteristic()]
   submitted.value = false
 }
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) resetForm()
+  },
+  { immediate: true },
+)
 
 function toCharacteristic(
   item: CharacteristicDraft,
@@ -167,22 +185,38 @@ async function submit() {
 </script>
 
 <template>
-  <NvDialog v-model:open="openModel">
-    <NvDialogContent class="sm:max-w-3xl">
-      <NvDialogHeader>
-        <NvDialogTitle>配置首件检验方案</NvDialogTitle>
-        <NvDialogDescription>
+  <NvSheet v-model:open="openModel">
+    <NvSheetContent data-testid="first-article-plan-sheet" size="xl">
+      <NvSheetHeader>
+        <NvSheetTitle>配置首件检验方案</NvSheetTitle>
+        <NvSheetDescription>
           方案适用于指定物料在指定工序的首件确认；启用后可用于首件检验记录，生产报工门禁另行接入。
-        </NvDialogDescription>
-      </NvDialogHeader>
+        </NvSheetDescription>
+      </NvSheetHeader>
 
       <form class="grid gap-5" @submit.prevent="submit">
+        <div
+          v-if="submitted && blockers.length"
+          id="first-article-plan-errors"
+          class="rounded-lg border border-destructive/40 bg-destructive/10 p-3"
+          role="alert"
+        >
+          <p class="text-sm font-medium text-destructive">请补齐以下内容：</p>
+          <ul class="mt-1 list-disc pl-5 text-sm text-destructive">
+            <li v-for="message in blockers" :key="message">{{ message }}</li>
+          </ul>
+        </div>
+
         <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
-          <NvField>
+          <NvField :data-invalid="submitted && !form.planCode.trim()">
             <NvFieldLabel for="first-article-plan-code">方案编号</NvFieldLabel>
-            <NvInput id="first-article-plan-code" v-model="form.planCode" />
+            <NvInput
+              id="first-article-plan-code"
+              v-model="form.planCode"
+              :aria-invalid="submitted && !form.planCode.trim()"
+            />
           </NvField>
-          <NvField>
+          <NvField :data-invalid="submitted && !form.skuCode.trim()">
             <NvFieldLabel for="first-article-sku">适用物料</NvFieldLabel>
             <NvEntityPicker
               id="first-article-sku"
@@ -193,9 +227,10 @@ async function submit() {
               placeholder="选择物料"
               source-text="数据来自物料主数据"
               aria-label="适用物料"
+              :aria-invalid="submitted && !form.skuCode.trim()"
             />
           </NvField>
-          <NvField>
+          <NvField :data-invalid="submitted && !form.workCenterId.trim()">
             <NvFieldLabel for="first-article-work-center">工序工作中心</NvFieldLabel>
             <NvEntityPicker
               id="first-article-work-center"
@@ -206,6 +241,7 @@ async function submit() {
               placeholder="选择工作中心"
               source-text="数据来自工作中心主数据"
               aria-label="工序工作中心"
+              :aria-invalid="submitted && !form.workCenterId.trim()"
             />
           </NvField>
         </NvFieldGroup>
@@ -227,17 +263,29 @@ async function submit() {
             :key="index"
             class="grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_1fr_1fr_140px_auto]"
           >
-            <NvField>
+            <NvField :data-invalid="characteristicCodeInvalid(index)">
               <NvFieldLabel :for="`first-article-item-code-${index}`">检验项编号</NvFieldLabel>
-              <NvInput :id="`first-article-item-code-${index}`" v-model="item.characteristicCode" />
+              <NvInput
+                :id="`first-article-item-code-${index}`"
+                v-model="item.characteristicCode"
+                :aria-invalid="characteristicCodeInvalid(index)"
+              />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && !item.name.trim()">
               <NvFieldLabel :for="`first-article-item-name-${index}`">检验项名称</NvFieldLabel>
-              <NvInput :id="`first-article-item-name-${index}`" v-model="item.name" />
+              <NvInput
+                :id="`first-article-item-name-${index}`"
+                v-model="item.name"
+                :aria-invalid="submitted && !item.name.trim()"
+              />
             </NvField>
-            <NvField>
+            <NvField :data-invalid="submitted && !item.method.trim()">
               <NvFieldLabel :for="`first-article-item-method-${index}`">检验方法</NvFieldLabel>
-              <NvInput :id="`first-article-item-method-${index}`" v-model="item.method" />
+              <NvInput
+                :id="`first-article-item-method-${index}`"
+                v-model="item.method"
+                :aria-invalid="submitted && !item.method.trim()"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel>重要程度</NvFieldLabel>
@@ -263,9 +311,16 @@ async function submit() {
                 <Trash2Icon aria-hidden="true" />
               </NvButton>
             </div>
-            <NvField class="md:col-span-3">
+            <NvField
+              class="md:col-span-3"
+              :data-invalid="submitted && !item.samplingRule.trim()"
+            >
               <NvFieldLabel :for="`first-article-item-sampling-${index}`">抽样要求</NvFieldLabel>
-              <NvInput :id="`first-article-item-sampling-${index}`" v-model="item.samplingRule" />
+              <NvInput
+                :id="`first-article-item-sampling-${index}`"
+                v-model="item.samplingRule"
+                :aria-invalid="submitted && !item.samplingRule.trim()"
+              />
               <NvFieldDescription
                 >首件通常采用全检；如工艺另有要求，请按现场标准填写。</NvFieldDescription
               >
@@ -273,19 +328,7 @@ async function submit() {
           </div>
         </section>
 
-        <div
-          v-if="submitted && blockers.length"
-          id="first-article-plan-errors"
-          class="rounded-lg border border-destructive/40 bg-destructive/10 p-3"
-          role="alert"
-        >
-          <p class="text-sm font-medium text-destructive">请补齐以下内容：</p>
-          <ul class="mt-1 list-disc pl-5 text-sm text-destructive">
-            <li v-for="message in blockers" :key="message">{{ message }}</li>
-          </ul>
-        </div>
-
-        <NvDialogFooter>
+        <NvSheetFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
           <NvButton
             type="submit"
@@ -297,8 +340,8 @@ async function submit() {
             <Spinner v-if="createFirstArticlePlanPending" aria-hidden="true" />
             创建并启用
           </NvButton>
-        </NvDialogFooter>
+        </NvSheetFooter>
       </form>
-    </NvDialogContent>
-  </NvDialog>
+    </NvSheetContent>
+  </NvSheet>
 </template>
