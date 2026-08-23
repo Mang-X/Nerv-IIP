@@ -68,35 +68,62 @@ describe('LoginForm', () => {
   })
 
   it('does not disclose seeded administrator credentials in rendered login surfaces', () => {
-    const zhWrapper = mountForm()
+    const renderTarget = document.createElement('div')
+    const bodyChildrenBefore = new Set(document.body.children)
+    document.body.append(renderTarget)
+
+    const zhWrapper = mountForm({ attachTo: renderTarget })
     const enWrapper = mount(LoginForm, {
+      attachTo: renderTarget,
       global: {
         plugins: [createConsoleI18n({ locale: 'en-US' })],
       },
     })
 
-    for (const wrapper of [zhWrapper, enWrapper]) {
-      const forbidden = /admin|管理员|seeded/i
-      const renderedRoot = wrapper.element as HTMLElement
-      const renderedElements = [renderedRoot, ...renderedRoot.querySelectorAll('*')]
-      const renderedAttributeValues = renderedElements.flatMap((element) =>
-        Array.from(element.attributes, (attribute) => attribute.value),
+    try {
+      const renderedBodyRoots = Array.from(document.body.children).filter(
+        (element) => !bodyChildrenBefore.has(element) && element !== renderTarget,
       )
+      const renderedBodyElements = renderedBodyRoots.flatMap((element) => [
+        element,
+        ...element.querySelectorAll('*'),
+      ])
 
-      expect(wrapper.text()).not.toMatch(forbidden)
-      for (const value of renderedAttributeValues) {
-        expect(value).not.toMatch(forbidden)
-      }
+      for (const wrapper of [zhWrapper, enWrapper]) {
+        const forbidden = /admin|管理员|seeded/i
+        const renderedRoot = wrapper.element as HTMLElement
+        const renderedElements = [
+          renderedRoot,
+          ...renderedRoot.querySelectorAll('*'),
+          ...renderedBodyElements,
+        ]
+        const renderedAttributeValues = renderedElements.flatMap((element) =>
+          Array.from(element.attributes, (attribute) => attribute.value),
+        )
+        const renderedText = [
+          wrapper.text(),
+          ...renderedBodyRoots.map((element) => element.textContent ?? ''),
+        ].join(' ')
 
-      for (const input of Array.from(renderedRoot.querySelectorAll('input'))) {
-        const inputElement = input as HTMLInputElement
+        expect(renderedText).not.toMatch(forbidden)
+        for (const value of renderedAttributeValues) {
+          expect(value).not.toMatch(forbidden)
+        }
 
-        expect(inputElement.value).not.toMatch(forbidden)
-        expect(inputElement.placeholder).not.toMatch(forbidden)
-        for (const attribute of ['aria-label', 'aria-description', 'title']) {
-          expect(inputElement.getAttribute(attribute) ?? '').not.toMatch(forbidden)
+        for (const input of Array.from(renderedRoot.querySelectorAll('input'))) {
+          const inputElement = input as HTMLInputElement
+
+          expect(inputElement.value).not.toMatch(forbidden)
+          expect(inputElement.placeholder).not.toMatch(forbidden)
+          for (const attribute of ['aria-label', 'aria-description', 'title']) {
+            expect(inputElement.getAttribute(attribute) ?? '').not.toMatch(forbidden)
+          }
         }
       }
+    } finally {
+      zhWrapper.unmount()
+      enWrapper.unmount()
+      renderTarget.remove()
     }
   })
 })
