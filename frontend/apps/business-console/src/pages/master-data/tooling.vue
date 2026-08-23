@@ -488,7 +488,7 @@ const listErrorMessage = computed(() =>
 
     <NvSheet v-if="canManage" v-model:open="registerOpen">
       <NvSheetContent class="w-full overflow-y-auto sm:max-w-2xl">
-        <form class="grid gap-5" @submit.prevent="submitRegister">
+        <form class="grid gap-5" novalidate @submit.prevent="submitRegister">
           <NvSheetHeader>
             <NvSheetTitle>注册工装</NvSheetTitle>
             <NvSheetDescription
@@ -520,7 +520,6 @@ const listErrorMessage = computed(() =>
                 id="tooling-name"
                 v-model="registerForm.name"
                 :invalid="Boolean(registerNameError)"
-                :class="registerNameError ? '!border-destructive' : undefined"
               />
               <NvFieldError v-if="registerNameError" :errors="[registerNameError]" />
             </NvField>
@@ -531,10 +530,7 @@ const listErrorMessage = computed(() =>
                 </span>
               </NvFieldLabel>
               <NvSelect v-model="registerForm.toolingType">
-                <NvSelectTrigger
-                  :invalid="Boolean(registerTypeError)"
-                  :class="registerTypeError ? '!border-destructive' : undefined"
-                >
+                <NvSelectTrigger :invalid="Boolean(registerTypeError)">
                   <NvSelectValue />
                 </NvSelectTrigger>
                 <NvSelectContent>
@@ -561,7 +557,6 @@ const listErrorMessage = computed(() =>
                 min="1"
                 step="1"
                 :invalid="Boolean(registerLifeError)"
-                :class="registerLifeError ? '!border-destructive' : undefined"
               />
               <NvFieldDescription
                 >可留空；达到寿命后转入保养状态并停止参与排程。</NvFieldDescription
@@ -660,13 +655,7 @@ const listErrorMessage = computed(() =>
       <NvDialogContent>
         <NvDialogHeader>
           <NvDialogTitle>{{ statusActionLabel }}</NvDialogTitle>
-          <NvDialogDescription>
-            {{
-              nextStatus === 'available'
-                ? '完成保养后将清零累计使用次数，请说明本次状态变更原因。'
-                : '请说明本次状态变更原因。'
-            }}
-          </NvDialogDescription>
+          <NvDialogDescription>请说明本次状态变更原因。</NvDialogDescription>
         </NvDialogHeader>
         <NvField :data-invalid="statusReasonInvalid">
           <NvFieldLabel for="tooling-status-reason">
@@ -678,7 +667,6 @@ const listErrorMessage = computed(() =>
             id="tooling-status-reason"
             v-model="statusReason"
             :invalid="statusReasonInvalid"
-            :class="statusReasonInvalid ? '!border-destructive' : undefined"
           />
           <NvFieldError v-if="statusReasonInvalid" :errors="['请填写状态变更原因。']" />
         </NvField>
@@ -712,7 +700,6 @@ const listErrorMessage = computed(() =>
             id="tooling-retire-reason"
             v-model="statusReason"
             :invalid="statusReasonInvalid"
-            :class="statusReasonInvalid ? '!border-destructive' : undefined"
           />
           <NvFieldDescription>请说明本次退役原因。</NvFieldDescription>
           <NvFieldError v-if="statusReasonInvalid" :errors="['请填写退役原因。']" />
@@ -761,7 +748,6 @@ const listErrorMessage = computed(() =>
             min="1"
             step="1"
             :invalid="Boolean(usageValidationMessage)"
-            :class="usageValidationMessage ? '!border-destructive' : undefined"
           />
           <NvFieldError v-if="usageValidationMessage" :errors="[usageValidationMessage]" />
         </NvField>

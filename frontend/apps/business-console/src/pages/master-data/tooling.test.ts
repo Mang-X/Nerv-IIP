@@ -39,6 +39,17 @@ vi.mock('@/composables/useBusinessTooling', () => ({
         workCenterCodes: ['WC-PRESS'],
         skuCodes: ['SKU-FLOOR', 'SKU-SILL'],
       },
+      {
+        code: 'FIXTURE-002',
+        name: '左门槛总成焊接夹具',
+        toolingType: 'fixture',
+        status: 'maintenance',
+        maintenanceLifeCount: 15000,
+        usageCount: 12640,
+        isSchedulable: false,
+        workCenterCodes: ['WC-PRESS'],
+        skuCodes: ['SKU-SILL'],
+      },
     ]),
     toolingTotal: computed(() => 1),
     toolingPending: shallowRef(false),
@@ -183,7 +194,19 @@ describe('工装与模具维护台', () => {
 
     expect(wrapper.find('form').exists()).toBe(false)
     await button(wrapper, '注册工装')!.trigger('click')
-    expect(wrapper.find('form').exists()).toBe(true)
+    const form = wrapper.find('form')
+    expect(form.exists()).toBe(true)
+    expect(form.attributes('novalidate')).toBeDefined()
+  })
+
+  it('未达到寿命时完成保养不承诺清零累计使用次数', async () => {
+    const wrapper = mount(ToolingPage, { global: { stubs } })
+    await flushPromises()
+
+    await button(wrapper, '完成保养')!.trigger('click')
+
+    expect(wrapper.text()).toContain('请说明本次状态变更原因。')
+    expect(wrapper.text()).not.toContain('完成保养后将清零累计使用次数')
   })
 
   it('注册提交后同时展示校验汇总与对应字段错误', async () => {
